@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost review</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --panel: #f4f5f8;
+  --line: #dde1e6;
+  --text: #161616;
+  --muted: #5d646d;
+  --cut: #0f62fe;
+  --useful: #a2a9b0;
+  --unknown: repeating-linear-gradient(135deg, #a2a9b0 0 4px, #e3e6ea 4px 8px);
+  --button: #161616;
+  --button-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --panel: #22252a;
+    --line: #393d43;
+    --text: #f2f4f8;
+    --muted: #a8afb7;
+    --cut: #4589ff;
+    --useful: #6f767e;
+    --unknown: repeating-linear-gradient(135deg, #6f767e 0 4px, #33373c 4px 8px);
+    --button: #f2f4f8;
+    --button-text: #161616;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; padding: 32px 16px 40px; }
+.eyebrow { color: var(--muted); font-size: 13px; }
+h1 { font-size: 30px; font-weight: 400; margin: 6px 0 6px; line-height: 1.2; }
+h1 b { font-weight: 600; }
+.lede { color: var(--muted); margin: 0; }
+h2 { font-size: 16px; font-weight: 600; margin: 32px 0 12px; }
+.changes { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.change { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--line); }
+.change:first-child { border-top: 0; }
+.num { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--panel); font-size: 12px; font-weight: 600; display: grid; place-items: center; }
+.what { flex: 1; min-width: 0; }
+.what .title { font-weight: 500; }
+.what .evidence { color: var(--muted); font-size: 13px; }
+.saving { flex: none; text-align: right; font-weight: 600; white-space: nowrap; }
+.saving small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+button.act { flex: none; min-width: 128px; padding: 9px 14px; border-radius: 4px; font: inherit; font-size: 14px; cursor: pointer; border: 1px solid var(--button); }
+button.fix { background: var(--button); color: var(--button-text); }
+button.how { background: transparent; color: var(--text); border-color: var(--line); }
+button.act:disabled { cursor: default; opacity: .55; }
+.total { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.total b { color: var(--text); }
+.hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.tile .label { color: var(--muted); font-size: 12px; }
+.tile .value { font-size: 22px; margin-top: 2px; }
+.tile .sub { color: var(--muted); font-size: 12px; }
+.bars { margin-top: 18px; display: grid; gap: 14px; }
+.bar { display: grid; grid-template-columns: minmax(120px, 190px) 1fr auto; gap: 14px; align-items: center; }
+.bar .name { font-size: 13px; }
+.bar .name small { display: block; color: var(--muted); font-size: 12px; }
+.bar .track { height: 18px; }
+.bar .fill { height: 100%; min-width: 3px; }
+.bar .amount { font-weight: 600; font-size: 14px; text-align: right; white-space: nowrap; }
+.unit-title { color: var(--muted); font-size: 12px; margin-top: 18px; }
+.legend { display: flex; gap: 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+details { border: 1px solid var(--line); border-radius: 8px; margin-top: 20px; }
+summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; padding: 12px 16px; font-weight: 500; }
+summary::-webkit-details-marker { display: none; }
+summary span { color: var(--muted); font-weight: 400; font-size: 13px; }
+details[open] summary span::before { content: "Hide"; }
+details:not([open]) summary span::before { content: "Show"; }
+.runs { width: 100%; border-collapse: collapse; font-size: 13px; }
+.runs th, .runs td { text-align: left; padding: 8px 16px; border-top: 1px solid var(--line); vertical-align: top; }
+.runs th { color: var(--muted); font-weight: 400; }
+.runs td.cost { text-align: right; white-space: nowrap; }
+.unseen { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
+@media (max-width: 560px) {
+  .change { flex-wrap: wrap; }
+  .what { flex-basis: calc(100% - 40px); }
+  .saving { margin-left: 38px; text-align: left; }
+  button.act { margin-left: auto; }
+  .bar { grid-template-columns: 1fr auto; }
+  .bar .track { grid-column: 1 / -1; grid-row: 2; }
+}
+</style>
+</head>
+<body>
+<main id="report"></main>
+<script type="application/json" id="report-data">{}</script>
+<script>
+(() => {
+  const data = JSON.parse(document.getElementById("report-data").textContent);
+  const root = document.getElementById("report");
+  const el = (tag, attrs = {}, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "class") node.className = v;
+      else if (k === "style") node.setAttribute("style", v);
+      else node[k] = v;
+    }
+    for (const kid of kids.flat()) if (kid !== null && kid !== undefined) node.append(kid);
+    return node;
+  };
+  const UNITS = {
+    usd: (n, d) => "$" + n.toFixed(d),
+    usd_list: (n, d) => "$" + n.toFixed(d) + " subscription value",
+    bobcoin: (n, d) => n.toFixed(Math.min(d, 1)) + " Bobcoins",
+    free: () => "free",
+  };
+  const UNIT_NAMES = { usd: "Paid", usd_list: "Covered by a subscription", bobcoin: "Bobcoins", free: "Free providers" };
+  const isMoney = (m) => Boolean(m) && typeof m.amount === "number" && Number.isFinite(m.amount);
+  const money = (m, digits = 2) =>
+    isMoney(m) ? (UNITS[m.unit] ?? ((n) => n + " " + m.unit))(m.amount, digits) : "";
+  const approx = (m) =>
+    isMoney(m) ? "~" + money(m, m.amount >= 10 || Number.isInteger(m.amount) ? 0 : m.amount >= 1 ? 1 : 2) : "";
+  const buttons = [];
+
+  root.append(
+    el("div", { class: "eyebrow" }, [data.agent, "Cost review", data.window].join(" · ")),
+    el("div", { class: "eyebrow" }, "Savings are estimates. Ask " + data.agent + " any time to run this again."),
+    el("h1", {}, data.headline, data.headlineAmount ? el("b", {}, " " + data.headlineAmount) : null),
+    el("p", { class: "lede" }, data.summary),
+  );
+
+  const changes = data.changes ?? [];
+  if (changes.length > 0) {
+    root.append(el("h2", {}, "What to change"));
+    const list = el("div", { class: "changes" });
+    changes.forEach((c, i) => {
+      let button = null;
+      if (data.interactive && c.action && c.prompt) {
+        const label = c.action === "fix" ? "Fix it for me" : "Show me how";
+        const act = el("button", { class: "act " + c.action, type: "button", hidden: true }, label);
+        act.addEventListener("click", () => {
+          window.platform.sendPrompt(c.prompt);
+          act.disabled = true;
+          act.textContent = "Sent";
+          setTimeout(() => {
+            act.disabled = false;
+            act.textContent = label;
+          }, 4000);
+        });
+        buttons.push(act);
+        button = act;
+      }
+      list.append(el("div", { class: "change" },
+        el("div", { class: "num" }, String(i + 1)),
+        el("div", { class: "what" },
+          el("div", { class: "title" }, c.title),
+          el("div", { class: "evidence" }, c.evidence)),
+        el("div", { class: "saving" },
+          isMoney(c.saving) ? approx(c.saving) : (c.savingNote ?? ""),
+          isMoney(c.saving) ? el("small", {}, "a week") : null),
+        button));
+    });
+    if (data.total && isMoney(data.total.saving) && isMoney(data.total.from) && isMoney(data.total.to)) {
+      list.append(el("div", { class: "total" },
+        el("span", {}, data.total.label),
+        el("span", {}, el("b", {}, approx(data.total.saving) + " a week"),
+          " · from " + money(data.total.from) + " to about " + money(data.total.to, 0))));
+    }
+    root.append(list);
+    const hint = el("p", { class: "hint" },
+      "To make a change, reply in " + data.agent + "'s chat, for example \"Make change 1\".");
+    root.append(hint);
+    if (buttons.length > 0 && window.platform && typeof window.platform.whoami === "function") {
+      Promise.resolve()
+        .then(() => window.platform.whoami())
+        .then((me) => {
+          if (!me || me.role !== "owner") return;
+          for (const b of buttons) b.hidden = false;
+          hint.hidden = true;
+        })
+        .catch(() => {});
+    }
+  }
+
+  root.append(el("h2", {}, "Where the money went"));
+  root.append(el("div", { class: "tiles" }, (data.tiles ?? []).map((t) =>
+    el("div", { class: "tile" },
+      el("div", { class: "label" }, t.label),
+      el("div", { class: "value" }, t.value),
+      t.sub ? el("div", { class: "sub" }, t.sub) : null))));
+
+  const buckets = (data.buckets ?? []).filter(isMoney)
+    .map((x) => ({ ...x, kind: ["cut", "useful", "unknown"].includes(x.kind) ? x.kind : "useful" }));
+  const units = [...new Set(buckets.map((b) => b.unit))];
+  const bars = el("div", {});
+  for (const unit of units) {
+    const rows = buckets.filter((b) => b.unit === unit);
+    const max = Math.max(...rows.map((b) => b.amount), 0.0001);
+    if (units.length > 1) bars.append(el("div", { class: "unit-title" }, UNIT_NAMES[unit] ?? unit));
+    bars.append(el("div", { class: "bars" }, rows.map((b) =>
+      el("div", { class: "bar" },
+        el("div", { class: "name" }, b.label, b.note ? el("small", {}, b.note) : null),
+        el("div", { class: "track" },
+          el("div", { class: "fill", style: `width:${(b.amount / max) * 100}%;background:var(--${b.kind})` })),
+        el("div", { class: "amount" }, money(b))))));
+  }
+  const KINDS = { cut: "Can be cut", useful: "Useful work", unknown: "Can't explain" };
+  const kinds = Object.keys(KINDS).filter((k) => buckets.some((b) => b.kind === k));
+  if (kinds.length > 0) {
+    bars.append(el("div", { class: "legend" }, kinds.map((k) =>
+      el("span", {}, el("i", { style: `background:var(--${k})` }), KINDS[k]))));
+  }
+  root.append(bars);
+
+  const runs = data.runs ?? [];
+  if (runs.length > 0) {
+    root.append(el("details", {},
+      el("summary", {}, "See every run", el("span", {})),
+      el("table", { class: "runs" },
+        el("thead", {}, el("tr", {}, ["When", "What", "Outcome", "Cost"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, runs.map((r) => el("tr", {},
+          el("td", {}, r.when), el("td", {}, r.what), el("td", {}, r.outcome),
+          el("td", { class: "cost" }, money(r.cost))))))));
+  }
+
+  const unseen = data.unseen ?? [];
+  if (unseen.length > 0) {
+    root.append(el("h2", {}, "What I couldn't see"));
+    root.append(el("ul", { class: "unseen" }, unseen.map((u) => el("li", {}, u))));
+  }
+
+  document.title = data.agent + " cost review";
+})();
+</script>
+</body>
+</html>

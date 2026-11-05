@@ -44,6 +44,7 @@ function service(
       ownsAgent: async () => true,
       defaultModelNotices: notices,
       outageAlerts: async () => [],
+      costReviews: async () => [],
       log: () => {},
     }),
   };

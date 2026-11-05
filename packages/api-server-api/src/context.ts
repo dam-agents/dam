@@ -10,6 +10,7 @@ import type {
   UserBudgetsService,
 } from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
+import type { CostReviewsService } from "./modules/cost-reviews/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type {
   SatellitesService,
@@ -87,6 +88,7 @@ export interface ApiContext {
   skills: SkillsService;
   approvals: ApprovalsService;
   attention: AttentionService;
+  costReviews: CostReviewsService;
   egressRules: EgressRulesService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;

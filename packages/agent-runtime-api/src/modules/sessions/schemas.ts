@@ -15,6 +15,8 @@ export const sessionTypeSchema = z.enum([
   "artifact",
 ]);
 
+export const sessionPurposeSchema = z.enum(["cost-review"]);
+
 export const senderSchema = z.object({
   sub: z.string().min(1),
   email: z.string().min(1).optional(),
@@ -32,6 +34,7 @@ export const sessionSchema = z.object({
   scheduleId: z.string().nullable(),
   continuedScheduleIds: z.array(z.string().min(1)).optional(),
   initialization: z.boolean().optional(),
+  purpose: sessionPurposeSchema.optional(),
   threadTs: z.string().nullable(),
   seenAt: z.string().nullable(),
   runStartedAt: z.string().nullable(),
