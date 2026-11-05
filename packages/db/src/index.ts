@@ -30,6 +30,7 @@ export {
   agentEditors,
   agentChatFormPreferences,
   agentSessions,
+  agentCostReviews,
   agentPublicProfiles,
   egressRules,
   pendingApprovals,

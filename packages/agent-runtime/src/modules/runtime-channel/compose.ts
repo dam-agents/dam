@@ -420,6 +420,7 @@ export async function composeRuntimeChannel(
           };
         }),
         kbPublish: 2,
+        costReview: 1,
         liveUpdates: true,
         modelRouter: opts.modelRouter === true,
       };

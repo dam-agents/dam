@@ -1,11 +1,12 @@
 # Artifact library
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
 The **Artifact Library** is where agents and users publish work products — HTML pages, React/JSX components, markdown, code, plain text, and binary files — organize them into **Folders**, and share them with people outside the platform.
 An **Artifact** is owner-scoped like every other resource, is attributed to the Agent it came from — the Agent that published it, or the sandbox's Agent when a person promotes a workspace file (or to the user, for manual uploads) — and outlives both the sandbox and the agent that produced it.
+An Agent's own artifact tools see only the artifacts that Agent published, as its environment tools see only its own [Environments](environments.md); the owner sees the whole library in the app ([agents](#publishing-and-download-paths)).
 Publishing a new revision keeps the same identity and share link and appends to a per-artifact **version history** the owner can flip through in the app; the share link itself only ever serves the current version ([sharing model](#sharing-model)).
 The history holds every version including the current one — creation writes the first row, each revision writes its own — and a version records the session that produced it when one is known, which is how the Home feed shows an artifact on the card of the session that made it.
 The session becomes known after the fact: the platform's artifact tools mark their results, the agent-runtime spots the marker in the session's ACP stream — frames it already proxies, each carrying its session id — and reports the touch over its runtime channel.
@@ -217,7 +218,9 @@ flowchart LR
 - **Agents** publish through artifact tools on the per-agent platform MCP server (the same outbound MCP surface as channels, skills, and schedules).
   Small text content travels inline; anything bigger takes the **direct-transfer** path: the tool mints a short-lived presigned upload link, the harness PUTs bytes straight to the store through its paired gateway, and the create call references the completed upload.
   The platform verifies the upload (existence, size cap) before the artifact row lands, and an upload reference outside the caller's own staging namespace reads as unknown.
-  Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the owner-scoped service means it can only ever touch its owner's library.
+  Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the same identity scopes every other artifact tool to the artifacts that Agent published.
+  An Agent may be shared, so a person who talks to it must not reach, through it, what the owner's other Agents published or what the owner uploaded: another Agent's artifact, or an upload, reads as not found, to list, read, download, revise, share and delete alike, and a public one stays readable by its link as before.
+  Folders belong to the owner's library, so an Agent lists every folder and files into any of them, each counted by the Agent's own artifacts, and renames or deletes only a folder that holds no artifact but its own.
   Reads mirror this: small text content returns inline, and a download tool mints a short-lived presigned link — signed for the same agent-dialed store authority — that the harness GETs straight into its sandbox (any kind or size, current or a past version), so work products published from one sandbox are consumable in another without transiting the conversation.
 - **Users** publish from the Artifacts tab in the UI: bytes go through an authenticated upload route on the app origin (avoiding browser↔store CORS), then the same create call.
   Downloads answer with a presigned direct link when the store has a browser-reachable endpoint, a relayed blob otherwise.

@@ -557,6 +557,17 @@ export const agentSessions = pgTable(
   ],
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the owner's answer to the platform's offer of a
+ * cost review for an Agent: accepted, which is final, or dismissed by Later,
+ * which hides the offer only until `decided_at` is old enough. */
+export const agentCostReviews = pgTable("agent_cost_reviews", {
+  agentId: text("agent_id").primaryKey(),
+  decision: text("decision").notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentEnv = pgTable(
   "agent_env",
   {

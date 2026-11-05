@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-30
+Last verified: 2026-11-04
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -103,7 +103,7 @@ A few observations the diagram glosses over:
   A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking on the channel's row, in the chat's own picker, changes what its next fresh session runs on.
   The channel's subagent slot, a profile or values of its own, joins the primary as a chat default's does; an empty one lets the Agent pick.
   A profile that cannot run on the Agent refuses the turn with its reason and a reply that names the profile and the row to change it on, never the Agent's default.
-  With no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
+  With no default model it runs on the [automatic model](harness-config.md#session-settings); with no model provider to run on, or a default on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
   A **resumed** thread keeps the values it already runs on, as a session that picked does (D94 A, D119): the channel's profile is applied when a session is created, so a profile edit reaches the next fresh thread and never a running one ([sessions](sessions.md#session-inside-the-machine)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
@@ -228,7 +228,7 @@ Text after an opening fence moves below it, unless the text is one lowercase lan
 The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
 An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply` or `send_channel_message` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
-An artifact with no share URL, a private one, or an id the owner has no artifact for refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
+An artifact with no share URL, a private one, or an id the Agent published no artifact under refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
 
 What the agent sees:
 

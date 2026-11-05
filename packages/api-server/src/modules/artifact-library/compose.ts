@@ -26,6 +26,7 @@ import {
 import {
   createArtifactLibraryService,
   type ArtifactLibraryServiceImpl,
+  type ArtifactScope,
 } from "./services/artifact-library-service.js";
 import {
   createShareBridgeService,
@@ -59,6 +60,7 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   artifacts: ArtifactService;
   owner: string;
   surface: string;
+  scope?: ArtifactScope;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
@@ -70,7 +72,7 @@ export interface ComposeArtifactLibraryForOwnerOpts {
 export type ArtifactLibraryFor = (
   owner: string,
   surface: string,
-  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists">,
+  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists" | "scope">,
 ) => ArtifactLibraryServiceImpl;
 
 export function composeArtifactLibraryForOwner(
@@ -85,6 +87,7 @@ export function composeArtifactLibraryForOwner(
         .enum(["ui", "cli", "mcp", "system", "other"])
         .catch("other")
         .parse(opts.surface),
+      ...(opts.scope ? { scope: opts.scope } : {}),
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ensureReady: opts.ensureReady,

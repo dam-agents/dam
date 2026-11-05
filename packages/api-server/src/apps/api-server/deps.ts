@@ -19,7 +19,7 @@ import type {
   RunBoundary,
 } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
-import type { SpendSystem } from "../../modules/spend/index.js";
+import type { SpendHoldGate, SpendSystem } from "../../modules/spend/index.js";
 import type { UserBudgetsForOperator } from "../../modules/budgets/index.js";
 import type { OutageAlertNotices } from "../../modules/outage-alerts/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
@@ -107,6 +107,7 @@ export interface ApiServerDeps {
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
   spendCeilingsForOperator: SpendSystem["ceilingsForOperator"];
+  spendHold: SpendHoldGate;
   userBudgetsForOperator: UserBudgetsForOperator;
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;

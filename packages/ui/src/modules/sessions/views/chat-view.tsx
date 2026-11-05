@@ -208,6 +208,8 @@ const TELEMETRY_SETTLE_MS = 5 * 60_000;
 // UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
 const SEND_SETTLE_MS = 300;
 
+const NO_RUN_STARTS: readonly string[] = [];
+
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const agentOperable = useIsAgentOperable(selectedAgent);
@@ -260,7 +262,9 @@ export function ChatView() {
     [messages, attribution.verdicts],
   );
   const now = useNow(60_000);
-  const runStarts = useStore((s) => s.runStarts);
+  const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const storedRunStarts = useStore((s) => s.runStarts);
+  const runStarts = currentSession?.purpose ? NO_RUN_STARTS : storedRunStarts;
   const items = useMemo(
     () =>
       threadItems(shown, runStarts, {
@@ -339,7 +343,6 @@ export function ChatView() {
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
   const harnessStatus = harnessStatusQuery.data;
-  const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const sessionTemplateId = useSessionTemplateId(selectedAgent, sessionId);
   const {
     choice,
@@ -479,9 +482,10 @@ export function ChatView() {
     !sessionView.scheduleId &&
     !sessionView.initialization;
   const canRewrite = harnessForks && rewritable;
-  const setupMessageId = sessionView?.initialization
-    ? setupMessageOf(shown)
-    : undefined;
+  const setupMessageId =
+    sessionView?.initialization || sessionView?.purpose
+      ? setupMessageOf(shown)
+      : undefined;
   const arrivalsRef = useRef(newLiveArrivals(sessionId));
   if (arrivalsRef.current.sessionId !== sessionId)
     arrivalsRef.current = newLiveArrivals(sessionId);
@@ -984,7 +988,11 @@ export function ChatView() {
                       const chatMessage = (actions?: ReactNode) => {
                         const bubbles = members.map((m, k) =>
                           m.id === setupMessageId ? (
-                            <SetupInstructionsCard key={m.id} message={m} />
+                            <SetupInstructionsCard
+                              key={m.id}
+                              message={m}
+                              purpose={sessionView?.purpose}
+                            />
                           ) : (
                             <ChatMessage
                               key={m.id}

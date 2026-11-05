@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -11,7 +11,7 @@ In an Agent's chat the bell sits in the chat's top bar and opens that same drawe
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) and [outage alerts](#outage-alerts) are read beside them.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts) and the [cost review offer](#cost-review-offer) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -107,7 +107,8 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 ## Default-model notices
 
-The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): the Agent holds no model provider to run on, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+A default with no model is not listed, since its runs take the automatic model.
 That state stops real work only where an Agent runs unattended, so one with no enabled Schedule and no bound Slack or Telegram Channel is not listed for it: nothing of its own fails yet.
 [Outage alerts](provider-status.md#outage-alerts) use the same rule for an Agent that runs unattended.
 A Slack Channel and a Telegram chat are stored apart, each where its own binding flow writes it, so the reader asks both stores for the Agents they hold rather than one for both.
@@ -132,6 +133,24 @@ A dismissal is per owner and on the server, and names the provider's template, t
 A dismissal is dropped once its alert is gone.
 The banner on Home does not count an outage alert, because the provider status banner already names a live outage on every page but the chat.
 A new or recovered alert reaches open tabs through the attention hint.
+
+## Cost review offer
+
+The bell offers the owner a cost review of the Agents that run on their own and spend enough to be worth a look, as one card for all of them.
+An Agent is offered when it is at least seven days old, its own scheduled or channel Sessions spent on at least three of the last seven days, and its Metered Spend over those days reached a paid-dollar floor or a Bobcoin floor (Helm `apiServer.costReview`, $25 and 20 Bobcoins by default).
+Dollars and Bobcoins are never added up, and subscription and free providers count toward neither, so an Agent that costs its owner nothing is never offered.
+Sub-agents a session spawned are never offered, and neither is an Agent whose runtime does not claim the `costReview` capability, which marks an image that ships the `agent-cost-review` skill.
+The offer is computed on read from the spend ledger and the session directory, so a sleeping Agent is never woken for it.
+
+The owner's answer is stored per Agent: an accepted review never comes back, and Later hides the Agent's offer for 30 days, after which it returns if the Agent still qualifies.
+Only the owner sees the card and may answer it; editors see nothing.
+Accepting starts nothing unless the Agent may spend today: a spend limit or the ceiling refuses it, and so does an Agent with no model to run on (no model provider, or a saved model whose provider is gone).
+An accepted review is a regular chat Session on the Agent's chat default, opened on the same rail as a kit's onboarding Session but marked with the `cost-review` purpose instead: it is titled "Cost review", its first turn shows as a collapsed request from the platform, and the UI opens it once it appears.
+That first turn runs like a scheduled one, without anyone watching, because the owner already asked for it: a review accepted and then left behind still runs and shows as unread.
+That first turn names the skill, which holds the procedure; the review recommends and changes nothing.
+It also says whether the owner has Interactive artifacts on, which the Agent cannot see, so the review's report page has buttons that ask the Agent for a change only when they can reach it ([artifact-library](artifact-library.md#interactive-pages)).
+Later, and the card's dismiss for all its Agents at once, tells the owner when the offer returns and that they can ask the Agent for a review in its chat any time, which the skill covers on its own.
+Both answers are recorded in the activity log.
 
 ## Seen, unread, and dismissed
 

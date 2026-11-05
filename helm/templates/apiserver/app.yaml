@@ -376,6 +376,10 @@ spec:
               value: {{ .Values.apiServer.kbShares.grepDeadlineMs | quote }}
             - name: KB_SHARE_MAX_CONNECTIONS_PER_OWNER
               value: {{ .Values.apiServer.kbShares.maxConnectionsPerOwner | quote }}
+            - name: COST_REVIEW_MIN_WEEKLY_USD
+              value: {{ .Values.apiServer.costReview.minWeeklyUsd | quote }}
+            - name: COST_REVIEW_MIN_WEEKLY_BOBCOINS
+              value: {{ .Values.apiServer.costReview.minWeeklyBobcoins | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"

@@ -78,6 +78,8 @@ export enum EventType {
   AgentResourceRemoved = "AgentResourceRemoved",
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
+  CostReviewStarted = "CostReviewStarted",
+  CostReviewDismissed = "CostReviewDismissed",
 }
 
 export type UserAuthenticated = {
@@ -554,6 +556,18 @@ export type AgentOutOfMemory = {
   memory?: string;
 };
 
+export type CostReviewStarted = {
+  type: EventType.CostReviewStarted;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type CostReviewDismissed = {
+  type: EventType.CostReviewDismissed;
+  agentId: string;
+  ownerSub: string;
+};
+
 export type AgentResourceRemoved = {
   type: EventType.AgentResourceRemoved;
   agentId: string;
@@ -635,7 +649,9 @@ export type DomainEvent =
   | AgentOutOfMemory
   | AgentResourceRemoved
   | AvatarUnlocked
-  | GettingStartedReset;
+  | GettingStartedReset
+  | CostReviewStarted
+  | CostReviewDismissed;
 
 const bus$ = new Subject<DomainEvent>();
 

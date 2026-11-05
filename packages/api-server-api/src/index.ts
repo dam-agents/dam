@@ -768,6 +768,12 @@ export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
 } from "./modules/attention/types.js";
+export type {
+  CostReviewOffer,
+  CostReviewStarted,
+  CostReviewsService,
+} from "./modules/cost-reviews/types.js";
+export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

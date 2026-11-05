@@ -18,6 +18,7 @@ import {
   clearSessionDefault,
   rememberSessionPair,
   useProviderConnections,
+  useRememberedPair,
   useSessionDefaults,
 } from "../../sessions/api/session-pair.js";
 import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
@@ -60,6 +61,7 @@ export function AgentModelPicker({
 }) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const saved = useSessionDefaults(agentId).data;
+  const { data: remembered } = useRememberedPair(agentId);
   const { owned } = useProviderConnections(agentId);
   const access = useAgent(agentId)?.access;
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -70,12 +72,15 @@ export function AgentModelPicker({
 
   const copy = COPY[kind];
   const chat = saved?.chat ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: with no model saved, runs take the automatic model the api-server resolves from the agent's providers, so the card names it instead of asking for a pick. */
+  const automatic = !chat?.model && remembered?.model ? remembered : null;
+  const shown = automatic ?? chat;
   const slots: SessionChoiceSlots =
     draft ??
     (kind === "chat"
       ? {
           profileId: saved?.chatProfileId ?? null,
-          pair: chat,
+          pair: shown,
           platformSubagentProfileId: saved?.platformSubagentProfileId ?? null,
           platformSubagentSettings: saved?.platformSubagentSettings ?? null,
         }
@@ -85,12 +90,12 @@ export function AgentModelPicker({
           platformSubagentProfileId: null,
           platformSubagentSettings: null,
         });
-  const defaultSummary = chat
-    ? pairSummary(chat.model, {
-        settings: chat.settings,
-        capability: status?.harnesses?.find((h) => h.name === chat.harness),
+  const defaultSummary = shown
+    ? pairSummary(shown.model, {
+        settings: shown.settings,
+        capability: status?.harnesses?.find((h) => h.name === shown.harness),
         provider: (() => {
-          const connection = owned.find((p) => p.id === chat.provider);
+          const connection = owned.find((p) => p.id === shown.provider);
           return connection ? shortProviderName(connection) : undefined;
         })(),
       })
@@ -127,7 +132,11 @@ export function AgentModelPicker({
     <section className="flex flex-col gap-2">
       <div>
         <SectionLabel>{copy.label}</SectionLabel>
-        <p className="text-sm text-muted-foreground">{copy.hint}</p>
+        <p className="text-sm text-muted-foreground">
+          {kind === "chat" && automatic
+            ? `Nothing is saved, so new chats and runs use ${defaultSummary}, picked automatically from this agent's providers. Pick a model to keep one.`
+            : copy.hint}
+        </p>
       </div>
       <fieldset
         disabled={!!access && !holds(access, "settings")}
@@ -154,8 +163,8 @@ export function AgentModelPicker({
                 detail: defaultSummary
                   ? `Follows ${defaultSummary}`
                   : "No default set yet",
-                harness: chat?.harness,
-                pair: chat,
+                harness: shown?.harness,
+                pair: shown,
                 onClear: () => {
                   setDraft(null);
                   clearSessionDefault(agentId, kind);

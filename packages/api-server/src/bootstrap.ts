@@ -335,6 +335,7 @@ import {
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
+import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -986,6 +987,7 @@ export async function bootstrap() {
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    ownerCatalog: ownerCatalogOf,
     resolveProfile,
     getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
@@ -2160,6 +2162,7 @@ export async function bootstrap() {
       surface,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
+      scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
       featureOn: interactiveArtifactsOn,
@@ -2246,6 +2249,10 @@ export async function bootstrap() {
     {
       name: "chat-form-preferences",
       ...createChatFormPreferencesCleanup(db),
+    },
+    {
+      name: "cost-reviews",
+      ...createCostReviewsCleanup(db),
     },
     {
       name: "sidebar-order",
@@ -2598,6 +2605,7 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    spendHold,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

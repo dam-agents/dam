@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   findAgent,
   useAgents,
@@ -28,6 +27,7 @@ import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
 import { AgentModelSettingsSection } from "../components/agent-config-sections.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
@@ -88,7 +88,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  const chatFormsEnabled = useChatFormsEnabled();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     environmentsEnabled && agent ? agent.id : null,
@@ -100,7 +99,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
   // UNIT_BOUNDARY_DESCRIPTION: the assistant's platform access is its owner's own, so it has no People section to show; every other Agent keeps one, locked for an editor.
   const sections = SECTIONS.filter(
     (e) =>
-      (chatFormsEnabled || e.section !== "chat-forms") &&
       (agentHasEnvironments || e.section !== "environments") &&
       (agent.kind !== "assistant" || e.section !== "people"),
   );
@@ -155,7 +153,10 @@ function AgentHome({ agent }: { agent: AgentView }) {
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
           ) : section === "chat-forms" ? (
-            <ChatFormSettings agentId={agent.id} />
+            <>
+              <ChatFormSettings agentId={agent.id} />
+              <ThinkingSetting />
+            </>
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
           ) : section === "schedules" ? (
