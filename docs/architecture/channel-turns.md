@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -142,7 +142,7 @@ A few observations the diagram glosses over:
 - **Injected history says what it is, and it does not say the same thing twice.** Every message the turn itself carries is left out of it, the whole batch where a burst is answered at once, so nothing the Agent is being asked to answer is also quoted back as background.
   A thread's history and a direct message's are one conversation, framed as the context for the answer.
   **A thread's history is its end**, read the way `read_thread` reads it, in one read: the message that opened the thread, then the newest replies that fit.
-  Where replies were left out, a bracketed line after the opener names them by position and carries the handle that reads them, and the thread counts as offered to that Agent so the handle is honoured.
+  Where replies were left out, a bracketed line after the opener names them by position and carries the handle that reads them; every turn offers its Agent the thread it runs in, so the handle is honoured.
   The replies it skips do not hold back the catch-up boundary: they are older than the window, so the boundary moves to the end of what the turn carried.
   A channel's window is the stream outside threads — several unrelated topics interleaved, each line's send time the boundary — framed as background to read, not answer.
   Catch-up on a resumed session inverts that deliberately: that block *is* a backlog, and what is still open in it is the Agent's to act on.
@@ -244,7 +244,7 @@ What the agent sees:
   Ids travel inbound only: the turn contract forbids writing a bare id back into a message — nobody in the channel can read one — and points the Agent at a Slack mention or the name it resolved instead.
   That holds whether or not the lookup is available.
   Slack-only: Telegram has no workspace directory.
-- **A thread the Agent is not inside is read with `read_thread`.** It returns the thread labelled exactly as injected history is, and a long one arrives **end first** — the question is usually what a conversation concluded.
+- **A thread is read with `read_thread`.** It returns the thread labelled exactly as injected history is, and a long one arrives **end first** — the question is usually what a conversation concluded.
   It is not confined to that end: every window opens with the message that started the thread, and carries the handle that reads the window immediately before it, so an Agent walks back to the first reply a window at a time.
   Each window of a long thread is labelled with the positions of the replies it holds, counted from the first reply, and names the ones it leaves out.
   A position, unlike a total, never goes stale as the thread grows, so two windows read minutes apart still line up.
@@ -253,8 +253,8 @@ What the agent sees:
   The handle stays free of platform state: a handle is a position and nothing more, because its holder can rewrite it, so anything the platform would have to *believe* on being handed one back is derived afresh from the thread instead.
   What a rewritten position buys is another window of a thread already offered, which is nothing.
   A handle does name its thread, and one offered to another thread is refused the way an unoffered thread id is, as is one naming a point its thread does not reach — nothing else tells a foreign handle from a native one, and satisfying either answers with a window that looks ordinary and is not.
-  Its reach is **what the platform offered**: a thread id resolves only against threads recently marked in that Agent's own injected history, which also settles which conversation the id lives in, and that conversation must still be bound.
-  It returns message bodies, so any wider reach would read every room the bot sits in; a forged or found id resolves to nothing, and offers are in-process and age out (48h), so a restart degrades to a refusal, never a wrong read.
+  Its reach is **what the platform offered**: a thread id resolves only against the threads that Agent's recent turns ran in or were shown, which also settles which conversation the id lives in, and that conversation must still be bound.
+  It returns message bodies, so any wider reach would read every room the bot sits in; a forged or found id resolves to nothing, and offers are in-process and age out 48h after the newest turn or showing, so a restart degrades to a refusal until the next turn there, never a wrong read.
   The scope it needs is already required, so it never drops out per workspace.
   The log records what was asked and how much came back, never the messages.
   Slack only.

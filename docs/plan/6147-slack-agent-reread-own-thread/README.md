@@ -82,10 +82,10 @@ No tool gives the workspace address or a link.
 
 ## Sub-issues
 
-| #   | Title                                                                              | Scope                                                                                                                                                                 | Depends on |
-| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Every turn offers its own thread](./01-every-turn-offers-its-own-thread.md)       | Offer the turn's thread in `buildThreadPrompt` and `buildCatchUp`; new refusal copy and `read_thread` description; a capped thread catch-up names `read_thread`; docs | —          |
-| 02  | [The agent can link an earlier message](./02-agent-can-link-an-earlier-message.md) | `ts` on `read_thread` lines; new `get_message_link` tool through the MCP endpoint, channel manager RPC, worker contract and Slack worker; docs                        | 01         |
+| #     | Title                                                                              | Scope                                                                                                                                                                 | Depends on |
+| ----- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| ✅ 01 | [Every turn offers its own thread](./01-every-turn-offers-its-own-thread.md)       | Offer the turn's thread in `buildThreadPrompt` and `buildCatchUp`; new refusal copy and `read_thread` description; a capped thread catch-up names `read_thread`; docs | —          |
+| 02    | [The agent can link an earlier message](./02-agent-can-link-an-earlier-message.md) | `ts` on `read_thread` lines; new `get_message_link` tool through the MCP endpoint, channel manager RPC, worker contract and Slack worker; docs                        | 01         |
 
 ## Conventions & glossary
 

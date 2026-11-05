@@ -106,11 +106,12 @@ describe("slack thread visibility from a channel turn", () => {
     });
     expect(unoffered).toEqual({
       error:
-        "not a thread you were shown — only a ts taken from a " +
-        "[thread: ...] tag in the conversation history handed to you " +
-        "can be read, and offers age out. If someone wants you on an " +
-        "older thread, ask them to reply in it — it will reach you " +
-        "with its full history",
+        "not a thread you were shown — you can read the thread you are " +
+        "answering in, a thread you started with start_thread, and a " +
+        "thread from a [thread: ...] tag in the conversation history " +
+        "handed to you, and such a tag ages out after 48 hours. To read " +
+        "any other thread, ask a person to tag you in it, which makes " +
+        "it readable",
     });
 
     expect(thread).toEqual({
@@ -276,8 +277,7 @@ describe("the history a first turn in a long thread is handed", () => {
    * than one window. The mention is usually about the newest replies, so the
    * history must hold the thread's end, not its start, after the message that
    * opened it. A line marks the gap and numbers the replies on each side of it,
-   * and the cursor it prints must be one read_thread accepts for this thread,
-   * since a first turn in a thread is never offered the thread any other way.
+   * and the cursor it prints must be one read_thread accepts for this thread.
    */
   it("hands the opener and the newest replies, and the gap marker reads the rest", async () => {
     const h = harness();

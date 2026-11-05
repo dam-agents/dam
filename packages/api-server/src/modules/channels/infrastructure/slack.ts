@@ -2262,6 +2262,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       offeredThreads.set(`${instanceName} ${ts}`, channel);
   }
 
+  function noteTurnThread(ctx: {
+    instanceName: string;
+    channel: string;
+    threadTs: string;
+    hasThread: boolean;
+  }): void {
+    if (ctx.hasThread)
+      noteOfferedThreads(ctx.instanceName, ctx.channel, [ctx.threadTs]);
+  }
+
   function readOfferedThread(
     instanceName: string,
     ts: string,
@@ -3614,13 +3624,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readHasMore,
       threadWindow,
     } = await readSlackContext(gw, ctx, null);
-    noteOfferedThreads(
-      ctx.instanceName,
-      ctx.channel,
-      threadWindow.cursor !== null
-        ? [...offeredHere, ctx.threadTs]
-        : offeredHere,
-    );
+    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    noteTurnThread(ctx);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
@@ -3727,6 +3732,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<CatchUpFrame> {
     const { threadKey } = ctx;
     const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
+    noteTurnThread(ctx);
     try {
       const since = await catchUpSince(gw, {
         instanceName: ctx.instanceName,
@@ -3771,6 +3777,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
+              ...(conversationTs !== undefined
+                ? { threadTs: conversationTs }
+                : {}),
               hasThreadMarker,
               hasAttachmentMarker,
             },
@@ -7557,11 +7566,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!offered) {
         return {
           error:
-            "not a thread you were shown — only a ts taken from a " +
-            "[thread: ...] tag in the conversation history handed to you " +
-            "can be read, and offers age out. If someone wants you on an " +
-            "older thread, ask them to reply in it — it will reach you " +
-            "with its full history",
+            "not a thread you were shown — you can read the thread you are " +
+            "answering in, a thread you started with start_thread, and a " +
+            "thread from a [thread: ...] tag in the conversation history " +
+            "handed to you, and such a tag ages out after 48 hours. To read " +
+            "any other thread, ask a person to tag you in it, which makes " +
+            "it readable",
         };
       }
       const target = owned
