@@ -28,10 +28,6 @@ export function cliTrpcUrl(mode: HarnessMode): string {
   return `${mode.baseUrl}/api/agents/${encodeURIComponent(mode.agentId)}/cli/trpc`;
 }
 
-export function cliVersionUrl(mode: HarnessMode): string {
-  return `${mode.baseUrl}/api/agents/${encodeURIComponent(mode.agentId)}/cli/version`;
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the verbs that need the owner's own doors — a chat
  * or terminal attach, a shell, a headless run, a workspace file, an import.

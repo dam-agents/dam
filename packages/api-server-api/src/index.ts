@@ -1223,6 +1223,3 @@ export {
   environmentNameSchema,
   environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";
-
-export { cliVersionResponseSchema } from "./modules/cli/schemas.js";
-export type { CliVersionResponse } from "./modules/cli/schemas.js";

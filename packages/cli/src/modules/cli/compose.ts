@@ -52,7 +52,7 @@ export function composeCliModule(): CliModule {
   const configService = createConfigService({ store, envReader });
   const compatService = createCompatService({
     config: configService,
-    probe: createHttpVersionProbe({ harness: readHarnessMode() }),
+    probe: createHttpVersionProbe(),
     localCliVersion: cliVersion,
   });
   const npmLatest = createHttpNpmLatestProbe({

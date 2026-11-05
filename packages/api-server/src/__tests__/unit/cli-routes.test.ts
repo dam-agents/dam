@@ -87,8 +87,6 @@ function world(opts: Partial<World> = {}) {
       ownerActive: async () => state.ownerActive,
     }),
     contextFor: (user) => contextFor(user),
-    bundle: null,
-    serverVersion: "1.2.3",
   });
   return { app, filed, rows, state };
 }
@@ -113,8 +111,6 @@ describe("the derived principal", () => {
           terms: { isAccepted: async () => true },
         } as unknown as ApiContext;
       },
-      bundle: null,
-      serverVersion: "1.2.3",
     });
     const response = await app.request(
       `${BASE}/agent-a/cli/trpc/agents.runtimeFleet`,
@@ -157,15 +153,11 @@ describe("the derived principal", () => {
     });
   });
 
-  it("serves the version of the CLI it carries, for its own Agent only", async () => {
-    const w = world({ agent: { owner: "owner-1", kind: "assistant" } });
-    expect(
-      await (await w.app.request(`${BASE}/agent-a/cli/version`)).json(),
-    ).toEqual({ serverVersion: "1.2.3" });
-    // UNIT_BOUNDARY_DESCRIPTION: the version route answers for the Agent the caller is; another Agent's path is refused like every other one.
-    w.state.agent = { owner: "owner-1" };
-    expect((await w.app.request(`${BASE}/agent-b/cli/version`)).status).toBe(
-      403,
+  it("serves nothing but the platform API on that path", async () => {
+    const w = world();
+    // UNIT_BOUNDARY_DESCRIPTION: the CLI's bundle and version live in the image, not on this route, so nothing else answers under the Agent's `cli/` prefix.
+    expect((await w.app.request(`${BASE}/agent-a/cli/version`)).status).toBe(
+      404,
     );
   });
 });

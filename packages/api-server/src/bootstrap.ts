@@ -258,7 +258,6 @@ import {
   createFailClosedOwnerActive,
   verifyAgentOnBehalf as verifyAgentOnBehalfFor,
 } from "./modules/agent-on-behalf/index.js";
-import { readCliBundle } from "./apps/harness-api-server/cli-bundle.js";
 import { createApiContextFactory } from "./apps/api-server/trpc/context.js";
 import {
   composeArtifactExpirySweeper,
@@ -2738,7 +2737,6 @@ export async function bootstrap() {
         agentId,
         ownerSub: owner,
       }),
-    cliBundle: readCliBundle(config.cliBundleDir),
     contextFor: createApiContextFactory(apiServerDeps),
     verifyAgentOnBehalf,
     satellitesBoot,

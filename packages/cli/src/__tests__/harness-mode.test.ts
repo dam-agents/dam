@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveActiveHost } from "../modules/shared/preflight.js";
 import {
   cliTrpcUrl,
-  cliVersionUrl,
   harnessUnavailableVerbs,
   readHarnessMode,
   refuseInHarnessMode,
@@ -45,9 +44,6 @@ describe("harness mode", () => {
     expect(
       cliTrpcUrl({ baseUrl: "http://harness:8080", agentId: "agent-a" }),
     ).toBe("http://harness:8080/api/agents/agent-a/cli/trpc");
-    expect(
-      cliVersionUrl({ baseUrl: "http://harness:8080", agentId: "agent-a" }),
-    ).toBe("http://harness:8080/api/agents/agent-a/cli/version");
   });
 
   it("takes the harness base as the host, without asking the config", async () => {

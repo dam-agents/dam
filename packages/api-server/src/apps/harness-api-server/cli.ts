@@ -9,7 +9,6 @@ import {
   type AgentOnBehalfRefusal,
   type AgentOnBehalfVerifier,
 } from "../../modules/agent-on-behalf/index.js";
-import type { CliBundle } from "./cli-bundle.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: the header an owner gateway stamps with the Agent
  * whose harness guard let the request through, and strips on every other route.
@@ -20,8 +19,6 @@ const HARNESS_AGENT_HEADER = "x-platform-harness-agent";
 export interface CliRoutesDeps {
   verifyAgentOnBehalf: AgentOnBehalfVerifier;
   contextFor: (user: UserIdentity, surface: string) => ApiContext;
-  bundle: CliBundle | null;
-  serverVersion: string;
 }
 
 class CliRefusal extends Error {
@@ -35,8 +32,7 @@ class CliRefusal extends Error {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what an assistant's own machine finds at its own
- * harness path — the CLI this install serves, and the platform API that CLI
- * drives. The proof the caller is that Agent is the harness API's own (the mesh
+ * harness path — the platform API that the CLI in its image drives. The proof the caller is that Agent is the harness API's own (the mesh
  * admits an Agent's gateway for `/api/agents/<id>/` and for no sibling); every
  * check the token used to carry is read live here instead, and the principal is
  * derived from the Agent, so nothing secret ever exists inside the machine.
@@ -90,35 +86,6 @@ export function mountCliRoutes(app: Hono, deps: CliRoutesDeps): void {
       refusal.status,
     );
   };
-
-  app.get("/api/agents/:id/cli/version", async (c) => {
-    try {
-      await resolve(c);
-    } catch (err) {
-      return refuse(c, err);
-    }
-    return c.json({
-      ...(deps.bundle ? { cliVersion: deps.bundle.version } : {}),
-      serverVersion: deps.serverVersion,
-    });
-  });
-
-  app.get("/api/agents/:id/cli/dam.mjs", async (c) => {
-    try {
-      await resolve(c);
-    } catch (err) {
-      return refuse(c, err);
-    }
-    if (deps.bundle === null)
-      return c.json(
-        { error: "not found", message: "this install serves no CLI bundle" },
-        404,
-      );
-    c.header("Content-Type", "text/javascript; charset=utf-8");
-    c.header("ETag", `"dam-${deps.bundle.version}"`);
-    c.header("Cache-Control", "no-cache");
-    return c.body(deps.bundle.bytes);
-  });
 
   app.all("/api/agents/:id/cli/trpc/*", async (c) => {
     let user: UserIdentity;

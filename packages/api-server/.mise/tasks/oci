@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Build the api-server image to dist/oci/api-server.tar"
-#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../agents/*/rootfs/app/runtime-manifest.yaml", "{{config_root}}/../agents/*/image.toml", "{{config_root}}/../../skills/dam/SKILL.md", "{{config_root}}/../cli/src/**", "{{config_root}}/../cli/package.json", "{{config_root}}/../cli/tsup.config.ts", "{{config_root}}/../cli/tsconfig.json", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../agents/*/rootfs/app/runtime-manifest.yaml", "{{config_root}}/../agents/*/image.toml", "{{config_root}}/../../skills/dam/SKILL.md", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
 #MISE outputs=["dist/oci/api-server.tar"]
 set -euo pipefail
 base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
@@ -27,14 +27,6 @@ cp -R ../db/drizzle "$root/app/packages/db/"
 # The dam skill of this commit, which the server offers to an agent given its URL.
 mkdir -p "$root/app/skills/dam"
 cp ../../skills/dam/SKILL.md "$root/app/skills/dam/"
-# The dam CLI of this commit, which an assistant's machine runs instead of the
-# npm release, and the version it reports: one single-file bundle, so the
-# machine needs nothing but the node it already has.
-mkdir -p "$root/app/cli"
-pnpm --filter @dam-agents/cli exec tsup
-cp ../cli/dist/js/bin.js "$root/app/cli/dam.mjs"
-jq -n --arg v "$(jq -r '.version' ../cli/package.json)" '{version: $v}' \
-  > "$root/app/cli/version.json"
 # Each harness's runtime manifest, named as the harness the image runs, so the
 # api-server can answer a harness's settings and native tiers without an agent.
 mkdir -p "$root/app/runtime-manifests"

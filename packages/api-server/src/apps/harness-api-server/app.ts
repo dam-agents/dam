@@ -56,7 +56,6 @@ import type { EgressProposals } from "../../modules/approvals/services/egress-pr
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountCliRoutes } from "./cli.js";
-import type { CliBundle } from "./cli-bundle.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import {
   createDriverOps,
@@ -133,7 +132,6 @@ export interface HarnessApiServerAppDeps {
     agentId: string,
   ) => AgentSecretRequests;
   egressProposalsFor: (owner: string, agentId: string) => EgressProposals;
-  cliBundle: CliBundle | null;
   /* UNIT_BOUNDARY_DESCRIPTION: the request context an assistant's own harness path composes its platform calls in — the app's own factory, with the owner the derived principal acts for. */
   contextFor: (user: UserIdentity, surface: string) => ApiContext;
   verifyAgentOnBehalf: AgentOnBehalfVerifier;
@@ -339,8 +337,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   mountCliRoutes(app, {
     verifyAgentOnBehalf: deps.verifyAgentOnBehalf,
     contextFor: deps.contextFor,
-    bundle: deps.cliBundle,
-    serverVersion: config.appVersion,
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),
