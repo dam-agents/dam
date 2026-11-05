@@ -34,17 +34,17 @@ function AgentLogo({ size = 36 }: { size?: number }) {
 
 const BEATS = [0, 1600, 3200, 5200, 7000] as const;
 
+const LAST_STEP = BEATS.length - 1;
+
+// UNIT_BOUNDARY_DESCRIPTION: the illustration's animation step. It plays once, the first time the illustration is in view, and then rests on the last step for good: scrolling it out of view again (paused) or back in never replays it, and if it leaves the view part way through, its pending steps are cancelled and it shows the last step. With reduced motion it shows the last step from the start.
 function useAnimationStep(paused: boolean, reduceMotion: boolean) {
-  const [step, setStep] = useState(reduceMotion ? 4 : -1);
+  const [step, setStep] = useState(reduceMotion ? LAST_STEP : -1);
   const hasPlayed = useRef(false);
 
   useEffect(() => {
-    if (reduceMotion) {
-      setStep(4);
-      return;
-    }
-    if (hasPlayed.current) {
-      setStep(BEATS.length - 1);
+    const finished = reduceMotion || hasPlayed.current;
+    if (finished) {
+      setStep(LAST_STEP);
       return;
     }
     if (paused) return;

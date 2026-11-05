@@ -13,17 +13,17 @@ const CHAR_GREEN = "#3F6C45";
 
 const BEATS = [0, 1800, 3400, 5000, 6600, 8400, 10600, 12600] as const;
 
+const LAST_STEP = BEATS.length - 1;
+
+// UNIT_BOUNDARY_DESCRIPTION: the illustration's animation step. It plays once, the first time the illustration is in view, and then rests on the last step for good: scrolling it out of view again (paused) or back in never replays it, and if it leaves the view part way through, its pending steps are cancelled and it shows the last step. With reduced motion it shows the last step from the start.
 function useAnimationStep(paused: boolean, reduceMotion: boolean) {
-  const [step, setStep] = useState(reduceMotion ? 7 : -1);
+  const [step, setStep] = useState(reduceMotion ? LAST_STEP : -1);
   const hasPlayed = useRef(false);
 
   useEffect(() => {
-    if (reduceMotion) {
-      setStep(7);
-      return;
-    }
-    if (hasPlayed.current) {
-      setStep(BEATS.length - 1);
+    const finished = reduceMotion || hasPlayed.current;
+    if (finished) {
+      setStep(LAST_STEP);
       return;
     }
     if (paused) return;
