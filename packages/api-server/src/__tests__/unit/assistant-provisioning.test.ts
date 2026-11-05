@@ -225,6 +225,7 @@ function world(
     ownName: ALICE,
     assistantName: NAME,
     brandName: BRAND,
+    cliInstall: { harnessUrl: "http://harness.test" },
     admitted: async () => initial.admitted ?? true,
     enabled: async () => state.enabled,
     agentOf: async (agentId) => {
@@ -252,15 +253,17 @@ it("adds a step a ready row predates, once", async () => {
     await w.store.repo.markReady(ALICE, FIRST);
 
     await w.provisioner.ensure();
-    expect(w.state.ran).toEqual(["instructions"]);
+    // UNIT_BOUNDARY_DESCRIPTION: the row predates both the instructions and the CLI, so a catch-up applies each once.
+    expect(w.state.ran).toEqual(["instructions", "cli"]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
       state: "ready",
-      steps: ["env", "egress", "grants", "instructions"],
+      steps: ["env", "egress", "grants", "instructions", "cli"],
     });
     expect(events.agents).toEqual([]);
 
+    // UNIT_BOUNDARY_DESCRIPTION: the next request finds nothing left to apply.
     await w.provisioner.ensure();
-    expect(w.state.ran).toEqual(["instructions"]);
+    expect(w.state.ran).toEqual(["instructions", "cli"]);
   } finally {
     events.stop();
   }
@@ -428,6 +431,7 @@ describe("assistant provisioning", () => {
       ownName: ALICE,
       assistantName: NAME,
       brandName: BRAND,
+      cliInstall: { harnessUrl: "http://harness.test" },
       admitted: async () => true,
       enabled: async () => true,
       agentOf: async (agentId) => {
@@ -492,10 +496,16 @@ describe("assistant provisioning", () => {
     expect(w.state.created).toEqual([
       expect.objectContaining({ id: FIRST, initDone: [] }),
     ]);
-    expect(w.state.ran).toEqual(["env", "egress", "instructions", "grants"]);
+    expect(w.state.ran).toEqual([
+      "env",
+      "egress",
+      "instructions",
+      "grants",
+      "cli",
+    ]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
       state: "ready",
-      steps: ["env", "egress", "instructions", "grants"],
+      steps: ["env", "egress", "instructions", "grants", "cli"],
     });
   });
 

@@ -205,13 +205,15 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
  * create to finish only the ones that have not landed, so a retry never
  * re-applies what its owner may have changed since.
  */
-export type AgentInitStep = "env" | "egress" | "instructions" | "grants";
+export type AgentInitStep =
+  "env" | "egress" | "instructions" | "grants" | "cli";
 
 export const AGENT_INIT_STEPS: readonly AgentInitStep[] = [
   "env",
   "egress",
   "instructions",
   "grants",
+  "cli",
 ];
 
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
@@ -222,6 +224,8 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   onInitStep?: (step: AgentInitStep) => Promise<void>;
   /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which says what the platform greeted the owner with. Only the provisioning that names it writes it, and only once. */
   instructions?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the install whose CLI this Agent is given, as the base its own harness path hangs off — named only for an assistant, whose machine drives that install for its owner. */
+  cliInstall?: { harnessUrl: string };
   starterKit?: string;
   starterKitSeed?: SeedStamp;
   starterKitDefaultModel?: string;

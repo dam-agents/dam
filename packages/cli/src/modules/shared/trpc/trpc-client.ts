@@ -12,6 +12,7 @@ import {
 } from "api-server-api";
 import type { AppRouter as AgentRuntimeAppRouter } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
+import { cliTrpcUrl, readHarnessMode } from "../harness-mode.js";
 
 export type TrpcClient = TRPCClient<AppRouter>;
 export type AgentTrpcClient = TRPCClient<AgentRuntimeAppRouter>;
@@ -77,10 +78,6 @@ function buildAuthHeaders(deps: {
       reason?: string;
       host?: string;
     };
-    if (e.kind === "agent-token-unavailable")
-      throw new Error(
-        `this install will not vouch for this assistant right now: ${e.reason ?? "unknown reason"}`,
-      );
     if (e.kind === "not-logged-in" || e.kind === "session-expired") {
       const reason =
         e.kind === "not-logged-in"
@@ -161,10 +158,14 @@ export function createTrpcClient(deps: {
   tokenProvider: TokenProvider;
   fetch?: typeof fetch;
 }): TrpcClient {
+  /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant, the install's API is its own harness path and carries no credential — the path itself is the proof of which Agent is asking. */
+  const harness = readHarnessMode();
   const options = {
-    url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
+    url: harness
+      ? cliTrpcUrl(harness)
+      : `${deps.host.replace(/\/+$/, "")}/api/trpc`,
     fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
-    headers: buildAuthHeaders(deps),
+    headers: harness ? () => ({}) : buildAuthHeaders(deps),
   };
   return createTRPCClient<AppRouter>({
     links: [

@@ -212,7 +212,6 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       case "auth-store-read":
       case "auth-store-write":
       case "malformed-auth-store":
-      case "agent-token-unavailable":
         return { kind: "unchecked", reason: token.error.reason };
     }
   };

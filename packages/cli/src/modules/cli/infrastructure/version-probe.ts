@@ -2,6 +2,7 @@ import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { ProbeError } from "../domain/errors.js";
 import { errorMessage, zodIssuesMessage } from "../../shared/error-message.js";
+import { cliVersionUrl } from "../../shared/harness-mode.js";
 
 const versionInfoSchema = z.object({
   serverVersion: z.string(),
@@ -17,6 +18,8 @@ export interface VersionProbe {
 
 export interface HttpVersionProbeOpts {
   timeoutMs?: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant the version is answered on its own harness path, beside the CLI bundle it serves, rather than at the install's public `/api/version` — the same proof, one door. */
+  harness?: { baseUrl: string; agentId: string } | null;
 }
 
 export function createHttpVersionProbe(
@@ -26,7 +29,9 @@ export function createHttpVersionProbe(
 
   return {
     async probe(serverUrl) {
-      const url = `${serverUrl.replace(/\/+$/, "")}/api/version`;
+      const url = opts.harness
+        ? cliVersionUrl(opts.harness)
+        : `${serverUrl.replace(/\/+$/, "")}/api/version`;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 

@@ -1224,8 +1224,5 @@ export {
   environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";
 
-export {
-  AGENT_TOKEN_PREFIX,
-  agentTokenResponseSchema,
-} from "./modules/agent-tokens/schemas.js";
-export type { AgentTokenResponse } from "./modules/agent-tokens/schemas.js";
+export { cliVersionResponseSchema } from "./modules/cli/schemas.js";
+export type { CliVersionResponse } from "./modules/cli/schemas.js";

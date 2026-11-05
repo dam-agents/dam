@@ -9,6 +9,7 @@ import type {
 import { upgradeAdvice } from "../cli/infrastructure/npm-installer.js";
 import { SERVER_ENV_VAR } from "../cli/index.js";
 import { EXIT_BELOW_FLOOR, EXIT_RUNTIME_FAILURE } from "./exit-codes.js";
+import { readHarnessMode } from "./harness-mode.js";
 
 export interface ProbeRetry {
   onWait: (reason: string, delayMs: number) => void;
@@ -30,6 +31,9 @@ export async function resolveActiveHost(
   server: string | undefined,
   retry?: ProbeRetry,
 ): Promise<string> {
+  /* UNIT_BOUNDARY_DESCRIPTION: an assistant's CLI came from the install it talks to, so there is no floor to meet and no recommendation to chase — the harness base is the host, and no configured server is consulted. */
+  const harness = readHarnessMode();
+  if (harness !== null) return harness.baseUrl;
   const backoff =
     retry === undefined ? undefined : createBackoff(retry.backoff);
   for (;;) {

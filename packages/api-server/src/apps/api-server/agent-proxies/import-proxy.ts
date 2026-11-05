@@ -45,7 +45,7 @@ export function createImportProxy(deps: ImportProxyDeps) {
   return async (c: ImportCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
-    /* UNIT_BOUNDARY_DESCRIPTION: an assistant's own token reaches the app tRPC API and nothing else; writing a bundle into a workspace is the machine changing itself. */
+    /* UNIT_BOUNDARY_DESCRIPTION: an assistant acting for its owner reaches the app tRPC API and nothing else; writing a bundle into a workspace is the machine changing itself, with no approval in front of it. */
     if (user.onBehalfAgentId !== undefined) {
       securityLog("warn", "authz.on_behalf_refused", {
         category: "authz",

@@ -193,6 +193,7 @@ const agentChangesNeedApproval = tBase.middleware(
     const assistant = ctx.user?.onBehalfAgentId;
     if (assistant === undefined || type !== "mutation") return next();
     const kind = agentChangeKind(path);
+    if (kind === "create") return next();
     if (kind === "refuse") {
       throw new TRPCError({
         code: "FORBIDDEN",
@@ -208,7 +209,6 @@ const agentChangesNeedApproval = tBase.middleware(
       });
     }
     const input = await canonicalAgentChangeInput(path, raw);
-    if (agentChangeKind(path, input) === "create") return next();
     const filed = await ctx.agentChanges.request({ procedure: path, input });
     throw new TRPCError({
       code: "PRECONDITION_FAILED",

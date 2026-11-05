@@ -46,7 +46,7 @@ function emptyStore(): AuthStore {
 }
 
 function envReader(): AuthEnvReader {
-  return { damToken: () => undefined, agentTokenUrl: () => undefined };
+  return { damToken: () => undefined };
 }
 
 function savedSession(
@@ -734,7 +734,6 @@ describe("auth-service.status", () => {
       authStore: emptyStore(),
       authEnvReader: {
         damToken: () => "env-token-value",
-        agentTokenUrl: () => undefined,
       },
       savedTokenProvider: savedSession(),
     });
@@ -771,7 +770,6 @@ describe("auth-service.status", () => {
       authStore: store,
       authEnvReader: {
         damToken: () => "env-token-value",
-        agentTokenUrl: () => undefined,
       },
       savedTokenProvider: savedSession(),
     });

@@ -99,10 +99,16 @@ A created key's plaintext is returned once and printed to stderr (so a `>` redir
 API-key principals cannot mint further keys — the server enforces that, so the constraint holds regardless of how the CLI is driven.
 Concurrent writes to the credential store are not coordinated in v1 (a solo, single-terminal assumption): overlapping processes can each persist their own merged snapshot, at worst forcing one re-login.
 
-**An assistant's own token** is the one source that leaves no secret behind.
-A `dam` running inside one of the install's assistants is given `DAM_AGENT_TOKEN_URL` — the exchange on that Agent's own harness route — instead of a credential, and mints a fifteen-minute token from it whenever it has none, or has one within a minute of expiry, and re-mints rather than failing when a long attach outlives one ([assistant](assistant.md#what-it-changes)).
-It sits between `DAM_TOKEN` and the credential store: an explicit bearer still wins, and a machine given this never reads `~/.local/state`.
-What it can do is the install's decision, not the CLI's: the token acts as the assistant's owner and every change it asks for waits on that owner's approval, so a verb that fails this way says so and names the approval to wait on.
+**Inside an assistant** the CLI needs no sign-in and holds no secret ([harness mode](#harness-mode)).
+
+## Harness mode
+
+An [assistant](assistant.md) drives its owner's install from inside its own machine, and that is the one place `dam` runs without an account.
+`DAM_HARNESS_URL` (the install's harness base) and `DAM_AGENT_ID` turn it on: every call goes to `<harness base>/api/agents/<id>/cli/trpc`, which the mesh admits only from that Agent's own gateway, so the path is the proof of who is asking — the CLI sends no `Authorization` header, reads no credential store, and there is no token in the machine to steal or replay.
+It stands in for the configured server: no host is read from the config file, no compatibility floor or recommendation is negotiated (the bundle came from this server), and the version it reports is the install's own, from `<harness base>/api/agents/<id>/cli/version`.
+The image's api-server carries the `dam` bundle of its own build and serves it on the same path, so the machine runs the CLI that matches its server rather than whichever npm release it happens to have; provisioning installs a launcher in `~/bin` that asks the version, keeps the bundle under `~/.dam` by that version, and re-downloads only when the install answers a new one.
+`dam update` has nothing to do there, and the verbs that need the owner's own doors refuse with a plain sentence: `chat`, `session`, `run`, `ssh`, `file` and `import` are not available from inside an assistant.
+What it may do is the install's decision, not the CLI's: reads and creates run, and every change it asks for waits on that owner's approval on Home, so a verb that fails this way says so and names the approval to wait on.
 `dam approval wait <id>` reports the verdict and what became of the change; it never re-runs anything, because an approved change has already happened server-side.
 Answering such a request (`dam approval approve` or `deny` on it) needs a person's own sign-in: an API key is refused there, and so is the assistant itself.
 

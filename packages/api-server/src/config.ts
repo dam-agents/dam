@@ -295,6 +295,8 @@ const configSchema = z.object({
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   agentSkillPath: z.string().default("./skills/dam/SKILL.md"),
+  /* UNIT_BOUNDARY_DESCRIPTION: the dam CLI of this build, which the image carries beside the skill it serves, so an assistant's machine runs the CLI that matches this server. */
+  cliBundleDir: z.string().default("./cli"),
   harnesses: harnessesSchema,
   spendPriceOverrides: spendPriceOverridesSchema,
   spendDefaultUserCeilingMicros: spendCeilingUsdTextSchema
@@ -529,6 +531,7 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     agentSkillPath: process.env.AGENT_SKILL_PATH,
+    cliBundleDir: process.env.CLI_BUNDLE_DIR,
     harnesses: process.env.HARNESSES,
     spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
     spendDefaultUserCeilingMicros: process.env.SPEND_DEFAULT_USER_CEILING_USD,

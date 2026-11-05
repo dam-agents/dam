@@ -341,6 +341,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         owner: user.sub,
         assistantName: config.brand.assistantName,
         brandName: config.brand.name,
+        cliInstall: { harnessUrl: config.harnessServerUrl },
         admitted: () => isTermsAccepted(user.sub),
         enabled: async () => {
           const mode = config.featureModes.dambledore;

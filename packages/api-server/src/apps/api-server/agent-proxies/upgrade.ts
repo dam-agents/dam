@@ -121,7 +121,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       });
       if (!allowed) return { ok: false, kind: "not-permitted" };
     }
-    /* UNIT_BOUNDARY_DESCRIPTION: an assistant's own token reaches the app tRPC API and nothing else — no terminal, no shell, no chat relay, no runtime tRPC. Those are the owner's own doors, and a machine that could open one would be acting as the person rather than asking for a change. */
+    /* UNIT_BOUNDARY_DESCRIPTION: an assistant acting for its owner reaches the app tRPC API and nothing else — no terminal, no shell, no chat relay, no runtime tRPC. Those are the owner's own doors, and a machine that opened one would act as the person rather than ask for a change. */
     if (user.onBehalfAgentId !== undefined) {
       securityLog("warn", "ws.on_behalf_refused", {
         category: "authz",

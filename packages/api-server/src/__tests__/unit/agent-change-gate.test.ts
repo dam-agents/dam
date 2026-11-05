@@ -149,58 +149,46 @@ describe("the change gate", () => {
     expect(w.filed).toEqual([]);
   });
 
-  it("holds a create that would grant something to the new Agent", async () => {
+  /* TEST_SCENARIO: every create runs freely, including one that hands the new Agent the owner's Connections, a shared Secret or a registry credential — only changes and removals wait (D236A). */
+  it("lets a create that carries grants run at once", async () => {
     const w = world();
     const caller = router.createCaller(contextOf(w.agentChanges));
-    const error = (await caller.agents
-      .create({ name: "notes", connectionIds: ["conn-1"] })
-      .catch((e: unknown) => e)) as TRPCError;
-    expect(error.code).toBe("PRECONDITION_FAILED");
-    expect(w.filed).toEqual([
-      {
-        procedure: "agents.create",
-        input: { name: "notes", connectionIds: ["conn-1"] },
-      },
-    ]);
+    await expect(
+      caller.agents.create({
+        name: "notes",
+        connectionIds: ["conn-1"],
+        secretRef: "my-secret",
+        providerConnectionId: "conn-2",
+      }),
+    ).resolves.toEqual({
+      name: "notes",
+      connectionIds: ["conn-1"],
+      secretRef: "my-secret",
+      providerConnectionId: "conn-2",
+    });
+    expect(w.filed).toEqual([]);
   });
 
-  it("holds a create that names the model provider it will run on", async () => {
+  it("lets a kit apply run at once", async () => {
     const w = world();
-    const caller = router.createCaller(contextOf(w.agentChanges));
-    const error = (await caller.agents
-      .create({ name: "notes", providerConnectionId: "conn-1" })
-      .catch((e: unknown) => e)) as TRPCError;
-    expect(error.code).toBe("PRECONDITION_FAILED");
-    expect(w.filed).toEqual([
-      {
-        procedure: "agents.create",
-        input: { name: "notes", providerConnectionId: "conn-1" },
-      },
-    ]);
-  });
-
-  it("holds a kit apply that brings its own Connections", async () => {
-    const w = world();
-    const caller = appRouter.createCaller(contextOf(w.agentChanges));
-    const error = (await caller.starterKits
+    const ctx = {
+      ...contextOf(w.agentChanges),
+      starterKits: { apply: async () => ({ agent: { id: "agent-9" } }) },
+    } as unknown as ApiContext;
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.starterKits
       .create({
         catalog: "curated",
         kitId: "wiki",
         name: "notes",
         connectionIds: ["conn-1"],
       } as never)
-      .catch((e: unknown) => e)) as TRPCError;
-    expect(error.code).toBe("PRECONDITION_FAILED");
-    expect(w.filed.map((f) => f.procedure)).toEqual(["starterKits.create"]);
-  });
-
-  it("holds a create that names a shared Secret", async () => {
-    const w = world();
-    const caller = router.createCaller(contextOf(w.agentChanges));
-    const error = (await caller.agents
-      .create({ name: "notes", secretRef: "my-secret" })
-      .catch((e: unknown) => e)) as TRPCError;
-    expect(error.code).toBe("PRECONDITION_FAILED");
+      .catch((e: unknown) => e);
+    // UNIT_BOUNDARY_DESCRIPTION: the gate is what this asserts — a create never lands on it, whatever the kit service itself answers.
+    expect((result as TRPCError | undefined)?.code).not.toBe(
+      "PRECONDITION_FAILED",
+    );
+    expect(w.filed).toEqual([]);
   });
 
   it("holds a reinstall of a skill, which replaces an installation that exists", async () => {

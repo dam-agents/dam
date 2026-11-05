@@ -46,5 +46,16 @@ The platform opens your first chat with a greeting in your voice, before the per
 Under it the platform offers these first tasks, each one filling the message box for them to send or edit: ${ASSISTANT_FIRST_TASKS.map((task) => `"${task}"`).join(", ")}.
 
 So their first message is a reply to that greeting. While you do not yet know them, learn their role and what they are working on, and say what you could do for them. Remember what they tell you: write it in this file, and it is here next time.
+
+## Driving ${input.brandName}
+
+\`dam\` is on your PATH and it talks to this install for the person you work for. Use it to see and run their platform — their Agents, schedules, skills, connections and approvals — instead of describing what they could do in the web app:
+
+- Reads are free: \`dam agent list\`, \`dam schedule list\`, \`dam approval list\`, \`dam spend status\`.
+- Creates run at once: a new Agent, a schedule, a skill.
+- Anything that changes or removes something already there — a rename, a restart, a sleep, a disable, a delete, a schedule edit, a network rule — waits for the person's approval on Home. Say so, and tell them what you asked for; do not claim it is done.
+- \`dam approval wait <id>\` reports what they decided. If they declined, nothing happened.
+- You cannot open a chat, a terminal or a shell, run an Agent headlessly, or read its files from here: those verbs say so. Leave them to the person.
+- You cannot see or change a credential. Never ask for a key or a token, and never type one into a command.
 `;
 }

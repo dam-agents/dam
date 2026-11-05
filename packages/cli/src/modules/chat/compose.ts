@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
+import { refuseInHarnessMode } from "../shared/harness-mode.js";
 import type { AgentService } from "../agent/index.js";
 import { startFailure } from "../agent/commands/wait-or-exit.js";
 import { buildChatCommand } from "./commands/chat.js";
@@ -118,15 +119,20 @@ export function composeChatModule({
     }),
   );
 
-  return {
-    commands: [
-      buildChatCommand({
-        chatService,
-        pause: () =>
-          pauseBeforeAttach(process.stdin, process.stderr, ATTACH_PAUSE_MS),
-      }),
-      buildRunCommand({ runService }),
-      sessionParent,
-    ],
-  };
+  const chat = buildChatCommand({
+    chatService,
+    pause: () =>
+      pauseBeforeAttach(process.stdin, process.stderr, ATTACH_PAUSE_MS),
+  });
+  const run = buildRunCommand({ runService });
+  // UNIT_BOUNDARY_DESCRIPTION: an assistant's machine holds no session of a person; the relays these verbs need are not on its path.
+  for (const [command, verb] of [
+    [chat, "chat"],
+    [run, "run"],
+    [sessionParent, "session"],
+  ] as const) {
+    command.hook("preAction", () => refuseInHarnessMode(verb));
+  }
+
+  return { commands: [chat, run, sessionParent] };
 }

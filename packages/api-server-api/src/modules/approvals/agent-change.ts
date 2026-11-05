@@ -198,37 +198,7 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "usage.entryPointChosen": "refuse",
 };
 
-/* UNIT_BOUNDARY_DESCRIPTION: what makes a create a change after all — a new
- * Agent that already holds something of the owner's. A create that grants a
- * Connection (a kit's, or a named model provider, which the server turns into a
- * grant), names a shared Secret or brings a registry credential hands the new
- * Agent reach over the owner's credentials, so it waits like any other grant; a
- * plain create, whose provider the server picks from the caller's own default,
- * runs at once. */
-const GRANT_CARRYING_CREATES = new Set(["agents.create", "starterKits.create"]);
-
-function grantsAnything(input: unknown): boolean {
-  if (typeof input !== "object" || input === null) return false;
-  const create = input as {
-    connectionIds?: unknown;
-    secretRef?: unknown;
-    registryCredential?: unknown;
-    providerConnectionId?: unknown;
-  };
-  return (
-    (Array.isArray(create.connectionIds) && create.connectionIds.length > 0) ||
-    create.secretRef !== undefined ||
-    create.registryCredential !== undefined ||
-    create.providerConnectionId !== undefined
-  );
-}
-
-export function agentChangeKind(
-  path: string,
-  input?: unknown,
-): AgentChangeKind {
-  if (GRANT_CARRYING_CREATES.has(path) && grantsAnything(input))
-    return "change";
+export function agentChangeKind(path: string): AgentChangeKind {
   // UNIT_BOUNDARY_DESCRIPTION: a mutation nobody classified waits for the owner rather than running, so a procedure added without a verdict fails safe.
   return AGENT_CHANGE_KINDS[path] ?? "change";
 }

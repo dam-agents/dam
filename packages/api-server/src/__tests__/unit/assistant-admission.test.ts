@@ -128,6 +128,7 @@ describe("provisioning before admission", () => {
       ownName: OWNER,
       assistantName: "Dambledore",
       brandName: BRAND,
+      cliInstall: { harnessUrl: "http://harness.test" },
       admitted: async () => false,
       enabled: async () => true,
       agentOf: async () => null,

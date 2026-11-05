@@ -255,10 +255,11 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
-  createAgentTokenCodec,
-  createAgentTokenVerifier,
   createFailClosedOwnerActive,
-} from "./modules/agent-tokens/index.js";
+  verifyAgentOnBehalf as verifyAgentOnBehalfFor,
+} from "./modules/agent-on-behalf/index.js";
+import { readCliBundle } from "./apps/harness-api-server/cli-bundle.js";
+import { createApiContextFactory } from "./apps/api-server/trpc/context.js";
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
@@ -792,13 +793,11 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
-  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's own bearer — minted on the harness route its machine alone reaches, signed with the install's token pepper, and re-checked against the live Agent at every use. Its owner check fails closed: an assistant's token dies when the directory cannot confirm its owner. */
-  const agentTokenCodec = createAgentTokenCodec(config.apiKeyHmacKey);
+  /* UNIT_BOUNDARY_DESCRIPTION: the checks an assistant's reach for its owner rides on — read live at every request on the Agent's own harness path, with the owner check failing closed: an unreachable directory refuses rather than waves through. */
   const onBehalfOwnerActive = createFailClosedOwnerActive({
     directory: userDirectory,
   });
-  const verifyAgentToken = createAgentTokenVerifier({
-    codec: agentTokenCodec,
+  const verifyAgentOnBehalf = verifyAgentOnBehalfFor({
     agentOf: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
       return agent ? { owner: agent.owner ?? null, kind: agent.kind } : null;
@@ -827,7 +826,6 @@ export async function bootstrap() {
     {
       verifyApiKey: apiKeysModule.validator,
       verifyOwnerActive: apiKeysModule.verifyOwnerActive,
-      verifyAgentToken,
     },
   );
   const jwksWarmup = startJwksWarmup(auth.warmJwks);
@@ -2740,8 +2738,9 @@ export async function bootstrap() {
         agentId,
         ownerSub: owner,
       }),
-    mintAgentToken: agentTokenCodec,
-    ownerActive: onBehalfOwnerActive,
+    cliBundle: readCliBundle(config.cliBundleDir),
+    contextFor: createApiContextFactory(apiServerDeps),
+    verifyAgentOnBehalf,
     satellitesBoot,
     secretStore,
     spendHold,

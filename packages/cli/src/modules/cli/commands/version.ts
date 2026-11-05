@@ -5,6 +5,7 @@ import { upgradeAdvice } from "../infrastructure/npm-installer.js";
 import type { CompatService } from "../services/compat-service.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { readHarnessMode } from "../../shared/harness-mode.js";
 
 export interface VersionCommandDeps {
   service: CompatService;
@@ -37,11 +38,18 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
     .option("--json", "emit the versions and the verdict as JSON")
     .addHelpText("after", "\nExamples:\n  dam version\n  dam version --json\n")
     .action(async (opts: { server?: string; json?: boolean }) => {
+      /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant, the version that matters is the install's own — the bundle this machine runs is the one the server serves, and npm is not where it came from. */
+      const harness = readHarnessMode();
       const [compat, latest] = await Promise.all([
         deps.service.check({
           flag: opts.server ? { server: opts.server } : undefined,
         }),
-        deps.npm.latest(),
+        harness === null
+          ? deps.npm.latest()
+          : Promise.resolve({
+              ok: false as const,
+              error: { message: "npm is not consulted inside an assistant" },
+            }),
       ]);
 
       const local = deps.localCliVersion;
@@ -83,11 +91,15 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
         process.stdout.write(`server ${verdict.serverVersion}${suffix}\n`);
       }
       if (latest.ok) process.stdout.write(`npm latest ${latest.value}\n`);
+      if (harness !== null)
+        process.stdout.write(
+          `this CLI is the one this install serves; \`dam update\` has nothing to do here\n`,
+        );
 
       if (report.serverError !== undefined) {
         process.stderr.write(`server unreachable: ${report.serverError}\n`);
       }
-      if (report.latestError !== undefined) {
+      if (report.latestError !== undefined && harness === null) {
         process.stderr.write(
           `npm unreachable: ${report.latestError}; cannot tell whether a newer CLI exists\n`,
         );

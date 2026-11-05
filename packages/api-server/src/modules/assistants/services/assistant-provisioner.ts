@@ -54,6 +54,7 @@ export function createAssistantProvisioner(deps: {
   ownName: string;
   assistantName: string;
   brandName: string;
+  cliInstall: { harnessUrl: string };
   admitted: () => Promise<boolean>;
   enabled: () => Promise<boolean>;
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
@@ -124,6 +125,7 @@ export function createAssistantProvisioner(deps: {
         name: deps.assistantName,
         kind: "assistant",
         instructions,
+        cliInstall: deps.cliInstall,
         resume: true,
         ...initOf(row),
       });
@@ -138,6 +140,7 @@ export function createAssistantProvisioner(deps: {
         name: deps.assistantName,
         kind: "assistant",
         instructions,
+        cliInstall: deps.cliInstall,
         initDone: [],
         onInitStep: initOf(row).onInitStep,
       });
@@ -150,6 +153,7 @@ export function createAssistantProvisioner(deps: {
         name: deps.assistantName,
         kind: "assistant",
         instructions,
+        cliInstall: deps.cliInstall,
         resume: true,
         ...initOf(current ?? row),
       });
