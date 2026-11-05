@@ -233,7 +233,7 @@ An artifact with no share URL, a private one, or an id the Agent published no ar
 What the agent sees:
 
 - **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `post` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
-  `start_thread` posts the same way and makes the calling Session the thread's owner; it and `post`'s old name are on [slack-threads](slack-threads.md).
+  `start_thread` posts too, and owns the thread ([slack-threads](slack-threads.md)).
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
   On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
@@ -340,8 +340,7 @@ A post that is only an attachment, top-level or a thread reply, is a single file
 
 A plain post is **one-way**.
 The agent posts a top-level message with `post`; the worker stores no thread-to-session mapping for it.
-If a user replies to the resulting thread, the inbound path treats it as any message in a thread — a tagged reply opens a fresh session.
-Continuity from the originating session does not carry over: an announcement must not wake a session that has finished.
+If a user replies to the resulting thread, the inbound path treats it as any message in a thread — a tagged reply opens a fresh session, and an announcement never wakes a session that has finished.
 
 A thread started with `start_thread` is **owned** instead: its replies come back to the Session that started it ([slack-threads](slack-threads.md)).
 
@@ -349,6 +348,6 @@ The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
   A reply to a plain post is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
-  An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation, or the Agent must start a thread there.
+  An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

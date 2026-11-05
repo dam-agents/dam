@@ -33,6 +33,7 @@ No undelivered-turn nudge runs: nobody in the thread summoned the Session, which
 Ownership ends when the Session calls `leave_thread`, or when a reply finds the Session gone; the record is dropped and that reply takes the road an unowned reply takes.
 `list_threads` reports the calling Session's threads, with Slack's reply count and last activity read at the call, and whether a message from someone else came after the boundary.
 `read_thread` reads an owned thread as it reads one an injected history offered.
+A DM is no exception: replies in a DM the Agent did not bind reach it only through a thread it started there.
 Every thread tool needs the calling Session's id, which the platform resolves from the call; a call it cannot tie to a Session is refused.
 Telegram has no threads: `start_thread` refuses it, and a Telegram chat's next message still reaches that chat's own session.
 `post`, the one-way tool, was called `send_channel_message`; the old name stays one release as a deprecated alias with the same behavior, since definitions outside the platform call it.
