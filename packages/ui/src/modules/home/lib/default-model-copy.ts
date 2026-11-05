@@ -50,7 +50,7 @@ export function defaultModelDetail(notice: DefaultModelNotice): string {
     case "provider-gone":
       return `${notice.model ?? "Its default model"} is on a provider this agent no longer holds. Its ${runs} won't run until you choose another.`;
     case "changed":
-      return `${capitalized(notice.changedFrom ?? "its old model")} isn't offered by its provider, so it now runs ${notice.model ?? "another model"}.`;
+      return `${capitalized(notice.changedFrom ?? "its old model")} could not be kept, so it now runs ${notice.model ?? "another model"}.`;
   }
 }
 

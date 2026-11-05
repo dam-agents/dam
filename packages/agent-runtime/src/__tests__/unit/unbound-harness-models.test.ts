@@ -50,20 +50,24 @@ const provider = (
 });
 
 describe("unboundHarnessModels", () => {
-  /** TEST_SCENARIO: The provider lists the preferred work model behind
-   * others; it leads the list, and every name is the plain qualified one,
-   * whatever spelling an entry carried. */
+  /** TEST_SCENARIO: A harness with no modelRouter section names no models of
+   * its own, so the platform's preferred work model for it is DeepSeek V4.1
+   * Flash, which its provider lists behind others; it leads the list, and
+   * every name is the plain qualified one, whatever spelling an entry
+   * carried. */
   it("puts the preferred work model first, under plain qualified names", () => {
     const models = unboundHarnessModels([
       provider("ibm", [
         "rits/zai-org/glm-5-1",
+        "azure/DeepSeek-V4.1-Flash",
         "aws/claude-opus-5-5",
         "azure/gpt-5.5",
       ]),
     ]);
     expect(models.map((m) => m.name)).toEqual([
-      "ibm/aws/claude-opus-5-5",
+      "ibm/azure/DeepSeek-V4.1-Flash",
       "ibm/rits/zai-org/glm-5-1",
+      "ibm/aws/claude-opus-5-5",
       "ibm/azure/gpt-5.5",
     ]);
   });
