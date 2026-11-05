@@ -248,10 +248,10 @@ export function createProviderModelCatalog(deps: {
                 connection.templateId,
                 base.harnesses,
               );
-              const spec = nativeListingForTemplate(connection.templateId);
+              const native = nativeListingForTemplate(connection.templateId);
               const known =
-                listedBy.length > 0 && spec
-                  ? await listed(connection, { spec }, current)
+                listedBy.length > 0 && native
+                  ? await listed(connection, native, current)
                   : undefined;
               const models = new Map(
                 named.map((m) => [m.upstreamId, m.harnesses]),

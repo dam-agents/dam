@@ -194,7 +194,7 @@ describe("the owner's provider model catalog", () => {
     expect(view.providers).toEqual([]);
   });
 
-  /** TEST_SCENARIO: the router never lists Bedrock, so Claude Code is offered its own tier names there and Pi the inference profiles the Connection's region lists, each model to the harness that runs it. */
+  /** TEST_SCENARIO: the router never lists Bedrock, so Claude Code is offered its own tier names there and Pi the inference profiles the Connection's region lists but its image models, each model to the harness that runs it. */
   it("offers each harness a natively run Connection's models its own way", async () => {
     const specs: string[] = [];
     const catalog = createProviderModelCatalog({
@@ -203,7 +203,10 @@ describe("the owner's provider model catalog", () => {
         specs.push(
           `${env.AWS_ENDPOINT_URL_BEDROCK} ${env.AWS_BEARER_TOKEN_BEDROCK}`,
         );
-        return observed([{ id: "us.anthropic.claude-opus-5-5" }])(spec, env);
+        return observed([
+          { id: "us.anthropic.claude-opus-5-5" },
+          { id: "us.stability.stable-outpaint-v1:0" },
+        ])(spec, env);
       },
       table,
       shipped,

@@ -197,10 +197,10 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     layer: RuntimeEnvState["providers"][number],
     previous: NativeListing | undefined,
   ): Promise<NativeListing | null> => {
-    const spec = nativeListingOf(layer.template ?? "");
-    if (!spec) return null;
+    const listing = nativeListingOf(layer.template ?? "");
+    if (!listing) return null;
     const pin = nativePinOf(layer.template ?? "", layer.env);
-    const outcome = await deps.discover(spec, layer.env);
+    const outcome = await deps.discover(listing.spec, layer.env);
     if (outcome.status !== "observed") {
       deps.log(
         `[model-catalog] ${layer.template} (${layer.id}): native listing ${outcome.status}${previous?.ids.length ? `; keeping ${previous.ids.length} known model(s)` : ""}`,
@@ -214,7 +214,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     }
     const ids = (
       outcome.entries ?? outcome.models.map((m) => ({ id: m.value }))
-    ).map((m) => m.id);
+    )
+      .map((m) => m.id)
+      .filter((id) => listing.keep?.(id) ?? true);
     deps.log(
       `[model-catalog] ${layer.template} (${layer.id}): ${ids.length} native model(s)`,
     );

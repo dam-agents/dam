@@ -369,14 +369,18 @@ describe("the model catalog", () => {
   /** TEST_SCENARIO: Bedrock never passes the router, but Claude Code and Pi
    * run it natively: Claude Code's view lists the Connection under its alias
    * with Claude Code's own tier names, Pi's with the inference profiles the
-   * Connection lists, while Codex still sees it as unsupported, and the
+   * Connection lists but its image models, while Codex still sees it as unsupported, and the
    * router neither lists nor resolves those names. */
   it("lists a natively run Connection's models for that harness only", async () => {
     const { catalog } = catalogWith(
       {
         ...BOTH,
         "https://bedrock.example": {
-          ids: ["us.anthropic.claude-opus-5-5", "us.amazon.nova-pro-v1:0"],
+          ids: [
+            "us.anthropic.claude-opus-5-5",
+            "us.amazon.nova-pro-v1:0",
+            "us.stability.stable-outpaint-v1:0",
+          ],
         },
       },
       [ibmLayer, bedrockLayer],

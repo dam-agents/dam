@@ -49,6 +49,7 @@ const seen = [];
 const server = createServer((req, res) => {
   const url = new URL(req.url, "http://127.0.0.1");
   if (req.method === "GET" && url.pathname === "/inference-profiles") {
+    if (req.headers.authorization !== "Bearer platform:conn:conn-bedrock") { res.statusCode = 403; return res.end("{}"); }
     res.setHeader("content-type", "application/json");
     return res.end(JSON.stringify({ inferenceProfileSummaries: [KNOWN, UNKNOWN].map((inferenceProfileId) => ({ inferenceProfileId, status: "ACTIVE" })) }));
   }
@@ -130,7 +131,7 @@ child.once("exit", (code) => {
 });
 
 try {
-  // TEST_SCENARIO: The router's URL alone does not switch Pi to the router: with no routed provider for Pi, it starts on Pi's own Bedrock provider and the session's model, and offers every inference profile the region lists, one Pi's catalog does not know included, and no longer one an earlier start added that the region stopped listing.
+  // TEST_SCENARIO: The router's URL alone does not switch Pi to the router: with no routed provider for Pi, it starts on Pi's own Bedrock provider and the session's model, and offers every inference profile the region lists, one Pi's catalog does not know included, listed with the Connection's key placeholder, and no longer one an earlier start added that the region stopped listing.
   const state = await rpc({ type: "get_state" });
   assert.equal(state.success, true, JSON.stringify(state).slice(0, 500));
   assert.equal(state.data.model?.provider, "amazon-bedrock", errors.slice(-800));

@@ -731,12 +731,15 @@ function bedrockEndpoint(): string | undefined {
   return env("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")?.replace(/\/+$/, "");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the region's inference profiles, listed with the Connection's key placeholder, which the gateway swaps for the key; the gateway adds no key to a call that carries none, and Bedrock refuses it.
 async function discoverBedrockProfiles(): Promise<string[] | undefined> {
   const base = env("AWS_ENDPOINT_URL_BEDROCK")?.replace(/\/+$/, "");
   if (!base) return undefined;
   const url = `${base}/inference-profiles?maxResults=1000`;
+  const key = env("AWS_BEARER_TOKEN_BEDROCK");
   try {
     const res = await fetch(url, {
+      ...(key && { headers: { authorization: `Bearer ${key}` } }),
       signal: AbortSignal.timeout(
         intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000),
       ),
