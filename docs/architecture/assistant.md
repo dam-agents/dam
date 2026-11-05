@@ -91,6 +91,18 @@ That file is written once, as one more **initialization step** of provisioning (
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
+## Starting it over
+
+Experimental features carries **Reset user onboarding** under the assistant's own row, shown only while the feature is on for the person.
+It is the person's own reset, scoped to the caller: it forgets that their assistant was ever used and starts the [Getting Started](getting-started.md) checklist over through the checklist's own reset.
+Nothing is deleted — not the assistant, its sessions or its files — and the one-time news of a rename, if there is one, stays.
+A person with no assistant yet is answered success, so the button is never a failure.
+The checklist it starts over is a first-timer's from the first moment: the assistant's own `Create` task is recorded again the way provisioning records it — done, and seen, so nothing celebrates an Agent nobody made — which is one task of eight rather than an empty checklist.
+
+What it restores is the first open: the assistant's record says it has never been used, so the greeting returns to an empty chat and the first landing routes the person into it again.
+The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
+The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
+
 ## What it changes
 
 The assistant is the one Agent that may drive its owner's install: it does so through the `dam` CLI inside its own machine, with a short-lived token of its own rather than the owner's credentials ([security-and-credentials](security-and-credentials.md#identity)).
@@ -101,7 +113,7 @@ It acts with its owner's permissions over that owner's Agents, minus `credential
 **Reading and creating run freely, when a create grants nothing.**
 Anything that changes or removes something that already exists — a rename, a restart, a sleep, a disable, a delete, an unbind, a revoked grant, a schedule edit, a new network rule — is **filed on the owner's approval queue** instead of running: the same Home queue a held network request appears in, showing which change it is and the exact arguments it would run with.
 The owner approves and it runs, once, as the owner; the owner refuses and nothing runs, and the CLI that asked is told so.
-A create that would hand its new Agent something of the owner's — a Connection grant, a shared Secret, a registry credential — waits like any other grant; a plain create, whose only provider is the owner's own default, runs at once.
+A create that would hand its new Agent something of the owner's — a Connection grant, a named model provider, a shared Secret, a registry credential — waits like any other grant; a plain create, whose provider the server picks from the owner's own default, runs at once.
 A change nobody decides expires after a day, and the one unanswered at its expiry runs nothing.
 Its word is never the verdict: verdicts on approvals, API keys, the Terms, feature flags and the owner's own UI state are refused outright, not queued.
 Nor does it answer its own request: a change is decided by the owner in their own signed-in session, never by an API key, an editor standing or the assistant's token.

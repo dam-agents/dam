@@ -23,19 +23,25 @@ export interface GreetingCopy {
   placeholder: string;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether this chat shows the greeting: the person's
+ * own assistant, with the feature on for them, which the server says has never
+ * been used. It is the row's mark alone that decides — not how many sessions the
+ * Agent holds — so a New chat opens with the greeting even after older sessions,
+ * and it is gone the moment a sent message marks the assistant used, until the
+ * person resets their onboarding.
+ */
 export function greetingShown(input: {
   kind: AgentKind | null;
   assistantOn: boolean;
   assistantId: string | null;
   selectedAgent: string | null;
   used: boolean | undefined;
-  sessionsListed: number | undefined;
 }): boolean {
   return (
     input.kind === "assistant" &&
     input.assistantOn &&
     input.used === false &&
-    input.sessionsListed === 0 &&
     input.assistantId !== null &&
     input.selectedAgent === input.assistantId
   );

@@ -22,4 +22,13 @@ export interface AssistantState {
 export interface AssistantsService {
   state(): Promise<AssistantState | null>;
   dismissNotice(): Promise<void>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: starts this person's onboarding over: the
+   * assistant counts as never used again, so the first landing and the greeting
+   * come back, and the Get started checklist resets through the same reset its
+   * own button uses. It deletes nothing — not the assistant, its sessions or
+   * files — and leaves the one-time rename news as it was. Success when the
+   * person has no assistant yet, and refused while the feature is off for them.
+   */
+  resetOnboarding(): Promise<void>;
 }

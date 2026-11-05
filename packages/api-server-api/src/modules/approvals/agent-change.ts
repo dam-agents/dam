@@ -56,6 +56,7 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "artifactLibrary.updateFolder": "change",
 
   "assistants.dismissNotice": "change",
+  "assistants.resetOnboarding": "refuse",
   "attention.dismiss": "change",
 
   "budgets.users.remove": "refuse",

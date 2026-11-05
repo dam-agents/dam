@@ -1,7 +1,6 @@
 import { getUser } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
 import { useAgent } from "../../agents/api/queries.js";
-import { useAgentSessionQuery } from "../../sessions/api/queries.js";
 import { useAssistantOn, useAssistantState } from "../api/assistant-state.js";
 import {
   type GreetingCopy,
@@ -19,13 +18,13 @@ const LOADING: AssistantGreetingState = { kind: "loading" };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting this chat opens with, or why it has
- * none yet: it belongs to the owner's own assistant, only while that assistant
- * has never had a session — said by the row's mark and by the Agent's own list
- * of sessions, so a New chat after the first message does not bring it back —
- * and it is named by the install's brand and the signed-in person's given name
- * rather than by the code. Until both answers are in it is `loading`, so the
- * chat shows neither the greeting nor the ordinary empty page before it knows
- * which it is — and an Agent that is not an assistant is answered before the
+ * none yet: it belongs to the owner's own assistant while the row's mark says it
+ * has never been used, so a New chat opens with it even after older sessions and
+ * a sent message, which marks it used, takes it away — and a reset brings it
+ * back. It is named by the install's brand and the signed-in person's given name
+ * rather than by the code. Until the record is in it is `loading`, so the chat
+ * shows neither the greeting nor the ordinary empty page before it knows which
+ * it is — and an Agent that is not an assistant is answered before the
  * assistant's record is even asked about, so no ordinary chat is ever held back.
  */
 export function useAssistantGreeting(
@@ -35,25 +34,12 @@ export function useAssistantGreeting(
   const assistantOn = useAssistantOn();
   const state = useAssistantState();
   const listed = state.data;
-  const unused =
-    agentId !== null &&
-    assistantOn &&
-    listed?.agentId === agentId &&
-    !listed.used;
-  const sessions = useAgentSessionQuery(
-    agentId,
-    { limit: 1 },
-    {
-      enabled: unused,
-    },
-  );
   const shown = greetingShown({
     kind,
     assistantOn,
     assistantId: listed?.agentId ?? null,
     selectedAgent: agentId,
     used: listed?.used,
-    sessionsListed: sessions.isPending ? undefined : sessions.data?.length,
   });
   if (shown) {
     const brand = getBrand();
@@ -68,9 +54,6 @@ export function useAssistantGreeting(
     };
   }
   const waiting =
-    kind === "assistant" &&
-    assistantOn &&
-    agentId !== null &&
-    (state.isPending || (unused && sessions.isPending));
+    kind === "assistant" && assistantOn && agentId !== null && state.isPending;
   return waiting ? LOADING : NONE;
 }

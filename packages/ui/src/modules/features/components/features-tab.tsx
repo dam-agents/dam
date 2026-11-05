@@ -8,6 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
+import { useAssistantOn } from "../../assistants/api/assistant-state.js";
+import { AssistantOnboardingReset } from "../../assistants/components/assistant-onboarding-reset.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
@@ -122,6 +124,11 @@ export function FeaturesTab() {
   const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
+  const offeredRows = featureRows(getBrand()).filter((row) =>
+    isFeatureOffered(row.id, install),
+  );
+  const assistantOn = useAssistantOn();
+
   return (
     <div>
       <PageHeader
@@ -130,18 +137,20 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {featureRows(getBrand())
-          .filter((row) => isFeatureOffered(row.id, install))
-          .map((row) => (
-            <FeatureRowCard
-              key={row.id}
-              row={row}
-              enabled={flags?.[row.id] ?? false}
-              onToggle={(enabled) =>
-                setFeature.mutate({ feature: row.id, enabled })
-              }
-            />
-          ))}
+        {offeredRows.map((row) => (
+          <FeatureRowCard
+            key={row.id}
+            row={row}
+            enabled={flags?.[row.id] ?? false}
+            onToggle={(enabled) =>
+              setFeature.mutate({ feature: row.id, enabled })
+            }
+          />
+        ))}
+        {/* UNIT_BOUNDARY_DESCRIPTION: the reset sits directly under the assistant's own row, and only while the person has the assistant on. */}
+        {assistantOn && offeredRows.some((row) => row.id === "dambledore") && (
+          <AssistantOnboardingReset />
+        )}
       </div>
 
       <SectionLabel spaced className="mt-8">
