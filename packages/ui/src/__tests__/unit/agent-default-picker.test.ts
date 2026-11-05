@@ -18,6 +18,7 @@ type Target = {
   placeholder: string;
   agentDefault?: {
     detail: string;
+    pair?: SessionPair | null;
     harness?: string | undefined;
     onClear: () => void;
   };
@@ -33,6 +34,7 @@ const state = vi.hoisted(() => ({
   row: false,
   close: null as (() => void) | null,
   saved: undefined as Record<string, unknown> | undefined,
+  remembered: undefined as SessionPair | undefined,
   owned: true,
   access: { role: "owner", editors: [], permissions: [] } as {
     role: string;
@@ -59,6 +61,7 @@ vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useSessionDefaults: () => ({ data: state.saved }),
+  useRememberedPair: () => ({ data: state.remembered }),
   useProviderConnections: () => ({
     owned: state.owned
       ? [{ id: "conn", name: "Anthropic", type: "anthropic" }]
@@ -135,6 +138,7 @@ const disabledFieldset = (): boolean | undefined =>
 
 beforeEach(() => {
   state.owned = true;
+  state.remembered = undefined;
   state.access = {
     role: "owner",
     editors: [],
@@ -280,6 +284,25 @@ describe("the default model itself", () => {
       references,
       opus,
     );
+  });
+
+  /** TEST_SCENARIO: nothing is saved, so new chats and runs take the automatic model; the card names it rather than asking for a pick, and a channel's row follows it by name. */
+  it("names the automatic model while no default is saved", () => {
+    state.saved = {
+      chat: { harness: "claude-code", provider: null, model: null },
+      channel: null,
+      scheduled: null,
+      chatProfileId: null,
+    };
+    state.remembered = opus;
+    mount("chat");
+    expect(state.target?.slots.pair).toEqual(opus);
+    expect(container.textContent).toMatch(/use .*Opus 5\.5.*automatically/);
+    act(() => root.unmount());
+    container.remove();
+    mount("channel");
+    expect(state.target?.agentDefault?.detail).toMatch(/^Follows .*Opus 5\.5/);
+    expect(state.target?.agentDefault?.pair).toEqual(opus);
   });
 
   /** TEST_SCENARIO: an agent whose owner holds no provider has no model to offer, so the page shows no picker at all. */

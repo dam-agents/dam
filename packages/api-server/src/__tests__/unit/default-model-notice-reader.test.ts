@@ -48,7 +48,11 @@ function world(initial: Partial<World> = {}) {
         rows: [
           [
             AGENT,
-            { harness: "claude-code", provider: "anthropic", model: null },
+            {
+              harness: "claude-code",
+              provider: "anthropic",
+              model: "openai/gpt-6-1-sol",
+            },
             null,
             null,
             null,
@@ -99,14 +103,14 @@ describe("the default-model notice reader", () => {
     expect(await noticeStateOf(db)).toBeNull();
 
     expect(await bindConversation(db)(CHAT, AGENT, OWNER)).toBe("bound");
-    expect(await noticeStateOf(db)).toBe("not-set");
+    expect(await noticeStateOf(db)).toBe("provider-gone");
   });
 
   // TEST_SCENARIO: removing the last binding ends the run the notice names, so the notice goes with it; the same reader call must answer null again.
   it("drops the notice when the last Telegram binding goes", async () => {
     const { db } = world();
     await bindConversation(db)(CHAT, AGENT, OWNER);
-    expect(await noticeStateOf(db)).toBe("not-set");
+    expect(await noticeStateOf(db)).toBe("provider-gone");
 
     await unbindConversation(db)(CHAT);
     expect(await noticeStateOf(db)).toBeNull();
@@ -117,7 +121,7 @@ describe("the default-model notice reader", () => {
     const { db, statements } = world({
       schedules: [{ agentId: AGENT, enabled: true }],
     });
-    expect(await noticeStateOf(db)).toBe("not-set");
+    expect(await noticeStateOf(db)).toBe("provider-gone");
     const asked = statements.find((s) => s.sql.includes('from "schedules"'));
     expect(asked?.sql).toContain('"schedules"."enabled" = ');
     expect(asked?.params).toContain(true);
@@ -136,7 +140,7 @@ describe("the default-model notice reader", () => {
           ],
         }).db,
       ),
-    ).toBe("not-set");
+    ).toBe("provider-gone");
   });
 
   // TEST_SCENARIO: a Slack Channel stays in `channels`, so the reader must count it there; a channel row of another type is not a run, so the type predicate must select Slack alone.
@@ -144,7 +148,7 @@ describe("the default-model notice reader", () => {
     const { db, statements } = world({
       slack: [{ agentId: AGENT, type: "slack" }],
     });
-    expect(await noticeStateOf(db)).toBe("not-set");
+    expect(await noticeStateOf(db)).toBe("provider-gone");
     const asked = statements.find((s) => s.sql.includes('from "channels"'));
     expect(asked?.sql).toContain('"channels"."type" = ');
     expect(asked?.params).toContain("slack");
@@ -163,7 +167,7 @@ describe("the default-model notice reader", () => {
           ],
         }).db,
       ),
-    ).toBe("not-set");
+    ).toBe("provider-gone");
   });
 
   // TEST_SCENARIO: the notice is per Agent, so a binding on another Agent must not put a notice on this one.

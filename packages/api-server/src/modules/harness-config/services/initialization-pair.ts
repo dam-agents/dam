@@ -18,9 +18,10 @@ const fieldOf = (payload: unknown, key: "harness" | "model"): unknown =>
  * so it runs on the default saved after it was queued; the caller converts
  * the Agent's default first when none is saved yet, so a provider that
  * listed too late for the conversion at hello is tried again on each
- * delivery. While there is no default model to run on, it is held back
- * rather than sent, since the runtime refuses a turn with no model; it goes
- * out on a later delivery, once the default is saved. A turn
+ * delivery. With nothing saved it takes the automatic model. While there is
+ * no model to run on, it is held back rather than sent, since the runtime
+ * refuses a turn with no model; it goes out on a later delivery, once a
+ * provider lists one. A turn
  * that names its model, any other event, and an Agent on an older runtime
  * pass as stored, and so does a turn whose default cannot be read, so a
  * failed read never drops it.

@@ -6,11 +6,11 @@ import type { DismissalRow } from "../../modules/attention/domain/types.js";
 import type { AttentionRepository } from "../../modules/attention/infrastructure/attention-repository.js";
 import { createAttentionService } from "../../modules/attention/services/attention-service.js";
 
-const notSet: DefaultModelNotice = {
-  id: "agent-a:not-set",
+const noProvider: DefaultModelNotice = {
+  id: "agent-a:no-provider",
   agentId: "agent-a",
   kinds: ["chat", "channel", "scheduled"],
-  state: "not-set",
+  state: "no-provider",
   harness: "claude-code",
   model: null,
   changedFrom: null,
@@ -55,16 +55,16 @@ describe("attention.listForOwner with default-model notices", () => {
   it("drops the dismissal of a notice that no longer holds", async () => {
     const { attention, deleteDismissals } = service(
       [
-        dismissal("default-model", "agent-a:not-set"),
+        dismissal("default-model", "agent-a:no-provider"),
         dismissal("default-model", "agent-b:provider-gone"),
         dismissal("approval", "ap-1"),
       ],
-      async () => [notSet],
+      async () => [noProvider],
     );
     const list = await attention.listForOwner();
-    expect(list.defaultModels).toEqual([notSet]);
+    expect(list.defaultModels).toEqual([noProvider]);
     expect(list.dismissed.map((d) => d.id)).toEqual([
-      "agent-a:not-set",
+      "agent-a:no-provider",
       "ap-1",
     ]);
     expect(deleteDismissals).toHaveBeenCalledWith("owner-1", "default-model", [
@@ -75,14 +75,14 @@ describe("attention.listForOwner with default-model notices", () => {
   // TEST_SCENARIO: when the notices cannot be read, the feed still answers with its sessions and dismissals, and no dismissal is deleted for a notice that only failed to load.
   it("keeps the feed and the dismissals when the notices fail", async () => {
     const { attention, deleteDismissals } = service(
-      [dismissal("default-model", "agent-a:not-set")],
+      [dismissal("default-model", "agent-a:no-provider")],
       async () => {
         throw new Error("agent store unavailable");
       },
     );
     const list = await attention.listForOwner();
     expect(list.defaultModels).toEqual([]);
-    expect(list.dismissed.map((d) => d.id)).toEqual(["agent-a:not-set"]);
+    expect(list.dismissed.map((d) => d.id)).toEqual(["agent-a:no-provider"]);
     expect(deleteDismissals).not.toHaveBeenCalled();
   });
 });

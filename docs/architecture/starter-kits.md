@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -167,7 +167,7 @@ flowchart LR
 - **Initialization Session** — the first turn is an `initialization` event on the [runtime-delivery](runtime-delivery.md#event) rail, not a chat message a browser sends — so every platform-created agent gets its first session the same way.
   Apply composes the turn once the grants, schedules and Slack binding it describes exist, inserts the event, and wakes the agent; the agent-runtime opens a **regular** chat session with it — regular, not schedule-typed, so the user finds it in the default session list and can answer what it asks.
   The session it opens is marked `initialization` in its platform metadata, so the agent's chat opens it first for as long as it is the agent's most recent session — whether or not anything is held, but not when the user asked the sidebar for a new session of that agent, which keeps that open of the chat on its new-session page — and the session list badges it **Onboarding** while the kit's onboarding is pending.
-  The turn is queued before the Agent's first `hello`, so before it has a saved default, and names no model; each delivery gives it the default saved since, and holds it back while the Agent has no default model, since the runtime refuses a turn with none ([harness-config](harness-config.md#session-settings)).
+  The turn is queued before the Agent's first `hello`, so before it has a saved default, and names no model; each delivery gives it the default saved since, or the automatic model, and holds it back while the Agent has no model to run on, since the runtime refuses a turn with none ([harness-config](harness-config.md#session-settings)).
   Running once is the rail's guarantee, not the kit's: the event id `initialization:<agent>:<ts>` is deduped by the runtime's per-key ledger on the agent's own volume, a failed dispatch is redelivered until it succeeds, and none of it needs a browser open.
   Kinded creates use the same rail for their install bootstrap, and events run in order, so a kit's bootstrap lands before its initialization session opens.
   **What the session opens with is the kit's `onboarding` field**: absent, the platform-composed briefing (follow `ONBOARDING.md` when the kit has a seed, ask the user what to work on otherwise); `prompt`, that text in place of the default instruction; `command`, a harness command the kit names and the platform spells for the agent's harness (`/setup`, `/prompts:setup` on Codex) — a mechanical trigger, so a kit that needs its first turn to ask the user for something declares none and ships `ONBOARDING.md`; `false`, no event and no session — the agent starts idle the way a Template-created one did.
@@ -269,7 +269,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
 The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
-An agent whose saved default has no model, or names a model no provider it holds serves, cannot start an update: the request is refused and says to pick a model in a chat's picker, which saves the chat default.
+An agent whose saved default has no model starts it on the automatic model; one whose default names a model no provider it holds serves, or that has no model provider to run on, cannot start an update, and the request is refused with that reason.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

@@ -33,8 +33,6 @@ function kindQualifier(kinds: readonly DefaultKind[]): string {
 export function defaultModelHeadline(notice: DefaultModelNotice): string {
   const qualifier = kindQualifier(notice.kinds);
   switch (notice.state) {
-    case "not-set":
-      return `No default model${qualifier}`;
     case "no-provider":
       return "No model provider";
     case "provider-gone":
@@ -47,8 +45,6 @@ export function defaultModelHeadline(notice: DefaultModelNotice): string {
 export function defaultModelDetail(notice: DefaultModelNotice): string {
   const runs = stoppedRuns(notice.kinds);
   switch (notice.state) {
-    case "not-set":
-      return `Its ${runs} won't run until you choose one.`;
     case "no-provider":
       return `Attach a provider, then choose a model. Its ${runs} won't run until then.`;
     case "provider-gone":
@@ -64,7 +60,6 @@ export function defaultModelAction(notice: DefaultModelNotice): string {
       return "Attach a provider";
     case "changed":
       return "Change";
-    case "not-set":
     case "provider-gone":
       return "Choose a model";
   }
@@ -78,7 +73,6 @@ export function defaultModelScheduleWarning(
       return "Won’t run: no model provider";
     case "provider-gone":
       return "Won’t run: default model’s provider is gone";
-    case "not-set":
     case "changed":
       return "Won’t run: no default model";
   }

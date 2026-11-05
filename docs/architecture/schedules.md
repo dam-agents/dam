@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-03
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -202,7 +202,7 @@ Each choice is optional; an unset one takes the agent's scheduled default, which
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
 A schedule row names the profile it runs on, or its own choices where it carries them, in the picker's summary.
 Its details read the same, or the reason its profile cannot run, never the chat default the fire would not fall back to.
-With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
+With no default model saved, a fire runs on the [automatic model](harness-config.md#session-settings); with no model to run on, or a saved model on a provider the agent no longer holds, it fails with the `no-default-model` reason on its first attempt, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.

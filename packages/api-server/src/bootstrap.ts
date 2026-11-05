@@ -983,6 +983,7 @@ export async function bootstrap() {
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    ownerCatalog: ownerCatalogOf,
     resolveProfile,
     getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
