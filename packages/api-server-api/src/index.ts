@@ -865,7 +865,9 @@ export type {
   EgressRuleCreateInput,
   EgressRuleUpdateInput,
   EgressRulesService,
+  PlatformRuleState,
 } from "./modules/egress-rules/types.js";
+export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,
@@ -1174,9 +1176,14 @@ export {
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
 export type {
+  AgentEnvironmentMembersView,
   AgentEnvironmentView,
+  EnvironmentAgentLookup,
   EnvironmentEndpoint,
+  EnvironmentMemberAgent,
   EnvironmentView,
+  MembersUpdate,
+  SharedEnvironmentView,
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,

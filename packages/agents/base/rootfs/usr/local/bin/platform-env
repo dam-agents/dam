@@ -78,9 +78,15 @@ def mcp(tool, arguments):
     return json.loads(content[0].get("text", "null"))
 
 
+def own_environments():
+    # Environments shared with this agent are listed too, marked; only its own
+    # are reached over the link.
+    return [e for e in mcp("list_environments", {}) or [] if not e.get("sharedWithYou")]
+
+
 def find(host):
     name = host[4:] if host.startswith("env-") else host
-    for env in mcp("list_environments", {}) or []:
+    for env in own_environments():
         if env["name"] == name or env["id"] == name:
             return env
     fail(f"you own no Environment named {name}; platform-env list shows yours")
@@ -173,7 +179,7 @@ def main(argv):
     if command in ("-h", "--help"):
         print(__doc__.strip())
     elif command == "list" and len(argv) == 1:
-        for env in mcp("list_environments", {}) or []:
+        for env in own_environments():
             urls = "  ".join(
                 f"{e['name']}={e.get('url') or ':' + str(e['port'])}"
                 for e in env["endpoints"]

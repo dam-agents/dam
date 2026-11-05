@@ -908,15 +908,22 @@
     {
       "idx": 129,
       "version": "7",
-      "when": 1793792490488,
-      "tag": "0129_ui_events",
+      "when": 1793792310718,
+      "tag": "0129_agent_environment_access",
       "breakpoints": true
     },
     {
       "idx": 130,
       "version": "7",
-      "when": 1793792492354,
-      "tag": "0130_ui_events_views",
+      "when": 1793918367050,
+      "tag": "0130_ui_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1793918368823,
+      "tag": "0131_ui_events_views",
       "breakpoints": true
     }
   ]

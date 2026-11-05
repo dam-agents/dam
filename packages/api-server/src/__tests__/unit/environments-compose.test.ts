@@ -39,6 +39,7 @@ function world(
   cluster: ListedAgent[] = [],
 ) {
   const deletedAgents: [string, string][] = [];
+  const forgotten: string[] = [];
   const events: { agentId: string; command: string }[] = [];
   const repo: EnvironmentsRepository = {
     insert: async (r) => void rows.push(r),
@@ -100,6 +101,7 @@ function world(
       },
       listAgents: async () => cluster,
       editorsOf: async () => [],
+      describeAgent: async () => null,
     },
     {
       ofAgent: async () => [],
@@ -108,9 +110,19 @@ function world(
       ofEnvironment: async () => [],
       ofEnvironments: async (ids) => new Map(ids.map((id) => [id, []])),
       setOfEnvironment: async () => {},
+      agentsOfAgent: async () => [],
+      setAgentsOfAgent: async () => {},
+      agentsOfEnvironment: async () => [],
+      agentsOfEnvironments: async (ids) => new Map(ids.map((id) => [id, []])),
+      setAgentsOfEnvironment: async () => {},
+      environmentsSharedWith: async () => [],
+      recordVisit: async () => {},
+      lastOpened: async () => new Map(),
+      forgetMemberAgent: async (id) => void forgotten.push(id),
+      listMemberAgentIds: async () => ["agent-qa"],
     },
   );
-  return { rows, deletedAgents, events, composition };
+  return { rows, deletedAgents, events, composition, forgotten };
 }
 
 describe("the cleanup source", () => {
@@ -128,6 +140,7 @@ describe("the cleanup source", () => {
         "agent-env2",
         "agent-other",
         "agent-owning",
+        "agent-qa",
         "agent-someone",
       ].sort(),
     );
@@ -138,6 +151,13 @@ describe("the cleanup source", () => {
       ["alice", "agent-env2"],
     ]);
     expect(rows.map((r) => r.agentId)).toEqual(["agent-other"]);
+  });
+
+  // TEST_SCENARIO: a deleted Agent is taken off every list that names it, so a later Agent can never be let in by a list entry it did not earn.
+  it("takes a deleted Agent off every list", async () => {
+    const { composition, forgotten } = world([]);
+    await composition.cleanupSource.cleanup("agent-qa");
+    expect(forgotten).toEqual(["agent-qa"]);
   });
 
   // TEST_SCENARIO: a deleted Environment's own Agent is already gone; only its row is left to delete, and no other Agent is touched.

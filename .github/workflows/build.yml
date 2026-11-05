@@ -182,10 +182,14 @@ jobs:
       - run: |
           find ~/.cache/mise/task-artifacts -type f -exec touch -a -d @0 {} + 2>/dev/null || true
           touch "$RUNNER_TEMP/check-start"
+      # mise runs eight tasks at a time by default, and four cores cannot feed
+      # eight compilers and test suites: the tests that wait on a clock (a lock
+      # held for 2s, a process that must start, vitest's 5s timeout) then fail
+      # on a machine that only lacked a core.
       - env:
           TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          if [ "$TAG" = true ]; then mise run check; else mise run --continue-on-error check ::: test; fi
+          if [ "$TAG" = true ]; then mise run --jobs "$(nproc)" check; else mise run --jobs "$(nproc)" --continue-on-error check ::: test; fi
       # platform-init's tests that need root (loop-mounted btrfs and ext4),
       # which the sandboxed, cached `test` cannot run. Only when the Rust cache
       # was needed: otherwise `test` replays, and this step alone would fill

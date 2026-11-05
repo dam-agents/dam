@@ -62,6 +62,10 @@ export function registerEnvironmentTools(
   deps: { environments: OwningAgentEnvironments },
 ): void {
   const envs = deps.environments;
+  if (!deps.environments.manage) {
+    registerSharedEnvironmentsTool(server, envs);
+    return;
+  }
 
   server.tool(
     "create_environment",
@@ -103,9 +107,10 @@ export function registerEnvironmentTools(
 
   server.tool(
     "list_environments",
-    "List your Environments: name, endpoints and their addresses, how many people may open each besides your owner, when they expire, and whether each runs or sleeps.",
+    "List your Environments — name, endpoints and their addresses, how many people may open each besides your owner, when they expire, and whether each runs or sleeps — and after them the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open a shared one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
     {},
-    () => run(async () => json(await envs.list())),
+    () =>
+      run(async () => json([...(await envs.list()), ...(await envs.shared())])),
   );
 
   server.tool(
@@ -157,5 +162,18 @@ export function registerEnvironmentTools(
         await envs.delete(args.name);
         return json({ deleted: args.name });
       }),
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the one tool an Agent whose owner does not have Environments gets: the Environments other agents' owners shared with it, so a listed agent finds them whatever its own owner turned on.
+function registerSharedEnvironmentsTool(
+  server: McpServer,
+  envs: Pick<OwningAgentEnvironments, "shared">,
+): void {
+  server.tool(
+    "list_environments",
+    "List the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
+    {},
+    () => run(async () => json(await envs.shared())),
   );
 }

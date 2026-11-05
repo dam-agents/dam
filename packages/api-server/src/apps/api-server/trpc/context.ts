@@ -94,6 +94,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     outageAlerts,
     wrapperFrameSender,
     presetSeeder,
+    platformAccess,
     trustedHosts,
     agentCleanupHooks,
     environmentsFor,
@@ -387,6 +388,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       l7Hosts,
       presetSeeder,
       trustedHosts,
+      platformAccess,
     });
     const { service: approvals } = composeApprovalsService({
       db,

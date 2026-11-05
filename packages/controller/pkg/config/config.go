@@ -54,6 +54,9 @@ type Config struct {
 	TelemetryCollectorPort int
 	ObjectStoreHost        string
 	ObjectStorePort        int
+	// UNIT_BOUNDARY_DESCRIPTION: the install's environments domain, empty when it serves no Environments, and the api-server's public port, where its Environment gate answers; an agent's gateway sends that domain there with the Agent's key.
+	EnvironmentsDomain string
+	APIServerPort      int
 
 	GatewayUpstreamTrustBundle string
 	ExtraTrustedCAs            string
@@ -272,6 +275,8 @@ func LoadFromEnv() (*Config, error) {
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
+	cfg.EnvironmentsDomain = strings.ToLower(strings.TrimSpace(os.Getenv("PLATFORM_ENVIRONMENTS_DOMAIN")))
+	cfg.APIServerPort = envOrDefaultInt("PLATFORM_APISERVER_PORT", 4000)
 	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
 	if extra := os.Getenv("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS"); strings.TrimSpace(extra) != "" {
 		extras, err := ExtraTrustedCAs(extra)
@@ -335,6 +340,11 @@ func (c *Config) ExtAuthzServiceName(instanceID string) string {
 
 func (c *Config) ExtAuthzHostFor(instanceID string) string {
 	return fmt.Sprintf("%s.%s.svc.cluster.local", c.ExtAuthzServiceName(instanceID), c.ReleaseNamespace)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the api-server's public Service, the one the environments Ingress sends every Environment address to.
+func (c *Config) APIServerHost() string {
+	return fmt.Sprintf("%s-apiserver.%s.svc.cluster.local", c.ReleaseName, c.ReleaseNamespace)
 }
 
 func (c *Config) HarnessHost() string {
