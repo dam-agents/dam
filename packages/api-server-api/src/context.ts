@@ -125,6 +125,8 @@ export interface ApiContext {
   assistants: AssistantsService;
   /* UNIT_BOUNDARY_DESCRIPTION: gives this person their assistant if the install offers one and they have accepted the Terms of Use. Called when a transport attaches, and again after a first acceptance or after the experimental switch is turned on, because neither of those re-creates the context. */
   provisionAssistant: () => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: deletes this person's assistant and its data, the way any Agent delete does, when they switch the feature off for themselves; the record is forgotten so opting back in starts fresh. A person with none is a no-op. */
+  removeAssistant: () => Promise<void>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

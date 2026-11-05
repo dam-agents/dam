@@ -134,6 +134,24 @@ function rowStore() {
     },
     markNoticeSeen: async () => undefined,
     resetUsed: async () => undefined,
+    forgetAll: async (
+      owner: string,
+      fromAgentId: string,
+      toAgentId: string,
+    ) => {
+      const row = rows.get(owner);
+      if (!row || row.agentId !== fromAgentId) return;
+      rows.set(owner, {
+        ...row,
+        incarnation: row.incarnation + 1,
+        agentId: toAgentId,
+        state: "creating",
+        steps: [],
+        used: false,
+        renamed: null,
+        noticeSeen: false,
+      });
+    },
     markUsed: async () => undefined,
     forgetByAgent: async (agentId: string) => {
       for (const row of rows.values())
@@ -494,6 +512,34 @@ describe("assistant provisioning", () => {
     ]);
     expect(w.state.ran).toEqual(["env", "egress", "instructions", "grants"]);
     expect(w.store.rows.get(ALICE)).toMatchObject({
+      state: "ready",
+      steps: ["env", "egress", "instructions", "grants"],
+    });
+  });
+
+  // TEST_SCENARIO: opting in again after turning the assistant off: the record was forgotten, so the next provisioning makes a new Agent under the new incarnation, from nothing initialized, and the old Agent is never reused.
+  it("makes a fresh assistant when the person opts in again", async () => {
+    const w = world();
+    await w.provisioner.ensure();
+    await w.store.repo.forgetAll(ALICE, FIRST, SECOND);
+    w.state.agents = [];
+
+    await w.provisioner.ensure();
+    expect(w.state.created.map((c) => c.id)).toEqual([FIRST, SECOND]);
+    expect(w.state.created[1]).toMatchObject({ id: SECOND, initDone: [] });
+    expect(w.state.ran).toEqual([
+      "env",
+      "egress",
+      "instructions",
+      "grants",
+      "env",
+      "egress",
+      "instructions",
+      "grants",
+    ]);
+    expect(w.store.rows.get(ALICE)).toMatchObject({
+      agentId: SECOND,
+      incarnation: 2,
       state: "ready",
       steps: ["env", "egress", "instructions", "grants"],
     });

@@ -22,6 +22,7 @@ const VERSION = "2026-01-01";
 
 function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   const provisionAssistant = vi.fn(async () => undefined);
+  const removeAssistant = vi.fn(async () => undefined);
   const accept = vi.fn(async () =>
     (opts.signUpsOpen ?? true)
       ? { ok: true as const, value: undefined }
@@ -30,6 +31,7 @@ function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   const ctx = {
     user: person(),
     provisionAssistant,
+    removeAssistant,
     terms: {
       current: () => ({ version: VERSION, text: "terms", hash: "hash" }),
       latestAcceptance: async () =>
@@ -44,7 +46,12 @@ function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
     },
   } as unknown as ApiContext;
   markTermsProven(ctx);
-  return { caller: appRouter.createCaller(ctx), provisionAssistant, accept };
+  return {
+    caller: appRouter.createCaller(ctx),
+    provisionAssistant,
+    removeAssistant,
+    accept,
+  };
 }
 
 describe("handing a person their assistant without a new context", () => {
@@ -59,6 +66,27 @@ describe("handing a person their assistant without a new context", () => {
       closed.caller.terms.accept({ version: VERSION }),
     ).rejects.toThrow(/Sign-ups are closed/);
     expect(closed.provisionAssistant).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: switching the assistant off deletes it, so the flag change is what runs the removal; switching it on provisions, and any other feature's switch does neither. An install's mode changing is not a flag change, so it deletes nothing.
+  it("deletes the assistant only when the person switches it off", async () => {
+    const off = world();
+    await off.caller.features.setFlag({
+      feature: "dambledore",
+      enabled: false,
+    });
+    expect(off.removeAssistant).toHaveBeenCalledTimes(1);
+    expect(off.provisionAssistant).not.toHaveBeenCalled();
+
+    const on = world();
+    await on.caller.features.setFlag({ feature: "dambledore", enabled: true });
+    expect(on.provisionAssistant).toHaveBeenCalledTimes(1);
+    expect(on.removeAssistant).not.toHaveBeenCalled();
+
+    const other = world();
+    await other.caller.features.setFlag({ feature: "hermes", enabled: false });
+    expect(other.removeAssistant).not.toHaveBeenCalled();
+    expect(other.provisionAssistant).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: a stale acceptance is refused before anything is stored, so it provisions nothing either.
@@ -119,6 +147,7 @@ describe("provisioning before admission", () => {
       clearRename: async () => undefined,
       markNoticeSeen: async () => undefined,
       resetUsed: async () => undefined,
+      forgetAll: async () => undefined,
       markUsed: async () => undefined,
       forgetByAgent: async () => undefined,
       listAgentIds: async () => [],

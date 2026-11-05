@@ -17,9 +17,11 @@ export const featuresRouter = t.router({
     .input(featureSetFlagInputSchema)
     .mutation(async ({ ctx, input }) => {
       const flags = await ctx.features.setFlag(input.feature, input.enabled);
-      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant on provisions it now; the caller's context is not made again, so nothing else would.
-      if (input.feature === "dambledore" && input.enabled)
-        await ctx.provisionAssistant();
+      if (input.feature === "dambledore") {
+        // UNIT_BOUNDARY_DESCRIPTION: switching the assistant on provisions it now, and switching it off deletes it and its data; the caller's context is not made again, so nothing else would. Only this switch deletes anything — an install's mode changing never does.
+        if (input.enabled) await ctx.provisionAssistant();
+        else await ctx.removeAssistant();
+      }
       return flags;
     }),
 });

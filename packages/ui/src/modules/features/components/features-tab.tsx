@@ -8,8 +8,10 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
+import { useStore } from "../../../store.js";
 import { useAssistantOn } from "../../assistants/api/assistant-state.js";
 import { AssistantOnboardingReset } from "../../assistants/components/assistant-onboarding-reset.js";
+import { runTurnOffAssistant } from "../../assistants/lib/turn-off-assistant.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
@@ -124,10 +126,25 @@ export function FeaturesTab() {
   const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
-  const offeredRows = featureRows(getBrand()).filter((row) =>
+  const brand = getBrand();
+  const offeredRows = featureRows(brand).filter((row) =>
     isFeatureOffered(row.id, install),
   );
   const assistantOn = useAssistantOn();
+  const showConfirm = useStore((s) => s.showConfirm);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: turning the assistant off for one person is a delete, so it asks first and only then changes the flag; any other feature's switch changes at once. */
+  const toggle = async (row: FeatureRow, enabled: boolean) => {
+    if (row.id !== "dambledore" || enabled) {
+      setFeature.mutate({ feature: row.id, enabled });
+      return;
+    }
+    await runTurnOffAssistant({
+      assistantName: brand.assistantName,
+      confirm: showConfirm,
+      turnOff: () => setFeature.mutateAsync({ feature: row.id, enabled }),
+    });
+  };
 
   return (
     <div>
@@ -142,9 +159,7 @@ export function FeaturesTab() {
             key={row.id}
             row={row}
             enabled={flags?.[row.id] ?? false}
-            onToggle={(enabled) =>
-              setFeature.mutate({ feature: row.id, enabled })
-            }
+            onToggle={(enabled) => void toggle(row, enabled)}
           />
         ))}
         {/* UNIT_BOUNDARY_DESCRIPTION: the reset sits directly under the assistant's own row, and only while the person has the assistant on. */}

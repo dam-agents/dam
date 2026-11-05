@@ -45,6 +45,16 @@ export interface AssistantsRepository {
   markNoticeSeen(owner: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: forgets that the assistant was ever used, and nothing else — not the rename it made room with, not the notice, and never the Agent itself. */
   resetUsed(owner: string): Promise<void>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: forgets the assistant entirely after its Agent was
+   * deleted: the next incarnation's Agent id, nothing initialized, never used,
+   * and no rename record or notice — the Agent that was renamed stays as it is.
+   */
+  forgetAll(
+    owner: string,
+    fromAgentId: string,
+    toAgentId: string,
+  ): Promise<void>;
   markUsed(agentId: string): Promise<void>;
   forgetByAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -210,6 +220,27 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         })
         .where(
           and(eq(assistants.owner, owner), eq(assistants.agentId, agentId)),
+        );
+    },
+
+    async forgetAll(owner, fromAgentId, toAgentId) {
+      await db
+        .update(assistants)
+        .set({
+          incarnation: sql`${assistants.incarnation} + 1`,
+          agentId: toAgentId,
+          state: "creating",
+          initSteps: [],
+          usedAt: null,
+          renamedAgentId: null,
+          renamedFrom: null,
+          renamedTo: null,
+          renamedDoneAt: null,
+          noticeSeenAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(eq(assistants.owner, owner), eq(assistants.agentId, fromAgentId)),
         );
     },
 
