@@ -7,10 +7,12 @@ import {
   turnOffBody,
 } from "../../modules/assistants/lib/turn-off-assistant.js";
 
-function world(confirmed: boolean) {
+function world(confirmed: boolean, opts: { fails?: boolean } = {}) {
   const steps: string[] = [];
+  const reports: string[] = [];
   return {
     steps,
+    reports,
     deps: {
       assistantName: "Dambledore",
       confirm: async (
@@ -23,6 +25,10 @@ function world(confirmed: boolean) {
       },
       turnOff: async () => {
         steps.push("turn-off");
+        if (opts.fails === true) throw new Error("the delete was refused");
+      },
+      reportFailure: (message: string) => {
+        reports.push(message);
       },
     },
   };
@@ -41,6 +47,14 @@ describe("turning the assistant off", () => {
     const w = world(false);
     expect(await runTurnOffAssistant(w.deps)).toBe(false);
     expect(w.steps).toEqual([`confirm:${TURN_OFF_TITLE}:Turn off`]);
+  });
+
+  // TEST_SCENARIO: the delete could not finish — the owner's provisioning lock was held, or the server refused — so the flag is not switched, the switch stays on, and the person is told to try again.
+  it("keeps the switch on and says so when the turn-off fails", async () => {
+    const w = world(true, { fails: true });
+    expect(await runTurnOffAssistant(w.deps)).toBe(false);
+    expect(w.steps).toEqual([`confirm:${TURN_OFF_TITLE}:Turn off`, "turn-off"]);
+    expect(w.reports).toEqual(["Couldn't turn off Dambledore. Try again."]);
   });
 
   // TEST_SCENARIO: the dialog says what turning it off deletes, naming the install's own assistant.

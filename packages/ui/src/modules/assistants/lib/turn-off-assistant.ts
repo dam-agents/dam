@@ -19,6 +19,8 @@ export async function runTurnOffAssistant(deps: {
     options: { confirmLabel: string },
   ) => Promise<boolean>;
   turnOff: () => Promise<unknown>;
+  /* UNIT_BOUNDARY_DESCRIPTION: told when the delete could not finish, so the person hears why the switch stayed on; the flag is not switched in that case, so the assistant is still theirs to use. */
+  reportFailure: (message: string) => void;
 }): Promise<boolean> {
   const confirmed = await deps.confirm(
     turnOffBody(deps.assistantName),
@@ -26,6 +28,11 @@ export async function runTurnOffAssistant(deps: {
     { confirmLabel: "Turn off" },
   );
   if (!confirmed) return false;
-  await deps.turnOff();
-  return true;
+  try {
+    await deps.turnOff();
+    return true;
+  } catch {
+    deps.reportFailure(`Couldn't turn off ${deps.assistantName}. Try again.`);
+    return false;
+  }
 }

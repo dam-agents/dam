@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useAssistantOn } from "../../assistants/api/assistant-state.js";
 import { AssistantOnboardingReset } from "../../assistants/components/assistant-onboarding-reset.js";
@@ -143,6 +144,7 @@ export function FeaturesTab() {
       assistantName: brand.assistantName,
       confirm: showConfirm,
       turnOff: () => setFeature.mutateAsync({ feature: row.id, enabled }),
+      reportFailure: (message) => emitToast({ kind: "error", message }),
     });
   };
 

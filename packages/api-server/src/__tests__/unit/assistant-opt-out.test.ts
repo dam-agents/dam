@@ -5,7 +5,10 @@ import type {
   AssistantsRepository,
 } from "../../modules/assistants/infrastructure/assistants-repository.js";
 import { assistantAgentId } from "../../modules/assistants/domain/agent-id.js";
-import { removeAssistant } from "../../modules/assistants/services/assistant-removal.js";
+import {
+  reconcileOptOut,
+  removeAssistant,
+} from "../../modules/assistants/services/assistant-removal.js";
 
 const ALICE = "alice";
 const BOB = "bob";
@@ -88,20 +91,29 @@ function world() {
       lock.held.delete(owner);
     }
   };
-  const removal = (owner: string) =>
+  const deleteAgent = async (id: string) => {
+    if (!agents.has(id)) return;
+    agents.delete(id);
+    deleted.push(id);
+  };
+  const removal = (owner: string, opts: Record<string, unknown> = {}) =>
     removeAssistant({
       repo,
-      agents: {
-        delete: async (id: string) => {
-          if (!agents.has(id)) return;
-          agents.delete(id);
-          deleted.push(id);
-        },
-      } as never,
+      agents: { delete: deleteAgent } as never,
       withLock,
       owner,
-    });
-  return { rows, agents, deleted, removal, lock };
+      sleep: async () => undefined,
+      ...opts,
+    } as unknown as Parameters<typeof removeAssistant>[0]);
+  const reconcile = (owner: string) =>
+    reconcileOptOut({
+      repo,
+      agents: { delete: deleteAgent } as never,
+      withLock,
+      owner,
+      sleep: async () => undefined,
+    } as unknown as Parameters<typeof reconcileOptOut>[0]);
+  return { rows, agents, deleted, removal, reconcile, lock };
 }
 
 describe("switching the assistant off for one person", () => {
@@ -144,12 +156,50 @@ describe("switching the assistant off for one person", () => {
     expect(w.rows.has("carol")).toBe(false);
   });
 
-  // TEST_SCENARIO: it runs under the owner's provisioning lock, so a create already holding it wins and the removal leaves everything as it was — the caller's next request tries again.
-  it("does nothing while the owner's provisioning lock is held", async () => {
+  // TEST_SCENARIO: a turn-off that meets the owner's provisioning lock waits for it briefly instead of leaving the delete undone: once the lock frees, the assistant goes and the record is forgotten.
+  it("waits for the lock and then deletes", async () => {
     const w = world();
     w.lock.held.add(ALICE);
-    expect(await w.removal(ALICE)).toEqual({ ran: false });
+    let waits = 0;
+    const removal = w.removal(ALICE, {
+      sleep: async () => {
+        waits += 1;
+        if (waits >= 2) w.lock.held.delete(ALICE);
+      },
+    } as never);
+
+    expect(await removal).toEqual({ ran: true, value: undefined });
+    expect(waits).toBe(2);
+    expect(w.deleted).toEqual([ASSISTANT]);
+    expect(w.rows.get(ALICE)?.used).toBe(false);
+  });
+
+  // TEST_SCENARIO: a lock that never frees is reported rather than waited on for ever, so the caller can tell the person the switch stayed on and the flag is never switched off behind an assistant that is still there.
+  it("gives up on a lock that never frees", async () => {
+    const w = world();
+    w.lock.held.add(ALICE);
+    expect(await w.removal(ALICE, { lockAttempts: 2 })).toEqual({
+      ran: false,
+    });
     expect(w.deleted).toEqual([]);
     expect(w.rows.get(ALICE)?.used).toBe(true);
+  });
+
+  // TEST_SCENARIO: the next admitted request finishes an opt-out that could not take the lock: the record and its Agent are still there, so the reconciliation deletes them; a request while the lock is still held leaves it to the next one.
+  it("finishes the delete on the next request", async () => {
+    const w = world();
+    w.lock.held.add(ALICE);
+    await w.reconcile(ALICE);
+    expect(w.deleted).toEqual([]);
+
+    w.lock.held.delete(ALICE);
+    await w.reconcile(ALICE);
+    expect(w.deleted).toEqual([ASSISTANT]);
+    expect(w.rows.get(ALICE)).toMatchObject({
+      incarnation: 2,
+      agentId: assistantAgentId(ALICE, 2),
+      used: false,
+      steps: [],
+    });
   });
 });

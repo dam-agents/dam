@@ -9,6 +9,7 @@ import {
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createAssistantsRepository } from "../../../modules/assistants/index.js";
 import { removeAssistant as removeAssistantForOwner } from "../../../modules/assistants/services/assistant-removal.js";
+import { assistantRequestWork } from "../../../modules/assistants/domain/on-request.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -334,6 +335,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       modes: config.featureModes,
     });
+    const assistantOn = async () => {
+      const mode = config.featureModes.dambledore;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).dambledore);
+    };
     const { assistants, provisioner: assistantProvisioner } =
       composeAssistantsForOwner({
         db,
@@ -341,12 +348,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         assistantName: config.brand.assistantName,
         brandName: config.brand.name,
         admitted: () => isTermsAccepted(user.sub),
-        enabled: async () => {
-          const mode = config.featureModes.dambledore;
-          if (mode === "on") return true;
-          if (mode !== "experimental") return false;
-          return featureOnForUser(mode, (await features.flags()).dambledore);
-        },
+        enabled: assistantOn,
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
         enrolled: () => gettingStarted.ensureEnrolled(user.sub),
@@ -563,15 +565,23 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. A person the feature is off for is not forgotten either: a turn-off that could not take the owner's lock finishes here, so nobody is left opted out with an assistant they may neither use nor delete. An install whose mode is off reads nothing at all. */
     const provisionAssistant = async () => {
-      if (config.featureModes.dambledore === "off") return;
+      const mode = config.featureModes.dambledore;
+      if (mode === "off") return;
       if (user.keyId !== undefined || user.agentIds !== "*") return;
       if (user.actingEditor !== undefined) return;
-      await assistantProvisioner.ensure();
+      const work = assistantRequestWork(
+        mode,
+        mode === "on" || (await assistantOn()),
+      );
+      if (work === "none") return;
+      if (!(await isTermsAccepted(user.sub))) return;
+      if (work === "provision") await assistantProvisioner.ensure();
+      else await removeAssistant({ lockAttempts: 1 });
     };
 
-    const removeAssistant = async () => {
+    const removeAssistant = async (opts?: { lockAttempts?: number }) => {
       if (user.keyId !== undefined || user.agentIds !== "*") return;
       if (user.actingEditor !== undefined) return;
       try {
@@ -580,6 +590,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           agents,
           withLock: assistantOwnerLock.withLock,
           owner: user.sub,
+          ...(opts?.lockAttempts === undefined
+            ? {}
+            : { lockAttempts: opts.lockAttempts }),
         });
       } catch (err) {
         getLogger().warn({ err, owner: user.sub }, "assistant.remove_failed");
