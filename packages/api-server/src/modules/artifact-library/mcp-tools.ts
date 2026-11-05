@@ -143,7 +143,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact_download_url",
-    "PREFERRED way to get an artifact's bytes INTO your sandbox when your runtime can make outbound HTTP requests (e.g. curl) — works for any artifact in the owner's library, text or binary, any size. Returns a short-lived presigned URL: GET it and save the response to a file. Pass `version` to fetch a past version. (For small text artifacts get_artifact already returns the source inline.)",
+    "PREFERRED way to get an artifact's bytes INTO your sandbox when your runtime can make outbound HTTP requests (e.g. curl) — works for any artifact you published, text or binary, any size. Returns a short-lived presigned URL: GET it and save the response to a file. Pass `version` to fetch a past version. (For small text artifacts get_artifact already returns the source inline.)",
     {
       id: z.string().min(1),
       version: z
@@ -195,29 +195,27 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "list_artifacts",
-    "List artifacts in the owner's library (metadata only). Filter by folder or search by title/file name.",
+    "List the artifacts you published (metadata only); those of your owner's other agents and the owner's uploads are not yours to see. Filter by folder or search by title/file name.",
     {
       folder_id: z.string().optional(),
       search: z.string().optional(),
       mine_only: z
         .boolean()
         .optional()
-        .describe("true = only artifacts created by THIS agent."),
+        .describe(
+          "Kept for older callers: the list holds only your own artifacts either way.",
+        ),
     },
-    ({ folder_id, search, mine_only }) =>
+    ({ folder_id, search }) =>
       run(async () => {
-        const artifacts = await lib.list({
-          folderId: folder_id,
-          search,
-          ...(mine_only ? { agentId: deps.agentId } : {}),
-        });
+        const artifacts = await lib.list({ folderId: folder_id, search });
         return json(artifacts.map(toAgentArtifact));
       }),
   );
 
   server.tool(
     "get_artifact",
-    "Get an artifact's metadata and (for text kinds) its full source content. A reference of the form `platform://artifacts/<id>` names an artifact — pass the `<id>` part as this tool's `id`. For binary or large artifacts use create_artifact_download_url instead.",
+    "Get an artifact you published: its metadata and (for text kinds) its full source content. A reference of the form `platform://artifacts/<id>` names an artifact — pass the `<id>` part as this tool's `id`. For binary or large artifacts use create_artifact_download_url instead.",
     {
       id: z.string().min(1),
       version: z.number().int().positive().optional(),
@@ -338,14 +336,14 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "list_artifact_folders",
-    "List the owner's artifact folders with artifact counts. Call it before create_artifact, so a new artifact goes into the folder that fits it.",
+    "List the owner's artifact folders, each with how many of your artifacts it holds. Call it before create_artifact, so a new artifact goes into the folder that fits it.",
     {},
     () => run(async () => json(await lib.listFolders())),
   );
 
   server.tool(
     "update_artifact_folder",
-    "Rename a folder.",
+    "Rename a folder that holds only artifacts you published.",
     {
       id: z.string().min(1),
       name: z.string().min(1).max(200).optional(),
@@ -356,7 +354,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "delete_artifact_folder",
-    "Delete a folder. Artifacts inside are NOT deleted — they become ungrouped.",
+    "Delete a folder that holds only artifacts you published. Artifacts inside are NOT deleted — they become ungrouped.",
     { id: z.string().min(1) },
     ({ id }) =>
       run(async () => {

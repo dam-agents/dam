@@ -46,6 +46,7 @@ import {
 } from "./services/reported-target-reap.js";
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
+import { createInvocationStart } from "./services/invocation-start.js";
 import {
   createScriptOutputs,
   type OutputBlobStore,
@@ -101,6 +102,7 @@ export function composeInvocationsForOwner(opts: {
   spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
+  readStartWait?: (agentId: string) => Promise<string | null>;
 }): InvocationsService {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationsService({
@@ -122,6 +124,7 @@ export function composeInvocationsForOwner(opts: {
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
+    ...(opts.readStartWait ? { readStartWait: opts.readStartWait } : {}),
   });
 }
 
@@ -155,6 +158,7 @@ export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  readStartWait: (agentId: string) => Promise<string | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   runsScripts: (agentId: string) => Promise<boolean | null>;
@@ -174,6 +178,7 @@ export function composeInvocationLivenessSweep(opts: {
       opts.openCalls,
     ),
     readTargetRestart: opts.readTargetRestart,
+    readStartWait: opts.readStartWait,
     hasAgent: opts.hasAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
     runsScripts: opts.runsScripts,
@@ -216,6 +221,13 @@ export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
     driverResolution: createDriverResolutionAdapter(db),
     links: createInvocationLinks(db),
   });
+}
+
+export function createInvocationStartAdapter(
+  db: Db,
+  log: (msg: string) => void,
+): ReturnType<typeof createInvocationStart> {
+  return createInvocationStart({ repo: createInvocationsRepository(db), log });
 }
 
 export function createInvocationTasksAdapter(db: Db): InvocationTasks {

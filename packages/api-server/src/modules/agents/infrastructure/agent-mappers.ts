@@ -46,6 +46,7 @@ import {
   MACHINE_STOPPING_REASON,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
+  READY_REASONS_AWAITING_ROOM,
   DISABLED_KEY,
   STOP_REQUESTED_KEY,
   VERSION,
@@ -128,6 +129,7 @@ export interface InfraAgent {
   disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  startWaitMessage?: string;
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
@@ -344,6 +346,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET
         ? ready.message || undefined
         : undefined,
+    startWaitMessage:
+      ready?.status === "False" &&
+      READY_REASONS_AWAITING_ROOM.has(ready.reason ?? "")
+        ? ready.message || undefined
+        : undefined,
     error,
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
@@ -430,6 +437,7 @@ export function assembleAgent(
     disabled: infra.disabled,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
+    startWaitMessage: infra.startWaitMessage,
     ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),
     podTerminationReason: infra.podTerminationReason,
     podTerminationCode: infra.podTerminationCode,

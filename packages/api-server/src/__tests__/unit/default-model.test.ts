@@ -1,11 +1,14 @@
-// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with no default model fails with a reason, and an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
+// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with nothing saved runs on the automatic model of its providers and fails only when none lists a model, and an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
 import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
-import type { HarnessCatalog, SessionPair } from "api-server-api";
+import type {
+  HarnessCatalog,
+  ProviderCatalogView,
+  SessionPair,
+} from "api-server-api";
 import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
 import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
-import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
 import { createScheduleModelForFire } from "../../modules/harness-config/services/schedule-model.js";
 import {
@@ -51,31 +54,139 @@ const IBM = {
   templateId: "ibm-litellm",
 };
 
+const nothingSaved = {
+  chat: null,
+  channel: null,
+  scheduled: null,
+  chatProfileId: null,
+};
+
+const listed = (
+  connectionId: string,
+  alias: string,
+  upstreamIds: string[],
+): ProviderCatalogView =>
+  ({
+    connectionId,
+    alias,
+    status: "listed",
+    models: upstreamIds.map((upstreamId) => ({
+      name: `${alias}/${upstreamId}`,
+      upstreamId,
+      harnesses: ["claude-code"],
+    })),
+  }) as unknown as ProviderCatalogView;
+
 describe("a fire on an Agent with no default model", () => {
-  const deps = (saved: SessionPair | null) => ({
+  const deps = (
+    saved: SessionPair | null,
+    providers: ProviderCatalogView[] = [
+      listed("anth", "anthropic", ["claude-sonnet-5-5", "claude-opus-5-5"]),
+    ],
+    chatProfileId: string | null = null,
+  ) => ({
     pairRepo: {
       read: async () => saved,
+      readSaved: async () => ({ ...nothingSaved, chatProfileId }),
       write: async () => {},
-      grantedProviders: async () => [ANTHROPIC],
+      grantedProviders: async () => [ANTHROPIC, IBM],
     },
     catalog: CATALOG,
     specHarness: async () => undefined,
     getCapabilities: async () => ROUTED,
+    ownerCatalog: async () => ({ providers }),
   });
 
-  // TEST_SCENARIO: nothing is saved, so no provider or model is the person's choice; the fire fails with the reason instead of running on one the platform picked.
-  it("fails with the missing default instead of guessing one", async () => {
+  // TEST_SCENARIO: nothing is saved, yet the agent holds a provider that lists models; the fire runs on the platform's preferred model there instead of failing for lack of a saved default.
+  it("runs on the automatic model", async () => {
+    expect(await resolveFirePair(deps(null), "a", "scheduled", {})).toEqual({
+      harness: "claude-code",
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
+  });
+
+  // TEST_SCENARIO: no provider lists a preferred model, so the run takes the first model the first provider lists rather than fail.
+  it("falls back to the first listed model", async () => {
+    expect(
+      await resolveFirePair(
+        deps(null, [listed("lite", "ibm", ["aws/claude-haiku-4-5"])]),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toMatchObject({ provider: "lite", model: "ibm/aws/claude-haiku-4-5" });
+  });
+
+  // TEST_SCENARIO: a "not set" default names its provider, so the automatic model comes from that provider even where another one lists the preferred model.
+  it("keeps a not-set default on its provider", async () => {
+    expect(
+      await resolveFirePair(
+        deps({ harness: "claude-code", provider: "lite", model: null }, [
+          listed("anth", "anthropic", ["claude-opus-5-5"]),
+          listed("lite", "ibm", ["aws/claude-sonnet-5-5"]),
+        ]),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toMatchObject({ provider: "lite", model: "ibm/aws/claude-sonnet-5-5" });
+  });
+
+  // TEST_SCENARIO: a "not set" default whose provider the agent no longer holds pins nothing, so the run takes the automatic model of the providers it does hold, as the defaults the runtime follows do.
+  it("drops a not-set pin to a provider the agent no longer holds", async () => {
+    expect(
+      await resolveFirePair(
+        deps({ harness: "claude-code", provider: "gone", model: null }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toMatchObject({ provider: "anth", model: "anthropic/claude-opus-5-5" });
+  });
+
+  // TEST_SCENARIO: the chat default names a profile that cannot run here, which reads as no default; it is the owner's choice, so the fire is refused rather than run on the automatic model, and the person's view shows no model.
+  it("refuses a chat profile that cannot run instead of replacing it", async () => {
+    const refused = deps(null, undefined, "profile-1");
     await expect(
-      resolveFirePair(deps(null), "a", "scheduled", {}),
-    ).rejects.toBeInstanceOf(NoDefaultModelError);
+      resolveFirePair(refused, "a", "scheduled", {}),
+    ).rejects.toThrow(/profile this agent's default names cannot run/);
+    expect(await resolveRememberedPair(refused, "a", "chat")).toMatchObject({
+      model: null,
+    });
   });
 
-  // TEST_SCENARIO: the person's view of the default shows it as not set rather than failing, so the UI can ask for one.
-  it("reads as not set for the person", async () => {
+  // TEST_SCENARIO: the only failure left is an agent whose providers list nothing it can run; the reason says to connect a model provider, not to pick a model.
+  it("fails as having no model provider when none lists a model", async () => {
+    await expect(
+      resolveFirePair(deps(null, []), "a", "scheduled", {}),
+    ).rejects.toThrow(/connect a model provider/);
+  });
+
+  // TEST_SCENARIO: a saved model whose provider is gone is the person's choice, so it is never replaced; the reason names the model.
+  it("never replaces a saved model whose provider is gone", async () => {
+    await expect(
+      resolveFirePair(
+        deps({
+          harness: "claude-code",
+          provider: null,
+          model: "openai/gpt-6-1-sol",
+        }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).rejects.toThrow(
+      /no provider this agent holds serves openai\/gpt-6-1-sol/,
+    );
+  });
+
+  // TEST_SCENARIO: the person's view of the default shows the model a run takes, so "Default" names it.
+  it("reads as the automatic model for the person", async () => {
     expect(await resolveRememberedPair(deps(null), "a", "chat")).toEqual({
       harness: "claude-code",
-      provider: null,
-      model: null,
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
     });
   });
 
@@ -196,6 +307,53 @@ describe("convertedDefaultModel", () => {
       "anthropic/claude-sonnet-5-5",
     );
     expect(convert("default", [])).toBe("anthropic/claude-opus-5-5");
+  });
+});
+
+describe("convertedDefaultModel on Bob's own gateway", () => {
+  const BOB = ["background", "explorer", "fast", "gpt-oss-20b", "premium-ide"];
+
+  // TEST_SCENARIO: 20 of 22 Bob agents converted to "not set" on 0.2.24: they named no model and ran on Bob's built-in default, which the preference list does not know, so they convert to the Bob model owners run on (`fast`, else `explorer`) — and the preference list still wins where another provider lists its model, and no other provider's `fast` is taken for Bob's.
+  it("takes Bob's built-in default for an agent that named no model", () => {
+    const bob = { alias: "bob", listed: BOB };
+    expect(
+      convertedDefaultModel({ setting: null, providers: [bob], ran: [] }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }, bob],
+        ran: [],
+      }),
+    ).toBe("ibm/aws/claude-opus-5-5");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "bob", listed: ["background", "explorer"] }],
+        ran: [],
+      }),
+    ).toBe("bob/explorer");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }, bob],
+        ran: [],
+      }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }],
+        ran: [],
+      }),
+    ).toBeNull();
+    expect(
+      convertedDefaultModel({
+        setting: "codestral-2508",
+        providers: [bob],
+        ran: [],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -333,6 +491,7 @@ describe("the one-time default conversion", () => {
     const wakes: string[] = [];
     let catalogReads = 0;
     let moved = opts.moved ?? false;
+    let awake = opts.running ?? true;
     let clock = 0;
     const c = createDefaultConverter({
       pairRepo: {
@@ -346,7 +505,7 @@ describe("the one-time default conversion", () => {
         write: async () => {},
         clear: async () => {},
         writeIfEmpty: async (_id, pair, note) => {
-          if (saved) return false;
+          if (saved?.model) return false;
           saved = pair;
           writes.push(pair);
           if (note) notes.push(note);
@@ -368,6 +527,7 @@ describe("the one-time default conversion", () => {
       specHarness: async () => undefined,
       catalogView: async () => {
         catalogReads++;
+        if (!awake) throw new Error("runtime asleep");
         return opts.catalog === undefined
           ? view("listed", ["claude-opus-4-8", "claude-opus-5-5"])
           : opts.catalog;
@@ -381,6 +541,7 @@ describe("the one-time default conversion", () => {
       isRunning: async () => opts.running ?? true,
       wake: async (id) => {
         wakes.push(id);
+        awake = true;
         if (opts.helloAfterWake !== false) moved = false;
         return { previous: "T0", written: "T1" };
       },
@@ -603,6 +764,53 @@ describe("the one-time default conversion", () => {
     });
   });
 
+  // TEST_SCENARIO: 0.2.24 saved "not set" for Bob agents whose provider listed no model the conversion knew; once the runtime lists one, the next hello converts the default instead of leaving every schedule failing for good.
+  it("converts again over a saved not set", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const { c, writes } = converter({ saved: notSet });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
+    ]);
+
+    const still = converter({
+      saved: notSet,
+      setting: "claude-opus-3",
+      catalog: view("listed", ["claude-opus-4-8"]),
+    });
+    expect(await still.c.convert("a")).toBe("not-set");
+    expect(still.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an asleep Agent whose default is "not set" runs its fire and "Run now" on the automatic model, so neither wakes it nor waits on a conversion; the next hello converts it.
+  it("neither wakes nor holds a not-set agent for a fire or Run now", async () => {
+    const notSet = { harness: "claude-code", provider: "anth", model: null };
+    const asleep = converter({ running: false, saved: notSet });
+    expect(await asleep.c.ensureForFire("a")).toBeNull();
+    expect(await asleep.c.pendingAfterMove("a")).toBe(false);
+    expect(asleep.wakes).toEqual([]);
+    expect(asleep.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
+  it("keeps the harness and provider of a not set", async () => {
+    const codex = converter({
+      saved: { harness: "codex", provider: null, model: null },
+    });
+    expect(await codex.c.convert("a")).toBe("not-set");
+    expect(codex.writes).toEqual([]);
+
+    const ibm = converter({
+      saved: { harness: "claude-code", provider: "lite", model: null },
+    });
+    expect(await ibm.c.convert("a")).toBe("not-set");
+    expect(ibm.writes).toEqual([]);
+  });
+
   // TEST_SCENARIO: a hello, a fire and a channel turn arriving together share one conversion instead of each polling the runtime.
   it("shares one conversion between callers", async () => {
     const { c, catalogReads } = converter({});
@@ -664,10 +872,10 @@ describe("defaultModelNoticesOf", () => {
       runsUnattended: opts.runsUnattended ?? true,
     })[0]?.state ?? null;
 
-  // TEST_SCENARIO: the owner is told about a default with no model, one with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
+  // TEST_SCENARIO: the owner is told about a default with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default, one with no model, which runs on the automatic model, and one that runs as saved say nothing.
   it("names the state the owner must know about", () => {
     expect(notice(null)).toBeNull();
-    expect(notice(pair(null, null))).toBe("not-set");
+    expect(notice(pair(null, null))).toBeNull();
     expect(notice(pair(null, null), { aliases: [] })).toBe("no-provider");
     expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"))).toBe(
       "provider-gone",
@@ -686,13 +894,13 @@ describe("defaultModelNoticesOf", () => {
     expect(notice(pair("ibm/aws/claude-opus-4-8", null))).toBe("provider-gone");
   });
 
-  // TEST_SCENARIO: a scheduled default of its own runs schedules even while the chat default is not set, so only chat and channel, which run on the chat default, are named as stopped.
+  // TEST_SCENARIO: a scheduled default of its own runs schedules even while the chat default's provider is gone, so only chat and channel, which run on the chat default, are named as stopped.
   it("names only the kinds whose default cannot run", () => {
     const notices = defaultModelNoticesOf({
       agentId: "a",
       routed: true,
       saved: {
-        chat: pair(null, null),
+        chat: pair("ibm/aws/claude-opus-4-8", "lite"),
         channel: null,
         scheduled: pair("anthropic/claude-opus-5-5"),
       },
@@ -702,9 +910,9 @@ describe("defaultModelNoticesOf", () => {
     });
     expect(notices).toEqual([
       expect.objectContaining({
-        id: "a:chat+channel:not-set",
+        id: "a:chat+channel:provider-gone",
         kinds: ["chat", "channel"],
-        state: "not-set",
+        state: "provider-gone",
       }),
     ]);
   });
@@ -723,7 +931,9 @@ describe("defaultModelNoticesOf", () => {
     expect(notice(pair(null, null), idle)).toBeNull();
     expect(notice(pair(null, null), { ...idle, aliases: [] })).toBeNull();
     expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"), idle)).toBeNull();
-    expect(notice(pair(null, null), { runsUnattended: true })).toBe("not-set");
+    expect(
+      notice(pair(null, null), { runsUnattended: true, aliases: [] }),
+    ).toBe("no-provider");
   });
 
   // TEST_SCENARIO: a converted default names the model every run pays for, so its owner is told even on an Agent that runs nothing unattended.

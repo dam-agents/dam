@@ -26,10 +26,12 @@ import {
 import {
   createArtifactLibraryService,
   type ArtifactLibraryServiceImpl,
+  type ArtifactScope,
 } from "./services/artifact-library-service.js";
 import {
   createShareBridgeService,
   type ShareBridgeService,
+  type ViewerPromptDelivery,
 } from "./services/share-bridge-service.js";
 import { createViewerPromptDelivery } from "./infrastructure/viewer-prompt-delivery.js";
 import {
@@ -58,16 +60,19 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   artifacts: ArtifactService;
   owner: string;
   surface: string;
+  scope?: ArtifactScope;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: (owner: string) => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
 }
 
 export type ArtifactLibraryFor = (
   owner: string,
   surface: string,
-  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists">,
+  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists" | "scope">,
 ) => ArtifactLibraryServiceImpl;
 
 export function composeArtifactLibraryForOwner(
@@ -82,10 +87,13 @@ export function composeArtifactLibraryForOwner(
         .enum(["ui", "cli", "mcp", "system", "other"])
         .catch("other")
         .parse(opts.surface),
+      ...(opts.scope ? { scope: opts.scope } : {}),
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ensureReady: opts.ensureReady,
       agentApi: opts.agentApi,
+      featureOn: () => opts.featureOn(opts.owner),
+      prompts: opts.prompts,
     }),
   };
 }
@@ -182,23 +190,20 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
   });
 }
 
+export function composeArtifactPromptDelivery(opts: {
+  makeAcpClient: AcpClientFactory;
+  ensureReady: (agentId: string) => Promise<void>;
+  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
+  attendance: ChannelTurnAttendance;
+}): ViewerPromptDelivery {
+  return createViewerPromptDelivery(opts);
+}
+
 export function composeShareBridge(opts: {
   featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  makeAcpClient: AcpClientFactory;
-  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
-  attendance: ChannelTurnAttendance;
+  prompts: ViewerPromptDelivery;
 }): ShareBridgeService {
-  return createShareBridgeService({
-    featureOn: opts.featureOn,
-    ensureReady: opts.ensureReady,
-    agentApi: opts.agentApi,
-    prompts: createViewerPromptDelivery({
-      makeAcpClient: opts.makeAcpClient,
-      ensureReady: opts.ensureReady,
-      spendHold: opts.spendHold,
-      attendance: opts.attendance,
-    }),
-  });
+  return createShareBridgeService(opts);
 }

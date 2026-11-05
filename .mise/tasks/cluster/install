@@ -302,10 +302,10 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   # An Environment runs the platform's agent image, whose root is an overlay,
   # as a sandbox's is.
   node_volumes_on_home
-  # Every image the install puts in stays (NODE_IMAGE_GC_DROPIN); a k3s that
-  # already runs takes it at a restart.
+  # Every image the install puts in stays, and only memory evicts
+  # (NODE_IMAGE_GC_DROPIN); a k3s that already runs takes it at a restart.
   if node_image_gc_off && node_k3s_running; then
-    echo "Restarting k3s, so its kubelet keeps every image..."
+    echo "Restarting k3s, so its kubelet keeps every image and evicts on memory alone..."
     env_k3s restart || { echo "FATAL: k3s did not restart, so its kubelet may still delete images" >&2; exit 1; }
   fi
   # The image's k3s service, in the default runlevel from now on, and the

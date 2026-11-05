@@ -340,6 +340,8 @@ const configSchema = z.object({
   kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
   kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
   kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
+  costReviewMinWeeklyUsd: z.coerce.number().nonnegative().default(25),
+  costReviewMinWeeklyBobcoins: z.coerce.number().nonnegative().default(20),
   brand: brandSchema,
   links: linksSchema,
   terms: z.object({
@@ -562,6 +564,8 @@ export function loadConfig(): Config {
     kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
     kbShareMaxConnectionsPerOwner:
       process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
+    costReviewMinWeeklyUsd: process.env.COST_REVIEW_MIN_WEEKLY_USD,
+    costReviewMinWeeklyBobcoins: process.env.COST_REVIEW_MIN_WEEKLY_BOBCOINS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

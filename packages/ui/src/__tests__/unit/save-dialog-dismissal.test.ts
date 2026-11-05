@@ -54,9 +54,16 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useProviderConnections: () => ({
     owned: [{ id: "c1", templateId: "anthropic" }],
   }),
+  useHarnessCatalog: () => ({
+    data: { harnesses: [{ name: "claude-code", displayName: "Claude" }] },
+  }),
 }));
-vi.mock("../../modules/sessions/components/custom-pair-screen.js", () => ({
-  CustomPairScreen: ({ onChoose }: { onChoose: (pair: SessionPair) => void }) =>
+vi.mock("../../modules/sessions/components/session-model-picker.js", () => ({
+  SessionModelPicker: ({
+    onChoose,
+  }: {
+    onChoose: (pair: SessionPair) => void;
+  }) =>
     createElement(
       "button",
       {
@@ -118,7 +125,7 @@ function dismissAll() {
   expect(document.querySelector('[role="dialog"]')).toBe(dialog);
 }
 
-it.each(["new", "create", "update"])(
+it.each(["new", "create"])(
   "blocks pending %s profile dismissal and recovers after failure",
   (mode) => {
     container = document.createElement("div");
@@ -135,7 +142,7 @@ it.each(["new", "create", "update"])(
           settings: {},
         },
         providerTemplate: "anthropic",
-        from: mode === "update" ? { id: "p1", name: "Existing" } : null,
+        from: null,
         capability: undefined,
         onSaved: saved,
       });
@@ -173,11 +180,7 @@ it.each(["new", "create", "update"])(
       });
       act(() =>
         [...document.querySelectorAll("button")]
-          .find(
-            (b) =>
-              b.textContent ===
-              (mode === "update" ? "Update profile" : "Save profile"),
-          )!
+          .find((b) => b.textContent === "Save profile")!
           .click(),
       );
       const options = state.mutate.mock.calls[0]![1] as {

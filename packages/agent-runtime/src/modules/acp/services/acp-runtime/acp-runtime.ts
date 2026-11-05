@@ -3151,6 +3151,7 @@ function toAcpPlatformMeta(session: Session): Record<string, unknown> {
       continuedScheduleIds: session.continuedScheduleIds,
     }),
     ...(session.initialization === true && { initialization: true }),
+    ...(session.purpose !== undefined && { purpose: session.purpose }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),
     ...(session.runStartedAt !== null && {

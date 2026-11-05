@@ -62,6 +62,7 @@ import {
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
+import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
@@ -89,6 +90,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     seedSources,
     spendForOwner,
     spendCeilingsForOperator,
+    spendHold,
     userBudgetsForOperator,
     loginTestimonials,
     providerStatus,
@@ -340,6 +342,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       k8s: k8sClient,
       db,
     });
+    const chatSessionPair = (agentId: string) =>
+      firePair(agentId, "chat", {}).catch((err: unknown) => {
+        if (isNoDefaultModelError(err))
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
+          });
+        throw err;
+      });
     const { starterKits } = composeStarterKitsForOwner({
       owner: user.sub,
       repo: starterKitsRepo,
@@ -353,15 +364,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
-      sessionPair: (agentId) =>
-        firePair(agentId, "chat", {}).catch((err: unknown) => {
-          if (isNoDefaultModelError(err))
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
-            });
-          throw err;
-        }),
+      sessionPair: chatSessionPair,
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
@@ -404,6 +407,26 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       wrapperFrameSender,
     });
+    const costReviews = composeCostReviewsForOwner({
+      db,
+      owner: user.sub,
+      floors: {
+        minWeeklyUsd: config.costReviewMinWeeklyUsd,
+        minWeeklyBobcoins: config.costReviewMinWeeklyBobcoins,
+      },
+      ownedAgents: async () =>
+        (await agentsRepo.list(user.sub)).flatMap((agent) =>
+          agent.createdAt
+            ? [{ id: agent.id, createdAt: new Date(agent.createdAt) }]
+            : [],
+        ),
+      spendHold,
+      sessionPair: chatSessionPair,
+      runtimeMutator,
+      wakeAgent,
+      interactiveReports: async () =>
+        (await features.flags())["interactive-artifacts"],
+    });
     const attention = composeAttentionService({
       db,
       ownerSub: user.sub,
@@ -417,6 +440,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           resolveProfile,
         )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
+      costReviews: () => costReviews.offers(),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -543,6 +567,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       skills,
       approvals,
       attention,
+      costReviews,
       egressRules,
       invocationsQuery,
       environments: environmentsFor(user.sub),

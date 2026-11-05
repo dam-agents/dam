@@ -444,11 +444,14 @@ export type {
   ArtifactTouchService,
   ArtifactCallAgentApiInput,
   ArtifactCallAgentApiResult,
+  ArtifactSendPromptInput,
+  ArtifactSendPromptResult,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
@@ -760,6 +763,12 @@ export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
 } from "./modules/attention/types.js";
+export type {
+  CostReviewOffer,
+  CostReviewStarted,
+  CostReviewsService,
+} from "./modules/cost-reviews/types.js";
+export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

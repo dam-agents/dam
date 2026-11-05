@@ -180,7 +180,8 @@ Beside the chart it installs two pieces the gate needs, and two the Environment'
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
-- **No image garbage collection** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full and delete the images the install just put in; nothing there pulls one back.
+- **No image garbage collection and no disk eviction** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
+  Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
 - **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.

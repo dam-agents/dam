@@ -15,9 +15,10 @@ import type {
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
-import type {
-  AgentsRepository,
-  RuntimeProgressPort,
+import {
+  type AgentsRepository,
+  type RuntimeProgressPort,
+  startWaitOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -196,6 +197,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
       },
+      readStartWait: async (agentId) =>
+        startWaitOf(agentsRepo.peekCached(agentId)),
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
@@ -285,7 +288,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     markOnboardingComplete,
     onboardingChecklist,
     kitUpdateReporter,
-    artifactLibraryFor: mcpArtifactLibraryFor,
+    artifactLibraryFor: (owner, agentId) =>
+      artifactLibraryFor(owner, "mcp", {
+        scope: { kind: "agent", agentId },
+      }),
     invocationsServiceFor,
     driverOpsFor: createDriverOps(driverOpsDeps),
     subAgentAwaitsFor: composeSubAgentAwaitMarks(db),

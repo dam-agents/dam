@@ -158,7 +158,7 @@ describe("the driver's default model", () => {
     });
 
     expect(await read("driver-1", "claude-code")).toBe(DEFAULT);
-    expect(asked).toEqual([["driver-1", "chat", { harness: "claude-code" }]]);
+    expect(asked).toEqual([["driver-1", "chat", {}]]);
   });
 
   test("is none on another harness, with no saved model, a bare name, or on an older runtime", async () => {

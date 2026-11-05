@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-30
+Last verified: 2026-11-04
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -103,7 +103,7 @@ A few observations the diagram glosses over:
   A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking on the channel's row, in the chat's own picker, changes what its next fresh session runs on.
   The channel's subagent slot, a profile or values of its own, joins the primary as a chat default's does; an empty one lets the Agent pick.
   A profile that cannot run on the Agent refuses the turn with its reason and a reply that names the profile and the row to change it on, never the Agent's default.
-  With no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
+  With no default model it runs on the [automatic model](harness-config.md#session-settings); with no model provider to run on, or a default on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
   A **resumed** thread keeps the values it already runs on, as a session that picked does (D94 A, D119): the channel's profile is applied when a session is created, so a profile edit reaches the next fresh thread and never a running one ([sessions](sessions.md#session-inside-the-machine)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
@@ -227,12 +227,13 @@ A fence that ends a line moves to the next line.
 Text after an opening fence moves below it, unless the text is one lowercase language word.
 The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
-An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply` or `send_channel_message` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
-An artifact with no share URL, a private one, or an id the owner has no artifact for refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
+An artifact's in-app link (`platform://artifacts/<id>`) opens only in the app's chat, so before a `reply`, `post` or `start_thread` posts, the endpoint puts the artifact's share URL in place of each such link, on Slack and Telegram alike.
+An artifact with no share URL, a private one, or an id the Agent published no artifact under refuses the whole message, and the error tells the Agent to say the artifact must be shared first and to send the message without the link.
 
 What the agent sees:
 
-- **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `send_channel_message` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
+- **Cross-channel tools.** `describe_channel` reports the chats an Agent can reach; `post` makes a **new top-level post** — for proactive or cross-channel messages, and on Slack never a turn reply, which `reply` owns.
+  `start_thread` posts too, and owns the thread ([slack-threads](slack-threads.md)).
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
   On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
@@ -266,8 +267,8 @@ What the agent sees:
   Gated by the binding; the log records the message and tally, never who reacted.
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
-  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
-  Like `send_channel_message`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
+  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `post` can.
+  Like `post`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
@@ -337,16 +338,16 @@ A post that is only an attachment, top-level or a thread reply, is a single file
 
 ### Threading model
 
-Outbound posts are **fire-and-forget at the thread level**.
-The agent posts a top-level message; the worker stores no thread-to-session mapping for proactive posts.
-If a user replies to the resulting thread, the inbound path treats it as a new mention — a fresh session.
-Continuity from the originating session does not carry over.
-This is the deliberate trade-off: keep outbound simple and stateless at the cost of session bridging on Slack-side replies.
+A plain post is **one-way**.
+The agent posts a top-level message with `post`; the worker stores no thread-to-session mapping for it.
+If a user replies to the resulting thread, the inbound path treats it as any message in a thread — a tagged reply opens a fresh session, and an announcement never wakes a session that has finished.
+
+A thread started with `start_thread` is **owned** instead: its replies come back to the Session that started it ([slack-threads](slack-threads.md)).
 
 The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
-  A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
+  A reply to a plain post is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
   An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

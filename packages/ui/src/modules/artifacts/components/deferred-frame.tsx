@@ -14,6 +14,7 @@ export function DeferredFrame({
   className,
   deferMs = MODAL_ANIMATION_MS,
   onSendPrompt,
+  onNewSessionPrompt,
   agentApiArtifactId,
 }: {
   html: string;
@@ -21,12 +22,13 @@ export function DeferredFrame({
   className: string;
   deferMs?: number;
   onSendPrompt?: (prompt: string) => Promise<void>;
+  onNewSessionPrompt?: (prompt: string) => Promise<void>;
   agentApiArtifactId?: string;
 }) {
   const [mounted, setMounted] = useState(deferMs === 0);
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  useArtifactPrompt(frameRef, onSendPrompt);
+  useArtifactPrompt(frameRef, onSendPrompt, onNewSessionPrompt);
   useArtifactRequest(frameRef, agentApiArtifactId);
   useArtifactPrint(frameRef);
   useEffect(() => {

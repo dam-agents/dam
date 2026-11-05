@@ -1,4 +1,5 @@
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import { useProviderConnections } from "../api/session-pair.js";
 import { providerOfModel } from "../lib/session-pair-options.js";
 import { pairSummary } from "../lib/session-settings.js";
@@ -24,7 +25,10 @@ export function StoredPairSummary({
       label={pairSummary(model, {
         settings,
         capability: carried?.find((h) => h.name === harness),
-        provider: providerOfModel(model, owned)?.name,
+        provider: (() => {
+          const connection = providerOfModel(model, owned);
+          return connection ? shortProviderName(connection) : undefined;
+        })(),
       })}
     />
   );

@@ -26,6 +26,7 @@ import type {
 import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import {
+  automaticModel,
   composedSubagent,
   qualifiedPairModel,
   sameModelName,
@@ -173,6 +174,7 @@ export function createHarnessConfigService(deps: {
           catalog: deps.catalog,
           getCapabilities: deps.getCapabilities,
           specHarness: deps.specHarness,
+          ownerCatalog: deps.ownerCatalog,
         },
         agentId,
         kind,
@@ -514,10 +516,13 @@ export function harnessesOf(capabilities: unknown): HarnessCapability[] | null {
 }
 
 export interface PairResolverDeps {
-  pairRepo: Pick<SessionPairRepo, "read" | "grantedProviders">;
+  pairRepo: Pick<SessionPairRepo, "read" | "readSaved" | "grantedProviders">;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
 }
 
 export async function resolveRememberedPair(
@@ -532,9 +537,10 @@ export async function resolveRememberedPair(
  * UNIT_BOUNDARY_DESCRIPTION: the pair an unattended run asks the agent for —
  * the one it names, or, naming only a model, that model on the agent's own
  * harness, or else the default saved for its kind of run (chat, channel or
- * scheduled, the last two falling back to chat). Undefined when the agent's
- * runtime holds one harness only and would ignore a pair, or runs a harness
- * the catalog does not offer, such as a custom template's own.
+ * scheduled, the last two falling back to chat). With no model named or
+ * saved for the harness, the run takes the automatic model. Undefined when
+ * the agent's runtime holds one harness only and would ignore a pair, or runs
+ * a harness the catalog does not offer, such as a custom template's own.
  */
 export async function resolveFirePair(
   deps: PairResolverDeps,
@@ -591,7 +597,28 @@ export async function resolveFirePair(
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
   });
+  /** UNIT_BOUNDARY_DESCRIPTION: a chat profile that cannot run reads as no default, yet it is the owner's choice, so it is refused, never replaced by the automatic model. */
+  const refusedProfile = async (): Promise<boolean> => {
+    const saved = await deps.pairRepo.readSaved(agentId);
+    return (
+      saved.chatProfileId !== null &&
+      saved.chat === null &&
+      (kind === "chat" || saved[kind] === null)
+    );
+  };
+  if (routed && pair?.model === null && !remembered?.model) {
+    if (await refusedProfile()) {
+      if (requireLeases)
+        throw new NoDefaultModelError(undefined, { profile: true });
+      return pair;
+    }
+    const automatic = automaticModel(
+      (await deps.ownerCatalog(agentId)).providers,
+      pair,
+    );
+    if (automatic) return { ...pair, ...automatic };
+  }
   if (requireLeases && routed && pair?.model === null && granted.length > 0)
-    throw new NoDefaultModelError(preferred.model);
+    throw new NoDefaultModelError(remembered?.model ?? undefined);
   return pair;
 }

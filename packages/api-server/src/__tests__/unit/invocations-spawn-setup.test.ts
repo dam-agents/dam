@@ -21,6 +21,8 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     insert: async () => {},
     get: async () => null,
     complete: async () => true,
+    markStarted: async () => null,
+    failExpired: async () => false,
     fail: async (id, reason) => {
       failed.push([id, reason]);
     },

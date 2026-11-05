@@ -144,6 +144,9 @@ export function composeFirePair(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   resolveProfile: ProfileResolver;
 }): FirePair {
   const resolver = {

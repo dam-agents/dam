@@ -66,6 +66,8 @@ export interface ParsedModel {
   family: ModelFamily;
   size: string;
   version: readonly number[];
+  /** UNIT_BOUNDARY_DESCRIPTION: a variant of the same size and version, such as GPT's `mini`, which is a model of its own. */
+  variant?: string;
   buildStamp?: string;
 }
 
@@ -174,24 +176,38 @@ export function parseModelFamily(name: string): ParsedModel | null {
         ...(buildStamp !== undefined && { buildStamp }),
       };
   }
+  const variant =
+    rest.length >= 2 &&
+    !VERSION_PART.test(rest[rest.length - 1]!) &&
+    /^[a-z][a-z0-9]*$/.test(rest[rest.length - 1]!)
+      ? rest[rest.length - 1]
+      : undefined;
+  const versionParts = variant === undefined ? rest : rest.slice(0, -1);
   const tierless =
-    rest.length >= 1 && rest.length <= 2 ? versionOf(rest) : null;
+    versionParts.length >= 1 && versionParts.length <= 2
+      ? versionOf(versionParts)
+      : null;
   return tierless === null
     ? null
     : {
         family,
         size: family.token,
         version: tierless,
+        ...(variant !== undefined && { variant }),
         ...(buildStamp !== undefined && { buildStamp }),
       };
 }
 
-const entryLabel = (parsed: ParsedModel) =>
-  parsed.family.names
+const entryLabel = (parsed: ParsedModel) => {
+  const version = [parsed.version.join("."), parsed.variant]
+    .filter(Boolean)
+    .join(" ");
+  return parsed.family.names
     ? parsed.size
     : parsed.family.sizes.length === 0 || parsed.size === parsed.family.token
-      ? parsed.version.join(".")
-      : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`;
+      ? version
+      : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${version}`;
+};
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the chat's own name for a matched model, family
@@ -293,7 +309,7 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
         addLoose(family, group, model);
         continue;
       }
-      const key = `${parsed.family.token}/${parsed.size}/${parsed.version.join(".")}`;
+      const key = `${parsed.family.token}/${parsed.size}/${parsed.version.join(".")}${parsed.variant ? `/${parsed.variant}` : ""}`;
       let entry = recognized.get(key);
       if (entry === undefined) {
         entry = {

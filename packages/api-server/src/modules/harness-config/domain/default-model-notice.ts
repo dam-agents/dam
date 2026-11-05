@@ -21,7 +21,8 @@ const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
  * on an older runtime runs a default with no model on its harness's own
  * model, so it says nothing. A pending one (nothing saved yet) says nothing
  * either, since the conversion settles it within minutes. A default with no
- * model is not set, or has no provider to pick from; one whose model names a
+ * model runs on the automatic model, so it says nothing unless the Agent
+ * holds no provider to pick one from; one whose model names a
  * provider alias the Agent no longer holds cannot run, as runs take the
  * provider from the model's name; a conversion note says the Agent runs
  * another model than its old setting named. A state that stops runs is told
@@ -81,9 +82,7 @@ export function defaultModelNoticesOf(input: {
       input.runsUnattended ? state : null;
     if (onChat && input.profileUnavailable) return stopsRuns("provider-gone");
     if (pair.model === null)
-      return stopsRuns(
-        input.grantedAliases.size === 0 ? "no-provider" : "not-set",
-      );
+      return input.grantedAliases.size === 0 ? stopsRuns("no-provider") : null;
     const alias = parseQualifiedModel(pair.model, {
       claudePrefix: true,
     })?.alias;

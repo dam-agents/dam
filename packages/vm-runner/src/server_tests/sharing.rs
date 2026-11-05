@@ -119,7 +119,7 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
-// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews, and the runner records that it is no longer holding them, for its log.
+// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, all that is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews, and the runner records that it is no longer holding them, for its log.
 #[tokio::test(flavor = "multi_thread")]
 async fn every_look_grants_each_guest_its_room_on_the_claim() {
     let (h, claim) = with_claim("storage-room");
@@ -150,9 +150,9 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
 }
 
-// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is neither stopped nor absent. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
+// TEST_SCENARIO: the room below 95% is not split: every machine that is neither stopped nor absent is granted all of it, starting or running, so one agent that needs the room gets it beside any number of idle siblings. Their writes together may pass 95% before the next look, which the last 5% of the claim is kept for.
 #[tokio::test(flavor = "multi_thread")]
-async fn machines_woken_together_share_the_room_between_them() {
+async fn every_machine_up_is_granted_the_whole_room() {
     let (h, claim) = with_claim("storage-woken-together");
     let ids = ["m1", "m2"];
     for id in ids {
@@ -169,17 +169,17 @@ async fn machines_woken_together_share_the_room_between_them() {
     }
     h.wait_for_call("start m2").await;
     h.server.check_storage();
-    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+    assert_eq!(h.grants(&ids), vec![40u64 << 30; 2]);
     for id in ids {
         h.until(id, "running", |s| s.state == STATE_RUNNING).await;
     }
     h.server.check_storage();
-    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+    assert_eq!(h.grants(&ids), vec![40u64 << 30; 2]);
 }
 
-// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is stopped is granted nothing rather than a part of the room: started between two looks, it would otherwise boot on the room its share held while it was stopped, beside every machine started with it. A start is a look of its own, so the machines woken together boot on their even part instead of on the floor alone, and the room they hold together never passes what the claim has left below 95%.
+// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is stopped is granted nothing: started between two looks, it would otherwise boot on a room its share held while it was stopped, which the claim may no longer have. A start is a look of its own, so the machines woken together boot on the room the claim has now instead of on the floor alone.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_machine_woken_between_looks_does_not_boot_on_the_whole_room() {
+async fn a_sleeping_machine_is_granted_nothing_and_its_wake_looks_again() {
     let (h, claim) = with_claim("storage-woken-between");
     let ids = ["m1", "m2"];
     for id in ids {
@@ -202,23 +202,19 @@ async fn a_machine_woken_between_looks_does_not_boot_on_the_whole_room() {
         assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
     }
     h.wait_for_call("start m2").await;
-    let woken = h.grants(&ids);
-    assert!(
-        woken.iter().all(|&bytes| bytes > 0),
-        "a wake booted on no grant of its own: {woken:?}"
-    );
-    assert!(
-        woken.iter().sum::<u64>() <= room,
-        "the machines woken together hold {woken:?} of the room's {room} bytes"
+    assert_eq!(
+        h.grants(&ids),
+        vec![room; 2],
+        "a wake booted on no grant of its own"
     );
     for id in ids {
         h.until(id, "running", |s| s.state == STATE_RUNNING).await;
     }
 }
 
-// TEST_SCENARIO: the two halves of a look count different machines. The room is split between the machines that are up, so a starting machine takes its part from the running ones before it boots. The shortage is asked back of the running machines alone, since only a guest that runs can free its scratch, so a starting sibling does not halve what a running one is asked for.
+// TEST_SCENARIO: the two halves of a look count different machines. The room is granted to every machine that is up, so a starting machine boots on it as a running one does. The shortage is asked back of the running machines alone, since only a guest that runs can free its scratch, so a starting sibling does not halve what a running one is asked for.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_one_sheds() {
+async fn a_running_and_a_starting_machine_both_get_the_room_but_only_the_running_one_sheds() {
     let (h, claim) = with_claim("storage-mixed");
     h.server.put("m1", spec(true)).unwrap();
     h.until("m1", "running", |s| s.state == STATE_RUNNING).await;
@@ -236,7 +232,7 @@ async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_on
     *locked(&claim) = filled(80);
     h.server.check_storage();
     let room = 15u64 << 30;
-    assert_eq!(h.grants(&["m1", "m2"]), vec![room / 2; 2]);
+    assert_eq!(h.grants(&["m1", "m2"]), vec![room; 2]);
     let shed = std::fs::read_to_string(
         h.dir
             .join("machines/m1")
@@ -252,7 +248,7 @@ async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_on
     h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
 }
 
-// TEST_SCENARIO: a look scans the machines and then writes every share, and two looks run at once: the periodic one and the one a start takes. A periodic look that scanned before a start, and stalled past it, must not write its older room over the newer one: that leaves the started machine at the floor and its sibling holding the whole room. The shares hold the look that scanned last, and what the machines hold together stays inside the room.
+// TEST_SCENARIO: a look scans the machines and then writes every share, and two looks run at once: the periodic one and the one a start takes. A periodic look that scanned before a start, and stalled past it, must not write its older room over the newer one: that leaves the started machine at the floor it was granted while stopped. The shares hold the look that scanned last.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
     let armed = Arc::new(AtomicBool::new(false));
@@ -294,7 +290,7 @@ async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
     let held = h.grants(&["m1", "m2"]);
     assert_eq!(
         held,
-        vec![room / 2; 2],
+        vec![room; 2],
         "the shares do not hold the look that scanned last"
     );
     for id in ["m1", "m2"] {
@@ -302,9 +298,9 @@ async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
     }
 }
 
-// TEST_SCENARIO: the storage every guest may add is the claim's room split among the machines holding it, and a runner that starts on records it cannot read must not hand one machine's share to the others. A machine a VMM process still holds is recorded as unknown and counted, as admission counts it, so a restart changes no guest's grant while the record is unreadable.
+// TEST_SCENARIO: every machine that is up is granted the claim's room, and a runner that starts on records it cannot read must not take a running guest for a stopped one and grant it nothing, which holds its agent to the floor. A machine a VMM process still holds is recorded as unknown and counted as up, as admission counts it, so a restart changes no guest's grant while the record is unreadable.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the_storage_grant() {
+async fn a_machine_whose_state_cannot_be_read_at_startup_is_still_granted_the_room() {
     let (h, claim) = with_claim("startup-unread");
     let measured = claim.clone();
     h.server.put("m1", spec(true)).unwrap();
@@ -330,8 +326,8 @@ async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the
     h.server.check_storage();
     assert_eq!(
         grant(&h, "m1"),
-        20 << 30,
-        "two machines share the room below 95% of the claim"
+        40 << 30,
+        "a running machine is granted the room below 95% of the claim"
     );
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
@@ -345,9 +341,9 @@ async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the
     *locked(&claim) = filled(55);
     next.server.check_storage();
     assert_eq!(
-        grant(&next, "m2"),
-        20 << 30,
-        "a machine whose record cannot be read at startup was left out of the share, so the others were granted its room"
+        grant(&next, "m1"),
+        40 << 30,
+        "a machine whose record cannot be read at startup was taken for stopped and granted nothing"
     );
     next.server.close().await;
 }

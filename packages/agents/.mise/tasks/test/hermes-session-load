@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real Hermes, when HERMES_CLI names its hermes entry point) that a Hermes session started through hermes_platform.py loads with its conversation in a new hermes acp process"
+//MISE sources=["hermes/rootfs/usr/local/share/hermes-platform/hermes_platform.py", "hermes/image.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/hermes-session-load"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient } from "../../../test-lib/acp-client.mjs";
+// TEST_OVERVIEW: The runtime starts `hermes acp` again whenever its lease idled out or the machine restarted, and then reads a session's conversation only through session/load. Hermes rebuilds a stored session from the provider it saved, a plain "custom", so the config hermes_platform.py writes must let that provider reach the router. Skipped when HERMES_CLI names no hermes entry point, since the repository does not vendor Hermes.
+
+const cli = process.env.HERMES_CLI;
+if (!cli) {
+  console.log("hermes-session-load: skipped, set HERMES_CLI=<path to the hermes entry point> to run against the real harness");
+  process.exit(0);
+}
+const python = join(dirname(realpathSync(cli)), "python");
+const launcher = fileURLToPath(new URL("../../../hermes/rootfs/usr/local/share/hermes-platform/hermes_platform.py", import.meta.url));
+
+const chunk = (delta, finish = null) => `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: "m", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+const router = createServer((req, res) => {
+  if (req.method === "GET") {
+    res.setHeader("content-type", "application/json");
+    return res.end(JSON.stringify({ object: "list", data: [{ id: "ibm/gpt-5.5", object: "model" }] }));
+  }
+  let body = "";
+  req.on("data", (d) => { body += d; });
+  req.on("end", () => {
+    const json = JSON.parse(body || "{}");
+    if (!json.stream) {
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ id: "c", object: "chat.completion", model: json.model, choices: [{ index: 0, message: { role: "assistant", content: "Greeting" }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 } }));
+    }
+    res.setHeader("content-type", "text/event-stream");
+    res.end(chunk({ role: "assistant", content: "hello there" }) + chunk({}, "stop") + "data: [DONE]\n\n");
+  });
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+
+const home = mkdtempSync(join(tmpdir(), "hermes-session-load-"));
+const work = join(home, "work");
+mkdirSync(work);
+const env = {
+  PATH: process.env.PATH, HOME: home, NO_PROXY: "127.0.0.1,localhost", HERMES_DISABLE_LAZY_INSTALLS: "1",
+  PLATFORM_MODEL_ROUTER_URL: `http://127.0.0.1:${router.address().port}`, PLATFORM_MODEL: "ibm/gpt-5.5",
+};
+const initialize = { protocolVersion: 1, clientCapabilities: { fs: {} }, clientInfo: { name: "dam", version: "0" } };
+const hermes = () => {
+  const replayed = [];
+  const c = acpClient(python, [launcher, "acp"], {
+    env, cwd: work, name: "hermes",
+    onRequest: () => { throw new Error("none"); },
+    onNotification: (method, params) => {
+      const update = params?.update;
+      if (method === "session/update" && /^(user|agent)_message_chunk$/.test(update?.sessionUpdate ?? "")) replayed.push(`${update.sessionUpdate}:${update.content?.text}`);
+    },
+  });
+  return { c, replayed };
+};
+
+try {
+  const first = hermes();
+  let sessionId;
+  try {
+    await first.c.request("initialize", initialize, 60_000);
+    ({ sessionId } = await first.c.request("session/new", { cwd: work, mcpServers: [] }, 60_000));
+    await first.c.request("session/set_config_option", { sessionId, configId: "model", value: "custom:platform:ibm/gpt-5.5" }, 60_000);
+    const answered = await first.c.request("session/prompt", { sessionId, prompt: [{ type: "text", text: "say hi" }] }, 60_000);
+    assert.equal(answered.stopReason, "end_turn");
+  } finally {
+    await first.c.close();
+  }
+
+  // TEST_SCENARIO: A new hermes acp process, as the runtime starts after an idle lease or a restart, lists the session and replays its conversation on session/load, before the load answers.
+  const second = hermes();
+  try {
+    await second.c.request("initialize", initialize, 60_000);
+    const listed = await second.c.request("session/list", { cwd: work }, 60_000);
+    assert.deepEqual(listed.sessions.map((s) => s.sessionId), [sessionId]);
+    await second.c.request("session/load", { sessionId, cwd: work, mcpServers: [] }, 60_000);
+    assert.deepEqual(second.replayed, ["user_message_chunk:say hi", "agent_message_chunk:hello there"]);
+  } finally {
+    await second.c.close();
+  }
+  console.log("hermes-session-load: a stored session loads with its conversation in a new process");
+} finally {
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}

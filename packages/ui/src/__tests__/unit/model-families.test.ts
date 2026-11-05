@@ -72,7 +72,6 @@ describe("a model id's family, size and version", () => {
   it("returns null for an unknown model", () => {
     expect(parseModelFamily("rits/moonshotai/Kimi-K2.5")).toBeNull();
     expect(parseModelFamily("meta/llama-4")).toBeNull();
-    expect(parseModelFamily("gpt-5.5-mini")).toBeNull();
   });
 
   // TEST_SCENARIO: GLM's ids carry no size word, so the family is one tier; DeepSeek's carry Flash, and the v in its version is not part of it.
@@ -146,12 +145,37 @@ describe("a model id's family, size and version", () => {
     });
   });
 
+  // TEST_SCENARIO: a variant after the version, such as GPT's mini, reads as part of the friendly name, so it never shows the raw id.
+  it("names a variant of a version", () => {
+    expect(prettyModelLabel("gpt-5-5-mini")).toBe("GPT 5.5 mini");
+    expect(parseModelFamily("gpt-5-5-mini")).toMatchObject({
+      size: "gpt",
+      version: [5, 5],
+      variant: "mini",
+    });
+  });
+
   // TEST_SCENARIO: The chat names a matched model by family and size, not by its provider, and has no pretty name for an unmatched one.
   it("names a matched model for the chat", () => {
     expect(prettyModelLabel("ibm/aws/claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(prettyModelLabel("cb/rits/zai-org/glm-5-3")).toBe("GLM 5.3");
     expect(prettyModelLabel("bob/premium-ide")).toBe("Bob premium-ide");
     expect(prettyModelLabel("azure/gpt-5.5")).toBe("GPT 5.5");
+  });
+
+  // TEST_SCENARIO: a variant and the plain model are distinct entries, while the same model on two providers is one entry with both.
+  it("keeps a variant distinct and one model on two providers together", () => {
+    const { families } = familyModelGroups([
+      group("ibm", "ibm/gpt-5-5", "ibm/gpt-5-5-mini"),
+      group("curve", "curve/gpt-5-5"),
+    ]);
+    const gpt = families.find((section) => section.family.token === "gpt")!;
+    expect(gpt.expanded.map((entry) => entry.label)).toEqual([
+      "5.5",
+      "5.5 mini",
+    ]);
+    expect(gpt.expanded.map((entry) => entry.options.length)).toEqual([2, 1]);
+    expect(gpt.newest).toEqual([]);
   });
 
   // TEST_SCENARIO: Versions compare numerically, so 5.5 beats 5.1, 5.1 beats 5, and 5.10 beats 5.9.

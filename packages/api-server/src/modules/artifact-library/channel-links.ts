@@ -11,7 +11,7 @@ interface LinkedArtifact {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: An artifact's `platform://artifacts/<id>` link opens only in the app's chat; Slack and Telegram show it as dead text. Before a channel message is posted, each such link becomes the artifact's share URL. An artifact with no share URL (a private one) or one the owner does not have refuses the message, and the error tells the agent to say the artifact must be shared first and to send the message without the link.
+ * UNIT_BOUNDARY_DESCRIPTION: An artifact's `platform://artifacts/<id>` link opens only in the app's chat; Slack and Telegram show it as dead text. Before a channel message is posted, each such link becomes the artifact's share URL. An artifact with no share URL (a private one) or one the agent did not publish refuses the message, and the error tells the agent to say the artifact must be shared first and to send the message without the link.
  */
 export async function withChannelArtifactLinks(
   text: string,
@@ -25,7 +25,7 @@ export async function withChannelArtifactLinks(
     const artifact = await lookup(id);
     if (!artifact)
       return {
-        error: `The message links ${ARTIFACT_INTERNAL_LINK_PREFIX}${id}, but no artifact of your owner has that id. Send the message without that link.`,
+        error: `The message links ${ARTIFACT_INTERNAL_LINK_PREFIX}${id}, but you published no artifact with that id. Send the message without that link.`,
       };
     if (artifact.shareUrl === null)
       return {
