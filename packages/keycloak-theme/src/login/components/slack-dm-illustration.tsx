@@ -61,20 +61,6 @@ function useAnimationStep(paused: boolean, reduceMotion: boolean) {
   return step;
 }
 
-let dmStyleInjected = false;
-function injectDmStyles() {
-  if (dmStyleInjected) return;
-  dmStyleInjected = true;
-  const s = document.createElement("style");
-  s.textContent = `
-    @keyframes dmDots {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-3px); }
-    }
-  `;
-  document.head.appendChild(s);
-}
-
 const USER_COLOR = "#ee5396";
 const THREAD_BLUE = "#1264A3";
 const SEND_GREEN = "#007A5A";
@@ -405,8 +391,6 @@ function DmPane({ step }: { step: number }) {
 }
 
 export function SlackDmIllustration({ brand }: { brand: string }) {
-  injectDmStyles();
-
   const containerRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const inView = useInView(containerRef);

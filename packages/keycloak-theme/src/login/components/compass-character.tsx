@@ -92,7 +92,8 @@ function clientPoint(
 /* UNIT_BOUNDARY_DESCRIPTION: The compass character beside the second sign-in
  * form: four green wings and two pink eyes that blink. A click pushes the
  * pieces away from the pointer and a drag pulls one piece, and each springs
- * back; hovering makes the wings flutter. The flutter is skipped when the
+ * back; hovering makes the wings flutter. A drag listens on the window until
+ * the pointer is released, or until the character unmounts mid-drag. The flutter is skipped when the
  * user prefers reduced motion. It is decoration only, hidden below lg. */
 export function CompassCharacter() {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -108,6 +109,7 @@ export function CompassCharacter() {
   } | null>(null);
   const fluttering = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const endDrag = useRef<(() => void) | null>(null);
   const reduceMotion = useReducedMotion();
   const blink = useBlink(2200, 4800);
   const [pokedEye, setPokedEye] = useState<"left" | "right" | null>(null);
@@ -117,6 +119,7 @@ export function CompassCharacter() {
     return () => {
       if (frame.current !== undefined) cancelAnimationFrame(frame.current);
       pending.forEach(clearTimeout);
+      endDrag.current?.();
     };
   }, []);
 
@@ -241,15 +244,22 @@ export function CompassCharacter() {
       applyTransforms();
     };
 
-    const onUp = () => {
-      dragging.current = null;
-      startLoop();
+    const removeListeners = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("touchmove", onMove);
       window.removeEventListener("touchend", onUp);
+      endDrag.current = null;
     };
 
+    const onUp = () => {
+      dragging.current = null;
+      startLoop();
+      removeListeners();
+    };
+
+    endDrag.current?.();
+    endDrag.current = removeListeners;
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     window.addEventListener("touchmove", onMove, { passive: true });

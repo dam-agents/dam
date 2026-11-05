@@ -40,24 +40,6 @@ function useAnimationStep(paused: boolean, reduceMotion: boolean) {
   return step;
 }
 
-let styleInjected = false;
-function injectStyles() {
-  if (styleInjected) return;
-  styleInjected = true;
-  const s = document.createElement("style");
-  s.textContent = `
-    @keyframes slkDots {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-3px); }
-    }
-    @keyframes slkFadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-  `;
-  document.head.appendChild(s);
-}
-
 const SLACK_AUBERGINE = "#3F0E40";
 const SLACK_ACTIVE = "#1164A3";
 const THREAD_BLUE = "#1264A3";
@@ -809,8 +791,6 @@ function CloseIcon() {
 }
 
 export function SlackTeamIllustration({ brand }: { brand: string }) {
-  injectStyles();
-
   const containerRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const inView = useInView(containerRef);

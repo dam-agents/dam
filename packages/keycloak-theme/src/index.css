@@ -207,3 +207,36 @@ a {
     animation: stack-bob 0.4s ease-in-out 0.2s;
   }
 }
+
+/* The Slack illustrations' typing dots and message fade-in
+   (slack-dm-illustration.tsx, slack-team-illustration.tsx). */
+@keyframes dmDots {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes slkDots {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes slkFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
