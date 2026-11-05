@@ -129,6 +129,9 @@ It acts as **that owner** over that owner's Agents and connections — `agents:r
 It is never an operator, and never a person, so the surfaces that need one refuse it: it cannot mint an API key, accept the Terms, set a feature flag, or decide an approval.
 It reaches the **app tRPC API and nothing else**: an agent's runtime tRPC, its file and import routes, and every relay socket — the ACP, terminal, SSH and browser-stream upgrades — refuse it outright, and the path takes no socket at all, so no long-lived surface can outlive it.
 
+One accepted exception, owned by [assistant](assistant.md#what-it-changes): a create is never reviewed, so an assistant may hand a new Agent its owner's own Connections, an owner-owned Secret and registry credential material.
+Tenancy still holds before anything is written ([Resource ownership](#resource-ownership)); the review is what is missing, and a create that grants anything waiting like any other change is the bridge.
+
 Everything it changes waits for the owner: the tRPC layer files the call on the owner's approval queue — the same queue a held network request lands in — and runs it, once, in a context composed for that owner's own authenticated identity, only when the owner approves it in their own signed-in session ([assistant](assistant.md#what-it-changes)).
 
 **Platform operators** run the install for all its users.

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import type { ApiContext, UserIdentity } from "api-server-api";
+import { appRouter } from "api-server-api/router";
 import { mountCliRoutes } from "../../apps/harness-api-server/cli.js";
 import { verifyAgentOnBehalf } from "../../modules/agent-on-behalf/index.js";
 import { agentOnBehalfUser } from "../../modules/agent-on-behalf/index.js";
@@ -191,6 +192,22 @@ describe("what the mount reaches", () => {
     expect(JSON.stringify(await response.json())).toContain("FORBIDDEN");
   });
 
+  // UNIT_BOUNDARY_DESCRIPTION: a create is not reviewed (D236A), so what keeps it inside the owner's own estate is the agent service's own checks, unchanged for every caller: the mount hands the input over untouched and adds no capability, so another owner's Secret or Connection is refused exactly where it always was.
+  it("hands a create to the service untouched, adding nothing", async () => {
+    const w = world();
+    const response = await w.app.request(
+      `${BASE}/agent-a/cli/trpc/agents.create`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "notes", secretRef: "theirs" }),
+      },
+    );
+    // UNIT_BOUNDARY_DESCRIPTION: the stub context's service answers what it can; what this asserts is that the request reached it, with the arguments as sent and no approval filed.
+    expect(response.status).not.toBe(403);
+    expect(w.filed).toEqual([]);
+  });
+
   it("reaches no runtime router of its own", async () => {
     const w = world();
     const response = await w.app.request(
@@ -203,6 +220,95 @@ describe("what the mount reaches", () => {
     );
     expect(response.ok).toBe(false);
     expect(w.filed).toEqual([]);
+  });
+});
+
+describe("a subscription", () => {
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's live-event stream is admitted once and never read again, so it would outlive the request — and the owner's account and this install's feature flag — by however long the socket is held. The mount refuses the type, so the stream factory is never entered.
+  it("is refused before it opens the owner's stream", async () => {
+    let streamed = 0;
+    const app = new Hono();
+    mountCliRoutes(app, {
+      verifyAgentOnBehalf: verifyAgentOnBehalf({
+        agentOf: async () => ({ owner: "owner-1", kind: "assistant" }),
+        featureOn: async () => true,
+        ownerActive: async () => true,
+      }),
+      contextFor: () =>
+        ({
+          user: { sub: "owner-1" },
+          liveEvents: {
+            ownerStream: () => {
+              streamed += 1;
+              return (async function* () {})();
+            },
+          },
+          terms: { isAccepted: async () => true },
+        }) as unknown as ApiContext,
+    });
+    const response = await app.request(
+      `${BASE}/agent-a/cli/trpc/events.owner`,
+      {
+        headers: { accept: "text/event-stream" },
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type") ?? "").not.toContain(
+      "text/event-stream",
+    );
+    expect(streamed).toBe(0);
+  });
+
+  it("is refused in a batch that carries a query with it", async () => {
+    let streamed = 0;
+    const app = new Hono();
+    mountCliRoutes(app, {
+      verifyAgentOnBehalf: verifyAgentOnBehalf({
+        agentOf: async () => ({ owner: "owner-1", kind: "assistant" }),
+        featureOn: async () => true,
+        ownerActive: async () => true,
+      }),
+      contextFor: () =>
+        ({
+          user: { sub: "owner-1" },
+          liveEvents: {
+            ownerStream: () => {
+              streamed += 1;
+              return (async function* () {})();
+            },
+          },
+          agents: { runtimeFleet: async () => ({ agents: [] }) },
+          terms: { isAccepted: async () => true },
+        }) as unknown as ApiContext,
+    });
+    const response = await app.request(
+      `${BASE}/agent-a/cli/trpc/agents.runtimeFleet,events.owner?batch=1`,
+      { headers: { accept: "text/event-stream" } },
+    );
+    expect(response.status).toBe(403);
+    expect(streamed).toBe(0);
+  });
+
+  it("leaves no subscription procedure callable through the mount", async () => {
+    const procedures = (
+      appRouter as unknown as {
+        _def: { procedures: Record<string, { _def: { type: string } }> };
+      }
+    )._def.procedures;
+    const subscriptions = Object.entries(procedures)
+      .filter(([, p]) => p._def.type === "subscription")
+      .map(([path]) => path);
+    // UNIT_BOUNDARY_DESCRIPTION: the assertion is only worth anything if the router has one to refuse.
+    expect(subscriptions.length).toBeGreaterThan(0);
+
+    const w = world();
+    for (const path of subscriptions) {
+      const response = await w.app.request(`${BASE}/agent-a/cli/trpc/${path}`, {
+        headers: { accept: "text/event-stream" },
+      });
+      expect(response.status, path).toBe(403);
+      expect(w.filed, path).toEqual([]);
+    }
   });
 });
 
