@@ -284,7 +284,7 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
 ```
 
 - `dam agent get` shows the granted providers, the harnesses and the defaults; under `--json` they are in `models`.
-  A default with a `null` model, or "not set" in the table, runs on the automatic model: the platform's preferred model among the agent's providers.
+  A default with a `null` model, or "not set" in the table, runs on the automatic model: the platform's preferred model for that harness among the agent's providers.
 - `dam agent models` lists the models the agent's providers offer for its default harness (`--harness` for another), named the way `--model` takes them: `<provider>/<model id>`.
   A provider that has not listed its models yet is named in a note; ask again in a minute.
 - `dam agent update` changes only what you pass.

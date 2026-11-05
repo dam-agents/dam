@@ -86,15 +86,19 @@ const curveBenderCatalog = () =>
 const deepSeek = `cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`;
 
 describe("the model a send picks", () => {
-  // TEST_SCENARIO: the preferred list's order beats the providers' own, so an agent holding Anthropic and OpenAI runs on the list's Claude over the provider listed first.
+  // TEST_SCENARIO: the list's order beats the providers' own, so a Claude Code agent holding OpenAI and Anthropic runs on the list's Claude over the provider listed first.
   it("takes the list's model across the attached providers", () => {
     const listed = catalog([
       { connectionId: "oai", alias: "openai", models: ["gpt-6.1-sol"] },
       { connectionId: "ant", alias: "anthropic", models: ["claude-opus-5-5"] },
     ]);
-    expect(topModelOf(listed, [openai, anthropic])).toEqual({
+    expect(topModelOf(listed, [openai, anthropic], "claude-code")).toEqual({
       provider: "ant",
       model: "anthropic/claude-opus-5-5",
+    });
+    expect(topModelOf(listed, [openai, anthropic], "codex")).toEqual({
+      provider: "oai",
+      model: "openai/gpt-6.1-sol",
     });
   });
 
@@ -103,7 +107,7 @@ describe("the model a send picks", () => {
     const listed = catalog([
       { connectionId: "oai", alias: "openai", models: ["llama-9", "llama-8"] },
     ]);
-    expect(topModelOf(listed, [openai])).toEqual({
+    expect(topModelOf(listed, [openai], "claude-code")).toEqual({
       provider: "oai",
       model: "openai/llama-9",
     });
@@ -119,14 +123,14 @@ describe("the model a send picks", () => {
       },
       { connectionId: "ant", alias: "anthropic", models: ["claude-opus-5-5"] },
     ]);
-    expect(topModelOf(listed, [anthropic])).toEqual({
+    expect(topModelOf(listed, [anthropic], "claude-code")).toEqual({
       provider: "ant",
       model: "anthropic/claude-opus-5-5",
     });
   });
 
   it("picks nothing without a listing", () => {
-    expect(topModelOf(undefined, [openai])).toBeNull();
+    expect(topModelOf(undefined, [openai], "claude-code")).toBeNull();
   });
 });
 

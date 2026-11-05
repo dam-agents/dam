@@ -294,7 +294,7 @@ describe("the owner's profiles", () => {
     expect(unserved.writes.seeds).toBe(0);
   });
 
-  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work over the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
+  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work on that harness — Claude for the default harness here, over the DeepSeek the same provider lists — rather than the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
   it("seeds Default from the first listed provider without the shared CurveBender", async () => {
     const model = (upstreamId: string, harnesses: string[]) => ({
       name: `ibm/${upstreamId}`,
@@ -324,6 +324,7 @@ describe("the owner's profiles", () => {
             models: [
               model("aws/claude-sonnet-6", ["claude-code", "pi"]),
               model("aws/claude-opus-5-5", ["claude-code", "pi"]),
+              model("azure/DeepSeek-V4.1-Flash", ["claude-code", "pi"]),
             ],
           },
         ],
