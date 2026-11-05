@@ -86,6 +86,18 @@ export type MessageReactionsResult = z.infer<
   typeof messageReactionsResultSchema
 >;
 
+export interface MessageLinkQuery {
+  conversationId?: string;
+  messageTs: string;
+}
+
+export const messageLinkResultSchema = z.object({
+  link: z.string(),
+  conversationId: z.string(),
+  messageTs: z.string(),
+});
+export type MessageLinkResult = z.infer<typeof messageLinkResultSchema>;
+
 export interface ThreadQuery {
   threadTs: string;
   cursor?: string;
@@ -214,6 +226,10 @@ export interface AddressedWorker {
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
+  getMessageLink(
+    instanceName: string,
+    query: MessageLinkQuery,
+  ): Promise<MessageLinkResult | { error: string }>;
   readThread(
     instanceName: string,
     query: ThreadQuery,

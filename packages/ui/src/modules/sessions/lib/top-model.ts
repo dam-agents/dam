@@ -11,6 +11,7 @@ export interface TopModel {
 export function topModelOf(
   catalog: HarnessCatalogView | undefined,
   granted: readonly ProviderConnectionRef[],
+  harness: string,
 ): TopModel | null {
   const grantedIds = new Set(granted.map((p) => p.id));
   const providers = (catalog?.providers ?? []).filter(
@@ -22,6 +23,7 @@ export function topModelOf(
       alias: p.alias,
       listed: p.models.map((m) => m.upstreamId),
     })),
+    harness,
   );
   if (preferred) {
     const provider = providers.find(

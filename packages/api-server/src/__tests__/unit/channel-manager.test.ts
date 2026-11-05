@@ -26,6 +26,11 @@ function fakeSlackWorker(): SlackWorker {
       conversationId: "C1",
       messageTs: "1.1",
     })),
+    getMessageLink: vi.fn(async () => ({
+      link: "https://example.slack.com/archives/C1/p11",
+      conversationId: "C1",
+      messageTs: "1.1",
+    })),
     resolveConversationLabels: vi.fn(async () => []),
     readThread: vi.fn(async () => ({
       messages: [],
