@@ -203,10 +203,16 @@ describe("the owner's provider model catalog", () => {
         specs.push(
           `${env.AWS_ENDPOINT_URL_BEDROCK} ${env.AWS_BEARER_TOKEN_BEDROCK}`,
         );
-        return observed([
-          { id: "us.anthropic.claude-opus-5-5" },
-          { id: "us.stability.stable-outpaint-v1:0" },
-        ])(spec, env);
+        const ids = [
+          "us.anthropic.claude-opus-5-5",
+          "us.stability.stable-outpaint-v1:0",
+        ];
+        return {
+          status: "observed",
+          via: "AWS_ENDPOINT_URL_BEDROCK",
+          models: ids.map((id) => ({ value: id, name: id })),
+          entries: ids.map((id) => ({ id, name: id })),
+        };
       },
       table,
       shipped,
