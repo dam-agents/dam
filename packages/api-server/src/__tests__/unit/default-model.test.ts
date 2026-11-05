@@ -97,9 +97,24 @@ describe("a fire on an Agent with no default model", () => {
     ownerCatalog: async () => ({ providers }),
   });
 
-  // TEST_SCENARIO: nothing is saved, yet the agent holds a provider that lists models; the fire runs on the platform's preferred model there instead of failing for lack of a saved default.
+  // TEST_SCENARIO: nothing is saved, yet the agent holds a provider that lists models; the fire runs on the platform's preferred model for the harness there instead of failing for lack of a saved default — Claude where a provider serves it, which is what a Claude Code agent gets even beside a provider that lists DeepSeek.
   it("runs on the automatic model", async () => {
     expect(await resolveFirePair(deps(null), "a", "scheduled", {})).toEqual({
+      harness: "claude-code",
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
+    expect(
+      await resolveFirePair(
+        deps(null, [
+          listed("cb", "cb", ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"]),
+          listed("anth", "anthropic", ["claude-opus-5-5"]),
+        ]),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toEqual({
       harness: "claude-code",
       provider: "anth",
       model: "anthropic/claude-opus-5-5",
@@ -213,6 +228,7 @@ describe("convertedDefaultModel", () => {
   ];
   const convert = (setting: string | null, ran: string[] = []) =>
     convertedDefaultModel({
+      harness: "claude-code",
       setting,
       providers: [{ alias: "anthropic", listed: LISTED }],
       ran,
@@ -228,6 +244,7 @@ describe("convertedDefaultModel", () => {
   it("takes the model the kit declared where the provider lists it", () => {
     const ibm = (declared: string, listed: string[]) =>
       convertedDefaultModel({
+        harness: "claude-code",
         setting: "opus",
         providers: [{ alias: "ibm", listed }],
         ran: [],
@@ -239,6 +256,7 @@ describe("convertedDefaultModel", () => {
     ).toBe("ibm/aws/claude-opus-5");
     expect(
       convertedDefaultModel({
+        harness: "claude-code",
         setting: "opus",
         providers: [{ alias: "anthropic", listed: LISTED }],
         ran: [],
@@ -247,6 +265,7 @@ describe("convertedDefaultModel", () => {
     ).toBe("anthropic/claude-opus-4-8");
     expect(
       convertedDefaultModel({
+        harness: "claude-code",
         setting: "opus",
         providers: [{ alias: "anthropic", listed: LISTED }],
         ran: [],
@@ -259,6 +278,7 @@ describe("convertedDefaultModel", () => {
   it("takes no other tier when the provider has none of it", () => {
     expect(
       convertedDefaultModel({
+        harness: "claude-code",
         setting: "opus",
         providers: [{ alias: "ibm", listed: ["aws/claude-sonnet-5-5"] }],
         ran: [],
@@ -270,6 +290,7 @@ describe("convertedDefaultModel", () => {
   it("runs Haiku on the newest Sonnet only where the provider has no Haiku", () => {
     const ibm = (setting: string, listed: string[]) =>
       convertedDefault({
+        harness: "claude-code",
         setting,
         providers: [{ alias: "ibm", listed }],
         ran: [],
@@ -284,6 +305,42 @@ describe("convertedDefaultModel", () => {
     });
     expect(ibm("opus", ["aws/claude-sonnet-5-5"])).toBeNull();
     expect(ibm("haiku", ["aws/gpt-5.5"])).toBeNull();
+  });
+
+  // TEST_SCENARIO: a tier word the fitting providers cannot answer falls to the platform's preference list, and the default keeps that word as `changedFrom`, so the owner is told which model the runs it pays for replaced; a tier they can answer names the model the setting meant, so nothing is noted — here on one provider and on several alike, now that the list answers a tier with the harness's own models first.
+  it("notes a default of another tier than the setting named", () => {
+    const cb = {
+      alias: "cb",
+      listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+    };
+    const anthropic = { alias: "anthropic", listed: ["claude-opus-5-5"] };
+    expect(
+      convertedDefault({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [cb],
+        ran: [],
+      }),
+    ).toEqual({
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      changedFrom: "opus",
+    });
+    expect(
+      convertedDefault({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [anthropic],
+        ran: [],
+      }),
+    ).toEqual({ model: "anthropic/claude-opus-5-5" });
+    expect(
+      convertedDefault({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [anthropic, cb],
+        ran: [],
+      }),
+    ).toEqual({ model: "anthropic/claude-opus-5-5" });
   });
 
   // TEST_SCENARIO: a model id is kept in the provider's own spelling when the provider lists it, and dropped when it does not.
@@ -313,14 +370,28 @@ describe("convertedDefaultModel", () => {
 describe("convertedDefaultModel on Bob's own gateway", () => {
   const BOB = ["background", "explorer", "fast", "gpt-oss-20b", "premium-ide"];
 
-  // TEST_SCENARIO: 20 of 22 Bob agents converted to "not set" on 0.2.24: they named no model and ran on Bob's built-in default, which the preference list does not know, so they convert to the Bob model owners run on (`fast`, else `explorer`) — and the preference list still wins where another provider lists its model, and no other provider's `fast` is taken for Bob's.
+  // TEST_SCENARIO: 20 of 22 Bob agents converted to "not set" on 0.2.24: they named no model and ran on Bob's built-in default, which the preference list does not know, so they convert to the Bob model owners run on (`fast`, else `explorer`) — before any other provider's model, since a Bob agent runs on Bob, and no other provider's `fast` is taken for Bob's.
   it("takes Bob's built-in default for an agent that named no model", () => {
     const bob = { alias: "bob", listed: BOB };
     expect(
-      convertedDefaultModel({ setting: null, providers: [bob], ran: [] }),
+      convertedDefaultModel({
+        harness: "bob",
+        setting: null,
+        providers: [bob],
+        ran: [],
+      }),
     ).toBe("bob/fast");
     expect(
       convertedDefaultModel({
+        harness: "bob",
+        setting: null,
+        providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }, bob],
+        ran: [],
+      }),
+    ).toBe("bob/fast");
+    expect(
+      convertedDefaultModel({
+        harness: "claude-code",
         setting: null,
         providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }, bob],
         ran: [],
@@ -328,6 +399,7 @@ describe("convertedDefaultModel on Bob's own gateway", () => {
     ).toBe("ibm/aws/claude-opus-5-5");
     expect(
       convertedDefaultModel({
+        harness: "bob",
         setting: null,
         providers: [{ alias: "bob", listed: ["background", "explorer"] }],
         ran: [],
@@ -335,6 +407,7 @@ describe("convertedDefaultModel on Bob's own gateway", () => {
     ).toBe("bob/explorer");
     expect(
       convertedDefaultModel({
+        harness: "bob",
         setting: null,
         providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }, bob],
         ran: [],
@@ -342,6 +415,7 @@ describe("convertedDefaultModel on Bob's own gateway", () => {
     ).toBe("bob/fast");
     expect(
       convertedDefaultModel({
+        harness: "bob",
         setting: null,
         providers: [{ alias: "ibm", listed: ["xai/grok-4-fast"] }],
         ran: [],
@@ -349,6 +423,7 @@ describe("convertedDefaultModel on Bob's own gateway", () => {
     ).toBeNull();
     expect(
       convertedDefaultModel({
+        harness: "bob",
         setting: "codestral-2508",
         providers: [bob],
         ran: [],
@@ -360,6 +435,7 @@ describe("convertedDefaultModel on Bob's own gateway", () => {
 describe("convertedDefaultModel on several fitting providers", () => {
   const both = (setting: string | null, ran: string[] = []) =>
     convertedDefaultModel({
+      harness: "claude-code",
       setting,
       ran,
       providers: [
@@ -371,23 +447,35 @@ describe("convertedDefaultModel on several fitting providers", () => {
       ],
     });
 
-  // TEST_SCENARIO: an id the setting or the history names is the person's own pick, and it names the same model whichever provider is asked, so it wins over the platform's preferred model; only a tier word, which names nothing on several providers, goes to the list, which is why the image's opus still lands on CurveBender.
-  it("keeps the person's own model and gives only a tier word to the list", () => {
+  // TEST_SCENARIO: an id the setting or the history names is the person's own pick, and it names the same model whichever provider is asked, so it wins over the platform's preferred model; a tier word names nothing on several providers, so it goes to the list, where a Claude Code agent's own models come first and DeepSeek follows, which is why the image's opus now lands on Claude wherever the agent fits an Anthropic provider and on DeepSeek only where none serves Claude.
+  it("keeps the person's own model and answers a tier word from the harness's own models first", () => {
     expect(both("claude-opus-4-8")).toBe("anthropic/claude-opus-4-8");
     expect(both("default", ["claude-opus-4-8"])).toBe(
       "anthropic/claude-opus-4-8",
     );
     expect(both(null, ["claude-opus-5-5"])).toBe("anthropic/claude-opus-5-5");
-    expect(both("opus")).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017");
-    expect(both("default", [])).toBe(
-      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    );
+    expect(both("opus")).toBe("anthropic/claude-opus-5-5");
+    expect(both("default", [])).toBe("anthropic/claude-opus-5-5");
+    expect(
+      convertedDefaultModel({
+        harness: "claude-code",
+        setting: "opus",
+        providers: [
+          {
+            alias: "cb",
+            listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+          },
+        ],
+        ran: [],
+      }),
+    ).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017");
   });
 
   // TEST_SCENARIO: a kit's declared model is what the agent was created for, so it answers before the several-providers shortcut and before the Haiku substitution, and it is found on whichever fitting provider lists it.
   it("takes the kit's declared model before anything else", () => {
     expect(
       convertedDefault({
+        harness: "claude-code",
         setting: "haiku",
         ran: [],
         declared: "claude-opus-5-5",
@@ -402,6 +490,7 @@ describe("convertedDefaultModel on several fitting providers", () => {
     ).toEqual({ model: "anthropic/claude-opus-5-5" });
     expect(
       convertedDefault({
+        harness: "claude-code",
         setting: "haiku",
         ran: [],
         declared: "claude-opus-5-5",
@@ -419,6 +508,7 @@ describe("convertedDefaultModel on several fitting providers", () => {
   it("asks the providers in alias order", () => {
     expect(
       convertedDefaultModel({
+        harness: "claude-code",
         setting: "default",
         ran: ["claude-sonnet-5-5"],
         providers: [
@@ -435,6 +525,7 @@ describe("convertedDefaultModel on a provider that prefixes its ids", () => {
   it("matches the recorded name to the one listed id ending in it", () => {
     const convert = (listed: string[]) =>
       convertedDefaultModel({
+        harness: "claude-code",
         setting: null,
         providers: [{ alias: "ibm", listed }],
         ran: ["claude-sonnet-5-5"],

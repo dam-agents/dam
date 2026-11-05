@@ -67,14 +67,18 @@ export function declaredModelOf(input: {
  * several providers, so only a tier word is left to the next step there; an id
  * the setting or the history names is resolved against each provider in turn,
  * since it names the same model wherever it is. Second the platform's model
- * preference list, across every fitting provider: it fills the gaps the first
- * step leaves — a tier word the provider lists no model of (CurveBender's ids
- * carry no tier word at all), a history whose models it does not list — and it
- * decides an Agent that fits several providers, where the list's order beats
- * the providers' own. Null when neither holds, so the owner picks the default
- * instead of the platform guessing it.
+ * preference list, for the harness these runs use, across every fitting
+ * provider: it fills the gaps the first step leaves — a tier word the provider
+ * lists no model of (CurveBender's ids carry no tier word at all), a history
+ * whose models it does not list — and it decides an Agent that fits several
+ * providers, where the list's order beats the providers' own and the
+ * harness's own models come before the list's fallback, so an Agent that fits
+ * several providers still gets the models its harness was built for. Null when
+ * neither holds, so the owner picks the default instead of the platform
+ * guessing it.
  */
 export function convertedDefaultModel(input: {
+  harness: string;
   setting: string | null;
   providers: readonly ProviderListing[];
   ran: readonly string[];
@@ -82,7 +86,7 @@ export function convertedDefaultModel(input: {
 }): string | null {
   const declared = declaredModelOf(input);
   if (declared) return declared;
-  const preferred = preferredModelOf("work", input.providers);
+  const preferred = preferredModelOf("work", input.providers, input.harness);
   const listed = preferred
     ? `${preferred.alias}/${preferred.upstreamId}`
     : null;

@@ -150,6 +150,7 @@ export function createDefaultConverter(deps: {
     const needsRan =
       !setting?.trim() || setting.trim().toLowerCase() === "default";
     const converted = convertedDefault({
+      harness,
       setting,
       providers,
       ran: needsRan ? await modelsRan(agentId) : [],

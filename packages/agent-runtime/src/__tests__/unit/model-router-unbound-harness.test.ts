@@ -62,7 +62,10 @@ const provider = (
 
 const providers = [
   provider("ibm", ["azure/gpt-5.5", "rits/zai-org/glm-5-1"]),
-  provider("cb", ["aws/claude-opus-5-5"]),
+  provider("cb", [
+    "aws/claude-opus-5-5",
+    "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  ]),
 ];
 const HARNESSES: Record<string, ModelRouterBinding> = {
   pi: { dialects: ["openai-chat"] },
@@ -104,25 +107,32 @@ const ids = async (harness?: string): Promise<string[]> => {
 };
 
 describe("the model list of a harness with no modelRouter section", () => {
-  /** TEST_SCENARIO: The preferred work model is on CurveBender, listed after
-   * IBM; it still comes first, because the list keeps its own order rather
-   * than putting a home provider first, and a harness that takes the first
-   * entry runs on the platform's pick. A request that names no harness is
-   * the image's own harness, the default one. */
+  /** TEST_SCENARIO: A harness this image carries on its own names no models
+   * of its own, so the platform's preferred work model for it is DeepSeek
+   * V4.1 Flash; it is on CurveBender, listed after IBM, and still comes
+   * first, because the list keeps its own order rather than putting a home
+   * provider first, and a harness that takes the first entry runs on the
+   * platform's pick. A request that names no harness is the image's own
+   * harness, the default one. */
   it("serves the preferred work model first, from a later provider", async () => {
     expect(await ids("image-agent")).toEqual([
-      "cb/aws/claude-opus-5-5",
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
       "ibm/azure/gpt-5.5",
       "ibm/rits/zai-org/glm-5-1",
+      "cb/aws/claude-opus-5-5",
     ]);
-    expect((await ids())[0]).toBe("cb/aws/claude-opus-5-5");
+    expect((await ids())[0]).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    );
   });
 
   /** TEST_SCENARIO: A harness name that is only a key of every object, such
    * as `constructor`, names no binding, so it gets the unbound list instead
    * of failing on a binding that is not one. */
   it("takes an inherited object key for an unbound harness", async () => {
-    expect((await ids("constructor"))[0]).toBe("cb/aws/claude-opus-5-5");
+    expect((await ids("constructor"))[0]).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    );
   });
 
   /** TEST_SCENARIO: A harness with a binding keeps its own list in its usual
@@ -132,6 +142,7 @@ describe("the model list of a harness with no modelRouter section", () => {
       "ibm/azure/gpt-5.5",
       "ibm/rits/zai-org/glm-5-1",
       "cb/aws/claude-opus-5-5",
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     ]);
   });
 });

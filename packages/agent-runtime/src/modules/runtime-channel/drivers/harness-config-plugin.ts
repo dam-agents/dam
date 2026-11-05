@@ -241,15 +241,20 @@ export function createHarnessConfigPlugin(deps: {
           binding?.modelDiscovery,
           env,
         )?.spec.extendsCatalog;
+        const routed = outcome.via === "model-router";
+        const offers = (tier: string) =>
+          outcome.models.some((m) =>
+            routed
+              ? [m.name, m.value].some((id) =>
+                  id.toLowerCase().split("/").includes(tier.toLowerCase()),
+                )
+              : m.value.toLowerCase().includes(tier.toLowerCase()),
+          );
         const catalogModels = extendsCatalog
           ? (
               binding?.catalog?.options.find((o) => o.id === "model")
                 ?.choices ?? []
-            ).filter((c) =>
-              outcome.models.some((m) =>
-                m.value.toLowerCase().includes(c.value.toLowerCase()),
-              ),
-            )
+            ).filter((c) => offers(c.value))
           : [];
         const listed = new Set(catalogModels.map((c) => c.value));
         return [

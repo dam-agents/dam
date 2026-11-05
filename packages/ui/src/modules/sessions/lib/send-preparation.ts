@@ -18,8 +18,9 @@ export interface SendPreparation {
 function preferredOn(
   catalog: HarnessCatalogView | undefined,
   granted: readonly ProviderConnectionRef[],
+  harness: string,
 ): TopModel | null {
-  const preferred = topModelOf(catalog, granted);
+  const preferred = topModelOf(catalog, granted, harness);
   if (preferred) return preferred;
   const curveBender = curveBenderProvider(granted);
   return curveBender
@@ -41,7 +42,9 @@ export function sendPreparation(input: {
   if (input.session) {
     if (input.session.model !== null)
       return { attach: null, pair: null, model: null };
-    const model = preferredOn(input.catalog, input.granted)?.model ?? null;
+    const model =
+      preferredOn(input.catalog, input.granted, input.session.harness)?.model ??
+      null;
     return { attach: null, pair: null, model };
   }
   const attach =
@@ -53,7 +56,7 @@ export function sendPreparation(input: {
     return { attach: attach?.id ?? null, pair: null, model: null };
   const harness = input.pair?.harness ?? input.harness;
   if (!harness) return { attach: attach?.id ?? null, pair: null, model: null };
-  const top = preferredOn(input.catalog, granted);
+  const top = preferredOn(input.catalog, granted, harness);
   return {
     attach: attach?.id ?? null,
     pair: top

@@ -164,9 +164,11 @@ export function firstProviderDefault(
     const models = provider.models.filter(
       (m) => harness !== undefined && m.harnesses.includes(harness),
     );
-    const preferred = preferredModelOf("work", [
-      { alias: provider.alias, listed: models.map((m) => m.upstreamId) },
-    ]);
+    const preferred = preferredModelOf(
+      "work",
+      [{ alias: provider.alias, listed: models.map((m) => m.upstreamId) }],
+      harness,
+    );
     const model =
       models.find((m) => m.upstreamId === preferred?.upstreamId) ?? models[0];
     if (harness && model)
