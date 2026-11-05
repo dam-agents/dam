@@ -28,12 +28,6 @@ interface Chain {
   returnTo: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a chain an address's session started to complete its sign-in, kept while the chain may still be walked, so that session starts no other.
-interface Completion {
-  startedAt: number;
-  missing: string[];
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, as an address's session depends on them: whether one still holds, and ending one.
 export interface ShareSessions {
   alive(sessionId: string): Promise<boolean>;
@@ -103,7 +97,7 @@ export function createEnvironmentSignIn(deps: {
   sessions: TtlStore<EnvironmentSession>;
   chains: TtlStore<Chain>;
   signedIn: TtlStore<string>;
-  completions: TtlStore<Completion>;
+  completions: TtlStore<string[]>;
   share: ShareSessions;
   addressUrl: (address: string) => string;
   now: () => number;
@@ -188,10 +182,7 @@ export function createEnvironmentSignIn(deps: {
           missing.push(address);
       }
       if (missing.length === 0) return null;
-      await deps.completions.set(sessionId, {
-        startedAt: deps.now(),
-        missing,
-      });
+      await deps.completions.set(sessionId, missing);
       const hop = await startChain(session, missing, returnTo);
       return hop === null ? null : { hop, missing };
     },

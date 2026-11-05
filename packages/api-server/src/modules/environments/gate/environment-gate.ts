@@ -748,7 +748,7 @@ export function createEnvironmentGate(
       );
     }
 
-    const completion = await completeSignIn(c, resolved, visitor!);
+    const completion = await completeSignIn(c, resolved, visitor);
     if (completion) return completion;
     return admitted(c, resolved);
   };
@@ -757,10 +757,11 @@ export function createEnvironmentGate(
   async function completeSignIn(
     c: Context,
     resolved: Resolved,
-    visitor: EnvironmentSession,
+    visitor: EnvironmentSession | null,
   ): Promise<Response | null> {
     const sessionId = getCookie(c, cookieName);
     if (
+      visitor === null ||
       !isPageLoad(c) ||
       (c.req.header("sec-fetch-dest") ?? "document") !== "document" ||
       sessionId === undefined
