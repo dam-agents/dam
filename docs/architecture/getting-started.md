@@ -22,6 +22,8 @@ The [assistant](assistant.md) is an Agent like any other here: provisioning enro
 Because nobody made that Agent by hand, its unlock is recorded already seen, so the checklist counts it at once instead of holding a celebration for it; the announcement that follows finds the task recorded and adds nothing.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 
+The checklist starts over from two doors: its own **Reset onboarding progress** under Experimental features, and **Reset user onboarding** under the assistant's row, which resets the same checklist and also forgets that the assistant was ever used ([assistant](assistant.md#starting-it-over)).
+
 ## Who sees the checklist
 
 The api-server decides once, the first time it meets a user here, whether the checklist applies.

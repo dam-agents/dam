@@ -32,7 +32,6 @@ const ON = {
   assistantId: ASSISTANT,
   selectedAgent: ASSISTANT,
   used: false,
-  sessionsListed: 0,
 };
 
 const copy = greetingCopy({
@@ -59,10 +58,11 @@ describe("when the greeting is shown", () => {
     expect(greetingShown({ ...ON, used: undefined })).toBe(false);
   });
 
-  // TEST_SCENARIO: the row's mark can lag the Session that just started, and the Agent's own list is the answer that does not: one session listed hides the greeting, and so does a list that has not answered.
-  it("is hidden by a session the Agent already lists", () => {
-    expect(greetingShown({ ...ON, sessionsListed: 1 })).toBe(false);
-    expect(greetingShown({ ...ON, sessionsListed: undefined })).toBe(false);
+  // TEST_SCENARIO: the greeting rests on the row's mark alone, so it opens a New chat even when the assistant already has older sessions — and a reset, which clears the mark, brings it straight back.
+  it("opens a New chat whatever sessions the assistant already has", () => {
+    expect(greetingShown(ON)).toBe(true);
+    expect(greetingShown({ ...ON, used: true })).toBe(false);
+    expect(greetingShown({ ...ON, used: false })).toBe(true);
   });
 });
 
@@ -113,9 +113,7 @@ describe("the assistant's used mark", () => {
     expect(queryClient.getQueryData(key)).toEqual({ ...row, used: true });
 
     const marked = queryClient.getQueryData<typeof row>(key);
-    expect(
-      greetingShown({ ...ON, used: marked?.used, sessionsListed: 0 }),
-    ).toBe(false);
+    expect(greetingShown({ ...ON, used: marked?.used })).toBe(false);
   });
 
   // TEST_SCENARIO: a session on another Agent is not the assistant's, so the row it does not name is left alone.

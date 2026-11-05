@@ -43,6 +43,8 @@ export interface AssistantsRepository {
   completeRename(owner: string, agentId: string): Promise<void>;
   clearRename(owner: string, agentId: string): Promise<void>;
   markNoticeSeen(owner: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: forgets that the assistant was ever used, and nothing else — not the rename it made room with, not the notice, and never the Agent itself. */
+  resetUsed(owner: string): Promise<void>;
   markUsed(agentId: string): Promise<void>;
   forgetByAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -209,6 +211,13 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         .where(
           and(eq(assistants.owner, owner), eq(assistants.agentId, agentId)),
         );
+    },
+
+    async resetUsed(owner) {
+      await db
+        .update(assistants)
+        .set({ usedAt: null, updatedAt: sql`now()` })
+        .where(eq(assistants.owner, owner));
     },
 
     async markNoticeSeen(owner) {

@@ -11,14 +11,27 @@ import {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: whether this person has an assistant to hear about:
  * the install's mode decides, except in `experimental`, where their own switch
- * does. Nothing is asked of the server for anyone it is off for.
+ * does — and `known` says whether both answers are in, so a caller that must not
+ * decide on a guess can wait. Nothing is asked of the server for anyone it is
+ * off for.
  */
+export function useAssistantGate(): { on: boolean; known: boolean } {
+  const install = useInstallCapabilities();
+  const mode = install.data?.features.dambledore;
+  const flags = useFeatures(mode !== undefined);
+  if (!install.isSuccess || mode === undefined)
+    return { on: false, known: false };
+  if (mode !== "experimental") return { on: mode === "on", known: true };
+  if (!flags.isSuccess) return { on: false, known: false };
+  return {
+    on: featureOnForUser(mode, flags.data.dambledore ?? false),
+    known: true,
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: whether the person has the assistant, as far as the client knows; the landing asks `useAssistantGate` when it must also know that the answer is in. */
 export function useAssistantOn(): boolean {
-  const install = useInstallCapabilities().data;
-  const mode = install?.features.dambledore;
-  const { data: flags } = useFeatures(mode !== undefined);
-  if (mode === undefined) return false;
-  return featureOnForUser(mode, flags?.dambledore ?? false);
+  return useAssistantGate().on;
 }
 
 /**

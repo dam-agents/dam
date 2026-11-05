@@ -118,6 +118,7 @@ describe("provisioning before admission", () => {
       completeRename: async () => undefined,
       clearRename: async () => undefined,
       markNoticeSeen: async () => undefined,
+      resetUsed: async () => undefined,
       markUsed: async () => undefined,
       forgetByAgent: async () => undefined,
       listAgentIds: async () => [],

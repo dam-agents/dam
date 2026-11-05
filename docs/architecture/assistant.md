@@ -91,6 +91,17 @@ That file is written once, as one more **initialization step** of provisioning (
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
+## Starting it over
+
+Experimental features carries **Reset user onboarding** under the assistant's own row, shown only while the feature is on for the person.
+It is the person's own reset, scoped to the caller: it forgets that their assistant was ever used and starts the [Getting Started](getting-started.md) checklist over through the checklist's own reset.
+Nothing is deleted — not the assistant, its sessions or its files — and the one-time news of a rename, if there is one, stays.
+A person with no assistant yet is answered success, so the button is never a failure.
+
+What it restores is the first open: the assistant's record says it has never been used, so the greeting returns to an empty chat and the first landing routes the person into it again.
+The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
+The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
+
 ## Rolling it out
 
 Those refusals rest on the kind, and a replica older than this page reads an unknown kind as no kind at all: it would let the assistant be deleted, renamed, disabled, shared or bound like any Agent.

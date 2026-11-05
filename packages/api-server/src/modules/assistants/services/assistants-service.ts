@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import type { AssistantsService } from "api-server-api";
 import type { AssistantsRepository } from "../infrastructure/assistants-repository.js";
 
@@ -12,6 +13,10 @@ import type { AssistantsRepository } from "../infrastructure/assistants-reposito
 export function createAssistantsService(deps: {
   repo: AssistantsRepository;
   owner: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the feature is on for this person, which is what the reset is refused on; the same answer provisioning asks for. */
+  enabled: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, the one its button in Experimental features calls, so both doors start it over the same way. */
+  resetChecklist: () => Promise<unknown>;
 }): AssistantsService {
   return {
     async state() {
@@ -28,6 +33,15 @@ export function createAssistantsService(deps: {
     },
     async dismissNotice() {
       await deps.repo.markNoticeSeen(deps.owner);
+    },
+    async resetOnboarding() {
+      if (!(await deps.enabled()))
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "This install does not offer the assistant to you.",
+        });
+      await deps.repo.resetUsed(deps.owner);
+      await deps.resetChecklist();
     },
   };
 }

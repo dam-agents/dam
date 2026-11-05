@@ -6,4 +6,7 @@ export const assistantsRouter = t.router({
   dismissNotice: signedInProcedure.mutation(({ ctx }) =>
     ctx.assistants.dismissNotice(),
   ),
+  resetOnboarding: signedInProcedure.mutation(({ ctx }) =>
+    ctx.assistants.resetOnboarding(),
+  ),
 });

@@ -133,6 +133,7 @@ function rowStore() {
       if (row?.agentId === agentId && row.renamed) row.renamed = null;
     },
     markNoticeSeen: async () => undefined,
+    resetUsed: async () => undefined,
     markUsed: async () => undefined,
     forgetByAgent: async (agentId: string) => {
       for (const row of rows.values())

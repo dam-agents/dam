@@ -20,11 +20,17 @@ export function composeAssistantsForOwner(deps: {
   agents: Pick<AgentsService, "list" | "create" | "update">;
   enrolled: () => Promise<void>;
   provisioned: (agent: InfraAgent) => Promise<void>;
+  resetChecklist: () => Promise<unknown>;
   withLock: OwnerLock["withLock"];
 }): { assistants: AssistantsService; provisioner: AssistantProvisioner } {
   const repo = createAssistantsRepository(deps.db);
   return {
-    assistants: createAssistantsService({ repo, owner: deps.owner }),
+    assistants: createAssistantsService({
+      repo,
+      owner: deps.owner,
+      enabled: deps.enabled,
+      resetChecklist: deps.resetChecklist,
+    }),
     provisioner: createAssistantProvisioner({
       repo,
       ownName: deps.owner,

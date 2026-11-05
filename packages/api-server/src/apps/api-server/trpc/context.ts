@@ -347,6 +347,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
         enrolled: () => gettingStarted.ensureEnrolled(user.sub),
+        resetChecklist: () => gettingStarted.forOwner(user.sub).reset(),
         provisioned: (agent) =>
           gettingStarted.recordProvisionedAssistant(user.sub, {
             agentId: agent.id,
