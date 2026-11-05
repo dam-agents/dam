@@ -125,13 +125,15 @@ It exists because an [assistant](assistant.md) drives its owner's install throug
 The exchange is the harness route the machine already stands on: `POST /api/agents/<id>/cli-token` is reachable only from that Agent's own gateway, which the mesh admits for its own `/api/agents/<id>/` prefix and for no sibling, so the proof that the caller is the Agent is the same one every harness call already rests on.
 The route reads the live Agent and refuses unless it is an `assistant`, its owner still owns it and the install still offers assistants to that owner.
 
-The token is signed with the install's token pepper and carries the Agent, its owner and a fifteen-minute expiry, and nothing is stored server-side, so there is no revocation list to keep: every use re-reads the Agent, its kind and its owner label and re-checks the `dambledore` flag for that owner.
+The token is signed with a key derived from the install's token pepper under its own HKDF context, so an API key's pepper can never forge one, and it carries the Agent, its owner and a fifteen-minute expiry in strict, canonically spelled claims.
+Nothing is stored server-side, so there is no revocation list to keep: every use re-reads the Agent, its kind and its owner label, asks the user directory whether the owner is still admitted, and re-checks the `dambledore` flag for that owner.
 A deleted Agent, a plain Agent, a moved owner label, an expired token and an owner the install stopped offering assistants to are all refused at the door, not only at mint.
 It acts as the agent's **owner** over that owner's Agents and connections — `agents:read`, `agents:operate`, `agents:manage` and `credentials:read` — and unlike a key it is never `credentials:manage`: adding or rotating a credential stays the person's.
 It is never an operator, and never a person, so the surfaces that need one refuse it: it cannot mint an API key, accept the Terms, set a feature flag, or decide an approval.
-A stream it opens is re-checked like a key's, so an assistant deleted or switched off mid-stream loses that stream.
+It reaches the **app tRPC API's HTTP calls and nothing else**: an agent's runtime tRPC, its file and import routes, and every relay socket — the ACP, terminal, SSH and browser-stream upgrades — refuse it outright, because those are the owner's own doors and an approval never stands in front of them.
+The app's tRPC socket refuses it too, so no long-lived surface it opened can outlive its fifteen minutes; the relays and the socket re-check a key every few seconds as before.
 
-Everything it changes waits for the owner: the tRPC layer files the call on the owner's approval queue — the same queue a held network request lands in — and runs it, once, as the owner, only when the owner approves ([assistant](assistant.md#what-it-changes)).
+Everything it changes waits for the owner: the tRPC layer files the call on the owner's approval queue — the same queue a held network request lands in — and runs it, once, in a context composed for that owner's own authenticated identity, only when the owner approves it in their own signed-in session ([assistant](assistant.md#what-it-changes)).
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.

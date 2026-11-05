@@ -156,26 +156,59 @@ const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
  */
 const AGENT_CHANGE_INPUT_MAX_LENGTH = 65_536;
 
+/* UNIT_BOUNDARY_DESCRIPTION: the procedure's own input parser, registered by the
+ * router that holds them, so the change filed is the canonical arguments the
+ * procedure would receive — defaults filled in, unknown keys gone — rather than
+ * whatever spelling the caller sent. */
+let agentChangeInputParser:
+  ((path: string, raw: unknown) => Promise<unknown>) | null = null;
+
+export function registerAgentChangeInputParser(
+  parser: (path: string, raw: unknown) => Promise<unknown>,
+): void {
+  agentChangeInputParser = parser;
+}
+
+async function canonicalAgentChangeInput(
+  path: string,
+  raw: AgentChangeArguments | null,
+): Promise<AgentChangeArguments | null> {
+  if (agentChangeInputParser === null) return raw;
+  try {
+    return (await agentChangeInputParser(
+      path,
+      raw,
+    )) as AgentChangeArguments | null;
+  } catch (err) {
+    // UNIT_BOUNDARY_DESCRIPTION: arguments the procedure itself would refuse are refused here, to the caller, rather than filed for an owner to approve something that cannot run.
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: err instanceof Error ? err.message : "invalid input",
+    });
+  }
+}
+
 const agentChangesNeedApproval = tBase.middleware(
   async ({ ctx, path, type, getRawInput, next }) => {
     const assistant = ctx.user?.onBehalfAgentId;
     if (assistant === undefined || type !== "mutation") return next();
     const kind = agentChangeKind(path);
-    if (kind === "create") return next();
     if (kind === "refuse") {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: `This is the owner's own decision, not the assistant's: \`${path}\` is refused for an agent acting on the owner's behalf.`,
       });
     }
-    const input = (await getRawInput()) as AgentChangeArguments | null;
-    if (JSON.stringify(input ?? null).length > AGENT_CHANGE_INPUT_MAX_LENGTH) {
+    const raw = (await getRawInput()) as AgentChangeArguments | null;
+    if (JSON.stringify(raw ?? null).length > AGENT_CHANGE_INPUT_MAX_LENGTH) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message:
           "This change is too large to put in front of your owner; split it into smaller ones.",
       });
     }
+    const input = await canonicalAgentChangeInput(path, raw);
+    if (agentChangeKind(path, input) === "create") return next();
     const filed = await ctx.agentChanges.request({ procedure: path, input });
     throw new TRPCError({
       code: "PRECONDITION_FAILED",

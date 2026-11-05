@@ -104,6 +104,7 @@ A `dam` running inside one of the install's assistants is given `DAM_AGENT_TOKEN
 It sits between `DAM_TOKEN` and the credential store: an explicit bearer still wins, and a machine given this never reads `~/.local/state`.
 What it can do is the install's decision, not the CLI's: the token acts as the assistant's owner and every change it asks for waits on that owner's approval, so a verb that fails this way says so and names the approval to wait on.
 `dam approval wait <id>` reports the verdict and what became of the change; it never re-runs anything, because an approved change has already happened server-side.
+Answering such a request (`dam approval approve` or `deny` on it) needs a person's own sign-in: an API key is refused there, and so is the assistant itself.
 
 ## Agent addressing
 

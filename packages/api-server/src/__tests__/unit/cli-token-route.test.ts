@@ -28,12 +28,16 @@ function agent(kind: string | undefined, owner = "owner-1"): KubeObject {
   } as unknown as KubeObject;
 }
 
-function app(exists: KubeObject | null, opts: { flagOn?: boolean } = {}) {
+function app(
+  exists: KubeObject | null,
+  opts: { flagOn?: boolean; ownerActive?: boolean } = {},
+) {
   const mounted = new Hono();
   mountCliTokenRoute(mounted, {
     readAgent: async () => exists,
     mintToken: codec,
     featureOn: async () => opts.flagOn ?? true,
+    ownerActive: async () => opts.ownerActive ?? true,
   });
   return mounted;
 }

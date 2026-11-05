@@ -74,6 +74,36 @@ interface CreateApprovalsServiceDeps {
   executeAgentChange?: (
     payload: AgentChangePayload,
   ) => Promise<AgentChangeResult>;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether this call is the owner's own signed-in session — no API key, no assistant's token, no editor standing. Only that answers a change an assistant asked for: the verdict is where an assistant's reach ends. */
+  interactiveOwner: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: the facts a token could not know when the change was filed, re-read at the verdict: the assistant still exists, is still an assistant, its owner is still an admitted person, and the install still offers assistants to them. */
+  assistantStillAllowed?: (input: {
+    agentId: string;
+    ownerSub: string;
+  }) => Promise<{ ok: true } | { ok: false; reason: string }>;
+}
+
+function refuseUnlessInteractiveOwner(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+): void {
+  if (deps.interactiveOwner) return;
+  securityLog("warn", "approval.verdict_refused", {
+    category: "approval",
+    actor: deps.actor,
+    actorKind: "agent",
+    agentId: row.agentId,
+    decision: "deny",
+    reason:
+      deps.actor === row.ownerSub ? "not-an-interactive-session" : "not-owner",
+    correlationId: row.id,
+    detail: { surface: "agent-change" },
+  });
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message:
+      "A change an assistant asked for is decided by the owner in a signed-in session — not by an API key, and not by the assistant.",
+  });
 }
 
 function matchesBinding(
@@ -341,6 +371,7 @@ async function refuseOnce(
   row: PendingApprovalRow,
   verdict: "deny" | "deny_once",
 ): Promise<ApprovalActionOutcome> {
+  refuseUnlessInteractiveOwner(deps, row);
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor, {
     markDelivered: true,
   });
@@ -362,12 +393,40 @@ async function runAgentChange(
   row: PendingApprovalRow,
 ): Promise<ApprovalActionOutcome> {
   if (row.payload.kind !== "agent_change") return NOT_ACTIONABLE;
+  refuseUnlessInteractiveOwner(deps, row);
   const payload = row.payload;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: everything a token was checked for when it filed the change is checked again here, against the world as it is at the verdict — a deleted assistant, a reassigned owner or a withdrawn feature ends the change instead of running it. */
+  const allowed = deps.assistantStillAllowed
+    ? await deps
+        .assistantStillAllowed({
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+        })
+        .catch(() => ({ ok: false as const, reason: "could not be checked" }))
+    : { ok: true as const };
+  if (!allowed.ok) {
+    securityLog("warn", "agent_change.refused", {
+      category: "approval",
+      actor: deps.actor,
+      actorKind: "user",
+      agentId: row.agentId,
+      decision: "deny",
+      reason: "assistant-no-longer-eligible",
+      correlationId: row.id,
+      detail: { why: allowed.reason },
+    });
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `This change cannot run: ${allowed.reason}.`,
+    });
+  }
+
   const casWon = await deps.repo.resolvePending(
     row.id,
     "allow_once",
     deps.actor,
-    { markDelivered: true },
+    { markDelivered: true, requireUnexpired: true },
   );
   if (!casWon) return NOT_ACTIONABLE;
   emitResolved(row, "allow_once");

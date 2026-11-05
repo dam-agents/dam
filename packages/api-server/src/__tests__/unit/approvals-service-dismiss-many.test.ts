@@ -83,6 +83,7 @@ function makeService(rows: PendingApprovalRow[]) {
     actor: "owner-1",
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
   });
   return { service, resolved, frames };
 }

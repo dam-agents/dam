@@ -101,6 +101,7 @@ function world() {
     actor: OBO.sub,
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
     executeAgentChange: async (payload) => {
       ran.push(payload.input);
       return { procedure: payload.procedure, status: "ran", error: null };
@@ -120,7 +121,13 @@ function contextOf(agentChanges: ApiContext["agentChanges"], user = OBO) {
 const router = t.router({
   agents: t.router({
     create: t.procedure
-      .input(z.object({ name: z.string() }))
+      .input(
+        z.object({
+          name: z.string(),
+          connectionIds: z.array(z.string()).optional(),
+          secretRef: z.string().optional(),
+        }),
+      )
       .mutation(({ input }) => input),
     update: t.procedure
       .input(z.object({ id: z.string(), name: z.string().optional() }))
@@ -139,6 +146,73 @@ describe("the change gate", () => {
       name: "notes",
     });
     expect(w.filed).toEqual([]);
+  });
+
+  it("holds a create that would grant something to the new Agent", async () => {
+    const w = world();
+    const caller = router.createCaller(contextOf(w.agentChanges));
+    const error = (await caller.agents
+      .create({ name: "notes", connectionIds: ["conn-1"] })
+      .catch((e: unknown) => e)) as TRPCError;
+    expect(error.code).toBe("PRECONDITION_FAILED");
+    expect(w.filed).toEqual([
+      {
+        procedure: "agents.create",
+        input: { name: "notes", connectionIds: ["conn-1"] },
+      },
+    ]);
+  });
+
+  it("holds a create that names a shared Secret", async () => {
+    const w = world();
+    const caller = router.createCaller(contextOf(w.agentChanges));
+    const error = (await caller.agents
+      .create({ name: "notes", secretRef: "my-secret" })
+      .catch((e: unknown) => e)) as TRPCError;
+    expect(error.code).toBe("PRECONDITION_FAILED");
+  });
+
+  it("holds a reinstall of a skill, which replaces an installation that exists", async () => {
+    const w = world();
+    const caller = appRouter.createCaller(contextOf(w.agentChanges));
+    const error = (await caller.skills
+      .install({
+        agentId: "agent-1",
+        source: "https://github.com/dam-agents/skills",
+        name: "review",
+        version: "1.2.0",
+      } as never)
+      .catch((e: unknown) => e)) as TRPCError;
+    expect(error.code).toBe("PRECONDITION_FAILED");
+    expect(w.filed.map((f) => f.procedure)).toEqual(["skills.install"]);
+  });
+
+  it("files the procedure's own canonical arguments, not the raw ones", async () => {
+    const w = world();
+    const caller = appRouter.createCaller(contextOf(w.agentChanges));
+
+    // UNIT_BOUNDARY_DESCRIPTION: egressRules.create fills its method and path from defaults the procedure's schema owns, so what the owner reads is what would run.
+    const egressError = await caller.egressRules
+      .create({
+        agentId: "agent-1",
+        host: "api.example.com",
+        verdict: "allow",
+      } as never)
+      .catch((e: unknown) => e);
+    expect(egressError).toBeInstanceOf(TRPCError);
+    expect(w.filed[0]!.input).toMatchObject({
+      agentId: "agent-1",
+      host: "api.example.com",
+      method: "*",
+      pathPattern: "*",
+      verdict: "allow",
+    });
+
+    // UNIT_BOUNDARY_DESCRIPTION: a key the schema does not declare is gone before the owner ever sees it.
+    await caller.agents
+      .update({ id: "agent-1", name: "renamed", sketchy: true } as never)
+      .catch(() => {});
+    expect(w.filed[1]!.input).toEqual({ id: "agent-1", name: "renamed" });
   });
 
   it("holds a rename, files it with the owner, and does not run it", async () => {
@@ -254,6 +328,7 @@ describe("the owner's verdict", () => {
       actor: OBO.sub,
       actorEmail: null,
       agentBinding: "*",
+      interactiveOwner: true,
       executeAgentChange: async () => {
         throw new Error("the schedule was deleted meanwhile");
       },

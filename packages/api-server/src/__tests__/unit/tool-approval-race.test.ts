@@ -120,6 +120,7 @@ function setup() {
     actor: "owner-1",
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
   });
   const asked = (options: AcpPermissionOption[] = OPTIONS) =>
     relay.recordAcpNativePending({

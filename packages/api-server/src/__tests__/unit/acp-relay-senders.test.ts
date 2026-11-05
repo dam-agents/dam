@@ -76,6 +76,7 @@ async function world(person: Pick<RelayActor, "sub" | "email" | "editor">) {
   front.on("upgrade", (req, socket, head) => {
     relay.handleUpgrade(req, socket, head, "agent-1", {
       ...person,
+      onBehalfAgentId: null,
       surface: "ui",
       attached: () => {},
       opened: () => {},

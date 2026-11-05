@@ -87,6 +87,7 @@ async function world(firePair: FirePair, boundary?: RunBoundary) {
       surface: "cli",
       attached: () => {},
       editor: null,
+      onBehalfAgentId: null,
       email: null,
       opened: () => {},
     });

@@ -341,6 +341,7 @@ async function deliver(
     actor: "owner-1",
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
   });
 
   const outcome =

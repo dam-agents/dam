@@ -132,6 +132,7 @@ export interface HarnessApiServerAppDeps {
   ) => AgentSecretRequests;
   egressProposalsFor: (owner: string, agentId: string) => EgressProposals;
   mintAgentToken: AgentTokenCodec;
+  ownerActive: (owner: string) => Promise<boolean>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -335,6 +336,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     readAgent: (id) => deps.agentStateCache.get(id),
     mintToken: deps.mintAgentToken,
     featureOn: async (owner) => (await featureFlagsFor(owner)).dambledore,
+    ownerActive: deps.ownerActive,
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),

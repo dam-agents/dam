@@ -67,6 +67,30 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
   return async (c: ProxyCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
+    /* UNIT_BOUNDARY_DESCRIPTION: an assistant's own token reaches the app tRPC API and nothing else. A runtime-tRPC verb — a file removal, a process stop — is the machine changing itself without an approval, which is exactly what the gate exists to prevent. */
+    if (user.onBehalfAgentId !== undefined) {
+      securityLog("warn", "authz.on_behalf_refused", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "agent",
+        agentId,
+        decision: "deny",
+        reason: "on-behalf-refused",
+        sourceIp: clientIp(c),
+        detail: {
+          surface: "trpc-proxy",
+          onBehalfAgentId: user.onBehalfAgentId,
+        },
+      });
+      return c.json(
+        {
+          error: "forbidden",
+          message:
+            "an assistant's own token reaches the platform API only, never an agent's runtime",
+        },
+        403,
+      );
+    }
     const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const admitted =
       (await deps.verifyOwner(agentId, user.sub)) ||

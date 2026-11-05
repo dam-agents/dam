@@ -174,7 +174,7 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "skills.applyBatch": "change",
   "skills.createLocal": "create",
   "skills.deleteLocal": "change",
-  "skills.install": "create",
+  "skills.install": "change",
   "skills.publish": "change",
   "skills.sets.applyToAgent": "change",
   "skills.sets.create": "create",
@@ -197,7 +197,27 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "usage.entryPointChosen": "refuse",
 };
 
-export function agentChangeKind(path: string): AgentChangeKind {
+/* UNIT_BOUNDARY_DESCRIPTION: what makes a create a change after all — a new Agent that already holds something of the owner's. A create that grants a Connection, names a shared Secret or brings a registry credential hands an Agent reach over the owner's credentials, so it waits like any other grant; a plain create, whose only provider is the caller's own default, runs at once. */
+function grantsAnythingToNewAgent(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false;
+  const create = input as {
+    connectionIds?: unknown;
+    secretRef?: unknown;
+    registryCredential?: unknown;
+  };
+  return (
+    (Array.isArray(create.connectionIds) && create.connectionIds.length > 0) ||
+    create.secretRef !== undefined ||
+    create.registryCredential !== undefined
+  );
+}
+
+export function agentChangeKind(
+  path: string,
+  input?: unknown,
+): AgentChangeKind {
+  if (path === "agents.create" && grantsAnythingToNewAgent(input))
+    return "change";
   // UNIT_BOUNDARY_DESCRIPTION: a mutation nobody classified waits for the owner rather than running, so a procedure added without a verdict fails safe.
   return AGENT_CHANGE_KINDS[path] ?? "change";
 }
@@ -209,14 +229,10 @@ export function isClassifiedAgentChange(path: string): boolean {
 export const agentChangeProcedurePaths = (): readonly string[] =>
   Object.keys(AGENT_CHANGE_KINDS);
 
-const DETAIL_MAX = 2_000;
-
+/* UNIT_BOUNDARY_DESCRIPTION: the arguments in full, never abbreviated — a field the owner cannot see is a field they did not approve. The gate bounds what can be filed at all, so this cannot grow without limit. */
 function compact(value: unknown): string {
   const text = JSON.stringify(value ?? null);
-  if (text === undefined) return "no arguments";
-  return text.length > DETAIL_MAX
-    ? `${text.slice(0, DETAIL_MAX)}… (${String(text.length)} characters in all)`
-    : text;
+  return text === undefined ? "no arguments" : text;
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: the few changes whose bare procedure name says

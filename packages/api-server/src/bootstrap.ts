@@ -808,6 +808,7 @@ export async function bootstrap() {
           modes: config.featureModes,
         }).features.flags()
       ).dambledore,
+    ownerActive: apiKeysModule.verifyOwnerActive,
   });
   const auth = createAuth(
     {
@@ -2735,6 +2736,7 @@ export async function bootstrap() {
         ownerSub: owner,
       }),
     mintAgentToken: agentTokenCodec,
+    ownerActive: apiKeysModule.verifyOwnerActive,
     satellitesBoot,
     secretStore,
     spendHold,

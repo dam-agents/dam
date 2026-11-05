@@ -89,6 +89,7 @@ function makeService(seed: PendingApprovalRow) {
     actor: "owner-1",
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
   });
   return { rows, service, inserts };
 }

@@ -1,3 +1,4 @@
+import { createHmac, hkdfSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { authenticatePrincipal } from "../../apps/api-server/admission/auth.js";
@@ -23,12 +24,13 @@ const codec = createAgentTokenCodec(HMAC);
 
 function verifierFor(
   agent: { owner: string | null; kind?: string } | null,
-  opts: { flagOn?: boolean } = {},
+  opts: { flagOn?: boolean; ownerActive?: boolean } = {},
 ) {
   return createAgentTokenVerifier({
     codec,
     agentOf: async () => agent,
     featureOn: async () => opts.flagOn ?? true,
+    ownerActive: async () => opts.ownerActive ?? true,
   });
 }
 
@@ -65,6 +67,71 @@ describe("agent token codec", () => {
       ownerSub: "owner-1",
     });
     expect(codec.read(token)).toBeNull();
+  });
+
+  it("signs with a key derived from the pepper, not with the pepper itself", () => {
+    const { token } = codec.mint({ agentId: "agent-1", ownerSub: "owner-1" });
+    const [body, mac] = token.slice("ob_".length).split(".") as [
+      string,
+      string,
+    ];
+    const rawPepperMac = createHmac("sha256", HMAC)
+      .update(body)
+      .digest("base64url");
+    expect(mac).not.toBe(rawPepperMac);
+    expect(codec.read(`ob_${body}.${rawPepperMac}`)).toBeNull();
+  });
+
+  it("refuses claims that are not the shape it counts on", () => {
+    const sign = (claims: unknown) => {
+      const body = Buffer.from(JSON.stringify(claims)).toString("base64url");
+      const mac = createHmac(
+        "sha256",
+        Buffer.from(
+          hkdfSync(
+            "sha256",
+            HMAC,
+            Buffer.alloc(0),
+            "platform/agent-obo/v1",
+            32,
+          ),
+        ),
+      )
+        .update(body)
+        .digest("base64url");
+      return `ob_${body}.${mac}`;
+    };
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    expect(codec.read(sign(["agent-1", "owner-1", exp]))).toBeNull();
+    expect(codec.read(sign(null))).toBeNull();
+    expect(codec.read(sign({ a: "", o: "owner-1", e: exp }))).toBeNull();
+    expect(
+      codec.read(sign({ a: "agent-1", o: "owner-1", e: "soon" })),
+    ).toBeNull();
+    expect(codec.read(sign({ a: "agent-1", o: "owner-1", e: 1.5 }))).toBeNull();
+    expect(
+      codec.read(sign({ a: "x".repeat(300), o: "owner-1", e: exp })),
+    ).toBeNull();
+    expect(
+      codec.read(sign({ a: "agent-1\u0000", o: "owner-1", e: exp })),
+    ).toBeNull();
+    expect(
+      codec.read(sign({ a: "agent-1", o: "owner-1", e: exp })),
+    ).toMatchObject({
+      agentId: "agent-1",
+    });
+  });
+
+  it("refuses a body or MAC that is not the canonical base64url spelling", () => {
+    const { token } = codec.mint({ agentId: "agent-1", ownerSub: "owner-1" });
+    const [body, mac] = token.slice("ob_".length).split(".") as [
+      string,
+      string,
+    ];
+    const padded = `${body}=`;
+    expect(codec.read(`ob_${padded}.${mac}`)).toBeNull();
+    expect(codec.read(`ob_${body}.${mac}=`)).toBeNull();
+    expect(codec.read(`ob_${body}\n.${mac}`)).toBeNull();
   });
 
   it("refuses an expired token", () => {

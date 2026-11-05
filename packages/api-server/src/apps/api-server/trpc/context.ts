@@ -1,11 +1,5 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import {
-  ALL_SCOPES,
-  ChannelType,
-  editorEmailOf,
-  featureOnForUser,
-} from "api-server-api";
-import { appRouter } from "api-server-api/router";
+import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   composeAgentsModule,
@@ -14,6 +8,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
+import { composeAgentChangeReplay } from "./agent-change-replay.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
@@ -444,43 +439,35 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       wrapperFrameSender,
-      /*
-       * UNIT_BOUNDARY_DESCRIPTION: an owner's verdict on a change an assistant
-       * asked for runs it as the owner — a clean identity, with no on-behalf
-       * marker, so the gate that filed it is not in its way and the change
-       * cannot file another approval in its turn.
-       */
-      executeAgentChange: async (payload) => {
-        const owner: UserIdentity = {
-          sub: user.sub,
-          preferredUsername: user.sub,
-          scopes: ALL_SCOPES,
-          agentIds: "*",
-        };
-        const caller = appRouter.createCaller({ ...ctx, user: owner });
-        const run = payload.procedure
-          .split(".")
-          .reduce<Record<string, unknown> | undefined>(
-            (node, key) =>
-              (node?.[key] as Record<string, unknown> | undefined) ?? undefined,
-            caller as unknown as Record<string, unknown>,
-          );
-        if (typeof run !== "function")
+      /* UNIT_BOUNDARY_DESCRIPTION: only the owner's own signed-in session answers a change an assistant asked for — not an API key, not the assistant's token, not an editor standing. */
+      interactiveOwner:
+        user.keyId === undefined &&
+        user.onBehalfAgentId === undefined &&
+        user.actingEditor === undefined,
+      /* UNIT_BOUNDARY_DESCRIPTION: the verdict re-reads the facts the token was admitted on, against the world as it is then. */
+      assistantStillAllowed: async ({ agentId, ownerSub }) => {
+        const agent = await agentsRepo.get(agentId, ownerSub);
+        if (!agent) return { ok: false, reason: "the assistant is gone" };
+        if (agent.kind !== "assistant")
+          return { ok: false, reason: "that Agent is no longer an assistant" };
+        const active = await apiKeysModule
+          .verifyOwnerActive(ownerSub)
+          .catch(() => false);
+        if (!active)
+          return { ok: false, reason: "the owner's account is not active" };
+        const offered = await features.flags().catch(() => null);
+        if (offered?.dambledore !== true)
           return {
-            procedure: payload.procedure,
-            status: "failed" as const,
-            error: `\`${payload.procedure}\` no longer exists on this install`,
+            ok: false,
+            reason: "assistants are no longer offered to this owner",
           };
-        await (run as (input: unknown) => Promise<unknown>).call(
-          null,
-          payload.input,
-        );
-        return {
-          procedure: payload.procedure,
-          status: "ran" as const,
-          error: null,
-        };
+        return { ok: true };
       },
+      executeAgentChange: composeAgentChangeReplay({
+        contextFor,
+        user,
+        surface,
+      }),
     });
     const costReviews = composeCostReviewsForOwner({
       db,

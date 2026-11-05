@@ -132,10 +132,23 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       }
       const { user } = admitted.principal;
 
+      /* UNIT_BOUNDARY_DESCRIPTION: an assistant's own token is accepted on the app tRPC API's HTTP calls and nowhere else. A socket outlives the request that opened it, and a token is fifteen minutes; the CLI needs no subscription, so the socket is not offered to it at all. The watcher and the expiry below stay correct for whichever credential a future need admits here. */
+      if (user.onBehalfAgentId !== undefined) {
+        await firstRequestOrTimeout(res, DENIAL_HOLD_MS);
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "an assistant's own token reaches the platform API over HTTP only",
+        });
+      }
+
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
-      if (user.keyId !== undefined && res.readyState === res.OPEN) {
+      if (
+        (user.keyId !== undefined || user.onBehalfAgentId !== undefined) &&
+        res.readyState === res.OPEN
+      ) {
         const stop = watchApiKey(deps.authenticate, token, site, () =>
           res.close(CLOSE_CREDENTIAL_EXPIRED, "credential revoked"),
         );

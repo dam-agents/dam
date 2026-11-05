@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
+import { and, asc, desc, eq, gt, isNull, lt, ne, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
@@ -60,7 +60,7 @@ export interface ApprovalsRepository {
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
     decidedBy: string,
-    opts?: { markDelivered?: boolean },
+    opts?: { markDelivered?: boolean; requireUnexpired?: boolean },
   ): Promise<boolean>;
   resolveExpired(
     id: string,
@@ -302,6 +302,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           and(
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
+            ...(opts?.requireUnexpired
+              ? [gt(pendingApprovals.expiresAt, now)]
+              : []),
           ),
         )
         .returning({ id: pendingApprovals.id });

@@ -45,6 +45,27 @@ export function createImportProxy(deps: ImportProxyDeps) {
   return async (c: ImportCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
+    /* UNIT_BOUNDARY_DESCRIPTION: an assistant's own token reaches the app tRPC API and nothing else; writing a bundle into a workspace is the machine changing itself. */
+    if (user.onBehalfAgentId !== undefined) {
+      securityLog("warn", "authz.on_behalf_refused", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "agent",
+        agentId,
+        decision: "deny",
+        reason: "on-behalf-refused",
+        sourceIp: clientIp(c),
+        detail: { surface: "import", onBehalfAgentId: user.onBehalfAgentId },
+      });
+      return c.json(
+        {
+          error: "forbidden",
+          message:
+            "an assistant's own token reaches the platform API only, never an agent's workspace",
+        },
+        403,
+      );
+    }
     if (!(await deps.verifyOwner(agentId, user.sub))) {
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",

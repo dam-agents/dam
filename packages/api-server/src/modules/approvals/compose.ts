@@ -61,6 +61,11 @@ interface ComposeApprovalsServiceDeps {
   executeAgentChange?: (
     payload: AgentChangePayload,
   ) => Promise<AgentChangeResult>;
+  interactiveOwner: boolean;
+  assistantStillAllowed?: (input: {
+    agentId: string;
+    ownerSub: string;
+  }) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -76,8 +81,12 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
+    interactiveOwner: deps.interactiveOwner,
     ...(deps.executeAgentChange && {
       executeAgentChange: deps.executeAgentChange,
+    }),
+    ...(deps.assistantStillAllowed && {
+      assistantStillAllowed: deps.assistantStillAllowed,
     }),
   });
   return { service };

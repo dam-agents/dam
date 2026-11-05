@@ -4,7 +4,6 @@ import { match } from "ts-pattern";
 import { JOSEError, JWKSInvalid, JWKSTimeout } from "jose/errors";
 import type { Context } from "hono";
 import { ALL_SCOPES, type Scope, type UserIdentity } from "api-server-api";
-import { AGENT_ON_BEHALF_SCOPES } from "api-server-api";
 import type { Result } from "../../../core/result.js";
 import {
   securityLog,
@@ -18,6 +17,7 @@ import {
   type ValidatedApiKey,
 } from "../../../modules/api-keys/index.js";
 import {
+  agentOnBehalfUser,
   isAgentToken,
   type AgentTokenIdentity,
 } from "../../../modules/agent-tokens/index.js";
@@ -154,7 +154,9 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
    * its owner, over that owner's Agents, with the read half of their credentials
    * and never credentials:manage; never an operator, and never a person, so the
    * gates that need one refuse it. The verifier has already re-checked the
-   * Agent, its kind, its owner and the install's feature flag for this use.
+   * Agent, its kind, its owner, the owner's account and the install's feature
+   * flag for this use. Its expiry rides along, so a long-lived transport can
+   * close on it rather than outlive the token.
    */
   async function verifyAgentToken(token: string): Promise<VerifiedPrincipal> {
     if (!deps.verifyAgentToken) {
@@ -165,15 +167,10 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
 
     const identity = result.value;
     return {
-      user: {
-        sub: identity.ownerSub,
-        preferredUsername: identity.ownerSub,
-        scopes: AGENT_ON_BEHALF_SCOPES,
-        agentIds: "*",
-        onBehalfAgentId: identity.agentId,
-      },
+      user: agentOnBehalfUser(identity),
       azp: "",
       roles: [],
+      expiresAt: identity.expiresAt,
     };
   }
 
