@@ -24,9 +24,9 @@ export function SandboxChannelsSection({
     ...(available.slack ? [] : ["Slack"]),
     ...(available.telegram ? [] : ["Telegram"]),
   ];
-  /* UNIT_BOUNDARY_DESCRIPTION: what channel turns run on is the agent's, whatever messengers this install offers, so the page picks it above an install with none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: what channel turns run on is the agent's, whatever messengers this install offers, so the page picks it below an install with none. */
   const modelPicker = !compact && (
-    <div className="mb-6">
+    <div className="mt-6">
       <AgentModelPicker agentId={agentId} kind="channel" />
     </div>
   );
@@ -40,17 +40,16 @@ export function SandboxChannelsSection({
       );
     return (
       <>
-        {modelPicker}
         <EmptyState title="No messenger set up">
           There is nothing to connect yet. Ask your administrator to configure
           Slack or Telegram.
         </EmptyState>
+        {modelPicker}
       </>
     );
   }
   return (
     <>
-      {modelPicker}
       {agent && readOnly && (
         <OwnerOnlyNotice
           title="Only the owner connects channels."
@@ -86,6 +85,7 @@ export function SandboxChannelsSection({
           {notConfigured(missing)}
         </p>
       )}
+      {modelPicker}
     </>
   );
 }
