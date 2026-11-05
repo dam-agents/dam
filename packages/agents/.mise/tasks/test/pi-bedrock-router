@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
 
-// TEST_OVERVIEW: a Pi process on a Bedrock Connection alone gets the router's URL but no routed provider, so it runs Pi's own Bedrock provider with the router as its Bedrock Runtime endpoint, in a lease directory of its own beside the shared one a routed Pi left. The fake router lists the region's profiles and answers in AWS event-stream frames (prelude with both lengths and its checksum, string headers, JSON payload, frame checksum).
+// TEST_OVERVIEW: a Pi process on a Bedrock Connection alone, behind the machine's egress proxy, gets the router's URL but no routed provider, so it runs Pi's own Bedrock provider with the router as its Bedrock Runtime endpoint, in a lease directory of its own beside the shared one a routed Pi left. The fake router lists the region's profiles and answers in AWS event-stream frames (prelude with both lengths and its checksum, string headers, JSON payload, frame checksum).
 
 const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
 const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
@@ -87,6 +87,7 @@ const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--n
   cwd: home,
   env: {
     PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+    HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9",
     PLATFORM_MODEL_ROUTER_URL: `${base}/unused`, PLATFORM_MODEL_ROUTER_PORT: "1", PLATFORM_MODEL: KNOWN,
     AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock", AWS_REGION: "us-east-1", AWS_BEDROCK_FORCE_HTTP1: "1",
     AWS_ENDPOINT_URL_BEDROCK: base, AWS_ENDPOINT_URL_BEDROCK_RUNTIME: `${base}/bedrock/${CONNECTION}`,
@@ -141,7 +142,7 @@ try {
   assert.equal(ids.includes(`amazon-bedrock:${GONE}`), false, ids.join(", "));
   assert.equal(errors.includes("lists no model"), false, errors);
 
-  // TEST_SCENARIO: A turn goes to the router's Bedrock path for the Connection, as a Converse stream on the session's model, naming the harness and the session so the router books it.
+  // TEST_SCENARIO: A turn goes to the router's Bedrock path for the Connection, as a Converse stream on the session's model, naming the harness and the session so the router books it, and straight to the router on the loopback, not through the machine's egress proxy.
   const known = await turn("Say ok (1).");
   assert.equal(known.at(-1)?.path, `/bedrock/${CONNECTION}/model/${KNOWN}/converse-stream`, JSON.stringify(known));
   assert.equal(known.at(-1)?.harness, "pi");

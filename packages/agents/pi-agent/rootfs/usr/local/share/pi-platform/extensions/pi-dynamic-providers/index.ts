@@ -716,12 +716,19 @@ async function activateBedrock(
     delete state.settings.defaultModel;
   }
 
-  if (builtin && profiles && profiles.length > 0) {
-    keepBedrockModels(state, [...profiles, ...(model ? [model] : [])]);
-    for (const id of profiles)
+  const listed = profiles && profiles.length > 0 ? profiles : undefined;
+  if (builtin && listed) {
+    keepBedrockModels(state, [...listed, ...(model ? [model] : [])]);
+    for (const id of listed)
       if (!hasModel(builtin, id)) addBedrockModel(state, id);
-    narrowBedrockModels(pi, builtin, profiles, model);
   }
+  if (builtin && (listed || bedrockEndpoint()))
+    narrowBedrockModels(pi, builtin, listed, model);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Model Router's Bedrock path, when the runtime runs Pi's Bedrock calls through it. It is every Bedrock model's base URL, not only the client's endpoint: Pi picks the machine's egress proxy by the model's base URL, and a call to the router through that proxy never arrives, while the loopback is in NO_PROXY.
+function bedrockEndpoint(): string | undefined {
+  return env("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")?.replace(/\/+$/, "");
 }
 
 async function discoverBedrockProfiles(): Promise<string[] | undefined> {
@@ -773,15 +780,20 @@ async function discoverBedrockProfiles(): Promise<string[] | undefined> {
 function narrowBedrockModels(
   pi: ExtensionAPI,
   builtin: Provider,
-  profiles: readonly string[],
+  profiles: readonly string[] | undefined,
   keep: string | undefined,
 ): void {
-  const wanted = new Set(profiles.map((id) => id.toLowerCase()));
+  const wanted = new Set((profiles ?? []).map((id) => id.toLowerCase()));
   if (keep) wanted.add(keep.toLowerCase());
-  const offered = (m: { id: string }) => wanted.has(m.id.toLowerCase());
-  const models = builtin.getModels().filter(offered);
+  const endpoint = bedrockEndpoint();
+  const pick = <M extends { id: string; baseUrl: string }>(all: M[]): M[] =>
+    all
+      .filter((m) => !profiles || wanted.has(m.id.toLowerCase()))
+      .map((m) => (endpoint ? { ...m, baseUrl: endpoint } : m));
+  const models = pick(builtin.getModels());
   if (models.length === 0) return;
-  const allModels = builtin.getAllModels?.().filter(offered);
+  const all = builtin.getAllModels?.();
+  const allModels = all ? pick(all) : undefined;
   pi.registerProvider({
     ...builtin,
     getModels: () => models,
@@ -844,7 +856,8 @@ function addBedrockModel(state: ConfigState, id: string): void {
     id,
     name: id,
     api: BEDROCK_API,
-    baseUrl: `https://bedrock-runtime.${region}.amazonaws.com`,
+    baseUrl:
+      bedrockEndpoint() ?? `https://bedrock-runtime.${region}.amazonaws.com`,
   };
   const provider = (state.models.providers[BEDROCK_PROVIDER] ?? {}) as {
     models?: BedrockModelEntry[];
