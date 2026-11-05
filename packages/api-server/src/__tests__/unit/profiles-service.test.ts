@@ -589,14 +589,21 @@ describe("a new agent's default", () => {
     seed: null,
   });
 
-  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile. */
+  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile; a Connection the owner holds reconciles nothing. */
   it("starts a new agent on the default profile", async () => {
     const { repo, writes } = fakeRepo();
-    const chosen = await newAgentDefault(owner(repo));
+    let reconciled = 0;
+    const chosen = await newAgentDefault({
+      ...owner(repo),
+      reconcileConnections: async () => {
+        reconciled += 1;
+      },
+    });
     expect(chosen).toMatchObject({
       profile: { id: "profile-1", harness: "claude-code" },
       connectionId: SHARED.id,
     });
+    expect(reconciled).toBe(0);
     await bindDefaultProfile(owner(repo), "agent-1", chosen!.profile);
     expect(writes.binds).toEqual(["agent-1"]);
   });
@@ -626,5 +633,33 @@ describe("a new agent's default", () => {
   it("offers nothing without a Connection of the template", async () => {
     const { repo } = fakeRepo({ owned: [OWN_KEY] });
     expect(await newAgentDefault(owner(repo))).toBeNull();
+  });
+
+  /** TEST_SCENARIO: the deployment-owned CurveBender comes from a Connection listing or a boot sweep over owners who already hold one, neither of which a first create through the CLI or API runs, so that create reconciles it and still starts on "Default": Pi on that Connection. */
+  it("starts an owner's first agent on Pi over the shared CurveBender it has not listed yet", async () => {
+    const owned: AliasedConnection[] = [];
+    const { repo } = fakeRepo({ rows: [], owned, granted: [] });
+    let reconciled = 0;
+    expect(
+      await newAgentDefault({
+        ...owner(repo),
+        seed: {
+          harness: "pi",
+          model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        },
+        reconcileConnections: async () => {
+          reconciled += 1;
+          owned.push(SHARED);
+        },
+      }),
+    ).toMatchObject({
+      profile: {
+        harness: "pi",
+        providerTemplate: "curve-bender-deployment",
+        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      },
+      connectionId: SHARED.id,
+    });
+    expect(reconciled).toBe(1);
   });
 });
