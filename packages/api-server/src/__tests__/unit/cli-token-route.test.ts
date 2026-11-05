@@ -65,6 +65,20 @@ describe("the assistant's token exchange", () => {
     expect(response.status).toBe(403);
   });
 
+  it("refuses when the owner's account cannot be checked at all", async () => {
+    const mounted = new Hono();
+    mountCliTokenRoute(mounted, {
+      readAgent: async () => agent("assistant"),
+      mintToken: codec,
+      featureOn: async () => true,
+      ownerActive: async () => {
+        throw new Error("keycloak unreachable");
+      },
+    });
+    const response = await post(mounted);
+    expect(response.status).toBe(403);
+  });
+
   it("refuses an owner the install no longer offers assistants to", async () => {
     const response = await post(app(agent("assistant"), { flagOn: false }));
     expect(response.status).toBe(403);

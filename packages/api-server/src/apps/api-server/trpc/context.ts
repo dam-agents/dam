@@ -150,6 +150,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner check a held change is re-read against — the directory, asked fresh, refusing whenever it cannot answer. */
+  const ownerActive = boot.onBehalfOwnerActive;
   const ownerPermissions = createOwnerPermissions({ repo: agentsRepo });
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
@@ -450,9 +452,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         if (!agent) return { ok: false, reason: "the assistant is gone" };
         if (agent.kind !== "assistant")
           return { ok: false, reason: "that Agent is no longer an assistant" };
-        const active = await apiKeysModule
-          .verifyOwnerActive(ownerSub)
-          .catch(() => false);
+        const active = await ownerActive(ownerSub);
         if (!active)
           return { ok: false, reason: "the owner's account is not active" };
         const offered = await features.flags().catch(() => null);

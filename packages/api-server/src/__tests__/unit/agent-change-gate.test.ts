@@ -126,6 +126,7 @@ const router = t.router({
           name: z.string(),
           connectionIds: z.array(z.string()).optional(),
           secretRef: z.string().optional(),
+          providerConnectionId: z.string().optional(),
         }),
       )
       .mutation(({ input }) => input),
@@ -161,6 +162,36 @@ describe("the change gate", () => {
         input: { name: "notes", connectionIds: ["conn-1"] },
       },
     ]);
+  });
+
+  it("holds a create that names the model provider it will run on", async () => {
+    const w = world();
+    const caller = router.createCaller(contextOf(w.agentChanges));
+    const error = (await caller.agents
+      .create({ name: "notes", providerConnectionId: "conn-1" })
+      .catch((e: unknown) => e)) as TRPCError;
+    expect(error.code).toBe("PRECONDITION_FAILED");
+    expect(w.filed).toEqual([
+      {
+        procedure: "agents.create",
+        input: { name: "notes", providerConnectionId: "conn-1" },
+      },
+    ]);
+  });
+
+  it("holds a kit apply that brings its own Connections", async () => {
+    const w = world();
+    const caller = appRouter.createCaller(contextOf(w.agentChanges));
+    const error = (await caller.starterKits
+      .create({
+        catalog: "curated",
+        kitId: "wiki",
+        name: "notes",
+        connectionIds: ["conn-1"],
+      } as never)
+      .catch((e: unknown) => e)) as TRPCError;
+    expect(error.code).toBe("PRECONDITION_FAILED");
+    expect(w.filed.map((f) => f.procedure)).toEqual(["starterKits.create"]);
   });
 
   it("holds a create that names a shared Secret", async () => {

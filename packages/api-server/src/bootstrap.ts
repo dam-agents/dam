@@ -257,6 +257,7 @@ import {
 import {
   createAgentTokenCodec,
   createAgentTokenVerifier,
+  createFailClosedOwnerActive,
 } from "./modules/agent-tokens/index.js";
 import {
   composeArtifactExpirySweeper,
@@ -791,8 +792,11 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
-  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's own bearer — minted on the harness route its machine alone reaches, signed with the install's token pepper, and re-checked against the live Agent at every use. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's own bearer — minted on the harness route its machine alone reaches, signed with the install's token pepper, and re-checked against the live Agent at every use. Its owner check fails closed: an assistant's token dies when the directory cannot confirm its owner. */
   const agentTokenCodec = createAgentTokenCodec(config.apiKeyHmacKey);
+  const onBehalfOwnerActive = createFailClosedOwnerActive({
+    directory: userDirectory,
+  });
   const verifyAgentToken = createAgentTokenVerifier({
     codec: agentTokenCodec,
     agentOf: async (agentId) => {
@@ -808,7 +812,7 @@ export async function bootstrap() {
           modes: config.featureModes,
         }).features.flags()
       ).dambledore,
-    ownerActive: apiKeysModule.verifyOwnerActive,
+    ownerActive: onBehalfOwnerActive,
   });
   const auth = createAuth(
     {
@@ -2610,6 +2614,7 @@ export async function bootstrap() {
   const listRegisteredAgentIds = listAgentIdsByOwner(db, subPseudonymizer);
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
+    onBehalfOwnerActive,
     config,
     api,
     db,
@@ -2736,7 +2741,7 @@ export async function bootstrap() {
         ownerSub: owner,
       }),
     mintAgentToken: agentTokenCodec,
-    ownerActive: apiKeysModule.verifyOwnerActive,
+    ownerActive: onBehalfOwnerActive,
     satellitesBoot,
     secretStore,
     spendHold,

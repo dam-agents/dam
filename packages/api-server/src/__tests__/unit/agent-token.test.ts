@@ -7,6 +7,7 @@ import {
   AGENT_TOKEN_TTL_MS,
   createAgentTokenCodec,
   createAgentTokenVerifier,
+  createFailClosedOwnerActive,
 } from "../../modules/agent-tokens/index.js";
 
 /**
@@ -110,6 +111,11 @@ describe("agent token codec", () => {
     ).toBeNull();
     expect(codec.read(sign({ a: "agent-1", o: "owner-1", e: 1.5 }))).toBeNull();
     expect(
+      codec.read(
+        sign({ a: "agent-1", o: "owner-1", e: Number.MAX_SAFE_INTEGER }),
+      ),
+    ).toBeNull();
+    expect(
       codec.read(sign({ a: "x".repeat(300), o: "owner-1", e: exp })),
     ).toBeNull();
     expect(
@@ -182,12 +188,60 @@ describe("agent token verifier", () => {
     expect(verified).toEqual({ ok: false, error: "flag-off" });
   });
 
+  it("refuses when the owner's account cannot be checked at all", async () => {
+    const verified = await createAgentTokenVerifier({
+      codec,
+      agentOf: async () => ({ owner: "owner-1", kind: "assistant" }),
+      featureOn: async () => true,
+      ownerActive: async () => {
+        throw new Error("keycloak unreachable");
+      },
+    })(mint());
+    expect(verified).toEqual({ ok: false, error: "owner-inactive" });
+  });
+
   it("refuses a token this install never signed", async () => {
     const verified = await verifierFor({
       owner: "owner-1",
       kind: "assistant",
     })("ob_nonsense.nonsense");
     expect(verified).toEqual({ ok: false, error: "unknown" });
+  });
+});
+
+describe("the owner check an assistant's token rides on", () => {
+  const probe = (directory: { isActive(sub: string): Promise<boolean> }) =>
+    createFailClosedOwnerActive({ directory });
+
+  it("admits an owner the directory says is active", async () => {
+    expect(await probe({ isActive: async () => true })("owner-1")).toBe(true);
+  });
+
+  it("refuses an owner the directory says is gone", async () => {
+    expect(await probe({ isActive: async () => false })("owner-1")).toBe(false);
+  });
+
+  it("refuses when the directory cannot answer, rather than waving it through", async () => {
+    expect(
+      await probe({
+        isActive: async () => {
+          throw new Error("keycloak unreachable");
+        },
+      })("owner-1"),
+    ).toBe(false);
+  });
+
+  it("asks the directory every time, caching nothing", async () => {
+    let asked = 0;
+    const verify = probe({
+      isActive: async () => {
+        asked += 1;
+        return true;
+      },
+    });
+    await verify("owner-1");
+    await verify("owner-1");
+    expect(asked).toBe(2);
   });
 });
 

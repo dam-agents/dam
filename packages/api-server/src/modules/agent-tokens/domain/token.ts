@@ -74,6 +74,8 @@ export function createAgentTokenCodec(hmacKey: string): AgentTokenCodec {
       const claims = parseClaims(body);
       if (claims === null) return null;
       const expiresAt = new Date(claims.e * 1000);
+      // UNIT_BOUNDARY_DESCRIPTION: an integer too large for a Date is an Invalid Date, and an Invalid Date is never "before now" — so the range is checked before the clock.
+      if (!Number.isFinite(expiresAt.getTime())) return null;
       if (expiresAt.getTime() <= now.getTime()) return null;
       return { agentId: claims.a, ownerSub: claims.o, expiresAt };
     },

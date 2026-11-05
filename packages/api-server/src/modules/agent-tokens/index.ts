@@ -11,6 +11,7 @@ export {
   agentOnBehalfUser,
   type AgentOnBehalfIdentity,
 } from "./domain/principal.js";
+export { createFailClosedOwnerActive } from "./services/owner-active.js";
 export {
   createAgentTokenVerifier,
   type AgentTokenRefusal,
