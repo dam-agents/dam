@@ -82,6 +82,7 @@ function setup(existing: ReturnType<typeof agent>[]) {
     editors: unused<AgentsDeps["editors"]>(),
     editorEmail: null,
     resolveUserEmail: async () => null,
+    assistantName: "Assistant",
   });
   return { agents, create, updateSpec };
 }

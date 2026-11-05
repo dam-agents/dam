@@ -224,7 +224,7 @@ export const agentsRouter = t.router({
 
   setDisabled: manageAgentsProcedure
     .input(agentSetDisabledInputSchema)
-    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
+    .use(agentPermission("disable", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.setDisabled(input.id, input.disabled);
       if (res.ok) return toAgentView(res.value);
@@ -256,7 +256,7 @@ export const agentsRouter = t.router({
 
   connectSlack: manageAgentsProcedure
     .input(agentConnectSlackInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.id)))
+    .use(agentPermission("channelBinding", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -339,7 +339,9 @@ export const agentsRouter = t.router({
 
   bindSlackChannel: manageAgentsProcedure
     .input(agentBindSlackChannelInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .use(
+      agentPermission("channelBinding", (input) => agentTarget(input.agentId)),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -431,7 +433,9 @@ export const agentsRouter = t.router({
 
   bindTelegramChat: manageAgentsProcedure
     .input(agentBindTelegramChatInputSchema)
-    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
+    .use(
+      agentPermission("channelBinding", (input) => agentTarget(input.agentId)),
+    )
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({

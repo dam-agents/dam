@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-10-23
+Last verified: 2026-11-02
 
 ## Overview
 
@@ -10,7 +10,7 @@ The behavior lives in the agent, and the platform provides only the structural s
 
 Two pieces make an Agent a Knowledge Base:
 
-- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view.
+- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`, beside the assistant's own kind), immutable afterwards, surfaced on the Agent view.
   A knowledge base *is* an agent, so it lists on Home beside every other one rather than on a destination of its own, badged by the kit that made it, and what the owner pays to run it is accounted for in the compute and spend figures there.
   Nothing about a knowledge base is routed or rendered separately any more: the destination, its create form and the paths they lived at are gone, and a marked agent opens, configures and deletes exactly as any other does.
   Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent.

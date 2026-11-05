@@ -21,6 +21,11 @@ brand:
   # a visitor arriving from Slack that the platform is open to them. Empty
   # string drops that sentence.
   vendor: "IBM Research"
+  # Name of each person's assistant agent — the one the platform gives them
+  # when the `dambledore` feature is on for them, which follows `featureDefault`
+  # unless `features.dambledore` names it. The name is reserved: no other agent
+  # may take it, and the assistant itself cannot be renamed.
+  assistantName: Dambledore
   # What `name` stands for. The sign-in page shows one meaning above its
   # heading and swaps it for another at random every few seconds, never the
   # same one twice in a row. An empty list shows no meaning.

@@ -97,7 +97,9 @@ function world(user: UserIdentity) {
       user,
       self: () => ctx,
       agentOfTarget: resolveTarget,
+      ownerPermissions: async () => null,
       editorStanding: standing,
+      assistantName: "Assistant",
       contextFor: (identity) => {
         madeFor.push(identity);
         return { ...ownerCtx, user: identity };

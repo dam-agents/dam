@@ -8,13 +8,19 @@ import {
 
 const SESSION_DIRECTORY_RETENTION_DAYS = 180;
 
-export function composeSessionDirectory(db: Db): {
+export function composeSessionDirectory(
+  db: Db,
+  onRecorded?: (agentId: string) => Promise<void>,
+): {
   sessionDirectory: SessionDirectory;
   retentionTick: () => Promise<void>;
 } {
   const repo = createSessionDirectoryRepository(db);
   return {
-    sessionDirectory: createSessionDirectoryService({ repo }),
+    sessionDirectory: createSessionDirectoryService({
+      repo,
+      ...(onRecorded ? { onRecorded } : {}),
+    }),
     retentionTick: async () => {
       const n = await repo.deleteOlderThan(SESSION_DIRECTORY_RETENTION_DAYS);
       if (n > 0) {

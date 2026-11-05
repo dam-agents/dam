@@ -96,8 +96,11 @@ function AgentHome({ agent }: { agent: AgentView }) {
     enabled: environmentsEnabled,
     count: environments.data?.length,
   });
+  // UNIT_BOUNDARY_DESCRIPTION: the assistant's platform access is its owner's own, so it has no People section to show; every other Agent keeps one, locked for an editor.
   const sections = SECTIONS.filter(
-    (e) => agentHasEnvironments || e.section !== "environments",
+    (e) =>
+      (agentHasEnvironments || e.section !== "environments") &&
+      (agent.kind !== "assistant" || e.section !== "people"),
   );
   const locked = new Set(
     sections

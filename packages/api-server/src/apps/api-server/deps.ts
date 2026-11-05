@@ -3,7 +3,7 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
-import type { Db } from "db";
+import type { Db, OwnerLock } from "db";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type {
@@ -85,6 +85,7 @@ export interface ApiServerDeps {
   config: Config;
   api: CoreV1Api;
   db: Db;
+  assistantOwnerLock: OwnerLock;
   channelManager: ChannelManager;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: TtlStore<SlackOAuthPending>;

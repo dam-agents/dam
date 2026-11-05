@@ -36,6 +36,8 @@ export interface EgressRulesRepository {
     source: EgressRuleSource,
   ): Promise<number>;
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
+  /** UNIT_BOUNDARY_DESCRIPTION: whether a preset ever wrote a rule for this Agent, revoked ones included. An empty active set is not proof that it never ran — that is exactly what an owner leaves behind by choosing no network access. */
+  hasPresetRowsForAgent(agentId: string): Promise<boolean>;
   getById(id: string): Promise<EgressRuleRow | null>;
   getActiveByTuple(
     agentId: string,
@@ -280,6 +282,17 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         RETURNING taken.id
       `);
       return (marked as unknown as Array<unknown>).length;
+    },
+
+    async hasPresetRowsForAgent(agentId) {
+      const rows = await db.execute(sql`
+        SELECT 1
+        FROM ${egressRules}
+        WHERE agent_id = ${agentId}
+          AND source LIKE 'preset:%'
+        LIMIT 1
+      `);
+      return (rows as unknown as Array<unknown>).length > 0;
     },
 
     async getPresetForAgent(agentId) {

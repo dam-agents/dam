@@ -85,6 +85,7 @@ function setup() {
     editors: unused<AgentsDeps["editors"]>(),
     editorEmail: null,
     resolveUserEmail: async () => null,
+    assistantName: "Assistant",
   });
   return { agents, persist, patchSpec };
 }

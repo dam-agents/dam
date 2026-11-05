@@ -38,6 +38,16 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **Home** — what changed since the user last looked; agents, usage, spend.
+- **Assistant** — an agent the platform gives each person when the install offers it: it is named by the install (Dambledore by default), cannot be deleted, shared, disabled or connected to a Slack or Telegram channel, cannot be renamed, and a person whose assistant has never been used lands in its chat instead of Home.
+  It is the experimental feature `dambledore`, which follows the install's `featureDefault` like the others: on the QA install that is `experimental`, so no account has one until it turns it on under Settings → Experimental features (its row is labelled with the install's assistant name).
+  With `on`, a fresh account gets one at sign-in; with `off`, nobody does.
+  An account that never opts in has no assistant, no rename of an agent named Dambledore, and lands on Home as usual.
+  Turning its switch off there deletes that account's assistant and its sessions and files, after a confirm; turning it back on makes a new one.
+  With it on, Experimental features offers **Reset user onboarding** directly under the assistant's row: it asks first, deletes nothing, starts the Get started checklist over, and takes the account back to a first-open arrival — the assistant greets them in an empty chat and the checklist counts from the start again.
+  An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its reserved name and the install's brand, e.g. *Hi Jenna!
+  I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
+  A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
+  The greeting is gone once the assistant has a conversation, so a renamed or second chat opens on the ordinary new-chat page.
 
 ## What the nested install cannot do
 

@@ -1,4 +1,9 @@
 export { createDb, DEFAULT_DB_POOL_MAX, type Db, type DbTx } from "./client.js";
+export {
+  createOwnerLock,
+  type LockOutcome,
+  type OwnerLock,
+} from "./owner-lock.js";
 export { runMigrations } from "./migrate.js";
 export {
   channels,
@@ -47,6 +52,7 @@ export {
   userFeatures,
   gettingStartedChecklists,
   avatarUnlocks,
+  assistants,
   sidebarAgentOrder,
   artifactFolders,
   libraryArtifacts,

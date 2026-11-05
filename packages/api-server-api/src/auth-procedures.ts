@@ -124,7 +124,7 @@ export function agentPermission<TInput>(
     if (!acting.ok)
       throw new TRPCError({
         code: "FORBIDDEN",
-        message: "Only the agent's owner can do this.",
+        message: acting.message ?? "Only the agent's owner can do this.",
       });
     return acting.ctx === ctx ? next() : next({ ctx: acting.ctx });
   };

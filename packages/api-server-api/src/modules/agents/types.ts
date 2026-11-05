@@ -199,8 +199,29 @@ export interface AgentDefaultProvider {
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the initialization a create performs after the
+ * Agent's definition is stored. A caller that records them can ask a later
+ * create to finish only the ones that have not landed, so a retry never
+ * re-applies what its owner may have changed since.
+ */
+export type AgentInitStep = "env" | "egress" | "instructions" | "grants";
+
+export const AGENT_INIT_STEPS: readonly AgentInitStep[] = [
+  "env",
+  "egress",
+  "instructions",
+  "grants",
+];
+
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
+  /* UNIT_BOUNDARY_DESCRIPTION: a create for an Agent whose definition is already stored — the assistant, whose id its provisioning derives — so the store write is skipped and the initialization that follows it runs as an addition rather than a replacement. */
+  resume?: boolean;
+  initDone?: readonly AgentInitStep[];
+  onInitStep?: (step: AgentInitStep) => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which says what the platform greeted the owner with. Only the provisioning that names it writes it, and only once. */
+  instructions?: string;
   starterKit?: string;
   starterKitSeed?: SeedStamp;
   starterKitDefaultModel?: string;

@@ -9,6 +9,7 @@ interface AgentKindBadge {
 
 const KIND_BADGE: Record<AgentKind, AgentKindBadge | null> = {
   "knowledge-base": null,
+  assistant: { label: "Assistant", variant: "muted" },
 };
 
 export function agentKindBadge(agent: AgentView): AgentKindBadge | null {

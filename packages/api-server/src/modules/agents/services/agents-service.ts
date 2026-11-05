@@ -10,6 +10,7 @@ import {
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
+  type AgentInitStep,
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
@@ -41,6 +42,10 @@ import type { AgentServiceStatusClient } from "../infrastructure/agent-service-s
 import type { AgentEditorsRepository } from "../infrastructure/agent-editors-repository.js";
 import { accessTo, namesOwner } from "../domain/agent-access.js";
 import { permissionsOf } from "../domain/agent-permissions.js";
+import {
+  assertNameNotReserved,
+  assertRenameAllowed,
+} from "../domain/reserved-name.js";
 import { minutesToDuration } from "../../../duration.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -125,6 +130,12 @@ export interface OnboardingChecklistReader {
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: seeds the preset only for an Agent that holds no rule yet, so re-running a create cannot replace what its owner changed since. */
+  seedIfAbsent(
+    agentId: string,
+    preset: EgressPreset,
+    decidedBy: string,
+  ): Promise<void>;
 }
 
 export interface TelegramBindingPort {
@@ -605,6 +616,11 @@ export function createAgentsService(deps: {
       agentId: string,
       sel: { connectionIds: string[] },
     ): Promise<void>;
+    /** UNIT_BOUNDARY_DESCRIPTION: grants the first providers only to an Agent that holds none, so re-running a create cannot take back a grant or a detach its owner chose since. */
+    applyAfterCreateIfNone(
+      agentId: string,
+      sel: { connectionIds: string[] },
+    ): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (
@@ -666,6 +682,7 @@ export function createAgentsService(deps: {
   editors: AgentEditorsRepository;
   editorEmail: string | null;
   resolveUserEmail: (sub: string) => Promise<string | null>;
+  assistantName: string;
 }): AgentsService {
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
@@ -1081,7 +1098,7 @@ export function createAgentsService(deps: {
         ? await deps.resolveUserEmail(infra.owner).catch(() => null)
         : null,
       editors,
-      permissions: permissionsOf("editor"),
+      permissions: permissionsOf("editor", infra.kind),
     };
   }
 
@@ -1092,6 +1109,8 @@ export function createAgentsService(deps: {
       (await deps.editors.agentIdsFor(deps.editorEmail)).map(async (id) => {
         const infra = await deps.repo.get(id);
         if (!infra) return [];
+        // UNIT_BOUNDARY_DESCRIPTION: an assistant has no editors, so a row left on one lists nothing for them.
+        if (infra.kind === "assistant") return [];
         const editors = await deps.editors.list(id);
         if (accessTo(infra.owner, editors, caller) !== "editor") return [];
         const [agent, access] = await Promise.all([
@@ -1115,7 +1134,7 @@ export function createAgentsService(deps: {
         access: {
           role: "owner" as const,
           editors: editors.get(agent.id) ?? [],
-          permissions: permissionsOf("owner"),
+          permissions: permissionsOf("owner", agent.kind),
         },
       }));
       return match(scope)
@@ -1135,13 +1154,15 @@ export function createAgentsService(deps: {
               sub: deps.owner,
               editorEmail: deps.editorEmail,
             });
-      if (role === null) return null;
+      // UNIT_BOUNDARY_DESCRIPTION: an assistant has no editors, so a row left on one grants nobody its view either.
+      if (role === null || (role === "editor" && infra.kind === "assistant"))
+        return null;
       const agent = await project(infra);
       return {
         agent,
         access:
           role === "owner"
-            ? { role, editors, permissions: permissionsOf(role) }
+            ? { role, editors, permissions: permissionsOf(role, infra.kind) }
             : await editorAccess(infra, editors),
       };
     },
@@ -1256,6 +1277,13 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      // UNIT_BOUNDARY_DESCRIPTION: a resumed create must say which initialization steps already landed. Guessing from an empty current set is exactly how a retry would restore network access or a provider its owner removed.
+      if (input.resume && input.initDone === undefined)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "a resumed agent create must name the initialization steps that already landed",
+        });
       if (input.vm === false)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -1325,7 +1353,7 @@ export function createAgentsService(deps: {
           deps.agentDefaultLimits,
         );
       }
-      await deps.storageGate?.assertCanCreateVm();
+      if (!input.resume) await deps.storageGate?.assertCanCreateVm();
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -1404,7 +1432,8 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
-      await assertNameFree(input.name, owner);
+      assertNameNotReserved(input.name, input.kind, deps.assistantName);
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1437,13 +1466,24 @@ export function createAgentsService(deps: {
 
       let infra: InfraAgent;
       try {
-        infra = await deps.repo.create(
-          spec,
-          owner,
-          agentId,
-          templateId,
-          Object.keys(createAnnotations).length ? createAnnotations : undefined,
-        );
+        infra = input.resume
+          ? // UNIT_BOUNDARY_DESCRIPTION: a resumed create initializes the Agent its store write already made, read from the store rather than from the informer, which may not have caught up.
+            ((await deps.repo.getLive(agentId, owner)) ??
+            (() => {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "the agent this initialization belongs to is gone",
+              });
+            })())
+          : await deps.repo.create(
+              spec,
+              owner,
+              agentId,
+              templateId,
+              Object.keys(createAnnotations).length
+                ? createAnnotations
+                : undefined,
+            );
       } catch (e) {
         if (input.registryCredential) {
           try {
@@ -1462,17 +1502,32 @@ export function createAgentsService(deps: {
         throw e;
       }
 
-      const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
-      if (userEnv.length > 0)
-        await deps.agentEnvRepo.replace(infra.id, userEnv);
+      // UNIT_BOUNDARY_DESCRIPTION: a resumed create adds what is missing instead of replacing it, and a step the caller has recorded as landed is skipped outright — an empty current set is not proof that the step never ran, since the owner may have emptied it on purpose.
+      const done = new Set<AgentInitStep>(input.initDone ?? []);
+      const step = async (
+        name: AgentInitStep,
+        run: () => Promise<void>,
+      ): Promise<void> => {
+        if (done.has(name)) return;
+        await run();
+        await input.onInitStep?.(name);
+      };
 
-      if (deps.presetSeeder) {
-        await deps.presetSeeder.seed(
-          infra.id,
-          input.egressPreset ?? "trusted",
-          owner,
-        );
-      }
+      const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
+      await step("env", async () => {
+        if (userEnv.length === 0) return;
+        if (input.resume)
+          await deps.agentEnvRepo.insertMissing(infra.id, userEnv);
+        else await deps.agentEnvRepo.replace(infra.id, userEnv);
+      });
+
+      await step("egress", async () => {
+        if (!deps.presetSeeder) return;
+        const preset = input.egressPreset ?? "trusted";
+        if (input.resume)
+          await deps.presetSeeder.seedIfAbsent(infra.id, preset, owner);
+        else await deps.presetSeeder.seed(infra.id, preset, owner);
+      });
 
       const createdAt = new Date();
       await deps.runtimeMutator.bump(infra.id, [
@@ -1497,9 +1552,23 @@ export function createAgentsService(deps: {
           : []),
       ]);
 
-      if (deps.grantProvisioner && hasInitialGrants) {
-        await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
-      }
+      const homeInstructions = input.instructions;
+      if (homeInstructions !== undefined)
+        await step("instructions", async () => {
+          await deps.runtimeMutator.bump(infra.id, [
+            agentInstructionsEvent(infra.id, homeInstructions, createdAt),
+          ]);
+        });
+
+      await step("grants", async () => {
+        if (!deps.grantProvisioner || !hasInitialGrants) return;
+        if (input.resume)
+          await deps.grantProvisioner.applyAfterCreateIfNone(
+            infra.id,
+            grantSel,
+          );
+        else await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
+      });
 
       if (startsOnProfile) {
         const missed = await startsOnProfile
@@ -1507,7 +1576,8 @@ export function createAgentsService(deps: {
           .catch((err: unknown) =>
             err instanceof Error ? err.message : String(err),
           );
-        if (missed)
+        // UNIT_BOUNDARY_DESCRIPTION: a resumed create normally finds the default already bound, which is what it wanted; only a create that made the Agent reports it as news.
+        if (missed && !input.resume)
           getLogger().warn(
             { agentId: infra.id, reason: missed },
             "agent create: the new agent does not start on the default profile; its first hello converts the default instead",
@@ -1551,12 +1621,14 @@ export function createAgentsService(deps: {
           envKeys: (input.env ?? []).map((e) => e.name),
         },
       });
-      emit({
-        type: EventType.AgentCreated,
-        agentId: agent.id,
-        ownerSub: owner,
-        character: avatarCharacter(agent.spec.avatar, owner, agent.name),
-      });
+      // UNIT_BOUNDARY_DESCRIPTION: the Agent already existed for a resumed create, so it was announced once when it was made.
+      if (!input.resume)
+        emit({
+          type: EventType.AgentCreated,
+          agentId: agent.id,
+          ownerSub: owner,
+          character: avatarCharacter(agent.spec.avatar, owner, agent.name),
+        });
       return agent;
     },
 
@@ -1569,6 +1641,8 @@ export function createAgentsService(deps: {
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
         if (input.name !== undefined && input.name !== current.name) {
           renamed = true;
+          assertRenameAllowed(current.kind, deps.assistantName);
+          assertNameNotReserved(input.name, current.kind, deps.assistantName);
           await assertNameFree(input.name, current.owner, input.id);
           if (input.avatar === undefined && !current.spec.avatar)
             keptAvatar = avatarCharacter(

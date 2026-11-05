@@ -64,7 +64,7 @@ export const avatarSchema = z.union([
   z.string().regex(AVATAR_IMAGE_RE),
 ]);
 
-export const agentKindSchema = z.enum(["knowledge-base"]);
+export const agentKindSchema = z.enum(["knowledge-base", "assistant"]);
 
 export const AGENT_ID_RE = /^agent-[0-9a-f]{16}$/;
 

@@ -1,0 +1,434 @@
+// TEST_OVERVIEW: A create records each initialization step as it lands, and a later create skips the recorded ones. That is what keeps a retry from restoring what the owner changed in between: choosing no network access, or detaching every provider, empties a set that an "apply if absent" step would read as unfinished. The adapters are the real ones — the preset seeder and the connection-grant provisioner — so the test sees the rules and grants a user would.
+import { describe, expect, it, vi } from "vitest";
+import type { AgentInitStep, TemplateSpec } from "api-server-api";
+import { createAgentsService } from "../../modules/agents/services/agents-service.js";
+import { connectionGrantProvisioner } from "../../modules/agents/compose.js";
+import { createPresetSeeder } from "../../modules/egress-rules/services/preset-seeder.js";
+import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
+import { ANN_AGENT_KIND } from "../../modules/agents/infrastructure/labels.js";
+import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
+
+type AgentsDeps = Parameters<typeof createAgentsService>[0];
+
+const OWNER = "owner-1";
+const ASSISTANT = "agent-00000000000000a1";
+const NAME = "Dambledore";
+const PROVIDER = "conn-provider";
+
+function unused<T extends object>(fields: Partial<T> = {}): T {
+  return new Proxy(fields, {
+    get(target, key) {
+      if (key in target) return Reflect.get(target, key);
+      throw new Error(`Unexpected dependency: ${String(key)}`);
+    },
+  }) as T;
+}
+
+const existing = parseInfraAgent({
+  metadata: {
+    name: ASSISTANT,
+    labels: { "agent-platform.ai/owner": OWNER },
+    annotations: { [ANN_AGENT_KIND]: "assistant" },
+  },
+  spec: { name: NAME, image: "quay.io/example/agent:latest" },
+});
+
+/** UNIT_BOUNDARY_DESCRIPTION: the egress rules table, as the real seeder and its repository see it — a preset revokes its rows rather than deleting them, so what it ever wrote outlives the owner's choice to hold no rule at all. */
+function egressWorld() {
+  let rows: { host: string; source: string; status: "active" | "revoked" }[] =
+    [];
+  const active = () => rows.filter((r) => r.status === "active");
+  const seeder = createPresetSeeder({
+    repo: unused<EgressRulesRepository>({
+      revokePresetRowsForAgent: async () => {
+        rows = rows.map((r) =>
+          r.source.startsWith("preset:")
+            ? { ...r, status: "revoked" as const }
+            : r,
+        );
+      },
+      insert: async (row) => {
+        rows.push({
+          host: row.host,
+          source: row.source ?? "",
+          status: "active",
+        });
+        return { ...row } as never;
+      },
+      insertAll: async (inserted) => {
+        for (const row of inserted)
+          rows.push({
+            host: row.host,
+            source: row.source ?? "",
+            status: "active",
+          });
+      },
+      markPresetUnderConnections: async () => undefined,
+      listForAgent: async () => active() as never,
+      hasPresetRowsForAgent: async () => rows.length > 0,
+    }),
+    trustedHosts: ["github.com"],
+  });
+  return {
+    seeder: {
+      seed: vi.fn(seeder.seed),
+      seedIfAbsent: vi.fn(seeder.seedIfAbsent),
+    },
+    get active() {
+      return active().map(({ host, source }) => ({ host, source }));
+    },
+    /** UNIT_BOUNDARY_DESCRIPTION: the owner choosing no network access, through the same seeder the app uses. */
+    ownerSelectsNone: () => seeder.seed(ASSISTANT, "none", OWNER),
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the grant table, as the real provisioner reads and writes it. */
+function grantsWorld() {
+  let held: string[] = [];
+  const provisioner = connectionGrantProvisioner(
+    unused<Parameters<typeof connectionGrantProvisioner>[0]>({
+      getAgentConnections: async () =>
+        ({
+          connections: held.map((id) => ({ connectionId: id })),
+        }) as never,
+      setAgentConnections: async (_agentId: string, ids: string[]) => {
+        held = [...ids];
+      },
+    }),
+    { harnesses: [] },
+  );
+  return {
+    provisioner: {
+      ...provisioner,
+      applyAfterCreate: vi.fn(provisioner.applyAfterCreate),
+      applyAfterCreateIfNone: vi.fn(provisioner.applyAfterCreateIfNone),
+    },
+    get held() {
+      return held;
+    },
+    ownerDetaches: () => {
+      held = [];
+    },
+  };
+}
+
+function createAgent(deps: {
+  seeder: ReturnType<typeof egressWorld>["seeder"];
+  provisioner: ReturnType<typeof grantsWorld>["provisioner"];
+  onInitStep: (step: AgentInitStep) => Promise<void>;
+  failGrants?: () => boolean;
+  bump?: AgentsDeps["runtimeMutator"]["bump"];
+}) {
+  return createAgentsService({
+    defaultHarness: "claude-code",
+    owner: OWNER,
+    actor: OWNER,
+    repo: unused<AgentsDeps["repo"]>({
+      list: async () => [existing],
+      get: async () => existing,
+      getLive: async () => existing,
+      create: async () => existing,
+    }),
+    agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({
+      list: async () => [],
+      insertMissing: async () => undefined,
+      replace: async () => undefined,
+    }),
+    registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
+      create: async () => undefined,
+      secretName: () => "registry",
+    }),
+    secretRefs: unused(),
+    agentDefaultLimits: { cpu: "1", memory: "1Gi" },
+    agentIdleTimeoutMinutes: 5,
+    cleanupHooks: [],
+    readTemplateSpec: async () => ({
+      spec: { image: "quay.io/example/agent:latest" } as TemplateSpec,
+    }),
+    runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({
+      bump: deps.bump ?? (async () => 1),
+    }),
+    contributionsProgress: unused(),
+    agentServiceStatus: unused(),
+    grantProvisioner: {
+      ...deps.provisioner,
+      async applyAfterCreate(agentId, sel) {
+        if (deps.failGrants?.() === true)
+          throw new Error("the grant step failed");
+        await deps.provisioner.applyAfterCreate(agentId, sel);
+      },
+      defaultProviders: async () => ({ ids: [PROVIDER], source: "harness" }),
+      async resolveSpecGrants() {
+        return { grantedConnectionIds: [PROVIDER] };
+      },
+    },
+    presetSeeder: deps.seeder,
+    listChannelsByOwner: async () => new Map(),
+    listChannelsByAgent: async () => [],
+    deleteChannelByType: async () => {},
+    deleteSlackChannelByAgent: async () => false,
+    deleteChannelsByAgentIds: async () => {},
+    unitOfWork: unused(),
+    channelsTxRepo: unused(),
+    resolveSlackWorkspace: async () => ({ kind: "unknown" }),
+    findSlackBindings: async () => [],
+    onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
+    assistantName: NAME,
+  });
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the steps a create records, as the assistants row would hold them. */
+function recordingSteps() {
+  const done: AgentInitStep[] = [];
+  return {
+    done,
+    onInitStep: async (step: AgentInitStep) => {
+      if (!done.includes(step)) done.push(step);
+    },
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the first create of the Agent, before anything has landed. */
+const fresh = (onInitStep: (step: AgentInitStep) => Promise<void>) => ({
+  id: ASSISTANT,
+  name: NAME,
+  kind: "assistant" as const,
+  initDone: [] as AgentInitStep[],
+  onInitStep,
+});
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a resumed create is told, as the assistants row would hold it. */
+const resumedWith = (
+  steps: AgentInitStep[],
+  onInitStep: (step: AgentInitStep) => Promise<void>,
+) => ({
+  id: ASSISTANT,
+  name: NAME,
+  kind: "assistant" as const,
+  resume: true,
+  initDone: steps,
+  onInitStep,
+});
+
+type Bump = AgentsDeps["runtimeMutator"]["bump"];
+
+const INSTRUCTIONS =
+  "You are Dambledore, the personal assistant this DAM install gave you.";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the events a create queues for the runtime, as the runtime would apply them. */
+function outboxEvents() {
+  const queued: Parameters<Bump>[1] = [];
+  return {
+    bump: (async (_agentId: string, events: Parameters<Bump>[1]) => {
+      queued.push(...events);
+      return 1;
+    }) as Bump,
+    instructions: () =>
+      queued
+        .filter((event) => event.kind === "agent-instructions")
+        .map((event) => (event.payload as { content: string }).content),
+  };
+}
+
+describe("resuming a create that already initialized", () => {
+  // TEST_SCENARIO: the egress step landed, then the owner chose no network access, then a retry arrives. The recorded step is skipped, so the owner's empty rule set stands.
+  it("does not restore egress the owner closed", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+    });
+
+    await agents.create(fresh(steps.onInitStep));
+    expect(egress.active).toEqual([
+      { host: "github.com", source: "preset:trusted" },
+    ]);
+    expect(steps.done).toEqual(["env", "egress", "grants"]);
+
+    await egress.ownerSelectsNone();
+    expect(egress.active).toEqual([]);
+
+    await agents.create(resumedWith(steps.done, steps.onInitStep));
+    expect(egress.active).toEqual([]);
+    expect(egress.seeder.seedIfAbsent).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the grant step landed, then the owner detached every provider, then a retry arrives. The recorded step is skipped, so nothing is granted again.
+  it("does not re-grant a provider the owner detached", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+    });
+
+    await agents.create(fresh(steps.onInitStep));
+    expect(grants.held).toEqual([PROVIDER]);
+
+    grants.ownerDetaches();
+    await agents.create(resumedWith(steps.done, steps.onInitStep));
+    expect(grants.held).toEqual([]);
+    expect(grants.provisioner.applyAfterCreateIfNone).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: a create that failed at the grant step leaves the steps before it recorded, and the retry applies only the grant step — the egress seeder is not asked again.
+  it("finishes only the steps that never landed", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    let failGrants = true;
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+      failGrants: () => failGrants,
+    });
+
+    await expect(agents.create(fresh(steps.onInitStep))).rejects.toThrow(
+      "the grant step failed",
+    );
+    expect(steps.done).toEqual(["env", "egress"]);
+    expect(grants.held).toEqual([]);
+
+    failGrants = false;
+    await agents.create(resumedWith(steps.done, steps.onInitStep));
+    expect(steps.done).toEqual(["env", "egress", "grants"]);
+    expect(grants.held).toEqual([PROVIDER]);
+    expect(egress.active).toEqual([
+      { host: "github.com", source: "preset:trusted" },
+    ]);
+  });
+
+  // TEST_SCENARIO: the round-1 repro at the level it was written — `seedIfAbsent` called directly on an agent whose preset rows were revoked by its owner's choice of none. Revoked rows count as a preset that already ran, so nothing comes back.
+  it("does not re-seed an agent that chose no network access", async () => {
+    const egress = egressWorld();
+    await egress.seeder.seed(ASSISTANT, "trusted", OWNER);
+    await egress.ownerSelectsNone();
+    expect(egress.active).toEqual([]);
+
+    await egress.seeder.seedIfAbsent(ASSISTANT, "trusted", OWNER);
+    expect(egress.active).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the residual window — the egress step landed but its record did not (the pod died between the two writes), then the owner chose no network access. The retry has no record to skip on, and still must not restore the preset: the revoked rows prove the step ran.
+  it("does not restore egress when the step landed without its record", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const recorded: AgentInitStep[] = [];
+    const recordEnvOnly = async (step: AgentInitStep) => {
+      if (step === "egress") throw new Error("the record was lost");
+      recorded.push(step);
+    };
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: recordEnvOnly,
+    });
+
+    await expect(agents.create(fresh(recordEnvOnly))).rejects.toThrow(
+      "the record was lost",
+    );
+    expect(recorded).toEqual(["env"]);
+    expect(egress.active).toEqual([
+      { host: "github.com", source: "preset:trusted" },
+    ]);
+
+    await egress.ownerSelectsNone();
+    expect(egress.active).toEqual([]);
+
+    await agents.create(resumedWith(recorded, async () => undefined));
+    expect(egress.active).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a step the caller says is done is not run at all — not even its "apply if absent" form — so the safest reading of an empty set is never taken.
+  it("does not ask the seeder at all for a recorded step", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+    });
+    await egress.ownerSelectsNone();
+
+    await agents.create(
+      resumedWith(["env", "egress", "grants"], steps.onInitStep),
+    );
+    expect(egress.active).toEqual([]);
+    expect(grants.held).toEqual([]);
+    expect(egress.seeder.seedIfAbsent).not.toHaveBeenCalled();
+    expect(grants.provisioner.applyAfterCreateIfNone).not.toHaveBeenCalled();
+  });
+});
+
+describe("the assistant's standing instructions", () => {
+  // TEST_SCENARIO: the assistant is created with the instructions that tell it what the platform greeted its owner with, queued once as a step of its own — and the plain template of a hand-made Agent is not among them.
+  it("queues the instructions it was created with, once", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const outbox = outboxEvents();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+      bump: outbox.bump,
+    });
+
+    await agents.create({
+      ...fresh(steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+
+    expect(outbox.instructions()).toEqual([INSTRUCTIONS]);
+    expect(steps.done).toEqual(["env", "egress", "instructions", "grants"]);
+  });
+
+  // TEST_SCENARIO: a retry after the instructions landed must not write them again — the owner may have rewritten the file since — and a create that names none, like any hand-made Agent, never records the step.
+  it("sends them once, and only for a create that names them", async () => {
+    const egress = egressWorld();
+    const grants = grantsWorld();
+    const steps = recordingSteps();
+    const outbox = outboxEvents();
+    const agents = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: steps.onInitStep,
+      bump: outbox.bump,
+    });
+
+    await agents.create({
+      ...fresh(steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+    await agents.create({
+      ...resumedWith(steps.done, steps.onInitStep),
+      instructions: INSTRUCTIONS,
+    });
+
+    expect(outbox.instructions()).toEqual([INSTRUCTIONS]);
+
+    const handmade = recordingSteps();
+    const agentsForHandmade = createAgent({
+      seeder: egress.seeder,
+      provisioner: grants.provisioner,
+      onInitStep: handmade.onInitStep,
+      bump: outbox.bump,
+    });
+    await agentsForHandmade.create({
+      ...fresh(handmade.onInitStep),
+      name: "another-agent",
+      kind: undefined,
+    });
+    expect(handmade.done).not.toContain("instructions");
+  });
+});

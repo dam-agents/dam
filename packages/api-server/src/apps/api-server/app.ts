@@ -89,7 +89,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
     });
     return standing && { role: "editor" as const, email, ...standing };
   };
-  const composeApiContext = createApiContextFactory(deps);
+  const contextFor = createApiContextFactory(deps);
+  const composeApiContext = async (user: UserIdentity, surface: string) => {
+    const ctx = contextFor(user, surface);
+    await ctx.provisionAssistant();
+    return ctx;
+  };
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
     authenticatePrincipal(deps.auth.verify, token, site);

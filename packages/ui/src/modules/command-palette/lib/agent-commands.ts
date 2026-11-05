@@ -175,7 +175,7 @@ export function agentCommands(
           }),
         ]
       : []),
-    ...(may("settings")
+    ...(may("settings") && agent.kind !== "assistant"
       ? [
           of({
             id: "rename",
@@ -216,13 +216,17 @@ export function agentCommands(
                 }),
               ]
             : []),
-          of({
-            id: "toggle-disabled",
-            label: agent.disabled ? "enable" : "disable",
-            icon: Power,
-            prior: PRIOR.disable,
-            run: () => act.toggleDisabled(agent),
-          }),
+          ...(may("disable")
+            ? [
+                of({
+                  id: "toggle-disabled",
+                  label: agent.disabled ? "enable" : "disable",
+                  icon: Power,
+                  prior: PRIOR.disable,
+                  run: () => act.toggleDisabled(agent),
+                }),
+              ]
+            : []),
         ]
       : []),
     ...(may("delete")

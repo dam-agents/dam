@@ -29,10 +29,12 @@ export function SlackChannelCard({
   agent,
   withWhisper = false,
   readOnly = false,
+  canAdd = true,
 }: {
   agent: AgentView | undefined;
   withWhisper?: boolean;
   readOnly?: boolean;
+  canAdd?: boolean;
 }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
@@ -54,7 +56,7 @@ export function SlackChannelCard({
             />
           </span>
         }
-        onNew={readOnly ? undefined : () => setModalTarget("new")}
+        onNew={canAdd && !readOnly ? () => setModalTarget("new") : undefined}
         newDisabled={!agent}
         newTestId="slack-connect"
         newLabel="Add Slack channel"
@@ -62,6 +64,7 @@ export function SlackChannelCard({
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
         addRow={
+          canAdd &&
           !readOnly && (
             <AddRow
               onClick={() => setModalTarget("new")}

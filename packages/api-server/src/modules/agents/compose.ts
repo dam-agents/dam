@@ -112,6 +112,7 @@ export function composeAgentsModule(deps: {
   editorEmail: string | null;
   actor?: string;
   resolveUserEmail: (sub: string) => Promise<string | null>;
+  assistantName: string;
 }): {
   agents: AgentsService;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
@@ -175,6 +176,7 @@ export function composeAgentsModule(deps: {
       editors: createAgentEditorsRepository(deps.db),
       editorEmail: deps.editorEmail,
       resolveUserEmail: deps.resolveUserEmail,
+      assistantName: deps.assistantName,
     }),
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
@@ -241,6 +243,7 @@ type ProvisionerConnections = Pick<
   | "validateProviderConnection"
   | "validateGrantSet"
   | "setAgentConnections"
+  | "getAgentConnections"
   | "defaultProviderConnections"
   | "listConnections"
 >;
@@ -324,6 +327,12 @@ export function connectionGrantProvisioner(
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
         await connections.setAgentConnections(agentId, sel.connectionIds);
+    },
+    async applyAfterCreateIfNone(agentId, sel) {
+      if (sel.connectionIds.length === 0) return;
+      const held = await connections.getAgentConnections(agentId);
+      if (held.connections.length > 0) return;
+      await connections.setAgentConnections(agentId, sel.connectionIds);
     },
   };
 }
@@ -417,8 +426,13 @@ export function composeEditorStanding(deps: {
   return async (agentId, caller) => {
     const infra = await deps.repo.get(agentId);
     if (!infra?.owner || infra.owner === caller.sub) return null;
+    // UNIT_BOUNDARY_DESCRIPTION: an assistant has no editors at all, so a row left on one grants nothing.
+    if (infra.kind === "assistant") return null;
     const list = await editors.list(agentId);
     if (accessTo(infra.owner, list, caller) !== "editor") return null;
-    return { ownerSub: infra.owner, permissions: permissionsOf("editor") };
+    return {
+      ownerSub: infra.owner,
+      permissions: permissionsOf("editor", infra.kind),
+    };
   };
 }

@@ -18,9 +18,15 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
   }) as T;
 }
 
-const infra = (id: string, owner: string) =>
+const infra = (id: string, owner: string, kind?: "assistant") =>
   parseInfraAgent({
-    metadata: { name: id, labels: { "agent-platform.ai/owner": owner } },
+    metadata: {
+      name: id,
+      labels: { "agent-platform.ai/owner": owner },
+      ...(kind
+        ? { annotations: { "agent-platform.ai/agent-kind": kind } }
+        : {}),
+    },
     spec: { name: id, image: "example.com/agent:latest" },
   });
 
@@ -30,6 +36,12 @@ const AGENTS = [
   infra("bob-bot", "bob"),
 ];
 
+// UNIT_BOUNDARY_DESCRIPTION: alice's assistant carries an editor row left by a version that still allowed one, so every read has to refuse it.
+const WITH_ASSISTANT = [
+  ...AGENTS,
+  infra("alice-assistant", "alice", "assistant"),
+];
+
 const OWNS = [...AGENT_PERMISSIONS];
 
 const EDITS = [
@@ -37,6 +49,7 @@ const EDITS = [
   "settings",
   "envVars",
   "lifecycle",
+  "disable",
   "spendLimits",
   "egressRules",
   "skills",
@@ -86,6 +99,7 @@ function inMemoryEditors(
 function serviceFor(
   caller: { sub: string; editorEmail: string | null },
   editors: AgentEditorsRepository,
+  agents: ReturnType<typeof infra>[] = AGENTS,
 ) {
   return createAgentsService({
     owner: caller.sub,
@@ -93,13 +107,14 @@ function serviceFor(
     editorEmail: caller.editorEmail,
     editors,
     resolveUserEmail: async (sub) => EMAILS[sub] ?? null,
+    assistantName: "Assistant",
     repo: unused<AgentsDeps["repo"]>({
-      list: async (owner) => AGENTS.filter((a) => a.owner === owner),
+      list: async (owner) => agents.filter((a) => a.owner === owner),
       get: async (id, owner) =>
-        AGENTS.find((a) => a.id === id && (!owner || a.owner === owner)) ??
+        agents.find((a) => a.id === id && (!owner || a.owner === owner)) ??
         null,
       isOwnedBy: async (id, owner) =>
-        AGENTS.some((a) => a.id === id && a.owner === owner),
+        agents.some((a) => a.id === id && a.owner === owner),
     }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({
       list: async () => [],
@@ -210,6 +225,24 @@ describe("reading one agent", () => {
     });
     expect(
       await serviceFor(CAROL, editors).getWithAccess("alice-bot"),
+    ).toBeNull();
+  });
+});
+
+describe("an editor row on the assistant", () => {
+  // TEST_SCENARIO: A version that still allowed editors on an assistant left a row behind; it lists the assistant for nobody, opens it for nobody, and grants nothing if the owner is that editor's caller context.
+  it("grants nothing, on the list or on one agent", async () => {
+    const editors = inMemoryEditors({
+      "alice-assistant": ["bob@example.com"],
+    });
+    const all = await serviceFor(BOB, editors, WITH_ASSISTANT).listWithAccess(
+      "all",
+    );
+    expect(all.map((l) => l.agent.id)).toEqual(["bob-bot"]);
+    expect(
+      await serviceFor(BOB, editors, WITH_ASSISTANT).getWithAccess(
+        "alice-assistant",
+      ),
     ).toBeNull();
   });
 });

@@ -1,17 +1,24 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf } from "api-server-api";
+import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
+import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
+import { createAssistantsRepository } from "../../../modules/assistants/index.js";
+import { removeAssistant as removeAssistantForOwner } from "../../../modules/assistants/services/assistant-removal.js";
+import { assistantRequestWork } from "../../../modules/assistants/domain/on-request.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
+import { createOwnerPermissions } from "./owner-permissions.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
+import { getLogger } from "../../../core/logger.js";
 import {
   composeHarnessConfigModule,
   createDefaultModelNoticeReader,
@@ -115,6 +122,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telemetryReader,
     sessionDirectory,
     terms,
+    isTermsAccepted,
+    assistantOwnerLock,
     e2e,
     artifacts,
     delegationFrames,
@@ -143,6 +152,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  const ownerPermissions = createOwnerPermissions({ repo: agentsRepo });
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
@@ -155,7 +165,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       self: () => ctx,
       agentOfTarget,
+      ownerPermissions,
       editorStanding,
+      assistantName: config.brand.assistantName,
       contextFor: (identity) => contextFor(identity, surface),
     });
     const connections = composeConnectionsForOwner({
@@ -243,6 +255,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       actor: user.actingEditor ?? user.sub,
       editorEmail: editorEmailOf(user),
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
+      assistantName: config.brand.assistantName,
       db,
       telegramBinding: telegramBindFlows
         ? {
@@ -326,6 +339,33 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       modes: config.featureModes,
     });
+    const assistantOn = async () => {
+      const mode = config.featureModes.dambledore;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).dambledore);
+    };
+    const { assistants, provisioner: assistantProvisioner } =
+      composeAssistantsForOwner({
+        db,
+        owner: user.sub,
+        assistantName: config.brand.assistantName,
+        brandName: config.brand.name,
+        admitted: () => isTermsAccepted(user.sub),
+        enabled: assistantOn,
+        agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
+        agents,
+        enrolled: () => gettingStarted.ensureEnrolled(user.sub),
+        resetChecklist: () => gettingStarted.forOwner(user.sub).reset(),
+        recordFirstAgent: (agent) =>
+          gettingStarted.recordProvisionedAssistant(user.sub, agent),
+        provisioned: (agent) =>
+          gettingStarted.recordProvisionedAssistant(user.sub, {
+            agentId: agent.id,
+            character: avatarCharacter(agent.spec.avatar, user.sub, agent.name),
+          }),
+        withLock: assistantOwnerLock.withLock,
+      });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
       agentStore: { authority: config.agentStore },
@@ -529,6 +569,45 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. A person the feature is off for is not forgotten either: a turn-off that could not take the owner's lock finishes here, so nobody is left opted out with an assistant they may neither use nor delete. An install whose mode is off reads nothing at all. */
+    const provisionAssistant = async () => {
+      const mode = config.featureModes.dambledore;
+      if (mode === "off") return;
+      if (user.keyId !== undefined || user.agentIds !== "*") return;
+      if (user.actingEditor !== undefined) return;
+      const work = assistantRequestWork(
+        mode,
+        mode === "on" || (await assistantOn()),
+      );
+      if (work === "none") return;
+      if (!(await isTermsAccepted(user.sub))) return;
+      if (work === "provision") await assistantProvisioner.ensure();
+      else await removeAssistant({ lockAttempts: 1 });
+    };
+
+    const removeAssistant = async (opts?: { lockAttempts?: number }) => {
+      if (user.keyId !== undefined || user.agentIds !== "*") return;
+      if (user.actingEditor !== undefined) return;
+      try {
+        await removeAssistantForOwner({
+          repo: createAssistantsRepository(db),
+          agents,
+          withLock: assistantOwnerLock.withLock,
+          owner: user.sub,
+          ...(opts?.lockAttempts === undefined
+            ? {}
+            : { lockAttempts: opts.lockAttempts }),
+        });
+      } catch (err) {
+        getLogger().warn({ err, owner: user.sub }, "assistant.remove_failed");
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message:
+            "Your assistant could not be deleted, so it is still there. Try again.",
+        });
+      }
+    };
+
     const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
@@ -607,6 +686,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       userBudgets: userBudgetsForOperator(user.sub),
       providerStatus,
       user,
+      assistants,
+      provisionAssistant,
+      removeAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
@@ -614,5 +696,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     };
     return ctx;
   };
+
   return contextFor;
 }

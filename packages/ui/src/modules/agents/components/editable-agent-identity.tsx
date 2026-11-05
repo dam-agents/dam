@@ -36,6 +36,18 @@ export function EditableAgentIdentity({
     (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
     (rename.isPending ? rename.variables.avatar : undefined) ??
     agent.avatar;
+  // UNIT_BOUNDARY_DESCRIPTION: the assistant's name is the reserved one, so it is shown as plain text, with no pencil to edit it.
+  if (agent.kind === "assistant")
+    return (
+      <EditableIdentity
+        {...display}
+        name={name}
+        avatar={avatar}
+        onAvatarChange={(next) =>
+          changeAvatar.mutate({ id: agent.id, avatar: next })
+        }
+      />
+    );
   return (
     <EditableIdentity
       {...display}
@@ -82,7 +94,7 @@ export function EditableIdentity({
 }: {
   name: string;
   avatar: string | null | undefined;
-  onRename: (name: string) => Promise<void> | void;
+  onRename?: (name: string) => Promise<void> | void;
   onAvatarChange: (avatar: string) => void;
 } & IdentityDisplay) {
   const hasNewAvatar = useFreshAvatars().length > 0;
@@ -114,7 +126,7 @@ export function EditableIdentity({
     }
     editEnded.current = true;
     try {
-      await onRename(next);
+      await onRename?.(next);
       setError(null);
       setDraft(null);
     } catch (e) {
@@ -134,7 +146,16 @@ export function EditableIdentity({
         />
         {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
       </AvatarPicker>
-      {draft === null ? (
+      {onRename === undefined ? (
+        <NameTag className={cn("flex min-w-0", nameClassName)}>
+          <span
+            className="flex min-w-0 items-center gap-1.5"
+            data-testid="agent-name-read-only"
+          >
+            <span className="truncate">{name}</span>
+          </span>
+        </NameTag>
+      ) : draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <Tooltip content="Rename">
             <button

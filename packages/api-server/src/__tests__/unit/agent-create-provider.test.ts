@@ -150,6 +150,7 @@ function setup(
       },
       defaultProviders,
       applyAfterCreate: applyGrants,
+      applyAfterCreateIfNone: applyGrants,
     },
     defaultProfile,
     listChannelsByOwner: async () => new Map(),
@@ -165,6 +166,7 @@ function setup(
     editors: unused<AgentsDeps["editors"]>(),
     editorEmail: null,
     resolveUserEmail: async () => null,
+    assistantName: "Assistant",
   });
   const ctx = unused<ApiContext>({
     agents,

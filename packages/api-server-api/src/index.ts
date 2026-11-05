@@ -142,6 +142,10 @@ export {
   type ProviderChoice,
 } from "./modules/harness-config/default-provider.js";
 
+export {
+  AGENT_INIT_STEPS,
+  type AgentInitStep,
+} from "./modules/agents/types.js";
 export type {
   Agent,
   AgentReclaim,
@@ -215,6 +219,18 @@ export {
   type AgentPermission,
   type AgentTarget,
 } from "./modules/agents/permissions.js";
+export type {
+  AssistantNotice,
+  AssistantsService,
+  AssistantState,
+} from "./modules/assistants/types.js";
+export {
+  ASSISTANT_FIRST_TASKS,
+  ASSISTANT_ROLE_ASK,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
 export {
   budgetCpuSchema,
   budgetSizeSchema,
@@ -481,6 +497,7 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export { featureOnForUser } from "./modules/features/modes.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
