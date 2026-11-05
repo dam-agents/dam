@@ -1,16 +1,13 @@
-import { kcSanitize } from "keycloakify/lib/kcSanitize";
-import { useInitialize } from "keycloakify/login/Template.useInitialize";
 import type { TemplateProps } from "keycloakify/login/TemplateProps";
-import { useSetClassName } from "keycloakify/tools/useSetClassName";
-import { useEffect } from "react";
 
-import { cn } from "../lib/cn.js";
-import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
-import { useRotatingNameMeaning } from "./hooks/use-rotating-name-meaning.js";
+import { MessageAlert } from "./components/message-alert.js";
+import {
+  BRAND_FALLBACK,
+  showsMessage,
+  useLoginPageSetup,
+} from "./hooks/use-login-page-setup.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
-
-const BRAND_FALLBACK = "Platform";
 
 export default function Template(props: TemplateProps<KcContext, I18n>) {
   const {
@@ -23,31 +20,15 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
     children,
   } = props;
 
-  const { msgStr } = props.i18n;
-  const { realm, message, isAppInitiatedAction } = kcContext;
-
-  useApplyThemeScript();
-  const nameMeaning = useRotatingNameMeaning(
-    kcContext.properties.PLATFORM_BRAND_NAME_MEANINGS,
-  );
-
-  useEffect(() => {
-    document.title =
-      documentTitle ??
-      (realm.displayNameHtml ||
-        msgStr("loginTitle", realm.displayName || BRAND_FALLBACK));
-  }, [documentTitle, msgStr, realm.displayNameHtml, realm.displayName]);
-
-  useSetClassName({ qualifiedName: "html", className: "" });
-  useSetClassName({ qualifiedName: "body", className: "" });
-
-  const { isReadyToRender } = useInitialize({ kcContext, doUseDefaultCss });
+  const { isReadyToRender, nameMeaning } = useLoginPageSetup({
+    kcContext,
+    i18n: props.i18n,
+    doUseDefaultCss,
+    documentTitle,
+  });
   if (!isReadyToRender) return null;
 
-  const showMessage =
-    displayMessage &&
-    message !== undefined &&
-    (message.type !== "warning" || !isAppInitiatedAction);
+  const showMessage = showsMessage(kcContext, displayMessage);
 
   return (
     <div className="min-h-screen bg-background">
@@ -65,18 +46,10 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
             {headerNode}
           </h1>
 
-          {showMessage && (
-            <div
-              role="alert"
-              className={cn(
-                "mt-6 max-w-[var(--width-login-col)] rounded-md border px-3 py-2 text-sm",
-                message.type === "error"
-                  ? "border-red-200 bg-red-50 text-red-800"
-                  : "border-blue-200 bg-blue-50 text-blue-800",
-              )}
-              dangerouslySetInnerHTML={{
-                __html: kcSanitize(message.summary),
-              }}
+          {showMessage && kcContext.message && (
+            <MessageAlert
+              message={kcContext.message}
+              className="mt-6 max-w-[var(--width-login-col)]"
             />
           )}
 

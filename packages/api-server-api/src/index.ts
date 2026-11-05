@@ -224,6 +224,19 @@ export {
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
+export {
+  LOGIN_TESTIMONIAL_LIMITS,
+  LOGIN_TESTIMONIALS_MAX,
+  loginTestimonialInputSchema,
+  loginTestimonialPhotoIdSchema,
+  loginTestimonialsSaveInputSchema,
+} from "./modules/login-testimonials/schemas.js";
+export type {
+  LoginTestimonial,
+  LoginTestimonialInput,
+  LoginTestimonialsSaveInput,
+  LoginTestimonialsService,
+} from "./modules/login-testimonials/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
