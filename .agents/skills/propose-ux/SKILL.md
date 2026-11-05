@@ -85,10 +85,18 @@ Write the brief:
 - **Out of scope**: what this proposal does not touch.
 - **Open assumptions**: what remains, and who can answer each one.
 
-Show the brief and stop until the user accepts it.
-When the flow is already fixed, for example a copy-only change or a binding design, say so at this stop and go to the spec.
+## 2. Stop: the brief
 
-## 2. Concepts
+Show the brief, and end your message there.
+Do not start the concepts in the same message.
+
+- The user accepts the brief: go to step 3.
+- The user corrects it: change the brief, and show it again.
+- The brief shows no problem worth a change: say so, and recommend that the work stops.
+- The flow is already fixed, for example a copy-only change or a binding design: say so here.
+  When the user accepts, go to step 5.
+
+## 3. Concepts
 
 Write the question that the concepts must answer.
 Then sketch two or three concepts, and keep today's flow as the baseline.
@@ -107,14 +115,20 @@ Do not write a weak concept to make another one win.
 
 Score every concept and the baseline against the criteria from the brief.
 Recommend one, say what it gives up, and say what would make you reconsider.
-If two concepts each win on a different criterion, ask the user to rank the criteria.
+If two concepts each win on a different criterion, say so, and ask the user at step 4 to rank the criteria.
 Do not average the two.
-A hybrid is a new concept: score it against the same criteria.
 For each rejected concept, record what it tested, what it lost on, and what would bring it back.
 
-Show the recommendation and the record, and stop until the user chooses.
+## 4. Stop: the choice
 
-## 3. Specify
+Show the recommendation and the choice record, and end your message there.
+
+- The user chooses a concept: go to step 5.
+- The user asks for a hybrid: score it against the same criteria, and show the result.
+- The user rejects every concept: ask why.
+  When a criterion is wrong, correct the brief and go back to step 2; otherwise, sketch new concepts.
+
+## 5. Specify
 
 Give the builder a flow that has no unanswered question:
 
@@ -149,10 +163,10 @@ A prompt that people always click through is a defect.
 
 Check the spec as a first-time person and as a returning one, against Nielsen's heuristics and the design rules.
 Fix what would block the build.
-When a fix changes what the person does, go back to the choice.
+When a fix changes what the person does, go back to step 4.
 Name the signal that will show that the change works, or say that none exists.
 
-## Deliver
+## 6. Deliver
 
 Give the proposal in the conversation: the brief, the concepts, the choice record, the spec, the open questions, and what must change with it.
 What must change includes the QA journeys and helpers in `.quality-inspector/qi-profile-dam/`, the design profile in `.design-desk/dam/`, the architecture pages whose behavior changes, and the words that the glossary needs.
