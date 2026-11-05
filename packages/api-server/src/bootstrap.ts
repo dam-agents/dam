@@ -1598,7 +1598,7 @@ export async function bootstrap() {
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(
       db,
-      config.featureModes.assistant === "off"
+      config.featureModes.dambledore === "off"
         ? undefined
         : (agentId) => assistantsRepo.markUsed(agentId),
     );

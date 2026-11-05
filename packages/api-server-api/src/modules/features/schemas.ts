@@ -9,7 +9,7 @@ export const featureIdSchema = z.enum([
   "custom-avatars",
   "environments",
   "hermes",
-  "assistant",
+  "dambledore",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

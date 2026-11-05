@@ -1,4 +1,4 @@
-import type { FeatureId } from "api-server-api";
+import type { Brand, FeatureId } from "api-server-api";
 import { type ReactNode, useId } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   useInstallCapabilities,
   useSetFeature,
 } from "../api/queries.js";
+import { assistantFeatureRow } from "../lib/assistant-feature-row.js";
 import { isFeatureOffered } from "../lib/visible-features.js";
 
 interface FeatureRow {
@@ -22,16 +23,9 @@ interface FeatureRow {
   description: ReactNode;
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the one row that names the install's own assistant built from its brand, never from a word written here. */
-function featureRows(assistantName: string): FeatureRow[] {
-  return [
-    ...FEATURE_ROWS,
-    {
-      id: "assistant",
-      label: assistantName,
-      description: `Give yourself ${assistantName}, an agent of your own: it appears in your agent list with its own chat, and it stays yours alone.`,
-    },
-  ];
+/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the assistant's own row last, built from the brand. */
+function featureRows(brand: Brand): FeatureRow[] {
+  return [...FEATURE_ROWS, assistantFeatureRow(brand)];
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
@@ -136,7 +130,7 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {featureRows(getBrand().assistantName)
+        {featureRows(getBrand())
           .filter((row) => isFeatureOffered(row.id, install))
           .map((row) => (
             <FeatureRowCard

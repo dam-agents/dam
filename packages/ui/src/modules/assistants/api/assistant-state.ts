@@ -15,10 +15,10 @@ import {
  */
 export function useAssistantOn(): boolean {
   const install = useInstallCapabilities().data;
-  const mode = install?.features.assistant;
+  const mode = install?.features.dambledore;
   const { data: flags } = useFeatures(mode !== undefined);
   if (mode === undefined) return false;
-  return featureOnForUser(mode, flags?.assistant ?? false);
+  return featureOnForUser(mode, flags?.dambledore ?? false);
 }
 
 /**

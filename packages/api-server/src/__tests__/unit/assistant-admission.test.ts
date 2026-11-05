@@ -73,11 +73,14 @@ describe("handing a person their assistant without a new context", () => {
   // TEST_SCENARIO: switching the assistant on in Experimental features provisions it at once, because the caller's context is not made again; switching another feature or switching it off does not.
   it("provisions when the experimental switch is turned on", async () => {
     const on = world();
-    await on.caller.features.setFlag({ feature: "assistant", enabled: true });
+    await on.caller.features.setFlag({ feature: "dambledore", enabled: true });
     expect(on.provisionAssistant).toHaveBeenCalledTimes(1);
 
     const off = world();
-    await off.caller.features.setFlag({ feature: "assistant", enabled: false });
+    await off.caller.features.setFlag({
+      feature: "dambledore",
+      enabled: false,
+    });
     await off.caller.features.setFlag({ feature: "hermes", enabled: true });
     expect(off.provisionAssistant).not.toHaveBeenCalled();
   });

@@ -339,10 +339,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         brandName: config.brand.name,
         admitted: () => isTermsAccepted(user.sub),
         enabled: async () => {
-          const mode = config.featureModes.assistant;
+          const mode = config.featureModes.dambledore;
           if (mode === "on") return true;
           if (mode !== "experimental") return false;
-          return featureOnForUser(mode, (await features.flags()).assistant);
+          return featureOnForUser(mode, (await features.flags()).dambledore);
         },
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
         agents,
@@ -559,7 +559,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
 
     /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. */
     const provisionAssistant = async () => {
-      if (config.featureModes.assistant === "off") return;
+      if (config.featureModes.dambledore === "off") return;
       if (user.keyId !== undefined || user.agentIds !== "*") return;
       if (user.actingEditor !== undefined) return;
       await assistantProvisioner.ensure();

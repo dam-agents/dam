@@ -13,7 +13,7 @@ The name is **reserved**: no other Agent may be created or renamed to it, and th
 
 ## Provisioning
 
-The install decides whether people get one at all through the `assistant` [feature](features.md) mode, which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` provisions nothing, `experimental` provisions for whoever switches the flag on in Settings › Experimental features, and `on` for everyone.
+The install decides whether people get one at all through the `dambledore` [feature](features.md) mode, which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` provisions nothing, `experimental` provisions for whoever switches the flag on in Settings › Experimental features, and `on` for everyone.
 Until a person switches it on, nothing of theirs exists: no record, no Agent, and no rename for an Agent that already holds the reserved name.
 Switching the mode off later stops provisioning and leaves the existing assistants where they are.
 The UI asks the server for the assistant's record only for someone it is on for, and lands nobody in its chat otherwise, so an install that offers it experimentally costs a person who never opts in nothing.
@@ -81,7 +81,7 @@ The text lives once, in `api-server-api`, because two readers need it: the UI th
 Under the message it offers a few **first tasks** — `Explain what you can do`, `Draft a weekly status template`, `Summarize a long text I paste`, `Remember I like answers short and technical` — each one needing neither a connection nor any personal context, and the composer's empty placeholder shows the last of them.
 A click puts the task's text in the composer and sends nothing: no turn, no model call, no token is spent until the person acts.
 
-Everything here is behind the `assistant` feature and the row's own `used` mark, and it needs the Agent's own answer too: the greeting is shown only while the row says the assistant is unused **and** the Agent lists no Session, since the mark follows the session report and lags the Session that just started.
+Everything here is behind the `dambledore` feature and the row's own `used` mark, and it needs the Agent's own answer too: the greeting is shown only while the row says the assistant is unused **and** the Agent lists no Session, since the mark follows the session report and lags the Session that just started.
 A Session appearing sets the cached mark at once, so a New chat after the first message does not bring the greeting back.
 Until both answers are in, the chat shows neither the greeting nor the ordinary new-chat page — a blank rather than a page that would be taken back a moment later.
 A person the feature is off for, and any other Agent, open on the ordinary new-chat page with the ordinary placeholder.
