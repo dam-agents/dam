@@ -5,7 +5,7 @@ Goal: hold several different answers to the same problem, then choose one for re
 ## Diverge
 
 1. **Fix the criteria and the question.**
-   Take the criteria from the accepted brief: its success criteria, and the design rules in `PROFILE.md`.
+   Take the criteria from the accepted brief: its success criteria, and the project's design rules.
    Write them down now, each as a *threshold* or a *trade-off*, before you draw a concept.
    Then write the question that the set must answer.
    A set that answers no question is a portfolio, not an exploration.
@@ -13,7 +13,7 @@ Goal: hold several different answers to the same problem, then choose one for re
    The concepts must differ in what the person does:
    - *Sequence*: what is asked first and what waits.
    - *Unit of interaction*: one item, a batch or a stream.
-   - *Division of labor*: what the person decides and what the agent decides.
+   - *Division of labor*: what the person decides and what the system decides.
    - *Entry point*: where the task begins and what it assumes the person knows.
    - *Commitment point*: how far the person goes before the action cannot be undone.
 3. **Draw three concepts, and keep today's flow as the baseline.**
@@ -33,7 +33,7 @@ Goal: hold several different answers to the same problem, then choose one for re
    Do not write a weak concept to make another one win.
    Drop a concept that you would refuse to build.
 7. **Walk each concept alone**, as a first-time person and as a returning one, with the check in `specify.md`.
-   When an agent acts alone, answer the questions in `agent-lens.md` for each concept.
+   When the feature has an agent or an automation that acts on its own, answer the questions in `agent-lens.md` for each concept.
    Do this before any comparison.
 
 ## Converge

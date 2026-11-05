@@ -1,6 +1,7 @@
 # Agent lens
 
-Use this lens in phases 2 and 4 when a feature has an agent that works on its own: approvals, schedules, connections, notifications, long runs.
+Use this lens in phases 2 and 4 when a feature has an agent or an automation that works on its own.
+Examples are approvals, schedules, integrations, notifications and long runs.
 Answer it for every concept, not only for the chosen one.
 
 ## Who leads
@@ -48,21 +49,18 @@ Ask at the moment of the action, for that action, and not in advance for everyth
 
 - The person can stop the work, redirect it, and reverse the last actions.
   Say what cannot be undone before it happens.
-- The person always sees the state of the agent: starting, working, waiting for them, failed, done or hibernated.
+- The person always sees the state of the work: starting, working, waiting for them, failed, done or stopped.
 - A person who returns after hours sees what happened, what waits for them, and what failed.
   Show a summary first and the detail on demand.
 - The person can see what the agent did on their behalf.
 
-## What DAM already has
+## What the product already has
 
-Reuse these devices before you add a new one:
-
-- Home shows what changed since the person last looked, and its approvals panel shows what waits for them.
-- The sidebar shows the agents, and the activity under them.
-- A blue dot marks unread, and an amber dot marks a session that waits for approval.
-- The status indicator shows a hibernated agent.
-  A hibernated agent does not run, and some surfaces still render its stored state.
-  Design what the person sees and can do then.
+Look for the devices that the product already uses to tell a person what happened while they were away.
+Examples are a feed or an inbox, notification dots, status indicators and an activity list.
+Reuse them before you add a new one.
+List the states that the work can be in when the person is away.
+For each state, say what the person sees and can do.
 
 ## When the work fails
 

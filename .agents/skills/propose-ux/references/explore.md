@@ -1,72 +1,78 @@
 # Explore the problem
 
 Goal: know who has the problem, what they do today, and how much it costs them, before any solution exists.
+Do this with the user.
 The output is the brief.
 Show the brief and stop.
 
-## Sources of evidence
+## Move 1: do the homework
 
-The agent cannot talk to users, so it reads what already records them.
+Read what already records the people and the problem.
+Draft the person, the job and the path today from it.
+Do not ask the user what a source already answers.
 
-| Source                                                                  | What it gives                                                                                                                                                                            |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The issue, linked issues and pull requests, and the history of the area | Who asked, why, and whether today's behavior was a deliberate decision                                                                                                                   |
-| The architecture page of the subsystem, and the glossary                | What the thing is, and the words users read                                                                                                                                              |
-| The running app                                                         | The current flow as the person meets it: each step, each state, each dead end                                                                                                            |
-| Usage analytics (`docs/architecture/usage-tracking.md`)                 | How new people get through their first weeks, and which features they use. Only the `platform-inspector` role can read it, so ask the user for a read and never read production yourself |
-| Other tools that do the same job                                        | How people solve the job elsewhere. Compare the job, not the whole product                                                                                                               |
-| The user                                                                | What the user holds: messages, call notes, screenshots, and what they saw people do                                                                                                      |
+| Source                                                                  | What it gives                                                                                                         |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| The issue, linked issues and pull requests, and the history of the area | Who asked, why, and whether today's behavior was a deliberate decision                                                |
+| The docs of the subsystem, and the glossary                             | What the thing is, and the words that users read                                                                      |
+| The running product                                                     | The current flow as the person meets it: each step, each state, each dead end                                         |
+| Usage data                                                              | How people use the product today. If you cannot reach it, ask the user for a read, and never read production yourself |
+| Other products that do the same job                                     | How people solve the job elsewhere. Compare the job, not the whole product                                            |
 
-Walk the current flow in the running app as the person.
-Use the `cluster-ops` skill to bring the app up.
+Walk the current flow in the running product as the person.
+Start it the way the project documents.
 A flow for a new person needs a fresh account.
 A flow for many items needs seeded data.
-A channel flow needs the channel set up.
 Keep a screenshot of each step, because the proposal needs the "before".
-When the app cannot run where you are, read the code path instead, and say so and why.
+When the product cannot run where you are, read the code path instead, and say so and why.
 
-## Steps
+## Label the evidence
 
-1. **Find the person and the moment.**
+- *Observed*: you saw it in the product, the code, the docs or data.
+  Cite the source.
+- *Reported*: someone says it, in an issue, a message, call notes or this conversation.
+  Name who.
+- *Inferred*: you reasoned it from observed or reported facts.
+  Show the reasoning.
+- *Assumed*: nothing backs it.
+
+## Move 2: interview the user
+
+The user knows what no source holds: what they saw people do, what messages and calls said, and what they want.
+Ask one question at a time, with your recommended answer.
+Walk your draft in this order, and let the user confirm or correct each part:
+
+1. **The person and the moment.**
    Name who it is.
-   It can be the owner of an agent, or someone that a thing is shared with.
-   It can be a member of a Slack or Telegram conversation bound to an agent, or a visitor who opens a public link.
-   It can be a Platform Operator.
+   It can be the owner of the thing, or someone that it is shared with.
+   It can be a visitor with no account, or an admin or operator.
    Name what happened just before they need this.
-2. **State the job.**
+2. **The job.**
    Write one statement per job: *When \[situation\], I want to \[motivation\], so I can \[outcome\].*
    Two jobs are two pieces of work.
    Say so, and take the main one first.
-3. **Map the path today.**
-   List each step the person takes now, including workarounds outside DAM.
+3. **The path today.**
+   List each step the person takes now, including workarounds outside the product.
    Mark each place where the person waits, guesses, leaves or asks someone.
    These places are the opportunities.
-4. **Label the evidence.**
-   - *Observed*: you saw it in the product, the code, an architecture page or data.
-     Cite the source.
-   - *Reported*: someone says it, in an issue, a message or call notes.
-     Name who.
-   - *Inferred*: you reasoned it from observed or reported facts.
-     Show the reasoning.
-   - *Assumed*: nothing backs it.
-5. **Ask for what is missing.**
-   Ask the user only what the evidence cannot answer.
-   Start with the assumptions that the design would depend on.
-   Ask one question at a time, with your recommended answer, as `grill-me` does.
-6. **Write the brief.**
+4. **What is still missing.**
+   Ask only what the sources and the earlier answers do not settle.
+   Start with the assumptions that the design depends on.
+
+Then write the brief.
 
 ## The brief
 
 - **Problem**: what happens, to whom, and with what consequence.
   No solution in this line.
-- **Job**: the statements from step 2.
-- **Path today**: the steps from step 3, with the pain points marked.
+- **Job**: the statements from move 2.
+- **Path today**: the steps from move 2, with the pain points marked.
   Say how you learned them: screenshots, the code path, or why neither was possible.
 - **Success criteria**: outcomes that a person can observe, each able to fail a concept.
   Mark each as a *threshold* (a concept that fails it is out) or a *trade-off* (weighed against the others).
-  Add the design rules in `PROFILE.md` and mark them too.
+  Add the project's design rules and mark them too.
 - **Existing designs**: the proposed solution, prototype or criteria that the issue already holds, and whether the criteria are binding.
-- **Constraints**: the surfaces, and the limits that the architecture pages state.
+- **Constraints**: the surfaces, and the limits that the docs state.
 - **Out of scope**: what this proposal does not touch.
 - **Evidence**: a table of claim, label and source.
 - **Added by the exploration**: the facts and sources that the issue does not hold.
@@ -78,7 +84,7 @@ When the app cannot run where you are, read the code path instead, and say so an
 | -------------- | ---------------------------------------------------------------- |
 | "Feels modern" | "Uses only components that exist today"                          |
 | "Feels simple" | "A new person sends a first message after three choices at most" |
-| "Scales"       | "Shows 400 agents without paging"                                |
+| "Scales"       | "Shows 400 items without paging"                                 |
 
 ## The exploration is not done when
 
