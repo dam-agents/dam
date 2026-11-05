@@ -51,6 +51,10 @@ function makeFakeRepo(): FakeRepo {
       return true;
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
+    setPayload: async (id, payload) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) row.payload = payload;
+    },
     findActivePendingExtAuthz: async ({
       agentId,
       host,

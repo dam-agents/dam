@@ -251,6 +251,12 @@ build_default() (
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist/js "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  # The dam CLI this image carries, as one file the staged `dam` skill's wrapper
+  # runs in place. It sits outside the skill's directory so the skill's hash is
+  # the SKILL.md the repo ships and never a build artifact; the assistant's
+  # Install Command is what puts that skill and a wrapper on the agent.
+  pnpm --filter @dam-agents/cli exec tsup
+  install -D -m 644 packages/cli/dist/js/bin.js "$b/usr/local/lib/dam/dam.mjs"
   install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
 
   # Not -C: mise reads .miserc.toml from the working directory only.

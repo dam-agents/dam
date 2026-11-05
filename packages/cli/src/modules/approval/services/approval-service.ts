@@ -32,6 +32,10 @@ export interface ApprovalService {
   denyForever(
     id: string,
   ): Promise<Result<ApprovalActionOutcome, TransportError | AuthRequiredError>>;
+  /* UNIT_BOUNDARY_DESCRIPTION: one approval, pending or settled — how a caller that was told to wait learns the owner's verdict and what became of the change. */
+  get(
+    id: string,
+  ): Promise<Result<ApprovalView | null, TransportError | AuthRequiredError>>;
   dismiss(
     id: string,
   ): Promise<Result<ApprovalActionOutcome, TransportError | AuthRequiredError>>;
@@ -65,6 +69,9 @@ export function createApprovalService(deps: {
     },
     async dismiss(id) {
       return trpcCall(() => deps.trpc.approvals.dismiss.mutate({ id }));
+    },
+    async get(id) {
+      return trpcCall(() => deps.trpc.approvals.get.query({ id }));
     },
   };
 }

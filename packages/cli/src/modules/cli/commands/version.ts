@@ -5,6 +5,7 @@ import { upgradeAdvice } from "../infrastructure/npm-installer.js";
 import type { CompatService } from "../services/compat-service.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { readHarnessMode } from "../../shared/harness-mode.js";
 
 export interface VersionCommandDeps {
   service: CompatService;
@@ -37,6 +38,20 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
     .option("--json", "emit the versions and the verdict as JSON")
     .addHelpText("after", "\nExamples:\n  dam version\n  dam version --json\n")
     .action(async (opts: { server?: string; json?: boolean }) => {
+      /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant, the CLI came from the image it runs in, so there is no server version to ask for and no npm release to chase — the version printed is the bundle's own, and the install's may be newer. */
+      const harness = readHarnessMode();
+      if (harness !== null) {
+        if (opts.json)
+          return writeStdoutAndExit(
+            `${JSON.stringify({ cliVersion: deps.localCliVersion, fromInstallImage: true })}\n`,
+            EXIT_SUCCESS,
+          );
+        return writeStdoutAndExit(
+          `dam ${deps.localCliVersion} (the CLI this install's image carries)\n`,
+          EXIT_SUCCESS,
+        );
+      }
+
       const [compat, latest] = await Promise.all([
         deps.service.check({
           flag: opts.server ? { server: opts.server } : undefined,

@@ -11,6 +11,7 @@ import { createAssistantsRepository } from "../../../modules/assistants/index.js
 import { removeAssistant as removeAssistantForOwner } from "../../../modules/assistants/services/assistant-removal.js";
 import { assistantRequestWork } from "../../../modules/assistants/domain/on-request.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
+import { composeAgentChangeReplay } from "./agent-change-replay.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
 import { createActOnAgent } from "./act-on-agent.js";
@@ -68,6 +69,7 @@ import {
 } from "../../../modules/connections/compose.js";
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { composeAgentChangeApprovals } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -152,6 +154,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner check a held change is re-read against — the directory, asked fresh, refusing whenever it cannot answer. */
+  const ownerActive = boot.onBehalfOwnerActive;
   const ownerPermissions = createOwnerPermissions({ repo: agentsRepo });
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
@@ -347,6 +351,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         owner: user.sub,
         assistantName: config.brand.assistantName,
         brandName: config.brand.name,
+        cliInstall: { harnessUrl: config.harnessServerUrl },
         admitted: () => isTermsAccepted(user.sub),
         enabled: assistantOn,
         agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
@@ -445,6 +450,33 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       wrapperFrameSender,
+      /* UNIT_BOUNDARY_DESCRIPTION: only the owner's own signed-in session answers a change an assistant asked for — not an API key, not the assistant's token, not an editor standing. */
+      interactiveOwner:
+        user.keyId === undefined &&
+        user.onBehalfAgentId === undefined &&
+        user.actingEditor === undefined,
+      /* UNIT_BOUNDARY_DESCRIPTION: the verdict re-reads the facts the token was admitted on, against the world as it is then. */
+      assistantStillAllowed: async ({ agentId, ownerSub }) => {
+        const agent = await agentsRepo.get(agentId, ownerSub);
+        if (!agent) return { ok: false, reason: "the assistant is gone" };
+        if (agent.kind !== "assistant")
+          return { ok: false, reason: "that Agent is no longer an assistant" };
+        const active = await ownerActive(ownerSub);
+        if (!active)
+          return { ok: false, reason: "the owner's account is not active" };
+        const offered = await features.flags().catch(() => null);
+        if (offered?.dambledore !== true)
+          return {
+            ok: false,
+            reason: "assistants are no longer offered to this owner",
+          };
+        return { ok: true };
+      },
+      executeAgentChange: composeAgentChangeReplay({
+        contextFor,
+        user,
+        surface,
+      }),
     });
     const costReviews = composeCostReviewsForOwner({
       db,
@@ -644,6 +676,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       secretRequests,
       skills,
       approvals,
+      agentChanges: composeAgentChangeApprovals({
+        db,
+        agentId: user.onBehalfAgentId,
+        ownerSub: user.sub,
+        actor: user.sub,
+      }),
       attention,
       costReviews,
       egressRules,

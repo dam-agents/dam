@@ -12,6 +12,8 @@ import {
 } from "./infrastructure/npm-latest-probe.js";
 import { createNpmInstaller } from "./infrastructure/npm-installer.js";
 import { createHttpVersionProbe } from "./infrastructure/version-probe.js";
+import { readHarnessMode } from "../shared/harness-mode.js";
+import { SERVER_ENV_VAR } from "./domain/config.js";
 import {
   createCompatService,
   type CompatService,
@@ -35,7 +37,15 @@ export interface CliModule {
 export function composeCliModule(): CliModule {
   const configPath = defaultConfigPath();
   const store = createTomlConfigStore(configPath);
-  const envReader = createProcessEnvReader();
+  const harness = readHarnessMode();
+  const processEnv = createProcessEnvReader();
+  /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant there is no configured server to find — the install's own harness base is where every call goes, so it stands in for `DAM_SERVER` and nothing is read from the user's config file. */
+  const envReader = {
+    get: (name: string) =>
+      name === SERVER_ENV_VAR && harness !== null
+        ? harness.baseUrl
+        : processEnv.get(name),
+  };
   const cliVersion =
     typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "0.0.0-dev";
 

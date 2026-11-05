@@ -12,6 +12,7 @@ import {
 } from "api-server-api";
 import type { AppRouter as AgentRuntimeAppRouter } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
+import { cliTrpcUrl, readHarnessMode } from "../harness-mode.js";
 
 export type TrpcClient = TRPCClient<AppRouter>;
 export type AgentTrpcClient = TRPCClient<AgentRuntimeAppRouter>;
@@ -157,10 +158,14 @@ export function createTrpcClient(deps: {
   tokenProvider: TokenProvider;
   fetch?: typeof fetch;
 }): TrpcClient {
+  /* UNIT_BOUNDARY_DESCRIPTION: inside an assistant, the install's API is its own harness path and carries no credential — the path itself is the proof of which Agent is asking. */
+  const harness = readHarnessMode();
   const options = {
-    url: `${deps.host.replace(/\/+$/, "")}/api/trpc`,
+    url: harness
+      ? cliTrpcUrl(harness)
+      : `${deps.host.replace(/\/+$/, "")}/api/trpc`,
     fetch: wrapFetchWithServerGates(deps.host, deps.fetch),
-    headers: buildAuthHeaders(deps),
+    headers: harness ? () => ({}) : buildAuthHeaders(deps),
   };
   return createTRPCClient<AppRouter>({
     links: [

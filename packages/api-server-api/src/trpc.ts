@@ -2,6 +2,11 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
 import { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 import { storageFullSchema } from "./modules/budgets/schemas.js";
+import {
+  agentChangeKind,
+  pendingApprovalSchema,
+} from "./modules/approvals/agent-change.js";
+import type { AgentChangeArguments } from "./modules/approvals/types.js";
 import type { BudgetStorageFull } from "./modules/budgets/types.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
 import { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
@@ -30,6 +35,15 @@ function isTermsStaleCause(cause: unknown): boolean {
     "termsStale" in cause &&
     (cause as { termsStale: unknown }).termsStale === true
   );
+}
+
+function extractPendingApproval(cause: unknown): unknown {
+  if (!cause || typeof cause !== "object" || !("pendingApproval" in cause))
+    return;
+  const parsed = pendingApprovalSchema.safeParse(
+    (cause as { pendingApproval: unknown }).pendingApproval,
+  );
+  return parsed.success ? parsed.data : undefined;
 }
 
 const PG_INVALID_TEXT_REPRESENTATION = "22P02";
@@ -71,6 +85,7 @@ const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
     const storageFull = extractStorageFull(error.cause);
+    const pendingApproval = extractPendingApproval(error.cause);
     return {
       ...shape,
       message: REDACTED_MESSAGES[error.code] ?? shape.message,
@@ -79,6 +94,7 @@ const tBase = initTRPC.context<ApiContext>().create({
         stack: undefined,
         ...(scanFailure ? { scanFailure } : {}),
         ...(storageFull ? { storageFull } : {}),
+        ...(pendingApproval ? { pendingApproval } : {}),
         ...(isTermsStaleCause(error.cause)
           ? { termsStale: true as const }
           : {}),
@@ -130,10 +146,89 @@ const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
   return next();
 });
 
+/*
+ * UNIT_BOUNDARY_DESCRIPTION: what an assistant's own token may change. A read
+ * or a create runs; anything that alters or removes something already there is
+ * filed on the owner's approval queue instead of running, and the caller is
+ * told which approval waits — the owner's verdict then runs it, once, as the
+ * owner. A refusal never reaches the procedure. Runs before every other guard,
+ * so no procedure is reachable around it.
+ */
+const AGENT_CHANGE_INPUT_MAX_LENGTH = 65_536;
+
+/* UNIT_BOUNDARY_DESCRIPTION: the procedure's own input parser, registered by the
+ * router that holds them, so the change filed is the canonical arguments the
+ * procedure would receive — defaults filled in, unknown keys gone — rather than
+ * whatever spelling the caller sent. */
+let agentChangeInputParser:
+  ((path: string, raw: unknown) => Promise<unknown>) | null = null;
+
+export function registerAgentChangeInputParser(
+  parser: (path: string, raw: unknown) => Promise<unknown>,
+): void {
+  agentChangeInputParser = parser;
+}
+
+async function canonicalAgentChangeInput(
+  path: string,
+  raw: AgentChangeArguments | null,
+): Promise<AgentChangeArguments | null> {
+  if (agentChangeInputParser === null) return raw;
+  try {
+    return (await agentChangeInputParser(
+      path,
+      raw,
+    )) as AgentChangeArguments | null;
+  } catch (err) {
+    // UNIT_BOUNDARY_DESCRIPTION: arguments the procedure itself would refuse are refused here, to the caller, rather than filed for an owner to approve something that cannot run.
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: err instanceof Error ? err.message : "invalid input",
+    });
+  }
+}
+
+const agentChangesNeedApproval = tBase.middleware(
+  async ({ ctx, path, type, getRawInput, next }) => {
+    const assistant = ctx.user?.onBehalfAgentId;
+    if (assistant === undefined || type !== "mutation") return next();
+    const kind = agentChangeKind(path);
+    if (kind === "create") return next();
+    if (kind === "refuse") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `This is the owner's own decision, not the assistant's: \`${path}\` is refused for an agent acting on the owner's behalf.`,
+      });
+    }
+    const raw = (await getRawInput()) as AgentChangeArguments | null;
+    if (JSON.stringify(raw ?? null).length > AGENT_CHANGE_INPUT_MAX_LENGTH) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This change is too large to put in front of your owner; split it into smaller ones.",
+      });
+    }
+    const input = await canonicalAgentChangeInput(path, raw);
+    const filed = await ctx.agentChanges.request({ procedure: path, input });
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `Waiting for your owner's approval: ${filed.title}. Run \`dam approval wait ${filed.id}\` to see the outcome.`,
+      cause: {
+        pendingApproval: {
+          id: filed.id,
+          title: filed.title,
+          expiresAt: filed.expiresAt,
+        },
+      },
+    });
+  },
+);
+
 export const t = {
   ...tBase,
   procedure: tBase.procedure
     .use(({ path, type, next }) => withTrpcTelemetry(path, type, next))
+    .use(agentChangesNeedApproval)
     .use(rejectOversizedArrays)
     .use(mapPgErrors)
     .use(requireTermsAccepted),

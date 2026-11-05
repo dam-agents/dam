@@ -732,7 +732,9 @@ describe("auth-service.status", () => {
       revokeClient: revokeUnused(),
       browserOpener: browserUnused(),
       authStore: emptyStore(),
-      authEnvReader: { damToken: () => "env-token-value" },
+      authEnvReader: {
+        damToken: () => "env-token-value",
+      },
       savedTokenProvider: savedSession(),
     });
 
@@ -766,7 +768,9 @@ describe("auth-service.status", () => {
       revokeClient: revokeUnused(),
       browserOpener: browserUnused(),
       authStore: store,
-      authEnvReader: { damToken: () => "env-token-value" },
+      authEnvReader: {
+        damToken: () => "env-token-value",
+      },
       savedTokenProvider: savedSession(),
     });
 

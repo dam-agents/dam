@@ -51,7 +51,8 @@ export function createAuthMiddleware(
     c.set("roles", roles);
     c.set("surface", clientSurface(admitted.principal, attribution));
     emitUserAuthenticated(admitted.principal, attribution);
-    if (user.keyId === undefined) return next();
+    if (user.keyId === undefined && user.onBehalfAgentId === undefined)
+      return next();
     await next();
 
     const body = c.res.body;

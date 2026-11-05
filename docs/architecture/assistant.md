@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -107,6 +107,28 @@ What it restores is the first open: the assistant's record says it has never bee
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
 The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
 
+## What it changes
+
+The assistant is the one Agent that may drive its owner's install, and it does so through the `dam` CLI every agent image carries for it ([cli](cli.md#harness-mode)).
+The image ships the CLI and a `dam` skill in its [staged-skills dir](agent-skills.md#skill-origin), and only an assistant is pointed at the install: provisioning's Install Command copies the skill onto its disk and writes the harness base and its own Agent id that the image's `dam` reads, so the skill is a [platform skill](skills.md#platform-skill) of this feature, visible in the assistant's Skills list, and every other Agent keeps a `dam` that refuses.
+Nothing secret exists there: the CLI calls the platform API on the Agent's own harness path, which only that machine reaches, so the path itself is the proof of which Agent is asking, and the server derives the rest — the owner, their scopes, and whether any of it still holds ([cli](cli.md#harness-mode)).
+It reaches the platform API and nothing else: an agent's runtime, its files and every chat, terminal and shell socket are out of its reach, and its own verbs for those say so.
+Every use re-reads the Agent's kind, its owner, the owner's account and this install's feature flag for them.
+
+It acts with its owner's permissions over that owner's Agents, minus `credentials:manage` — it can never add, rotate or read out a credential, and it is never an operator.
+**Reading and creating run freely.**
+Anything that changes or removes something that already exists — a rename, a restart, a sleep, a disable, a delete, an unbind, a revoked grant, a schedule edit, a new network rule — is **filed on the owner's approval queue** instead of running: the same Home queue a held network request appears in, showing which change it is and the exact arguments it would run with.
+The owner approves and it runs, once, as the owner; the owner refuses and nothing runs, and the CLI that asked is told so.
+
+**An accepted exception: a create is not reviewed.**
+D236A reads D230B literally, so an assistant's create runs without the owner seeing it first — and a create carries what the owner already holds: it may grant any of the owner's own Connections to a new Agent, name an owner-owned Secret as its `secretRef` and so hand that Agent its bytes, and write registry credential material.
+None of that crosses an owner boundary and none of it alters something that already exists, but it is reach **granted without the owner looking**, and closing it is a create-with-grants waiting like any other change ([security-and-credentials](security-and-credentials.md#resource-ownership)).
+A change nobody decides expires after a day, and the one unanswered at its expiry runs nothing.
+Its word is never the verdict: verdicts on approvals, API keys, the Terms, feature flags and the owner's own UI state are refused outright, not queued.
+Nor does it answer its own request: a change is decided by the owner in their own signed-in session, never by an API key, an editor standing or the assistant itself.
+What the request was admitted on is re-read when the verdict lands — the assistant still exists, is still an assistant, its owner is still admitted, and the install still offers assistants — so a decision taken after any of that changed runs nothing.
+Nothing re-runs a held change twice: the verdict runs it and writes what became of it on the record, and `dam approval wait` reads that back.
+
 ## Rolling it out
 
 Those refusals rest on the kind, and a replica older than this page reads an unknown kind as no kind at all: it would let the assistant be deleted, renamed, disabled, shared or bound like any Agent.
@@ -115,5 +137,6 @@ Rolling back below that version withdraws the protections, not the Agents: the a
 
 ## Boundaries
 
-Its owner's other Agents are not visible to it, it holds no platform tools, and it is never proactive: it knows what any Agent knows, with the access any Agent has.
+Its owner's other Agents are not visible to it and it is never proactive: it knows what any Agent knows, with the access any Agent has, plus the one capability below.
+Changing its owner's install is the one capability it has that no other Agent does, and that capability is the approval queue rather than a wider reach.
 Anything it should know later — a team knowledge base, the state of the owner's other Agents, cost and failure explanations — arrives as a grant or a capability, without changing provisioning or the blocked operations above.

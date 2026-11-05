@@ -5,6 +5,7 @@ import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildApproveCommand } from "./commands/approve.js";
 import { buildDenyCommand } from "./commands/deny.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildWaitCommand } from "./commands/wait.js";
 import {
   createApprovalService,
   type ApprovalService,
@@ -45,6 +46,7 @@ export function composeApprovalModule(
   parent.addCommand(buildListCommand(agentScoped));
   parent.addCommand(buildApproveCommand(idScoped));
   parent.addCommand(buildDenyCommand(idScoped));
+  parent.addCommand(buildWaitCommand(idScoped));
 
   return { commands: [parent] };
 }

@@ -1,4 +1,6 @@
 import type {
+  AgentChangePayload,
+  AgentChangeResult,
   ApprovalActionOutcome,
   ApprovalVerdict,
   ApprovalView,
@@ -68,6 +70,40 @@ interface CreateApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  /* UNIT_BOUNDARY_DESCRIPTION: runs a change an assistant's token asked for, as the owner, once the owner's verdict arrived — the caller composes the owner's own context for it, so the gate that filed the change is not in its way. */
+  executeAgentChange?: (
+    payload: AgentChangePayload,
+  ) => Promise<AgentChangeResult>;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether this call is the owner's own signed-in session — no API key, no assistant's token, no editor standing. Only that answers a change an assistant asked for: the verdict is where an assistant's reach ends. */
+  interactiveOwner: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: the facts a token could not know when the change was filed, re-read at the verdict: the assistant still exists, is still an assistant, its owner is still an admitted person, and the install still offers assistants to them. */
+  assistantStillAllowed?: (input: {
+    agentId: string;
+    ownerSub: string;
+  }) => Promise<{ ok: true } | { ok: false; reason: string }>;
+}
+
+function refuseUnlessInteractiveOwner(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+): void {
+  if (deps.interactiveOwner) return;
+  securityLog("warn", "approval.verdict_refused", {
+    category: "approval",
+    actor: deps.actor,
+    actorKind: "agent",
+    agentId: row.agentId,
+    decision: "deny",
+    reason:
+      deps.actor === row.ownerSub ? "not-an-interactive-session" : "not-owner",
+    correlationId: row.id,
+    detail: { surface: "agent-change" },
+  });
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message:
+      "A change an assistant asked for is decided by the owner in a signed-in session — not by an API key, and not by the assistant.",
+  });
 }
 
 function matchesBinding(
@@ -81,6 +117,7 @@ const NOT_ACTIONABLE: ApprovalActionOutcome = {
   outcome: "not_actionable",
   type: null,
   rule: null,
+  agentChange: null,
 };
 
 function toView(row: PendingApprovalRow): ApprovalView {
@@ -197,6 +234,13 @@ export function createApprovalsService(
       return visible.map(toView);
     },
 
+    async get(id) {
+      const row = await deps.repo.getPending(id);
+      if (!row || row.ownerSub !== deps.ownerSub) return null;
+      if (!matchesBinding(deps.agentBinding, row.agentId)) return null;
+      return toView(row);
+    },
+
     async listForInstance(agentId, opts) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
       const rows = await deps.repo.listPendingForInstance(agentId, opts);
@@ -210,6 +254,7 @@ export function createApprovalsService(
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
+      if (row.payload.kind === "agent_change") return runAgentChange(deps, row);
       if (row.type === "ext_authz") {
         return resolveOnce(deps, row, "allow_once", "allow");
       }
@@ -221,6 +266,7 @@ export function createApprovalsService(
       if (row?.type === "spend_limit") {
         return answerSpendQuestion(deps, row, "allow");
       }
+      if (row?.payload.kind === "agent_change") return NOT_ACTIONABLE;
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (
         row.payload.kind === "ext_authz" ||
@@ -242,6 +288,7 @@ export function createApprovalsService(
       if (row?.type === "spend_limit") {
         return answerSpendQuestion(deps, row, "allow");
       }
+      if (row?.payload.kind === "agent_change") return NOT_ACTIONABLE;
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (
         row.payload.kind === "ext_authz" ||
@@ -260,6 +307,11 @@ export function createApprovalsService(
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
+      if (row?.payload.kind === "agent_change") {
+        return row.status === "pending"
+          ? refuseOnce(deps, row, "deny")
+          : NOT_ACTIONABLE;
+      }
       if (row?.type === "spend_limit") refuseSpendDeny();
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") {
@@ -304,10 +356,104 @@ async function dismissOne(
   if (row.payload.kind === "egress_proposal") {
     return declineProposal(deps, row);
   }
+  if (row.payload.kind === "agent_change") {
+    return refuseOnce(deps, row, "deny_once");
+  }
   if (row.type === "ext_authz") {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a refused change just settles — nothing ran, and nothing of the harness is waiting to hear it. */
+async function refuseOnce(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: "deny" | "deny_once",
+): Promise<ApprovalActionOutcome> {
+  refuseUnlessInteractiveOwner(deps, row);
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor, {
+    markDelivered: true,
+  });
+  if (casWon) emitResolved(row, verdict);
+  auditVerdict(deps, row, "deny", { verdict, ruleWritten: false });
+  return casWon
+    ? { outcome: "applied", type: row.type, rule: null, agentChange: null }
+    : NOT_ACTIONABLE;
+}
+
+/*
+ * UNIT_BOUNDARY_DESCRIPTION: the verdict that lets a held change happen. The
+ * row settles first, then the change runs exactly once, as the owner — a
+ * concurrent second verdict finds it settled and runs nothing — and whatever
+ * became of it is written on the row for the CLI that asked to read back.
+ */
+async function runAgentChange(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+): Promise<ApprovalActionOutcome> {
+  if (row.payload.kind !== "agent_change") return NOT_ACTIONABLE;
+  refuseUnlessInteractiveOwner(deps, row);
+  const payload = row.payload;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: everything a token was checked for when it filed the change is checked again here, against the world as it is at the verdict — a deleted assistant, a reassigned owner or a withdrawn feature ends the change instead of running it. */
+  const allowed = deps.assistantStillAllowed
+    ? await deps
+        .assistantStillAllowed({
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+        })
+        .catch(() => ({ ok: false as const, reason: "could not be checked" }))
+    : { ok: true as const };
+  if (!allowed.ok) {
+    securityLog("warn", "agent_change.refused", {
+      category: "approval",
+      actor: deps.actor,
+      actorKind: "user",
+      agentId: row.agentId,
+      decision: "deny",
+      reason: "assistant-no-longer-eligible",
+      correlationId: row.id,
+      detail: { why: allowed.reason },
+    });
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `This change cannot run: ${allowed.reason}.`,
+    });
+  }
+
+  const casWon = await deps.repo.resolvePending(
+    row.id,
+    "allow_once",
+    deps.actor,
+    { markDelivered: true, requireUnexpired: true },
+  );
+  if (!casWon) return NOT_ACTIONABLE;
+  emitResolved(row, "allow_once");
+
+  const result: AgentChangeResult = deps.executeAgentChange
+    ? await deps.executeAgentChange(payload).catch((err: unknown) => ({
+        procedure: payload.procedure,
+        status: "failed" as const,
+        error: err instanceof Error ? err.message : String(err),
+      }))
+    : {
+        procedure: payload.procedure,
+        status: "failed",
+        error: "this install cannot run a held change",
+      };
+  await deps.repo.setPayload(row.id, { ...payload, outcome: result });
+  auditVerdict(deps, row, "allow", {
+    verdict: "allow_once",
+    procedure: payload.procedure,
+    ran: result.status === "ran",
+  });
+  return {
+    outcome: "applied",
+    type: row.type,
+    rule: null,
+    agentChange: result,
+  };
 }
 
 async function declineProposal(

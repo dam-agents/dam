@@ -33,6 +33,10 @@ export function approvalHeadline(approval: ApprovalView): string {
         : "Reached its spend limit",
     )
     .with({ kind: "egress_proposal" }, () => "Proposes a network rule")
+    .with(
+      { kind: "agent_change" },
+      ({ title }) => `Wants to make a change: ${title}`,
+    )
     .exhaustive();
 }
 
@@ -81,6 +85,8 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
+  if (payload.kind === "agent_change")
+    return payload.procedure.replace(/\./g, " · ");
   const target =
     payload.path === "*"
       ? `${payload.host} (any path)`
@@ -91,6 +97,28 @@ export function approvalDetail(
   return payload.viaEnvironment
     ? `${request}, from its Environment ${payload.viaEnvironment}`
     : request;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: which Agent a held change acts on, resolved from the arguments the change will run with — `id` on an Agent patch, `agentId` on anything scoped — so the owner reads a name rather than an identifier. */
+export function agentChangeTarget(
+  approval: ApprovalView,
+  nameOf: (agentId: string) => string | undefined,
+): string | null {
+  const payload = approval.payload;
+  if (payload.kind !== "agent_change") return null;
+  const input = payload.input;
+  if (typeof input !== "object" || input === null) return null;
+  const { agentId, id } = input as { agentId?: unknown; id?: unknown };
+  const target = typeof agentId === "string" ? agentId : id;
+  if (typeof target !== "string" || target === "") return null;
+  return nameOf(target) ?? target;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the arguments in full, pretty-printed for the owner to read field by field; nothing is abbreviated, because a field they cannot see is a field they did not approve. */
+export function agentChangeArguments(approval: ApprovalView): string | null {
+  return approval.payload.kind === "agent_change"
+    ? JSON.stringify(approval.payload.input ?? null, null, 2)
+    : null;
 }
 
 export function approvalReason(approval: ApprovalView): string | null {

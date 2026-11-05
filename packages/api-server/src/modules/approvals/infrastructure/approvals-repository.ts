@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
+import { and, asc, desc, eq, gt, isNull, lt, ne, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
@@ -40,6 +40,7 @@ export interface ApprovalsRepository {
       { status: "expired" } | { status: "resolved"; verdict: ApprovalVerdict },
   ): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
+  setPayload(id: string, payload: ApprovalPayload): Promise<void>;
   findActivePendingExtAuthz(input: {
     agentId: string;
     host: string;
@@ -59,7 +60,7 @@ export interface ApprovalsRepository {
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
     decidedBy: string,
-    opts?: { markDelivered?: boolean },
+    opts?: { markDelivered?: boolean; requireUnexpired?: boolean },
   ): Promise<boolean>;
   resolveExpired(
     id: string,
@@ -223,6 +224,13 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
     },
 
+    async setPayload(id, payload) {
+      await db
+        .update(pendingApprovals)
+        .set({ payload })
+        .where(eq(pendingApprovals.id, id));
+    },
+
     async findActivePendingExtAuthz({ agentId, host, port, method, path }) {
       const rows = await db.execute(sql`
         SELECT id, type, agent_id AS "agentId",
@@ -294,6 +302,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           and(
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
+            ...(opts?.requireUnexpired
+              ? [gt(pendingApprovals.expiresAt, now)]
+              : []),
           ),
         )
         .returning({ id: pendingApprovals.id });

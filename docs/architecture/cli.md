@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -99,6 +99,21 @@ A created key's plaintext is returned once and printed to stderr (so a `>` redir
 API-key principals cannot mint further keys — the server enforces that, so the constraint holds regardless of how the CLI is driven.
 Concurrent writes to the credential store are not coordinated in v1 (a solo, single-terminal assumption): overlapping processes can each persist their own merged snapshot, at worst forcing one re-login.
 
+**Inside an assistant** the CLI needs no sign-in and holds no secret ([harness mode](#harness-mode)).
+
+## Harness mode
+
+An [assistant](assistant.md) drives its owner's install from inside its own machine, and that is the one place `dam` runs without an account.
+`DAM_HARNESS_URL` (the install's harness base) and `DAM_AGENT_ID` turn it on: every call goes to `<harness base>/api/agents/<id>/cli/trpc`, which the mesh admits only from that Agent's own gateway, so the path is the proof of who is asking — the CLI sends no `Authorization` header, reads no credential store, and there is no token in the machine to steal or replay.
+It stands in for the configured server: no host is read from the config file, no compatibility floor or recommendation is negotiated (the bundle came from this server), and the version it reports is the install's own, from `<harness base>/api/agents/<id>/cli/version`.
+The CLI arrives with the machine rather than from npm: every agent image carries the `dam` bundle of its own build, and a plain `dam` on every agent's PATH that refuses until something configures it.
+An assistant's provisioning Install Command — the only thing that copies the staged `dam` skill — puts that skill on its disk and writes the two values (`DAM_HARNESS_URL`, `DAM_AGENT_ID`) that turn the image's CLI into that machine's own; every other Agent keeps a `dam` that says this CLI is not for it.
+The bundle a machine runs is therefore the one its image was built with, and a newer image is how it moves; version skew between an image and a newer server is accepted, which is what one-click image updates are for.
+`dam update` has nothing to do there, and the verbs that need the owner's own doors refuse with a plain sentence: `chat`, `session`, `run`, `ssh`, `file` and `import` are not available from inside an assistant.
+What it may do is the install's decision, not the CLI's: reads and creates run, and every change it asks for waits on that owner's approval on Home, so a verb that fails this way says so and names the approval to wait on.
+`dam approval wait <id>` reports the verdict and what became of the change; it never re-runs anything, because an approved change has already happened server-side.
+Answering such a request (`dam approval approve` or `deny` on it) needs a person's own sign-in: an API key is refused there, and so is the assistant itself.
+
 ## Agent addressing
 
 The `agent` module gives users a human-friendly way to name an Agent and exports the seam every Agent-targeted verb consumes.
@@ -131,7 +146,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
-- **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear.
+- **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear, with `wait` for the verdict on a change an assistant asked for.
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).

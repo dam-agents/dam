@@ -1,4 +1,4 @@
-import { t } from "./trpc.js";
+import { registerAgentChangeInputParser, t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
 import { assistantsRouter } from "./modules/assistants/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
@@ -77,6 +77,27 @@ export const appRouter = t.router({
   spend: spendRouter,
   providerStatus: providerStatusRouter,
   events: eventsRouter,
+});
+
+type InputParser = { parseAsync(input: unknown): Promise<unknown> };
+
+/* UNIT_BOUNDARY_DESCRIPTION: a held change is filed with the arguments its
+ * procedure would actually receive, parsed here by that procedure's own input
+ * schema — the router is the only place that holds them, so it hands the parser
+ * to the gate that files. */
+registerAgentChangeInputParser(async (path, raw) => {
+  const procedure = (
+    appRouter as unknown as {
+      _def: {
+        procedures: Record<string, { _def: { inputs?: InputParser[] } }>;
+      };
+    }
+  )._def.procedures[path];
+  let value = raw;
+  for (const parser of procedure?._def.inputs ?? []) {
+    value = await parser.parseAsync(value);
+  }
+  return value;
 });
 
 export type AppRouter = typeof appRouter;

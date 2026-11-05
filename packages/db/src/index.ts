@@ -95,6 +95,7 @@ export {
   eq,
   and,
   or,
+  gt,
   gte,
   ilike,
   inArray,

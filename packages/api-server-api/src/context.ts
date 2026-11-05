@@ -11,7 +11,10 @@ import type {
 } from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
 import type { CostReviewsService } from "./modules/cost-reviews/types.js";
-import type { ApprovalsService } from "./modules/approvals/types.js";
+import type {
+  AgentChangeApprovals,
+  ApprovalsService,
+} from "./modules/approvals/types.js";
 import type {
   SatellitesService,
   SatelliteWorkerOps,
@@ -67,6 +70,13 @@ export interface UserIdentity {
   scopes: readonly Scope[];
   agentIds: readonly string[] | "*";
   keyId?: string;
+  /*
+   * UNIT_BOUNDARY_DESCRIPTION: the assistant Agent whose own token this
+   * principal acts with — the owner's identity, minus credentials:manage, and
+   * with every change waiting for the owner's approval. Never a person: the
+   * gates that need one (API keys, the Terms, verdicts) refuse it.
+   */
+  onBehalfAgentId?: string;
   isOperator?: boolean;
   email?: string;
   emailVerified?: boolean;
@@ -89,6 +99,11 @@ export interface ApiContext {
   secretRequests: SecretRequestsService;
   skills: SkillsService;
   approvals: ApprovalsService;
+  /*
+   * UNIT_BOUNDARY_DESCRIPTION: where an assistant's token files a change it may
+   * not make itself; the owner's verdict on Home then runs it.
+   */
+  agentChanges: AgentChangeApprovals;
   attention: AttentionService;
   costReviews: CostReviewsService;
   egressRules: EgressRulesService;

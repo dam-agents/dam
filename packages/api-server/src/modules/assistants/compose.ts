@@ -15,6 +15,8 @@ export function composeAssistantsForOwner(deps: {
   owner: string;
   assistantName: string;
   brandName: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the install an assistant's machine is given the CLI of, as its own harness base — the one door it may drive the platform through. */
+  cliInstall: { harnessUrl: string };
   admitted: () => Promise<boolean>;
   enabled: () => Promise<boolean>;
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
@@ -43,6 +45,7 @@ export function composeAssistantsForOwner(deps: {
       ownName: deps.owner,
       assistantName: deps.assistantName,
       brandName: deps.brandName,
+      cliInstall: deps.cliInstall,
       admitted: deps.admitted,
       enabled: deps.enabled,
       agentOf: deps.agentOf,

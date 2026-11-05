@@ -50,6 +50,7 @@ export type RelayAdmissionResult =
       user: UserIdentity;
       surface: string;
       editor: RelayEditor | null;
+      onBehalfAgentId: string | null;
       attached: () => void;
       opened: (client: WebSocket) => void;
       watchKey: (onDead: () => void) => () => void;
@@ -120,6 +121,21 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       });
       if (!allowed) return { ok: false, kind: "not-permitted" };
     }
+    /* UNIT_BOUNDARY_DESCRIPTION: an assistant acting for its owner reaches the app tRPC API and nothing else — no terminal, no shell, no chat relay, no runtime tRPC. Those are the owner's own doors, and a machine that opened one would act as the person rather than ask for a change. */
+    if (user.onBehalfAgentId !== undefined) {
+      securityLog("warn", "ws.on_behalf_refused", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "agent",
+        surface: "ws",
+        agentId,
+        decision: "deny",
+        reason: "on-behalf-refused",
+        sourceIp: site.sourceIp,
+        detail: { relay: relayKind, onBehalfAgentId: user.onBehalfAgentId },
+      });
+      return { ok: false, kind: "not-permitted" };
+    }
     if (!hasScope(user, "agents:operate") || !hasAgentBinding(user, agentId)) {
       return { ok: false, kind: "not-permitted" };
     }
@@ -158,6 +174,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
         ownerSub: editor.ownerSub,
         permissions: editor.permissions,
       },
+      onBehalfAgentId: user.onBehalfAgentId ?? null,
       opened: (client) => {
         if (editor)
           deps.editorSockets.track(
@@ -173,7 +190,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
           Math.round(performance.now() - connectedAt),
         ),
       watchKey: (onDead) =>
-        user.keyId === undefined
+        user.keyId === undefined && user.onBehalfAgentId === undefined
           ? () => {}
           : watchApiKey(deps.authenticate, token, site, onDead),
     };
@@ -188,6 +205,8 @@ export interface RelayActor {
   email: string | null;
   surface: string;
   editor: RelayEditor | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant whose own token opened this relay, so any relay path can tell it is not a person. No relay admits one today; carrying it is what makes each relay's refusal checkable rather than implied by an admission elsewhere. */
+  onBehalfAgentId: string | null;
   attached: () => void;
   opened: (client: WebSocket) => void;
 }
@@ -290,6 +309,7 @@ export function relayRoute(
       email: admitted.user.email ?? null,
       surface: admitted.surface,
       editor: admitted.editor,
+      onBehalfAgentId: admitted.onBehalfAgentId,
       attached: admitted.attached,
       opened: admitted.opened,
     });

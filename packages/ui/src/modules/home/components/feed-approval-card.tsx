@@ -3,11 +3,14 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
+  agentChangeArguments,
+  agentChangeTarget,
   approvalDetail,
   approvalHeadline,
   approvalHideHint,
@@ -40,6 +43,12 @@ export function FeedApprovalCard({
   const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
   const reason = approvalReason(approval);
+  const agents = useAgentsList();
+  const changeTarget = agentChangeTarget(
+    approval,
+    (agentId) => agents.find((agent) => agent.id === agentId)?.name,
+  );
+  const changeArguments = agentChangeArguments(approval);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
@@ -81,6 +90,29 @@ export function FeedApprovalCard({
           Dismiss
         </button>
       </div>
+
+      {changeTarget !== null && (
+        <p
+          data-testid="feed-approval-target"
+          className="mt-2 text-sm text-muted-foreground"
+        >
+          On {changeTarget}
+        </p>
+      )}
+
+      {changeArguments !== null && (
+        <details
+          data-testid="feed-approval-arguments"
+          className="mt-2 rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5"
+        >
+          <summary className="cursor-pointer text-sm text-muted-foreground">
+            What it will do
+          </summary>
+          <pre className="mt-2 overflow-x-auto font-mono text-sm text-foreground">
+            {changeArguments}
+          </pre>
+        </details>
+      )}
 
       <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
         <span

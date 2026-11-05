@@ -143,6 +143,8 @@ export interface ApiServerDeps {
   delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
   userDirectory: Pick<KeycloakUserDirectory, "resolveBySub">;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner check an assistant's own token rides on — the directory, asked fresh, refusing whenever it cannot answer. */
+  onBehalfOwnerActive: (sub: string) => Promise<boolean>;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

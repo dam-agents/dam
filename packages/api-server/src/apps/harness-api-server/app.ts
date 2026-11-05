@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
+import type { ApiContext, UserIdentity } from "api-server-api";
 import type {
   AgentsService,
   ArtifactTouchService,
@@ -54,6 +55,7 @@ import type { AgentSecretRequests } from "../../modules/connections/services/age
 import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
+import { mountCliRoutes } from "./cli.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import {
   createDriverOps,
@@ -62,6 +64,7 @@ import {
 } from "./driver-ops.js";
 import type { FirePair } from "../../modules/harness-config/index.js";
 import { createAgentImageReader } from "./agent-image.js";
+import type { AgentOnBehalfVerifier } from "../../modules/agent-on-behalf/index.js";
 import {
   limitRequestBody,
   MAX_AGENT_REQUEST_BODY_BYTES,
@@ -129,6 +132,9 @@ export interface HarnessApiServerAppDeps {
     agentId: string,
   ) => AgentSecretRequests;
   egressProposalsFor: (owner: string, agentId: string) => EgressProposals;
+  /* UNIT_BOUNDARY_DESCRIPTION: the request context an assistant's own harness path composes its platform calls in — the app's own factory, with the owner the derived principal acts for. */
+  contextFor: (user: UserIdentity, surface: string) => ApiContext;
+  verifyAgentOnBehalf: AgentOnBehalfVerifier;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -327,6 +333,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     kbMcp,
     connections: connectionsRepo,
     secretStore,
+  });
+  mountCliRoutes(app, {
+    verifyAgentOnBehalf: deps.verifyAgentOnBehalf,
+    contextFor: deps.contextFor,
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),

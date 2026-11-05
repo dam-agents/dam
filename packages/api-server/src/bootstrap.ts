@@ -256,6 +256,11 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  createFailClosedOwnerActive,
+  verifyAgentOnBehalf as verifyAgentOnBehalfFor,
+} from "./modules/agent-on-behalf/index.js";
+import { createApiContextFactory } from "./apps/api-server/trpc/context.js";
+import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
   composeShareAuth,
@@ -788,6 +793,26 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  /* UNIT_BOUNDARY_DESCRIPTION: the checks an assistant's reach for its owner rides on — read live at every request on the Agent's own harness path, with the owner check failing closed: an unreachable directory refuses rather than waves through. */
+  const onBehalfOwnerActive = createFailClosedOwnerActive({
+    directory: userDirectory,
+  });
+  const verifyAgentOnBehalf = verifyAgentOnBehalfFor({
+    agentOf: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent ? { owner: agent.owner ?? null, kind: agent.kind } : null;
+    },
+    featureOn: async (ownerSub) =>
+      (
+        await composeFeaturesForOwner({
+          db,
+          owner: ownerSub,
+          surface: "cli",
+          modes: config.featureModes,
+        }).features.flags()
+      ).dambledore,
+    ownerActive: onBehalfOwnerActive,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -2595,6 +2620,7 @@ export async function bootstrap() {
   const listRegisteredAgentIds = listAgentIdsByOwner(db, subPseudonymizer);
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
+    onBehalfOwnerActive,
     config,
     api,
     db,
@@ -2720,6 +2746,8 @@ export async function bootstrap() {
         agentId,
         ownerSub: owner,
       }),
+    contextFor: createApiContextFactory(apiServerDeps),
+    verifyAgentOnBehalf,
     satellitesBoot,
     secretStore,
     spendHold,

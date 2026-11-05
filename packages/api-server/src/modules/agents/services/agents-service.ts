@@ -83,8 +83,10 @@ import { isSlackChannelUniqueViolation } from "../infrastructure/channel-binding
 import {
   type RuntimeMutator,
   agentInstructionsEvent,
+  workspaceCommandEvent,
   workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
+import { cliInstallCommand } from "../domain/cli-install.js";
 import {
   AGENT_INSTRUCTIONS_TEMPLATE,
   seedsAgentInstructions,
@@ -1557,6 +1559,22 @@ export function createAgentsService(deps: {
         await step("instructions", async () => {
           await deps.runtimeMutator.bump(infra.id, [
             agentInstructionsEvent(infra.id, homeInstructions, createdAt),
+          ]);
+        });
+
+      const cliInstall = input.cliInstall;
+      if (cliInstall !== undefined)
+        await step("cli", async () => {
+          await deps.runtimeMutator.bump(infra.id, [
+            workspaceCommandEvent(
+              "assistant-cli",
+              infra.id,
+              cliInstallCommand({
+                agentId: infra.id,
+                harnessUrl: cliInstall.harnessUrl,
+              }),
+              createdAt,
+            ),
           ]);
         });
 

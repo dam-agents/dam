@@ -71,6 +71,7 @@ function world(opts: { allowed?: boolean } = {}) {
     actor: "owner-1",
     actorEmail: null,
     agentBinding: "*",
+    interactiveOwner: true,
   });
   return { proposals, approvals, written };
 }

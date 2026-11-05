@@ -32,6 +32,9 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       subtitle: `${formatSpendAmount(effective, payload.unit)} on ${payload.day}`,
     };
   }
+  if (payload.kind === "agent_change") {
+    return { title: payload.title, subtitle: payload.detail };
+  }
   return { title: payload.toolName ?? "tool call", subtitle: "" };
 }
 
