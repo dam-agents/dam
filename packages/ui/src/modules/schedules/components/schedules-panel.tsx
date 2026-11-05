@@ -136,11 +136,7 @@ export function SchedulesPanel({
           )}
         </section>
       )}
-      {!panel && (
-        <div className="mt-6">
-          <AgentModelPicker agentId={agentId} kind="scheduled" />
-        </div>
-      )}
+      {!panel && <AgentModelPicker agentId={agentId} kind="scheduled" />}
 
       {form && (
         <ScheduleFormModal
