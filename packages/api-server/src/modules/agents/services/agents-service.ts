@@ -394,7 +394,7 @@ function slackConnectNotice(notice: {
   const { agentName } = notice;
   if (notice.slackChannelId.startsWith("D"))
     return `This DM is now connected to ${agentName}. Message it here; run the unbind command to disconnect.`;
-  const connected = `<@${notice.connectedBy}> connected ${agentName} to this channel`;
+  const connected = `This channel is now connected to ${agentName} owned by <@${notice.connectedBy}>`;
   if (notice.alreadyHere === 0)
     return `${connected}. Everyone here can use it; run the unbind command to disconnect.`;
   const alongside =
