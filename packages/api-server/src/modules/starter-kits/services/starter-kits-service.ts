@@ -91,7 +91,12 @@ export interface StarterKitsServiceDeps {
   repo: StarterKitsRepository;
   agents: Pick<
     AgentsService,
-    "create" | "delete" | "get" | "list" | "connectSlack"
+    | "create"
+    | "delete"
+    | "get"
+    | "list"
+    | "connectSlack"
+    | "announceSlackConnect"
   >;
   schedules: Pick<
     SchedulesService,
@@ -416,6 +421,8 @@ export function createStarterKitsService(
             agent.id,
             slackChannelId,
             false,
+            undefined,
+            { quiet: true },
           );
           if (!connected.ok)
             throw new TRPCError({
@@ -438,6 +445,8 @@ export function createStarterKitsService(
         });
         throw err;
       }
+      for (const slackChannelId of input.slackChannelIds ?? [])
+        await deps.agents.announceSlackConnect(agent.id, slackChannelId);
       await deps.wakeAgent(agent.id);
       emit({
         type: EventType.StarterKitApplied,

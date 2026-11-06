@@ -36,6 +36,10 @@ On a bound Agent, channel members get that access too unless the harness refuses
 It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete` and `/dam whisper <agent> on|off`, never who may talk to the Agent.
 It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
+Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
+`/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
+Owners never appear on the Agent's own posts.
+
 ### How the agent reaches Slack
 
 Two paths, both by tool call; plain assistant text is never posted.

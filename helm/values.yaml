@@ -260,14 +260,15 @@ environments:
   domain: ""
   # -- Most Environments one agent may hold at once.
   maxPerAgent: 5
-  # -- Furthest ahead an Environment's expiry may be set, in days.
+  # -- Furthest ahead an Environment's expiry may be set, in days. Its owner or
+  # agent may still keep one with no expiry.
   expiryMaxDays: 30
   # -- How long an Environment may sit idle before it sleeps, when its agent
   # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
   # since what an Environment runs takes minutes to come back.
   idleTimeout: "60m"
   # -- Longest idle timeout an agent may give an Environment; a longer one is
-  # cut to it. An Environment always sleeps in the end.
+  # cut to it. Its agent may still keep one awake with "never".
   idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share

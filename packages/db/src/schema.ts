@@ -644,7 +644,8 @@ export const environments = pgTable(
       .$type<{ name: string; port: number; ready?: string }[]>()
       .notNull(),
     access: jsonb("access").$type<string[] | null>(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // UNIT_BOUNDARY_DESCRIPTION: when the expiry sweep deletes the Environment; null when its owner or Owning Agent keeps it with no expiry.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

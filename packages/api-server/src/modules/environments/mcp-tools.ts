@@ -8,17 +8,25 @@ import {
   environmentReadyPathSchema,
 } from "api-server-api";
 import { json, run } from "../../core/mcp-tool-result.js";
+import type {
+  ExpiryRequest,
+  IdleTimeoutRequest,
+} from "./domain/environment.js";
 import type { OwningAgentEnvironments } from "./services/environments-service.js";
 
 const expiresInput = z
   .string()
   .optional()
   .describe(
-    `When the platform deletes the Environment: an ISO date-time, or a number of hours or days ("48h", "7d"). Default ${ENVIRONMENT_EXPIRY_DEFAULT_DAYS} days; capped at the install's maximum.`,
+    `When the platform deletes the Environment: an ISO date-time, or a number of hours or days ("48h", "7d"), capped at the install's maximum; or "never" to keep it until it is deleted, on your owner's own runner. Default ${ENVIRONMENT_EXPIRY_DEFAULT_DAYS} days. Your owner can change it too, and the last change wins.`,
   );
 
-export function parseExpiry(value: string | undefined): Date | undefined {
+// UNIT_BOUNDARY_DESCRIPTION: reads an expiry as an agent writes it: "never", an ISO date-time, or a number of hours or days from now.
+export function parseExpiry(
+  value: string | undefined,
+): ExpiryRequest | undefined {
   if (value === undefined) return undefined;
+  if (value.trim().toLowerCase() === "never") return "never";
   const relative = /^(\d+)\s*([hd])$/.exec(value.trim());
   const at = relative
     ? new Date(
@@ -38,19 +46,21 @@ function idleTimeoutInput(limits: OwningAgentEnvironments["idleTimeout"]) {
     .string()
     .optional()
     .describe(
-      `How long it may sit idle before it sleeps: a number of minutes, hours or days ("90m", "4h"). Default ${limits.defaultMin} minutes; at most ${limits.maxMin} minutes, and a longer one is cut to that. It always sleeps in the end: 0 or "never" is refused, and the platform may still put it to sleep early when its machine's memory is needed.`,
+      `How long it may sit idle before it sleeps: a number of minutes, hours or days ("90m", "4h"). Default ${limits.defaultMin} minutes; at most ${limits.maxMin} minutes, and a longer one is cut to that. "never" or 0 keeps it awake, so a client never waits for it to wake; it then holds its memory on your owner's runner all the time, so give it only to an Environment people rely on.`,
     );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads an idle timeout as an agent writes it, in the units `expires` takes plus minutes, into whole minutes. A word or a bare number is refused here, so "never" or "off" cannot read as no timeout; zero parses and is refused by the service, with the reason.
+// UNIT_BOUNDARY_DESCRIPTION: reads an idle timeout as an agent writes it, in the units `expires` takes plus minutes, into whole minutes. "never" and a zero, bare or with a unit, keep the Environment awake; any other word or bare number is refused here, so "off" or "60" is not guessed at.
 export function parseIdleTimeout(
   value: string | undefined,
-): number | undefined {
+): IdleTimeoutRequest | undefined {
   if (value === undefined) return undefined;
-  const parsed = /^(\d+)\s*([mhd])$/.exec(value.trim());
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "never" || /^0+\s*[mhd]?$/.test(trimmed)) return "never";
+  const parsed = /^(\d+)\s*([mhd])$/.exec(trimmed);
   if (!parsed)
     throw new Error(
-      `idle_timeout: ${value} is not a number of minutes, hours or days ("90m", "4h"); an Environment always sleeps when nobody uses it`,
+      `idle_timeout: ${value} is not a number of minutes, hours or days ("90m", "4h"), or "never"`,
     );
   const minutes =
     Number(parsed[1]) * (parsed[2] === "d" ? 1440 : parsed[2] === "h" ? 60 : 1);
@@ -96,7 +106,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "create_environment",
-    "Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform's image with Docker, k3s and openrc, with no harness and no connections, and it sleeps when nobody uses it for `idle_timeout` and is deleted at its expiry. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH: `ssh env-<name>` reaches it over a link only you can open, and `docker save IMAGE | ssh env-<name> k3s ctr images import -` ships an image in. Who may open it is for people to decide, never you: your owner, your editors and the people they name on your page in the app, and anyone your owner adds to this one Environment there.",
+    "Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform's image with Docker, k3s and openrc, with no harness and no connections, and it sleeps when nobody uses it for `idle_timeout` and is deleted at its expiry; either can be `never`, for a server people rely on. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH: `ssh env-<name>` reaches it over a link only you can open, and `docker save IMAGE | ssh env-<name> k3s ctr images import -` ships an image in. Who may open it is for people to decide, never you: your owner, your editors and the people they name on your page in the app, and anyone your owner adds to this one Environment there.",
     {
       name: environmentNameSchema.describe(
         "Unique among your Environments, e.g. pr-42.",
@@ -137,7 +147,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "list_environments",
-    "List your Environments — name, endpoints and their addresses, how many people may open each besides your owner, when they expire, how long each may sit idle before it sleeps (`idleTimeoutMin`), and whether each runs or sleeps — and after them the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open a shared one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
+    "List your Environments — name, endpoints and their addresses, how many people may open each besides your owner, when they expire (`never` for one kept until deleted), how long each may sit idle before it sleeps (`idleTimeoutMin`, `never` for one that never sleeps), and whether each runs or sleeps — and after them the Environments other agents' owners shared with you, each marked `sharedWithYou: true`, with whose agent it is and its addresses. Open a shared one at its addresses, as any visitor does; you cannot change, wake, delete or SSH into it.",
     {},
     () =>
       run(async () => json([...(await envs.list()), ...(await envs.shared())])),
@@ -145,7 +155,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "update_environment",
-    "Change one of your Environments: extend or shorten its expiry, change how long it may sit idle before it sleeps, or set its endpoints' readiness paths. Who may open it is not yours to change: only people share it, in the app.",
+    "Change one of your Environments: extend or shorten its expiry, or turn it off with `never`, change how long it may sit idle before it sleeps, or set its endpoints' readiness paths. Who may open it is not yours to change: only people share it, in the app.",
     {
       name: environmentNameSchema,
       expires: expiresInput,

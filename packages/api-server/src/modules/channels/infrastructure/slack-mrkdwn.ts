@@ -10,7 +10,7 @@ const SECTION_CHARS = 3000;
 
 const SLACK_TOKEN = /(<[@#!][^<>\s]+>)/;
 
-function escaped(text: string): string {
+export function escapeMrkdwn(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -20,7 +20,7 @@ function escaped(text: string): string {
 function escapedKeepingTokens(text: string): string {
   return text
     .split(SLACK_TOKEN)
-    .map((part, i) => (i % 2 === 1 ? part : escaped(part)))
+    .map((part, i) => (i % 2 === 1 ? part : escapeMrkdwn(part)))
     .join("");
 }
 
@@ -29,7 +29,7 @@ function inline(nodes: MdNode[]): string {
 }
 
 function fenced(code: string): string {
-  return `\`\`\`\n${escaped(code)}\n\`\`\``;
+  return `\`\`\`\n${escapeMrkdwn(code)}\n\`\`\``;
 }
 
 function listToMrkdwn(list: MdList, depth: number): string {
@@ -56,19 +56,19 @@ function toMrkdwn(node: MdNode): string {
     .with({ type: "strong" }, (n) => `*${inline(n.children)}*`)
     .with({ type: "emphasis" }, (n) => `_${inline(n.children)}_`)
     .with({ type: "delete" }, (n) => `~${inline(n.children)}~`)
-    .with({ type: "inlineCode" }, (n) => `\`${escaped(n.value)}\``)
+    .with({ type: "inlineCode" }, (n) => `\`${escapeMrkdwn(n.value)}\``)
     .with({ type: "code" }, (n) => fenced(n.value))
     .with({ type: "link" }, (n) => {
       const label = inline(n.children);
-      return label && label !== escaped(n.url)
+      return label && label !== escapeMrkdwn(n.url)
         ? `<${n.url}|${label}>`
         : `<${n.url}>`;
     })
     .with({ type: "image" }, (n) =>
-      n.alt ? `<${n.url}|${escaped(n.alt)}>` : `<${n.url}>`,
+      n.alt ? `<${n.url}|${escapeMrkdwn(n.alt)}>` : `<${n.url}>`,
     )
     .with({ type: "linkReference" }, (n) => inline(n.children))
-    .with({ type: "imageReference" }, (n) => escaped(n.alt ?? ""))
+    .with({ type: "imageReference" }, (n) => escapeMrkdwn(n.alt ?? ""))
     .with({ type: "footnoteReference" }, (n) => `[^${n.label ?? n.identifier}]`)
     .with(
       { type: "footnoteDefinition" },
