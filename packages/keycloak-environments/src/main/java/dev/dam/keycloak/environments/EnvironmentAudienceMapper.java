@@ -44,7 +44,7 @@ public class EnvironmentAudienceMapper extends AbstractOIDCProtocolMapper implem
 
   @Override
   public void postInit(KeycloakSessionFactory factory) {
-    if (config.resource().isPresent()) StaleClientsCleanupFactory.schedule(config.realm(), factory);
+    if (config.resource().isPresent()) RealmSetup.register(config.realm(), factory);
   }
 
   public void configure(EnvironmentsConfig config) {

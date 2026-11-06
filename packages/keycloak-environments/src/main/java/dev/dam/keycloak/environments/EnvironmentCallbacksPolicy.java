@@ -9,7 +9,7 @@ import org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyE
 
 /*
  * UNIT_BOUNDARY_DESCRIPTION: The anonymous client registration policy that
- * stands in for Keycloak's Trusted Hosts policy: it checks what a registering
+ * replaces Keycloak's Trusted Hosts policy: it checks what a registering
  * client names as its callbacks against the install's list, since Trusted
  * Hosts compares hosts only and cannot allow an app scheme such as `cursor:`.
  * A client must name at least one callback and every one must be allowed, at
