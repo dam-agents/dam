@@ -53,19 +53,18 @@ export function useReauthenticateConnection() {
 
   const {
     open: openPopup,
+    expect: expectPopup,
     close: closePopup,
     focus: focusPopup,
   } = useOAuthPopup((result) => void settle(result));
 
   const reauthenticate = async (connection: ConnectionView) => {
-    if (busyId !== null) {
-      focusPopup();
-      return;
-    }
+    if (pendingRef.current && focusPopup()) return;
     const signIn = signInOf(connection);
     const popup = openPopup();
     setBusyId(signIn.id);
     pendingRef.current = signIn;
+    expectPopup(signIn.id);
     try {
       const { authUrl } = await api.connections.startOAuth.mutate({
         connectionId: signIn.id,
@@ -73,6 +72,7 @@ export function useReauthenticateConnection() {
       });
       if (popup) {
         popup.location.href = authUrl;
+        setBusyId(null);
         return;
       }
       window.location.href = authUrl;
