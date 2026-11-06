@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-06
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -111,8 +111,6 @@ An Agent can ask for the same page through its platform MCP server (the `connect
 An Agent's request is narrower than the CLI's, because the Agent, not the person, chose its inputs: a new Connection must send the secret only to the hosts its template presets without config inputs, so a custom template, an S3 endpoint or a host of the Agent's choosing is refused, and a rotation names only a Connection granted to that Agent.
 The Connection the page creates is granted to the Agent that asked, and the status that Agent polls says whether the grant took; it reads only its own requests.
 OAuth stays a person's step: an Agent does not start a sign-in.
-The web UI runs a sign-in in a popup, and the callback page hands its result back on two channels: a message to the window that opened it, and a broadcast on the app's origin that names the Connection.
-An authorization server that sends `Cross-Origin-Opener-Policy: same-origin` cuts the popup off from its opener, so the opener cannot tell the popup is still open and the callback page has no opener to answer; the broadcast still arrives, so a popup that looks closed does not end the sign-in — Cancel does, and removes the Connection that never got a token.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.
