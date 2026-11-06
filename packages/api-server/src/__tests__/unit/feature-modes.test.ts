@@ -21,7 +21,6 @@ describe("feature modes", () => {
       surface: "test",
       modes: {
         processes: "off",
-        "interactive-artifacts": "on",
         "agent-telemetry": "experimental",
         "advanced-connections": "experimental",
         "chat-forms": "experimental",
@@ -32,7 +31,6 @@ describe("feature modes", () => {
     });
     expect(await service.flags()).toMatchObject({
       processes: false,
-      "interactive-artifacts": true,
       "agent-telemetry": true,
       "advanced-connections": false,
     });

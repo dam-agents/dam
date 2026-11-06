@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const featureIdSchema = z.enum([
   "advanced-connections",
-  "interactive-artifacts",
   "agent-telemetry",
   "processes",
   "chat-forms",

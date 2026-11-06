@@ -65,7 +65,6 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: (owner: string) => Promise<boolean>;
   prompts: ViewerPromptDelivery;
 }
 
@@ -92,7 +91,6 @@ export function composeArtifactLibraryForOwner(
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ensureReady: opts.ensureReady,
       agentApi: opts.agentApi,
-      featureOn: () => opts.featureOn(opts.owner),
       prompts: opts.prompts,
     }),
   };
@@ -200,7 +198,6 @@ export function composeArtifactPromptDelivery(opts: {
 }
 
 export function composeShareBridge(opts: {
-  featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
   prompts: ViewerPromptDelivery;
