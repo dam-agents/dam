@@ -150,6 +150,7 @@ The api-server names the declared ports on every request, so a port the Environm
   Every other request never waits.
   While the machine wakes, a page load (a `GET` navigation) gets the loading page below, and every other request — a script's call, an API client, a WebSocket — a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
 - **The app answers for itself.** Once the machine runs, every request but a page load goes to the app as it is, whatever its answer: the gate never stands in for a script, a stylesheet or an API call of an app that is up.
+  The gate's own paths are the exceptions: `/.platform/` and the resource metadata at `/.well-known/oauth-protected-resource`.
   The one exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.
 - **When a page load waits.** A page load to a running machine gets the loading page instead of the app's answer only while nothing behind the endpoint can answer it: nothing listens on the port, or, for an endpoint without a readiness path, a proxy in front of the app answers 502, 503 or 504, as a bridge or a k3s ingress does before the app behind it is up.
   An endpoint may declare a readiness path (`ready: "/healthz"` on create, or set by endpoint name on update); a page load to it waits until that path answers 2xx or 3xx, for an app that answers before it can serve.
