@@ -20,6 +20,20 @@ function timeoutScaleFromEnv(): number {
   return scale;
 }
 
+const workers = workersFromEnv();
+
+function workersFromEnv(): number {
+  const raw = process.env.E2E_WORKERS;
+  if (raw === undefined || raw.trim() === "") return 2;
+  const count = Number(raw);
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(
+      `E2E_WORKERS must be a whole number of at least 1, got "${raw}"`,
+    );
+  }
+  return count;
+}
+
 type NamedProject = Project & { name: string };
 
 const suite: NamedProject[] = [
@@ -149,11 +163,13 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  * creates. E2E_TIMEOUT_SCALE multiplies the default test and expect timeouts: e2e:loop
  * sets it, as a warm cluster shares the machine's CPUs with the browser and an action
  * takes seconds there, where it takes tenths in CI. A spec's own timeout stays as it is.
+ * E2E_WORKERS sets how many specs run at once, 2 by default: e2e:loop sets 1 in an
+ * Environment, whose 4 vCPUs two workers' agent machines and browsers overrun (#6199).
  */
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
-  workers: 2,
+  workers,
   retries: 0,
   timeout: 30_000 * timeoutScale,
   reporter: [

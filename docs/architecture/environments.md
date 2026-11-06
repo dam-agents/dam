@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-05
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -180,13 +180,14 @@ Nothing in the create asks for nesting: the Environment's machine nests through 
 An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
-Beside the chart it installs two pieces the gate needs, and two the Environment's disk needs:
+Beside the chart it installs two pieces the gate needs, two the Environment's disk needs, and one its nested machines need:
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
 - **No image garbage collection and no disk eviction** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
   Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
 - **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
+- **Transparent huge pages `always`, after every restart too**: the kernel's default is `madvise`, and the runner does not advise guest RAM, so a nested machine's boot often outlasts the VM runner's 30 s window; the install sets `always`, fails when the kernel keeps `madvise`, and leaves a boot service that sets it again before k3s starts.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
