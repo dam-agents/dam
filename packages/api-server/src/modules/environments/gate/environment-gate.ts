@@ -163,7 +163,7 @@ export const noEnvironmentGate: EnvironmentGate = {
  * on the Environment's loopback. While the machine wakes, a page load gets a
  * loading page that opens the app by itself, and any other request a 503 to
  * try again. An OAuth client's resource metadata is the gate's own answer,
- * the one path an app never serves. Once it runs, every request but a page load goes to the app
+ * the one path outside `/.platform/` that an app never serves. Once it runs, every request but a page load goes to the app
  * as it is; a page load waits on the loading page only while nothing behind
  * the endpoint answers it, or while a declared readiness path does not. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
