@@ -34,11 +34,16 @@ export function OAuthPopupWait({
 
   return (
     <div className="flex w-full flex-col gap-3" data-testid="oauth-popup-wait">
-      <Callout tone="info" size="sm" role="status" aria-live="polite">
+      <Callout tone="info" size="sm">
         <p className="text-sm text-foreground">
-          Waiting for your sign-in to finish in the other window…
+          <span role="status">
+            Waiting for your sign-in to finish in the other window…
+          </span>
           {remaining && (
-            <span className="text-muted-foreground"> {remaining} left.</span>
+            <span className="text-muted-foreground" aria-live="off">
+              {" "}
+              {remaining} left.
+            </span>
           )}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">

@@ -224,7 +224,7 @@ it("re-authenticate completes by broadcast", async () => {
   ]);
 });
 
-// TEST_SCENARIO: the wait is a status, not a button: the person sees that the sign-in still runs and how long it may take, is told to close a window still open before reopening, and sees that Cancel discards the connection.
+// TEST_SCENARIO: the wait is a status, not a button: the person sees that the sign-in still runs and how long it may take, is told to close a window still open before reopening, and sees that Cancel discards the connection. Only the static sentence is a live region, so a screen reader does not read the clock every second.
 it("the wait panel shows the time left and what Cancel does", async () => {
   const onReopen = vi.fn();
   const onDiscard = vi.fn();
@@ -243,6 +243,11 @@ it("the wait panel shows the time left and what Cancel does", async () => {
   );
   expect(text).toMatch(/10:00 left\./);
   expect(text).toContain("Close any sign-in window that is still open");
+  const live = host.querySelector('[role="status"]');
+  expect(live?.textContent).toBe(
+    "Waiting for your sign-in to finish in the other window…",
+  );
+  expect(host.querySelector('[aria-live="polite"]')).toBeNull();
   const buttons = [...host.querySelectorAll("button")];
   expect(buttons.map((b) => b.textContent)).toEqual([
     "Cancel and discard",
