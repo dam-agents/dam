@@ -251,6 +251,7 @@ export function useAcpConnection(
       }
       const continuedFrom = read?.kind === "ready" ? read.copy : null;
 
+      let generation = generationRef.current;
       let listening = true;
       let settled = false;
       let kept = false;
@@ -258,7 +259,8 @@ export function useAcpConnection(
       const { connection, ws, forksSessions } = await openInitializedConnection(
         selectedAgent,
         withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-          if (listening) handler(update, updateSessionId, frame);
+          if (listening && generation === generationRef.current)
+            handler(update, updateSessionId, frame);
         }),
       );
       ws.addEventListener("close", () => releaseStartSlot(holders));
@@ -319,6 +321,7 @@ export function useAcpConnection(
             continuedFrom,
             capabilities,
           );
+          generation = generationRef.current;
           return true;
         },
         finish: () => {
@@ -391,10 +394,12 @@ export function useAcpConnection(
     const existing = connectionRef.current;
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
+    const generation = generationRef.current;
     const handler = makeUpdateHandler();
     const { connection, ws, forksSessions } = await openInitializedConnection(
       selectedAgent,
       withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+        if (generation !== generationRef.current) return;
         const collector = collectorRef.current;
         if (
           collector &&
@@ -407,6 +412,10 @@ export function useAcpConnection(
         handler(update, updateSessionId, frame);
       }),
     );
+    if (generation !== generationRef.current) {
+      ws.close();
+      throw new Error("The session changed while its connection was opening");
+    }
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     agentForksRef.current = forksSessions;
