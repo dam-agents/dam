@@ -279,6 +279,7 @@ The differences are transport, identity model, and where the bot token comes fro
   Afterwards `/platform who` lists the conversation's Agents, and `/platform default` with no name shows the same list.
   Each line gives the owner's Slack tag, whether the Agent is the default, whether it reads every message or only its tags, the mention that reaches it, and its description, cut to 200 characters.
   The description is the Agent's own, set by its owner in the platform UI, so it says the same in every conversation.
+  A description equal to the Agent's template's is left out, as it describes the template rather than the Agent; a new Agent no longer copies its template's description.
   The tag is the owner's link in that workspace; an owner with none there, after a logout or from a connect that predates the membership check, is named by display name instead, so a member never needs the Public Agent Page to find them, and an owner with neither is left out.
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.

@@ -1375,6 +1375,7 @@ export type SlackWorkerDeps = {
   channelPair?: ChannelPair;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
+  templateDescription?: (templateId: string) => Promise<string | null>;
   identityLinks: IdentityLinkService;
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<SlackOAuthPending>;
@@ -2193,12 +2194,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const agent = await agents().get(instanceName);
       name = agent?.name?.trim() || instanceName;
       avatar = agent?.spec?.avatar;
-      description = agent?.spec?.description?.trim() ?? "";
+      description = await ownDescription(agent);
     } catch {
       name = instanceName;
     }
     agentNameCache.set(instanceName, { name, avatar, description }, readAt);
     return { name, avatar, description };
+  }
+
+  async function ownDescription(agent: Agent | null): Promise<string> {
+    const own = agent?.spec?.description?.trim() ?? "";
+    if (!own || !agent?.templateId || !deps.templateDescription) return own;
+    const inherited = await deps
+      .templateDescription(agent.templateId)
+      .catch(() => null);
+    return own === inherited?.trim() ? "" : own;
   }
 
   const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
