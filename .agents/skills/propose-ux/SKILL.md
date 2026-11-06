@@ -56,12 +56,16 @@ Do the homework before you ask anything:
   If you cannot open the frame, ask the user for a screenshot.
   A solution or a prototype that the issue proposes is the concept to beat.
   Criteria in the issue go into the brief: ask whether they are binding.
-- Research the area as in step 1 of the `develop` skill: duplicate issues, the history, and whether today's behavior was a deliberate decision.
+- Search the open and closed issues and pull requests for this area.
+  Look for a duplicate, an earlier attempt and why it stopped, and a change in flight that moves the same screen.
+- Find out whether today's behavior was a deliberate decision: a pull request or review that argues for it, an architecture page that describes it, or an issue closed as `not planned`.
+  A concept that reverses a deliberate decision has a cost: say so, and name who made the decision.
 - Walk today's flow in the running app as the person, and keep a screenshot of each step as the "before".
   When the app cannot run here at a fair cost, read the code path instead, and say so.
 - List where the area shows today on each surface: the web UI, the `dam` CLI, Slack, Telegram, the GitHub issues and pull requests that an agent writes, and shared pages (an artifact link, a public agent).
 - When the adoption funnel or the use of a feature matters, ask the user for a read of the usage analytics (`docs/architecture/usage-tracking.md`).
-  Only the `platform-inspector` role can read them.
+  Use only the numbers from the install that real people use.
+  A local cluster records only test activity.
 - Look at how other products solve the same job.
   Cite a URL for each one, or label it *Assumed*.
 
@@ -104,6 +108,7 @@ Do not start the concepts in the same message.
 - The user accepts the brief: go to step 3.
 - The user corrects it: change the brief, and show it again.
 - The brief shows no problem worth a change: say so, and recommend that the work stops.
+- A duplicate issue or a pull request in flight already covers the change: say so, and ask the user whether to go on.
 - The request is a research question, for example how people move between agents: concepts cannot answer it.
   Propose how to get the evidence, for example a read of the usage analytics or talks with the people who use the product, and stop there.
 - The flow is already fixed, for example a copy-only change or a binding design: say so here.
@@ -157,16 +162,12 @@ Give the builder a flow that leaves no question for the builder to answer alone:
 - **Errors**: prevent them first.
   When one still happens, say what happened, what it affects and how to recover.
 - **Words**: the glossary and the existing copy, never a retired word.
-  Never write the brand as a literal: it comes from configuration.
-  Write `<brand.name>` in text that a person reads, and `<brand.short>` only in commands, handles and URLs.
 - **Surfaces**: for each surface from step 1, say what the person sees, or that the surface is out of scope.
 - **Components**: the existing component for each part, in a labelled wireframe when a screen helps.
-  Take the icons from `docs/guidelines/code/icons-and-tooltips.md`.
+  Take the icon and the verb of each action from `docs/guidelines/code/icons-and-tooltips.md`.
   Where no component fits, say what is new and why.
-  Reuse the size of the existing component, or ask the user for the numbers.
-  Never take a size from a screenshot.
 
-When an agent or an automation acts on its own, also say:
+When the feature lets an agent or an automation act while the person is away, also say:
 
 - What it does alone, what it reports, and what waits for approval.
 - What the person sees when they return after hours.
@@ -177,8 +178,6 @@ When an agent or an automation acts on its own, also say:
   After a failed wake, the chat shows a Start button and the session list shows a retry (`docs/architecture/agent-lifecycle.md#wake`).
 - What happens when nobody answers.
   An irreversible action never proceeds in silence.
-- How each failure recovers.
-  No failure ends in a dead end.
 
 A prompt that people always click through is a defect.
 
