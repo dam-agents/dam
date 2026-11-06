@@ -22,6 +22,15 @@ outputs = []
 deny_net = true
 deny_write = true
 
+[tasks."check:project-order"]
+description = "Full scenarios wait for smoke setup and do not overlap shared user, agent or controller mutations"
+run = "node .mise/lib/project-order.mjs"
+sources = ["playwright.config.ts", ".mise/lib/project-order.mjs"]
+outputs = []
+deny_net = true
+deny_write = true
+cache.enabled = true
+
 [tasks."check:trpc-failures"]
 description = "A failed tRPC call names its procedure, its status and the answer's body, and a passing one is untouched"
 run = "node src/lib/trpc-failures.ts"

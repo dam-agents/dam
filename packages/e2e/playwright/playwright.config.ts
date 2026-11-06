@@ -22,7 +22,7 @@ function timeoutScaleFromEnv(): number {
 
 type NamedProject = Project & { name: string };
 
-const suite: NamedProject[] = [
+const smoke: NamedProject[] = [
   {
     name: "auth",
     testMatch: /01-.*\.spec\.ts$/,
@@ -67,11 +67,15 @@ const suite: NamedProject[] = [
   },
   {
     name: "own-agents",
-    testMatch: /\/(17|18|19|22|23|25|27|29)-.*\.spec\.ts$/,
+    testMatch: /\/(17|18|22|23|25|27|29)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
+];
+
+const suite: NamedProject[] = [
+  ...smoke,
   ...(full
     ? [
         {
@@ -110,7 +114,16 @@ const suite: NamedProject[] = [
           testMatch: /full\/skill-.*\.spec\.ts$/,
           use: { ...devices["Desktop Chrome"] },
         },
-      ]
+      ].map((project, index, fullProjects) => ({
+        ...project,
+        dependencies: [
+          ...(project.dependencies ?? []),
+          ...(index === 0
+            ? smoke.map(({ name }) => name)
+            : [fullProjects[index - 1]!.name]),
+        ],
+        workers: 1,
+      }))
     : []),
 ];
 
