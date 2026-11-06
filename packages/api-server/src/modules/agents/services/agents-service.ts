@@ -85,7 +85,7 @@ import {
   seedsAgentInstructions,
 } from "../domain/agent-instructions.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
-import { ok, err } from "../../../core/result.js";
+import { ok, err, type Result } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
@@ -364,6 +364,11 @@ export type SlackConnectResult =
       >;
     };
 
+type SlackChannelMembership =
+  | { kind: "member"; slackUserId: string }
+  | { kind: "not-member" }
+  | { kind: "unlinked" };
+
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -378,6 +383,58 @@ export interface SlackBindingPort {
     slackChannelId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
+}
+
+function slackConnectNotice(notice: {
+  agentName: string;
+  slackChannelId: string;
+  alreadyHere: number;
+  connectedBy: string;
+}): string {
+  const { agentName } = notice;
+  if (notice.slackChannelId.startsWith("D"))
+    return `This DM is now connected to ${agentName}. Message it here; run the unbind command to disconnect.`;
+  const connected = `<@${notice.connectedBy}> connected ${agentName} to this channel`;
+  if (notice.alreadyHere === 0)
+    return `${connected}. Everyone here can use it; run the unbind command to disconnect.`;
+  const alongside =
+    notice.alreadyHere === 1 ? "one agent" : `${notice.alreadyHere} agents`;
+  return `${connected}, alongside ${alongside} already here. Start a mention with an agent's name to reach that one; a mention with no name goes to the channel's default agent. Run the unbind command to disconnect.`;
+}
+
+async function announceSlackConnect(
+  binding: SlackBindingPort,
+  actor: string | null,
+  notice: {
+    agentId: string;
+    agentName: string;
+    slackChannelId: string;
+    alreadyHere: number;
+    connectedBy: string;
+  },
+): Promise<void> {
+  let failure: string;
+  try {
+    const post = await binding.postMessage(
+      notice.agentId,
+      notice.slackChannelId,
+      slackConnectNotice(notice),
+    );
+    if (!("error" in post)) return;
+    failure = post.error;
+  } catch (e) {
+    failure = e instanceof Error ? e.message : String(e);
+  }
+  securityLog("warn", "channel.chat_bound.notify_failed", {
+    category: "channel",
+    actor,
+    actorKind: "user",
+    surface: "slack",
+    agentId: notice.agentId,
+    result: "failure",
+    reason: failure,
+    detail: { slackChannelId: notice.slackChannelId },
+  });
 }
 
 export function executeSlackBind(deps: {
@@ -456,30 +513,13 @@ export function executeSlackBind(deps: {
       },
     });
 
-    const isDm = flow.slackChannelId.startsWith("D");
-    const alongside =
-      existing.length === 1 ? "one agent" : `${existing.length} agents`;
-    const post = await deps.binding.postMessage(
+    await announceSlackConnect(deps.binding, deps.owner ?? null, {
       agentId,
-      flow.slackChannelId,
-      isDm
-        ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
-        : existing.length > 0
-          ? `${agent.name} is now connected to this channel, alongside ${alongside} already here. Start a mention with an agent's name to reach that one; a mention with no name goes to the channel's default agent. Run the unbind command to disconnect.`
-          : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
-    );
-    if ("error" in post) {
-      securityLog("warn", "channel.chat_bound.notify_failed", {
-        category: "channel",
-        actor: deps.owner,
-        actorKind: "user",
-        surface: "slack",
-        agentId,
-        result: "failure",
-        reason: post.error,
-        detail: { slackChannelId: flow.slackChannelId },
-      });
-    }
+      agentName: agent.name,
+      slackChannelId: flow.slackChannelId,
+      alreadyHere: existing.length,
+      connectedBy: flow.slackUserId,
+    });
 
     return ok({
       slackChannelId: flow.slackChannelId,
@@ -643,7 +683,7 @@ export function createAgentsService(deps: {
     keycloakSub: string,
     slackChannelId: string,
     teamId: string,
-  ) => Promise<"member" | "not-member" | "unlinked">;
+  ) => Promise<SlackChannelMembership>;
   findSlackBindings: (slackChannelId: string) => Promise<
     {
       agentId: string;
@@ -873,13 +913,13 @@ export function createAgentsService(deps: {
       .with("unknown", () => ({ type: "WorkspaceUnresolved" as const }))
       .exhaustive();
 
-  const membershipRefusal = async (
+  const connectorInConversation = async (
     slackChannelId: string,
     teamId: string,
-  ): Promise<ConnectSlackError | null> => {
+  ): Promise<Result<string, ConnectSlackError>> => {
     if (!deps.actor || !deps.slackChannelMembership)
-      return { type: "SlackAccountUnlinked" };
-    let membership;
+      return err({ type: "SlackAccountUnlinked" });
+    let membership: SlackChannelMembership;
     try {
       membership = await deps.slackChannelMembership(
         deps.actor,
@@ -891,12 +931,16 @@ export function createAgentsService(deps: {
         { err: e, slackChannelId },
         "agents: could not ask Slack whether the person is in the channel",
       );
-      return { type: "MembershipUnchecked" };
+      return err({ type: "MembershipUnchecked" });
     }
     return match(membership)
-      .with("member", () => null)
-      .with("unlinked", () => ({ type: "SlackAccountUnlinked" as const }))
-      .with("not-member", () => ({ type: "NotChannelMember" as const }))
+      .with({ kind: "member" }, ({ slackUserId }) => ok(slackUserId))
+      .with({ kind: "unlinked" }, () =>
+        err({ type: "SlackAccountUnlinked" as const }),
+      )
+      .with({ kind: "not-member" }, () =>
+        err({ type: "NotChannelMember" as const }),
+      )
       .exhaustive();
   };
 
@@ -1801,12 +1845,11 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient, customEmoji) {
+    async connectSlack(id, slackChannelId, ambient, customEmoji, options) {
       if (!(await deps.repo.get(id, deps.owner)))
         return err({ type: "AgentNotFound" });
-      const alreadyHere = (await deps.findSlackBindings(slackChannelId)).some(
-        (b) => b.agentId === id,
-      );
+      const bindings = await deps.findSlackBindings(slackChannelId);
+      const alreadyHere = bindings.some((b) => b.agentId === id);
       if (alreadyHere)
         return connectSlackImpl(
           id,
@@ -1818,8 +1861,11 @@ export function createAgentsService(deps: {
       const workspace = await deps.resolveSlackWorkspace(slackChannelId);
       if (workspace.kind !== "resolved")
         return err(unresolvedWorkspace(workspace));
-      const refusal = await membershipRefusal(slackChannelId, workspace.teamId);
-      if (refusal) {
+      const connector = await connectorInConversation(
+        slackChannelId,
+        workspace.teamId,
+      );
+      if (!connector.ok) {
         securityLog("warn", "channel.connect_refused", {
           category: "channel",
           actor: deps.actor ?? null,
@@ -1827,18 +1873,66 @@ export function createAgentsService(deps: {
           surface: "slack",
           agentId: id,
           result: "failure",
-          reason: refusal.type,
+          reason: connector.error.type,
           detail: { slackChannelId },
         });
-        return err(refusal);
+        return err(connector.error);
       }
-      return connectSlackImpl(
+      const connected = await connectSlackImpl(
         id,
         slackChannelId,
         ambient,
         workspace.teamId,
         customEmoji,
       );
+      if (connected.ok && !options?.quiet && deps.slackBinding)
+        void announceSlackConnect(deps.slackBinding, deps.actor ?? null, {
+          agentId: id,
+          agentName: connected.value.name,
+          slackChannelId,
+          alreadyHere: bindings.length,
+          connectedBy: connector.value,
+        });
+      return connected;
+    },
+
+    async announceSlackConnect(id, slackChannelId) {
+      const binding = deps.slackBinding;
+      if (!binding) return;
+      let reason: string;
+      try {
+        const agent = await namedAgent(id);
+        const bindings = await deps.findSlackBindings(slackChannelId);
+        const own = bindings.find((b) => b.agentId === id);
+        if (!agent || !own) return;
+        const connector = await connectorInConversation(
+          slackChannelId,
+          own.teamId,
+        );
+        if (connector.ok) {
+          void announceSlackConnect(binding, deps.actor ?? null, {
+            agentId: id,
+            agentName: agent.name,
+            slackChannelId,
+            alreadyHere: bindings.length - 1,
+            connectedBy: connector.value,
+          });
+          return;
+        }
+        reason = connector.error.type;
+      } catch (e) {
+        reason = e instanceof Error ? e.message : String(e);
+      }
+      securityLog("warn", "channel.chat_bound.notify_failed", {
+        category: "channel",
+        actor: deps.actor ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "failure",
+        reason,
+        detail: { slackChannelId },
+      });
     },
 
     async disconnectSlack(id, slackChannelId) {

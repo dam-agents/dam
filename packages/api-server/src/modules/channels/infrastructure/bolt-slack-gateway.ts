@@ -385,7 +385,7 @@ export function createBoltSlackGateway(
         });
       });
 
-      bolt.command(deps.commandName, async ({ command, ack }) => {
+      bolt.command(deps.commandName, async ({ command, ack, respond }) => {
         await handlers.onCommand(
           {
             text: command.text,
@@ -399,6 +399,9 @@ export function createBoltSlackGateway(
             response
               ? ack({ response_type: "ephemeral", text: response.text })
               : ack(),
+          async (text) => {
+            await respond({ response_type: "ephemeral", text });
+          },
         );
       });
 
