@@ -55,6 +55,8 @@ export type SlackChannelMessageEvent = SlackMentionEvent;
 
 export type SlackAck = (response?: { text: string }) => Promise<void>;
 
+export type SlackRespond = (text: string) => Promise<void>;
+
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
 ) => Promise<string | null>;
@@ -75,7 +77,11 @@ export interface SlackSessionStoppedEvent {
 
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
-  onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
+  onCommand: (
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    respond: SlackRespond,
+  ) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;

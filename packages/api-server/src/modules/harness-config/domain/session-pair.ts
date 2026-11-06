@@ -10,8 +10,10 @@ import { z } from "zod";
 import {
   aliasForProviderType,
   parseQualifiedModel,
+  preferredModelOf,
   resolveDefaultProvider,
   type OwnerModelCatalogView,
+  type ProviderCatalogView,
   type ProviderPresetType,
   type SessionChoiceReferences,
   type SessionChoiceSlots,
@@ -306,7 +308,8 @@ export function sameModelName(listed: string | null, model: string): boolean {
  * model the person or the schedule chose and that model's provider, never a
  * model or provider the platform picks in their place. A model that names no
  * granted provider, or a saved default with no model, comes back with no
- * model, which a run reports as the agent having no default model. No
+ * model; the caller runs the second on the automatic model and reports the
+ * first as a provider the agent no longer holds. No
  * provider that fits the harness is a failed run, never a jump to another
  * harness; with nothing granted at all the run goes ahead with no provider,
  * for an agent that holds its model key some other way.
@@ -414,4 +417,46 @@ function resolveLeasedPair(input: SessionPairInputs): SessionPair | null {
   return fallback
     ? { harness: input.defaultHarness, provider: fallback.id, model: null }
     : null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a run takes when nothing is saved for
+ * its harness, so an agent that holds a usable provider never fails for lack
+ * of a saved default: the platform's preferred work model across the
+ * agent's providers in the owner catalog's order, else the first model the
+ * first of them lists for the harness. A "not set" default that names a
+ * provider the agent still holds keeps to it, so the run never moves off the
+ * provider it ran on; one the agent no longer holds pins nothing. A
+ * provider that has not listed offers nothing. Null when no provider lists a
+ * model for the harness, which the caller reports as the agent having no
+ * model provider to run on.
+ */
+export function automaticModel(
+  providers: readonly ProviderCatalogView[],
+  pair: Pick<SessionPair, "harness" | "provider">,
+): { provider: string; model: string } | null {
+  const pinned = providers.some((p) => p.connectionId === pair.provider);
+  const listings = providers.flatMap((p) => {
+    const models =
+      p.status === "listed" && (!pinned || p.connectionId === pair.provider)
+        ? p.models.filter((m) => m.harnesses.includes(pair.harness))
+        : [];
+    return models.length > 0 ? [{ ...p, models }] : [];
+  });
+  const preferred = preferredModelOf(
+    "work",
+    listings.map((p) => ({
+      alias: p.alias,
+      listed: p.models.map((m) => m.upstreamId),
+    })),
+    pair.harness,
+  );
+  for (const p of listings) {
+    const model = preferred
+      ? p.alias === preferred.alias &&
+        p.models.find((m) => m.upstreamId === preferred.upstreamId)
+      : p.models[0];
+    if (model) return { provider: p.connectionId, model: model.name };
+  }
+  return null;
 }

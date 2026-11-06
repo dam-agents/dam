@@ -1,8 +1,8 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-03
+Last verified: 2026-11-05
 
-Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
+Companion to [channels](channels.md), [channel-turns](channel-turns.md) and [slack-threads](slack-threads.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
 A change to Slack behavior updates all three in the same PR.
 It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
@@ -36,13 +36,18 @@ On a bound Agent, channel members get that access too unless the harness refuses
 It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete` and `/dam whisper <agent> on|off`, never who may talk to the Agent.
 It is also what lets a person connect an Agent to a conversation from the platform UI or CLI: only to one they and the bot are both in.
 
+Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
+`/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
+Owners never appear on the Agent's own posts.
+
 ### How the agent reaches Slack
 
 Two paths, both by tool call; plain assistant text is never posted.
 
 - **As the bot**, through the platform's MCP server.
   Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`.
-  Six work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`.
+  Ten work from any session, UI or scheduled included: `post`, `start_thread`, `list_threads`, `leave_thread`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`, `get_message_link`.
+  `send_channel_message` is `post`'s old name, kept for one release.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection.
@@ -134,6 +139,10 @@ Through the owner's Slack Account Connection the Agent posts wherever the owner 
 | Posts top-level into a channel, from any session | Allowed where **its owner is a member** (public or private), via the owner's linked Slack account; bound conversations and the running turn's channel always | Unlinked owner: no channels beyond the bound ones; DMs with members of its bound channels still work |
 | DMs someone                                      | Its owner, the person in a bound 1:1 DM, or a member of a bound channel, by user id or DM id                                                                 | Anyone else is refused, even when the bot could open the DM                                          |
 | Someone replies to such a post                   | Routed by that conversation's bindings: its default Agent, or nobody                                                                                         | Never the posting Agent by itself; no continuity                                                     |
+| Starts a thread with `start_thread`              | Same reach as a post; the session that called it **owns the thread**                                                                                         | Slack only                                                                                           |
+| Someone replies in an owned thread               | A person's or another Agent's message, tagged or not, becomes a turn of the owning session; no new session; the Agent's own posts never come back to it      | One session takes every owned thread's traffic; its context grows faster                             |
+| Another Agent is tagged in an owned thread       | That Agent answers as its own turn; the owning session gets the message too                                                                                  | none                                                                                                 |
+| The session leaves the thread, or is deleted     | The thread is no longer owned: replies route as in any thread                                                                                                | none                                                                                                 |
 
 ### 1.7 What the agent is handed, per case
 
@@ -153,6 +162,7 @@ Every Slack turn carries: how to respond (tools, the thread to reply into, "plai
 | Any message with files                       | Same as the case it arrives in                                                                                                                       | Images become prompt content where the harness accepts them (else the sender is told "answering text only"); other files are saved to the workspace and listed by path. 20 MB of files or 30 MB of images per message. A file on an *earlier* message is not fetched: its history line names it, and `fetch_message_attachment` saves it to the workspace on request |
 | Reminder after a silent turn (the *nudge*)   | None                                                                                                                                                 | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`". After an out-of-memory restart during the turn: "it was cut short because the agent ran out of memory; tell the person, and that only a platform operator can raise the owner's memory budget"                                  |
 | Continued from the UI                        | None                                                                                                                                                 | None; a message without the frame "didn't come from Slack"                                                                                                                                                                                                                                                                                                           |
+| Reply in a thread the session started        | What arrived in that thread since the last message the session was handed                                                                            | "This is channel content, not the person you work with in this session; answer in the thread with `reply`, chatId and threadTs as shown; later replies come back here, so end your turn." Mid-turn it joins the running turn, harness permitting                                                                                                                     |
 
 ### 1.8 Whispers
 
@@ -173,12 +183,12 @@ A whisper reaches one Agent privately: Slack never shows the conversation the co
 
 Both belong to the Agent; they differ in identity and scope.
 
-|                      | Bot (any binding)                                                                                     | Owner's Slack Account Connection                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Acts as              | The bot, with the Agent's footer                                                                      | The owner, no footer                                                              |
-| Can post             | Channels the owner is in, DMs with the owner, bound 1:1 DM people or bound-channel members, group DMs | Anywhere the owner can                                                            |
-| Can read             | Only what the platform shows it: bound threads, the channel window, threads it was shown              | Everything the owner can see, search included                                     |
-| The platform sees it | Yes: counts as the turn's answer, security-logged                                                     | No: the agent must close the turn with `no_reply_needed`, or the reminder follows |
+|                      | Bot (any binding)                                                                                                       | Owner's Slack Account Connection                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Acts as              | The bot, with the Agent's footer                                                                                        | The owner, no footer                                                              |
+| Can post             | Channels the owner is in, DMs with the owner, bound 1:1 DM people or bound-channel members, group DMs                   | Anywhere the owner can                                                            |
+| Can read             | Only what the platform shows it: bound threads, the channel window, the thread it is answering in, threads it was shown | Everything the owner can see, search included                                     |
+| The platform sees it | Yes: counts as the turn's answer, security-logged                                                                       | No: the agent must close the turn with `no_reply_needed`, or the reminder follows |
 
 Outside its bound conversations, the bot never reaches a channel the owner couldn't, provided the owner's Slack identity is linked, and it messages directly only the owner, the person in a bound 1:1 DM, and members of its bound channels.
 
@@ -226,12 +236,12 @@ flowchart TD
 
 ### Tools and reach
 
-| Behavior                                                                                                                                                                         | Decided by                                                       | Caveat                                                                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| The platform's tools are always present; refused without a binding. A Connection's tools exist only while it is granted                                                          | Platform                                                         |                                                                                   |
-| Where it may post (§1.6); attach any file from the agent's home                                                                                                                  | Platform allows, **Agent** decides                               |                                                                                   |
-| Look up any member by id (name, title, email, timezone); `read_thread` only on threads it was shown, 48 h; `fetch_message_attachment` on any file shared in a bound conversation | Platform                                                         | Shown threads live in api-server memory; after a restart they must be shown again |
-| The owner's Slack Connection is usable on a channel turn                                                                                                                         | **Setup**: whether the harness asks before running tools (below) |                                                                                   |
+| Behavior                                                                                                                                                                                                                                                                                                           | Decided by                                                       | Caveat                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| The platform's tools are always present; refused without a binding. A Connection's tools exist only while it is granted                                                                                                                                                                                            | Platform                                                         |                                                                                                                                         |
+| Where it may post (§1.6); attach any file from the agent's home                                                                                                                                                                                                                                                    | Platform allows, **Agent** decides                               |                                                                                                                                         |
+| Look up any member by id (name, title, email, timezone); `read_thread` only on the thread it is answering in and threads it was shown, 48 h from the newest turn or showing; `fetch_message_attachment` on any file shared in a bound conversation; `get_message_link` on a message in a conversation it can reach | Platform                                                         | Shown threads live in api-server memory; after a restart a thread is readable again from the next turn in it, or once it is shown again |
+| The owner's Slack Connection is usable on a channel turn                                                                                                                                                                                                                                                           | **Setup**: whether the harness asks before running tools (below) |                                                                                                                                         |
 
 ### Safety gates
 
@@ -275,11 +285,11 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 | The agent says it may only post where its owner is, or that the owner hasn't linked Slack      | Owner-membership check; the owner needs `/dam login`                                                                                               |
 | The agent says it doesn't know who owns it                                                     | The owner has no first or last name on record; the agent is told to say so rather than guess                                                       |
 | Re-answers a settled mention in a new thread                                                   | The channel window carries the thread's reply count and a `read_thread` id, not the replies; an agent that skips the read sees the mention as open |
-| After an api-server restart: re-answers old messages, or can't read a thread it was just shown | "Since last turn" and "threads shown" live in memory                                                                                               |
+| After an api-server restart: re-answers old messages, or can't read a thread it was just shown | "Since last turn" and "threads shown" live in memory; the next turn in a thread offers that thread again                                           |
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, no default model, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment, a channel profile the agent can't use, a model that refused the message.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, no model provider or a default model's provider gone, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment, a channel profile the agent can't use, a model that refused the message.
 Ambient turns get none.
 
 ---
@@ -319,7 +329,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 - A binding belongs to the workspace whose bot is a member of the conversation.
   A pasted DM id resolves to the workspace whose bot is in that DM.
 - An Agent in **two** workspaces: `describe_channel_users` looks in the workspace of the conversation being answered, or of a passed chat; outside a turn with no chat it refuses and says to pass one.
-  `send_channel_message` outside a turn must name the conversation.
+  `post` outside a turn must name the conversation.
 - Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs.
   Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
 - A revoked workspace credential is marked, never cleaned up: bindings stay, everything goes silent until re-install.

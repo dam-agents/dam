@@ -21,7 +21,7 @@ const CATALOG: HarnessConfigCatalog = {
       ],
     },
   ],
-  modelConstraints: { haiku: { mode: ["default"] } },
+  modelConstraints: { "claude-haiku-4-5": { mode: ["default"] } },
 };
 
 const capability = {

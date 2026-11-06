@@ -17,8 +17,8 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import { authFetch } from "../../../../auth.js";
 import { emitToast } from "../../../../lib/toast.js";
+import { uploadAvatarImage } from "../../../../lib/upload-avatar-image.js";
 import { useFeatures } from "../../../features/api/queries.js";
 import { useMarkAvatarPicked } from "../../../getting-started/api/mutations.js";
 import { AvatarEgg } from "../../../getting-started/components/avatar-egg.js";
@@ -280,18 +280,7 @@ function CustomAvatarInputs({
   const upload = async (file: File) => {
     setUploading(true);
     try {
-      const res = await authFetch("/api/avatars", {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        avatar?: string;
-        error?: string;
-      };
-      if (!res.ok || !body.avatar)
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      onPick(body.avatar);
+      onPick(`image:${await uploadAvatarImage(file)}`);
     } catch (err) {
       emitToast({
         kind: "error",

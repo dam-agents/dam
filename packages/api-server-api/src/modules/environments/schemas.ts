@@ -76,15 +76,21 @@ export const environmentViewSchema = z.object({
   members: z.array(z.string()),
   memberAgents: z.array(environmentMemberAgentSchema),
   agentMemberCount: z.number().int(),
-  expiresAt: z.string(),
+  // UNIT_BOUNDARY_DESCRIPTION: when it is deleted; null when it is kept with no expiry, as an artifact's is.
+  expiresAt: z.string().nullable(),
+  // UNIT_BOUNDARY_DESCRIPTION: how long it may sit idle before it sleeps, or "never"; null when its Agent is gone.
+  idleTimeoutMin: z.union([z.number().int(), z.literal("never")]).nullable(),
   createdAt: z.string(),
   state: z.string(),
 });
 
-// UNIT_BOUNDARY_DESCRIPTION: an Environment as its owning agent reads it: how many people may open it besides its owner, never who.
+// UNIT_BOUNDARY_DESCRIPTION: an Environment as its owning agent reads it: how many people may open it besides its owner, never who, and its expiry as a date or "never".
 export const agentEnvironmentViewSchema = environmentViewSchema
   .omit({ members: true, memberAgents: true, agentMemberCount: true })
-  .extend({ peopleWhoMayOpen: z.number().int() });
+  .extend({
+    peopleWhoMayOpen: z.number().int(),
+    expiresAt: z.union([z.iso.datetime(), z.literal("never")]),
+  });
 
 // UNIT_BOUNDARY_DESCRIPTION: an Environment another Agent's list shares with the calling Agent, as that Agent reads it: what it is, whose, and its addresses, never who else may open it.
 export const sharedEnvironmentViewSchema = z.object({
@@ -94,7 +100,7 @@ export const sharedEnvironmentViewSchema = z.object({
   owningAgentName: z.string(),
   ownerName: z.string().nullable(),
   endpoints: z.array(environmentEndpointViewSchema),
-  expiresAt: z.string(),
+  expiresAt: z.union([z.iso.datetime(), z.literal("never")]),
   state: z.string(),
 });
 
@@ -137,7 +143,14 @@ export const environmentMembersInputSchema = z.object({
   agentIds: environmentMemberAgentIdsSchema.optional(),
 });
 
+// UNIT_BOUNDARY_DESCRIPTION: the owner's choice whether an Environment is kept awake: true keeps it from ever sleeping; false lets it sleep again after the install's default idle timeout for Environments.
+export const environmentSetAwakeInputSchema = z.object({
+  id: z.string().min(1),
+  awake: z.boolean(),
+});
+
 export const environmentExtendInputSchema = z.object({
   id: z.string().min(1),
-  expiresAt: z.iso.datetime(),
+  // UNIT_BOUNDARY_DESCRIPTION: the new expiry, or "never" to keep the Environment until someone deletes it.
+  expiresAt: z.union([z.iso.datetime(), z.literal("never")]),
 });

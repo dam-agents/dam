@@ -71,7 +71,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     configOptions,
     ttlMs,
     pollMs = 5000,
-    timeoutMs = (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000,
+    timeoutMs = defaultTimeoutMs(ttlMs),
     seed,
     install,
     env,
@@ -136,6 +136,10 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   return view.result as T;
 }
 
+export function defaultTimeoutMs(ttlMs: number | undefined): number {
+  return 2 * (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000;
+}
+
 export async function awaitInvocation(
   id: string,
   tag: string,
@@ -143,6 +147,7 @@ export async function awaitInvocation(
 ): Promise<InvocationView & { status: "done" | "failed" }> {
   const deadline = Date.now() + opts.timeoutMs;
   let consecutiveErrors = 0;
+  let waiting: string | undefined;
   for (;;) {
     let view: InvocationView;
     try {
@@ -157,6 +162,10 @@ export async function awaitInvocation(
       continue;
     }
     if (view.status !== "running") return { ...view, status: view.status };
+    if (view.waiting !== waiting) {
+      waiting = view.waiting;
+      if (waiting) log(`${tag} (${id}) waits for room to start: ${waiting}`);
+    }
     if (Date.now() > deadline) {
       throw new Error(
         `spawn ${tag} (${id}) timed out after ${Math.round(opts.timeoutMs / 1000)}s`,

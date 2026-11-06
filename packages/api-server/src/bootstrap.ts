@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
@@ -89,6 +90,7 @@ import {
   MAX_AVATAR_BYTES,
   storeAvatarImage,
   sweepAvatarImages,
+  startWaitOf,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -119,6 +121,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackOwnedThreadsRepository } from "./modules/channels/infrastructure/slack-owned-threads-repository.js";
 import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
   createFakeSlackGateway,
@@ -255,6 +258,7 @@ import {
   composeShareAuth,
   composeShareRelayTokens,
   composeShareRenderTokens,
+  composeArtifactPromptDelivery,
   composeShareBridge,
   composeShareViewer,
   createAgentApiClient,
@@ -299,6 +303,7 @@ import {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
@@ -328,6 +333,7 @@ import {
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
+import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -779,6 +785,10 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  const loginTestimonials = composeLoginTestimonialsModule({
+    db,
+    photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -896,6 +906,7 @@ export async function bootstrap() {
     const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
       ...agents.map((a) => a.spec.avatar),
       ...kits.map((k) => k.kit.avatar),
+      ...(await loginTestimonials.photoIds()).map((id) => `image:${id}`),
     ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
@@ -953,7 +964,10 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
-    resolveEvent: (agentId, event) => resolveInitializationPair(agentId, event),
+    resolveEvent: async (agentId, event) => {
+      const paired = await resolveInitializationPair(agentId, event);
+      return paired && resolveInvocationStart(agentId, paired);
+    },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -976,6 +990,7 @@ export async function bootstrap() {
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    ownerCatalog: ownerCatalogOf,
     resolveProfile,
     getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
@@ -990,6 +1005,9 @@ export async function bootstrap() {
     resolvePair: firePair,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
+  const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
+    getLogger().warn(msg),
+  );
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -1726,21 +1744,26 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const shareBridge = composeShareBridge({
-    featureOn: async (owner) =>
-      (
-        await composeFeaturesForOwner({
-          db,
-          owner,
-          surface: "system",
-          modes: config.featureModes,
-        }).features.flags()
-      )["interactive-artifacts"],
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiClient,
+  const interactiveArtifactsOn = async (owner: string) =>
+    (
+      await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "system",
+        modes: config.featureModes,
+      }).features.flags()
+    )["interactive-artifacts"];
+  const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+  });
+  const shareBridge = composeShareBridge({
+    featureOn: interactiveArtifactsOn,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiClient,
+    prompts: artifactPrompts,
   });
   const kbShareServing = composeKbShareServing({
     db,
@@ -1796,6 +1819,8 @@ export async function bootstrap() {
       : null;
   void agentIcons?.warm();
 
+  const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1818,6 +1843,7 @@ export async function bootstrap() {
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
+        ownedThreads: slackOwnedThreads,
         loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
@@ -2128,8 +2154,11 @@ export async function bootstrap() {
       surface,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
+      scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
+      featureOn: interactiveArtifactsOn,
+      prompts: artifactPrompts,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,
@@ -2164,6 +2193,8 @@ export async function bootstrap() {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
       expiryMaxDays: config.environmentExpiryMaxDays,
+      idleTimeoutDefaultMin: config.environmentIdleTimeoutMinutes,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     },
   });
 
@@ -2208,8 +2239,17 @@ export async function bootstrap() {
       cleanup: satellitesBoot.onAgentDeleted,
     },
     {
+      name: "slack-owned-threads",
+      listAgentIds: () => slackOwnedThreads.listAgentIds(),
+      cleanup: (agentId: string) => slackOwnedThreads.forgetAgent(agentId),
+    },
+    {
       name: "chat-form-preferences",
       ...createChatFormPreferencesCleanup(db),
+    },
+    {
+      name: "cost-reviews",
+      ...createCostReviewsCleanup(db),
     },
     {
       name: "sidebar-order",
@@ -2421,6 +2461,8 @@ export async function bootstrap() {
           }
         : null;
     },
+    readStartWait: async (agentId) =>
+      startWaitOf(agentsRepo.peekCached(agentId)),
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
@@ -2552,6 +2594,8 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    spendHold,
+    loginTestimonials,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

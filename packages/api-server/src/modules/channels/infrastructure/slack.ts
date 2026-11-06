@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { parseAvatar, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import { createTtlMap, type TtlMap } from "../../../core/ttl-map.js";
@@ -65,10 +66,23 @@ import type {
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
+  MessageLinkQuery,
   PostMessageOptions,
   ReactionsQuery,
+  ThreadLeave,
   ThreadQuery,
+  ThreadStart,
 } from "../services/worker-contract.js";
+import {
+  createMemorySlackOwnedThreads,
+  type SlackOwnedThread,
+  type SlackOwnedThreads,
+} from "./slack-owned-threads-repository.js";
+import {
+  ownedThreadGuidance,
+  ownedThreadMessages,
+  type OwnedThreadBatch,
+} from "./slack-owned-thread-copy.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpModelRefusedError,
@@ -121,6 +135,7 @@ import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
+  SlackRespond,
   SlackBlock,
   SlackBotJoinedChannelEvent,
   SlackConversationInfo,
@@ -148,7 +163,7 @@ import {
   renderAssistantBlocks,
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
-import { markdownToSections } from "./slack-mrkdwn.js";
+import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import {
   agentContextBlock,
   agentFooterLabel,
@@ -173,6 +188,7 @@ import {
 import {
   aboveBoundary,
   formatThreadCursor,
+  isAfterTs,
   lastOwnPostTs,
   laterTs,
   newestTs,
@@ -294,6 +310,14 @@ function groupDirectMessageMembers(channelName: string | null): string[] {
 }
 
 const MEMBERSHIP_CHECK_BUDGET_MS = 1_500;
+
+const ROSTER_ACK_BUDGET_MS = 2_000;
+
+interface CommandReply {
+  ack: SlackAck;
+  respond: SlackRespond;
+  receivedAt: number;
+}
 
 const SILENT_PRESENTER: TurnPresenter = {
   onUpdate() {},
@@ -866,7 +890,7 @@ function labelMessages(
   names: Map<string, string>,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
-  opts: { showThreadMarkers: boolean },
+  opts: { showThreadMarkers: boolean; showTs?: boolean },
 ): string[] {
   return entries.map((e) =>
     labelHistoryMessage(
@@ -1379,7 +1403,16 @@ export type SlackWorkerDeps = {
   wakeWait?: WakeWaitOptions;
   agentIcon?: AgentIconUrl | null;
   readPodRestarts?: (agentId: string) => Promise<PodRestartState | null>;
+  ownedThreads?: SlackOwnedThreads;
 };
+
+const FIRST_LINE_MAX = 200;
+
+/* UNIT_BOUNDARY_DESCRIPTION: the agent-runtime's surface for a message no
+ * viewer typed that may still join a running turn, the one a message from
+ * another of the Agent's Sessions carries. A reply in a thread a Session
+ * started is the same kind of message. */
+const MESSAGE_SURFACE = "message";
 
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const {
@@ -1412,6 +1445,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     wakeWait = {},
     agentIcon = null,
     readPodRestarts = async () => null,
+    ownedThreads = createMemorySlackOwnedThreads(),
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -2065,10 +2099,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     teamId: SlackWorkspace,
   ): Promise<ChannelOwner | null> {
     let owner: string | null;
-    let name: string | null;
     try {
       owner = await getInstanceOwner(instanceName);
-      name = owner ? await ownerDisplayName(owner) : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "owner", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+    const name = owner ? await ownerName(instanceName, owner) : null;
+    if (!owner || !name) return null;
+    return {
+      name,
+      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
+    };
+  }
+
+  async function ownerName(
+    instanceName: string,
+    owner: string,
+  ): Promise<string | null> {
+    try {
+      return await ownerDisplayName(owner);
     } catch (err) {
       getLogger().warn(
         { agentId: instanceName, step: "name", error: formatError(err) },
@@ -2076,11 +2129,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       return null;
     }
-    if (!owner || !name) return null;
-    return {
-      name,
-      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
-    };
   }
 
   async function ownerSlackUserId(
@@ -2237,6 +2285,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): void {
     for (const ts of threadTss)
       offeredThreads.set(`${instanceName} ${ts}`, channel);
+  }
+
+  function noteTurnThread(ctx: {
+    instanceName: string;
+    channel: string;
+    threadTs: string;
+    hasThread: boolean;
+  }): void {
+    if (ctx.hasThread)
+      noteOfferedThreads(ctx.instanceName, ctx.channel, [ctx.threadTs]);
   }
 
   function readOfferedThread(
@@ -3591,13 +3649,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readHasMore,
       threadWindow,
     } = await readSlackContext(gw, ctx, null);
-    noteOfferedThreads(
-      ctx.instanceName,
-      ctx.channel,
-      threadWindow.cursor !== null
-        ? [...offeredHere, ctx.threadTs]
-        : offeredHere,
-    );
+    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    noteTurnThread(ctx);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
@@ -3704,6 +3757,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<CatchUpFrame> {
     const { threadKey } = ctx;
     const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
+    noteTurnThread(ctx);
     try {
       const since = await catchUpSince(gw, {
         instanceName: ctx.instanceName,
@@ -3748,6 +3802,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
+              ...(conversationTs !== undefined
+                ? { threadTs: conversationTs }
+                : {}),
               hasThreadMarker,
               hasAttachmentMarker,
             },
@@ -3974,7 +4031,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { ok: true, entry: matches[0]!, roster };
   }
 
-  async function handleCommand(command: SlackSlashCommand, ack: SlackAck) {
+  async function handleCommand(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    respond: SlackRespond,
+  ) {
+    const reply = { ack, respond, receivedAt: Date.now() };
     const subcommand = command.text.trim().toLowerCase();
     const [verb = ""] = subcommand.split(/\s+/).filter(Boolean);
     const rest = command.text
@@ -4104,7 +4166,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await handleDeleteCommand(command, ack);
       })
       .with("default", async () => {
-        await handleDefaultCommand(rest, command, ack);
+        await handleDefaultCommand(rest, command, reply);
+      })
+      .with("who", async () => {
+        await handleWhoCommand(command, reply);
       })
       .with("whisper", async () => {
         const { action, nameArg } = parseSwitchArgs(rest);
@@ -4114,7 +4179,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -4466,22 +4531,92 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
-  function rosterRoll(roster: RosterEntry[]): string {
+  function rosterRoll(
+    roster: RosterEntry[],
+    owners: (string | null)[] = [],
+  ): string {
     return roster
       .map(
-        (entry) =>
-          `• \`${entry.name}\`${entry.isDefault ? " — default" : ""}${
-            entry.ambient ? " (reads along)" : ""
-          }`,
+        (entry, i) =>
+          `• \`${entry.name}\`${owners[i] ? `, owned by ${owners[i]}` : ""}${
+            entry.isDefault ? " — default" : ""
+          }${entry.ambient ? " (reads along)" : ""}`,
       )
       .join("\n");
+  }
+
+  async function ownerMention(entry: RosterEntry): Promise<string | null> {
+    const owner =
+      (await getInstanceOwner(entry.instanceName).catch(() => null)) ??
+      entry.owner;
+    const slackUserId = await ownerSlackUserId(
+      entry.instanceName,
+      owner,
+      entry.teamId,
+    );
+    if (slackUserId) return `<@${slackUserId}>`;
+    const name = await ownerName(entry.instanceName, owner);
+    return name ? escapeMrkdwn(name) : null;
+  }
+
+  async function ownedRosterRoll(roster: RosterEntry[]): Promise<string> {
+    return rosterRoll(roster, await Promise.all(roster.map(ownerMention)));
+  }
+
+  async function ackWhenReady(
+    reply: CommandReply,
+    pending: Promise<string>,
+  ): Promise<void> {
+    const text = pending.catch((err: unknown) => {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.command.reply_failed",
+      );
+      return "Could not list the agents here. Try again.";
+    });
+    const left = reply.receivedAt + ROSTER_ACK_BUDGET_MS - Date.now();
+    const ready = await Promise.race([
+      text,
+      sleep(Math.max(0, left), null, { ref: false }),
+    ]);
+    if (ready !== null) {
+      await reply.ack({ text: ready });
+      return;
+    }
+    await reply.ack();
+    try {
+      await reply.respond(await text);
+    } catch (err) {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.command.late_reply_failed",
+      );
+    }
+  }
+
+  async function handleWhoCommand(
+    command: SlackSlashCommand,
+    reply: CommandReply,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    if (roster.length === 0) {
+      await reply.ack({
+        text: `No agent is connected here. Run \`/${brandShort} bind\` to connect one of yours.`,
+      });
+      return;
+    }
+    await ackWhenReady(
+      reply,
+      ownedRosterRoll(roster).then((roll) => `Connected here:\n${roll}`),
+    );
   }
 
   async function handleDefaultCommand(
     rest: string,
     command: SlackSlashCommand,
-    ack: SlackAck,
+    reply: CommandReply,
   ) {
+    const { ack } = reply;
     const roster = await resolveRoster(command.channelId);
     if (roster.length === 0) {
       await ack({ text: "This channel isn't connected to an agent." });
@@ -4490,13 +4625,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     if (!rest) {
       const current = roster.find((entry) => entry.isDefault);
-      await ack({
-        text:
-          (current
-            ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
-            : "This channel has no default agent set.") +
-          `\n\nConnected here:\n${rosterRoll(roster)}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
-      });
+      await ackWhenReady(
+        reply,
+        ownedRosterRoll(roster).then(
+          (roll) =>
+            (current
+              ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
+              : "This channel has no default agent set.") +
+            `\n\nConnected here:\n${roll}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
+        ),
+      );
       return;
     }
 
@@ -5182,9 +5320,425 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
+  type OwnedPending = PendingMessage & {
+    channelId: string;
+    threadTs: string;
+    teamId: SlackWorkspace;
+    reroute: () => Promise<void>;
+  };
+
+  const ownedQueues = new Map<string, ConversationQueue<OwnedPending>>();
+
+  function ownedQueueKey(instanceName: string, sessionId: string): string {
+    return `${instanceName}|${sessionId}`;
+  }
+
+  function ownedRefOf(msg: OwnedPending, sessionId: string): TurnRef {
+    return {
+      channel: msg.channelId,
+      threadTs: msg.threadTs,
+      eventTs: msg.eventTs,
+      teamId: msg.teamId,
+      sessionId,
+      text: msg.text,
+      slackUserId: msg.slackUserId,
+      hasThread: true,
+      hadAttachments: msg.images.length > 0 || msg.files.length > 0,
+    };
+  }
+
+  async function ownedBatches(
+    gw: SlackGateway,
+    instanceName: string,
+    queued: OwnedPending[],
+  ): Promise<OwnedThreadBatch[]> {
+    const byThread = new Map<string, OwnedPending[]>();
+    for (const msg of queued) {
+      const key = `${msg.channelId} ${msg.threadTs}`;
+      byThread.set(key, [...(byThread.get(key) ?? []), msg]);
+    }
+    return Promise.all(
+      [...byThread.values()].map(async (messages) => {
+        const first = messages[0]!;
+        const owned = await ownedThreads
+          .find(first.channelId, first.threadTs)
+          .catch(() => null);
+        return {
+          channel: first.channelId,
+          threadTs: first.threadTs,
+          firstLine: owned?.firstLine ?? "",
+          messages: messages.map((m) => ({
+            ts: m.eventTs,
+            speaker: m.speaker,
+            text: m.text,
+          })),
+          missed: owned
+            ? await missedInOwnedThread(gw, instanceName, owned, messages)
+            : [],
+        };
+      }),
+    );
+  }
+
+  async function missedInOwnedThread(
+    gw: SlackGateway,
+    instanceName: string,
+    owned: SlackOwnedThread,
+    carried: OwnedPending[],
+  ): Promise<string[]> {
+    const oldest = carried.reduce(
+      (min, m) => (isAfterTs(min, m.eventTs) ? m.eventTs : min),
+      carried[0]!.eventTs,
+    );
+    try {
+      const read = await gw.getThreadReplies({
+        channel: owned.channelId,
+        threadTs: owned.threadTs,
+        teamId: owned.teamId,
+        limit: THREAD_LOOKBACK,
+        oldest: owned.deliveredUpTo,
+      });
+      const carriedTs = new Set(carried.map((m) => m.eventTs));
+      const entries = read.messages
+        .filter(
+          (message) =>
+            message.ts !== undefined &&
+            message.ts !== owned.threadTs &&
+            !carriedTs.has(message.ts) &&
+            isAfterTs(message.ts, owned.deliveredUpTo) &&
+            isAfterTs(oldest, message.ts),
+        )
+        .map((message) => ({ message, footer: parseAgentFooter(message) }))
+        .filter((e) => e.footer?.agentId !== instanceName);
+      if (entries.length === 0) return [];
+      const names = await resolveAuthorNames(entries, resolveAgentName);
+      return labelMessages(
+        entries,
+        names,
+        instanceName,
+        {
+          userId: await gw.getBotUserId(owned.teamId).catch(() => null),
+          label: botHistoryLabel(brand),
+        },
+        { showThreadMarkers: false },
+      );
+    } catch (err) {
+      getLogger().warn(
+        {
+          agentId: instanceName,
+          channelId: owned.channelId,
+          threadTs: owned.threadTs,
+          error: formatError(err),
+        },
+        "slack.owned_thread.catchup_failed",
+      );
+      return [];
+    }
+  }
+
+  async function markOwnedDelivered(
+    batch: Array<Pick<OwnedPending, "channelId" | "threadTs" | "eventTs">>,
+  ): Promise<void> {
+    const newest = new Map<string, (typeof batch)[number]>();
+    for (const msg of batch) {
+      const key = `${msg.channelId} ${msg.threadTs}`;
+      const seen = newest.get(key);
+      if (!seen || isAfterTs(msg.eventTs, seen.eventTs)) newest.set(key, msg);
+    }
+    for (const msg of newest.values()) {
+      await ownedThreads
+        .markDelivered(msg.channelId, msg.threadTs, msg.eventTs)
+        .catch((err) =>
+          getLogger().warn(
+            {
+              channelId: msg.channelId,
+              threadTs: msg.threadTs,
+              error: formatError(err),
+            },
+            "slack.owned_thread.boundary_unsaved",
+          ),
+        );
+    }
+  }
+
+  async function ownedTurnPrompt(
+    gw: SlackGateway,
+    instanceName: string,
+    batch: OwnedPending[],
+  ): Promise<string | ContentBlock[]> {
+    const batches = await ownedBatches(gw, instanceName, batch);
+    const owner = await resolveChannelOwner(instanceName, batch[0]!.teamId);
+    const files = await deliverTurnFiles({
+      agentId: instanceName,
+      conversation: slackThreadKey(batch[0]!.channelId, batch[0]!.threadTs),
+      files: batch.flatMap((m) => m.files),
+    });
+    return framePrompt({
+      contract: ownedThreadGuidance({
+        owner,
+        brandName: brand.name,
+        steered: false,
+        several: batches.length > 1,
+      }),
+      text: ownedThreadMessages(batches) + files.withheldNote,
+      images: batch.flatMap((m) => m.images),
+      files: files.files,
+    });
+  }
+
+  async function ownedSteerText(
+    gw: SlackGateway,
+    instanceName: string,
+    batch: OwnedPending[],
+  ): Promise<string> {
+    const batches = await ownedBatches(gw, instanceName, batch);
+    return [
+      ownedThreadGuidance({
+        owner: await resolveChannelOwner(instanceName, batch[0]!.teamId),
+        brandName: brand.name,
+        steered: true,
+        several: batches.length > 1,
+      }),
+      ownedThreadMessages(batches),
+    ].join("\n\n");
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the session that owned the thread is gone, so
+   * the thread has no owner any more and the message takes the road it would
+   * have taken had nobody owned the thread.
+   */
+  async function releaseOwnedThread(
+    instanceName: string,
+    sessionId: string,
+    batch: OwnedPending[],
+  ): Promise<void> {
+    getLogger().info(
+      { agentId: instanceName, sessionId },
+      "slack.owned_thread.session_gone: the session that started the thread no longer exists; its threads are released",
+    );
+    await ownedThreads.forgetSession(instanceName, sessionId).catch(() => {});
+    for (const msg of batch) {
+      msg.release();
+      await msg.reroute();
+    }
+  }
+
+  function createOwnedQueue(
+    key: string,
+    instanceName: string,
+    sessionId: string,
+  ): ConversationQueue<OwnedPending> {
+    const steeredRefs: TurnRef[] = [];
+    return createConversationQueue<OwnedPending>({
+      settleMs,
+      canSteer: (msg) => !carriesAttachments(msg),
+      runTurn: async (batch, onSession, steersSettled) => {
+        const gw = gateway;
+        const first = batch[0];
+        if (!gw || !first) return;
+        const owner = await getInstanceOwner(instanceName);
+        if (!owner || !(await isTermsAccepted(owner))) return;
+        const held = await spendHold?.(instanceName, {
+          kind: "ambient",
+          channel: "slack",
+        });
+        if (held) {
+          getLogger().info(
+            { agentId: instanceName, sessionId, reason: held },
+            "slack.owned_thread.skipped_spend",
+          );
+          return;
+        }
+        const refs = batch.map((m) => ownedRefOf(m, sessionId));
+        for (const ref of refs) beginTurn(instanceName, ref);
+        let outcome: TurnOutcome = "failure";
+        let failureReason: string | undefined;
+        let gone = false;
+        try {
+          await runWhileAgentStarts(async () => {
+            await agents().ensureReady(instanceName);
+            const acp = makeAcpClient(instanceName);
+            const sessions = await acp.listSessions();
+            if (!sessions.some((s) => s.sessionId === sessionId)) {
+              gone = true;
+              return;
+            }
+            const prompt = await ownedTurnPrompt(gw, instanceName, batch);
+            await acp.sendPrompt(prompt, {
+              resumeSessionId: sessionId,
+              surface: MESSAGE_SURFACE,
+              onSession,
+            });
+          }, wakeWait);
+          if (gone) {
+            outcome = "success";
+            await releaseOwnedThread(instanceName, sessionId, batch);
+            return;
+          }
+          outcome = "success";
+          await steersSettled();
+          await markOwnedDelivered([
+            ...batch,
+            ...steeredRefs.map((ref) => ({
+              channelId: ref.channel,
+              threadTs: ref.threadTs,
+              eventTs: ref.eventTs,
+            })),
+          ]);
+        } catch (err) {
+          failureReason = classifyTurnFailure(err).reason;
+          getLogger().warn(
+            {
+              agentId: instanceName,
+              sessionId,
+              reason: failureReason,
+              error: formatError(err),
+            },
+            "slack.owned_thread.turn_failed",
+          );
+        } finally {
+          await steersSettled();
+          for (const ref of refs) endTurn(instanceName, ref);
+          emit({
+            type: EventType.ChannelTurnRelayed,
+            channel: "slack",
+            agentId: instanceName,
+            actorSub: null,
+            externalActorId: batch.at(-1)!.slackUserId,
+            outcome,
+            ...(failureReason !== undefined ? { reason: failureReason } : {}),
+            ambient: true,
+          });
+        }
+      },
+      steer: async (target, batch, request) => {
+        const gw = gateway;
+        if (!gw) return "refused";
+        return steerChannelTurn(
+          makeAcpClient(instanceName),
+          target,
+          await ownedSteerText(gw, instanceName, batch),
+          request,
+          {
+            surface: "slack",
+            fields: { agentId: instanceName, sessionId },
+          },
+        );
+      },
+      onSteered: (batch) => {
+        for (const msg of batch) {
+          const ref = { ...ownedRefOf(msg, sessionId), steered: true };
+          beginTurn(instanceName, ref);
+          steeredRefs.push(ref);
+          msg.release();
+        }
+      },
+      onTurnSettled: (batch) => {
+        for (const ref of steeredRefs) endTurn(instanceName, ref);
+        steeredRefs.length = 0;
+        for (const msg of batch) msg.release();
+      },
+      onEmpty: () => {
+        ownedQueues.delete(key);
+      },
+      onError: (err) => {
+        getLogger().warn(
+          { agentId: instanceName, sessionId, error: formatError(err) },
+          "slack.owned_thread.drain_failed",
+        );
+      },
+    });
+  }
+
+  type OwnedRouting =
+    { owner: null } | { owner: string; dropped: boolean; rateChecked: boolean };
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a message in a thread one of an Agent's
+   * Sessions started goes to that Session, whoever wrote it and whether or
+   * not it tags the Agent, and the owning Agent takes it no other way. Another
+   * Agent tagged in the thread still gets it as usual, which is how one Agent
+   * asks another. The owning Agent's own posts never come back to it, and bot
+   * posts pass the rate limit once, here, so two Agents cannot wake each other
+   * in a loop there. Every message waits in one queue per Session, so two
+   * owned threads never send two prompts into one Session at once.
+   */
+  async function routeOwnedThreadMessage(
+    event: SlackMentionEvent,
+    reroute: () => Promise<void>,
+  ): Promise<OwnedRouting> {
+    if (!event.threadTs || !gateway) return { owner: null };
+    let owned: SlackOwnedThread | null;
+    try {
+      owned = await ownedThreads.find(event.channel, event.threadTs);
+    } catch (err) {
+      getLogger().warn(
+        { channelId: event.channel, error: formatError(err) },
+        "slack.owned_thread.unread",
+      );
+      return { owner: null };
+    }
+    if (!owned) return { owner: null };
+    const connected = await channelRegistry
+      .resolveSlackChannelsByInstance(owned.agentId)
+      .catch(() => []);
+    if (connected.length === 0) return { owner: null };
+    const sender = event.sender;
+    const { agentId, sessionId } = owned;
+    if (await isIgnoredApp(sender, event.channel))
+      return { owner: agentId, dropped: true, rateChecked: false };
+    if (!senderReaches(sender, { instanceName: agentId }))
+      return { owner: agentId, dropped: false, rateChecked: false };
+    if (!(await admitBotPost(sender, event)))
+      return { owner: agentId, dropped: true, rateChecked: true };
+    const slackUserId = sender.kind === "person" ? sender.user : "";
+    const fetched = await fetchSlackAttachments(
+      gateway,
+      event.files,
+      slackUserId,
+      heldBudget,
+      event.teamId,
+    );
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: null,
+      actorKind: "external",
+      surface: "slack",
+      agentId,
+      decision: "allow",
+      detail: {
+        basis: "place",
+        trigger: "owned-thread",
+        slackUserId,
+        ...senderDetail(sender),
+        channelId: event.channel,
+      },
+    });
+    const key = ownedQueueKey(agentId, sessionId);
+    void getOrCreateQueue(ownedQueues, key, () =>
+      createOwnedQueue(key, agentId, sessionId),
+    ).submit({
+      text: event.text + renderWithheldNote(fetched.failures),
+      eventTs: event.ts,
+      slackUserId,
+      sender,
+      speaker: await speakerOf(sender),
+      images: fetched.images,
+      files: fetched.files,
+      release: fetched.release,
+      channelId: event.channel,
+      threadTs: event.threadTs,
+      teamId: event.teamId,
+      reroute,
+    });
+    return { owner: agentId, dropped: false, rateChecked: true };
+  }
+
   async function handleInbound(
     signedEvent: SlackMentionEvent,
     opts: { directMessage: boolean },
+    rerouted = false,
   ) {
     if (!gateway) return;
 
@@ -5192,10 +5746,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
     if (
+      !rerouted &&
       sender.kind !== "person" &&
       !firstBotMentionSighting(event.channel, event.ts)
     )
       return;
+    const owned = rerouted
+      ? { owner: null }
+      : await routeOwnedThreadMessage(event, () =>
+          handleInbound(signedEvent, opts, true),
+        );
+    if (owned.owner !== null && owned.dropped) return;
     if (await isIgnoredApp(sender, event.channel)) return;
     const slackUserId = sender.kind === "person" ? sender.user : "";
 
@@ -5230,6 +5791,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const roster = await resolveRoster(event.channel);
     const routed = routeMention(event.text, roster);
+    if (
+      owned.owner !== null &&
+      (!routed?.target || routed.target.instanceName === owned.owner)
+    )
+      return;
     if (!routed) {
       await gateway.postEphemeral({
         channel: event.channel,
@@ -5250,7 +5816,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const binding = routed.target;
     if (!senderReaches(sender, binding)) return;
-    if (!(await admitBotPost(sender, event))) return;
+    const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
+    if (!rateChecked && !(await admitBotPost(sender, event))) return;
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
@@ -5943,6 +6510,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     images: FetchedImage[];
     files: FetchedFile[];
     release: () => void;
+    ownedBy?: string;
   };
 
   function batchFiles(batch: PendingMessage[]): {
@@ -6026,7 +6594,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const reached = batch.filter((m) => senderReaches(m.sender, reader));
+          const reached = batch.filter(
+            (m) =>
+              senderReaches(m.sender, reader) &&
+              m.ownedBy !== reader.instanceName,
+          );
           const isCarriedByThread = (m: PendingMessage) =>
             !inThread &&
             threadSupersede.isSuperseded(
@@ -6172,7 +6744,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
-  async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
+  async function handleChannelMessage(
+    signedEvent: SlackChannelMessageEvent,
+    rerouted = false,
+  ) {
     if (!gateway) return;
     const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
@@ -6185,18 +6760,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       return;
     }
+    const owned = rerouted
+      ? { owner: null }
+      : await routeOwnedThreadMessage(event, () =>
+          handleChannelMessage(signedEvent, true),
+        );
+    if (owned.owner !== null && owned.dropped) return;
     if (await isIgnoredApp(sender, event.channel)) return;
 
-    const bindings = await channelRegistry.resolveSlackBindings(event.channel);
+    const bindings = (
+      await channelRegistry.resolveSlackBindings(event.channel)
+    ).filter((binding) => binding.instanceName !== owned.owner);
     const reached = bindings.some(
       (binding) => binding.ambient && senderReaches(sender, binding),
     );
     if (!reached) {
-      if (sender.kind === "person" && event.threadTs)
+      if (sender.kind === "person" && event.threadTs && owned.owner === null)
         await noticeUntaggedReply(event, sender.user, event.threadTs, bindings);
       return;
     }
-    if (!(await admitBotPost(sender, event))) return;
+    const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
+    if (!rateChecked && !(await admitBotPost(sender, event))) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
@@ -6217,6 +6801,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       images,
       files,
       release,
+      ...(owned.owner !== null && { ownedBy: owned.owner }),
     });
   }
 
@@ -6264,7 +6849,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
-  return {
+  const worker: SlackWorker = {
     type: ChannelType.Slack,
 
     async connect() {
@@ -6349,7 +6934,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       teamId: SlackWorkspace,
     ): Promise<SlackChannelMembership> {
       const links = await identityLinks.externalLinksOf("slack", keycloakSub);
-      if (links.length === 0) return "unlinked";
+      if (links.length === 0) return { kind: "unlinked" };
       const gw = await ensureGateway();
       if (!gw) throw new Error("slack gateway is not connected here");
       const userIds = [...new Set(links.map((l) => l.externalUserId))];
@@ -6358,8 +6943,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return lookup.kind === "found" &&
           lookup.directMessageUser !== null &&
           userIds.includes(lookup.directMessageUser)
-          ? "member"
-          : "not-member";
+          ? { kind: "member", slackUserId: lookup.directMessageUser }
+          : { kind: "not-member" };
       }
       const workspaces = [
         ...new Set([teamId, ...(await linkedWorkspaces(links))]),
@@ -6367,10 +6952,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       for (const workspace of workspaces) {
         for (const userId of userIds) {
           const shared = await gw.listSharedChannels(userId, workspace);
-          if (shared.includes(slackChannelId)) return "member";
+          if (shared.includes(slackChannelId))
+            return { kind: "member", slackUserId: userId };
         }
       }
-      return "not-member";
+      return { kind: "not-member" };
     },
 
     async listConversations(instanceName: string) {
@@ -6754,7 +7340,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             error:
               "no active thread to reply to — if you are answering a thread, pass " +
               "the threadTs shown in that turn's instructions; for a top-level " +
-              "post use send_channel_message",
+              "post use post",
           };
         }
         threadTs = resolved.ref.threadTs;
@@ -7071,6 +7657,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
+    async getMessageLink(instanceName: string, query: MessageLinkQuery) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const { messageTs } = query;
+      const liveChannels = new Set(
+        liveTurnRefs(instanceName).map((ref) => ref.channel),
+      );
+      const turnChannel =
+        findTurnRef(instanceName, (ref) => ref.eventTs === messageTs)
+          ?.channel ??
+        (liveChannels.size === 1 ? [...liveChannels][0] : undefined);
+      const target = await resolveOutboundTarget(
+        gw,
+        boundChannelIds,
+        query.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
+        async (id, teamId, dm) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+      );
+      if ("error" in target) return target;
+
+      try {
+        const link = await gw.getPermalink(target.id, messageTs, target.teamId);
+        if (!link) {
+          return {
+            error:
+              `Slack gave no link for message ${messageTs} in ` +
+              `${target.id} — check messageTs, and pass chatId when the ` +
+              "message is in another conversation",
+          };
+        }
+        return { link, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
     async readThread(instanceName: string, query: ThreadQuery) {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
@@ -7078,18 +7708,26 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      const offered = readOfferedThread(instanceName, query.threadTs);
+      const owned = await ownedThreads
+        .findForAgent(instanceName, query.threadTs)
+        .catch(() => null);
+      const offered = owned
+        ? { channel: owned.channelId }
+        : readOfferedThread(instanceName, query.threadTs);
       if (!offered) {
         return {
           error:
-            "not a thread you were shown — only a ts taken from a " +
-            "[thread: ...] tag in the conversation history handed to you " +
-            "can be read, and offers age out. If someone wants you on an " +
-            "older thread, ask them to reply in it — it will reach you " +
-            "with its full history",
+            "not a thread you were shown — you can read the thread you are " +
+            "answering in, a thread you started with start_thread, and a " +
+            "thread from a [thread: ...] tag in the conversation history " +
+            "handed to you, and such a tag ages out after 48 hours. To read " +
+            "any other thread, ask a person to tag you in it, which makes " +
+            "it readable",
         };
       }
-      const target = bound.find((c) => c.id === offered.channel);
+      const target = owned
+        ? { id: owned.channelId, teamId: owned.teamId }
+        : bound.find((c) => c.id === offered.channel);
       if (!target) {
         return {
           error:
@@ -7134,6 +7772,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
+          showTs: true,
         });
         return {
           messages: markThreadWindow(labelled, offsets, {
@@ -7151,6 +7790,134 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       } catch (err) {
         return { error: formatError(err) };
       }
+    },
+
+    async startThread(instanceName: string, start: ThreadStart) {
+      if (!start.text.trim())
+        return { error: "nothing to send — start_thread needs text" };
+      const posted = await worker.postMessage(instanceName, start.text, {
+        conversationId: start.conversationId,
+      });
+      if ("error" in posted) return posted;
+      if (posted.conversationId === undefined || posted.ts === undefined)
+        return { error: "Slack did not say where the post landed" };
+      const target = (
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName)
+      ).find((c) => c.id === posted.conversationId);
+      const teamId =
+        target?.teamId ??
+        turnWorkspace(instanceName)(posted.conversationId) ??
+        turnWorkspace(instanceName)();
+      if (teamId === undefined)
+        return {
+          error:
+            "the message was posted, but its workspace is unknown, so " +
+            "replies under it are not followed",
+        };
+      try {
+        await ownedThreads.own({
+          channelId: posted.conversationId,
+          threadTs: posted.ts,
+          teamId,
+          agentId: instanceName,
+          sessionId: start.sessionId,
+          firstLine: sessionTitleOf(start.text).slice(0, FIRST_LINE_MAX),
+        });
+      } catch (err) {
+        return {
+          error: `the message was posted, but replies under it are not followed: ${formatError(err)}`,
+        };
+      }
+      getLogger().info(
+        {
+          agentId: instanceName,
+          sessionId: start.sessionId,
+          channelId: posted.conversationId,
+          threadTs: posted.ts,
+        },
+        "slack.owned_thread.started",
+      );
+      return {
+        ok: true as const,
+        conversationId: posted.conversationId,
+        threadTs: posted.ts,
+      };
+    },
+
+    async listThreads(instanceName: string, sessionId: string) {
+      let owned: SlackOwnedThread[];
+      try {
+        owned = await ownedThreads.listForSession(instanceName, sessionId);
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+      const gw = await ensureGateway();
+      const threads = await Promise.all(
+        owned.map(async (thread) => {
+          const base = {
+            conversationId: thread.channelId,
+            threadTs: thread.threadTs,
+            firstLine: thread.firstLine,
+            startedAt: thread.createdAt.toISOString(),
+          };
+          if (!gw) return base;
+          const read = await gw
+            .getThreadReplies({
+              channel: thread.channelId,
+              threadTs: thread.threadTs,
+              teamId: thread.teamId,
+              limit: THREAD_LOOKBACK,
+              oldest: thread.deliveredUpTo,
+            })
+            .catch(() => null);
+          const parent = read?.messages.find(
+            (message) => message.ts === thread.threadTs,
+          );
+          if (!read || !parent) return base;
+          const latest = parent.latestReplyTs ?? thread.threadTs;
+          return {
+            ...base,
+            replies: parent.replyCount ?? 0,
+            lastActivityAt: new Date(Number(latest) * 1000).toISOString(),
+            replyWaiting: read.messages.some(
+              (message) =>
+                message.ts !== undefined &&
+                isAfterTs(message.ts, thread.deliveredUpTo) &&
+                parseAgentFooter(message)?.agentId !== instanceName,
+            ),
+          };
+        }),
+      );
+      return { threads };
+    },
+
+    async leaveThread(instanceName: string, leave: ThreadLeave) {
+      try {
+        const left = await ownedThreads.leave(
+          instanceName,
+          leave.sessionId,
+          leave.conversationId,
+          leave.threadTs,
+        );
+        if (!left)
+          return {
+            error:
+              "this session does not follow that thread — list_threads " +
+              "shows the ones it does",
+          };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+      getLogger().info(
+        {
+          agentId: instanceName,
+          sessionId: leave.sessionId,
+          channelId: leave.conversationId,
+          threadTs: leave.threadTs,
+        },
+        "slack.owned_thread.left",
+      );
+      return { ok: true as const };
     },
 
     async fetchAttachment(instanceName: string, query: AttachmentQuery) {
@@ -7273,4 +8040,5 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return { sent };
     },
   };
+  return worker;
 }

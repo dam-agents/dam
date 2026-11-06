@@ -62,14 +62,14 @@ describe("platformSubagentSettingsError", () => {
     expect(
       check({
         "platformSubagent.harness": "codex",
-        "platformSubagent.model": "openai/gpt-5-mini",
+        "platformSubagent.model": "openai/mini",
         "platformSubagent.effort": "minimal",
       }),
-    ).toMatch(/not available for openai\/gpt-5-mini/);
+    ).toMatch(/not available for openai\/mini/);
     expect(
       check({
         "platformSubagent.harness": "codex",
-        "platformSubagent.model": "openai/gpt-5-mini",
+        "platformSubagent.model": "openai/mini",
         "platformSubagent.effort": "high",
         "platformSubagent.approvals": "auto",
       }),

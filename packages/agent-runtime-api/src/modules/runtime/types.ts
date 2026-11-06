@@ -2,6 +2,10 @@ import { z } from "zod";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
 import { startupItemDeclarationSchema } from "../processes/schemas.js";
 import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
+import {
+  sessionPurposeSchema,
+  sessionTitleSchema,
+} from "../sessions/schemas.js";
 
 export const contributionKind = z.enum([
   "env",
@@ -316,6 +320,8 @@ export const initializationEventPayload = z.object({
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   settings: sessionSettingsSchema.optional(),
+  purpose: sessionPurposeSchema.optional(),
+  title: sessionTitleSchema.optional(),
 });
 
 export const initializationEvent = z.object({
@@ -527,6 +533,16 @@ export function routesByModelName(capabilities: unknown): boolean {
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the runtime's hello claims an image
+ * that ships the agent-cost-review skill and opens a cost-review Session
+ * as its own kind, so the platform offers the review only where it can run.
+ */
+export function supportsCostReview(capabilities: unknown): boolean {
+  const level = (capabilities as { costReview?: unknown } | null)?.costReview;
+  return typeof level === "number" && level >= 1;
+}
+
 function advertisedKinds<T extends string>(known: readonly T[]) {
   const recognised = new Set<string>(known);
   return z
@@ -545,6 +561,7 @@ export const capabilities = z.object({
   defaultHarness: z.string().optional(),
   harnesses: z.array(harnessCapability).optional(),
   kbPublish: z.number().int().optional(),
+  costReview: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
   modelRouter: z.boolean().optional(),
 });

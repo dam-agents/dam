@@ -288,6 +288,8 @@ const configSchema = z.object({
     .default(null),
   environmentsMaxPerAgent: z.coerce.number().int().positive().default(5),
   environmentExpiryMaxDays: z.coerce.number().int().positive().default(30),
+  environmentIdleTimeoutMinutes: z.number().int().positive(),
+  environmentIdleTimeoutMaxMinutes: z.number().int().positive(),
   minClientCliVersion: z.string().optional(),
   recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
@@ -338,6 +340,8 @@ const configSchema = z.object({
   kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
   kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
   kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
+  costReviewMinWeeklyUsd: z.coerce.number().nonnegative().default(25),
+  costReviewMinWeeklyBobcoins: z.coerce.number().nonnegative().default(20),
   brand: brandSchema,
   links: linksSchema,
   terms: z.object({
@@ -514,6 +518,12 @@ export function loadConfig(): Config {
     environmentsUrl: process.env.ENVIRONMENTS_URL || null,
     environmentsMaxPerAgent: process.env.ENVIRONMENTS_MAX_PER_AGENT,
     environmentExpiryMaxDays: process.env.ENVIRONMENT_EXPIRY_MAX_DAYS,
+    environmentIdleTimeoutMinutes: durationToMinutesStrict(
+      process.env.ENVIRONMENT_IDLE_TIMEOUT ?? "60m",
+    ),
+    environmentIdleTimeoutMaxMinutes: durationToMinutesStrict(
+      process.env.ENVIRONMENT_IDLE_TIMEOUT_MAX ?? "24h",
+    ),
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
@@ -554,6 +564,8 @@ export function loadConfig(): Config {
     kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
     kbShareMaxConnectionsPerOwner:
       process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
+    costReviewMinWeeklyUsd: process.env.COST_REVIEW_MIN_WEEKLY_USD,
+    costReviewMinWeeklyBobcoins: process.env.COST_REVIEW_MIN_WEEKLY_BOBCOINS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",

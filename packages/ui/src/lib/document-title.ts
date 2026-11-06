@@ -4,6 +4,7 @@ const SETTINGS_TAB_TITLE: Record<SettingsTab, string> = {
   account: "Account",
   appearance: "Appearance",
   providers: "Providers",
+  profiles: "Profiles",
   connections: "Connections",
   "api-keys": "API keys",
   usage: "Usage",

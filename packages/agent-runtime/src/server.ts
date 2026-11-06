@@ -1424,7 +1424,10 @@ server.listen(config.PORT, () => {
       })),
     }),
   );
-  if (environmentOf === "") acpRuntime.prestart();
+  if (environmentOf === "") {
+    acpRuntime.prestart();
+    void sessionsService.adoptHarnessTitles();
+  }
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));

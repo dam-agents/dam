@@ -322,7 +322,7 @@ describe("createSessionsService", () => {
 });
 
 describe("adoptHarnessTitle", () => {
-  function titled(meta: SessionMetaEntry["meta"]) {
+  function titled(meta: SessionMetaEntry["meta"], failedOpens = 0) {
     const entries = new Map<string, SessionMetaEntry>([
       ["term", { meta, createdAt: "2026-10-20T00:00:00.000Z" }],
     ]);
@@ -341,7 +341,10 @@ describe("adoptHarnessTitle", () => {
     const service = createSessionsService({
       defaultHarness: "claude-code",
       subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
-      openCaller: () => caller,
+      openCaller: () => {
+        if (failedOpens-- > 0) throw new Error("the runtime is closed");
+        return caller;
+      },
       sessionMetadata: {
         ...fakeStore(),
         get: (id) => entries.get(id),
@@ -379,5 +382,176 @@ describe("adoptHarnessTitle", () => {
       expect(t.asked).toEqual([]);
       expect(t.meta()?.title).toBeUndefined();
     }
+  });
+
+  // TEST_SCENARIO: No channel to the harness opens; the read fails without throwing, and the next read of the same Session asks again.
+  it("asks again after no channel to the harness opened", async () => {
+    const t = titled({ mode: "terminal", harness: "copilot" }, 1);
+    await expect(t.service.adoptHarnessTitle("term")).resolves.toBeUndefined();
+    expect(t.meta()?.title).toBeUndefined();
+    await t.service.adoptHarnessTitle("term");
+    expect(t.meta()?.title).toBe("fix the login");
+  });
+});
+
+describe("adoptHarnessTitles", () => {
+  type Listed = { sessionId: string; title?: string };
+  function booted(
+    listings: Record<string, Listed[] | Listed[][] | Error>,
+    failedOpens = 0,
+  ) {
+    const entries = new Map<string, SessionMetaEntry>([
+      [
+        "old",
+        {
+          meta: { mode: "chat" },
+          createdAt: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+      [
+        "named",
+        {
+          meta: { mode: "chat", harness: "claude-code", title: "kept" },
+          createdAt: "2026-10-02T00:00:00.000Z",
+        },
+      ],
+      [
+        "renamed",
+        {
+          meta: { mode: "chat", harness: "claude-code", customTitle: "mine" },
+          createdAt: "2026-10-03T00:00:00.000Z",
+        },
+      ],
+      [
+        "codex-session",
+        {
+          meta: { mode: "chat", harness: "codex" },
+          createdAt: "2026-10-04T00:00:00.000Z",
+        },
+      ],
+    ]);
+    const asked: { _meta?: { platform?: { harness?: string } } }[] = [];
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        const harness = (
+          params as { _meta?: { platform?: { harness?: string } } }
+        )._meta?.platform?.harness;
+        if (harness === undefined) return { sessions: [] } as T;
+        asked.push(params as { _meta?: { platform?: { harness?: string } } });
+        const listing = listings[harness] ?? [];
+        if (listing instanceof Error) throw listing;
+        const pages = (
+          Array.isArray(listing[0]) ? listing : [listing]
+        ) as Listed[][];
+        const page = Number((params as { cursor?: string }).cursor ?? 0);
+        return {
+          sessions: pages[page],
+          nextCursor: page + 1 < pages.length ? String(page + 1) : null,
+        } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => {
+        if (failedOpens-- > 0) throw new Error("the runtime is closed");
+        return caller;
+      },
+      sessionMetadata: {
+        ...fakeStore(),
+        all: () => Object.fromEntries(entries),
+        get: (id) => entries.get(id),
+        set: (id, m) => {
+          entries.set(id, { ...entries.get(id)!, meta: m });
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+    return { service, asked, meta: (id: string) => entries.get(id)?.meta };
+  }
+
+  // TEST_SCENARIO: Sessions an older runtime made carry no kept title; after a boot the runtime asks each harness for its own listing once and keeps the first line, so the list shows those Sessions with their harness's title again; a Session that records no harness is asked of the default one.
+  it("keeps the harness's title for every untitled session", async () => {
+    const t = booted({
+      "claude-code": [
+        { sessionId: "old", title: "fix the login\nand the logout" },
+        { sessionId: "named", title: "the harness's" },
+        { sessionId: "renamed", title: "the harness's" },
+      ],
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "claude-code" } } },
+      { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    ]);
+    expect(t.meta("old")?.title).toBe("fix the login");
+    expect(t.meta("codex-session")?.title).toBe("port the hook");
+    expect(t.meta("named")?.title).toBe("kept");
+    expect(t.meta("renamed")).toEqual({
+      mode: "chat",
+      harness: "claude-code",
+      customTitle: "mine",
+    });
+
+    const listed = (await t.service.list()).sessions.find(
+      (s) => s.sessionId === "old",
+    );
+    expect(listed?.title).toBe("fix the login");
+  });
+
+  // TEST_SCENARIO: A harness with many sessions lists them over many pages; once every untitled session has its title, the runtime reads no further page.
+  it("stops paging once every untitled session is found", async () => {
+    const t = booted({
+      "claude-code": [
+        [{ sessionId: "named", title: "the harness's" }],
+        [{ sessionId: "old", title: "fix the login" }],
+        [{ sessionId: "older", title: "never read" }],
+      ],
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.meta("old")?.title).toBe("fix the login");
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "claude-code" } } },
+      {
+        cwd: ".",
+        _meta: { platform: { harness: "claude-code" } },
+        cursor: "1",
+      },
+      { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    ]);
+  });
+
+  // TEST_SCENARIO: One harness failing to answer must not stop the others; its sessions stay untitled and the next harness still gets its titles.
+  it("keeps the other harness's titles when one listing fails", async () => {
+    const t = booted({
+      "claude-code": new Error("harness exited"),
+      codex: [{ sessionId: "codex-session", title: "port the hook" }],
+    });
+
+    await t.service.adoptHarnessTitles();
+
+    expect(t.meta("old")?.title).toBeUndefined();
+    expect(t.meta("codex-session")?.title).toBe("port the hook");
+  });
+
+  // TEST_SCENARIO: No channel to the harnesses opens at boot; the backfill logs it and resolves, since a rejection there would end the runtime.
+  it("resolves when no channel to the harnesses opens", async () => {
+    const t = booted({}, 1);
+    await expect(t.service.adoptHarnessTitles()).resolves.toBeUndefined();
+    expect(t.asked).toEqual([]);
+    expect(t.meta("old")?.title).toBeUndefined();
   });
 });

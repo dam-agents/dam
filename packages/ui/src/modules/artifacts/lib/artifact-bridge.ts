@@ -16,3 +16,19 @@ export function canUseArtifactBridge(
     artifact.version === version
   );
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: outside any chat, the same page may still ask
+ * its publishing Agent for a Session of its own, on its latest version with
+ * the feature on. The server checks the artifact again on every prompt.
+ */
+export function canStartArtifactSession(
+  artifact: LibraryArtifact | null | undefined,
+  enabled: boolean,
+  version: number | undefined,
+): boolean {
+  return (
+    artifact?.agentId != null &&
+    canUseArtifactBridge(artifact, enabled, artifact.agentId, version)
+  );
+}

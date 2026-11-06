@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The environments composition root's own logic, against a fake repository, agents service and runtime mutator. Deleting an Agent deletes the Environments it owned and an Environment's own row, and no other owner's; the expiry sweep deletes only what expired, as each one's owner, and one failed delete does not stop the rest; an Environment Agent left without its row is deleted too; a `start` command reaches the Environment as an openrc user service, quoted so the shell runs it as one command.
+// TEST_OVERVIEW: The environments composition root's own logic, against a fake repository, agents service and runtime mutator. Deleting an Agent deletes the Environments it owned and an Environment's own row, and no other owner's; the expiry sweep deletes only what expired, as each one's owner, never one kept with no expiry, and one failed delete does not stop the rest; an Environment Agent left without its row is deleted too; a `start` command reaches the Environment as an openrc user service, quoted so the shell runs it as one command.
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentsService } from "api-server-api";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
@@ -19,7 +19,7 @@ function record(
   agentId: string,
   owningAgentId: string,
   owner: string,
-  expiresAt = LATER,
+  expiresAt: Date | null = LATER,
 ): EnvironmentRecord {
   return {
     agentId,
@@ -47,7 +47,8 @@ function world(
     getByHost: async (host) => rows.find((r) => r.host === host) ?? null,
     listByOwningAgent: async (id) => rows.filter((r) => r.owningAgentId === id),
     listByOwner: async (owner) => rows.filter((r) => r.owner === owner),
-    listExpired: async (now) => rows.filter((r) => r.expiresAt < now),
+    listExpired: async (now) =>
+      rows.filter((r) => r.expiresAt !== null && r.expiresAt < now),
     listAgentIds: async () => rows.map((r) => r.agentId),
     listOwningAgentIds: async () => [
       ...new Set(rows.map((r) => r.owningAgentId)),
@@ -98,6 +99,8 @@ function world(
         urlTemplate: null,
         maxPerAgent: 5,
         expiryMaxDays: 30,
+        idleTimeoutDefaultMin: 60,
+        idleTimeoutMaxMin: 1440,
       },
       listAgents: async () => cluster,
       editorsOf: async () => [],
@@ -174,7 +177,7 @@ describe("the cleanup source", () => {
 });
 
 describe("the expiry sweep", () => {
-  // TEST_SCENARIO: only an expired Environment is deleted, as its own owner; a delete that fails is logged and the sweep goes on, and the failed one is tried again on the next sweep.
+  // TEST_SCENARIO: only an expired Environment is deleted, as its own owner, and one kept with no expiry never is; a delete that fails is logged and the sweep goes on, and the failed one is tried again on the next sweep.
   it("deletes what expired, as its owner, past a failed delete", async () => {
     const { rows, deletedAgents, composition } = world(
       [
@@ -182,6 +185,7 @@ describe("the expiry sweep", () => {
         record("agent-stuck", "agent-owning", "alice", PAST),
         record("agent-gone2", "agent-other", "bob", PAST),
         record("agent-kept", "agent-owning", "alice", LATER),
+        record("agent-forever", "agent-owning", "alice", null),
       ],
       ["agent-stuck"],
     );
@@ -193,6 +197,7 @@ describe("the expiry sweep", () => {
       ["bob", "agent-gone2"],
     ]);
     expect(rows.map((r) => r.agentId).sort()).toEqual([
+      "agent-forever",
       "agent-kept",
       "agent-stuck",
     ]);

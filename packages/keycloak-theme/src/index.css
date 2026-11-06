@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* dark: follows the page's own light/dark choice (the .dark class the theme
+   script sets), as in packages/ui, not the operating system's setting. */
+@custom-variant dark (&:is(.dark *));
+
 @font-face {
   font-family: "IBM Plex Sans";
   font-weight: 300;
@@ -42,6 +46,10 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-placeholder: var(--placeholder);
   --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  /* The tinted background of every other login page section, solid so a
+     label can mask a line drawn behind it. */
+  --color-section: color-mix(in srgb, var(--muted) 30%, var(--background));
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-sm: calc(var(--radius) - 4px);
@@ -74,6 +82,7 @@
   --muted-foreground: #4d5358;
   --placeholder: #94989b;
   --accent: #0f62fe;
+  --accent-foreground: #ffffff;
   --input: #dde1e6;
   --ring: #000000;
 }
@@ -87,6 +96,7 @@
   --muted-foreground: #a8a29e;
   --placeholder: #6a6562;
   --accent: #78a9ff;
+  --accent-foreground: #0c0a09;
   --input: #292524;
   --ring: #fafaf9;
 }
@@ -104,4 +114,129 @@ button,
 [role="button"],
 a {
   cursor: pointer;
+}
+
+/* The compass character's wings flutter on hover (compass-character.tsx). */
+@keyframes compass-flutter-l {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(8deg);
+  }
+  55% {
+    transform: rotate(-5deg);
+  }
+  80% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes compass-flutter-r {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-8deg);
+  }
+  55% {
+    transform: rotate(5deg);
+  }
+  80% {
+    transform: rotate(-3deg);
+  }
+}
+
+/* The stack character looks around and bobs on hover (sections/capabilities.tsx). */
+@keyframes stack-look-left-eye {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25%,
+  38% {
+    transform: translate(135px, -80px) scale(1);
+  }
+  58%,
+  72% {
+    transform: translate(-135px, -80px) scale(1.15);
+  }
+}
+@keyframes stack-look-right-eye {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25%,
+  38% {
+    transform: translate(135px, -80px) scale(1.15);
+  }
+  58%,
+  72% {
+    transform: translate(-135px, -80px) scale(1);
+  }
+}
+@keyframes stack-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-220px);
+  }
+}
+.stack-character-eyes > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .group:hover .stack-character-eyes > :nth-child(1) {
+    animation: stack-look-left-eye 1.2s ease-in-out;
+  }
+  .group:hover .stack-character-eyes > :nth-child(2) {
+    animation: stack-look-right-eye 1.2s ease-in-out;
+  }
+  .group:hover .stack-character svg > rect:nth-of-type(3) {
+    animation: stack-bob 0.4s ease-in-out;
+  }
+  .group:hover .stack-character svg > rect:nth-of-type(2) {
+    animation: stack-bob 0.4s ease-in-out 0.1s;
+  }
+  .group:hover .stack-character svg > rect:nth-of-type(1) {
+    animation: stack-bob 0.4s ease-in-out 0.2s;
+  }
+}
+
+/* The Slack illustrations' typing dots and message fade-in
+   (slack-dm-illustration.tsx, slack-team-illustration.tsx). */
+@keyframes dmDots {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes slkDots {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes slkFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

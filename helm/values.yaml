@@ -260,8 +260,16 @@ environments:
   domain: ""
   # -- Most Environments one agent may hold at once.
   maxPerAgent: 5
-  # -- Furthest ahead an Environment's expiry may be set, in days.
+  # -- Furthest ahead an Environment's expiry may be set, in days. Its owner or
+  # agent may still keep one with no expiry.
   expiryMaxDays: 30
+  # -- How long an Environment may sit idle before it sleeps, when its agent
+  # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
+  # since what an Environment runs takes minutes to come back.
+  idleTimeout: "60m"
+  # -- Longest idle timeout an agent may give an Environment; a longer one is
+  # cut to it. Its agent may still keep one awake with "never".
+  idleTimeoutMax: "24h"
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -794,7 +802,7 @@ postgres:
     timeoutSeconds: 10
     failureThreshold: 6
   # -- Timing of the `pg_isready` check that holds the two checks around it off
-  # until Postgres first answers: after initdb on a first boot, after recovery
+  # until Postgres answers on TCP: after initdb on a first boot, after recovery
   # when the last run was killed. On a loaded CI runner Postgres was still
   # answering nothing 108 seconds in, and liveness's 90-second budget killed it
   # inside initdb; the recovery that kill left took minutes more. Five minutes
@@ -1090,6 +1098,12 @@ keycloak:
   # below it.
   login:
     allowPassword: true
+    # -- The chat channel the login page names for questions, shown as
+    # "Questions? Ask in <label> on Slack." with the label linking to `url`.
+    # Both empty, or either one, hides it.
+    community:
+      label: ""
+      url: ""
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log
@@ -1420,6 +1434,16 @@ apiServer:
     grepDeadlineMs: 2000
     # -- Most shared-knowledge-base connections one account may hold.
     maxConnectionsPerOwner: 20
+  # -- The offer of a cost review in an owner's Approvals: an agent at least
+  # 7 days old, with scheduled or channel spend on 3 of the last 7 days,
+  # qualifies when it spent at least one of these amounts of Metered Spend
+  # over those days. Dollars and Bobcoins are never added up; subscription
+  # and free providers count toward neither.
+  costReview:
+    # -- Paid dollars over the last 7 days.
+    minWeeklyUsd: 25
+    # -- Bobcoins over the last 7 days.
+    minWeeklyBobcoins: 20
   # -- Default hold window (seconds) for HITL ext_authz approvals. The held
   # call resolves on user verdict or denies on timeout; the durable
   # pending_approvals row outlives the hold and is consumed by the agent's
@@ -1917,8 +1941,9 @@ controller:
       # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
 
-      # Lifecycle. A machine starts fast, so every agent takes this and
-      # ignores its own hibernationTimeout; "0s" disables hibernation.
+      # Lifecycle. A machine starts fast, so every agent takes this unless
+      # its spec carries a hibernationTimeout of its own, as an Environment's
+      # does (`environments.idleTimeout`); "0s" disables hibernation.
       vmIdleTimeout: "5m"
 
     harnessTemplateDefaults:

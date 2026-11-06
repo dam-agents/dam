@@ -37,9 +37,19 @@ const catalog = {
   providers: [
     {
       connectionId: "conn-1",
+      alias: "anthropic",
+      status: "listed",
       models: [
-        { name: "anthropic/claude-haiku-5", harnesses: ["claude-code"] },
-        { name: "anthropic/claude-sonnet-5", harnesses: ["claude-code"] },
+        {
+          name: "anthropic/claude-haiku-5",
+          upstreamId: "claude-haiku-5",
+          harnesses: ["claude-code"],
+        },
+        {
+          name: "anthropic/claude-sonnet-5",
+          upstreamId: "claude-sonnet-5",
+          harnesses: ["claude-code"],
+        },
       ],
     },
   ],
@@ -79,7 +89,7 @@ function publisher(saved: () => SessionDefaultsView) {
     } as never,
     boundary: createRunBoundary({
       inputsOf: async () => ({
-        capabilities: { harnesses: [CLAUDE] },
+        capabilities: { modelRouter: true, harnesses: [CLAUDE] },
         catalog,
       }),
     }),
@@ -142,6 +152,17 @@ describe("the session-defaults event", () => {
         5,
       ).id,
     ).toBe("session-defaults:agent-1:5");
+  });
+
+  // TEST_SCENARIO: a chat default with no model reaches the runtime on the automatic model, so a chat that follows it runs on the model a fire would instead of being refused as having no model.
+  it("carries the automatic model for a default with no model", async () => {
+    const { publish, events } = publisher(() =>
+      defaultsOf({ harness: "claude-code", provider: null, model: null }),
+    );
+    await publish("agent-1");
+    expect(events[0]?.payload).toMatchObject({
+      chat: { provider: "conn-1", model: "anthropic/claude-haiku-5" },
+    });
   });
 });
 

@@ -106,3 +106,18 @@ export const kitUpdateEvent = (
     initializationPayload(task, pair),
     at,
   );
+
+export const costReviewEvent = (
+  agentId: string,
+  task: string,
+  title: string,
+  at: Date,
+  pair?: SessionPair | null,
+): OutboxEvent =>
+  workspaceEvent(
+    "initialization",
+    "cost-review",
+    agentId,
+    { task, ...sessionPairFields(pair), purpose: "cost-review", title },
+    at,
+  );

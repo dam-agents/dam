@@ -1,7 +1,8 @@
 import { Add } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
-import { useState } from "react";
+import { shortNameForTemplate } from "api-server-api";
+import { useRef, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -22,11 +23,19 @@ import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
-import { CustomPairScreen } from "../../sessions/components/custom-pair-screen.js";
+import { SessionModelPicker } from "../../sessions/components/session-model-picker.js";
 import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
 import { SessionPairTrigger } from "../../sessions/components/session-pair-trigger.js";
+import {
+  type ProviderConnectionRef,
+  providerOfModel,
+} from "../../sessions/lib/session-pair-options.js";
 import { pairSummary } from "../../sessions/lib/session-settings.js";
-import { isProfileSetting } from "../../sessions/lib/subagent-choice.js";
+import {
+  profileEditPair,
+  profileSettings,
+  subagentOf,
+} from "../../sessions/lib/subagent-choice.js";
 import {
   useCreateProfile,
   useDeleteProfile,
@@ -40,35 +49,24 @@ import {
   sortProfiles,
   usedBy,
 } from "../lib/profile-detail.js";
+import { RenameProfileDialog } from "./rename-profile-dialog.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: what each runs, edited with the chat picker's Custom screen, how often it is used, rename, and a delete that names what still uses it. */
-export function ProfileSection() {
+export function ProfileSection({
+  openProfileId = null,
+}: {
+  /** UNIT_BOUNDARY_DESCRIPTION: a deep link to one profile opens that row's editor. */
+  openProfileId?: string | null;
+} = {}) {
   const { data: profiles = [], isPending } = useProfiles();
-  const update = useUpdateProfile();
   const remove = useDeleteProfile();
   const setDefault = useSetDefaultProfile();
   const showConfirm = useStore((s) => s.showConfirm);
   const showAlert = useStore((s) => s.showAlert);
   const agents = useAgents().data;
   const [creating, setCreating] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [name, setName] = useState("");
-
-  const startRename = (profile: ProfileWithUsage) => {
-    setRenaming(profile.id);
-    setName(profile.name);
-  };
-  const commitRename = (profile: ProfileWithUsage) => {
-    const next = name.trim();
-    if (next === "" || next === profile.name) {
-      setRenaming(null);
-      return;
-    }
-    update.mutate(
-      { id: profile.id, name: next },
-      { onSuccess: () => setRenaming(null) },
-    );
-  };
+  const [renaming, setRenaming] = useState<ProfileWithUsage | null>(null);
+  const renameAfterMenu = useRef<ProfileWithUsage | null>(null);
   const confirmDelete = async (profile: ProfileWithUsage) => {
     if (profileUses(profile) > 0) {
       const usage = await queryClient.fetchQuery(
@@ -107,6 +105,12 @@ export function ProfileSection() {
           onClose={() => setCreating(false)}
         />
       )}
+      {renaming && (
+        <RenameProfileDialog
+          profile={renaming}
+          onClose={() => setRenaming(null)}
+        />
+      )}
       <p className="mb-3 text-sm text-muted-foreground">
         Save harness, provider and model settings as profiles to quickly set and
         change them in agents. Update a profile here to quickly change settings
@@ -122,35 +126,24 @@ export function ProfileSection() {
               className="flex items-center gap-3 px-3 py-2 text-sm"
             >
               <div className="min-w-0 flex-1">
-                {renaming === profile.id ? (
-                  <Input
-                    autoFocus
-                    value={name}
-                    aria-label={`Name for ${profile.name}`}
-                    onChange={(e) => setName(e.target.value)}
-                    onBlur={() => commitRename(profile)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitRename(profile);
-                      if (e.key === "Escape") setRenaming(null);
-                    }}
-                  />
-                ) : (
-                  <p className="truncate font-medium text-foreground">
-                    {profile.name}
-                    {profile.newAgentDefault && (
-                      <Badge
-                        variant="muted"
-                        size="sm"
-                        title="Default for new agents"
-                        className="ml-2 align-middle"
-                      >
-                        Default
-                        <span className="sr-only"> for new agents</span>
-                      </Badge>
-                    )}
-                  </p>
-                )}
-                <ProfileValues profile={profile} />
+                <p className="truncate font-medium text-foreground">
+                  {profile.name}
+                  {profile.newAgentDefault && (
+                    <Badge
+                      variant="muted"
+                      size="sm"
+                      title="Default for new agents"
+                      className="ml-2 align-middle"
+                    >
+                      Default
+                      <span className="sr-only"> for new agents</span>
+                    </Badge>
+                  )}
+                </p>
+                <ProfileValues
+                  profile={profile}
+                  defaultOpen={profile.id === openProfileId}
+                />
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {profileUses(profile) === 0
@@ -160,10 +153,17 @@ export function ProfileSection() {
               <RowActionsMenu
                 label={`Actions for ${profile.name}`}
                 contentProps={{
-                  onCloseAutoFocus: (e) => e.preventDefault(),
+                  onCloseAutoFocus: (e) => {
+                    // UNIT_BOUNDARY_DESCRIPTION: Rename opens its dialog only once the menu has handed focus back to its button, so the dialog returns focus there on close; the menu item it was picked from is gone by then.
+                    if (!renameAfterMenu.current) return e.preventDefault();
+                    setRenaming(renameAfterMenu.current);
+                    renameAfterMenu.current = null;
+                  },
                 }}
               >
-                <DropdownMenuItem onSelect={() => startRename(profile)}>
+                <DropdownMenuItem
+                  onSelect={() => (renameAfterMenu.current = profile)}
+                >
                   Rename
                 </DropdownMenuItem>
                 {!profile.newAgentDefault && (
@@ -197,27 +197,33 @@ export function ProfileSection() {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a profile's values on the chat picker's Custom
- * screen. Models and harness settings come from the owner-level catalog, so
- * no agent is needed; until it loads it only shows the values. A pick updates
- * the profile; a harness picked without a model waits in the open picker
- * until one is, and closing the picker drops it, so the row never shows an
- * unsaved harness as the profile's.
+ * UNIT_BOUNDARY_DESCRIPTION: a profile's values on the chat picker's own body.
+ * Models and harness settings come from the owner-level catalog, so no agent
+ * is needed; until it loads it only shows the values. A pick updates the
+ * profile, subagent included; a harness picked without a model waits in the
+ * open picker until one is, and closing the picker drops it, so the row never
+ * shows an unsaved harness as the profile's.
  */
-function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
+function ProfileValues({
+  profile,
+  defaultOpen = false,
+}: {
+  profile: ProfileWithUsage;
+  defaultOpen?: boolean;
+}) {
   const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
   const providers = useProviderConnections(null);
   const update = useUpdateProfile();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const [draft, setDraft] = useState<SessionPair | null>(null);
-  const pair: SessionPair = draft ?? {
-    harness: profile.harness,
-    provider:
+  const [open, setOpen] = useState(defaultOpen);
+  const pair: SessionPair =
+    draft ??
+    profileEditPair(
+      profile,
       providers.owned.find((p) => p.templateId === profile.providerTemplate)
         ?.id ?? null,
-    model: profile.model,
-    settings: profile.settings,
-  };
+    );
   const save = (next: SessionPair) => {
     setDraft(next);
     if (next.model === null) return;
@@ -229,14 +235,11 @@ function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
           providers.owned.find((p) => p.id === next.provider)?.templateId ??
           profile.providerTemplate,
         model: next.model,
-        settings: Object.fromEntries(
-          Object.entries(next.settings ?? {}).filter(([id]) =>
-            isProfileSetting(
-              id,
-              status?.harnesses?.find((h) => h.name === next.harness),
-            ),
-          ),
+        settings: profileSettings(
+          next,
+          status?.harnesses?.find((h) => h.name === next.harness),
         ),
+        subagent: profileSubagentField(next, providers.owned),
       },
       { onSettled: () => setDraft(null) },
     );
@@ -250,8 +253,10 @@ function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
           defaultHarness={status.defaultHarness ?? profile.harness}
           routed={status.modelRouter}
           onConnectProviders={() => navigateToSettings("providers")}
-          onOpenChange={(open) => {
-            if (!open && draft?.model === null) setDraft(null);
+          open={open}
+          onOpenChange={(next) => {
+            setOpen(next);
+            if (!next && draft?.model === null) setDraft(null);
           }}
           edit={{
             pair,
@@ -265,7 +270,9 @@ function ProfileValues({ profile }: { profile: ProfileWithUsage }) {
           disabled
           label={pairSummary(profile.model, {
             settings: profile.settings,
-            provider: profileProviderName(profile),
+            provider:
+              shortNameForTemplate(profile.providerTemplate) ??
+              profileProviderName(profile),
           })}
         />
       )}
@@ -297,14 +304,12 @@ function NewProfileDialog({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pair, setPair] = useState<SessionPair | null>(
-    from && {
-      harness: from.harness,
-      provider:
+    from &&
+      profileEditPair(
+        from,
         providers.owned.find((p) => p.templateId === from.providerTemplate)
           ?.id ?? null,
-      model: from.model,
-      settings: from.settings,
-    },
+      ),
   );
   const providerTemplate =
     providers.owned.find((p) => p.id === pair?.provider)?.templateId ??
@@ -319,14 +324,11 @@ function NewProfileDialog({
         harness: pair.harness,
         providerTemplate,
         model: pair.model,
-        settings: Object.fromEntries(
-          Object.entries(pair.settings ?? {}).filter(([id]) =>
-            isProfileSetting(
-              id,
-              status?.harnesses?.find((h) => h.name === pair.harness),
-            ),
-          ),
+        settings: profileSettings(
+          pair,
+          status?.harnesses?.find((h) => h.name === pair.harness),
         ),
+        subagent: profileSubagentField(pair, providers.owned),
       },
       { onSuccess: onClose, onError: (err) => setError(err.message) },
     );
@@ -350,13 +352,12 @@ function NewProfileDialog({
         </FormField>
         <div className="mt-3 flex flex-col gap-2 rounded-md border border-border p-1 text-sm">
           {status?.harnesses?.length ? (
-            <CustomPairScreen
+            <SessionModelPicker
               agentId={null}
               carried={status.harnesses}
               harnesses={status.harnesses.map((h) => h.name)}
               pair={pair}
               defaultHarness={status.defaultHarness}
-              inline
               onChoose={setPair}
               onManageProviders={() => {
                 if (create.isPending) return;
@@ -379,4 +380,16 @@ function NewProfileDialog({
       />
     </Modal>
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the subagent a profile edit or creation carries (D193B), its provider named by the Connection the model runs on; null is "Same as agent". */
+function profileSubagentField(
+  pair: SessionPair,
+  providers: readonly ProviderConnectionRef[],
+): { providerTemplate: string; model: string } | null {
+  const subagent = subagentOf(pair);
+  const template = providerOfModel(subagent?.model, providers)?.templateId;
+  return subagent && template
+    ? { providerTemplate: template, model: subagent.model }
+    : null;
 }

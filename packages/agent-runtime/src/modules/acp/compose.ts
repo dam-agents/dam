@@ -209,6 +209,7 @@ function inheritedSubAgentConfig(
 const UNATTENDED_TYPES = new Set([
   "channel_slack",
   "channel_telegram",
+  "artifact",
   "schedule_cron",
   "schedule_once",
 ]);

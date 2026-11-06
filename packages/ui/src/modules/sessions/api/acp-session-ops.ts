@@ -4,6 +4,7 @@ import {
   type SessionListCursor,
   type SessionListQuery,
   sessionMatchesQuery,
+  type SessionPurpose,
 } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
@@ -23,6 +24,7 @@ interface PlatformMeta {
   scheduleId?: string;
   continuedScheduleIds?: string[];
   initialization?: boolean;
+  purpose?: SessionPurpose;
   threadTs?: string;
   createdAt?: string;
   running?: boolean;
@@ -68,6 +70,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
       continuedScheduleIds: p.continuedScheduleIds,
     }),
     initialization: p?.initialization ?? null,
+    ...(p?.purpose !== undefined && { purpose: p.purpose }),
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
     ...(p?.customTitle !== undefined && { customTitle: p.customTitle }),
@@ -136,6 +139,7 @@ const SESSION_TYPE: Record<Session["type"], SessionType> = {
   schedule_once: SessionType.ScheduleOnce,
   cli_run: SessionType.CliRun,
   invocation: SessionType.Invocation,
+  artifact: SessionType.Artifact,
 };
 
 const SESSION_MODE: Record<Session["mode"], SessionMode> = {
@@ -155,6 +159,7 @@ function toSessionViewFromApi(agentId: string, s: Session): SessionView {
       continuedScheduleIds: s.continuedScheduleIds,
     }),
     initialization: s.initialization ?? null,
+    ...(s.purpose !== undefined && { purpose: s.purpose }),
     threadTs: s.threadTs,
     title: s.title,
     ...(s.customTitle !== undefined && { customTitle: s.customTitle }),

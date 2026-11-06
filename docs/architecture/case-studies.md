@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-10-23
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -51,7 +51,7 @@ While an edition is pending, the linked artifact is what the owner surface reads
 Listing does not resolve — one artifact read per row is the wrong trade for a length — so a pending row reports the submitted text and says so, and a reader that needs the draft fetches the edition.
 Releasing **freezes** the resolved text and a stamp of which copy won into the row, and stops consulting the artifact ever after — consent attaches to specific words, so an edit made after release must not rewrite what an inspector already read, just as an edit made before it must not be ignored; the stamp keeps saying which copy consent froze once reads can no longer recompute it.
 An artifact that cannot stand in for the draft (deleted, another owner's, binary, oversized, or outside the content bounds) falls back to the submitted text rather than failing the owner's read: a missing artifact is not a reason to refuse someone their own consent.
-The skill scopes its lookup of that copy to the artifacts it published itself — every agent an owner runs titles its weekly copy the same way, and an update is owner-scoped rather than agent-scoped, so an unscoped title match would let one agent publish over another's.
+The skill looks that copy up among the artifacts it published itself, the only ones its artifact tools see — every agent an owner runs titles its weekly copy the same way, so one agent never publishes over another's.
 
 Attribution is server-stamped and unforgeable: the agent id comes from the mesh-bound MCP session, never tool input; the harness image is read from the Agent CR at submit time so it survives agent deletion.
 Owner resolution rides the `agents` mirror ([usage-tracking](usage-tracking.md)) — editions carry no owner column.

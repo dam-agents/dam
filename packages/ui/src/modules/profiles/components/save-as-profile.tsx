@@ -1,9 +1,8 @@
-import { Add, Save } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
-import { useState } from "react";
+import { shortNameForTemplate } from "api-server-api";
+import { useId, useState } from "react";
 
-import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -14,21 +13,26 @@ import { Input } from "@/components/ui/input";
 
 import { useAgent } from "../../agents/api/queries.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
-import { isProfileSetting } from "../../sessions/lib/subagent-choice.js";
-import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
+import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
+import { prettyModelLabel } from "../../sessions/lib/model-families.js";
+import { harnessDisplayName } from "../../sessions/lib/session-pair-options.js";
+import { sessionSettingOptions } from "../../sessions/lib/session-settings.js";
+import { profileSettings } from "../../sessions/lib/subagent-choice.js";
+import { useCreateProfile } from "../api/mutations.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the foot of the full picker: "Save as a profile"
- * names the pick, and on a pick that came from a profile "Update {name}"
- * writes it back to that profile beside "Save as a new profile" (D95 B). Not
- * offered on a shared agent, whose editor uses the owner's profiles and never
- * changes them. The dialog renders outside the picker's popover, which an
- * outside click closes.
+ * UNIT_BOUNDARY_DESCRIPTION: the More options header of the picker: "Save as
+ * profile" names the pick, or "Save as a new profile" when the pick came from
+ * or matches an existing one, subagent included (D193B). It always creates a
+ * profile; the picker has no Update action. Not offered on a shared agent,
+ * whose editor uses the owner's profiles and never changes them. The dialog
+ * renders outside the picker's popover, which an outside click closes.
  */
 export function useSaveAsProfile({
   agentId,
   pair,
   providerTemplate,
+  subagent = null,
   from,
   capability,
   onSaved,
@@ -36,17 +40,20 @@ export function useSaveAsProfile({
   agentId: string | null;
   pair: SessionPair | null;
   providerTemplate: string | undefined;
+  /** UNIT_BOUNDARY_DESCRIPTION: the subagent the profile carries (D193B), which a slot following the profile resolves to; null is "Same as agent". */
+  subagent?: { providerTemplate: string; model: string } | null;
   from: { id: string; name: string } | null;
   capability: HarnessCapability | undefined;
   onSaved: (profile: { id: string; name: string }) => void;
 }) {
   const agent = useAgent(agentId);
+  const { data: catalog } = useHarnessCatalog();
+  const nameId = useId();
   const create = useCreateProfile();
-  const update = useUpdateProfile();
-  const [open, setOpen] = useState<"create" | "update" | null>(null);
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const saving = create.isPending || update.isPending;
+  const saving = create.isPending;
   if (
     !agentId ||
     !pair?.model ||
@@ -55,7 +62,29 @@ export function useSaveAsProfile({
   )
     return { row: null, dialog: null };
 
-  const updating = open === "update" ? from : null;
+  const effort = sessionSettingOptions(capability).find(
+    (o) => o.category === "thought_level" && !o.subagents,
+  );
+  const effortValue = effort
+    ? (pair.settings?.[effort.id] ?? effort.default)
+    : undefined;
+  const effortLabel = effortValue
+    ? (effort?.choices.find((c) => c.value === effortValue)?.name ??
+      effortValue)
+    : undefined;
+  const summary = [
+    harnessDisplayName(pair.harness, catalog?.harnesses) ?? pair.harness,
+    prettyModelLabel(pair.model) ?? pair.model,
+    effortLabel,
+    providerTemplate
+      ? (shortNameForTemplate(providerTemplate) ?? providerTemplate)
+      : undefined,
+  ]
+    .filter((part): part is string => !!part)
+    .join(" · ");
+  const subagentSummary = subagent
+    ? `subagents on ${prettyModelLabel(subagent.model) ?? subagent.model}`
+    : null;
   const save = () => {
     const trimmed = name.trim();
     if (trimmed === "") return setError("Give the profile a name.");
@@ -65,88 +94,65 @@ export function useSaveAsProfile({
       harness: pair.harness,
       providerTemplate,
       model: pair.model ?? "",
-      settings: Object.fromEntries(
-        Object.entries(pair.settings ?? {}).filter(([id]) =>
-          isProfileSetting(id, capability),
-        ),
-      ),
+      settings: profileSettings(pair, capability),
+      subagent,
     };
-    const done = {
+    create.mutate(body, {
       onSuccess: (saved: { id: string; name: string }) => {
-        setOpen(null);
+        setOpen(false);
         onSaved(saved);
       },
       onError: (err: { message: string }) => setError(err.message),
-    };
-    if (updating)
-      update.mutate(
-        { id: updating.id, ...body },
-        {
-          ...done,
-          onSuccess: () => done.onSuccess({ id: updating.id, name: trimmed }),
-        },
-      );
-    else create.mutate(body, done);
+    });
   };
-  const ask = (mode: "create" | "update") => {
-    setName(mode === "update" ? (from?.name ?? "") : "");
+  const ask = () => {
+    setName("");
     setError(null);
-    setOpen(mode);
+    setOpen(true);
   };
   const action =
-    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground";
+    "text-left text-[13px] text-accent underline-offset-2 hover:underline";
 
   return {
     row: (
-      <div className="flex flex-col">
-        {from && (
-          <button
-            type="button"
-            onClick={() => ask("update")}
-            className={action}
-          >
-            <Save size={14} aria-hidden />
-            {`Update “${from.name}”`}
-          </button>
-        )}
-        <button type="button" onClick={() => ask("create")} className={action}>
-          {from ? (
-            <Add size={14} aria-hidden />
-          ) : (
-            <Save size={14} aria-hidden />
-          )}
-          {from ? "Save as a new profile" : "Save as a profile"}
-        </button>
-      </div>
+      <button type="button" onClick={ask} className={action}>
+        {from ? "Save as a new profile" : "Save as profile"}
+      </button>
     ),
     dialog: open && (
-      <Modal onClose={() => !saving && setOpen(null)}>
+      <Modal onClose={() => !saving && setOpen(false)}>
         <DialogHeader
-          onClose={() => setOpen(null)}
+          onClose={() => setOpen(false)}
           closeDisabled={saving}
-          title={updating ? `Update “${updating.name}”` : "Save as a profile"}
+          title="Save as profile"
         />
         <DialogBody>
-          <p className="mb-3 text-sm text-muted-foreground">
-            {updating
-              ? "Every chat default, channel and schedule that uses this profile takes these values."
-              : "Name this harness, model and settings, then point your defaults, channels and schedules at it."}
+          <label htmlFor={nameId} className="mb-2 block text-sm">
+            Name
+          </label>
+          <Input
+            id={nameId}
+            autoFocus
+            aria-label="Profile name"
+            placeholder="e.g. Deep review"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+          />
+          {error && (
+            <p role="alert" className="mt-1 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            {summary}
+            {subagentSummary ? ` · ${subagentSummary}` : ""}
           </p>
-          <FormField label="Name" error={error ?? undefined}>
-            <Input
-              autoFocus
-              aria-label="Profile name"
-              placeholder="e.g. Fast review"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && save()}
-            />
-          </FormField>
         </DialogBody>
         <DialogActions
-          onCancel={() => setOpen(null)}
+          onCancel={() => setOpen(false)}
           cancelDisabled={saving}
-          label={updating ? "Update profile" : "Save profile"}
+          label="Save profile"
           pendingLabel="Saving…"
           pending={saving}
           onSubmit={save}

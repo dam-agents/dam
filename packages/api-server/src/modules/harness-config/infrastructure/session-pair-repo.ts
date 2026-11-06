@@ -4,6 +4,8 @@ import {
   eq,
   inArray,
   isNull,
+  or,
+  sql,
   agents as agentsTable,
   connectionGrants,
   connections as connectionsTable,
@@ -169,7 +171,10 @@ export function createSessionPairRepo(
         .where(
           and(
             eq(agentsTable.id, agentId),
-            isNull(agentsTable.sessionPair),
+            or(
+              isNull(agentsTable.sessionPair),
+              sql`${agentsTable.sessionPair}->>'model' IS NULL`,
+            ),
             isNull(agentsTable.sessionProfile),
           ),
         )

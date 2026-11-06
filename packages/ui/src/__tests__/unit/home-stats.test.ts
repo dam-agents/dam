@@ -66,6 +66,7 @@ describe("home stats", () => {
       chat: 1,
       slack: 1,
       telegram: 1,
+      artifact: 0,
       schedule: 1,
       terminal: 1,
     });

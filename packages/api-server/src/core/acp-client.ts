@@ -122,15 +122,33 @@ function connectClient(
     .connect(stream);
 }
 
-function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+function wsStream(
+  url: string,
+  agentId: string,
+): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
-          ws.on("message", (data) =>
-            controller.enqueue(JSON.parse(data.toString())),
-          );
+          ws.on("message", (data) => {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            const text = data.toString();
+            let frame: AnyMessage;
+            try {
+              frame = JSON.parse(text) as AnyMessage;
+            } catch {
+              getLogger().warn(
+                { agentId, frameLength: text.length },
+                "acp frame is not JSON; closing the connection",
+              );
+              ws.close(1007, "invalid JSON frame");
+              return;
+            }
+            try {
+              controller.enqueue(frame);
+            } catch {}
+          });
           ws.on("close", () => {
             try {
               controller.close();
@@ -251,6 +269,7 @@ export type SendPromptOpts = (
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string, promptId?: string) => void;
   signal?: AbortSignal;
+  surface?: string;
 };
 
 export type TriggerSessionOpts = {
@@ -319,7 +338,7 @@ async function withAcpConnection<T>(
   watch: ConnectionWatch,
   fn: (connection: ClientConnection, init: InitializeResponse) => Promise<T>,
 ): Promise<T> {
-  const { stream, ws } = await wsStream(url);
+  const { stream, ws } = await wsStream(url, agentId);
 
   const ac = new AbortController();
   let abortError: Error = new AcpTurnAbandonedError(
@@ -544,7 +563,7 @@ export function createAcpClient(opts: {
   const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
-      const { stream, ws } = await wsStream(url);
+      const { stream, ws } = await wsStream(url, agentId);
 
       const connection = connectClient(stream, {
         async requestPermission() {
@@ -690,7 +709,14 @@ export function createAcpClient(opts: {
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
-              _meta: { platform: { promptId } },
+              _meta: {
+                platform: {
+                  promptId,
+                  ...(sendOpts.surface !== undefined && {
+                    surface: sendOpts.surface,
+                  }),
+                },
+              },
             });
           const cancel = () => {
             connection.agent

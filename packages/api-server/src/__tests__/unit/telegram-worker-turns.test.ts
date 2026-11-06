@@ -70,7 +70,7 @@ describe("telegram worker turns", () => {
     await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
     const [{ prompt, opts }] = h.prompts as [(typeof h.prompts)[number]];
     expect(opts).toMatchObject({ resumeSessionId: "s-chat" });
-    expect(prompt).toContain("send_channel_message");
+    expect(prompt).toContain("post` tool");
     expect(prompt).toContain('chatId="telegram:7"');
     expect(prompt).toContain("@jane, id=7");
     expect(prompt).toContain("<permission-check>");

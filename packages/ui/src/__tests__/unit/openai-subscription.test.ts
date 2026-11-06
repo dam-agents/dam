@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { OpenAIForm } from "../../modules/providers/components/openai/form.js";
+import { settledSessionSettings } from "../../modules/sessions/lib/session-settings.js";
 import { withSubagent } from "../../modules/sessions/lib/subagent-choice.js";
 
 describe("OpenAI subscription setup", () => {
@@ -57,7 +58,7 @@ describe("OpenAI subscription setup", () => {
         ],
       },
     };
-    const result = withSubagent(
+    const pair = withSubagent(
       {
         harness: "codex",
         provider: "subscription",
@@ -69,10 +70,34 @@ describe("OpenAI subscription setup", () => {
         model: "chatgpt/gpt-6-luna",
         settings: { effort: "high" },
       },
-      capability,
-      [{ name: "chatgpt/gpt-6.1-sol", native: true }],
     );
-    expect(result.settings).toEqual({
+    const result = settledSessionSettings(
+      pair,
+      capability,
+      [
+        {
+          connectionId: "subscription",
+          alias: "chatgpt",
+          displayName: "Subscription",
+          native: true,
+          attached: true,
+          status: "listed",
+          listedAt: null,
+          models: ["chatgpt/gpt-6.1-sol", "chatgpt/gpt-6-luna"].map((name) => ({
+            name,
+            upstreamId: name.split("/")[1]!,
+            contextWindow: null,
+            maxOutputTokens: null,
+            reasoning: null,
+            vision: null,
+            prices: null,
+            source: { limits: "none", prices: "none" },
+          })),
+        },
+      ],
+      [],
+    );
+    expect(result).toEqual({
       effort: "high",
       "platformSubagent.harness": "codex",
       "platformSubagent.model": "chatgpt/gpt-6-luna",

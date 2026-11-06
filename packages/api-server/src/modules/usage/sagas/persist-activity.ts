@@ -36,6 +36,8 @@ import {
   type SlackConnected,
   type StarterKitOnboarded,
   type AgentOutOfMemory,
+  type CostReviewStarted,
+  type CostReviewDismissed,
 } from "../../../events.js";
 import type { ActivityEventRow } from "../domain/types.js";
 
@@ -408,6 +410,24 @@ export function startPersistActivitySaga(
       ...(event.cpu ? { cpu: event.cpu } : {}),
       ...(event.memory ? { memory: event.memory } : {}),
     },
+  }));
+
+  persist<CostReviewStarted>(EventType.CostReviewStarted, (event) => ({
+    type: "cost_review_started",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: null,
+    outcome: "success",
+    payload: {},
+  }));
+
+  persist<CostReviewDismissed>(EventType.CostReviewDismissed, (event) => ({
+    type: "cost_review_dismissed",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: null,
+    outcome: "success",
+    payload: {},
   }));
 
   return sub;

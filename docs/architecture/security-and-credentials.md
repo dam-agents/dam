@@ -78,9 +78,14 @@ It runs in-cluster as a Helm subchart and is the OIDC provider for every authent
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
 The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
-Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
-An install with no meanings shows only the heading.
-The lead paragraph's documentation link points at the install's documentation site, the chart's `links.docs` value, which reaches the theme the same way; an install that sets it empty shows the paragraph without the link.
+The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
+The shared-artifact sign-in keeps the short single-screen layout.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The page's "Read the docs" links point at the install's documentation site, the chart's `links.docs` value, and its community channel link is the `keycloak.login.community` value; both reach the theme the same way, and a value set empty, or a docs value that is not an http(s) URL, hides that link.
+The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, from the Operator settings page or `dam login-testimonials`, so a change reaches the page within a minute, with no redeploy.
+The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
+While the call is pending, failed or empty, the page hides the section, and sign-in never waits for it.
+An install with no meanings shows the brand name as the heading.
 Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
@@ -158,7 +163,7 @@ Cross- owner leakage is structurally prevented by the label selector — a missi
 ## Native Codex subscription login
 
 An owner can enable a ChatGPT subscription Connection and grant it to an agent alongside other provider Connections.
-Subscription model names have a distinct provider identity, so replacing Connections cannot silently change a saved model's billing path.
+Subscription models use the `chatgpt` provider alias, while API models use `openai`, so replacing Connections cannot silently change a saved model's billing path.
 The Connection configures Codex's native mode and permits its authentication and inference hosts; it stores no subscription token in the platform.
 The owner authorizes the agent over SSH, and Codex stores, refreshes and removes its login in the persistent home.
 Connection inheritance does not authorize a platform sub-agent: its own persistent home needs its own login.

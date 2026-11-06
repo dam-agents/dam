@@ -12,7 +12,7 @@ const ALL_DIALECTS: readonly ModelDialect[] = [
  * UNIT_BOUNDARY_DESCRIPTION: a harness can run on a provider through the
  * Model Router only when the provider serves a dialect the harness's
  * manifest lists. Bedrock is empty: it has paths and a stream of its own, so
- * a Claude Code process on it stays in Claude Code's Bedrock mode and the
+ * a harness process on it stays in the harness's own Bedrock mode and the
  * router passes its calls on unchanged.
  */
 export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
@@ -132,4 +132,52 @@ export function listingForTemplate(
     default:
       return null;
   }
+}
+
+const BEDROCK_NON_CHAT = /(^|\.)(stability|twelvelabs)\./i;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how the catalog lists the models of a Connection
+ * a harness runs natively, for a harness whose manifest takes them from the
+ * Connection instead of naming its own: a Bedrock Connection names the
+ * region's control-plane endpoint, which lists the inference profiles
+ * invocable from that region. The region also lists image and video models
+ * there (Stability, TwelveLabs), which no chat runs on, so they are left out.
+ * Null for a template with no such listing.
+ */
+export function nativeListingForTemplate(
+  templateId: string,
+): ProviderListingSpec | null {
+  if (templateId !== "bedrock") return null;
+  return {
+    spec: {
+      urlEnv: ["AWS_ENDPOINT_URL_BEDROCK"],
+      tokenEnv: ["AWS_BEARER_TOKEN_BEDROCK"],
+      path: "/inference-profiles?maxResults=1000",
+      shape: "bedrock-inference-profiles",
+    },
+    keep: (id) => !BEDROCK_NON_CHAT.test(id),
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a natively run Connection pins, which
+ * its listing always includes: a Bedrock key may invoke models without the
+ * right to list profiles, and the pin is then the one model known to run.
+ */
+export function nativePinOf(
+  templateId: string,
+  env: Record<string, string>,
+): string | null {
+  if (templateId !== "bedrock") return null;
+  return env.AWS_BEDROCK_MODEL?.trim() || null;
+}
+
+export function withNativePin(
+  ids: readonly string[],
+  pin: string | null,
+): string[] {
+  return pin && !ids.some((id) => id.toLowerCase() === pin.toLowerCase())
+    ? [...ids, pin]
+    : [...ids];
 }

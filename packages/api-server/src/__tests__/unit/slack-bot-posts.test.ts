@@ -307,10 +307,10 @@ describe("an agent's reply in an ambient round", () => {
   });
 
   /** TEST_SCENARIO: During its ambient turn an Agent also posts with
-   *  send_channel_message. That tool does not say which session calls it, so
+   *  post. That tool does not say which session calls it, so
    *  the post is not marked as a round reply, and it reaches the other
    *  reader as a new post. */
-  it("lets a send_channel_message post reach the other readers", async () => {
+  it("lets a top-level post reach the other readers", async () => {
     const h = harness({
       a: { ambient: true },
       b: { ambient: true },

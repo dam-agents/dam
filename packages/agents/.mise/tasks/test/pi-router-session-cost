@@ -66,7 +66,7 @@ const startPi = async (...args) => {
     cwd: home,
     env: {
       PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
-      PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL: PAID, PI_CALL_COST_POLL_MS: "100",
+      PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL: PAID, PI_CALL_COST_POLL_MS: "100",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });

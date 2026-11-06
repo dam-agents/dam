@@ -376,6 +376,10 @@ spec:
               value: {{ .Values.apiServer.kbShares.grepDeadlineMs | quote }}
             - name: KB_SHARE_MAX_CONNECTIONS_PER_OWNER
               value: {{ .Values.apiServer.kbShares.maxConnectionsPerOwner | quote }}
+            - name: COST_REVIEW_MIN_WEEKLY_USD
+              value: {{ .Values.apiServer.costReview.minWeeklyUsd | quote }}
+            - name: COST_REVIEW_MIN_WEEKLY_BOBCOINS
+              value: {{ .Values.apiServer.costReview.minWeeklyBobcoins | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -549,6 +553,10 @@ spec:
               value: {{ .Values.environments.maxPerAgent | quote }}
             - name: ENVIRONMENT_EXPIRY_MAX_DAYS
               value: {{ .Values.environments.expiryMaxDays | quote }}
+            - name: ENVIRONMENT_IDLE_TIMEOUT
+              value: {{ .Values.environments.idleTimeout | quote }}
+            - name: ENVIRONMENT_IDLE_TIMEOUT_MAX
+              value: {{ .Values.environments.idleTimeoutMax | quote }}
             - name: SPEND_PRICE_OVERRIDES
               value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
             {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}

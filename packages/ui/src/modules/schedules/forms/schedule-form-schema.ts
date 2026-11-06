@@ -193,13 +193,10 @@ export function scheduleChoices(v: ChoiceValues, clear: boolean) {
     ),
   );
   if (v.profile) {
-    const own = Object.fromEntries(
-      Object.entries(settings).filter(([id]) => isPlatformSubagentSetting(id)),
-    );
     return {
       profile: v.profile,
       platformSubagentProfile,
-      ...(Object.keys(own).length > 0 && { settings: own }),
+      ...(Object.keys(settings).length > 0 && { settings }),
     };
   }
   const values = {
@@ -290,8 +287,8 @@ export function scheduleInheritsChoices(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's Custom selection cannot
- * save: it names no model. Only a row written before profiles that still
+ * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's own pick cannot save:
+ * it names no model. Only a row written before profiles that still
  * follows the chat default, with no harness of its own either, saves without
  * one (D123); null when the save may go ahead.
  */

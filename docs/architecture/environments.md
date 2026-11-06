@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-04
+Last verified: 2026-11-05
 
 ## Overview
 
@@ -35,9 +35,18 @@ People and Agents sit in tables of their own, so an email never matches an Agent
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
-- **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
-  The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
+- **Sleep.** An Environment sleeps like any machine when it sits idle, and keeps its disk, but after an idle timeout of its own: what it runs, Docker, k3s and an install of an app, takes far longer to come back than an agent's harness.
+  The Owning Agent gives it at create or update (`idle_timeout`, in minutes, hours or days, as `"90m"` or `"4h"`), and the api-server writes it as the Environment Agent's `hibernationTimeout`, which the controller's idle sweep reads in place of the install's `vmIdleTimeout`.
+  Without one, a new Environment gets `environments.idleTimeout` (default 60 minutes); one created before the setting existed carries none and keeps the install's `vmIdleTimeout` until an update gives it one.
+  One past `environments.idleTimeoutMax` (default 24 hours) is cut to it, as an expiry is.
+  `never`, or a zero, keeps it awake, for a server people rely on: the api-server writes `hibernationTimeout: 0s`, which the idle sweep reads as never sleeping and the memory reclaim skips, so the machine holds its memory on the owner's runner all the time; `environments.idleTimeoutMax` does not bound it, and any other word or a bare number is refused.
+  Otherwise the memory reclaim that puts an idle machine to sleep early when its owner needs the room still applies.
+  The owner keeps one awake, or lets one the agent kept awake sleep again after `environments.idleTimeout`, from its row's menu (`environments.setAwake`); the last change wins, as with the expiry.
+  `list_environments` shows each one's idle timeout, `never` for one that never sleeps.
+- **Expiry.** An Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
+  Its expiry can also be `never`, so it is kept until someone deletes it, with no install-wide switch and no maximum, since it spends its owner's own runner; the row's `expires_at` is then null.
+  The Owning Agent and the owner set, extend or turn it off, and the last change wins, whoever made it; a sweep every five minutes deletes an Environment whose expiry passed and never one with none.
+  The cap per agent counts kept ones too.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
   Deleting an Owning Agent deletes its Environments through the same cleanup, and the periodic sweep of agent artifacts catches any left behind.
 
@@ -175,7 +184,8 @@ Beside the chart it installs two pieces the gate needs, and two the Environment'
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
-- **No image garbage collection** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full and delete the images the install just put in; nothing there pulls one back.
+- **No image garbage collection and no disk eviction** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
+  Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
 - **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
@@ -187,7 +197,7 @@ The [end-to-end suite](e2e.md#running-it) runs against such an install on its ba
 
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
-`list_environments` also lists, after them, the Environments other Agents' lists share with the caller, each marked `sharedWithYou: true`, with its name, whose Agent it is, its addresses, its expiry and whether it runs — never who else may open it — from the same lists the gate reads; none of the other tools reaches one, and `platform-env` keeps to the Agent's own.
+`list_environments` also lists, after them, the Environments other Agents' lists share with the caller, each marked `sharedWithYou: true`, with its name, whose Agent it is, its addresses, its expiry (`never` for one kept) and whether it runs — never who else may open it — from the same lists the gate reads; none of the other tools reaches one, and `platform-env` keeps to the Agent's own.
 An Agent whose owner does not have the feature gets `list_environments` alone, listing only what is shared with it, on an install that serves Environments, since a person needs no feature to open one either.
 
 **The owner** lists their Environments, extends, shares or deletes one, and reads and sets an agent's Environment Members through the `environments` tRPC router, under the same scopes as the agent's own management; listing every Environment and setting the agent's members refuse a key bound to one Agent, which the agent itself may hold.
@@ -195,9 +205,10 @@ In the app, behind the feature:
 
 - **The Artifacts list** has an **Environments** group above its folders, which only the owner sees, as with artifacts, and only while there is one to show (see [artifact library](artifact-library.md#ui-surfaces)).
   In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
-  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, its agent, and a link per address that opens a new tab.
-  Its menu has the artifact's delete-after control for the expiry, which cannot be turned off, and Delete.
-- **The Share dialog** of an Environment says who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
+  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `kept` for one with no expiry, `awake` for one that never sleeps, its agent, and a link per address that opens a new tab.
+  Its menu has the artifact's delete-after control for the expiry, with **Keep until deleted**, whose text says what the chosen value does; **Keep awake** or **Let it sleep when idle**; and Delete.
+  The owner's `extend` takes `never` for no expiry.
+- **The Share dialog** of an Environment says when it is kept with no expiry and when it is kept awake, and who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
   An id is looked up before it is added, so the row shows the Agent's name and its owner's display name, marked as an agent, and an id that names no Agent, or names an Environment, is refused; saving checks every id again.
   Each Agent row says when it last opened the Environment, which the gate records at most once a minute.
 - **An agent's page** has an **Environments** section with the agent's Environment Members, people and Agents as in the Share dialog, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.
