@@ -22,6 +22,9 @@ import {
   environmentAgentName,
   environmentHost,
   type EnvironmentRecord,
+  type ExpiryRequest,
+  type IdleTimeoutRequest,
+  NEVER_SLEEPS_MIN,
 } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
 import { effectiveAccess } from "../domain/gate.js";
@@ -39,14 +42,14 @@ export interface CreateEnvironmentInput {
   name: string;
   endpoints: EnvironmentEndpoint[];
   storage?: string;
-  expiresAt?: Date;
-  idleTimeoutMin?: number;
+  expiresAt?: ExpiryRequest;
+  idleTimeoutMin?: IdleTimeoutRequest;
   start?: string;
 }
 
 export interface UpdateEnvironmentInput {
-  expiresAt?: Date;
-  idleTimeoutMin?: number;
+  expiresAt?: ExpiryRequest;
+  idleTimeoutMin?: IdleTimeoutRequest;
   // UNIT_BOUNDARY_DESCRIPTION: readiness paths by endpoint name; null removes one, so the endpoint is ready once its port answers.
   ready?: Record<string, string | null>;
 }
@@ -104,7 +107,8 @@ export interface EnvironmentsServiceImpl {
   ): Promise<AgentEnvironmentMembersView>;
   setMembers(id: string, update: MembersUpdate): Promise<EnvironmentView>;
   lookupAgent(agentId: string): Promise<EnvironmentAgentLookup>;
-  extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
+  extend(id: string, expiresAt: ExpiryRequest): Promise<EnvironmentView>;
+  setAwake(id: string, awake: boolean): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
 }
@@ -126,6 +130,14 @@ function withReadyPaths(
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the idle timeout a view shows: "never" for an Environment that never sleeps, its minutes otherwise, and null when its Agent is gone.
+function idleTimeoutView(agent: Agent | null): number | "never" | null {
+  if (!agent) return null;
+  return agent.effectiveHibernationTimeoutMin === NEVER_SLEEPS_MIN
+    ? "never"
+    : agent.effectiveHibernationTimeoutMin;
+}
+
 function refuse(
   message: string,
   code: TRPCError["code"] = "BAD_REQUEST",
@@ -140,7 +152,8 @@ function refuse(
  * owning Agent, on the default image, with no harness, no
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints and expiry,
- * its Agent carries the idle timeout it sleeps after,
+ * its Agent carries the idle timeout it sleeps after; either may be "never",
+ * set by the owner or the owning Agent, whoever changed it last,
  * and the owner alone adds people to one Environment, beside the people of its
  * Agent, whom the owner and the Agent's editors name. A `start` command becomes its first Startup Item through the
  * runtime channel. The owning Agent wakes a sleeping one before it opens the
@@ -172,8 +185,8 @@ export function createEnvironmentsService(
       members: lists.members,
       memberAgents: lists.memberAgents,
       agentMemberCount: lists.agentMemberCount,
-      expiresAt: record.expiresAt.toISOString(),
-      idleTimeoutMin: agent?.effectiveHibernationTimeoutMin ?? null,
+      expiresAt: record.expiresAt?.toISOString() ?? null,
+      idleTimeoutMin: idleTimeoutView(agent),
       createdAt: record.createdAt.toISOString(),
       state: agent?.state ?? "unknown",
     };
@@ -270,7 +283,7 @@ export function createEnvironmentsService(
       name: env.name,
       endpoints: env.endpoints,
       peopleWhoMayOpen: people.length,
-      expiresAt: env.expiresAt,
+      expiresAt: env.expiresAt ?? "never",
       idleTimeoutMin: env.idleTimeoutMin,
       createdAt: env.createdAt,
       state: env.state,
@@ -313,16 +326,16 @@ export function createEnvironmentsService(
     return record;
   }
 
-  function expiry(requested: Date | undefined): Date {
+  function expiry(requested: ExpiryRequest | undefined): Date | null {
     const at =
       requested ??
       new Date(now().getTime() + ENVIRONMENT_EXPIRY_DEFAULT_DAYS * DAY_MS);
     const resolved = clampExpiry(at, now(), deps.config.expiryMaxDays);
-    if ("error" in resolved) refuse(resolved.error);
+    if (resolved !== null && "error" in resolved) refuse(resolved.error);
     return resolved;
   }
 
-  function idleTimeout(requested: number | undefined): number {
+  function idleTimeout(requested: IdleTimeoutRequest | undefined): number {
     const resolved = clampIdleTimeout(
       requested,
       deps.config.idleTimeoutDefaultMin,
@@ -449,7 +462,7 @@ export function createEnvironmentsService(
               ...e,
               url: endpointUrl(deps.config.urlTemplate, e.name, record.host),
             })),
-            expiresAt: record.expiresAt.toISOString(),
+            expiresAt: record.expiresAt?.toISOString() ?? "never",
             state: await deps.directory.environmentState(record.agentId),
           });
         }
@@ -583,10 +596,21 @@ export function createEnvironmentsService(
     },
 
     async extend(id, expiresAt) {
+      // UNIT_BOUNDARY_DESCRIPTION: the owner's change of the expiry, "never" included; a later change by the Owning Agent replaces it, as this one replaces the agent's.
       const record = await ownRecord(id);
       const at = expiry(expiresAt);
       await deps.repo.update(id, { expiresAt: at });
       return viewOf({ ...record, expiresAt: at }, await deps.agents.get(id));
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: the owner keeps an Environment awake, or lets one the agent kept awake sleep again after the install's default idle timeout; the last change wins, as with the expiry.
+    async setAwake(id, awake) {
+      const record = await ownRecord(id);
+      const agent = await deps.agents.update({
+        id,
+        hibernationTimeoutMin: idleTimeout(awake ? "never" : undefined),
+      });
+      return viewOf(record, agent);
     },
 
     async delete(id) {

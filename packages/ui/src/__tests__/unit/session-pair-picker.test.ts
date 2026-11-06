@@ -565,8 +565,10 @@ describe("the new session panel", () => {
     const html = renderToStaticMarkup(picker());
     expect(html.indexOf(">Harness<")).toBeLessThan(html.indexOf(">Model<"));
     expect(html.indexOf(">Model<")).toBeLessThan(html.indexOf(">Provider<"));
-    expect(html).not.toContain(">Thinking<");
-    expect(html).toContain("More options");
+    expect(html.indexOf(">Provider<")).toBeLessThan(html.indexOf(">Thinking<"));
+    expect(html.indexOf(">Thinking<")).toBeLessThan(
+      html.indexOf("More options"),
+    );
     expect(html).not.toContain("Custom selection");
     expect(html).not.toContain("Primary model");
     expect(html).not.toContain("Use a profile");
@@ -778,16 +780,19 @@ describe("the new session panel", () => {
     expect(menuTrigger(node, "model")).toBe("Claude Opus 5.1");
   });
 
-  /** TEST_SCENARIO: Effort (Thinking on a harness that names it so) sits in More options, and a model constrained by its exact name says so instead of offering a value the harness would refuse. */
-  it("puts the effort row in More options and greys it out for a model without one", () => {
+  /** TEST_SCENARIO: Effort (Thinking on a harness that names it so) sits in the main panel with More options closed, and a model constrained by its exact name says so instead of offering a value the harness would refuse. */
+  it("puts the effort row in the main panel and greys it out for a model without one", () => {
     state.chosen = {
       harness: "pi",
       provider: "ibm",
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
-    expect(node.textContent).not.toContain("Thinking");
-    openMore(node);
+    expect(
+      node
+        .querySelector('[aria-controls$="-more"]')
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
     expect(node.textContent).toContain("Thinking");
     expect(
       menuItems(node, "Thinking").map((row) => row.textContent?.trim()),
@@ -809,7 +814,6 @@ describe("the new session panel", () => {
     root = null;
     container.remove();
     const greyed = mount(picker());
-    openMore(greyed);
     expect(greyed.textContent).toContain("GPT 5.5 has no thinking levels");
     expect(
       greyed.querySelector('button[aria-labelledby*="-effort-label"]'),
@@ -1069,7 +1073,7 @@ describe("the saved profiles behind Use a profile", () => {
     expect(document.activeElement?.textContent).toContain("Back to custom");
   });
 
-  /** TEST_SCENARIO: a non-default effort is not hidden: More options opens by itself so the changed setting is visible, while a default pick leaves it closed. */
+  /** TEST_SCENARIO: a non-default setting under More options is not hidden: More options opens by itself so the changed setting is visible, while a default pick, or a non-default effort that the main panel already shows, leaves it closed. */
   it("opens More options while a setting differs from its default", () => {
     state.chosen = {
       harness: "pi",
@@ -1088,16 +1092,35 @@ describe("the saved profiles behind Use a profile", () => {
     state.chosen = {
       harness: "pi",
       provider: "ibm",
-      model: "ibm/azure/gpt-5.5",
+      model: "ibm/aws/claude-opus-5-5",
       settings: { mode: "high" },
     };
-    const changed = mount(picker());
+    const effort = mount(picker());
+    expect(
+      effort
+        .querySelector('[aria-controls$="-more"]')
+        ?.getAttribute("aria-expanded"),
+    ).toBe("false");
+    act(() => root!.unmount());
+    root = null;
+    container.remove();
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/azure/gpt-5.5",
+      settings: { cacheTtl: "1h" },
+    };
+    const changed = mount(
+      picker({
+        carried: [{ ...carried[0]!, sessionSettings: ["mode", "cacheTtl"] }],
+      }),
+    );
     expect(
       changed
         .querySelector('[aria-controls$="-more"]')
         ?.getAttribute("aria-expanded"),
     ).toBe("true");
-    expect(changed.textContent).toContain("Thinking");
+    expect(changed.textContent).toContain("Prompt cache");
   });
 
   /** TEST_SCENARIO: with a profile selected, the bottom entry names it ("Using profile “…”") and still opens the profiles view; without one it reads "Use a profile". */

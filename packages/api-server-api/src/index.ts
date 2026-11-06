@@ -75,6 +75,9 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
@@ -224,6 +227,19 @@ export {
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
+export {
+  LOGIN_TESTIMONIAL_LIMITS,
+  LOGIN_TESTIMONIALS_MAX,
+  loginTestimonialInputSchema,
+  loginTestimonialPhotoIdSchema,
+  loginTestimonialsSaveInputSchema,
+} from "./modules/login-testimonials/schemas.js";
+export type {
+  LoginTestimonial,
+  LoginTestimonialInput,
+  LoginTestimonialsSaveInput,
+  LoginTestimonialsService,
+} from "./modules/login-testimonials/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -623,7 +639,10 @@ export type {
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
+export {
+  DEFAULT_PROFILE_UNDELETABLE,
+  PROFILE_NAME_MAX_LENGTH,
+} from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,

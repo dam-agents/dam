@@ -1,5 +1,5 @@
 {
-  "id": "ffeb9f97-b221-41ef-aae7-289720264d56",
+  "id": "b124ef9d-ce57-4a99-8b03-a12ff05c31e8",
   "prevId": "083d6b08-0224-41af-85c3-2651dde42a31",
   "version": "7",
   "dialect": "postgresql",
@@ -3771,30 +3771,6 @@
           "notNull": true,
           "default": false
         },
-        "prompt_profile_id": {
-          "name": "prompt_profile_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_session_pair": {
-          "name": "prompt_session_pair",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_subagent_profile": {
-          "name": "prompt_subagent_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_subagent_settings": {
-          "name": "prompt_subagent_settings",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "expires_at": {
           "name": "expires_at",
           "type": "timestamp with time zone",
@@ -3914,47 +3890,91 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "library_artifacts_prompt_profile_id_profiles_id_fk": {
-          "name": "library_artifacts_prompt_profile_id_profiles_id_fk",
-          "tableFrom": "library_artifacts",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "prompt_profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "library_artifacts_prompt_subagent_profile_profiles_id_fk": {
-          "name": "library_artifacts_prompt_subagent_profile_profiles_id_fk",
-          "tableFrom": "library_artifacts",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "prompt_subagent_profile"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "library_artifacts_prompt_pair_xor_profile": {
-          "name": "library_artifacts_prompt_pair_xor_profile",
-          "value": "\"library_artifacts\".\"prompt_profile_id\" is null or \"library_artifacts\".\"prompt_session_pair\" is null"
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.login_testimonials": {
+      "name": "login_testimonials",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
         },
-        "library_artifacts_prompt_subagent_xor_profile": {
-          "name": "library_artifacts_prompt_subagent_xor_profile",
-          "value": "\"library_artifacts\".\"prompt_subagent_profile\" is null or \"library_artifacts\".\"prompt_subagent_settings\" is null"
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "quote": {
+          "name": "quote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "photo_id": {
+          "name": "photo_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         }
       },
+      "indexes": {
+        "login_testimonials_position_idx": {
+          "name": "login_testimonials_position_idx",
+          "columns": [
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.outage_alerts": {

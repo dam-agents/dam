@@ -142,6 +142,12 @@ spec:
               value: {{ .Values.brand.nameMeanings | default (list) | toJson | quote }}
             - name: PLATFORM_DOCS_URL
               value: {{ .Values.links.docs | quote }}
+            - name: PLATFORM_LOGIN_COMMUNITY_LABEL
+              value: {{ dig "community" "label" "" .Values.keycloak.login | quote }}
+            - name: PLATFORM_LOGIN_COMMUNITY_URL
+              value: {{ dig "community" "url" "" .Values.keycloak.login | quote }}
+            - name: PLATFORM_API_URL
+              value: {{ include "platform.url.ui" . | quote }}
             {{- with .Values.keycloak.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

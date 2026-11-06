@@ -1,4 +1,8 @@
-import { routesByModelName, type HarnessCatalogView } from "agent-runtime-api";
+import {
+  claudeTierOf,
+  routesByModelName,
+  type HarnessCatalogView,
+} from "agent-runtime-api";
 import {
   parseQualifiedModel,
   type HarnessCatalog,
@@ -148,8 +152,11 @@ export function createDefaultConverter(deps: {
       (await deps.snapshotRepo.read(agentId))?.model ??
       null;
     const needsRan =
-      !setting?.trim() || setting.trim().toLowerCase() === "default";
+      !setting?.trim() ||
+      setting.trim().toLowerCase() === "default" ||
+      claudeTierOf(setting) !== null;
     const converted = convertedDefault({
+      harness,
       setting,
       providers,
       ran: needsRan ? await modelsRan(agentId) : [],

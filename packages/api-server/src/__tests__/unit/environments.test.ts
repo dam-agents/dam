@@ -36,7 +36,8 @@ function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
     getByHost: async (host) => rows.find((r) => r.host === host) ?? null,
     listByOwningAgent: async (id) => rows.filter((r) => r.owningAgentId === id),
     listByOwner: async (owner) => rows.filter((r) => r.owner === owner),
-    listExpired: async (now) => rows.filter((r) => r.expiresAt < now),
+    listExpired: async (now) =>
+      rows.filter((r) => r.expiresAt !== null && r.expiresAt < now),
     listAgentIds: async () => rows.map((r) => r.agentId),
     listOwningAgentIds: async () => [
       ...new Set(rows.map((r) => r.owningAgentId)),
@@ -253,7 +254,7 @@ describe("creating an Environment", () => {
     expect(env.idleTimeoutMin).toBe(60);
   });
 
-  // TEST_SCENARIO: an Environment's services take far longer to come back than an agent's, so the owning Agent may give it an idle timeout of its own; one past the install's maximum is cut down to it, and zero, which would mean never sleeping, is refused before any Agent is created.
+  // TEST_SCENARIO: an Environment's services take far longer to come back than an agent's, so the owning Agent may give it an idle timeout of its own; one past the install's maximum is cut down to it, and zero minutes is refused before any Agent is created, since only "never" turns sleep off.
   it("takes an idle timeout, cut to the maximum, and refuses zero", async () => {
     const { service, agents } = setup();
     const mine = service.forOwningAgent(vmOwning.id!);
@@ -281,6 +282,58 @@ describe("creating an Environment", () => {
       ["a", 90],
       ["b", 1440],
     ]);
+  });
+
+  // TEST_SCENARIO: AC-3 — the owning Agent creates an Environment that never sleeps, for a server people rely on: its Agent is written with a zero hibernation timeout, which the controller reads as never sleeping, the install's maximum does not cut it, and the agent's list says "never"; a later update gives it a timeout again.
+  it("creates an Environment that never sleeps, and gives it a timeout again", async () => {
+    const { service, agents } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+
+    const env = await mine.create({
+      name: "mcp",
+      endpoints: [{ name: "app", port: 80 }],
+      idleTimeoutMin: "never",
+    });
+
+    expect(agents.created[0]!.hibernationTimeoutMin).toBe(0);
+    expect(env.idleTimeoutMin).toBe("never");
+    expect((await mine.list())[0]!.idleTimeoutMin).toBe("never");
+    expect((await service.listAll())[0]!.idleTimeoutMin).toBe("never");
+
+    const changed = await mine.update("mcp", { idleTimeoutMin: 90 });
+    expect(agents.updated.at(-1)).toEqual({
+      id: env.id,
+      hibernationTimeoutMin: 90,
+    });
+    expect(changed.idleTimeoutMin).toBe(90);
+    const again = await mine.update("mcp", { idleTimeoutMin: "never" });
+    expect(agents.updated.at(-1)!.hibernationTimeoutMin).toBe(0);
+    expect(again.idleTimeoutMin).toBe("never");
+  });
+
+  // TEST_SCENARIO: #6318 — the owner keeps an Environment awake from the app, and lets one the agent kept awake sleep again: it then takes the install's default idle timeout for Environments; another owner's Environment is not found.
+  it("lets the owner keep an Environment awake or let it sleep again", async () => {
+    const { service, agents } = setup();
+    const env = await service.forOwningAgent(vmOwning.id!).create({
+      name: "mcp",
+      endpoints: [{ name: "app", port: 80 }],
+      idleTimeoutMin: "never",
+    });
+
+    const asleep = await service.setAwake(env.id, false);
+    expect(agents.updated.at(-1)).toEqual({
+      id: env.id,
+      hibernationTimeoutMin: 60,
+    });
+    expect(asleep.idleTimeoutMin).toBe(60);
+
+    const awake = await service.setAwake(env.id, true);
+    expect(agents.updated.at(-1)!.hibernationTimeoutMin).toBe(0);
+    expect(awake.idleTimeoutMin).toBe("never");
+
+    await expect(service.setAwake("agent-nope", true)).rejects.toThrow(
+      /no such Environment/,
+    );
   });
 
   // TEST_SCENARIO: only a vm Agent can own Environments, since they run on its owner's VM runner beside it, and an Environment cannot own one in turn.
@@ -372,6 +425,39 @@ describe("changing and deleting Environments", () => {
     expect(repo.rows).toHaveLength(0);
   });
 
+  // TEST_SCENARIO: AC-1, AC-2 — the owner and the owning Agent may both keep an Environment with no expiry, and the last change wins, whoever made it: the agent creates one that never expires, the owner gives it a date, the agent turns it off again, and the owner does too. A kept one has no expiry in its row, the agent reads "never" and the owner's view null, as an artifact kept with no expiry.
+  it("keeps an Environment with no expiry, the last change winning", async () => {
+    const { service, repo } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+
+    const env = await mine.create({
+      name: "mcp",
+      endpoints: [{ name: "app", port: 80 }],
+      expiresAt: "never",
+    });
+    expect(env.expiresAt).toBe("never");
+    expect(repo.rows[0]!.expiresAt).toBeNull();
+    expect((await service.listAll())[0]!.expiresAt).toBeNull();
+
+    const dated = await service.extend(
+      env.id,
+      new Date(NOW.getTime() + DAY_MS),
+    );
+    expect(dated.expiresAt).toBe(
+      new Date(NOW.getTime() + DAY_MS).toISOString(),
+    );
+
+    expect((await mine.update("mcp", { expiresAt: "never" })).expiresAt).toBe(
+      "never",
+    );
+    expect(repo.rows[0]!.expiresAt).toBeNull();
+
+    await service.extend(env.id, new Date(NOW.getTime() + DAY_MS));
+    const kept = await service.extend(env.id, "never");
+    expect(kept.expiresAt).toBeNull();
+    expect(repo.rows[0]!.expiresAt).toBeNull();
+  });
+
   // TEST_SCENARIO: an endpoint declares its readiness path at create, and the owning Agent sets, changes or removes one by endpoint name later, leaving the others as they were; a name that is no endpoint is refused and nothing changes.
   it("sets readiness paths at create and update", async () => {
     const { service, repo } = setup();
@@ -415,7 +501,7 @@ describe("changing and deleting Environments", () => {
     const changed = await mine.update("a", { idleTimeoutMin: 240 });
     expect(changed.idleTimeoutMin).toBe(240);
     expect(changed.expiresAt).toBe(env.expiresAt);
-    expect(repo.rows[0]!.expiresAt.toISOString()).toBe(env.expiresAt);
+    expect(repo.rows[0]!.expiresAt!.toISOString()).toBe(env.expiresAt);
 
     const both = await mine.update("a", {
       idleTimeoutMin: 10_000,
@@ -577,7 +663,9 @@ describe("refusing what cannot be stored", () => {
   it("refuses an expiry outside the date range", () => {
     expect(() => parseExpiry("9999999999d")).toThrow(/not a date/);
     expect(() => parseExpiry("soon")).toThrow(/not a date/);
-    expect(parseExpiry("48h")!.getTime()).toBeGreaterThan(Date.now());
+    expect(parseExpiry(" never ")).toBe("never");
+    expect(clampExpiry("never", NOW, 30)).toBeNull();
+    expect((parseExpiry("48h") as Date).getTime()).toBeGreaterThan(Date.now());
     expect(clampExpiry(new Date(Number.NaN), NOW, 30)).toEqual({
       error: "the expiry is not a date",
     });
@@ -585,22 +673,24 @@ describe("refusing what cannot be stored", () => {
 });
 
 describe("Environment idle timeouts", () => {
-  // TEST_SCENARIO: an agent writes an idle timeout as it writes an expiry, in minutes, hours or days, and the tool reads it as whole minutes; a word such as "never", a bare number or a negative one is refused where it is parsed, with a message, so nothing that means "never sleep" reaches the service as no timeout.
+  // TEST_SCENARIO: an agent writes an idle timeout as it writes an expiry, in minutes, hours or days, and the tool reads it as whole minutes; "never" and a zero, bare or with a unit, read as never sleeping, and any other word, bare number or a negative one is refused where it is parsed, with a message.
   it("parses minutes, hours and days, and refuses anything else", () => {
     expect(parseIdleTimeout(undefined)).toBeUndefined();
     expect(parseIdleTimeout("90m")).toBe(90);
     expect(parseIdleTimeout("4h")).toBe(240);
     expect(parseIdleTimeout(" 2d ")).toBe(2880);
-    expect(parseIdleTimeout("0m")).toBe(0);
-    for (const value of ["never", "off", "60", "-5m", "1.5h", ""])
+    for (const value of ["never", "Never", "0", "0m", "00h"])
+      expect(parseIdleTimeout(value)).toBe("never");
+    for (const value of ["off", "60", "-5m", "1.5h", ""])
       expect(() => parseIdleTimeout(value)).toThrow(/idle_timeout/);
     expect(() => parseIdleTimeout(`${"9".repeat(20)}d`)).toThrow(/too long/);
   });
 
-  // TEST_SCENARIO: the idle timeout is the install's default for Environments when none is asked for, at most the install's maximum, and never zero or less, since an Environment always sleeps when nobody uses it.
+  // TEST_SCENARIO: the idle timeout is the install's default for Environments when none is asked for, at most the install's maximum, and never zero or less as a number; "never" is zero, which the maximum does not cut.
   it("defaults, caps and refuses zero", () => {
     expect(clampIdleTimeout(undefined, 60, 1440)).toBe(60);
     expect(clampIdleTimeout(90, 60, 1440)).toBe(90);
+    expect(clampIdleTimeout("never", 60, 1440)).toBe(0);
     expect(clampIdleTimeout(1441, 60, 1440)).toBe(1440);
     for (const zero of [0, -1])
       expect(clampIdleTimeout(zero, 60, 1440)).toEqual({

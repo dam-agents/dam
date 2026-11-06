@@ -619,7 +619,8 @@ export const environments = pgTable(
       .$type<{ name: string; port: number; ready?: string }[]>()
       .notNull(),
     access: jsonb("access").$type<string[] | null>(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // UNIT_BOUNDARY_DESCRIPTION: when the expiry sweep deletes the Environment; null when its owner or Owning Agent keeps it with no expiry.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1480,6 +1481,23 @@ export const avatarImages = pgTable("avatar_images", {
     .defaultNow()
     .notNull(),
 });
+
+export const loginTestimonials = pgTable(
+  "login_testimonials",
+  {
+    id: text("id").primaryKey(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    quote: text("quote").notNull(),
+    photoId: text("photo_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: text("updated_by").notNull(),
+  },
+  (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
+);
 
 export const spendDaily = pgTable(
   "spend_daily",

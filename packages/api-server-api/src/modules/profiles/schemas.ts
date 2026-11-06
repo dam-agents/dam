@@ -4,7 +4,9 @@ import {
 } from "agent-runtime-api";
 import { z } from "zod";
 
-const profileNameSchema = z.string().trim().min(1).max(64);
+export const PROFILE_NAME_MAX_LENGTH = 64;
+
+const profileNameSchema = z.string().trim().min(1).max(PROFILE_NAME_MAX_LENGTH);
 
 /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot is its own reference on
  * the agent, so a profile's settings never answer it a second time. */

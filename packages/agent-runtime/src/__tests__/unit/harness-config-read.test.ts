@@ -180,6 +180,65 @@ describe("createReadHarnessConfig", () => {
     ]);
   });
 
+  // TEST_SCENARIO: on the Model Router a tier is a name the router resolves against the provider's listing, so a tier row stays only where the provider lists a model of exactly that name — Bedrock's tier ids — and goes where it lists full ids only, since the router refuses a bare `opus` a gateway would have mapped.
+  it("keeps a catalog tier only where the provider lists that exact name", async () => {
+    const binding = {
+      ...BINDING,
+      catalog: {
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            choices: [
+              { value: "opus", name: "Opus" },
+              { value: "haiku", name: "Haiku" },
+            ],
+          },
+        ],
+      },
+      modelDiscovery: { urlEnv: ["U"], extendsCatalog: true },
+    };
+    const list = (models: { value: string; name: string }[]) =>
+      createHarnessConfigPlugin({
+        harness: "test",
+        binding,
+        agentHome: home,
+        envReader: asLease({
+          current: () => ({ U: "https://proxy" }),
+          ready: () => true,
+        }),
+        discoverModels: noDiscovery,
+        catalogModels: () => models,
+        log: noop,
+      }).readCurrent();
+    expect(
+      (
+        await list([
+          {
+            value: "claude/ibm/aws/claude-opus-5-5",
+            name: "aws/claude-opus-5-5",
+          },
+          {
+            value: "claude/ibm/azure/deepseek-v4.1-flash",
+            name: "azure/DeepSeek-V4.1-Flash",
+          },
+        ])
+      ).availableModels?.map((m) => m.value),
+    ).toEqual([
+      "claude/ibm/aws/claude-opus-5-5",
+      "claude/ibm/azure/deepseek-v4.1-flash",
+    ]);
+    expect(
+      (
+        await list([
+          { value: "claude/bedrock/opus", name: "opus" },
+          { value: "claude/bedrock/haiku", name: "haiku" },
+        ])
+      ).availableModels?.map((m) => m.value),
+    ).toEqual(["opus", "haiku", "claude/bedrock/opus", "claude/bedrock/haiku"]);
+  });
+
   // TEST_SCENARIO: before the env rail has materialized once, a missing URL says nothing about the grant, so the read must not clear an established list.
   it("omits the model list until the runtime env has materialized", async () => {
     const out = await createHarnessConfigPlugin({

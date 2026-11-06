@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { parseAvatar, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import { createTtlMap, type TtlMap } from "../../../core/ttl-map.js";
@@ -65,6 +66,7 @@ import type {
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
+  MessageLinkQuery,
   PostMessageOptions,
   ReactionsQuery,
   ThreadLeave,
@@ -133,6 +135,7 @@ import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
+  SlackRespond,
   SlackBlock,
   SlackBotJoinedChannelEvent,
   SlackConversationInfo,
@@ -160,7 +163,7 @@ import {
   renderAssistantBlocks,
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
-import { markdownToSections } from "./slack-mrkdwn.js";
+import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import {
   agentContextBlock,
   agentFooterLabel,
@@ -307,6 +310,14 @@ function groupDirectMessageMembers(channelName: string | null): string[] {
 }
 
 const MEMBERSHIP_CHECK_BUDGET_MS = 1_500;
+
+const ROSTER_ACK_BUDGET_MS = 2_000;
+
+interface CommandReply {
+  ack: SlackAck;
+  respond: SlackRespond;
+  receivedAt: number;
+}
 
 const SILENT_PRESENTER: TurnPresenter = {
   onUpdate() {},
@@ -879,7 +890,7 @@ function labelMessages(
   names: Map<string, string>,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
-  opts: { showThreadMarkers: boolean },
+  opts: { showThreadMarkers: boolean; showTs?: boolean },
 ): string[] {
   return entries.map((e) =>
     labelHistoryMessage(
@@ -2088,10 +2099,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     teamId: SlackWorkspace,
   ): Promise<ChannelOwner | null> {
     let owner: string | null;
-    let name: string | null;
     try {
       owner = await getInstanceOwner(instanceName);
-      name = owner ? await ownerDisplayName(owner) : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "owner", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+    const name = owner ? await ownerName(instanceName, owner) : null;
+    if (!owner || !name) return null;
+    return {
+      name,
+      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
+    };
+  }
+
+  async function ownerName(
+    instanceName: string,
+    owner: string,
+  ): Promise<string | null> {
+    try {
+      return await ownerDisplayName(owner);
     } catch (err) {
       getLogger().warn(
         { agentId: instanceName, step: "name", error: formatError(err) },
@@ -2099,11 +2129,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       return null;
     }
-    if (!owner || !name) return null;
-    return {
-      name,
-      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
-    };
   }
 
   async function ownerSlackUserId(
@@ -2260,6 +2285,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): void {
     for (const ts of threadTss)
       offeredThreads.set(`${instanceName} ${ts}`, channel);
+  }
+
+  function noteTurnThread(ctx: {
+    instanceName: string;
+    channel: string;
+    threadTs: string;
+    hasThread: boolean;
+  }): void {
+    if (ctx.hasThread)
+      noteOfferedThreads(ctx.instanceName, ctx.channel, [ctx.threadTs]);
   }
 
   function readOfferedThread(
@@ -3614,13 +3649,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readHasMore,
       threadWindow,
     } = await readSlackContext(gw, ctx, null);
-    noteOfferedThreads(
-      ctx.instanceName,
-      ctx.channel,
-      threadWindow.cursor !== null
-        ? [...offeredHere, ctx.threadTs]
-        : offeredHere,
-    );
+    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    noteTurnThread(ctx);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
@@ -3727,6 +3757,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<CatchUpFrame> {
     const { threadKey } = ctx;
     const conversationTs = ctx.hasThread ? ctx.threadTs : undefined;
+    noteTurnThread(ctx);
     try {
       const since = await catchUpSince(gw, {
         instanceName: ctx.instanceName,
@@ -3771,6 +3802,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
+              ...(conversationTs !== undefined
+                ? { threadTs: conversationTs }
+                : {}),
               hasThreadMarker,
               hasAttachmentMarker,
             },
@@ -3997,7 +4031,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { ok: true, entry: matches[0]!, roster };
   }
 
-  async function handleCommand(command: SlackSlashCommand, ack: SlackAck) {
+  async function handleCommand(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    respond: SlackRespond,
+  ) {
+    const reply = { ack, respond, receivedAt: Date.now() };
     const subcommand = command.text.trim().toLowerCase();
     const [verb = ""] = subcommand.split(/\s+/).filter(Boolean);
     const rest = command.text
@@ -4127,7 +4166,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await handleDeleteCommand(command, ack);
       })
       .with("default", async () => {
-        await handleDefaultCommand(rest, command, ack);
+        await handleDefaultCommand(rest, command, reply);
+      })
+      .with("who", async () => {
+        await handleWhoCommand(command, reply);
       })
       .with("whisper", async () => {
         const { action, nameArg } = parseSwitchArgs(rest);
@@ -4137,7 +4179,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -4489,22 +4531,92 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
-  function rosterRoll(roster: RosterEntry[]): string {
+  function rosterRoll(
+    roster: RosterEntry[],
+    owners: (string | null)[] = [],
+  ): string {
     return roster
       .map(
-        (entry) =>
-          `• \`${entry.name}\`${entry.isDefault ? " — default" : ""}${
-            entry.ambient ? " (reads along)" : ""
-          }`,
+        (entry, i) =>
+          `• \`${entry.name}\`${owners[i] ? `, owned by ${owners[i]}` : ""}${
+            entry.isDefault ? " — default" : ""
+          }${entry.ambient ? " (reads along)" : ""}`,
       )
       .join("\n");
+  }
+
+  async function ownerMention(entry: RosterEntry): Promise<string | null> {
+    const owner =
+      (await getInstanceOwner(entry.instanceName).catch(() => null)) ??
+      entry.owner;
+    const slackUserId = await ownerSlackUserId(
+      entry.instanceName,
+      owner,
+      entry.teamId,
+    );
+    if (slackUserId) return `<@${slackUserId}>`;
+    const name = await ownerName(entry.instanceName, owner);
+    return name ? escapeMrkdwn(name) : null;
+  }
+
+  async function ownedRosterRoll(roster: RosterEntry[]): Promise<string> {
+    return rosterRoll(roster, await Promise.all(roster.map(ownerMention)));
+  }
+
+  async function ackWhenReady(
+    reply: CommandReply,
+    pending: Promise<string>,
+  ): Promise<void> {
+    const text = pending.catch((err: unknown) => {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.command.reply_failed",
+      );
+      return "Could not list the agents here. Try again.";
+    });
+    const left = reply.receivedAt + ROSTER_ACK_BUDGET_MS - Date.now();
+    const ready = await Promise.race([
+      text,
+      sleep(Math.max(0, left), null, { ref: false }),
+    ]);
+    if (ready !== null) {
+      await reply.ack({ text: ready });
+      return;
+    }
+    await reply.ack();
+    try {
+      await reply.respond(await text);
+    } catch (err) {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.command.late_reply_failed",
+      );
+    }
+  }
+
+  async function handleWhoCommand(
+    command: SlackSlashCommand,
+    reply: CommandReply,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    if (roster.length === 0) {
+      await reply.ack({
+        text: `No agent is connected here. Run \`/${brandShort} bind\` to connect one of yours.`,
+      });
+      return;
+    }
+    await ackWhenReady(
+      reply,
+      ownedRosterRoll(roster).then((roll) => `Connected here:\n${roll}`),
+    );
   }
 
   async function handleDefaultCommand(
     rest: string,
     command: SlackSlashCommand,
-    ack: SlackAck,
+    reply: CommandReply,
   ) {
+    const { ack } = reply;
     const roster = await resolveRoster(command.channelId);
     if (roster.length === 0) {
       await ack({ text: "This channel isn't connected to an agent." });
@@ -4513,13 +4625,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     if (!rest) {
       const current = roster.find((entry) => entry.isDefault);
-      await ack({
-        text:
-          (current
-            ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
-            : "This channel has no default agent set.") +
-          `\n\nConnected here:\n${rosterRoll(roster)}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
-      });
+      await ackWhenReady(
+        reply,
+        ownedRosterRoll(roster).then(
+          (roll) =>
+            (current
+              ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
+              : "This channel has no default agent set.") +
+            `\n\nConnected here:\n${roll}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
+        ),
+      );
       return;
     }
 
@@ -6819,7 +6934,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       teamId: SlackWorkspace,
     ): Promise<SlackChannelMembership> {
       const links = await identityLinks.externalLinksOf("slack", keycloakSub);
-      if (links.length === 0) return "unlinked";
+      if (links.length === 0) return { kind: "unlinked" };
       const gw = await ensureGateway();
       if (!gw) throw new Error("slack gateway is not connected here");
       const userIds = [...new Set(links.map((l) => l.externalUserId))];
@@ -6828,8 +6943,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return lookup.kind === "found" &&
           lookup.directMessageUser !== null &&
           userIds.includes(lookup.directMessageUser)
-          ? "member"
-          : "not-member";
+          ? { kind: "member", slackUserId: lookup.directMessageUser }
+          : { kind: "not-member" };
       }
       const workspaces = [
         ...new Set([teamId, ...(await linkedWorkspaces(links))]),
@@ -6837,10 +6952,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       for (const workspace of workspaces) {
         for (const userId of userIds) {
           const shared = await gw.listSharedChannels(userId, workspace);
-          if (shared.includes(slackChannelId)) return "member";
+          if (shared.includes(slackChannelId))
+            return { kind: "member", slackUserId: userId };
         }
       }
-      return "not-member";
+      return { kind: "not-member" };
     },
 
     async listConversations(instanceName: string) {
@@ -7541,6 +7657,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     },
 
+    async getMessageLink(instanceName: string, query: MessageLinkQuery) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const { messageTs } = query;
+      const liveChannels = new Set(
+        liveTurnRefs(instanceName).map((ref) => ref.channel),
+      );
+      const turnChannel =
+        findTurnRef(instanceName, (ref) => ref.eventTs === messageTs)
+          ?.channel ??
+        (liveChannels.size === 1 ? [...liveChannels][0] : undefined);
+      const target = await resolveOutboundTarget(
+        gw,
+        boundChannelIds,
+        query.conversationId ?? turnChannel,
+        turnWorkspace(instanceName),
+        async (id, teamId, dm) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+      );
+      if ("error" in target) return target;
+
+      try {
+        const link = await gw.getPermalink(target.id, messageTs, target.teamId);
+        if (!link) {
+          return {
+            error:
+              `Slack gave no link for message ${messageTs} in ` +
+              `${target.id} — check messageTs, and pass chatId when the ` +
+              "message is in another conversation",
+          };
+        }
+        return { link, conversationId: target.id, messageTs };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
     async readThread(instanceName: string, query: ThreadQuery) {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
@@ -7557,11 +7717,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!offered) {
         return {
           error:
-            "not a thread you were shown — only a ts taken from a " +
-            "[thread: ...] tag in the conversation history handed to you " +
-            "can be read, and offers age out. If someone wants you on an " +
-            "older thread, ask them to reply in it — it will reach you " +
-            "with its full history",
+            "not a thread you were shown — you can read the thread you are " +
+            "answering in, a thread you started with start_thread, and a " +
+            "thread from a [thread: ...] tag in the conversation history " +
+            "handed to you, and such a tag ages out after 48 hours. To read " +
+            "any other thread, ask a person to tag you in it, which makes " +
+            "it readable",
         };
       }
       const target = owned
@@ -7611,6 +7772,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
+          showTs: true,
         });
         return {
           messages: markThreadWindow(labelled, offsets, {

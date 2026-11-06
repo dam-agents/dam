@@ -25,6 +25,7 @@ import {
   bedrockModelCallOf,
   bedrockRootOf,
   bedrockRouteOf,
+  converseUsageOfBody,
   createBedrockUsageScanner,
   type BedrockRoute,
 } from "../domain/bedrock.js";
@@ -561,7 +562,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   };
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: a call of a Claude Code process on a Bedrock
+   * UNIT_BOUNDARY_DESCRIPTION: a call of a harness process on a Bedrock
    * Connection, passed on unchanged to the Connection's region with its key
    * placeholder, which the gateway swaps: Bedrock speaks its own paths and
    * streams AWS event-stream frames, so nothing is resolved or rewritten. The
@@ -689,8 +690,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const eventStream = (upstream.headers.get("content-type") ?? "").includes(
       "vnd.amazon.eventstream",
     );
-    if (upstream.ok && upstream.body && eventStream && call?.messages) {
-      const scanner = createBedrockUsageScanner();
+    if (upstream.ok && upstream.body && eventStream && call) {
+      const scanner = createBedrockUsageScanner(call.messages);
       streamed = scanner;
       res.writeHead(upstream.status, resHeaders);
       res.on("finish", () => record(upstream.status, scanner.usage()));
@@ -714,9 +715,11 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     res.on("finish", () =>
       record(
         upstream.status,
-        upstream.ok && call?.messages
-          ? usageOfBody("anthropic-messages", text)
-          : null,
+        !upstream.ok || !call
+          ? null
+          : call.messages
+            ? usageOfBody("anthropic-messages", text)
+            : converseUsageOfBody(text),
       ),
     );
     res.end(text);
@@ -725,9 +728,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const bobHarness = Object.entries(deps.harnesses).find(
     ([, binding]) => binding?.bobGateway,
   )?.[0];
+  /* UNIT_BOUNDARY_DESCRIPTION: Pi names itself on its Bedrock calls and Claude Code does not, so an unnamed call is from the harness that runs Bedrock on names of its own. */
   const bedrockHarness =
-    Object.entries(deps.harnesses).find(([, binding]) =>
-      binding?.native?.templates.includes(BEDROCK_TEMPLATE),
+    Object.entries(deps.harnesses).find(
+      ([, binding]) =>
+        binding?.native?.templates.includes(BEDROCK_TEMPLATE) &&
+        binding.native.models !== "listed",
     )?.[0] ?? deps.defaultHarness;
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");

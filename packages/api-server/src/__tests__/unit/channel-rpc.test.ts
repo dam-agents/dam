@@ -31,7 +31,7 @@ function fakeSlackWorker(): SlackWorker {
     connect: vi.fn(async () => {}),
     conversationStanding: vi.fn(async () => "unknown" as const),
     channelChoices: vi.fn(async () => ({ linked: false as const })),
-    channelMembership: vi.fn(async () => "unlinked" as const),
+    channelMembership: vi.fn(async () => ({ kind: "unlinked" as const })),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -44,6 +44,11 @@ function fakeSlackWorker(): SlackWorker {
     describeUsers: vi.fn(async () => ({ users: [] })),
     describeMessageReactions: vi.fn(async () => ({
       reactions: [],
+      conversationId: "C1",
+      messageTs: "1.1",
+    })),
+    getMessageLink: vi.fn(async () => ({
+      link: "https://example.slack.com/archives/C1/p11",
       conversationId: "C1",
       messageTs: "1.1",
     })),

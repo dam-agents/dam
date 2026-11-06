@@ -445,6 +445,7 @@ export function automaticModel(
       alias: p.alias,
       listed: p.models.map((m) => m.upstreamId),
     })),
+    pair.harness,
   );
   for (const p of listings) {
     const model = preferred
