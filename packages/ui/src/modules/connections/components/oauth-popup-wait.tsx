@@ -38,10 +38,7 @@ export function OAuthPopupWait({
         <p className="text-sm text-foreground">
           Waiting for your sign-in to finish in the other window…
           {remaining && (
-            <span className="text-muted-foreground">
-              {" "}
-              {remaining} left.
-            </span>
+            <span className="text-muted-foreground"> {remaining} left.</span>
           )}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
