@@ -20,7 +20,7 @@ function app(popup: boolean) {
   const engine = unused<OAuthEngine>({
     peek: (async () => ({
       ctx: { connectionId: "conn-1", ownerId: "owner-1", popup },
-    })) as OAuthEngine["peek"],
+    })) as unknown as OAuthEngine["peek"],
   });
   const routes = createOAuthRoutes(
     unused<OAuthCallbackDeps>({ uiBaseUrl: UI, brandName: "Test", engine }),

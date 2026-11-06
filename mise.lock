@@ -170,10 +170,7 @@ conda_deps = []
 [[tools."conda:pigz"]]
 version = "2.8"
 backend = "conda:pigz"
-specifiers = [
-    "2.8",
-    "latest",
-]
+specifiers = ["latest"]
 
 [tools."conda:pigz".options]
 channel = "conda-forge"
