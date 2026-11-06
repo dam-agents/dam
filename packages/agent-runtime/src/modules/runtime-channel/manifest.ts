@@ -136,11 +136,13 @@ export type InitializeCapabilities = z.infer<typeof initializeCapabilities>;
  * rather than through the Model Router's catalog (Claude Code on Bedrock,
  * whose paths and stream are Bedrock's own): a session on one runs in a
  * process of its own with the Connection's env, and the router passes its
- * calls on unchanged.
+ * calls on unchanged. `models` is the harness's own names for them, or
+ * `listed` for the models the Connection itself lists (Pi on Bedrock runs
+ * the region's inference profiles).
  */
 export const nativeProvidersBinding = z.object({
   templates: z.array(z.string().min(1)).nonempty(),
-  models: z.array(z.string().min(1)).nonempty(),
+  models: z.union([z.array(z.string().min(1)).nonempty(), z.literal("listed")]),
 });
 export type NativeProvidersBinding = z.infer<typeof nativeProvidersBinding>;
 

@@ -4,9 +4,15 @@
 manifestVersion: 1
 
 # Pi picks the API per model, so it reaches every provider the router serves.
+# Bedrock has paths and a stream of its own, so a session on a Bedrock model
+# runs in a Pi process of its own on Pi's Bedrock provider, with the router as
+# its Bedrock endpoint; the Connection lists the region's inference profiles.
 modelRouter:
   dialects: [openai-responses, openai-chat, anthropic-messages]
   sessionModel: { configOption: model, valuePrefix: "platform/" }
+  native:
+    templates: [bedrock]
+    models: listed
 
 # Pi's bash tool sets the session's id on every command it runs, and pi-acp
 # uses Pi's own id as the session's, so git's trace names the session that

@@ -23,7 +23,7 @@ describe("ownedApiRequests", () => {
     const gates = sql.match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(9);
+    expect(gates).toHaveLength((sql.match(/FROM otel_logs/g) ?? []).length + 1);
   });
 
   it("scopes to call records by Body, not template ServiceName", () => {
@@ -40,24 +40,95 @@ describe("ownedApiRequests", () => {
    * from the router and, on Claude Code, a second from the harness. The read
    * sums the router's records for every agent that has any in the window and
    * the harness's (Claude Code's, Pi's) for the rest, decided from the data,
-   * each agent and invocation from its own first router record on. Claude Code on a
-   * subscription token or Bedrock runs outside the router, so its own record,
-   * which names the model without the `claude/` prefix, still counts.
+   * each agent and invocation from its own first router record on. A key the
+   * router never recorded answers with a threshold after its last call, so
+   * its harness records still count.
    */
   it("prefers the router's records per agent and keeps the harness's records of calls the router never saw", () => {
     const sql = ownedApiRequests({ hours: 24 });
-    const key =
-      "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
     expect(sql).toContain(
-      `OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`,
+      "if(countIf(Body = 'platform.model_call') = 0, max(Timestamp) + toIntervalSecond(1), minIf(Timestamp, Body = 'platform.model_call'))",
+    );
+    expect(sql).not.toContain("min(Timestamp) AS m");
+    expect(sql).not.toContain("SELECT DISTINCT (ResourceAttributes");
+  });
+
+  /**
+   * TEST_SCENARIO: #4620 routed regular models, and a later release started
+   * routing a Bedrock Connection. One agent therefore has a regular routed
+   * call and, after it, a native Bedrock call the router never recorded:
+   * both are real calls and both count. A Bedrock call the router did record
+   * counts once, from the router's record. Two things pin that: the native
+   * branch must take the map whose threshold is the agent's own first Bedrock
+   * router record, and the count fixture must show the two calls. The unit
+   * suite has no ClickHouse, so the fixture runs against a model of these
+   * clauses.
+   */
+  it("keeps a native Bedrock call from before the agent's Bedrock cutover", () => {
+    const sql = ownedApiRequests({ hours: 24 });
+    expect(sql).toContain(
+      "if(countIf(Body = 'platform.model_call' AND LogAttributes['platform.provider.alias'] = 'bedrock') = 0, max(Timestamp) + toIntervalSecond(1), minIf(Timestamp, Body = 'platform.model_call' AND LogAttributes['platform.provider.alias'] = 'bedrock'))",
     );
     expect(sql).toContain(
-      "OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id']) AS k, min(Timestamp) AS m FROM otel_logs",
+      "Timestamp < if((Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%'), (SELECT mapFromArrays",
     );
-    expect(sql).not.toContain("SELECT min(Timestamp) FROM otel_logs");
-    expect(sql).toContain(
-      "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",
-    );
+
+    interface Record {
+      at: number;
+      router: boolean;
+      bedrockRouter: boolean;
+      native: boolean;
+    }
+    const counted = (records: Record[]): number => {
+      const firstAt = (rows: Record[]) =>
+        rows.length === 0
+          ? Number.POSITIVE_INFINITY
+          : Math.min(...rows.map((r) => r.at));
+      const routers = records.filter((r) => r.router);
+      const bedrockRouters = records.filter((r) => r.bedrockRouter);
+      return records.filter((record) => {
+        if (record.router) return true;
+        const cutover = record.native
+          ? firstAt(bedrockRouters)
+          : firstAt(routers);
+        return record.at < cutover;
+      }).length;
+    };
+
+    const regularCall = { at: 10, router: true, bedrockRouter: false };
+    const nativeBedrock = { at: 20, router: false, bedrockRouter: false };
+    const routedBedrock = { at: 30, router: true, bedrockRouter: true };
+
+    expect(
+      counted([
+        { ...regularCall, native: false },
+        { ...nativeBedrock, native: true },
+      ]),
+      "a regular routed call plus a Bedrock call the router never recorded",
+    ).toBe(2);
+    expect(
+      counted([
+        { ...routedBedrock, native: false },
+        { at: 30, router: false, bedrockRouter: false, native: true },
+      ]),
+      "one Bedrock call the router recorded, with Claude Code's record beside it",
+    ).toBe(1);
+    expect(
+      counted([
+        { ...regularCall, native: false },
+        { ...nativeBedrock, native: true },
+        { ...routedBedrock, native: false },
+        { at: 31, router: false, bedrockRouter: false, native: true },
+      ]),
+      "a cutover mid-window: the native call before it and the routed one after it",
+    ).toBe(3);
+  });
+
+  // TEST_SCENARIO: the Bedrock cutover must not cost more scans than the split it completes. A session-narrowed call read embeds the predicate three times, so every subquery it gains is paid three times.
+  it("keeps the scan count of a session-narrowed call read", () => {
+    const scans = (sql: string) => (sql.match(/FROM otel_logs/g) ?? []).length;
+    expect(scans(ownedApiRequests({ hours: 24 }))).toBe(2);
+    expect(scans(ownedApiRequests({ sessionId: "s-1", hours: 24 }))).toBe(8);
   });
 
   it("bounds by the absolute range as half-open [from, to)", () => {
