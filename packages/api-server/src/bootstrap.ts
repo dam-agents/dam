@@ -1,3 +1,4 @@
+import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
@@ -851,6 +852,11 @@ export async function bootstrap() {
     identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
     log: (m) => getLogger().warn(`[agent-keys] ${m}`),
   });
+  const environmentTokenKeys = createRemoteJWKSet(
+    new URL(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    ),
+  );
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -885,6 +891,10 @@ export async function bootstrap() {
           `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
         ],
         isApiKey: isApiKeyToken,
+      },
+      oauth: {
+        issuer: keycloakRealmUrl(addresses.public, config.keycloakRealm),
+        keys: environmentTokenKeys,
       },
       ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
