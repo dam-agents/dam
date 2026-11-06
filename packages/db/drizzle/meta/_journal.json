@@ -932,6 +932,13 @@
       "when": 1793865451670,
       "tag": "0132_slack_owned_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1793881727330,
+      "tag": "0133_artifact_prompt_profile",
+      "breakpoints": true
     }
   ]
 }

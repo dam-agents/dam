@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-04
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -47,7 +47,7 @@ An agent remembers one **chat default**, which preselects the next session, and 
 A pick in a chat saves the chat default, whose primary model and subagent slot each hold a profile reference or values of their own, never both; a channel and a schedule keep the same two slots, checked by the same rule.
 **Tool approval** (Claude Code's permission mode, Bob's approvals, Copilot's mode, whose Autopilot is Auto mode) is one session's own pick, in a picker shown where there are two choices: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
 An owner's named pairs, the defaults that follow them and a new agent's start are [profiles](profiles.md).
-Detaching a provider lists the defaults, channels and schedules that run on it before it goes.
+Detaching a provider lists the defaults, channels, schedules and interactive pages that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 **The automatic model.** With no model saved for the harness (a default **not set**), a run takes the [preferred model](#the-model-router) across the agent's providers that run the harness, else the first one listed; a "not set" default keeps to its provider while the agent holds it.
 It is never saved; the pickers name it.

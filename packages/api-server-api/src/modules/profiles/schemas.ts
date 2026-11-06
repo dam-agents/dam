@@ -54,6 +54,9 @@ export const profileUsageSchema = z.object({
   schedules: z.array(
     z.object({ id: z.string(), name: z.string(), agentId: z.string() }),
   ),
+  artifacts: z
+    .array(z.object({ id: z.string(), title: z.string(), agentId: z.string() }))
+    .optional(),
 });
 
 const count = z.number().int().nonnegative();
@@ -68,7 +71,12 @@ export const profileViewSchema = z.object({
   settings: z.record(z.string(), z.string()),
   /* UNIT_BOUNDARY_DESCRIPTION: the owner's one default for new agents, which cannot be deleted while it is. */
   newAgentDefault: z.boolean(),
-  usage: z.object({ agents: count, channels: count, schedules: count }),
+  usage: z.object({
+    agents: count,
+    channels: count,
+    schedules: count,
+    artifacts: count.optional(),
+  }),
   /* UNIT_BOUNDARY_DESCRIPTION: asked for one agent, whether the profile runs
    * there; `attachable` is a provider the owner holds and the agent does not,
    * which a pick grants first. */

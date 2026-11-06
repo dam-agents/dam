@@ -87,6 +87,7 @@ export function usedBy(usage: {
   agents: readonly string[];
   channels: readonly string[];
   schedules: readonly string[];
+  artifacts?: readonly string[];
 }): string {
   const kind = (singular: string, plural: string, names: readonly string[]) =>
     names.length === 0
@@ -96,12 +97,16 @@ export function usedBy(usage: {
     ...kind("agent", "agents", usage.agents),
     ...kind("channel", "channels", usage.channels),
     ...kind("schedule", "schedules", usage.schedules),
+    ...kind("page", "pages", usage.artifacts ?? []),
   ].join(", ");
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: how many places name a profile: agents whose chat default or subagent slot does, channels and schedules, as the list reports them. */
+/** UNIT_BOUNDARY_DESCRIPTION: how many places name a profile: agents whose chat default or subagent slot does, channels, schedules and interactive pages, as the list reports them. */
 export const profileUses = (profile: ProfileWithUsage): number =>
-  profile.usage.agents + profile.usage.channels + profile.usage.schedules;
+  profile.usage.agents +
+  profile.usage.channels +
+  profile.usage.schedules +
+  (profile.usage.artifacts ?? 0);
 
 /** UNIT_BOUNDARY_DESCRIPTION: the one order every list of profiles shows: the default for new agents, then the most used, then by name. Display only: the pickers match a pick to a profile in the server's order, so a reorder never moves a saved reference to a twin with the same values. */
 export function sortProfiles(

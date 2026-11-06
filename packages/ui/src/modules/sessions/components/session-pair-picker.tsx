@@ -579,7 +579,7 @@ export function SessionPairPicker(props: Props) {
         usage={
           provider
             ? usage(provider)
-            : { kinds: [], schedules: [], profiles: [] }
+            : { kinds: [], schedules: [], pages: [], profiles: [] }
         }
       />,
       `Disconnect ${name} from this agent?`,

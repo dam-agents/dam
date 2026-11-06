@@ -93,6 +93,7 @@ export function ProfileSection({
         agents: usage.agents.map((a) => agentName(a.id)),
         channels: usage.channels.map((c) => c.label),
         schedules: usage.schedules.map((s) => `“${s.name}”`),
+        artifacts: (usage.artifacts ?? []).map((a) => `“${a.title}”`),
       });
       void showAlert(
         `It is used by ${who}. Move ${profileUses(profile) === 1 ? "it" : "them"} to another profile first.`,

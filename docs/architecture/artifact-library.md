@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-04
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -71,13 +71,22 @@ Callbacks are available in the docked preview inside the publishing Agent's chat
 There is no permanent Session binding: the currently open conversation is the destination.
 The same preview on a page outside that chat sends no requests, and refuses a plain prompt with a notice that the button works in the Agent's chat.
 A prompt there that asks for a session of its own (`sendPrompt(text, { newSession: true })`) starts or continues the owner's own Session for that page on the publishing Agent, one per owner and artifact, as a viewer's prompt does below.
-The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the Agent's channel [pair](harness-config.md).
+The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the page's [model](#a-pages-model).
 The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
 Historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
 The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
+
+### A page's model
+
+The owner picks what the Sessions a page's prompts open run on with **Set model** in the artifact's menu, offered for an interactive HTML page an Agent published.
+The pick is the chat's own picker, in the two slots a Slack channel keeps, a profile or values of their own, saved as it is made; **Use agent default** clears it, and a page with no pick follows the Agent's channel [pair](harness-config.md).
+It reaches only a Session that a prompt opens, the owner's own for the page and each viewer's: a Session that already runs keeps the values it started on, as a Slack thread does, and a prompt sent into the open chat runs on that chat.
+A profile that cannot run on the Agent refuses the prompt before the Agent wakes, and the person is told so, rather than running on a model the owner did not pick.
+A page that names a profile is among its uses, so the profile cannot be deleted while it does ([profiles](profiles.md)).
+Detaching a provider from the Agent names the pages whose pick runs on it, since their prompts stop with it.
 
 ### Viewers of a shared page
 
@@ -100,7 +109,7 @@ A page the owner makes private or plain, a viewer the owner removes, and turning
   It is typed `artifact`, as the owner's Session for the page is, so the session list files it with the channels and the Home feed can filter it on its own.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.
-  The turn runs on the Agent's channel default and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
+  The turn runs on the page's [model](#a-pages-model) and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
   An Agent at a spend limit or the Spend Ceiling is not woken, and the viewer is told why ([spend limits](spend-limits.md#unattended-work)).
 
 Every call, allowed or refused, is in the security log under the viewer, with the artifact and the owner, and never with the prompt or the request ([logging](logging.md)).

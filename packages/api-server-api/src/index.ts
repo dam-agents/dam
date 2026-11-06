@@ -434,6 +434,8 @@ export type {
   ArtifactCallAgentApiResult,
   ArtifactSendPromptInput,
   ArtifactSendPromptResult,
+  ArtifactPromptChoiceInput,
+  ArtifactPromptChoiceRow,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,

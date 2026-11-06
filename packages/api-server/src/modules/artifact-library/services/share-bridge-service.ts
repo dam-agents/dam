@@ -17,11 +17,15 @@ import type { ArtifactRow } from "../infrastructure/artifact-library-repository.
 
 export type ViewerPromptOutcome =
   | { ok: true; sessionId: string | null }
-  | { ok: false; reason: "spend-limit" | "agent-unreachable" };
+  | {
+      ok: false;
+      reason: "spend-limit" | "agent-unreachable" | "profile-unavailable";
+    };
 
 export interface ViewerPromptDelivery {
   deliver(input: {
     agentId: string;
+    artifactId: string;
     sessionKey: string;
     sessionTitle: string;
     prompt: string;
@@ -122,6 +126,7 @@ export function createShareBridgeService(deps: {
       const name = viewerName(viewer);
       const outcome = await deps.prompts.deliver({
         agentId,
+        artifactId: artifact.id,
         sessionKey: viewerSessionKey(artifact.id, viewer.sub),
         sessionTitle: viewerSessionTitle(name, artifact.title),
         prompt: viewerPromptText({

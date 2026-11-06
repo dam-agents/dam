@@ -66,7 +66,12 @@ const profile = (overrides: Partial<ProfileRow> = {}): ProfileRow => ({
   ...overrides,
 });
 
-const none: ProfileReferences = { agents: [], channels: [], schedules: [] };
+const none: ProfileReferences = {
+  agents: [],
+  channels: [],
+  schedules: [],
+  artifacts: [],
+};
 
 function fakeRepo(
   opts: {
