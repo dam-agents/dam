@@ -4565,8 +4565,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function ackWhenReady(
     reply: CommandReply,
-    text: Promise<string>,
+    pending: Promise<string>,
   ): Promise<void> {
+    const text = pending.catch((err: unknown) => {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.command.reply_failed",
+      );
+      return "Could not list the agents here. Try again.";
+    });
     const left = reply.receivedAt + ROSTER_ACK_BUDGET_MS - Date.now();
     const ready = await Promise.race([
       text,
