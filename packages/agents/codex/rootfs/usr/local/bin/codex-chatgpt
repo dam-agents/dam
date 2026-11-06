@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+PLATFORM_CODEX_AUTH_MODE=chatgpt
+export PLATFORM_CODEX_AUTH_MODE
+. /usr/local/lib/codex-auth.sh
+. /usr/local/lib/codex-otel.sh
+. /usr/local/lib/codex-agents-md.sh
+set -- "$@" -c "developer_instructions=$(jq -Rs . /etc/AGENTS.md)"
+exec codex "$@"

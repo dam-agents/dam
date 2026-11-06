@@ -229,6 +229,7 @@ describe("harness icons on provider and preset cards", () => {
   it.each([
     ["anthropic", undefined, "Claude models straight from the source"],
     ["openai", undefined, "GPT models straight from the source"],
+    ["chatgpt", undefined, "Your ChatGPT subscription for Codex"],
     ["bedrock", undefined, "Amazon Web Services inference engine"],
     ["bob", undefined, "IBM Bob&#x27;s backend"],
     [

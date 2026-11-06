@@ -1,8 +1,11 @@
 #!/bin/sh
 # the CLI refuses to start without a key; a provider's own placeholder, which names its connection, wins
-: "${OPENAI_API_KEY:=dummy-placeholder}"
-export OPENAI_API_KEY
+if [ "${PLATFORM_CODEX_AUTH_MODE:-}" != chatgpt ]; then
+  : "${OPENAI_API_KEY:=dummy-placeholder}"
+  export OPENAI_API_KEY
+fi
 set -- --dangerously-bypass-approvals-and-sandbox -c 'model_provider="openai-platform"'
+. /usr/local/lib/codex-auth.sh
 # The TUI starts on the session's model (a catalog name the Model Router routes);
 # /model then offers the router's catalog.
 if [ -n "$PLATFORM_MODEL" ]; then

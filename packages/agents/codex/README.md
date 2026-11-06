@@ -13,7 +13,8 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Authentication
 
-Codex requires an OpenAI API key.
+Codex runs either on a platform API provider or on its native ChatGPT subscription login.
+An OpenAI API key is used through the credential gateway:
 On the platform, the actual credential is never stored in the machine -- the [credential gateway](../../../docs/architecture/credential-gateway.md), Envoy in a pod of its own, injects it on the wire.
 
 Create a **generic secret** on the platform with:
@@ -24,9 +25,38 @@ Create a **generic secret** on the platform with:
 The runtime sets `OPENAI_API_KEY` to the router's placeholder, which satisfies the CLI's startup check; the router drops it and owns the upstream credential.
 The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 
+### ChatGPT subscription
+
+In Settings → Providers, enable **ChatGPT subscription**, then attach that Connection to the agent.
+It can coexist with an OpenAI API-key Connection: subscription models start with `chatgpt/`, while API models start with `openai/`.
+Removing one Connection leaves its saved model choices unavailable, rather than moving their calls to the other billing account.
+Sign in over SSH so authorization works even when API providers are also attached:
+
+```sh
+codex-chatgpt login --device-auth
+codex-chatgpt login status
+```
+
+Approve the URL and code in your own browser; device-code login must be enabled in your ChatGPT security settings or workspace permissions.
+Select a subscription model in web chat and save it in the agent's chat or channel default before asking it to work in Slack.
+Codex stores and refreshes this login on the agent, shared by its native terminal and ACP sessions.
+Each platform sub-agent needs its own authorization too; inheriting the Connection does not copy the login to a new agent.
+MCP configuration, instructions, history and resume use the existing Codex home.
+Native launches discard API-key and endpoint variables, select Codex's OpenAI provider, and turn off the router catalog; the API launch path never forces a login method or clears the native cache.
+Model choices follow [OpenAI's current Codex model guidance](https://learn.chatgpt.com/docs/models); a completed turn proves that the account and pinned client can use the chosen model.
+
+The agent's tools can read the cached subscription credentials, and anyone allowed to run work on it uses that account.
+Calls still pass through the egress gateway but are outside router-based model metering and spend limits.
+The Connection being enabled does not mean every agent is signed in.
+For an expired or removed login, repeat device authorization on that agent.
+Detaching the provider does not delete the login; remove it explicitly with `codex-chatgpt logout`.
+Restart the agent after reauthorizing an expired login, logging out or changing accounts so existing processes use the new login state.
+An unauthenticated chat launch fails before starting ACP, so a retry after initial authorization starts a fresh process with the new account.
+Do not copy or display the authentication cache in chat, logs or source control.
+
 ### The Model Router
 
-Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the machine's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
+API-provider calls go to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the machine's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
 The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, those codex-acp starts on its own included.
 A session's subagent model (`subagentModel`) is the router's: Codex's subagent threads carry their own `thread-id` beside the session's, and the router sends their calls to that model, whatever the thread asked for.
 The subagent effort (`subagentEffort`) replaces the `reasoning.effort` those calls carry.

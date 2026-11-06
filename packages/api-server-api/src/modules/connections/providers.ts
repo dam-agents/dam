@@ -1,7 +1,13 @@
 import type { HarnessView } from "../templates/types.js";
 
 export type ProviderPresetType =
-  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
+  | "anthropic"
+  | "ibm-litellm"
+  | "curve-bender"
+  | "openai"
+  | "chatgpt"
+  | "bob"
+  | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -16,6 +22,8 @@ export function harnessFits(
 ): boolean {
   const entry = catalog.harnesses.find((h) => h.name === harness);
   if (templateId === "anthropic-oauth" && harness !== "claude-code")
+    return false;
+  if (templateId === OPENAI_CHATGPT_TEMPLATE_ID && harness !== "codex")
     return false;
   return !!entry && (!entry.providers || entry.providers.includes(type));
 }
@@ -121,6 +129,7 @@ export function openaiEnvMappings(): EnvMapping[] {
 }
 
 export const BEDROCK_TEMPLATE_ID = "bedrock";
+export const OPENAI_CHATGPT_TEMPLATE_ID = "openai-chatgpt";
 
 export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
 
@@ -188,13 +197,14 @@ export interface ProviderPresetMode {
 }
 
 export type ProviderAlias =
-  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob";
+  "ibm" | "cb" | "anthropic" | "openai" | "chatgpt" | "bedrock" | "bob";
 
 export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "ibm",
   "cb",
   "anthropic",
   "openai",
+  "chatgpt",
   "bedrock",
   "bob",
 ];
@@ -263,7 +273,27 @@ export const PROVIDERS = {
     id: "openai",
     alias: "openai",
     displayName: "OpenAI",
-    modes: [{ key: "api-key", label: "API key", templateId: "openai" }],
+    modes: [
+      {
+        key: "api-key",
+        label: "API key",
+        templateId: "openai",
+        isDefault: true,
+      },
+    ],
+  },
+  chatgpt: {
+    id: "chatgpt",
+    alias: "chatgpt",
+    displayName: "ChatGPT subscription",
+    modes: [
+      {
+        key: "chatgpt",
+        label: "ChatGPT subscription",
+        templateId: OPENAI_CHATGPT_TEMPLATE_ID,
+        isDefault: true,
+      },
+    ],
   },
   bob: {
     id: "bob",
@@ -365,6 +395,7 @@ export function aliasForTemplateId(templateId: string): ProviderAlias | null {
  */
 const TEMPLATE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender (shared)",
+  [OPENAI_CHATGPT_TEMPLATE_ID]: "ChatGPT subscription",
 };
 
 export function displayNameForTemplate(templateId: string): string | null {

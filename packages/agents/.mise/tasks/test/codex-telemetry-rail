@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Test that the Codex launch scripts pass the platform instructions as text, render the telemetry rail into -c otel flags, and pass Codex nothing else while the rail is off"
-//MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/lib/codex-agents-md.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
+//MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/lib/codex-auth.sh", "codex/rootfs/usr/local/lib/codex-agents-md.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -28,6 +28,7 @@ const script = (name) => {
   const path = join(home, name);
   assert.ok(body.includes("/etc/AGENTS.md"), `${name} reads the platform instructions`);
   const moved = body
+    .replace("/usr/local/lib/codex-auth.sh", join(rootfs, "usr/local/lib/codex-auth.sh"))
     .replace("/usr/local/lib/codex-otel.sh", lib)
     .replace("/usr/local/lib/codex-agents-md.sh", agentsMdLib)
     .replace("/etc/AGENTS.md", agentsMd);

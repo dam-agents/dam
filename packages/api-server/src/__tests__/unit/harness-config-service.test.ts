@@ -20,6 +20,10 @@ import {
 } from "../../modules/harness-config/index.js";
 import { createSessionPairRepo } from "../../modules/harness-config/infrastructure/session-pair-repo.js";
 import type { ResolvedProfile } from "../../modules/profiles/index.js";
+import {
+  harnessCapabilityOf,
+  loadShippedHarnessFacts,
+} from "../../modules/connections/infrastructure/shipped-harness-manifests.js";
 
 type QueueCall = { agentId: string; change: unknown; inLock: boolean };
 type MergeCall = {
@@ -123,7 +127,7 @@ function makeService(opts?: {
         {
           name: "codex",
           displayName: "Codex",
-          providers: ["openai"],
+          providers: ["openai", "chatgpt"],
           tags: [],
           experimental: false,
         },
@@ -1060,5 +1064,75 @@ describe("the chat default's slots", () => {
       platformSubagentProfileId: null,
       platformSubagentSettings: slot,
     });
+  });
+});
+
+// TEST_SCENARIO: Web chat, Slack's channel default and scheduled turns use the same native subscription selection, and must not save settings implemented only by the router.
+describe("native Codex subscription defaults", () => {
+  const capability = harnessCapabilityOf(loadShippedHarnessFacts()["codex"]!);
+  const native = {
+    capabilities: {
+      modelRouter: true,
+      defaultHarness: "codex",
+      harnesses: [capability],
+    },
+    granted: [
+      { id: "subscription", type: "chatgpt", templateId: "openai-chatgpt" },
+    ] as GrantedProvider[],
+    snapshot: {
+      model: null,
+      mode: null,
+      configOptions: {},
+      availableModels: [{ value: "chatgpt/gpt-6.1-sol", name: "Sol" }],
+      capturedAt: new Date(0).toISOString(),
+      confirmed: true,
+    },
+  };
+  it.each(["chat", "channel", "scheduled"] as const)(
+    "saves an explicit subscription model for %s",
+    async (kind) => {
+      const { service, calls } = makeService(native);
+      await service.rememberSessionPair("a1", kind, {
+        harness: "codex",
+        provider: null,
+        model: "chatgpt/gpt-6.1-sol",
+        settings: { effort: "high" },
+      });
+      expect(calls.pairs).toEqual([
+        {
+          harness: "codex",
+          provider: "subscription",
+          model: "chatgpt/gpt-6.1-sol",
+          settings: { effort: "high" },
+        },
+      ]);
+    },
+  );
+  it("rejects router-only settings on a subscription default", async () => {
+    await expect(
+      makeService(native).service.rememberSessionPair("a1", "channel", {
+        harness: "codex",
+        provider: null,
+        model: "chatgpt/gpt-6.1-sol",
+        settings: { subagentEffort: "high" },
+      }),
+    ).rejects.toThrow(/requires the Model Router/);
+  });
+  it("keeps router-only settings available for an API default", async () => {
+    const { service, calls } = makeService({
+      ...native,
+      granted: [{ id: "api", type: "openai", templateId: "openai" }],
+      snapshot: {
+        ...native.snapshot,
+        availableModels: [{ value: "openai/gpt-6.1-sol", name: "Sol" }],
+      },
+    });
+    await service.rememberSessionPair("a1", "chat", {
+      harness: "codex",
+      provider: null,
+      model: "openai/gpt-6.1-sol",
+      settings: { subagentEffort: "high" },
+    });
+    expect(calls.pairs[0]?.settings).toEqual({ subagentEffort: "high" });
   });
 });

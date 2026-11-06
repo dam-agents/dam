@@ -1,9 +1,5 @@
 import type { HarnessCapability } from "agent-runtime-api";
 import {
-  effectiveSubagentSettings,
-  isPlatformSubagentSetting,
-} from "agent-runtime-api";
-import {
   aliasForProviderType,
   parseQualifiedModel,
   type ProviderPresetType,
@@ -39,15 +35,17 @@ import { keepOpenWhileDialog } from "../hooks/use-connect-on-pick.js";
 import {
   findModel,
   modelGroups,
-  sameModel,
   sameSideGroups,
 } from "../lib/catalog-groups.js";
 import {
   harnessDisplayName,
   modelProviderLabel,
-  providerOfModel,
 } from "../lib/session-pair-options.js";
-import { pairSummary, settingDefaults } from "../lib/session-settings.js";
+import {
+  pairSummary,
+  settingDefaults,
+  settledSessionSettings,
+} from "../lib/session-settings.js";
 import {
   pickProfile as profileValues,
   primaryProfileOf,
@@ -162,38 +160,15 @@ export function ModelIndicator({
     onSaved: setFromProfile,
   });
   /* UNIT_BOUNDARY_DESCRIPTION: the session's full settings with the one rule settled against its own pair: the platform slot the pair carries and the native keys the harness's own subagents take where the sub-agent model runs on the session's provider. The UI holds the authoritative pair and settings, so it settles a configure patch itself instead of relying on the relay's per-connection state. */
-  const settledSettings = (next: SessionPair) => {
-    const all = next.settings ?? {};
-    if (!routed) return all;
-    const slot = Object.fromEntries(
-      Object.entries(all).filter(([id]) => isPlatformSubagentSetting(id)),
-    );
-    if (Object.keys(slot).length === 0) return all;
-    const primary = Object.fromEntries(
-      Object.entries(all).filter(([id]) => !isPlatformSubagentSetting(id)),
-    );
-    /* UNIT_BOUNDARY_DESCRIPTION: the session's effective provider is the model's owner-catalog group; a reported provider is trusted only while its own listing offers that model, since a pinned model keeps the old provider in session metadata. */
-    const offeredBy = (connectionId: string | null | undefined) =>
-      connectionId != null &&
-      (groups
-        .find((g) => g.connectionId === connectionId)
-        ?.models.some((m) => sameModel(m.name, next.model ?? "")) ??
-        false);
-    const supplied = next.provider ?? provider;
-    /* UNIT_BOUNDARY_DESCRIPTION: an unlisted primary model (the catalog is down or the model is gone) still names its provider by its qualified alias among the agent's Connections; without a match compatibility is unknown, so no native key is derived rather than trusting the stale field. */
-    const sessionProvider = offeredBy(supplied)
-      ? supplied
-      : (findModel(groups, next.model ?? null)?.group.connectionId ??
-        providerOfModel(next.model ?? null, granted)?.id ??
-        null);
-    return effectiveSubagentSettings(capability, primary, slot, (name) =>
-      groups.some(
-        (g) =>
-          g.connectionId === sessionProvider &&
-          g.models.some((m) => sameModel(m.name, name)),
-      ),
-    );
-  };
+  const settledSettings = (next: SessionPair) =>
+    routed
+      ? settledSessionSettings(
+          { ...next, provider: next.provider ?? provider },
+          capability,
+          groups,
+          granted,
+        )
+      : (next.settings ?? {});
   const applyPair = (next: SessionPair) => {
     const changes = settingChanges(settings, settledSettings(next));
     if (next.model !== null && next.model !== model)

@@ -154,6 +154,13 @@ export function createSessionChoicesValidator(deps: {
     const fireModel = fire.model;
     const side = nativeOf(fireModel);
     if (side === undefined) return undefined;
+    const invalid = sessionSettingsError(
+      capability?.harnessConfigCatalog,
+      choices.settings,
+      fireModel,
+      side,
+    );
+    if (invalid) return invalid;
     const crossed = Object.entries(choices.settings).find(([id, value]) => {
       if (!modelSettings.has(id) || value === "") return false;
       const own = nativeOf(value);

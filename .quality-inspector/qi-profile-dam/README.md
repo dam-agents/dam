@@ -61,6 +61,19 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 **Keep it in step with the chart.**
 A change that alters what a fresh install needs — a new prerequisite, a renamed value the QA install sets (`keycloak.testUser`, `keycloak.extraTestUsers`, `terms`, `ingress.catchAllAppHost`) — updates `profile.json` in the same PR.
 
+## ChatGPT subscription setup
+
+Settings → Providers offers separate **OpenAI** and **ChatGPT subscription** rows.
+The subscription form asks for no secret and its **Enable ChatGPT subscription** button records the provider choice.
+Its instructions explain that each agent needs its own authorization, that web chat and Slack reuse that login, and that model spend limits do not cover its calls.
+When this provider is attached, Codex is offered in the agent's terminal and model selections; Pi and other harnesses are not offered this subscription.
+Attach both an OpenAI API-key Connection and a subscription Connection and confirm their model groups remain distinct.
+Remove either Connection and confirm its saved chat, channel and schedule models fail visibly rather than switching billing paths.
+
+A real authorization, native inference turn, login expiry and Slack turn using the subscription need a person's ChatGPT account and access to the external OpenAI hosts.
+Those checks are blocked by an external dependency in the nested QA install; do not substitute a mock turn or treat the configured provider as proof of sign-in.
+With a real test account, authorize over SSH, send a web-chat turn, select the same subscription model for a connected Slack channel and verify its reply, then log out, restart the agent and verify the next native turn fails without an API fallback.
+
 ## Smoke regression suite
 
 The journeys every release must keep, one file each in `scenarios/`.
