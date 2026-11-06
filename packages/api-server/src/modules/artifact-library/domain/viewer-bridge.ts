@@ -30,7 +30,11 @@ export type ViewerPromptResult =
   | {
       ok: false;
       reason:
-        "invalid-request" | "not-allowed" | "agent-unreachable" | "spend-limit";
+        | "invalid-request"
+        | "not-allowed"
+        | "agent-unreachable"
+        | "spend-limit"
+        | "profile-unavailable";
     };
 
 /**

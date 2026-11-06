@@ -1196,6 +1196,16 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a Session that a prompt from this interactive page opens runs on, in the two slots a channel binding keeps; all four null follows the agent's channel pair. */
+    promptProfileId: text("prompt_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    promptSessionPair: jsonb("prompt_session_pair"),
+    promptSubagentProfile: text("prompt_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    promptSubagentSettings: jsonb("prompt_subagent_settings"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1213,6 +1223,14 @@ export const libraryArtifacts = pgTable(
     index("library_artifacts_expires_idx")
       .on(table.expiresAt)
       .where(sql`${table.expiresAt} is not null`),
+    check(
+      "library_artifacts_prompt_pair_xor_profile",
+      sql`${table.promptProfileId} is null or ${table.promptSessionPair} is null`,
+    ),
+    check(
+      "library_artifacts_prompt_subagent_xor_profile",
+      sql`${table.promptSubagentProfile} is null or ${table.promptSubagentSettings} is null`,
+    ),
   ],
 );
 

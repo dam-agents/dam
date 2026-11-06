@@ -346,6 +346,7 @@ export function createProfilesService(
         ).length,
         channels: refs.channels.filter((c) => c.profileId === row.id).length,
         schedules: refs.schedules.filter((s) => s.profileId === row.id).length,
+        artifacts: refs.artifacts.filter((a) => a.profileId === row.id).length,
       },
       availability,
     };
@@ -399,6 +400,11 @@ export function createProfilesService(
         schedules: refs.schedules.map(({ id, name, agentId }) => ({
           id,
           name,
+          agentId,
+        })),
+        artifacts: refs.artifacts.map(({ id, title, agentId }) => ({
+          id,
+          title,
           agentId,
         })),
       };
@@ -525,6 +531,7 @@ export function createProfilesService(
             ...count(outcome.agents.length, "agent"),
             ...count(outcome.channels.length, "channel"),
             ...count(outcome.schedules.length, "schedule"),
+            ...count(outcome.artifacts.length, "artifact"),
           ].join(", ")}.`,
         });
       }

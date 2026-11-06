@@ -319,9 +319,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
-      agentExists,
-    });
     const { features } = composeFeaturesForOwner({
       db,
       owner: user.sub,
@@ -484,6 +481,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         contributionsProgress.progress(agentId).then((p) => p.settled),
       hiddenHarnesses: async () =>
         new Set((await features.flags()).hermes ? [] : ["hermes"]),
+    });
+    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
+      agentExists,
+      validateChoice: (agentId, pair, references) =>
+        harnessConfig.validateChoice(agentId, pair, references),
     });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]

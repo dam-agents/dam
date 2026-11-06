@@ -41,6 +41,7 @@ export function ArtifactListRow({
   onMove,
   onShare,
   onSetRetention,
+  onSetPromptModel,
 }: {
   artifact: LibraryArtifact;
   depth: number;
@@ -54,6 +55,7 @@ export function ArtifactListRow({
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
+  onSetPromptModel: (artifact: LibraryArtifact) => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const startDrag = useCallback(
@@ -72,7 +74,14 @@ export function ArtifactListRow({
     onEnd: endDrag,
   });
 
-  const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+  const menuActions = {
+    onEdit,
+    onRename,
+    onMove,
+    onShare,
+    onSetRetention,
+    onSetPromptModel,
+  };
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });

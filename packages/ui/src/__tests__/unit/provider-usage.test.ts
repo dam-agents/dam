@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: What detaching a provider from an agent says stops: the agent's own defaults and schedules on it, and only the profiles this agent's chat default, subagent slot, channels or schedules name, never one another agent uses (QA R7).
+// TEST_OVERVIEW: What detaching a provider from an agent says stops: the agent's own defaults, schedules and interactive pages on it, and only the profiles this agent's chat default, subagent slot, channels, schedules or pages name, never one another agent uses (QA R7).
 import type { ProfileWithUsage } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -50,6 +50,30 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgent: () => ({ channels: [] }),
 }));
 
+const pick = (pair: { provider: string; model: string } | null) => ({
+  profileId: null,
+  pair: pair && { harness: "claude-code", ...pair },
+  platformSubagentProfileId: null,
+  platformSubagentSettings: null,
+});
+
+vi.mock("../../modules/artifacts/api/queries.js", () => ({
+  useAgentPromptChoices: () => ({
+    data: [
+      {
+        id: "a1",
+        title: "Desk",
+        choice: pick({ provider: "conn-bedrock", model: "bedrock/opus" }),
+      },
+      {
+        id: "a2",
+        title: "Elsewhere",
+        choice: pick({ provider: "conn-openai", model: "openai/gpt" }),
+      },
+    ],
+  }),
+}));
+
 function Usage() {
   const usage = useProviderUsage("agent-1")({
     id: "conn-bedrock",
@@ -68,4 +92,13 @@ it("names only the profiles this agent runs on", () => {
   ) as { profiles: string[]; kinds: string[] };
   expect(usage.profiles).toEqual(["Mine", "Nightly profile"]);
   expect(usage.kinds).toEqual(["chat"]);
+});
+
+/** TEST_SCENARIO: a page whose own pick runs on the provider is named, so detaching it says the page's prompts stop; a page on another provider is not. */
+it("names the pages whose own pick runs on the provider", () => {
+  const html = renderToStaticMarkup(createElement(Usage));
+  const usage = JSON.parse(
+    html.replace(/^<output>|<\/output>$/g, "").replace(/&quot;/g, '"'),
+  ) as { pages: string[] };
+  expect(usage.pages).toEqual(["Desk"]);
 });
