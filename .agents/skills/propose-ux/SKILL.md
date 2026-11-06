@@ -36,6 +36,7 @@ A wrong direction costs little at a stop, and much after the spec.
 Scale the work to the change.
 A small change to one screen needs a few lines per phase.
 Keep both stops, but a stop can be one question.
+A fixed flow (step 2) has only the first stop.
 
 Keep a record in a file outside the repository (the session scratchpad, or a temporary file): each answer of the user, the brief and the choice record.
 Add to it after each answer and at each stop.
@@ -113,6 +114,7 @@ Do not start the concepts in the same message.
   Propose how to get the evidence, for example a read of the usage analytics or talks with the people who use the product, and stop there.
 - The flow is already fixed, for example a copy-only change or a binding design: say so here.
   When the user accepts, go to step 5.
+  The fixed flow is the chosen concept: there are no other concepts and no choice record.
 
 ## 3. Concepts
 
@@ -183,15 +185,16 @@ A prompt that people always click through is a defect.
 
 Check the spec as a first-time person and as a returning one, against Nielsen's heuristics and the design rules.
 Fix each problem that the spec can fix, and list the others as open questions.
-When a fix changes what the person does or learns, go back to step 4.
+When a fix changes what the person does or learns, go back to step 4, or to step 2 for a fixed flow.
 Name the signal that will show that the change works, or say that none exists.
 
 ## 6. Deliver
 
-Build the proposal from your record file, and give it in the conversation: the brief, the concepts, the choice record, the spec, the open questions with who answers each, and what must change with it.
+Build the proposal from your record file, and give it in the conversation: the brief, the concepts and the choice record (a fixed flow has none), the spec, the open questions with who answers each, and what must change with it.
 What must change includes the QA journeys and helpers in `.quality-inspector/qi-profile-dam/`, the design profile in `.design-desk/dam/`, the architecture pages whose behavior changes, and the words that the glossary needs.
 Build a live prototype only for the chosen concept, and only when the user asks.
-Offer to post the proposal as a comment on the issue, and post it only after the user approves the exact text.
+Offer to post the proposal as a comment on the issue, or to file a new issue when none exists.
+Post it only after the user approves the exact text.
 Posted text cites staging, never the cluster on your machine.
 Write no file in the repository unless the user asks.
 
