@@ -27,7 +27,9 @@ function workersFromEnv(): number {
   if (raw === undefined || raw.trim() === "") return 2;
   const count = Number(raw);
   if (!Number.isInteger(count) || count < 1) {
-    throw new Error(`E2E_WORKERS must be a whole number of at least 1, got "${raw}"`);
+    throw new Error(
+      `E2E_WORKERS must be a whole number of at least 1, got "${raw}"`,
+    );
   }
   return count;
 }
