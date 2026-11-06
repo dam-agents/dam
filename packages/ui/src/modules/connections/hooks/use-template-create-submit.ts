@@ -99,9 +99,57 @@ export function useTemplateCreateSubmit({
 
   const {
     open: openPopup,
+    expect: expectPopup,
     close: closePopup,
     focus: focusPopup,
   } = useOAuthPopup((result) => void settlePopup(result));
+
+  const authorizeInPopup = async (popup: Window, connectionId: string) => {
+    pendingIdRef.current = connectionId;
+    expectPopup(connectionId);
+    const r = await api.connections.startOAuth.mutate({
+      connectionId,
+      popup: true,
+    });
+    popup.location.href = r.authUrl;
+  };
+
+  const failPopup = (connectionId: string, err: unknown) => {
+    closePopup();
+    pendingIdRef.current = null;
+    setAuthorizing(false);
+    void discardPending(connectionId);
+    fail(getErrorMessage(err));
+  };
+
+  const cancelAuthorization = async () => {
+    const id = pendingIdRef.current;
+    closePopup();
+    pendingIdRef.current = null;
+    setAuthorizing(false);
+    if (!id) return;
+    try {
+      const conn = await api.connections.get.query({ id });
+      if (conn?.status === "active") {
+        void invalidateConnections();
+        return;
+      }
+    } catch {}
+    await discardPending(id);
+  };
+
+  const reopenPopup = async () => {
+    if (focusPopup()) return;
+    const id = pendingIdRef.current;
+    if (!id) return;
+    const popup = openPopup();
+    if (!popup) return;
+    try {
+      await authorizeInPopup(popup, id);
+    } catch (err) {
+      failPopup(id, err);
+    }
+  };
 
   const needsOAuth = template.authKind === "oauth";
   const pending =
@@ -150,12 +198,7 @@ export function useTemplateCreateSubmit({
             fail("Authorization was cancelled.");
             return;
           }
-          pendingIdRef.current = created.id;
-          const r = await api.connections.startOAuth.mutate({
-            connectionId: created.id,
-            popup: true,
-          });
-          popup.location.href = r.authUrl;
+          await authorizeInPopup(popup, created.id);
           return;
         }
         const r = await api.connections.startOAuth.mutate({
@@ -169,11 +212,7 @@ export function useTemplateCreateSubmit({
           );
         window.location.href = r.authUrl;
       } catch (err) {
-        closePopup();
-        pendingIdRef.current = null;
-        setAuthorizing(false);
-        void discardPending(created.id);
-        fail(getErrorMessage(err));
+        failPopup(created.id, err);
       }
       return;
     }
@@ -209,6 +248,7 @@ export function useTemplateCreateSubmit({
     verifying: discover.isPending,
     needsOAuth,
     awaitingPopup: !!popupOAuth && authorizing,
-    refocusPopup: focusPopup,
+    refocusPopup: () => void reopenPopup(),
+    cancelAuthorization: () => void cancelAuthorization(),
   };
 }

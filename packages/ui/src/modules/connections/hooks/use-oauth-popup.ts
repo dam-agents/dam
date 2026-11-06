@@ -5,13 +5,22 @@ export interface OAuthPopupResult {
   message?: string;
 }
 
+interface PopupMessage {
+  source?: string;
+  oauth?: string;
+  connection?: string;
+  message?: string;
+}
+
+const POPUP_NAME = "platform-oauth";
 const POPUP_FEATURES = "popup,width=640,height=760";
-const CLOSE_GRACE_MS = 400;
+const OAUTH_FLOW_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   const popupRef = useRef<Window | null>(null);
-  const pollRef = useRef<number | null>(null);
-  const settledRef = useRef(false);
+  const timeoutRef = useRef<number | null>(null);
+  const expectedRef = useRef<string | null>(null);
+  const settledRef = useRef(true);
   const onResultRef = useRef(onResult);
 
   useEffect(() => {
@@ -19,11 +28,12 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   }, [onResult]);
 
   const teardown = useCallback(() => {
-    if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);
-      pollRef.current = null;
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
     popupRef.current = null;
+    expectedRef.current = null;
   }, []);
 
   const settle = useCallback(
@@ -37,40 +47,57 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   );
 
   useEffect(() => {
+    const resultOf = (data: PopupMessage): OAuthPopupResult => ({
+      ok: data.oauth === "success",
+      message: typeof data.message === "string" ? data.message : undefined,
+    });
+    const isResult = (data: unknown): data is PopupMessage =>
+      !!data && (data as PopupMessage).source === "platform-oauth";
+
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
-      const data = e.data as
-        | { source?: string; oauth?: string; message?: string }
-        | null
-        | undefined;
-      if (!data || data.source !== "platform-oauth") return;
+      if (!isResult(e.data)) return;
       popupRef.current?.close();
-      settle({
-        ok: data.oauth === "success",
-        message: typeof data.message === "string" ? data.message : undefined,
-      });
+      settle(resultOf(e.data));
     };
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [settle]);
+
+    const channel =
+      typeof BroadcastChannel === "undefined"
+        ? null
+        : new BroadcastChannel(POPUP_NAME);
+    if (channel)
+      channel.onmessage = (e: MessageEvent) => {
+        if (!isResult(e.data)) return;
+        if (!expectedRef.current || e.data.connection !== expectedRef.current)
+          return;
+        popupRef.current?.close();
+        settle(resultOf(e.data));
+      };
+
+    return () => {
+      window.removeEventListener("message", onMessage);
+      channel?.close();
+      teardown();
+    };
+  }, [settle, teardown]);
 
   const open = useCallback((): Window | null => {
-    const popup = window.open("about:blank", "platform-oauth", POPUP_FEATURES);
+    const popup = window.open("about:blank", POPUP_NAME, POPUP_FEATURES);
     if (!popup) return null;
+    teardown();
     popupRef.current = popup;
     settledRef.current = false;
-    if (pollRef.current !== null) window.clearInterval(pollRef.current);
-    pollRef.current = window.setInterval(() => {
-      if (!popupRef.current?.closed) return;
-      window.clearInterval(pollRef.current!);
-      pollRef.current = null;
-      window.setTimeout(
-        () => settle({ ok: false, message: "Authorization was cancelled." }),
-        CLOSE_GRACE_MS,
-      );
-    }, 600);
+    timeoutRef.current = window.setTimeout(
+      () => settle({ ok: false, message: "Authorization timed out." }),
+      OAUTH_FLOW_TIMEOUT_MS,
+    );
     return popup;
-  }, [settle]);
+  }, [settle, teardown]);
+
+  const expect = useCallback((connectionId: string) => {
+    expectedRef.current = connectionId;
+  }, []);
 
   const close = useCallback(() => {
     settledRef.current = true;
@@ -78,9 +105,11 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     teardown();
   }, [teardown]);
 
-  const focus = useCallback(() => {
-    if (popupRef.current && !popupRef.current.closed) popupRef.current.focus();
+  const focus = useCallback((): boolean => {
+    if (!popupRef.current || popupRef.current.closed) return false;
+    popupRef.current.focus();
+    return true;
   }, []);
 
-  return { open, close, focus };
+  return { open, expect, close, focus };
 }

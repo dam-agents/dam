@@ -130,6 +130,7 @@ export function McpCreatePane({
     needsOAuth,
     awaitingPopup,
     refocusPopup,
+    cancelAuthorization,
   } = useTemplateCreateSubmit({
     template: template ?? EMPTY_TEMPLATE,
     popupOAuth: true,
@@ -265,7 +266,18 @@ export function McpCreatePane({
         </div>
       </div>
       <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
-        <Button variant="outline" onClick={onBack} disabled={pending}>
+        <Button
+          variant="outline"
+          onClick={
+            awaitingPopup
+              ? () => {
+                  cancelAuthorization();
+                  onBack();
+                }
+              : onBack
+          }
+          disabled={pending && !awaitingPopup}
+        >
           Cancel
         </Button>
         <Button

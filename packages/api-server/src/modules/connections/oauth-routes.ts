@@ -73,7 +73,11 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
     const respondError = (message: string) => {
       if (popup)
         return c.html(
-          renderPopupResult(targetOrigin, { oauth: "error", message }),
+          renderPopupResult(targetOrigin, {
+            oauth: "error",
+            message,
+            ...(peeked ? { connection: peeked.ctx.connectionId } : {}),
+          }),
         );
       const params = new URLSearchParams();
       params.set("oauth", "error");
@@ -128,8 +132,14 @@ function renderPopupResult(targetOrigin: string, result: PopupResult): string {
     <p>You can close this window.</p>
     <script>
       (function () {
+        var result = ${payload};
         try {
-          if (window.opener) window.opener.postMessage(${payload}, ${origin});
+          if (window.opener) window.opener.postMessage(result, ${origin});
+        } catch (e) {}
+        try {
+          var channel = new BroadcastChannel("platform-oauth");
+          channel.postMessage(result);
+          channel.close();
         } catch (e) {}
         window.close();
       })();

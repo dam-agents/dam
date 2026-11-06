@@ -91,6 +91,7 @@ export function TemplateCreateFormBody({
     needsOAuth,
     awaitingPopup,
     refocusPopup,
+    cancelAuthorization,
   } = useTemplateCreateSubmit({
     template,
     popupOAuth,
@@ -246,7 +247,18 @@ export function TemplateCreateFormBody({
 
   const footerRegion = (
     <>
-      <Button variant="outline" onClick={onCancel} disabled={pending}>
+      <Button
+        variant="outline"
+        onClick={
+          awaitingPopup
+            ? () => {
+                cancelAuthorization();
+                onCancel();
+              }
+            : onCancel
+        }
+        disabled={pending && !awaitingPopup}
+      >
         Cancel
       </Button>
       <Button
