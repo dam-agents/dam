@@ -72,6 +72,7 @@ export {
   spendLimits,
   spendLimitExtensions,
   spendCeilings,
+  uiEvents,
 } from "./schema.js";
 export {
   control,

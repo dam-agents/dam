@@ -120,6 +120,7 @@
     { "host": "github.githubassets.com", "method": "GET", "path": "/assets/*", "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
     { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" },
+    { "host": "{profile.ux_signals_host}", "method": "GET", "path": "/api/usage/ui/signals?*", "why": "real-user UI signals" },
     { "host": "litellm.cb.ete.res.ibm.com", "why": "operator credential: the nested agent's model calls with the operator's CurveBender key" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
@@ -162,8 +163,18 @@
   "operator_credentials": [
     { "name": "LITELLM_CURVE_BENDER_TOKEN",
       "what": "a real CurveBender (LiteLLM) API key for litellm.cb.ete.res.ibm.com, so a nested agent can use a real model; optional — without it a criterion that needs one is blocked",
+      "required": false },
+    { "name": "DAM_USAGE_API_KEY",
+      "what": "a read-only key of the UI usage API",
       "required": false }
   ],
+  "ux_signals": {
+    "endpoint": "https://{profile.ux_signals_host}/api/usage/ui/signals",
+    "api_key_env": "E2E_DAM_USAGE_API_KEY",
+    "flows": ["starter_kit_agent", "connect_slack", "create_schedule", "publish_artifact"],
+    "min_users": 3,
+    "min_rate": 0.05
+  },
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },
@@ -171,6 +182,7 @@
     "cert_manager_version": { "default": "v1.21.2", "about": "cert-manager, installed once" },
     "gateway_api_version": { "default": "v1.2.0", "about": "Gateway API CRDs, installed once" },
     "helm_version": { "default": "v3.19.0", "about": "helm downloaded into the home" },
+    "ux_signals_host": { "default": "", "ask": true, "about": "the install that collects UI usage (DAM: its DEV install)" },
     "sandbox_github_repo": { "default": "", "ask": true, "about": "the sandbox repository an agent under test files issues in, <organization>/<repository>: an organization of its own, never the product's; empty = no GitHub sandbox" }
   }
 }

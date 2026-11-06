@@ -6,6 +6,7 @@ import {
 } from "../../agents/components/bind/bind-flow.js";
 import { ChannelBindView } from "../../agents/components/bind/channel-bind-view.js";
 import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
+import { useFlowOpened } from "../../usage/lib/ui-telemetry.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
 import { bindErrorCopy, callbackErrorCopy } from "../lib/bind-flow.js";
@@ -17,6 +18,7 @@ const callbackError = readCallbackErrorFromSearch(window.location.search);
 export function SlackBindView() {
   const brandShort = getBrand().short;
   const bind = useBindSlackChannel();
+  useFlowOpened("connect_slack");
   const flow = useSlackBindFlow(flowId);
   return (
     <ChannelBindView

@@ -1,7 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 
+import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
 import { agentsKeys } from "../../agents/api/queries.js";
+import { withFlowSteps } from "../../usage/lib/ui-telemetry.js";
 import { fetchSlackInstallLink } from "./install.js";
 
 export function useStartSlackInstall() {
@@ -23,7 +25,12 @@ export function useSlackInvitationLink() {
 
 export function useBindSlackChannel() {
   return useMutation({
-    ...trpc.agents.bindSlackChannel.mutationOptions(),
+    mutationKey: trpc.agents.bindSlackChannel.mutationKey(),
+    mutationFn: withFlowSteps(
+      "connect_slack",
+      (input: Parameters<typeof api.agents.bindSlackChannel.mutate>[0]) =>
+        api.agents.bindSlackChannel.mutate(input),
+    ),
     meta: {
       invalidates: [agentsKeys.listWithChannels(), trpc.attention.pathKey()],
     },

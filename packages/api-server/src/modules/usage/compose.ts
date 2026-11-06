@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import type { UsageService } from "api-server-api";
+import type { UiTelemetrySettings, UsageService } from "api-server-api";
 import { emit, EventType } from "../../events.js";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import {
@@ -33,13 +33,26 @@ import { createAnalyticsRepository } from "./infrastructure/analytics-repository
 import { toLiveAgentFact } from "./infrastructure/live-agent-facts.js";
 import type { AgentSizing } from "./domain/analytics-report.js";
 import { createUsageRoutes } from "./routes.js";
+import {
+  deleteUiEventsOlderThan,
+  insertUiEvents,
+  readUiSignalsFacts,
+} from "./infrastructure/ui-events-repository.js";
+import {
+  createUiEventsIngest,
+  type UiEventsIngest,
+} from "./services/ui-events-ingest.js";
+import { UI_EVENTS_RETENTION_DAYS } from "./domain/ui-signals-report.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
 export interface UsageModuleDeps {
   db: Db;
   subPseudonymizer: SubPseudonymizer;
   activityTrackingEnabled: boolean;
+  uiTelemetryEnabled: boolean;
+  appVersion: string;
   inspectorRole: string;
+  keyOwnerIsInspector: (sub: string) => Promise<boolean>;
   listK8sAgents: () => Promise<
     Array<{
       id: string;
@@ -63,13 +76,25 @@ export interface UsageModule {
   start(): void;
   stop(): void;
   retentionTick(): Promise<void>;
+  uiEventsRetentionTick(): Promise<void>;
+  uiTelemetry: UiTelemetry;
 }
 
-export function composeUsageForOwner(ownerSub: string): UsageService {
+export interface UiTelemetry {
+  settings: UiTelemetrySettings;
+  ingest: UiEventsIngest;
+}
+
+export function composeUsageForOwner(
+  ownerSub: string,
+  uiTelemetry: UiTelemetry,
+): UsageService {
   return {
     entryPointChosen: (choice) => {
       emit({ type: EventType.EntryPointChosen, actorSub: ownerSub, choice });
     },
+    uiTelemetry: () => uiTelemetry.settings,
+    uiEvents: (input) => uiTelemetry.ingest(ownerSub, input),
   };
 }
 
@@ -82,6 +107,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     resetRuntimeState: true,
   });
 
+  const uiTelemetryOn = deps.activityTrackingEnabled && deps.uiTelemetryEnabled;
   const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
         service: createReportService(deps.db),
@@ -94,8 +120,20 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
           sizing: deps.agentSizing,
         }),
         inspectorRole: deps.inspectorRole,
+        uiSignalsFacts: uiTelemetryOn ? readUiSignalsFacts(deps.db) : null,
+        keyOwnerIsInspector: deps.keyOwnerIsInspector,
       })
     : new Hono();
+
+  const uiTelemetry: UiTelemetry = {
+    settings: { enabled: uiTelemetryOn, build: deps.appVersion },
+    ingest: uiTelemetryOn
+      ? createUiEventsIngest({
+          insert: insertUiEvents(deps.db, deps.subPseudonymizer),
+          now: () => new Date(),
+        })
+      : async () => {},
+  };
 
   let persistAgentsSub: Subscription | null = null;
   let persistActorRolesSub: Subscription | null = null;
@@ -170,7 +208,24 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     }
   }
 
-  return { mount, start, stop, retentionTick };
+  const deleteOldUiEvents = deleteUiEventsOlderThan(deps.db);
+  async function uiEventsRetentionTick(): Promise<void> {
+    const n = await deleteOldUiEvents(UI_EVENTS_RETENTION_DAYS);
+    if (n > 0) {
+      process.stderr.write(
+        `[usage/retention] deleted ${n} ui_events older than ${UI_EVENTS_RETENTION_DAYS}d\n`,
+      );
+    }
+  }
+
+  return {
+    mount,
+    start,
+    stop,
+    retentionTick,
+    uiEventsRetentionTick,
+    uiTelemetry,
+  };
 }
 
 export function listUsageAgentIds(db: Db): Promise<string[]> {
