@@ -30,7 +30,8 @@ A Slack "conversation" is any surface the bot is party to: a public/private **ch
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
-So a conversation carries at most one **default Agent** — the first connected, and the one a bare mention reaches — while a mention opening with an Agent's name reaches that Agent.
+So a conversation carries at most one **default Agent** — the first connected, and the one a mention that names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
+A mention whose words are exactly a command runs that command instead, and a mention with no words lists the Agents (**Commands by mention**, below).
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
@@ -275,11 +276,22 @@ The differences are transport, identity model, and where the bot token comes fro
 - **A conversation shows who stands behind its Agents.** Every connect, in-chat, from the UI or from the CLI, posts one notice in the conversation that tags the person who connected the Agent, because members otherwise find an Agent there with nobody to ask about it.
   That person is always the Agent's owner, since only the owner may manage its channels.
   A 1:1 DM is the exception: the notice there names no one, as the person reading it is the one who connected.
-  Afterwards `/platform who` lists the conversation's Agents with each owner's Slack tag, and `/platform default` with no name shows the same list.
+  Afterwards `/platform who` lists the conversation's Agents, and `/platform default` with no name shows the same list.
+  Each line gives the owner's Slack tag, whether the Agent is the default, whether it reads every message or only its tags, the mention that reaches it, and its description, cut to 200 characters.
+  The description is the Agent's own, set by its owner in the platform UI, so it says the same in every conversation.
   The tag is the owner's link in that workspace; an owner with none there, after a logout or from a connect that predates the membership check, is named by display name instead, so a member never needs the Public Agent Page to find them, and an owner with neither is left out.
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **Commands by mention.** Every command except `whisper` also runs as `@bot <command>`, because many people only mention the bot and never use slash commands.
+  A mention is a command only when its words are a valid command: the command word, then arguments that command accepts, such as a connected Agent's name or a message link.
+  Any other mention is a message to the default Agent, so `@bot who owns this milestone?` stays a question.
+  A bare `@bot` runs `who`, and a command word wins over an Agent with the same name.
+  Only a person's mention runs a command: an Agent's or an app's post that reads like one stays a message, so one Agent can never disconnect another.
+  The reply is ephemeral, in the mention's thread, as a slash command's reply is.
+  `whisper` has no mention form, because the mention shows its text to the whole conversation.
+  `@bot delete <message link>` points to `/platform delete`, because Slack opens its confirmation dialog only from a slash command.
+  A 1:1 DM is unchanged: every message there is already addressed to the bot.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
   Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.

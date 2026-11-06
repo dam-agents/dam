@@ -38,6 +38,8 @@ It is also what lets a person connect an Agent to a conversation from the platfo
 
 Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
 `/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
+Each line also says whether the Agent is the default, whether it reads every message, the mention that reaches it, and the description its owner set.
+Every command except `whisper` also runs as `@DAM <command>` when its words are a valid command, and a bare `@DAM` runs `who`; only a person's mention runs one.
 Owners never appear on the Agent's own posts.
 
 ### How the agent reaches Slack
