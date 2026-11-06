@@ -280,6 +280,12 @@ export function composeEnvironmentGate(
     handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
     sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
     chains: createRedisTtlStore(deps.redis, "env:signin-chain", CHAIN_TTL_MS),
+    signedIn: createRedisTtlStore(deps.redis, "env:signed-in", SESSION_TTL_MS),
+    completions: createRedisTtlStore(
+      deps.redis,
+      "env:signin-completion",
+      CHAIN_TTL_MS,
+    ),
     share: deps.share,
     addressUrl,
     now: () => Date.now(),

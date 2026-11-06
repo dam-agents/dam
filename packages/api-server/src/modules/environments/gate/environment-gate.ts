@@ -13,6 +13,7 @@ import {
   decideAccess,
   decideAgentAccess,
   effectiveAccess,
+  endpointAddresses,
   environmentOrigins,
   isSignInToken,
   parseAddress,
@@ -89,7 +90,10 @@ export interface EnvironmentGateDeps {
   agentOfKey: (key: string) => Promise<AgentVisitor | null>;
   // UNIT_BOUNDARY_DESCRIPTION: records that an Agent opened an Environment; the gate calls it at most once a minute per pair.
   recordAgentVisit: (environmentId: string, agentId: string) => Promise<void>;
-  signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
+  signIn: Pick<
+    EnvironmentSignIn,
+    "redeemHandoff" | "completeSignIn" | "session" | "signOut"
+  >;
   platform: PlatformCredentials;
   ensureReady: (
     agentId: string,
@@ -480,13 +484,23 @@ export function createEnvironmentGate(
         address,
         getCookie(c, signInCookieName) ?? "",
       );
-      if (!redeemed)
+      if (!redeemed) {
+        securityLog("warn", "environment.session", {
+          category: "authn",
+          actor: null,
+          actorKind: "user",
+          agentId: record.agentId,
+          result: "failure",
+          reason: "handoff-refused",
+          detail: { address },
+        });
         return page(
           c,
           400,
           "Sign-in expired",
           "This sign-in link was used, has expired, or was opened in another browser. Open the Environment's link again.",
         );
+      }
       setCookie(c, cookieName, redeemed.sessionId, {
         httpOnly: true,
         secure,
@@ -709,7 +723,7 @@ export function createEnvironmentGate(
       deny(record, visitor, address, access.reason);
       siblingCors(c, record);
       if (access.reason === "not-signed-in") {
-        if (isNavigation(c)) {
+        if (isPageLoad(c)) {
           gateHeaders(c);
           const url = new URL(c.req.url);
           return c.redirect(
@@ -721,7 +735,8 @@ export function createEnvironmentGate(
             302,
           );
         }
-        return page(c, 401, "Sign in", "Sign in to open this Environment.");
+        gateHeaders(c);
+        return c.text("Not signed in to this Environment address.", 401);
       }
       return page(
         c,
@@ -733,8 +748,48 @@ export function createEnvironmentGate(
       );
     }
 
+    const completion = await completeSignIn(c, resolved, visitor);
+    if (completion) return completion;
     return admitted(c, resolved);
   };
+
+  // UNIT_BOUNDARY_DESCRIPTION: a page load of an endpoint with a session (the top document, never a frame, which the front door refuses to be shown in, and never the loading page's own paths), in an Environment whose other endpoints the same sign-in left without one, or whose session there is gone: the browser passes through those endpoints and comes back to the page, so an app's call to them finds a session. Without this the app breaks for good, since its address's session still holds and no page load ever goes through the front door again.
+  async function completeSignIn(
+    c: Context,
+    resolved: Resolved,
+    visitor: EnvironmentSession | null,
+  ): Promise<Response | null> {
+    const sessionId = getCookie(c, cookieName);
+    if (
+      visitor === null ||
+      c.req.path.startsWith(RESERVED_PREFIX) ||
+      !isPageLoad(c) ||
+      (c.req.header("sec-fetch-dest") ?? "document") !== "document" ||
+      sessionId === undefined
+    )
+      return null;
+    const others = endpointAddresses(resolved.record).filter(
+      (a) => a !== resolved.address,
+    );
+    if (others.length === 0) return null;
+    const url = new URL(c.req.url);
+    const completion = await deps.signIn.completeSignIn(
+      sessionId,
+      visitor,
+      others,
+      `${deps.scheme}://${c.req.header("host") ?? ""}${safeNext(`${url.pathname}${url.search}`)}`,
+    );
+    if (!completion) return null;
+    securityLog("info", "environment.signin_complete", {
+      category: "authn",
+      actor: visitor.sub,
+      actorKind: "user",
+      agentId: resolved.record.agentId,
+      detail: { address: resolved.address, missing: completion.missing },
+    });
+    gateHeaders(c);
+    return c.redirect(completion.hop, 302);
+  }
 
   // UNIT_BOUNDARY_DESCRIPTION: what a visitor the gate let in gets, a person or an Agent alike: the start and status paths of the loading page, the loading page itself while the app is not ready, and the app once it is.
   async function admitted(c: Context, resolved: Resolved): Promise<Response> {
