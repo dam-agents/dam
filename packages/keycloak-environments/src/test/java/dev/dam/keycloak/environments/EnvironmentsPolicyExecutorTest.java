@@ -42,6 +42,8 @@ class EnvironmentsPolicyExecutorTest {
   void keepsTheSignedInResource() {
     assertDoesNotThrow(() -> executor.checkSameResource(ENV, null));
     assertDoesNotThrow(() -> executor.checkSameResource(ENV, List.of(ENV)));
+    assertDoesNotThrow(() -> executor.checkSameResource(ENV + "/", List.of(ENV)));
+    assertDoesNotThrow(() -> executor.checkSameResource(ENV, List.of(ENV + "/")));
     assertDoesNotThrow(() -> executor.checkSameResource(null, List.of("x")));
     assertEquals("invalid_target", refused(() -> executor.checkSameResource(ENV, List.of("https://mcp-other.env.example.com"))));
     assertEquals("invalid_target", refused(() -> executor.checkSameResource(ENV, List.of(ENV, "x"))));

@@ -67,8 +67,13 @@ public class EnvironmentsPolicyExecutor implements ClientPolicyExecutorProvider<
 
   void checkSameResource(String signedIn, List<String> asked) throws ClientPolicyException {
     if (signedIn == null || asked == null || asked.isEmpty()) return;
-    if (asked.size() != 1 || !asked.get(0).equals(signedIn))
+    if (asked.size() != 1 || !sameAddress(asked.get(0), signedIn))
       throw new ClientPolicyException(OAuthErrorException.INVALID_TARGET, "resource does not match the sign-in");
+  }
+
+  private boolean sameAddress(String asked, String signedIn) {
+    Optional<String> a = accepted(asked);
+    return a.isPresent() && a.equals(accepted(signedIn));
   }
 
   private Optional<String> accepted(String resource) {
