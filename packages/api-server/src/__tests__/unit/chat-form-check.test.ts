@@ -161,6 +161,34 @@ describe("check_chat_form", () => {
     );
   });
 
+  // TEST_SCENARIO: an update that replaces root on a surface an earlier reply created must also send the children it lists, since the chat rejects it otherwise, and an update that leaves root alone is still accepted.
+  it("reports a child that an update replacing root lists but does not send", () => {
+    const update = (components: unknown[]) =>
+      checkChatForm(
+        JSON.stringify({
+          version: "v1.0",
+          updateComponents: { surfaceId: "earlier", components },
+        }),
+      );
+    const missing = update([
+      { id: "root", component: "Column", children: ["q", "chat"] },
+    ]);
+    expect(missing.ok).toBe(false);
+    expect(missing.problems.map((problem) => problem.message)).toEqual([
+      expect.stringContaining('refers to missing component "q"'),
+      expect.stringContaining('refers to missing component "chat"'),
+    ]);
+    expect(
+      update([
+        { id: "root", component: "Column", children: ["q"] },
+        { id: "q", component: "Text", text: "Next?" },
+      ]).ok,
+    ).toBe(true);
+    expect(update([{ id: "note", component: "Text", text: "Saved" }]).ok).toBe(
+      true,
+    );
+  });
+
   // TEST_SCENARIO: with one question per form, no recommendations and no input lock, the tool reports each of them on a form the defaults accept.
   it("reports a form that goes against the agent's chat form preferences", async () => {
     expect(checkChatForm(TWO_QUESTIONS_LOCKED).ok).toBe(true);
