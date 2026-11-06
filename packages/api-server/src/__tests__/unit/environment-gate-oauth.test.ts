@@ -11,6 +11,7 @@ import {
   type JWK,
 } from "jose";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { WebSocket, WebSocketServer } from "ws";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import {
@@ -84,6 +85,11 @@ async function world(
     if (req.method !== "HEAD") seen.push(req.headers);
     res.end("tools from the app");
   });
+  const wss = new WebSocketServer({ server: runtime });
+  wss.on("connection", (ws, req) => {
+    seen.push(req.headers);
+    ws.send("connected");
+  });
   const runtimePort = await listen(runtime);
   const record: EnvironmentRecord = {
     agentId: "agent-env",
@@ -139,7 +145,25 @@ async function world(
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
   closers.push(() => new Promise((r) => server.close(() => r())));
   await new Promise((r) => server.once("listening", r));
+  server.on("upgrade", (req, socket, head) => {
+    if (!gate.handleUpgrade(req, socket, head)) socket.destroy();
+  });
   const port = (server.address() as AddressInfo).port;
+  // UNIT_BOUNDARY_DESCRIPTION: a WebSocket to the address with the given Authorization: its first message, or the status the gate refused the upgrade with.
+  const socket = (authorization: string) =>
+    new Promise<string>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/mcp`, {
+        headers: { host: `${ADDRESS}.${DOMAIN}`, authorization },
+      });
+      ws.on("message", (d) => {
+        resolve(String(d));
+        ws.close();
+      });
+      ws.on("unexpected-response", (_req, res) =>
+        resolve(`refused ${res.statusCode}`),
+      );
+      ws.on("error", () => resolve("error"));
+    });
   // UNIT_BOUNDARY_DESCRIPTION: a request to the address as a client sends it, with the address in its Host header, which fetch would replace.
   const call = (path: string, headers: Record<string, string> = {}) =>
     new Promise<Answer>((resolve, reject) => {
@@ -170,7 +194,7 @@ async function world(
       req.on("error", reject);
       req.end();
     });
-  return { call, seen, lists, woken };
+  return { call, socket, seen, lists, woken };
 }
 
 describe("an OAuth client at an Environment address", () => {
@@ -258,6 +282,19 @@ describe("an OAuth client at an Environment address", () => {
       (await call("/mcp", { authorization: `Bearer ${unverified}` })).status,
     ).toBe(403);
     expect(seen).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: an MCP client that talks over a WebSocket opens it with the same token: the owner's opens, a token for another address is refused with a 401, and the app sees no token.
+  it("admits a WebSocket by its token", async () => {
+    const { socket, seen } = await world();
+
+    expect(await socket(`Bearer ${await token()}`)).toBe("connected");
+    expect(seen[0]!.authorization).toBeUndefined();
+    expect(
+      await socket(
+        `Bearer ${await token({ aud: "http://mcp-pr-2-abcdef.env.test" })}`,
+      ),
+    ).toBe("refused 401");
   });
 
   // TEST_SCENARIO: AC-9 — the owner's client calls a sleeping Environment; the gate wakes it and holds the call until the machine runs, so the call answers instead of failing with a 503.

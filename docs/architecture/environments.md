@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-05
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -126,6 +126,14 @@ The api-server names the declared ports on every request, so a port the Environm
 - **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
   So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
+- **A person's own OAuth client signs in with their platform account** — an MCP client in an IDE, a desktop app or a CLI, any client of the MCP authorization standard.
+  A request with no session, no Agent Key and no bearer token that is not a page load gets a 401 whose `WWW-Authenticate` names `<address>/.well-known/oauth-protected-resource` and the scopes `environments offline_access` (RFC 9728); a page load keeps the redirect to the front door.
+  The gate answers that path itself on every endpoint, before the app, and the same path suffixed with a path: `resource` is the endpoint's address exactly as a client compares it (`<scheme>://<address>.<environments domain>`, the port only when the install's URL has one, no trailing slash), `authorization_servers` the realm's public issuer; the app can no longer serve that path.
+  The client then registers itself with Keycloak (RFC 7591), signs the person in there with PKCE, and asks for a token naming the address as its `resource` (RFC 8707); Keycloak's `keycloak-environments` extension makes that address the token's only audience and keeps it on every refresh, and the person allows the client once on Keycloak's consent page.
+  A bearer JWT whose issuer is one of the platform's is checked at the gate: RS256 against the realm's keys, that issuer, an audience of exactly this endpoint's address and nothing else, and its expiry; then the same rule a browser session gets, read from the lists at that request — the owner by `sub`, anyone else by an `email` the token marks verified.
+  A token that fails gets a 401 with `error="invalid_token"`, a valid token whose person is not on the lists a 403; a token for one Environment opens no other, and none opens the platform's API, whose audience it never names.
+  The same holds for a WebSocket upgrade, and the relay drops the token before the app as it drops every platform token.
+  An Agent Key request is unchanged.
 - **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
   Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status and retry, which never reach the app.
@@ -138,7 +146,8 @@ The api-server names the declared ports on every request, so a port the Environm
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
-- **Wake.** A request to a sleeping Environment starts its wake and never waits for it.
+- **Wake.** A request to a sleeping Environment starts its wake; only a request with a valid token waits for it, up to a minute until the machine runs, then goes on, and past that gets the 503 below, so a connected client's call answers instead of failing.
+  Every other request never waits.
   While the machine wakes, a page load (a `GET` navigation) gets the loading page below, and every other request — a script's call, an API client, a WebSocket — a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
 - **The app answers for itself.** Once the machine runs, every request but a page load goes to the app as it is, whatever its answer: the gate never stands in for a script, a stylesheet or an API call of an app that is up.
   The one exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.

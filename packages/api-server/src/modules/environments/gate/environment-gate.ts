@@ -981,8 +981,27 @@ export function createEnvironmentGate(
         }
         agentVisited(resolved.record, agent.visitor!, resolved.address);
       } else {
+        const bearer = deps.oauth
+          ? await checkBearer(req.headers.authorization, {
+              resource: resourceFor(resolved.address),
+              issuers: deps.platform.issuers,
+              keys: deps.oauth.keys,
+            })
+          : ({ kind: "none" } as const);
+        if (bearer.kind === "invalid") {
+          deny(resolved.record, null, resolved.address, "invalid-token");
+          return refuseUpgrade(socket, "401 Unauthorized");
+        }
         const cookie = cookieValue(req.headers.cookie, cookieName);
-        const visitor = await session(cookie);
+        const visitor =
+          bearer.kind === "valid"
+            ? {
+                ...bearer.visitor,
+                address: resolved.address,
+                shareSession: "",
+                createdAt: 0,
+              }
+            : await session(cookie);
         const access = decideAccess(
           resolved.record,
           effectiveAccess(
