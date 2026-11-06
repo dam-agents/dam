@@ -58,6 +58,7 @@ import {
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalDefaultModel } from "./modules/terminal-default-model.js";
 import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import { composeBrowser } from "./modules/browser-preview.js";
@@ -895,6 +896,11 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+const grantedModel = (model: string): boolean => {
+  const alias = parseQualifiedModel(model)?.alias;
+  return !alias || grantedAliases().includes(alias);
+};
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
  * refuses the terminal with the provider-removed reason, as a chat prompt
@@ -913,10 +919,12 @@ function terminalLease(
       ? acpRuntime.sessionChoice(sessionId).model
       : requested.model !== undefined
         ? canonicalModel(requested.model)
-        : null;
-  const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
-  if (alias && !grantedAliases().includes(alias))
-    return PROVIDER_REMOVED_REASON;
+        : terminalDefaultModel({
+            harness,
+            chatDefault: acpRuntime.defaults()?.chat,
+            granted: grantedModel,
+          });
+  if (chosen && !grantedModel(chosen)) return PROVIDER_REMOVED_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",

@@ -112,6 +112,7 @@ export interface LeaseRouter extends AcpRuntime {
   sessionChoice(sessionId: string): SessionChoice;
   modelMissing(sessionId: string): boolean;
   receiveDefaults(defaults: SessionDefaultsEventPayload): void;
+  defaults(): SessionDefaultsEventPayload | null;
 }
 
 interface Lease {
@@ -1049,6 +1050,8 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       deps.sessionDefaults.set(defaults);
       convertSessions(defaults);
     },
+
+    defaults: () => deps.sessionDefaults?.get() ?? null,
 
     sessionFrames(sessionId) {
       return (
