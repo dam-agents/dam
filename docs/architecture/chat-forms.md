@@ -45,7 +45,8 @@ sequenceDiagram
   It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before the user sees it.
   The skill and the tool's description require the agent to check every reply with a block and to send only a reply the tool answered `ok` for; without the tool, the agent asks in plain text.
   The chat does not verify that a block was checked.
-  A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked; agent function calls are checked, not run.
+  A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked, plus the children of a `root` the reply replaces, which the reply must send itself; agent function calls are checked, not run.
+  A dynamic value that is not a literal, a `{"@path": "…"}` binding or a `{"@call": "…"}` call fails with a message that names those shapes, and an object with only a `path` key is reported as a mistyped binding.
   Each literal `regex` pattern is compiled the way the chat's renderer (`@a2ui/web_core`) compiles it — no flags, at most 256 characters, no catastrophic backtracking — because a pattern it rejects makes the field's check fail in the chat.
   The tool takes the attempt number and refuses a fourth: after the third failed check the skill and the tool's answer both tell the agent to ask in plain text.
   The count travels in the call, because the endpoint keeps no state between requests.
