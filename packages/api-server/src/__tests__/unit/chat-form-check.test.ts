@@ -108,6 +108,58 @@ describe("check_chat_form", () => {
       problems: [],
     });
   });
+  // TEST_SCENARIO: an object with only a "path" key in an action context or an input value is not a data binding, so the tool reports it and names {"@path": "/x"}, and a real binding passes.
+  it("reports a path key written without the @ and names the binding shape", () => {
+    const withBindings = (context: unknown, value: unknown) =>
+      checkChatForm(
+        block([
+          {
+            version: "v1.0",
+            createSurface: {
+              surfaceId: "ask",
+              catalogId: A2UI_PLATFORM_CATALOG_ID,
+              components: [
+                { id: "root", component: "Column", children: ["pick", "go"] },
+                {
+                  id: "pick",
+                  component: "ChoicePicker",
+                  options: [{ label: "A", value: "a" }],
+                  value,
+                },
+                {
+                  id: "go",
+                  component: "Button",
+                  child: "label",
+                  action: {
+                    event: { name: "save", context: { choice: context } },
+                  },
+                },
+                { id: "label", component: "Text", text: "Save" },
+              ],
+            },
+          },
+        ]),
+      );
+    expect(
+      withBindings({ "@path": "/choice" }, { "@path": "/choice" }),
+    ).toEqual(expect.objectContaining({ ok: true, problems: [] }));
+    const wrongContext = withBindings(
+      { path: "/choice" },
+      { "@path": "/choice" },
+    );
+    expect(wrongContext.ok).toBe(false);
+    expect(wrongContext.problems[0]?.message).toContain(
+      'write {"@path": "/x"}',
+    );
+    const wrongValue = withBindings(
+      { "@path": "/choice" },
+      { path: "/choice" },
+    );
+    expect(wrongValue.ok).toBe(false);
+    expect(wrongValue.problems[0]?.message).toContain(
+      'a binding is written "@path", not "path"',
+    );
+  });
 
   // TEST_SCENARIO: with one question per form, no recommendations and no input lock, the tool reports each of them on a form the defaults accept.
   it("reports a form that goes against the agent's chat form preferences", async () => {
