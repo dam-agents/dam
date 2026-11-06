@@ -505,20 +505,30 @@ node_image_gc_off() {
 # reason (etc/lima/k3s.yaml). An Environment's sysfs write is lost when it
 # sleeps, so an openrc service makes it again before k3s starts.
 NODE_THP_SERVICE=/etc/init.d/platform-thp
+NODE_THP_ENABLED=/sys/kernel/mm/transparent_hugepage/enabled
 
-# node_thp_always: writes and starts NODE_THP_SERVICE, and checks that the
-# kernel took it.
+# node_thp_always: turns huge pages on now, writes NODE_THP_SERVICE and puts
+# it in the default runlevel, beside k3s, and checks that the kernel took it.
+# A node with no OpenRC keeps the setting until it restarts, and a new install
+# makes it again.
 node_thp_always() {
-  printf '%s\n' '#!/sbin/openrc-run' \
-    "# Transparent huge pages on for the nested VM runners (cluster:install)." \
-    'description="Transparent huge pages always"' \
-    'depend() { before k3s; }' \
-    'start() { echo always > /sys/kernel/mm/transparent_hugepage/enabled; }' |
-    node_sh tee "$NODE_THP_SERVICE" >/dev/null
-  node_sh chmod 755 "$NODE_THP_SERVICE"
-  node_sh rc-update add "$(basename "$NODE_THP_SERVICE")" default >/dev/null 2>&1 || true
-  node_sh "$NODE_THP_SERVICE" restart >/dev/null 2>&1 || true
-  node_sh grep -q '\[always\]' /sys/kernel/mm/transparent_hugepage/enabled ||
+  local name
+  name="$(basename "$NODE_THP_SERVICE")"
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# Transparent huge pages on for the nested VM runners (cluster:install, #6199)." \
+      'description="Transparent huge pages always"' \
+      'depend() { before k3s; }' \
+      "start() { echo always > $NODE_THP_ENABLED; }" |
+      node_sh tee "$NODE_THP_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_THP_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart turns huge pages back to madvise" >&2
+  else
+    echo "WARNING: no OpenRC on the node, so nothing turns huge pages on again after a restart; run cluster:install again then" >&2
+  fi
+  node_sh sh -c 'echo always > "$1"' _ "$NODE_THP_ENABLED" 2>/dev/null || true
+  node_sh grep -q '\[always\]' "$NODE_THP_ENABLED" ||
     { echo "FATAL: transparent huge pages did not turn on, so nested VMs boot past their 30 s window" >&2; return 1; }
 }
 
