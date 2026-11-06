@@ -12,6 +12,7 @@ import { unused } from "../helpers/connections-service.js";
  * authorization server that sends Cross-Origin-Opener-Policy: same-origin
  * leaves the callback page with no opener, so the broadcast is the one that
  * arrives. The result names the connection, so a tab takes only its own.
+ * The page tells the person they can close it, as the app finishes alone.
  */
 
 const UI = "https://platform.example.com";
@@ -41,6 +42,9 @@ describe("OAuth popup callback page", () => {
     expect(html).toContain("window.opener.postMessage(result,");
     expect(html).toContain(
       '{"source":"platform-oauth","oauth":"error","message":"access_denied","connection":"conn-1"}',
+    );
+    expect(html).toContain(
+      "The sign-in did not finish. You can close this window and try again in Test.",
     );
   });
 

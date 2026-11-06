@@ -62,6 +62,7 @@ vi.mock(
       awaitingPopup: false,
       refocusPopup: () => {},
       cancelAuthorization: () => {},
+      popupDeadlineAt: null,
     }),
   }),
 );

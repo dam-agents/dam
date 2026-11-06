@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface OAuthPopupResult {
   ok: boolean;
@@ -22,6 +22,7 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
   const expectedRef = useRef<string | null>(null);
   const settledRef = useRef(true);
   const onResultRef = useRef(onResult);
+  const [deadlineAt, setDeadlineAt] = useState<number | null>(null);
 
   useEffect(() => {
     onResultRef.current = onResult;
@@ -34,6 +35,7 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     }
     popupRef.current = null;
     expectedRef.current = null;
+    setDeadlineAt(null);
   }, []);
 
   const settle = useCallback(
@@ -88,6 +90,7 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     teardown();
     popupRef.current = popup;
     settledRef.current = false;
+    setDeadlineAt(Date.now() + OAUTH_FLOW_TIMEOUT_MS);
     timeoutRef.current = window.setTimeout(
       () => settle({ ok: false, message: "Authorization timed out." }),
       OAUTH_FLOW_TIMEOUT_MS,
@@ -111,5 +114,5 @@ export function useOAuthPopup(onResult: (result: OAuthPopupResult) => void) {
     return true;
   }, []);
 
-  return { open, expect, close, focus };
+  return { open, expect, close, focus, deadlineAt };
 }

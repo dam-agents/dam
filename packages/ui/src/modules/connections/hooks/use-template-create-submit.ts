@@ -102,6 +102,7 @@ export function useTemplateCreateSubmit({
     expect: expectPopup,
     close: closePopup,
     focus: focusPopup,
+    deadlineAt: popupDeadlineAt,
   } = useOAuthPopup((result) => void settlePopup(result));
 
   const authorizeInPopup = async (popup: Window, connectionId: string) => {
@@ -248,6 +249,7 @@ export function useTemplateCreateSubmit({
     verifying: discover.isPending,
     needsOAuth,
     awaitingPopup: !!popupOAuth && authorizing,
+    popupDeadlineAt: popupOAuth && authorizing ? popupDeadlineAt : null,
     refocusPopup: () => void reopenPopup(),
     cancelAuthorization: () => void cancelAuthorization(),
   };

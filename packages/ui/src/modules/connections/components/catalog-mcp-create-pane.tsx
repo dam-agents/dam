@@ -21,6 +21,7 @@ import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { validateConnectionName } from "../lib/connection-name.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
+import { OAuthPopupWait } from "./oauth-popup-wait.js";
 
 const MCP_OAUTH_TEMPLATE_ID = "custom-mcp-oauth";
 const MCP_NONE_TEMPLATE_ID = "custom-mcp-none";
@@ -131,6 +132,7 @@ export function McpCreatePane({
     awaitingPopup,
     refocusPopup,
     cancelAuthorization,
+    popupDeadlineAt,
   } = useTemplateCreateSubmit({
     template: template ?? EMPTY_TEMPLATE,
     popupOAuth: true,
@@ -163,14 +165,12 @@ export function McpCreatePane({
   const submitLabel = useMemo(() => {
     if (showDetecting) return "Checking URL…";
     if (verifying) return "Verifying…";
-    if (awaitingPopup) return "Waiting for authorization — reopen";
     if (authorizing) return "Redirecting…";
     if (pending) return "…";
     return needsOAuth ? "Create + Authorize" : "Create";
   }, [
     showDetecting,
     verifying,
-    awaitingPopup,
     authorizing,
     pending,
     needsOAuth,
@@ -266,35 +266,31 @@ export function McpCreatePane({
         </div>
       </div>
       <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
-        <Button
-          variant="outline"
-          onClick={
-            awaitingPopup
-              ? () => {
-                  cancelAuthorization();
-                  onBack();
-                }
-              : onBack
-          }
-          disabled={pending && !awaitingPopup}
-        >
-          Cancel
-        </Button>
-        <Button
-          onClick={awaitingPopup ? refocusPopup : onSubmit}
-          disabled={
-            !awaitingPopup &&
-            (pending || !template || showDetecting || !formState.isValid)
-          }
-          tooltip={
-            awaitingPopup
-              ? "Bring the authorization window back to the front"
-              : undefined
-          }
-          data-testid="connection-create-submit"
-        >
-          {submitLabel}
-        </Button>
+        {awaitingPopup ? (
+          <OAuthPopupWait
+            deadlineAt={popupDeadlineAt}
+            onReopen={refocusPopup}
+            onDiscard={() => {
+              cancelAuthorization();
+              onBack();
+            }}
+          />
+        ) : (
+          <>
+            <Button variant="outline" onClick={onBack} disabled={pending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={onSubmit}
+              disabled={
+                pending || !template || showDetecting || !formState.isValid
+              }
+              data-testid="connection-create-submit"
+            >
+              {submitLabel}
+            </Button>
+          </>
+        )}
       </div>
     </>
   );

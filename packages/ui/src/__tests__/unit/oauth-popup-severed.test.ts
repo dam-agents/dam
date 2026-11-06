@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: an OAuth sign-in in a popup finishes even when the authorization server cuts the popup off from the page that opened it. A server that sends Cross-Origin-Opener-Policy: same-origin leaves the opener seeing the popup as closed and the callback page with no window.opener, so the result also comes over a BroadcastChannel on the app's origin and is taken for the connection being authorized. A popup that reads as closed does not cancel the flow; Cancel does, and removes the half-made connection. The button that refocuses the popup opens a new one when the old one is out of reach.
+// TEST_OVERVIEW: an OAuth sign-in in a popup finishes even when the authorization server cuts the popup off from the page that opened it. A server that sends Cross-Origin-Opener-Policy: same-origin leaves the opener seeing the popup as closed and the callback page with no window.opener, so the result also comes over a BroadcastChannel on the app's origin and is taken for the connection being authorized. A popup that reads as closed does not cancel the flow; Cancel does, and removes the half-made connection. The button that refocuses the popup opens a new one when the old one is out of reach. While the form waits, it says so in a status line with the time left, warns to close a sign-in window still open before reopening, and names Cancel as discarding the connection.
 import type { ConnectionView } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -51,6 +51,8 @@ const { useTemplateCreateSubmit } =
   await import("../../modules/connections/hooks/use-template-create-submit.js");
 const { useReauthenticateConnection } =
   await import("../../modules/connections/hooks/use-reauthenticate-connection.js");
+const { OAuthPopupWait } =
+  await import("../../modules/connections/components/oauth-popup-wait.js");
 
 interface FakePopup {
   closed: boolean;
@@ -144,6 +146,7 @@ async function submitAndSever() {
 it("a severed popup's broadcast result creates the connection", async () => {
   await submitAndSever();
   expect(submitHook.awaitingPopup).toBe(true);
+  expect(submitHook.popupDeadlineAt).toBeGreaterThan(Date.now());
   expect(fake.del).not.toHaveBeenCalled();
   expect(fake.toasts).toEqual([]);
 
@@ -219,4 +222,34 @@ it("re-authenticate completes by broadcast", async () => {
   expect(fake.toasts).toEqual([
     { kind: "success", message: "Connection re-authenticated." },
   ]);
+});
+
+// TEST_SCENARIO: the wait is a status, not a button: the person sees that the sign-in still runs and how long it may take, is told to close a window still open before reopening, and sees that Cancel discards the connection.
+it("the wait panel shows the time left and what Cancel does", async () => {
+  const onReopen = vi.fn();
+  const onDiscard = vi.fn();
+  act(() =>
+    root.render(
+      createElement(OAuthPopupWait, {
+        deadlineAt: Date.now() + 10 * 60 * 1000,
+        onReopen,
+        onDiscard,
+      }),
+    ),
+  );
+  const text = host.textContent ?? "";
+  expect(text).toContain(
+    "Waiting for your sign-in to finish in the other window…",
+  );
+  expect(text).toMatch(/10:00 left\./);
+  expect(text).toContain("Close any sign-in window that is still open");
+  const buttons = [...host.querySelectorAll("button")];
+  expect(buttons.map((b) => b.textContent)).toEqual([
+    "Cancel and discard",
+    "Reopen window",
+  ]);
+  act(() => buttons[0].click());
+  act(() => buttons[1].click());
+  expect(onDiscard).toHaveBeenCalledOnce();
+  expect(onReopen).toHaveBeenCalledOnce();
 });
