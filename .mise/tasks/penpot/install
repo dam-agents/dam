@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#MISE description="Install or upgrade Penpot, its MCP server, PostgreSQL and Valkey into one namespace of the current kubectl context"
+#USAGE flag "--namespace <namespace>" default="penpot" help="The namespace to install into; created when missing"
+#USAGE flag "--public-uri <uri>" required=#true help="The address people open Penpot at, e.g. https://penpot.apps.<cluster domain>"
+#USAGE flag "--openshift" help="On OpenShift: fit the pods to the restricted-v2 SCC, and create a Route for the address, with edge TLS"
+# Acts on whatever KUBECONFIG and context the shell has, so point it at the
+# cluster first. Run again to upgrade: the Secret it made on the first run is
+# kept, and so are the data volumes. etc/penpot/README.md says how to connect
+# an agent to the MCP server.
+set -euo pipefail
+
+chart_version="1.11.7"
+here="$MISE_CONFIG_ROOT/etc/penpot"
+ns="$usage_namespace"
+uri="${usage_public_uri%/}"
+host="${uri#*://}"
+host="${host%%/*}"
+
+kubectl get namespace "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns"
+
+if ! kubectl -n "$ns" get secret penpot-secrets >/dev/null 2>&1; then
+  pg_password="$(openssl rand -hex 24)"
+  valkey_password="$(openssl rand -hex 24)"
+  kubectl -n "$ns" create secret generic penpot-secrets \
+    --from-literal=api-secret-key="$(openssl rand -base64 64 | tr -d '\n')" \
+    --from-literal=postgres-username=penpot \
+    --from-literal=postgres-password="$pg_password" \
+    --from-literal=postgres-uri="postgresql://penpot-postgres:5432/penpot" \
+    --from-literal=valkey-password="$valkey_password" \
+    --from-literal=valkey-uri="redis://:$valkey_password@penpot-valkey:6379/0" >/dev/null
+  echo "Created Secret $ns/penpot-secrets"
+fi
+
+kubectl -n "$ns" apply -f "$here/dependencies.yaml"
+kubectl -n "$ns" rollout status statefulset/penpot-postgres --timeout=5m
+kubectl -n "$ns" rollout status statefulset/penpot-valkey --timeout=5m
+
+openshift_values=()
+[ -z "${usage_openshift:-}" ] || openshift_values=(--values "$here/values-openshift.yaml")
+
+helm upgrade --install penpot penpot \
+  --repo https://helm.penpot.app --version "$chart_version" \
+  --namespace "$ns" \
+  --values "$here/values.yaml" \
+  "${openshift_values[@]}" \
+  --set-string config.publicUri="$uri" \
+  --wait --timeout 15m
+
+# The chart's own Route copies its tls keys into the Route as they are named in
+# its values (terminationType), which the Route API does not know, so the
+# Route is made here. The timeout keeps the MCP plugin's WebSocket open.
+if [ -n "${usage_openshift:-}" ]; then
+  kubectl -n "$ns" apply -f - <<YAML
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: penpot
+  labels:
+    app.kubernetes.io/part-of: penpot
+  annotations:
+    haproxy.router.openshift.io/timeout: 1h
+spec:
+  host: $host
+  to:
+    kind: Service
+    name: penpot
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+YAML
+fi
+
+echo "Penpot is up at $uri"

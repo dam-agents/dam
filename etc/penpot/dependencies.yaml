@@ -1,0 +1,162 @@
+# The two services Penpot's chart needs and no longer bundles: PostgreSQL and
+# Valkey, one replica each, on the same Red Hat hardened images the platform
+# chart runs. Their passwords come from the penpot-secrets Secret, which the
+# install script makes on first run and never rewrites.
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-postgres
+  labels:
+    app.kubernetes.io/name: penpot-postgres
+    app.kubernetes.io/part-of: penpot
+spec:
+  selector:
+    app.kubernetes.io/name: penpot-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: penpot-postgres
+  labels:
+    app.kubernetes.io/name: penpot-postgres
+    app.kubernetes.io/part-of: penpot
+spec:
+  serviceName: penpot-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: penpot-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: penpot-postgres
+        app.kubernetes.io/part-of: penpot
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: registry.access.redhat.com/hi/postgresql:18
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: penpot
+            - name: POSTGRES_DB
+              value: penpot
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: penpot-secrets
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, penpot, -d, penpot]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, penpot, -d, penpot]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: penpot-valkey
+  labels:
+    app.kubernetes.io/name: penpot-valkey
+    app.kubernetes.io/part-of: penpot
+spec:
+  selector:
+    app.kubernetes.io/name: penpot-valkey
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: valkey
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: penpot-valkey
+  labels:
+    app.kubernetes.io/name: penpot-valkey
+    app.kubernetes.io/part-of: penpot
+spec:
+  serviceName: penpot-valkey
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: penpot-valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: penpot-valkey
+        app.kubernetes.io/part-of: penpot
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: valkey
+          image: registry.access.redhat.com/hi/valkey:9.0
+          command: [sh, -c]
+          args:
+            - 'exec valkey-server --appendonly yes --appendfsync everysec --requirepass "$VALKEY_PASSWORD"'
+          ports:
+            - name: valkey
+              containerPort: 6379
+          env:
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: penpot-secrets
+                  key: valkey-password
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping']
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: [sh, -c, 'valkey-cli -a "$VALKEY_PASSWORD" --no-auth-warning ping']
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi

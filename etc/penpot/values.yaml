@@ -1,0 +1,66 @@
+# Values for Penpot's own chart (https://helm.penpot.app, chart `penpot`), at
+# the version the install script pins. The script sets config.publicUri and,
+# on OpenShift, the Route; everything else is here.
+config:
+  # enable-mcp deploys the chart's MCP server and shows Your account →
+  # Integrations → MCP Server, where each person makes the key an agent
+  # connects with. There is no SMTP, so sign-up skips the e-mail check.
+  flags: >-
+    enable-registration enable-login-with-password
+    disable-email-verification
+    enable-mcp enable-access-tokens
+  telemetryEnabled: false
+  existingSecret: penpot-secrets
+  secretKeys:
+    apiSecretKey: api-secret-key
+  postgresql:
+    existingSecret: penpot-secrets
+    secretKeys:
+      postgresqlUriKey: postgres-uri
+      usernameKey: postgres-username
+      passwordKey: postgres-password
+  redis:
+    existingSecret: penpot-secrets
+    secretKeys:
+      redisUriKey: valkey-uri
+
+persistence:
+  assets:
+    enabled: true
+    size: 10Gi
+
+backend:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+frontend:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+exporter:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+mcp:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

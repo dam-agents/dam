@@ -1,0 +1,12 @@
+# Added by `penpot:install -- --openshift`. The chart drops its fixed user IDs on
+# OpenShift by itself but keeps fsGroup 1001, which the restricted-v2 SCC
+# refuses: it allows only the namespace's own range. Without one, OpenShift
+# gives each pod a group from that range, and the volumes are writable to it.
+backend:
+  podSecurityContext: null
+frontend:
+  podSecurityContext: null
+exporter:
+  podSecurityContext: null
+mcp:
+  podSecurityContext: null
