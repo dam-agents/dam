@@ -1,5 +1,5 @@
 [tools]
-"npm:@ibm/bob" = "2.0.8"
+"npm:@ibm/bob" = "2.0.9"
 
 [oci.env]
 PLATFORM_HARNESS = "bob"
