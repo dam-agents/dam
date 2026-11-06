@@ -1758,6 +1758,9 @@ export async function bootstrap() {
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+    db,
+    resolveProfile,
+    boundary: runBoundary,
   });
   const shareBridge = composeShareBridge({
     featureOn: interactiveArtifactsOn,
@@ -2159,6 +2162,7 @@ export async function bootstrap() {
       agentApi: agentApiClient,
       featureOn: interactiveArtifactsOn,
       prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,

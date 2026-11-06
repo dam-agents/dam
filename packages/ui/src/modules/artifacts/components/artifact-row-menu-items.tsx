@@ -4,6 +4,7 @@ import {
   Download,
   Edit,
   FolderMoveTo,
+  MachineLearningModel,
   RequestQuote,
   Share,
   TrashCan,
@@ -23,6 +24,7 @@ import { useStore } from "../../../store.js";
 import { useDeleteArtifact } from "../api/mutations.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
+import { picksPromptModel } from "../lib/prompt-model.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
 const MENU_PARTS = {
@@ -37,6 +39,7 @@ export function ArtifactRowMenuItems({
   onMove,
   onShare,
   onSetRetention,
+  onSetPromptModel,
   menu = "dropdown",
 }: {
   artifact: LibraryArtifact;
@@ -45,6 +48,7 @@ export function ArtifactRowMenuItems({
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
+  onSetPromptModel: (artifact: LibraryArtifact) => void;
   menu?: keyof typeof MENU_PARTS;
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
@@ -96,6 +100,12 @@ export function ArtifactRowMenuItems({
         <Item onSelect={startSession.start}>
           <AddComment size={14} />
           Discuss with agent
+        </Item>
+      )}
+      {startSession.available && picksPromptModel(artifact) && (
+        <Item onSelect={() => onSetPromptModel(artifact)}>
+          <MachineLearningModel size={14} />
+          Set model
         </Item>
       )}
       <Separator />
