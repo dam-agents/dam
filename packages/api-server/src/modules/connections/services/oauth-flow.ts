@@ -19,7 +19,10 @@ import type { SecretStore } from "../../secret-store/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
-import { oauthProviderFor } from "./oauth-token.js";
+import {
+  oauthProviderForSignIn,
+  resolveOAuthClientSecret,
+} from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
 import { rederiveGitHubChildren } from "./github-children.js";
 import { withoutParentScope } from "../domain/github-parent.js";
@@ -75,7 +78,7 @@ export function createOAuthFlowService(deps: {
             "This connection is renewed by the GitHub sign-in it was made from. Sign in again on the sign-in.",
         });
       }
-      const provider = await oauthProviderFor({
+      const provider = await oauthProviderForSignIn({
         ...deps,
         conn,
         auth: conn.auth,
@@ -119,11 +122,15 @@ export function createOAuthFlowService(deps: {
         );
       }
 
-      const provider = await oauthProviderFor({
+      const clientSecret = await resolveOAuthClientSecret({
         ...deps,
         conn,
         auth: conn.auth,
       });
+      const provider = {
+        ...pending.provider,
+        ...(clientSecret ? { clientSecret } : {}),
+      };
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
       const isReauth =
@@ -194,6 +201,12 @@ export function createOAuthFlowService(deps: {
         const expiresAt = earliestExpiry(tokens.expiresAt, scoped?.expiresAt);
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(fresh.auth),
+          ...(pending.provider.resource
+            ? {
+                resource: pending.provider.resource,
+                requestedScopes: pending.provider.scopes ?? [],
+              }
+            : {}),
           connectedAt: Math.floor(Date.now() / 1000),
           scopes: tokens.scopes ?? pending.provider.scopes ?? fresh.auth.scopes,
           ...(expiresAt !== undefined ? { expiresAt } : {}),

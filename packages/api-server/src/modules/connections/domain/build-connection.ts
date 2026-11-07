@@ -338,6 +338,8 @@ async function buildOAuthDcr(
       refreshTokenRef: { ...secretPath, field: "refresh_token" },
       accessTokenRef: { ...secretPath, field: "access_token" },
       scopes: meta.scopes ?? template.scopes ?? [],
+      resource: meta.resource,
+      requestedScopes: meta.scopes ?? template.scopes ?? [],
       authorizationUrl: meta.authorizationEndpoint,
       tokenUrl: meta.tokenEndpoint,
       ...(clientSecret
