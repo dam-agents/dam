@@ -10,7 +10,7 @@ Any harness, any model, on Kubernetes.
 </h3>
 
 <p align="center">
-  Run agents at scale, each in its own microVM, with credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
+  Run agents at scale, each in its own microVM, packed densely on Kubernetes, with credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
 </p>
 
 <p align="center">
@@ -64,8 +64,12 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Why DAM?
 
-- **A microVM for every agent:** Each agent gets its own kernel, boots in seconds, and sleeps when idle. Many agents share one runner pod per user, and nobody sizes an agent by hand.
-- **Agents can test what they build:** Each agent can run Docker or a small Kubernetes cluster (k3s) inside its own VM. It can start the app it works on, with its database and services, and test it before it hands work back.
+- **A microVM for every agent:** Each agent gets its own VM with its own kernel, so isolation is VM-grade, not container-grade.
+- **Dense by design:** Many agents share one runner pod per user.
+  Memory is counted by what agents use, not by their size, and nobody sizes an agent by hand.
+  Idle agents sleep and wake on demand.
+- **Agents can test what they build:** Each agent can run Docker or a small Kubernetes cluster (k3s) inside its own VM.
+  It can start the app it works on, with its database and services, and test it during development or review, before it hands work back.
 - **Isolated by design:** Credential isolation, network controls, and optional human approval.
 - **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
 - **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
