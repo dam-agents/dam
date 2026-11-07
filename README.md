@@ -10,7 +10,7 @@ Any harness, any model, on Kubernetes.
 </h3>
 
 <p align="center">
-  Run agents at scale with isolated sandboxes, credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
+  Run agents at scale, each in its own microVM, with credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
 </p>
 
 <p align="center">
@@ -64,7 +64,9 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Why DAM?
 
-- **Isolated by design:** Sandboxed agents, credential isolation, network controls, and optional human approval.
+- **A microVM for every agent:** Each agent gets its own kernel, boots in seconds, and sleeps when idle. Many agents share one runner pod per user, and nobody sizes an agent by hand.
+- **Agents can test what they build:** Each agent can run Docker or a small Kubernetes cluster (k3s) inside its own VM. It can start the app it works on, with its database and services, and test it before it hands work back.
+- **Isolated by design:** Credential isolation, network controls, and optional human approval.
 - **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
 - **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
 - **Built for teams:** Shared agents accessible through Slack, Telegram, web UI, and CLI.
@@ -80,15 +82,15 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Capabilities
 
-| Building block        | What it provides                                                      |
-| --------------------- | --------------------------------------------------------------------- |
-| Harnesses and models  | Pluggable agent runtimes and inference endpoints                      |
-| Security              | Isolation, credential injection, network controls, optional approvals |
-| Workspaces and memory | Persistent files and context                                          |
-| Orchestration         | Schedules, subagents, and multi-agent workflows                       |
-| Channels              | Slack, Telegram, web UI, and CLI                                      |
-| Skills and artifacts  | Reusable workflows and shareable results                              |
-| Cost visibility       | Usage, budgets, and activity history                                  |
+| Building block        | What it provides                                                              |
+| --------------------- | ----------------------------------------------------------------------------- |
+| Harnesses and models  | Pluggable agent runtimes and inference endpoints                              |
+| Security              | MicroVM isolation, credential injection, network controls, optional approvals |
+| Workspaces and memory | Persistent files and context                                                  |
+| Orchestration         | Schedules, subagents, and multi-agent workflows                               |
+| Channels              | Slack, Telegram, web UI, and CLI                                              |
+| Skills and artifacts  | Reusable workflows and shareable results                                      |
+| Cost visibility       | Usage, budgets, and activity history                                          |
 
 ---
 
@@ -101,10 +103,11 @@ helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
 The chart includes Keycloak, Postgres, Valkey (a Redis-compatible cache), and optional telemetry.
-DAM requires an Istio ambient mesh.
+DAM requires an Istio ambient mesh and nodes with `/dev/kvm`, exposed through a device plugin, because every agent runs as a microVM.
 
 - [Deployment configuration](helm/values.yaml)
 - [Architecture](docs/architecture.md)
+- [VM runner](docs/architecture/vm-runner.md)
 - [Security and credentials](docs/architecture/security-and-credentials.md)
 
 ## Contribute
