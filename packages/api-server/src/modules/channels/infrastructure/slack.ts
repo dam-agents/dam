@@ -4200,7 +4200,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` also works as a mention, for example \`@${brand.name} who\`.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` and \`delete\` also works as a mention, for example \`@${brand.name} who\`.`,
         });
       })
       .exhaustive();
@@ -4607,11 +4607,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   function roleLine(description: string): string {
-    const line = description.replace(/\s+/g, " ").trim().replaceAll("_", "ˍ");
+    const chars = [
+      ...description.replace(/\s+/g, " ").trim().replaceAll("_", "ˍ"),
+    ];
     return escapeMrkdwn(
-      line.length > ROLE_LINE_MAX
-        ? `${line.slice(0, ROLE_LINE_MAX - 1)}…`
-        : line,
+      chars.length > ROLE_LINE_MAX
+        ? `${chars.slice(0, ROLE_LINE_MAX - 1).join("")}…`
+        : chars.join(""),
     );
   }
 

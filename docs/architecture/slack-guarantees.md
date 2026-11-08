@@ -39,7 +39,8 @@ It is also what lets a person connect an Agent to a conversation from the platfo
 Every connect, in-chat or from the UI or CLI, posts one notice in the conversation that tags the person who connected the Agent, its owner; a 1:1 DM's notice names no one.
 `/dam who` needs no link: anyone in the conversation sees its Agents with each owner's Slack tag, or display name when the owner has no link in that workspace, and `/dam default` with no name shows the same list.
 Each line also says whether the Agent is the default, whether it reads every message, the mention that reaches it, and the description its owner set.
-Every command except `whisper` also runs as `@DAM <command>` when its words are a valid command, and a bare `@DAM` runs `who`; only a person's mention runs one.
+Every command except `whisper` and `delete` also runs as `@DAM <command>` when its words are a valid command, and a bare `@DAM` runs `who`; only a person's mention runs one.
+`@DAM delete` only points to `/dam delete`, as Slack opens its confirmation dialog only from a slash command.
 Owners never appear on the Agent's own posts.
 
 ### How the agent reaches Slack
@@ -121,7 +122,7 @@ flowchart TD
 
 | Situation                                                | What happens                                                                                                                                       | Drawback                                                                                                                      |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Bare `@DAM …`                                            | Reaches the **default Agent**: the first one connected, unless changed with `/dam default`                                                         | If the default was disconnected, nobody; an ephemeral lists who is here until an owner runs `/dam default X`                  |
+| `@DAM <message>` that names no Agent                     | Reaches the **default Agent**: the first one connected, unless changed with `/dam default`                                                         | If the default was disconnected, nobody; an ephemeral lists who is here until an owner runs `/dam default X`                  |
 | `@DAM Reviewer …`                                        | Reaches Reviewer; an unknown name is plain text and goes to the default                                                                            | Two connected Agents with the same name: default, only the agent is told                                                      |
 | An Agent hands the message to a peer                     | The peer, bound to the same conversation, takes the whole turn as its own in the same thread                                                       | Once only; attachments dropped; the receiver's owner must have accepted the terms                                             |
 | Mixed bindings: one reads along, another is mention-only | Ambient is per binding. Plain messages reach only readers. A tagged mention reaches one Agent, default or named; readers aren't handed it live     | A reader may meet it later as history and take it as open if the answer sits in a thread                                      |
