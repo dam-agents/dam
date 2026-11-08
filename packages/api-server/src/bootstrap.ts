@@ -1841,6 +1841,8 @@ export async function bootstrap() {
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
+        templateDescription: async (id) =>
+          (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),

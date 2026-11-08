@@ -165,6 +165,11 @@ import {
 } from "./slack-turn-presenter.js";
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import {
+  mentionCommandVerb,
+  parseMentionCommand,
+  parseSwitchArgs,
+} from "./slack-mention-commands.js";
+import {
   agentContextBlock,
   agentFooterLabel,
   catchUpLegend,
@@ -312,6 +317,8 @@ function groupDirectMessageMembers(channelName: string | null): string[] {
 const MEMBERSHIP_CHECK_BUDGET_MS = 1_500;
 
 const ROSTER_ACK_BUDGET_MS = 2_000;
+
+const ROLE_LINE_MAX = 200;
 
 interface CommandReply {
   ack: SlackAck;
@@ -1368,6 +1375,7 @@ export type SlackWorkerDeps = {
   channelPair?: ChannelPair;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
+  templateDescription?: (templateId: string) => Promise<string | null>;
   identityLinks: IdentityLinkService;
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<SlackOAuthPending>;
@@ -2164,30 +2172,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const AGENT_NAME_TTL_MS = 30_000;
   const agentNameCache = createTtlMap<
     string,
-    { name: string; avatar: string | undefined }
+    { name: string; avatar: string | undefined; description: string }
   >({ ttlMs: AGENT_NAME_TTL_MS, maxEntries: 500 });
 
   async function resolveAgentName(instanceName: string): Promise<string> {
     return (await resolveAgentIdentity(instanceName)).name;
   }
 
-  async function resolveAgentIdentity(
-    instanceName: string,
-  ): Promise<{ name: string; avatar: string | undefined }> {
+  async function resolveAgentIdentity(instanceName: string): Promise<{
+    name: string;
+    avatar: string | undefined;
+    description: string;
+  }> {
     const readAt = Date.now();
     const cached = agentNameCache.get(instanceName);
     if (cached) return cached;
     let name: string;
     let avatar: string | undefined;
+    let description = "";
     try {
       const agent = await agents().get(instanceName);
       name = agent?.name?.trim() || instanceName;
       avatar = agent?.spec?.avatar;
+      description = await ownDescription(agent);
     } catch {
       name = instanceName;
     }
-    agentNameCache.set(instanceName, { name, avatar }, readAt);
-    return { name, avatar };
+    agentNameCache.set(instanceName, { name, avatar, description }, readAt);
+    return { name, avatar, description };
+  }
+
+  async function ownDescription(agent: Agent | null): Promise<string> {
+    const own = agent?.spec?.description?.trim() ?? "";
+    if (!own || !agent?.templateId || !deps.templateDescription) return own;
+    const inherited = await deps
+      .templateDescription(agent.templateId)
+      .catch(() => null);
+    return own === inherited?.trim() ? "" : own;
   }
 
   const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -4179,7 +4200,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` and \`delete\` also works as a mention, for example \`@${brand.name} who\`.`,
         });
       })
       .exhaustive();
@@ -4531,16 +4552,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
-  function rosterRoll(
-    roster: RosterEntry[],
-    owners: (string | null)[] = [],
-  ): string {
+  function rosterRoll(roster: RosterEntry[]): string {
     return roster
       .map(
-        (entry, i) =>
-          `• \`${entry.name}\`${owners[i] ? `, owned by ${owners[i]}` : ""}${
-            entry.isDefault ? " — default" : ""
-          }${entry.ambient ? " (reads along)" : ""}`,
+        (entry) =>
+          `• \`${entry.name}\`${entry.isDefault ? " — default" : ""}${
+            entry.ambient ? " (reads along)" : ""
+          }`,
       )
       .join("\n");
   }
@@ -4560,7 +4578,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   async function ownedRosterRoll(roster: RosterEntry[]): Promise<string> {
-    return rosterRoll(roster, await Promise.all(roster.map(ownerMention)));
+    const teamId = roster[0]?.teamId;
+    const [owners, identities, botUserId] = await Promise.all([
+      Promise.all(roster.map(ownerMention)),
+      Promise.all(
+        roster.map((entry) => resolveAgentIdentity(entry.instanceName)),
+      ),
+      teamId ? gateway?.getBotUserId(teamId).catch(() => null) : null,
+    ]);
+    const tag = botUserId ? `<@${botUserId}>` : `@${brand.name}`;
+    return roster
+      .map((entry, i) => {
+        const owner = owners[i] ? `, owned by ${owners[i]}` : "";
+        const named = `${tag} ${escapeMrkdwn(entry.name)} &lt;message&gt;`;
+        const role = roleLine(identities[i]!.description);
+        return (
+          `• \`${entry.name}\`${owner}${entry.isDefault ? ", the default" : ""}. ` +
+          (entry.ambient
+            ? "Reads every message here. "
+            : "Reads only messages that tag it. ") +
+          (entry.isDefault
+            ? `Reach it with ${tag} &lt;message&gt; or ${named}.`
+            : `Reach it with ${named}.`) +
+          (role ? `\n      _${role}_` : "")
+        );
+      })
+      .join("\n");
+  }
+
+  function roleLine(description: string): string {
+    const chars = [
+      ...description.replace(/\s+/g, " ").trim().replaceAll("_", "ˍ"),
+    ];
+    return escapeMrkdwn(
+      chars.length > ROLE_LINE_MAX
+        ? `${chars.slice(0, ROLE_LINE_MAX - 1).join("")}…`
+        : chars.join(""),
+    );
   }
 
   async function ackWhenReady(
@@ -4630,7 +4684,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ownedRosterRoll(roster).then(
           (roll) =>
             (current
-              ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
+              ? `\`${current.name}\` is this channel's default agent — a mention with a message that names no agent reaches it.`
               : "This channel has no default agent set.") +
             `\n\nConnected here:\n${roll}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
         ),
@@ -4713,7 +4767,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     await ack({
       text:
-        `\`${target.name}\` is now this channel's default agent — mentions with no name reach it` +
+        `\`${target.name}\` is now this channel's default agent — mentions with a message that names no agent reach it` +
         (previous ? `, not \`${previous.name}\`` : "") +
         `. Every agent here stays reachable by name.`,
     });
@@ -4775,16 +4829,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
     await ack({ text: opts.denyCopy });
     return null;
-  }
-
-  function parseSwitchArgs(rest: string): {
-    action: "on" | "off" | null;
-    nameArg: string;
-  } {
-    const words = rest.split(/\s+/).filter(Boolean);
-    const tail = words.at(-1)?.toLowerCase();
-    const action = tail === "on" || tail === "off" ? tail : null;
-    return { action, nameArg: (action ? words.slice(0, -1) : words).join(" ") };
   }
 
   function appLabel(app: SlackIgnoredApp): string {
@@ -5735,6 +5779,52 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { owner: agentId, dropped: false, rateChecked: true };
   }
 
+  async function runMentionCommand(
+    event: SlackMentionEvent,
+    user: string,
+  ): Promise<boolean> {
+    if (!mentionCommandVerb(event.text)) return false;
+    const parsed = await parseMentionCommand(
+      event.text,
+      await resolveRoster(event.channel),
+      async () =>
+        (await ignoredApps.list(event.channel)).map(
+          (app) => app.name || app.botId,
+        ),
+    );
+    if (!parsed) return false;
+    const say = (text: string) =>
+      ephemeral(event.channel, user, event.threadTs, text, event.teamId);
+    getLogger().info(
+      {
+        channelId: event.channel,
+        command:
+          parsed.kind === "run" ? parsed.text.split(" ")[0] : parsed.verb,
+      },
+      "slack.mention.command",
+    );
+    if (parsed.kind === "slash-only") {
+      await say(
+        `Run \`/${brandShort} delete <message link> [reason]\` to delete an agent post. Its confirmation opens only from the slash command.`,
+      );
+      return true;
+    }
+    await handleCommand(
+      {
+        text: parsed.text,
+        userId: user,
+        channelId: event.channel,
+        teamId: event.teamId,
+        triggerId: "",
+      },
+      async (response) => {
+        if (response) await say(response.text);
+      },
+      say,
+    );
+    return true;
+  }
+
   async function handleInbound(
     signedEvent: SlackMentionEvent,
     opts: { directMessage: boolean },
@@ -5745,6 +5835,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
+    if (
+      !opts.directMessage &&
+      sender.kind === "person" &&
+      (await runMentionCommand(event, sender.user))
+    )
+      return;
     if (
       !rerouted &&
       sender.kind !== "person" &&
