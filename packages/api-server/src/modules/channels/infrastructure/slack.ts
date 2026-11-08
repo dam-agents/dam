@@ -4590,7 +4590,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return roster
       .map((entry, i) => {
         const owner = owners[i] ? `, owned by ${owners[i]}` : "";
-        const named = `${tag} ${escapeMrkdwn(entry.name)}`;
+        const named = `${tag} ${escapeMrkdwn(entry.name)} &lt;message&gt;`;
         const role = roleLine(identities[i]!.description);
         return (
           `• \`${entry.name}\`${owner}${entry.isDefault ? ", the default" : ""}. ` +
@@ -4598,7 +4598,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ? "Reads every message here. "
             : "Reads only messages that tag it. ") +
           (entry.isDefault
-            ? `Reach it with ${tag} or ${named}.`
+            ? `Reach it with ${tag} &lt;message&gt; or ${named}.`
             : `Reach it with ${named}.`) +
           (role ? `\n      _${role}_` : "")
         );
@@ -4682,7 +4682,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ownedRosterRoll(roster).then(
           (roll) =>
             (current
-              ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
+              ? `\`${current.name}\` is this channel's default agent — a mention with a message that names no agent reaches it.`
               : "This channel has no default agent set.") +
             `\n\nConnected here:\n${roll}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
         ),
@@ -4765,7 +4765,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     await ack({
       text:
-        `\`${target.name}\` is now this channel's default agent — mentions with no name reach it` +
+        `\`${target.name}\` is now this channel's default agent — mentions with a message that names no agent reach it` +
         (previous ? `, not \`${previous.name}\`` : "") +
         `. Every agent here stays reachable by name.`,
     });

@@ -39,10 +39,14 @@ export function AgentDescriptionSection({ agent }: { agent: AgentView }) {
     ) : null;
 
   const save = () => {
-    if (draft === null || !changed) return;
+    if (draft === null || !changed || update.isPending) return;
+    const sent = draft;
     update.mutate(
-      { id: agent.id, description: draft.trim() },
-      { onSuccess: () => setDraft(null) },
+      { id: agent.id, description: sent.trim() },
+      {
+        onSuccess: () =>
+          setDraft((current) => (current === sent ? null : current)),
+      },
     );
   };
 
