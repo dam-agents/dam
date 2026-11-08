@@ -181,7 +181,9 @@ Two consequences worth knowing:
 
 The session picker's Model choices are the Model Catalog's view of Bob: every granted provider's chat-capable models under provider-qualified names (`ibm/aws/claude-sonnet-4-6`, `cb/rits/zai-org/glm-5-3`, `bob/premium-ide`), listed by agent-runtime per Connection and served to Bob itself as a LiteLLM-shaped `/inference/v1/model/info` on the router, the endpoint Bob reads its models and prices from.
 The Bob Shell Connection's own gateway (`BOB_DEFAULT_GATEWAY_URL`) is listed through the same catalog; its model-info's limits and prices outrank the price table.
-Bob's `/admin/v1` calls belong to its own gateway and get a 404 from the router, which Bob tolerates.
+Bob's other calls to that base URL, its profile and team budget under `/admin/v1` and its docs-search MCP server under `/rag/v1`, belong to its own gateway: the router forwards them to the Bob Shell Connection's gateway with the Connection's placeholder.
+Bob takes its team and instance from the first entry of the profile and stamps them on every call, so a general-type key without them is refused with HTTP 402; the router puts the Connection's pinned team and instance first in the profile it hands on, and drops `region_domain`, which would otherwise make Bob move every call to that region's host.
+With no Bob Shell Connection granted those calls get a 404, which Bob tolerates only with a key that needs no team.
 
 A Bob Shell connection made before `BOB_DEFAULT_GATEWAY_URL` was added to the preset does not carry it: re-save the provider in Settings → Providers once to pick it up, otherwise the catalog lists no Bob-gateway model and the rest keeps working.
 A listing that cannot be read keeps that Connection's last known list and never empties another's.
@@ -190,15 +192,15 @@ A listing that cannot be read keeps that Connection's last known list and never 
 
 These ride on the secret's `envMappings`, so every agent granted the Bob secret inherits them automatically — no per-agent re-entry.
 
-| Env var                   | Translated to                            | Effect                                                                                                                                                                                             |
-| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOBSHELL_API_KEY`        | n/a (env-only)                           | API key the credential gateway swaps to the real value on the wire. Always emitted.                                                                                                                |
-| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                           | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                       |
-| `BOB_SHELL_MODEL`         | `session.model`                          | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default.                                         |
-| `BOB_CHAT_MODE`           | `session.defaultMode`                    | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
-| `BOB_MAX_COINS`           | `session.maxCost`                        | Per-task cost cap — Bob stops the task when exceeded.                                                                                                                                              |
-| `BOB_INSTANCE_ID`         | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles.               |
-| `BOB_TEAM_ID`             | `bob chat --team-id` (terminal only)     | Team ID for `general`-type API keys. Terminal-only for the same reason.                                                                                                                            |
+| Env var                   | Translated to                                         | Effect                                                                                                                                                                                             |
+| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOBSHELL_API_KEY`        | n/a (env-only)                                        | API key the credential gateway swaps to the real value on the wire. Always emitted.                                                                                                                |
+| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                                        | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                       |
+| `BOB_SHELL_MODEL`         | `session.model`                                       | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default.                                         |
+| `BOB_CHAT_MODE`           | `session.defaultMode`                                 | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
+| `BOB_MAX_COINS`           | `session.maxCost`                                     | Per-task cost cap — Bob stops the task when exceeded.                                                                                                                                              |
+| `BOB_INSTANCE_ID`         | profile order on the router; `bob chat --instance-id` | IBM tenant scoping. `bob acp` takes no instance, so the router puts this instance first in the profile Bob reads, which is where a chat session takes its instance from.                           |
+| `BOB_TEAM_ID`             | profile order on the router; `bob chat --team-id`     | Team ID for `general`-type API keys, the same way: first in the forwarded profile for chat sessions.                                                                                               |
 
 Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
 
