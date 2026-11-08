@@ -13,7 +13,7 @@ import { HarnessSettingsSections } from "./harness-settings-sections.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 
 const DESCRIPTION_HINT =
-  "One or two sentences on what this agent is for. People see it when they list the agents in a Slack conversation.";
+  "How this agent introduces itself to others: one or two sentences on what it is for.";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the Agent is for, in its owner's words, on

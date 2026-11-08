@@ -4600,14 +4600,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           (entry.isDefault
             ? `Reach it with ${tag} or ${named}.`
             : `Reach it with ${named}.`) +
-          (role ? `\n      ${role}` : "")
+          (role ? `\n      _${role}_` : "")
         );
       })
       .join("\n");
   }
 
   function roleLine(description: string): string {
-    const line = description.replace(/\s+/g, " ").trim();
+    const line = description.replace(/\s+/g, " ").trim().replaceAll("_", "ˍ");
     return escapeMrkdwn(
       line.length > ROLE_LINE_MAX
         ? `${line.slice(0, ROLE_LINE_MAX - 1)}…`
