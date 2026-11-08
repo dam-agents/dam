@@ -144,33 +144,33 @@ export function BobForm({
         <div className="grid grid-cols-1 gap-3">
           <PinField
             label="Model"
-            hint="BOB_SHELL_MODEL — empty → Bob's built-in default."
+            hint="BOB_SHELL_MODEL. Fallback model of a terminal session that names none, after the agent's Config panel and the agent's default provider; a chat session always picks its model. Empty → Bob's built-in default."
             placeholder="premium-shell"
             error={errors.model?.message}
             register={register("model")}
           />
           <PinField
             label="Instance ID"
-            hint="BOB_INSTANCE_ID. IBM tenant scoping: the Bob instance the agent's chat sessions run on."
+            hint="BOB_INSTANCE_ID. IBM tenant scoping: the Bob instance the agent's chat and terminal sessions run on."
             error={errors.agentId?.message}
             register={register("agentId")}
           />
           <PinField
             label="Team ID"
-            hint="BOB_TEAM_ID. For general-type API keys: the team the agent's Bob chat sessions run on."
+            hint="BOB_TEAM_ID. For general-type API keys: the team the agent's chat and terminal sessions run on."
             error={errors.teamId?.message}
             register={register("teamId")}
           />
           <PinField
             label="Max cost"
-            hint="BOB_MAX_COINS → session.maxCost. Per-task cost cap; Bob stops the task when exceeded."
+            hint="BOB_MAX_COINS → session.maxCost. Per-task cost cap for chat and terminal sessions; Bob stops the task when exceeded."
             placeholder="(no cap)"
             error={errors.maxCost?.message}
             register={register("maxCost")}
           />
           <PinField
             label="Mode"
-            hint={`BOB_CHAT_MODE → session.defaultMode. Starting mode unless the agent Config panel sets one. One of: ${BOB_CHAT_MODES.join(", ")}.`}
+            hint={`BOB_CHAT_MODE → session.defaultMode. Starting mode of chat and terminal sessions unless the agent's Config panel sets one. One of: ${BOB_CHAT_MODES.join(", ")}.`}
             placeholder="(Bob default)"
             list="bob-chat-modes"
             error={errors.chatMode?.message}

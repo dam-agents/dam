@@ -55,6 +55,7 @@ import {
   bedrockRouterEnv,
   createCallerSessionLookup,
   createModelCallExporter,
+  homeConnectionEnv,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
@@ -105,7 +106,11 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
+import {
+  leaseSpawnEnv,
+  type LeaseEnvReader,
+  mergedSpawnEnv,
+} from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   canonicalModel,
@@ -485,6 +490,15 @@ const nativeEnv = (connectionId: string): Record<string, string> => {
   const layer = envStore.state().providers.find((l) => l.id === connectionId);
   return layer ? layerEnvOf(layer) : {};
 };
+const spawnEnvReader: LeaseEnvReader = {
+  ...envStore,
+  connectionEnvFor: (harness) =>
+    homeConnectionEnv({
+      harness,
+      binding: harnessManifests[harness]?.modelRouter,
+      layers: envStore.state().providers,
+    }),
+};
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a terminal's harness starts with the same model
  * env as its chat process: a native Connection's env and the harness's own
@@ -556,7 +570,7 @@ const {
   workingDir: workDir,
   agentHome: homeDir,
   stateBackend,
-  envReader: envStore,
+  envReader: spawnEnvReader,
   defaultHarness,
   harnesses: Object.fromEntries(
     Object.entries(harnessManifests).map(([name, manifest]) => {
@@ -1078,7 +1092,7 @@ function attachPty(
         env: {
           ...(Object.fromEntries(
             Object.entries(
-              leaseSpawnEnv(envStore, {
+              leaseSpawnEnv(spawnEnvReader, {
                 harness: lease.harness,
                 provider: null,
                 model: null,

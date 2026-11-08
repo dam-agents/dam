@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-04
+Last verified: 2026-11-08
 
 ## Session inside the machine
 
@@ -25,7 +25,7 @@ A listed session's title is its explicit title (a rename, a schedule's session t
 The list is read from the platform's own session records, not from the harness, so a Session with no kept title (one a runtime before the Model Router made) gets the harness's title once: at each boot the runtime asks each harness's listing for its untitled Sessions and keeps the first line of the title.
 A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
-A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
+A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, but for the variables the harness's manifest names from its home Connection (Bob's Advanced settings), laid under the agent's own env ([harness configuration](harness-config.md#the-model-router)); a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
 
 Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
