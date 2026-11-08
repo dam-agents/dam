@@ -47,12 +47,14 @@ export function createBobGatewayPassthrough(
       if (deps.harnesses[harness]?.bobGateway !== true) return false;
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       if (url.pathname.startsWith(MODEL_NAMESPACE)) return false;
-      const layer = deps
-        .envState()
-        .providers.find(
-          (l) => l.template === BOB_TEMPLATE && !!l.env.BOB_DEFAULT_GATEWAY_URL,
-        );
+      const state = deps.envState();
+      const layer = state.providers.find(
+        (l) => l.template === BOB_TEMPLATE && !!l.env.BOB_DEFAULT_GATEWAY_URL,
+      );
       if (!layer) return false;
+      /* UNIT_BOUNDARY_DESCRIPTION: a pin is read the way a harness process reads its env, the agent's own env over the Connection's setting, so an override in Configure Agent → Env wins for chat sessions as it does for a terminal's flags. */
+      const pin = (name: string): string | null =>
+        state.env[name] ?? layer.env[name] ?? null;
       const method = req.method ?? "GET";
       const where = `bob gateway ${method} ${url.pathname}`;
       const target = `${layer.env.BOB_DEFAULT_GATEWAY_URL!.replace(/\/+$/, "")}${url.pathname}${url.search}`;
@@ -96,8 +98,8 @@ export function createBobGatewayPassthrough(
             })
             .end(
               rewriteBobProfile(text, {
-                teamId: layer.env.BOB_TEAM_ID ?? null,
-                instanceId: layer.env.BOB_INSTANCE_ID ?? null,
+                teamId: pin("BOB_TEAM_ID"),
+                instanceId: pin("BOB_INSTANCE_ID"),
               }),
             );
           return true;

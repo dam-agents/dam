@@ -60,6 +60,7 @@ const logs: string[] = [];
 const recorded: ModelCallRecord[] = [];
 let gateway: Server;
 let layers: EnvLayer[] = [];
+let agentEnv: Record<string, string> = {};
 let router: ModelRouter;
 
 const bobLayer = (pins: Record<string, string>, base: string): EnvLayer => ({
@@ -114,7 +115,7 @@ beforeAll(async () => {
   layers = [bobLayer({ BOB_TEAM_ID: "team-B" }, base)];
   router = composeModelRouter({
     catalog: { providers: () => [], forHarness: () => [] },
-    envState: () => ({ env: {}, harnesses: [], providers: layers }),
+    envState: () => ({ env: agentEnv, harnesses: [], providers: layers }),
     harnesses: HARNESSES,
     defaultHarness: "bob",
     onCall: (record) => recorded.push(record),
@@ -170,6 +171,27 @@ describe("Bob's gateway calls through the router", () => {
     expect(profile.instances[0]!.is_internal).toBe(true);
     expect(profile.instances.some((i) => "region_domain" in i)).toBe(false);
     expect(recorded).toHaveLength(0);
+  });
+
+  /** TEST_SCENARIO: an override in the agent's own env (Configure Agent →
+   * Env) outranks the Connection's pin for a chat session, as it does for a
+   * terminal's flags: the instance holding the overriding team moves first
+   * while the Connection still pins another team. */
+  it("lets the agent's env override the Connection's team pin", async () => {
+    agentEnv = { BOB_TEAM_ID: "team-C" };
+    try {
+      const r = await fetch(`${router.baseUrl}/admin/v1/profile`, {
+        headers: bobHeaders,
+      });
+      const profile = (await r.json()) as typeof PROFILE;
+      expect(profile.instances.map((i) => i.instance_id)).toEqual([
+        "inst-2",
+        "inst-1",
+      ]);
+      expect(profile.instances[0]!.teams.map((t) => t.id)).toEqual(["team-C"]);
+    } finally {
+      agentEnv = {};
+    }
   });
 
   /** TEST_SCENARIO: Bob's docs search is an MCP client posting JSON to
