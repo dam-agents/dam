@@ -45,3 +45,14 @@ describe("send-error surfacing", () => {
     expect(hint).toMatch(/session log/i);
   });
 });
+
+// TEST_SCENARIO: Native login belongs to the selected agent, so its startup failure points to that terminal rather than replacing a provider key or retrying a memory failure.
+test("missing ChatGPT login names this agent and its sign-in action", () => {
+  const description = describeSendError(
+    "the harness exited (ChatGPT sign-in is required on this agent.)",
+  );
+  expect(description.message).toBe("Sign in to ChatGPT on this agent.");
+  expect(description.hint).toContain("Providers page");
+  expect(description.hint).toContain("Sign in to ChatGPT");
+  expect(description.hint).not.toMatch(/memory|API key|Settings/);
+});

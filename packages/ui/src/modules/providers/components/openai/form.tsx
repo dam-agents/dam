@@ -79,10 +79,10 @@ export function OpenAIForm({
         <>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              After attaching this provider to an agent, sign in over SSH: run{" "}
-              <code>codex-chatgpt login --device-auth</code>. That login also
-              powers the agent's web chat and Slack sessions when you select a
-              subscription model.
+              After attaching this provider, open the agent’s Providers page and
+              select Sign in to ChatGPT. Follow the device sign-in steps there.
+              That login also powers the agent's web chat and Slack sessions
+              when you select a subscription model.
             </p>
             <p>Approve the device code in your own browser.</p>
             <p>

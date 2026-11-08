@@ -90,6 +90,7 @@ export function ProviderRow({
         <ConnectionBadge
           id={`${id}-status`}
           name={name}
+          subscription={type === "chatgpt"}
           connected={connected}
           degraded={degraded}
           keyCheck={keyCheck}
@@ -145,6 +146,7 @@ function ConnectionBadge({
   id,
   name,
   connected,
+  subscription,
   degraded,
   keyCheck,
   checking,
@@ -153,12 +155,19 @@ function ConnectionBadge({
   id: string;
   name: string;
   connected: boolean;
+  subscription: boolean;
   degraded: boolean;
   keyCheck: ProviderKeyCheck | null | undefined;
   checking: boolean;
   reason: string | null;
 }) {
-  const [state, tone] = match({ connected, checking, degraded, keyCheck })
+  const [state, tone] = match({
+    connected,
+    checking,
+    degraded,
+    keyCheck,
+    subscription,
+  })
     .with({ connected: false }, () => [
       "Not connected",
       "text-muted-foreground",
@@ -173,6 +182,7 @@ function ConnectionBadge({
       "Could not verify",
       "text-danger",
     ])
+    .with({ subscription: true }, () => ["Enabled", "text-muted-foreground"])
     .with({ keyCheck: P.union({ result: "ok" }, P.nullish) }, () => [
       "Connected",
       "text-green-700 dark:text-success",

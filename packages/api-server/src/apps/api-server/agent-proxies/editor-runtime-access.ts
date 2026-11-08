@@ -6,6 +6,7 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 
 const RUNTIME_PROCEDURES: ReadonlyMap<string, AgentPermission> = new Map([
+  ["nativeLogin.status", "view"],
   ["harnessConfig.current", "view"],
   ["harnessConfig.models", "view"],
   ["harnessConfig.watch", "view"],

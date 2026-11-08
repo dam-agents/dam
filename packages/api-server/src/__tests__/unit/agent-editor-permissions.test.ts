@@ -594,3 +594,10 @@ describe("an editor and the agent's saved defaults", () => {
     editorPermissions = EDITS;
   });
 });
+
+// TEST_SCENARIO: Editors can read the safe sign-in enum but cannot call invented login mutations. Terminal authorization remains owner-only.
+it("allows only the safe native status procedure to editors", () => {
+  expect(editorMayCall(EDITS, "nativeLogin.status")).toBe(true);
+  expect(editorMayCall(EDITS, "nativeLogin.start")).toBe(false);
+  expect(editorMayCall([], "nativeLogin.status")).toBe(false);
+});

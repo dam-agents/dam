@@ -40,6 +40,8 @@ export function Terminal({
   onSubmit,
   onSessionMoved,
   autoConnect = true,
+  nativeLogin = false,
+  onExit,
 }: {
   agentId: string;
   sessionId: string;
@@ -50,6 +52,8 @@ export function Terminal({
   onSubmit?: () => void;
   onSessionMoved?: (sessionId: string) => void;
   autoConnect?: boolean;
+  nativeLogin?: boolean;
+  onExit?: (code: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -60,7 +64,7 @@ export function Terminal({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
-  const userConnect = useRef(false);
+  const userConnect = useRef(nativeLogin);
   const stopped = useRef(false);
   const [pty] = useState(freshPty);
   const socket = useRef<WebSocket | null>(null);
@@ -156,7 +160,12 @@ export function Terminal({
           token,
           reset,
           wakes,
-          lease: lease ? pairMeta(lease) : null,
+          lease: nativeLogin
+            ? { harness: "codex" }
+            : lease
+              ? pairMeta(lease)
+              : null,
+          nativeLogin,
         }),
       );
       ws.binaryType = "arraybuffer";
@@ -195,6 +204,7 @@ export function Terminal({
         } else if (frame.op === OP_EXIT) {
           exited = true;
           setExitCode(frame.code);
+          onExit?.(frame.code);
           setState("exited");
         } else if (frame.op === OP_SESSION) {
           onSessionMoved?.(frame.sessionId);

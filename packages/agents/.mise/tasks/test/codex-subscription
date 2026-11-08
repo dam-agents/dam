@@ -83,7 +83,11 @@ try {
   assert.equal(chat.env.INITIAL_AGENT_MODE, "agent-full-access");
 
   // TEST_SCENARIO: Starting ACP before authorization must fail with instructions instead of keeping an app-server with a cached missing account. After sign-in, retry starts normally.
-  assert.throws(() => run("harness-chat", [], { ...env, NATIVE_AUTH_STATUS: "missing" }), /ChatGPT sign-in is required/);
+  assert.throws(() => run("harness-chat", [], { ...env, NATIVE_AUTH_STATUS: "missing" }), (error) => {
+    assert.equal(error.status, 77);
+    assert.match(error.stderr.toString(), /ChatGPT sign-in is required/);
+    return true;
+  });
   native(run("harness-chat", [], env));
 
   // TEST_SCENARIO: Native and API launches share MCP/config/history in the existing home, but API processes select the router without a global login restriction that would log out the native account.

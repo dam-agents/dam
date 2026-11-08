@@ -84,7 +84,7 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "chatgpt",
-    description: "Your ChatGPT subscription for Codex",
+    description: "Sign in separately on each agent",
   },
 ];
 

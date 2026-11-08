@@ -72,3 +72,25 @@ describe("createChildAgentProcess", () => {
     await new Promise((r) => setTimeout(r, 100));
   });
 });
+
+// TEST_SCENARIO: A missing native login must survive the subprocess boundary as actionable feedback, while unrelated exits and stderr keep their generic cause.
+describe("native ChatGPT startup failures", () => {
+  it.each([
+    ["chatgpt", 77, "ChatGPT sign-in is required on this agent."],
+    ["chatgpt", 1, "exit code 1"],
+    [undefined, 77, "exit code 77"],
+  ])("reports mode %s and exit %s safely", async (mode, code, expected) => {
+    const proc = createChildAgentProcess({
+      command: [
+        process.execPath,
+        "-e",
+        `console.error("unrelated harness output"); process.exit(${code});`,
+      ],
+      workingDir: process.cwd(),
+      env: { ...process.env, PLATFORM_CODEX_AUTH_MODE: mode },
+    });
+    await proc.exited;
+    expect(proc.exitCause()).toBe(expected);
+    expect(proc.exitCause()).not.toContain("unrelated harness output");
+  });
+});

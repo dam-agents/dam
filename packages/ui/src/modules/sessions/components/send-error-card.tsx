@@ -61,7 +61,9 @@ function withProvidersLink(text: string): ReactNode {
 
 export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
   const viewer = useSpendRefusalViewer(isSpendRefusal(rawError));
-  const { title, message, hint } = describeSendError(rawError, viewer);
+  const { title, message, hint, kind } = describeSendError(rawError, viewer);
+  const agentId = useStore((s) => s.selectedAgent);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (interrupted && quiet) {
     return (
       <QuietNotice testId="prompt-delivery-error">
@@ -91,6 +93,33 @@ export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
           <p className="text-xs text-muted-foreground break-words">
             {withProvidersLink(hint)}
           </p>
+        )}
+        {kind === "native-login-required" && agentId && (
+          <a
+            href={routeToPath({
+              view: "sandbox-home",
+              agentId,
+              sandboxSection: "providers",
+            })}
+            className={cn(
+              "text-xs text-accent underline underline-offset-2",
+              FOCUS_RING,
+            )}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              navigateToSandboxHome(agentId, "providers");
+            }}
+          >
+            Open this agent’s sign-in settings
+          </a>
         )}
       </div>
     </Callout>

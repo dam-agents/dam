@@ -1,5 +1,6 @@
 import {
   agentPageUrl,
+  CHATGPT_LOGIN_REQUIRED_MESSAGE,
   jsonRpcErrorDetails,
   saysProviderUnavailable,
 } from "api-server-api";
@@ -63,6 +64,13 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
         modelRefusedUserCopy(agentPageUrl(uiBaseUrl, agentId, "providers"), {
           threads,
         }),
+    };
+  if (errorText(err).includes(CHATGPT_LOGIN_REQUIRED_MESSAGE))
+    return {
+      kind: "plain",
+      reason: "chatgpt-login-required",
+      copy: ({ uiBaseUrl, agentId }) =>
+        `This agent needs a ChatGPT sign-in. Ask its owner to select Sign in to ChatGPT on this agent’s Providers page, then retry: ${agentPageUrl(uiBaseUrl, agentId, "providers")}`,
     };
   const spend = spendRefusalIn(errorText(err));
   if (spend !== null)

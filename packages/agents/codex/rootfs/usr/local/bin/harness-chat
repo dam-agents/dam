@@ -4,7 +4,7 @@ if [ "${PLATFORM_CODEX_AUTH_MODE:-}" = chatgpt ]; then
   unset OPENAI_API_KEY CODEX_API_KEY OPENAI_BASE_URL OPENAI_MODEL
   if ! codex-chatgpt login status >/dev/null 2>&1; then
     printf '%s\n' 'ChatGPT sign-in is required. Run codex-chatgpt login --device-auth over SSH, then retry.' >&2
-    exit 1
+    exit 77
   fi
 else
   : "${OPENAI_API_KEY:=dummy-placeholder}"

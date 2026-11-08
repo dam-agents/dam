@@ -1,3 +1,8 @@
+import {
+  createNativeLoginService,
+  nativeLoginCommand,
+} from "./modules/native-login/index.js";
+import { runOnce } from "./core/run-once.js";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
@@ -822,7 +827,10 @@ const CORS = {
 
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
+const nativeLogin = createNativeLoginService({ run: runOnce });
+
 const createTrpcContext = (): AgentRuntimeContext => ({
+  nativeLogin,
   artifactApi,
   browser: browser.preview,
   changes,
@@ -1033,7 +1041,11 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean; lease: { harness?: string; model?: string } },
+  opts: {
+    reset: boolean;
+    lease: { harness?: string; model?: string };
+    action?: string;
+  },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -1101,6 +1113,21 @@ function attachPty(
         ws.close(1008, lease);
         return;
       }
+      const command =
+        opts.action === undefined
+          ? (["/usr/local/bin/harness-terminal", []] as const)
+          : nativeLoginCommand({
+              action: opts.action,
+              harness: lease.harness,
+              chatgptGranted: grantedAliases().includes("chatgpt"),
+            });
+      if (command === null) {
+        ws.close(
+          1008,
+          "ChatGPT sign-in requires its provider and Codex on this agent",
+        );
+        return;
+      }
       const headless = new HeadlessTerminal({
         cols,
         rows,
@@ -1111,7 +1138,7 @@ function attachPty(
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
       browser.start();
-      const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
+      const pty = nodePty.spawn(command[0], [...command[1]], {
         name: "xterm-256color",
         cols,
         rows,
@@ -1438,7 +1465,11 @@ server.on("upgrade", (req, socket, head) => {
       ...(leaseParam("model") !== undefined && { model: leaseParam("model") }),
     };
     termWss.handleUpgrade(req, socket, head, (ws) =>
-      attachPty(sessionId, ws, { reset, lease }),
+      attachPty(sessionId, ws, {
+        reset,
+        lease,
+        action: url.searchParams.get("action") ?? undefined,
+      }),
     );
   } else if (url.pathname === "/api/browser/display") {
     browser.start();
