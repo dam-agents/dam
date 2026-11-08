@@ -146,7 +146,13 @@ export interface ModelRouter {
   close(): Promise<void>;
 }
 
-const REQ_DROP = new Set([
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the request headers that never go upstream, the
+ * hop-by-hop set plus the client's own credential and the platform's stamps,
+ * and the reply headers that never come back, since the router re-frames the
+ * body; one list for the model calls and the Bob gateway pass-through alike.
+ */
+export const REQ_DROP = new Set([
   "host",
   "connection",
   "keep-alive",
@@ -164,7 +170,7 @@ const REQ_DROP = new Set([
   SESSION_HEADER,
   CALL_HEADER,
 ]);
-const RES_DROP = new Set([
+export const RES_DROP = new Set([
   "content-encoding",
   "content-length",
   "transfer-encoding",
@@ -208,7 +214,7 @@ function reply(
     .end(errorBody(dialect, `model-router: ${message}`));
 }
 
-const keep = (
+export const keepHeaders = (
   entries: Iterable<[string, string | string[] | undefined]>,
   drop: Set<string>,
 ): Record<string, string> =>
@@ -218,6 +224,7 @@ const keep = (
         !drop.has(pair[0]) && typeof pair[1] === "string",
     ),
   );
+const keep = keepHeaders;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Model Router, the loopback listener every
@@ -728,6 +735,9 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const bobHarness = Object.entries(deps.harnesses).find(
     ([, binding]) => binding?.bobGateway,
   )?.[0];
+  /* UNIT_BOUNDARY_DESCRIPTION: a path no route and no extension serves is logged once per method and path, so the log names what a harness relies on without a retry loop filling it; the oldest entry leaves when the set is full, so a path carrying an id per call cannot grow it without bound. */
+  const loggedUnrouted = new Set<string>();
+  const LOGGED_UNROUTED_MAX = 200;
   /* UNIT_BOUNDARY_DESCRIPTION: Pi names itself on its Bedrock calls and Claude Code does not, so an unnamed call is from the harness that runs Bedrock on names of its own. */
   const bedrockHarness =
     Object.entries(deps.harnesses).find(
@@ -774,12 +784,16 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       for (const ext of deps.extensions ?? []) {
         if (await ext.handle({ req, res, path: route.path, harness })) return;
       }
-      reply(
-        res,
-        404,
-        null,
-        `no route for ${req.method ?? "GET"} ${route.path}`,
-      );
+      const unrouted = `${req.method ?? "GET"} ${route.path}`;
+      if (!loggedUnrouted.has(unrouted)) {
+        if (loggedUnrouted.size >= LOGGED_UNROUTED_MAX)
+          loggedUnrouted.delete(loggedUnrouted.values().next().value!);
+        loggedUnrouted.add(unrouted);
+        deps.log(
+          `[model-router] ${harness}: no route for ${unrouted}, answered 404 (logged once per path)`,
+        );
+      }
+      reply(res, 404, null, `no route for ${unrouted}`);
     })().catch((err: Error) => {
       deps.log(
         `[model-router] ${req.method ?? ""} ${url.pathname}: ${err.message}`,

@@ -18,6 +18,11 @@ export {
 } from "./domain/replay.js";
 export { CODEX_CATALOG_PATH } from "./services/catalog-endpoints.js";
 export {
+  BOB_TEMPLATE,
+  createBobGatewayPassthrough,
+} from "./services/bob-gateway.js";
+export { rewriteBobProfile } from "./domain/bob-profile.js";
+export {
   createModelRouter,
   type SessionModelChoice,
   HARNESS_HEADER,
