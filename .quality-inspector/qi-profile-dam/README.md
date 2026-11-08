@@ -74,6 +74,7 @@ Editors can read the safe status but cannot open that terminal.
 A completed sign-in updates the card; verify both the status and a real subsequent turn.
 An owner can use **Sign in again** for a saved account that needs reauthorization.
 The dialog must not claim completion before Codex finishes, and it keeps the restart instruction for reauthorization.
+An expired or failed device authorization offers **Get a new code**, which starts a fresh device session.
 Saved login status does not prove account entitlement or refreshability.
 Its instructions explain that each agent needs its own authorization, that web chat and Slack reuse that login, and that model spend limits do not cover its calls.
 When this provider is attached, Codex is offered in the agent's terminal and model selections; Pi and other harnesses are not offered this subscription.

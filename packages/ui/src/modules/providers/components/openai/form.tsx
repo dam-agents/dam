@@ -85,6 +85,15 @@ export function OpenAIForm({
               when you select a subscription model.
             </p>
             <p>Approve the device code in your own browser.</p>
+            <details>
+              <summary className="cursor-pointer">
+                Sign in over SSH instead
+              </summary>
+              <p className="mt-2">
+                Run <code>codex-chatgpt login --device-auth</code> on this
+                agent, then approve its device code in your browser.
+              </p>
+            </details>
             <p>
               Restart the agent after reauthorizing an expired login, signing
               out or switching ChatGPT accounts so existing sessions use the new

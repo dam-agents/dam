@@ -179,7 +179,7 @@ A LiteLLM proxy is listed from `/v1/models` on its root with the Connection's pl
 Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone; the router refuses it to any other harness by name.
 Bedrock and ChatGPT subscriptions are **native Connections**: their harnesses use their own provider mode instead of routed inference.
-Claude Code and Pi run Bedrock; Codex runs subscriptions, whose [login belongs to the agent](security-and-credentials.md#native-codex-subscription-login).
+Claude Code and Pi run Bedrock; Codex runs subscriptions, whose [login belongs to the agent](native-codex-login.md).
 A native model starts a separate harness process with that Connection's environment; switching to or from a routed model moves the session between processes after its running turn ends.
 Bedrock calls pass through the router unchanged, while subscription calls use Codex's native endpoint.
 Claude Code lists Bedrock under its alias with its own tier names; Pi lists the region's inference profiles ([connections](connection-presets.md#app-preset-aws-bedrock)).

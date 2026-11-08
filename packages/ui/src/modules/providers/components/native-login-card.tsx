@@ -36,7 +36,7 @@ export function NativeLoginCard({
       </p>
       <p className="text-sm text-muted-foreground">
         {state === "signed-in"
-          ? "Saved ChatGPT login detected. Account access is checked when you send a message."
+          ? "Saved ChatGPT login detected. Account access is checked when you send a message. Signing in again replaces this agent’s current login."
           : state === "asleep"
             ? "Wake this agent to check its ChatGPT sign-in."
             : state === "unavailable"
@@ -71,9 +71,11 @@ export function NativeLoginCard({
       )}
       {loginSession !== null && (
         <NativeLoginDialog
+          key={loginSession}
           agentId={agentId}
           sessionId={loginSession}
           signedIn={state === "signed-in"}
+          onRetry={() => setLoginSession(crypto.randomUUID())}
           onClose={() => {
             setLoginSession(null);
             void status.refetch();

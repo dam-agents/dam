@@ -27,12 +27,17 @@ vi.mock("../../modules/sessions/components/terminal.js", () => ({
   Terminal: ({
     nativeLogin,
     onExit,
+    sessionId,
   }: {
     nativeLogin?: boolean;
     onExit?: (code: number) => void;
+    sessionId?: string;
   }) => {
     if (onExit) fake.exit = onExit;
-    return createElement("div", { "data-native-login": String(nativeLogin) });
+    return createElement("div", {
+      "data-native-login": String(nativeLogin),
+      "data-session-id": sessionId,
+    });
   },
 }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -168,4 +173,52 @@ it("offers reauthorization without claiming success before Codex exits", () => {
   act(() => fake.exit?.(0));
   expect(document.body.textContent).toContain("ChatGPT sign-in completed");
   expect(document.body.textContent).toContain("restart");
+});
+
+// TEST_SCENARIO: An expired or failed device authorization offers a new code instead of leaving the owner at exit 1. A retry starts a fresh terminal and clears the failed state.
+it("starts a fresh device session after failed authorization", () => {
+  fake.status = {
+    operable: true,
+    isError: false,
+    isPending: false,
+    isFetching: false,
+    data: { state: "sign-in-required" },
+  };
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  cleanup = () => {
+    act(() => root.unmount());
+    container.remove();
+  };
+  act(() =>
+    root.render(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(NativeLoginCard, { agentId: "agent-1", maySignIn: true }),
+      ),
+    ),
+  );
+  act(() =>
+    Array.from(container.querySelectorAll("button"))
+      .find((b) => b.textContent === "Sign in to ChatGPT")!
+      .click(),
+  );
+  const initial = document
+    .querySelector("[data-native-login]")!
+    .getAttribute("data-session-id");
+  act(() => fake.exit(1));
+  expect(document.body.textContent).toContain("Sign-in didn’t finish");
+  act(() =>
+    Array.from(document.querySelectorAll("button"))
+      .find((b) => b.textContent === "Get a new code")!
+      .click(),
+  );
+  expect(
+    document
+      .querySelector("[data-native-login]")!
+      .getAttribute("data-session-id"),
+  ).not.toBe(initial);
+  expect(document.body.textContent).not.toContain("Sign-in didn’t finish");
 });

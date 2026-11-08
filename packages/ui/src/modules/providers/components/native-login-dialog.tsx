@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 
 import { Terminal } from "../../sessions/components/terminal.js";
 
@@ -9,11 +10,13 @@ export function NativeLoginDialog({
   sessionId,
   signedIn,
   onClose,
+  onRetry,
 }: {
   agentId: string;
   sessionId: string;
   signedIn: boolean;
   onClose: () => void;
+  onRetry: () => void;
 }) {
   const [exitCode, setExitCode] = useState<number | null>(null);
   return (
@@ -44,6 +47,16 @@ export function NativeLoginDialog({
             onExit={setExitCode}
           />
         </div>
+        {exitCode !== null && exitCode !== 0 && (
+          <div className="mt-3 space-y-2">
+            <p role="status" className="text-sm">
+              Sign-in didn’t finish. Get a new code and try again.
+            </p>
+            <Button size="sm" onClick={onRetry}>
+              Get a new code
+            </Button>
+          </div>
+        )}
         {signedIn && exitCode === 0 && (
           <p role="status" className="text-sm mt-3">
             ChatGPT sign-in completed. Close this window and retry your message.

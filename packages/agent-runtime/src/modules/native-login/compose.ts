@@ -4,11 +4,13 @@ import type { runOnce } from "../../core/run-once.js";
 /** UNIT_BOUNDARY_DESCRIPTION: Reports only whether this agent's Codex recognizes a saved ChatGPT login. The CLI owns credential access; its output, including key fragments from other auth modes, never reaches clients or logs. */
 export function createNativeLoginService(deps: {
   run: typeof runOnce;
+  env: () => NodeJS.ProcessEnv;
 }): NativeLoginService {
   return {
     async status() {
       const result = await deps.run({
-        command: ["codex-chatgpt", "login", "status"],
+        command: ["/usr/local/bin/codex-chatgpt", "login", "status"],
+        env: deps.env(),
         timeoutMs: 5000,
         maxOutputBytes: 4096,
       });

@@ -827,7 +827,11 @@ const CORS = {
 
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
-const nativeLogin = createNativeLoginService({ run: runOnce });
+const nativeLogin = createNativeLoginService({
+  run: runOnce,
+  env: () =>
+    leaseSpawnEnv(envStore, { harness: "codex", provider: null, model: null }),
+});
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   nativeLogin,
@@ -1137,7 +1141,7 @@ function attachPty(
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
-      browser.start();
+      if (opts.action !== "chatgpt-login") browser.start();
       const pty = nodePty.spawn(command[0], [...command[1]], {
         name: "xterm-256color",
         cols,
@@ -1158,7 +1162,7 @@ function attachPty(
                 !k.startsWith("npm_lifecycle_"),
             ),
           ) as Record<string, string>),
-          ...terminalModelEnv(lease),
+          ...(opts.action === "chatgpt-login" ? {} : terminalModelEnv(lease)),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           ...gitTraceEnv(gitTraceDir, sessionEnvVars),
