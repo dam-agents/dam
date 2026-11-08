@@ -76,7 +76,7 @@ The Session is titled with the artifact's title alone, and the owner gets a noti
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
 
 A page used for many separate conversations, such as one per thread, names the conversation with each prompt: `sendPrompt(text, { conversation: "<key>" })`.
-The key is 1 to 64 letters, digits, dots, colons, underscores or hyphens; the bridge throws on any other, and the server refuses it.
+The key is 1 to 64 letters, digits, dots, underscores or hyphens; the bridge throws on any other, and the server refuses it.
 Each conversation of one caller on one page gets a Session of its own, keyed by the page, the caller and the conversation, and a later prompt with the same key continues it; a prompt without a key keeps the caller's one Session for the page.
 The key only splits the caller's own Sessions for that page, so it never reaches another person's Session or a chat.
 A prompt with a key always wants a Session of its own: for the owner it goes to their Session for that conversation even in the publishing Agent's chat, and where no such Session can start it is refused with a notice.

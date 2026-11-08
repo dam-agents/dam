@@ -8,7 +8,7 @@ import type { ArtifactCallAgentApiResult } from "./types.js";
 
 export const ARTIFACT_PROMPT_TYPE = "artifact.prompt";
 export const ARTIFACT_PROMPT_MAX_LENGTH = 16_384;
-export const ARTIFACT_PROMPT_CONVERSATION_PATTERN = /^[A-Za-z0-9._:-]{1,64}$/;
+export const ARTIFACT_PROMPT_CONVERSATION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 
 export const artifactPromptConversationSchema = z
   .string()

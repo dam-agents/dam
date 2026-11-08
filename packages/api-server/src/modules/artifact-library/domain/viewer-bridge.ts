@@ -85,15 +85,18 @@ export function shareCaller(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a caller's Sessions for one page are keyed by
  * the page and the caller, so artifact code never picks a Session outside
- * them. A page's conversation only splits that caller's own Sessions.
+ * them. A page's conversation only splits that caller's own Sessions: its key
+ * has its own prefix and holds no colon, and the sub comes last, so no key
+ * a page chooses can spell another caller's Session (a sub may hold colons).
  */
 export function viewerSessionKey(
   artifactId: string,
   viewerSub: string,
   conversation?: string,
 ) {
-  const key = `artifact:${artifactId}:${viewerSub}`;
-  return conversation === undefined ? key : `${key}:${conversation}`;
+  return conversation === undefined
+    ? `artifact:${artifactId}:${viewerSub}`
+    : `artifact-conversation:${artifactId}:${conversation}:${viewerSub}`;
 }
 
 function sessionTitle(full: string): string {

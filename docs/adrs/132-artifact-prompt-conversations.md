@@ -26,9 +26,9 @@ That Session grows without end and mixes unrelated work, so the Agent carries on
 A page's prompt may name a conversation, a short plain key the page chooses, and each conversation of one caller on one page gets a Session of its own.
 A later prompt with the same key continues that Session; a prompt without a key keeps the one Session it had before.
 
-- The key only splits the caller's own Sessions for that page: the Session is still found by the page and the caller, and the key is added after them.
+- The key only splits the caller's own Sessions for that page: the Session is still found by the page and the caller. A keyed Session's key has a prefix of its own and puts the caller last (`artifact-conversation:<page>:<key>:<caller>`), and the key holds no colon, so no key a page chooses spells another caller's Session, even for a caller whose id holds colons.
   It grants no new destination: artifact code still cannot reach another person's Session, a chat, or a Session outside its own page and caller.
-- A key is at most 64 letters, digits, dots, colons, underscores or hyphens; the bridge and the server refuse any other.
+- A key is at most 64 letters, digits, dots, underscores or hyphens; the bridge and the server refuse any other.
 - A prompt with a key always wants a Session of its own: for the owner it goes to their own Session for that conversation even in the publishing Agent's docked chat, where a plain prompt goes to the open chat.
 - The Session title ends with the key, so the owner tells the conversations apart in the session list.
 - The security log records the key with the prompt's other metadata, never the prompt text.

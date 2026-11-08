@@ -610,7 +610,7 @@ describe("a viewer's prompt on a shared interactive page", () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(w.delivered).toEqual([
       expect.objectContaining({
-        sessionKey: "artifact:a1:alice-sub:thread-7",
+        sessionKey: "artifact-conversation:a1:thread-7:alice-sub",
         sessionTitle: "alice@example.com · Team dashboard · thread-7",
       }),
     ]);
@@ -732,8 +732,17 @@ describe("the share page relay", () => {
 describe("viewer session keys", () => {
   it("adds a page's conversation only to the caller's own key", () => {
     expect(viewerSessionKey("a1", "alice-sub")).toBe("artifact:a1:alice-sub");
-    expect(viewerSessionKey("a1", "alice-sub", "t:1")).toBe(
-      "artifact:a1:alice-sub:t:1",
+    expect(viewerSessionKey("a1", "alice-sub", "t1")).toBe(
+      "artifact-conversation:a1:t1:alice-sub",
+    );
+  });
+
+  it("never lets a page's key spell another caller's Session", () => {
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f:a:b"),
+    );
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f", "a:b"),
     );
   });
 });

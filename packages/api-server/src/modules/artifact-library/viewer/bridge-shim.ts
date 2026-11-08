@@ -44,7 +44,7 @@ window.platform = (() => {
         throw new Error("Provide the options as an object, such as { newSession: true }.");
       const conversation = options ? options.conversation : undefined;
       if (conversation !== undefined && (typeof conversation !== "string" || !${ARTIFACT_PROMPT_CONVERSATION_PATTERN}.test(conversation)))
-        throw new Error("Provide the conversation as 1 to 64 letters, digits, dots, colons, underscores or hyphens.");
+        throw new Error("Provide the conversation as 1 to 64 letters, digits, dots, underscores or hyphens.");
       const message = { type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt };
       if (options && options.newSession === true) message.newSession = true;
       if (conversation !== undefined) message.conversation = conversation;

@@ -34,7 +34,7 @@ Outside a chat the prompt then starts or continues the owner's own Session for t
 Without the option, a prompt sent outside the chat starts nothing, and the owner is told to open the page in your chat.
 On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
 For a page used for many separate conversations, such as one per thread or request, pass `{ conversation: "<key>" }` so each conversation gets its own Session: `platform.sendPrompt('Answer this thread.', { conversation: 'thread-42' })`.
-The key is 1 to 64 letters, digits, dots, colons, underscores or hyphens, and the call throws on any other; a later prompt with the same key continues that Session.
+The key is 1 to 64 letters, digits, dots, underscores or hyphens, and the call throws on any other; a later prompt with the same key continues that Session.
 It splits only the caller's own Sessions for this page, the owner's or each viewer's, and always opens one of its own, also in your chat, unattended as above.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
