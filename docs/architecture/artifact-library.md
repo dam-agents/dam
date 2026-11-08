@@ -74,6 +74,13 @@ A prompt there that asks for a session of its own (`sendPrompt(text, { newSessio
 The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the page's [model](#a-pages-model).
 The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
+
+A page used for many separate conversations, such as one per thread, names the conversation with each prompt: `sendPrompt(text, { conversation: "<key>" })`.
+The key is 1 to 64 letters, digits, dots, colons, underscores or hyphens; the bridge throws on any other, and the server refuses it.
+Each conversation of one caller on one page gets a Session of its own, keyed by the page, the caller and the conversation, and a later prompt with the same key continues it; a prompt without a key keeps the caller's one Session for the page.
+The key only splits the caller's own Sessions for that page, so it never reaches another person's Session or a chat.
+A prompt with a key always wants a Session of its own: for the owner it goes to their Session for that conversation even in the publishing Agent's chat, and where no such Session can start it is refused with a notice.
+The Session's title ends with the key, and the security log records the key, never the prompt text.
 Historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
@@ -106,6 +113,7 @@ A page the owner makes private or plain, a viewer the owner removes, and turning
 
 - **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
+  A prompt that names a conversation goes to the viewer's own Session for that conversation instead, titled with the key as well, as the owner's does.
   It is typed `artifact`, as the owner's Session for the page is, so the session list files it with the channels and the Home feed can filter it on its own.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.

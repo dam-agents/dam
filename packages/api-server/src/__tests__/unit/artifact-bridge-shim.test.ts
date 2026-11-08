@@ -74,6 +74,32 @@ describe("artifact prompt buttons", () => {
     ]);
   });
 
+  it("names the page's conversation when the page gives one", () => {
+    const { platform, postMessage } = page();
+    platform.sendPrompt("Answer the thread.", {
+      conversation: "thread:R-12.v2_a-b",
+    });
+    expect(postMessage).toHaveBeenCalledExactlyOnceWith(
+      {
+        type: ARTIFACT_PROMPT_TYPE,
+        prompt: "Answer the thread.",
+        conversation: "thread:R-12.v2_a-b",
+      },
+      "*",
+    );
+  });
+
+  it.each(["", "a b", "x".repeat(65), "thread/1", "\u00fcn", 7, null, {}])(
+    "refuses a conversation that is not a short plain key: %j",
+    (conversation) => {
+      const { platform, postMessage } = page();
+      expect(() => platform.sendPrompt("Go.", { conversation })).toThrow(
+        "Provide the conversation",
+      );
+      expect(postMessage).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([null, "new", 1])(
     "refuses options that are not an object: %j",
     (options) => {

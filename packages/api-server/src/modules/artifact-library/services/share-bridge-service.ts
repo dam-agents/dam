@@ -44,6 +44,7 @@ export interface ShareBridgeService {
     artifact: ArtifactRow,
     viewer: ShareSession,
     prompt: string,
+    conversation?: string,
   ): Promise<ViewerPromptResult>;
   refuse(
     artifact: ArtifactRow,
@@ -78,6 +79,7 @@ export function createShareBridgeService(deps: {
     viewer: ShareSession,
     kind: ViewerCallKind,
     denial: ViewerBridgeDenial | null,
+    conversation?: string,
   ): void {
     securityLog(denial === null ? "info" : "warn", `artifact.viewer_${kind}`, {
       category: "authz",
@@ -88,7 +90,11 @@ export function createShareBridgeService(deps: {
       target: artifact.id,
       ...(artifact.agentId ? { agentId: artifact.agentId } : {}),
       ...(denial === null ? {} : { reason: denial }),
-      detail: { viewerEmail: viewer.email, owner: artifact.owner },
+      detail: {
+        viewerEmail: viewer.email,
+        owner: artifact.owner,
+        ...(conversation === undefined ? {} : { conversation }),
+      },
     });
   }
 
@@ -96,12 +102,19 @@ export function createShareBridgeService(deps: {
     artifact: ArtifactRow,
     viewer: ShareSession,
     kind: ViewerCallKind,
+    conversation?: string,
   ): Promise<string | null> {
     const decided = viewerBridgeAccess(
       artifact,
       await deps.featureOn(artifact.owner),
     );
-    log(artifact, viewer, kind, decided.allowed ? null : decided.denial);
+    log(
+      artifact,
+      viewer,
+      kind,
+      decided.allowed ? null : decided.denial,
+      conversation,
+    );
     return decided.allowed ? decided.agentId : null;
   }
 
@@ -120,15 +133,15 @@ export function createShareBridgeService(deps: {
       });
     },
 
-    async prompt(artifact, viewer, prompt) {
-      const agentId = await agentFor(artifact, viewer, "prompt");
+    async prompt(artifact, viewer, prompt, conversation) {
+      const agentId = await agentFor(artifact, viewer, "prompt", conversation);
       if (agentId === null) return { ok: false, reason: "not-allowed" };
       const name = viewerName(viewer);
       const outcome = await deps.prompts.deliver({
         agentId,
         artifactId: artifact.id,
-        sessionKey: viewerSessionKey(artifact.id, viewer.sub),
-        sessionTitle: viewerSessionTitle(name, artifact.title),
+        sessionKey: viewerSessionKey(artifact.id, viewer.sub, conversation),
+        sessionTitle: viewerSessionTitle(name, artifact.title, conversation),
         prompt: viewerPromptText({
           viewer: name,
           artifactId: artifact.id,

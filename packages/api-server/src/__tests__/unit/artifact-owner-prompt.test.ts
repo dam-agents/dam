@@ -64,6 +64,43 @@ describe("Artifact prompt — no chat docked", () => {
   });
 
   /**
+   * TEST_SCENARIO: A team page keeps many conversations apart, one per
+   * thread. A prompt that names its conversation goes to the owner's own
+   * Session for that conversation, titled with it; a later prompt with the
+   * same name continues it, and one with another name or none keeps its own.
+   */
+  it("should keep each of the page's conversations in its own session", async () => {
+    const world = createArtifactApiWorld();
+    const dashboard = world.publish({ by: "agent-a" });
+
+    await world.prompt(dashboard, "One", {}, "thread:1");
+    await world.prompt(dashboard, "Two", {}, "thread:2");
+    await world.prompt(dashboard, "Three", {}, "thread:1");
+    await world.prompt(dashboard, "Four");
+
+    expect(
+      world.prompts().map(({ sessionKey, sessionTitle }) => ({
+        sessionKey,
+        sessionTitle,
+      })),
+    ).toEqual([
+      {
+        sessionKey: `artifact:${dashboard}:alice:thread:1`,
+        sessionTitle: "Dashboard · thread:1",
+      },
+      {
+        sessionKey: `artifact:${dashboard}:alice:thread:2`,
+        sessionTitle: "Dashboard · thread:2",
+      },
+      {
+        sessionKey: `artifact:${dashboard}:alice:thread:1`,
+        sessionTitle: "Dashboard · thread:1",
+      },
+      { sessionKey: `artifact:${dashboard}:alice`, sessionTitle: "Dashboard" },
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: The agent is at its spend limit, or does not wake. The
    * page's owner is told why, rather than the prompt silently vanishing.
    */

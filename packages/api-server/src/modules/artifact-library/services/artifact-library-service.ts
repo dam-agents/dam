@@ -859,7 +859,7 @@ export function createArtifactLibraryService(
     },
 
     async sendPrompt(
-      { artifactId, prompt },
+      { artifactId, prompt, conversation },
       { agentIds },
     ): Promise<ArtifactSendPromptResult> {
       const row = await findArtifact(artifactId);
@@ -878,14 +878,15 @@ export function createArtifactLibraryService(
         target: artifactId,
         ...(row?.agentId ? { agentId: row.agentId } : {}),
         ...(denial === null ? {} : { reason: denial }),
+        ...(conversation === undefined ? {} : { detail: { conversation } }),
       });
       if (!row || !access.allowed || denial !== null)
         return { ok: false, reason: "not-allowed" };
       const outcome = await deps.prompts.deliver({
         agentId: access.agentId,
         artifactId: row.id,
-        sessionKey: viewerSessionKey(row.id, owner),
-        sessionTitle: ownerSessionTitle(row.title),
+        sessionKey: viewerSessionKey(row.id, owner, conversation),
+        sessionTitle: ownerSessionTitle(row.title, conversation),
         prompt: ownerPromptText({
           artifactId: row.id,
           artifactTitle: row.title,

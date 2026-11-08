@@ -1,4 +1,7 @@
-import { ARTIFACT_PROMPT_MAX_LENGTH } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptConversationSchema,
+} from "api-server-api";
 import {
   artifactApiCallerEmail,
   SESSION_TITLE_MAX_LENGTH,
@@ -23,6 +26,7 @@ export type ViewerBridgeAccess =
 
 export const viewerPromptInputSchema = z.object({
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export type ViewerPromptResult =
@@ -78,8 +82,18 @@ export function shareCaller(
   };
 }
 
-export function viewerSessionKey(artifactId: string, viewerSub: string) {
-  return `artifact:${artifactId}:${viewerSub}`;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a caller's Sessions for one page are keyed by
+ * the page and the caller, so artifact code never picks a Session outside
+ * them. A page's conversation only splits that caller's own Sessions.
+ */
+export function viewerSessionKey(
+  artifactId: string,
+  viewerSub: string,
+  conversation?: string,
+) {
+  const key = `artifact:${artifactId}:${viewerSub}`;
+  return conversation === undefined ? key : `${key}:${conversation}`;
 }
 
 function sessionTitle(full: string): string {
@@ -88,16 +102,27 @@ function sessionTitle(full: string): string {
     : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
 }
 
-export function viewerSessionTitle(viewer: string, title: string): string {
-  return sessionTitle(`${viewer} · ${title}`);
+function withConversation(full: string, conversation?: string): string {
+  return conversation === undefined ? full : `${full} · ${conversation}`;
+}
+
+export function viewerSessionTitle(
+  viewer: string,
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(withConversation(`${viewer} · ${title}`, conversation));
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the owner's Session for a page is theirs alone,
  * so the page's title names it; a viewer's also names the viewer.
  */
-export function ownerSessionTitle(title: string): string {
-  return sessionTitle(title);
+export function ownerSessionTitle(
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(withConversation(title, conversation));
 }
 
 export function viewerPromptText(input: {
