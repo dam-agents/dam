@@ -146,8 +146,8 @@ spec:
             {{- if .Values.accessList.enabled }}
             # Read by the access-list required action
             # (packages/keycloak-environments): where it asks the api-server
-            # whether an email may sign in, with the secret only the two pods
-            # hold. The path is outside /api, so no ingress routes it.
+            # whether an email may sign in, on its in-cluster Service, with the
+            # secret only the two pods hold.
             - name: DAM_ACCESS_CHECK_URL
               value: {{ printf "http://%s.%s.svc.cluster.local:%v/internal/access-check" (include "platform.apiserver.fullname" .) .Release.Namespace .Values.apiServer.port | quote }}
             - name: DAM_ACCESS_CHECK_SECRET

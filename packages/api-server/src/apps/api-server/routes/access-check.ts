@@ -7,12 +7,13 @@ const bodySchema = z.object({ email: z.string().min(1).max(254) });
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: `POST /internal/access-check`, which Keycloak's
- * access-list authenticator calls at each sign-in with the person's email. It
- * answers only whether that address is on the Access List. It sits outside
- * `/api`, so no ingress path reaches it and no browser sign-in applies; the
- * install's shared secret, which only Keycloak holds, is the gate. A failed
- * read answers 503, so Keycloak refuses the sign-in as unavailable instead of
- * as not allowed.
+ * access-list required action calls on the api-server's in-cluster Service at
+ * each sign-in, with the person's email. It answers only whether that address
+ * is on the Access List. It sits outside `/api`, so no browser sign-in applies
+ * to it; the install's shared secret, which only the Keycloak and api-server
+ * pods hold, is the gate, and a call without it is refused before the list is
+ * read. A failed read answers 503, so Keycloak refuses the sign-in as
+ * unavailable instead of as not allowed.
  */
 export function createAccessCheckRoutes(deps: {
   secret: string;

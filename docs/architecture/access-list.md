@@ -25,7 +25,7 @@ A required action runs at the end of every sign-in to the platform realm — the
 The extension turns the action on in the platform realm at each Keycloak start, and when the realm is first created, so no realm import or admin step is needed.
 
 The action asks the api-server, `POST /internal/access-check` on its in-cluster Service, whether the person's email is on the list.
-That path is outside `/api`, so no ingress routes it, and it carries a shared secret that the chart generates once, keeps across upgrades, and gives only the Keycloak and api-server pods.
+That path is outside `/api`, so no browser sign-in applies to it; the call carries a shared secret that the chart generates once, keeps across upgrades, and gives only the Keycloak and api-server pods.
 A call without that secret is refused before the list is read.
 
 The check fails closed.
