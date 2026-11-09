@@ -146,14 +146,12 @@ export function buildGrantCommand(
         : `${ref} can now reach ${name}. Its harness picks the tools up when it next starts.\n`,
     );
     if (!revoke) {
-      const groups = await deps
-        .createSharingService(at)
-        .telegramGroups(agentId);
-      if (!groups.ok)
-        process.stderr.write(sharingUnchecked(agent.name, groups.error.reason));
+      const chats = await deps.createSharingService(at).telegramChats(agentId);
+      if (!chats.ok)
+        process.stderr.write(sharingUnchecked(agent.name, chats.error.reason));
       const warning = sharingWarning(
         agent.name,
-        audienceOf(agent, groups.ok ? groups.value : []),
+        audienceOf(agent, chats.ok ? chats.value : []),
         { connections: [], satellites: [name] },
       );
       if (warning) process.stderr.write(warning);

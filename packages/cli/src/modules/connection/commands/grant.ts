@@ -112,16 +112,16 @@ export function buildGrantCommand(
           connections.filter((c) => connectionIds.includes(c.id)),
         );
         if (shared.length > 0) {
-          const groups = await deps
+          const chats = await deps
             .createSharingService(host)
-            .telegramGroups(agent.id);
-          if (!groups.ok)
+            .telegramChats(agent.id);
+          if (!chats.ok)
             process.stderr.write(
-              sharingUnchecked(agent.name, groups.error.reason),
+              sharingUnchecked(agent.name, chats.error.reason),
             );
           const warning = sharingWarning(
             agent.name,
-            audienceOf(agent, groups.ok ? groups.value : []),
+            audienceOf(agent, chats.ok ? chats.value : []),
             { connections: shared, satellites: [] },
           );
           if (warning) process.stderr.write(warning);

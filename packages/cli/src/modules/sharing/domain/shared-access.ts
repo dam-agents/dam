@@ -1,13 +1,15 @@
 import {
-  type ChannelConfig,
   type ConnectionView,
   PROVIDER_TEMPLATE_IDS,
+  type SharedChannel,
+  sharedChannels,
+  type SlackChannel,
+  type TelegramChatAudience,
 } from "api-server-api";
 
 export interface Audience {
   editors: readonly string[];
-  slackChannels: readonly string[];
-  telegramGroups: readonly string[];
+  conversations: readonly SharedChannel[];
 }
 
 export interface SharedGrants {
@@ -19,37 +21,16 @@ export const NO_GRANTS: SharedGrants = { connections: [], satellites: [] };
 
 const MAX_NAMED = 3;
 
-export const isSlackDirectMessage = (slackChannelId: string): boolean =>
-  slackChannelId.startsWith("D");
-
-function slackChannelLabel(channel: ChannelConfig): string | null {
-  if (channel.label?.kind === "direct-message") return null;
-  if (isSlackDirectMessage(channel.slackChannelId)) return null;
-  if (channel.label?.kind === "group-direct-message") return "a group DM";
-  if (channel.label?.kind === "channel") return `#${channel.label.name}`;
-  return channel.slackChannelId;
-}
-
-export function sharedSlackChannels(
-  channels: readonly ChannelConfig[],
-): string[] {
-  return channels.flatMap((c) => {
-    const label = slackChannelLabel(c);
-    return label === null ? [] : [label];
-  });
-}
-
 export function audienceOf(
   agent: {
     access?: { editors: readonly string[] };
-    channels: readonly ChannelConfig[];
+    channels: readonly Pick<SlackChannel, "slackChannelId" | "label">[];
   },
-  telegramGroups: readonly string[],
+  telegramChats: readonly TelegramChatAudience[],
 ): Audience {
   return {
     editors: agent.access?.editors ?? [],
-    slackChannels: sharedSlackChannels(agent.channels),
-    telegramGroups,
+    conversations: sharedChannels(agent.channels, telegramChats),
   };
 }
 
@@ -81,6 +62,16 @@ const SLACK_CHANNELS: Noun = {
   many: "everyone in the Slack channels",
   count: (n) => `everyone in ${n} Slack channels`,
 };
+const SLACK_GROUP_DMS: Noun = {
+  one: "everyone in a Slack group DM",
+  many: "everyone in the Slack group DMs",
+  count: (n) => `everyone in ${n} Slack group DMs`,
+};
+const OTHER_CONVERSATIONS: Noun = {
+  one: "everyone in another conversation",
+  many: "everyone in other conversations",
+  count: (n) => `everyone in ${n} other conversations`,
+};
 const TELEGRAM_GROUPS: Noun = {
   one: "everyone in Telegram group",
   many: "everyone in the Telegram groups",
@@ -104,16 +95,39 @@ function counted(items: readonly string[], noun: Noun): string | null {
   return noun.count(items.length);
 }
 
+function tallied(n: number, noun: Noun): string | null {
+  if (n === 0) return null;
+  return n === 1 ? noun.one : noun.count(n);
+}
+
+const namesOf = (
+  conversations: readonly SharedChannel[],
+  kind: "slack-channel" | "telegram-chat",
+): string[] =>
+  conversations.flatMap((c) =>
+    c.kind === kind ? [c.name ?? "without a name"] : [],
+  );
+
+const countOf = (
+  conversations: readonly SharedChannel[],
+  kind: SharedChannel["kind"],
+): number => conversations.filter((c) => c.kind === kind).length;
+
 function phrase(parts: readonly (string | null)[]): string | null {
   const present = parts.filter((p): p is string => p !== null);
   return present.length === 0 ? null : listed(present);
 }
 
-const who = (audience: Audience) =>
+const who = ({ editors, conversations }: Audience) =>
   phrase([
-    counted(audience.editors, EDITORS),
-    counted(audience.slackChannels, SLACK_CHANNELS),
-    counted(audience.telegramGroups, TELEGRAM_GROUPS),
+    counted(editors, EDITORS),
+    counted(namesOf(conversations, "slack-channel"), SLACK_CHANNELS),
+    tallied(countOf(conversations, "slack-group-dm"), SLACK_GROUP_DMS),
+    counted(namesOf(conversations, "telegram-chat"), TELEGRAM_GROUPS),
+    tallied(
+      countOf(conversations, "unknown-conversation"),
+      OTHER_CONVERSATIONS,
+    ),
   ]);
 
 const what = (grants: SharedGrants) =>
@@ -130,8 +144,10 @@ export const sharingUnchecked = (agentName: string, reason: string): string =>
  * connection or satellite is shared with anyone besides an Agent's owner: its
  * editors, and everyone in a Slack channel, group DM or Telegram group it is
  * bound to, since the binding itself lets each of them steer the Agent with
- * everything it holds. Model providers are left out, as there. This is the
- * same warning for the CLI, which an AI agent usually drives: one stderr line
+ * everything it holds. Which conversations count is the contract package's
+ * rule, the one the web app reads, and model providers are left out, as there.
+ * This is the same warning for the CLI, which an AI agent usually drives: one
+ * stderr line
  * that names who can use what, and a hint for each kind of grant, or nothing
  * when nobody else steers the Agent or it shares nothing.
  */
@@ -148,7 +164,7 @@ export function sharingWarning(
   ];
   if (grants.connections.length > 0)
     lines.push(
-      "hint: each of them acts as you through a connection that signs in as you; give an agent others steer a connection with an identity of its own, such as a GitHub App (`dam connection connect github-app`), scoped to what they may do",
+      "hint: through a connection that signs in as you, each of them acts as you; give an agent others steer a connection with an identity of its own instead, such as a GitHub App (`dam connection connect github-app`), scoped to what they may do",
     );
   if (grants.satellites.length > 0)
     lines.push(

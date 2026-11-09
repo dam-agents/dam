@@ -3,6 +3,7 @@ import {
   ChannelType,
   type ConnectionView,
   PROVIDER_TEMPLATE_IDS,
+  type TelegramChatAudience,
 } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentView } from "../modules/agent/domain/agent-view.js";
@@ -76,13 +77,13 @@ const connection = (
 const GITHUB = connection("conn-gh", "github-acme");
 const PROVIDER = connection("conn-model", "anthropic", PROVIDER_TEMPLATE);
 
-const NOBODY: Audience = { editors: [], slackChannels: [], telegramGroups: [] };
+const NOBODY: Audience = { editors: [], conversations: [] };
 
 function sharing(
-  over: { telegramGroups?: string[]; held?: SharedGrants } = {},
+  over: { telegramChats?: TelegramChatAudience[]; held?: SharedGrants } = {},
 ): () => SharingService {
   return () => ({
-    telegramGroups: async () => ok(over.telegramGroups ?? []),
+    telegramChats: async () => ok(over.telegramChats ?? []),
     heldGrants: async () =>
       ok(over.held ?? { connections: [], satellites: [] }),
   });
@@ -100,14 +101,16 @@ describe("the sharing warning", () => {
         "scout",
         {
           editors: ["ana@example.com"],
-          slackChannels: ["#eng"],
-          telegramGroups: ["Ops"],
+          conversations: [
+            { kind: "slack-channel", name: "#eng" },
+            { kind: "telegram-chat", name: "Ops" },
+          ],
         },
         { connections: ["github-acme", "notion"], satellites: ["laptop"] },
       ),
     ).toBe(
       "warning: its editor ana@example.com, everyone in Slack channel #eng and everyone in Telegram group Ops can steer scout, and through it use its connections github-acme and notion and its satellite laptop\n" +
-        "hint: each of them acts as you through a connection that signs in as you; give an agent others steer a connection with an identity of its own, such as a GitHub App (`dam connection connect github-app`), scoped to what they may do\n" +
+        "hint: through a connection that signs in as you, each of them acts as you; give an agent others steer a connection with an identity of its own instead, such as a GitHub App (`dam connection connect github-app`), scoped to what they may do\n" +
         "hint: a satellite runs their requests on its machine; grant it only to an agent that only you steer\n",
     );
   });
@@ -123,6 +126,26 @@ describe("the sharing warning", () => {
     ).toMatch(/^warning: its 4 editors can steer scout,/);
   });
 
+  /** TEST_SCENARIO: a group DM and a conversation the platform cannot name have no channel name, so the warning says what they are instead of printing a missing name. */
+  it("names a group DM and an unnamed conversation by what they are", () => {
+    expect(
+      sharingWarning(
+        "scout",
+        {
+          editors: [],
+          conversations: [
+            { kind: "slack-group-dm" },
+            { kind: "slack-group-dm" },
+            { kind: "unknown-conversation" },
+          ],
+        },
+        { connections: ["github-acme"], satellites: [] },
+      ),
+    ).toMatch(
+      /^warning: everyone in 2 Slack group DMs and everyone in another conversation can steer scout, and through it use its connection github-acme\n/,
+    );
+  });
+
   /** TEST_SCENARIO: nothing is said when nobody else steers the Agent, or when it shares nothing, so the warning keeps its weight. */
   it("says nothing without an audience or anything shared", () => {
     const grants = { connections: ["github-acme"], satellites: [] };
@@ -130,14 +153,14 @@ describe("the sharing warning", () => {
     expect(
       sharingWarning(
         "scout",
-        { ...NOBODY, slackChannels: ["#eng"] },
+        { ...NOBODY, conversations: [{ kind: "slack-channel", name: "#eng" }] },
         { connections: [], satellites: [] },
       ),
     ).toBe(null);
   });
 
-  /** TEST_SCENARIO: a 1:1 DM is the binder's own conversation, so only channels and group DMs make an audience, labelled as Slack names them. */
-  it("counts every Slack conversation but a 1:1 DM", () => {
+  /** TEST_SCENARIO: the audience is the editors plus the contract package's shared conversations, the rule the web app reads: a 1:1 Slack DM and a 1:1 Telegram chat are left out, every other conversation counts. */
+  it("counts the editors and every conversation but a 1:1 one", () => {
     const audience = audienceOf(
       {
         access: { editors: ["ana@example.com"] },
@@ -148,12 +171,19 @@ describe("the sharing warning", () => {
           slack("C0999"),
         ],
       },
-      [],
+      [
+        { title: "Ops", direct: false },
+        { title: "ana", direct: true },
+      ],
     );
     expect(audience).toEqual({
       editors: ["ana@example.com"],
-      slackChannels: ["#eng", "a group DM", "C0999"],
-      telegramGroups: [],
+      conversations: [
+        { kind: "slack-channel", name: "#eng" },
+        { kind: "slack-group-dm" },
+        { kind: "slack-channel", name: "C0999" },
+        { kind: "telegram-chat", name: "Ops" },
+      ],
     });
   });
 });
@@ -169,7 +199,9 @@ describe("commands that share an Agent's grants", () => {
     const stdout = await run(
       buildGrantCommand({
         ...deps({ list: async () => ok([GITHUB]), grant }, agentLookup(agent)),
-        createSharingService: sharing({ telegramGroups: ["Ops"] }),
+        createSharingService: sharing({
+          telegramChats: [{ title: "Ops", direct: false }],
+        }),
       }),
       ["scout", "--connection", "github-acme", "--json"],
     );
@@ -196,7 +228,7 @@ describe("commands that share an Agent's grants", () => {
           agentLookup(agent),
         ),
         createSharingService: () => ({
-          telegramGroups: async () => ({
+          telegramChats: async () => ({
             ok: false as const,
             error: { kind: "transport" as const, reason: "connection reset" },
           }),
@@ -242,9 +274,9 @@ describe("commands that share an Agent's grants", () => {
     expect(output.stderr).not.toContain("warning:");
   });
 
-  /** TEST_SCENARIO: binding a channel lets everyone in it use what the Agent already holds; binding a 1:1 DM does not, so it does not warn. */
+  /** TEST_SCENARIO: binding a channel lets everyone in it use what the Agent already holds, so the warning names the Agent's whole audience, its editors and Telegram groups included; binding a 1:1 DM shares nothing and does not warn. */
   it("warns when a shared Slack channel is bound, and not for a DM", async () => {
-    const agent = agentView();
+    const agent = agentView({ access: { editors: ["ana@example.com"] } });
     const connectSlack = vi.fn(async (_id: string, channelId: string) =>
       ok([slack(channelId)]),
     );
@@ -257,13 +289,14 @@ describe("commands that share an Agent's grants", () => {
         ...deps({}, agentLookup(agent)),
         createChannelService: () => channels,
         createSharingService: sharing({
+          telegramChats: [{ title: "Ops", direct: false }],
           held: { connections: ["github-acme"], satellites: ["laptop"] },
         }),
       });
 
-    await run(command(), ["scout", "--channel-id", "C0456"]);
+    await run(command(), ["scout", "--channel-id", "C0456", "--json"]);
     expect(output.stderr).toContain(
-      "warning: everyone in Slack channel C0456 can steer scout, and through it use its connection github-acme and its satellite laptop\n",
+      "warning: its editor ana@example.com, everyone in Slack channel C0456 and everyone in Telegram group Ops can steer scout, and through it use its connection github-acme and its satellite laptop\n",
     );
 
     await run(command(), ["scout", "--channel-id", "D0123"]);

@@ -138,7 +138,7 @@ export const deps = (
   },
   createConnectionService: () => svc as ConnectionService,
   createSharingService: (): SharingService => ({
-    telegramGroups: async () => ({ ok: true as const, value: [] }),
+    telegramChats: async () => ({ ok: true as const, value: [] }),
     heldGrants: async () => ({ ok: true as const, value: NO_GRANTS }),
   }),
   browserOpener: {

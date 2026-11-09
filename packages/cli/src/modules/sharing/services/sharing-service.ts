@@ -1,3 +1,4 @@
+import type { TelegramChatAudience } from "api-server-api";
 import { ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import {
@@ -14,13 +15,15 @@ import {
 type SharingResult<T> = Result<T, TransportError | AuthRequiredError>;
 
 export interface SharingService {
-  telegramGroups(agentId: string): Promise<SharingResult<readonly string[]>>;
+  telegramChats(
+    agentId: string,
+  ): Promise<SharingResult<readonly TelegramChatAudience[]>>;
   heldGrants(agentId: string): Promise<SharingResult<SharedGrants>>;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The reads behind the sharing warning that a
- * command does not make anyway: the Telegram groups an Agent is bound to,
+ * command does not make anyway: the Telegram chats an Agent is bound to,
  * none when the deployment has no Telegram bot, and the connections and
  * satellites the Agent holds. A failed read is an error, never an empty list,
  * so the command can say it could not check.
@@ -29,12 +32,12 @@ export function createSharingService(deps: {
   trpc: TrpcClient;
 }): SharingService {
   return {
-    async telegramGroups(agentId) {
+    async telegramChats(agentId) {
       try {
         const { chats } = await deps.trpc.agents.listTelegramChats.query({
           agentId,
         });
-        return ok(chats.filter((c) => !c.direct).map((c) => c.title));
+        return ok(chats);
       } catch (e) {
         if (trpcErrorCode(e) === "PRECONDITION_FAILED") return ok([]);
         return classifyTrpcError(e);
