@@ -18,7 +18,7 @@ import { topModelOf } from "../../modules/sessions/lib/top-model.js";
 
 const shared: ProviderConnectionRef = {
   id: "cb",
-  name: "CurveBender (shared)",
+  name: "CurveBender",
   type: "curve-bender",
   templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
 };

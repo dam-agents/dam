@@ -92,7 +92,7 @@ const render = () =>
   );
 
 const CUSTOM = "CurveBender (own key)";
-const SHARED = "CurveBender (shared)";
+const SHARED = "CurveBender";
 
 const deploymentConfigured = () =>
   (state.templates = [{ id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID }]);
@@ -128,9 +128,7 @@ describe("CurveBender provider rows", () => {
     const html = render();
     expect(html).toContain(`>${SHARED}<`);
     expect(html).toContain(">Connected<");
-    expect(html).toMatch(
-      /<button[^>]*aria-label="About CurveBender \(shared\)"/,
-    );
+    expect(html).toMatch(/<button[^>]*aria-label="About CurveBender"/);
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);
     expect(html).not.toContain("Disconnect");

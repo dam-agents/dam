@@ -252,7 +252,7 @@ const CURVE_BENDER_DEPLOYMENT_PATHS = [
  */
 const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
   id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  name: "CurveBender (shared)",
+  name: "CurveBender",
   category: "app",
   isCustom: false,
   description: "Open-source models hosted internally in IBM.",

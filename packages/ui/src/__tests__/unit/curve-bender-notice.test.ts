@@ -8,7 +8,7 @@ import type { ProviderConnectionRef } from "../../modules/sessions/lib/session-p
 
 const shared: ProviderConnectionRef = {
   id: "cb",
-  name: "CurveBender (shared)",
+  name: "CurveBender",
   type: "curve-bender",
   templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
 };
