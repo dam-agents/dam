@@ -104,6 +104,7 @@ describe("the model catalog a boot starts from", () => {
       ready: () => true,
       providers: () => [],
       forLease: () => ({}),
+      connectionEnvFor: () => ({}),
     };
     const plugin = createHarnessConfigPlugin({
       harness: "claude-code",

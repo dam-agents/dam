@@ -145,6 +145,10 @@ export const modelRouterBinding = z.object({
   sessionFromRunningTurn: z.boolean().optional(),
   unmarkedOpeningCall: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
+  connectionEnv: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .nonempty()
+    .optional(),
   classifierModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
     .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
