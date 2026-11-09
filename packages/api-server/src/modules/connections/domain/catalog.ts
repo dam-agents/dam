@@ -324,7 +324,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "chatMode",
       envName: "BOB_CHAT_MODE",
       label: "Mode",
-      hint: `Starting mode of chat and terminal sessions unless the agent's Config panel sets one. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      hint: `Starting mode of terminal, channel and scheduled sessions unless the agent's Config panel sets one; a web chat carries the mode its session picker computes. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
     },
   ],

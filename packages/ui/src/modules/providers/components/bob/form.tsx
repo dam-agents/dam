@@ -175,7 +175,7 @@ export function BobForm({
           />
           <PinField
             label="Mode"
-            hint={`BOB_CHAT_MODE → session.defaultMode. Starting mode of chat and terminal sessions unless the agent's Config panel sets one. One of: ${BOB_CHAT_MODES.join(", ")}.`}
+            hint={`BOB_CHAT_MODE → session.defaultMode. Starting mode of terminal, channel and scheduled sessions unless the agent's Config panel sets one; a web chat carries the mode its session picker computes. One of: ${BOB_CHAT_MODES.join(", ")}.`}
             placeholder="(Bob default)"
             list="bob-chat-modes"
             error={errors.chatMode?.message}
