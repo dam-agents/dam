@@ -55,6 +55,10 @@ export interface ApprovalsRepository {
     agentId: string,
     opts?: ListApprovalsRepoOpts,
   ): Promise<PendingApprovalRow[]>;
+  /* UNIT_BOUNDARY_DESCRIPTION: every waiting egress request a driver filed on its child, unpaged, so a dedupe or a withdraw sees each one; a driver replaces the whole set on each update, so it stays as large as the driver's last rules. */
+  listPendingChildEgressRequests(
+    childId: string,
+  ): Promise<PendingApprovalRow[]>;
   resolvePending(
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
@@ -277,6 +281,21 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .where(where)
         .orderBy(desc(pendingApprovals.createdAt))
         .limit(limit);
+      return rows.map((r) => toPendingRow(r as RawPending));
+    },
+
+    async listPendingChildEgressRequests(childId) {
+      const rows = await db
+        .select()
+        .from(pendingApprovals)
+        .where(
+          and(
+            eq(pendingApprovals.agentId, childId),
+            eq(pendingApprovals.status, "pending"),
+            eq(pendingApprovals.type, "egress_proposal"),
+            sql`${pendingApprovals.payload}->>'forAgentId' is not null`,
+          ),
+        );
       return rows.map((r) => toPendingRow(r as RawPending));
     },
 

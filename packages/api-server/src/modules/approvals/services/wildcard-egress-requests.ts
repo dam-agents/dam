@@ -32,18 +32,8 @@ export function createWildcardEgressRequests(deps: {
 }): WildcardEgressRequests {
   const now = deps.now ?? (() => Date.now());
 
-  async function pendingOf(childId: string) {
-    const rows = await deps.repo.listPendingForInstance(childId, {
-      status: "pending",
-      limit: 500,
-    });
-    return rows.filter(
-      (r) =>
-        r.agentId === childId &&
-        r.payload.kind === "egress_proposal" &&
-        r.payload.forAgentId !== undefined,
-    );
-  }
+  const pendingOf = (childId: string) =>
+    deps.repo.listPendingChildEgressRequests(childId);
 
   return {
     async request({ childId, driverId, rule }) {

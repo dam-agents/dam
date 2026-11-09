@@ -76,7 +76,8 @@ An Environment runs the app its agent built, which reaches registries, mirrors a
 - **Egress follows the Owning Agent's rules**, unless the Owning Agent created it with egress of its own ([detached egress](security-and-credentials.md)).
   The egress gate resolves an Environment to its Owning Agent, of the same owner, and decides by the Owning Agent's rules: a host the agent may reach, the Environment may reach; a host denied stays denied.
   The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
-- **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
+- **A new host** of one that follows the Owning Agent's rules files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
+  One with rules of its own is decided as any [detached](security-and-credentials.md) child is.
 - **Connections.** An Environment holds none, all of the Owning Agent's when created with them, mirrored as a sub-agent's are, or a subset copied once ([invocations](invocations.md#spawning)); their credentials are injected by its own gateway, while its egress is decided under the Owning Agent.
   A mirroring one follows every later grant and revoke on the Owning Agent, a new provider included; the others keep what they were created with, and a newly connected provider is never attached to an Environment on its own.
 

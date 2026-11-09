@@ -89,6 +89,7 @@ function makeFakeRepo(): FakeRepo {
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
     listDistinctAgentIds: async () => [],
+    listPendingChildEgressRequests: async () => [],
   };
   return {
     repo,
