@@ -103,7 +103,7 @@ function render(connections: ConnectionView[]) {
         } as never,
         templateById: new Map([[TEMPLATE.id, TEMPLATE]]),
         sandbox: {
-          grantedIds: new Set(),
+          grantedIds: new Set<string>(),
           onToggleGrant: () => {},
           onRevoke: () => {},
         },
