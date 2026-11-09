@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -77,9 +77,14 @@ It runs in-cluster as a Helm subchart and is the OIDC provider for every authent
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
 The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
-Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
-An install with no meanings shows only the heading.
-The lead paragraph's documentation link points at the install's documentation site, the chart's `links.docs` value, which reaches the theme the same way; an install that sets it empty shows the paragraph without the link.
+The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
+The shared-artifact sign-in keeps the short single-screen layout.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The page's "Read the docs" links point at the install's documentation site, the chart's `links.docs` value, and its community channel link is the `keycloak.login.community` value; both reach the theme the same way, and a value set empty, or a docs value that is not an http(s) URL, hides that link.
+The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, from the Operator settings page or `dam login-testimonials`, so a change reaches the page within a minute, with no redeploy.
+The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
+While the call is pending, failed or empty, the page hides the section, and sign-in never waits for it.
+An install with no meanings shows the brand name as the heading.
 Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
@@ -121,18 +126,12 @@ A key is checked when a request or connection opens, so every long-lived stream 
 The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
 
 **An assistant acting for its owner** is not a credential at all.
-The one Agent the platform gives each person may drive its owner's install through the `dam` CLI from inside its own machine, and it does so over the harness path that machine alone reaches: `POST /api/agents/<id>/cli/trpc` is served on `/api/agents/<id>/`, which the mesh admits for that Agent's own gateway and for no sibling ([assistant](assistant.md#what-it-changes)).
-So the proof is the one every harness call already rests on, the machine holds no secret of any kind, and nothing in it can be replayed from elsewhere.
-Where an owner gateway serves a machine, the mesh sees the owner's principal rather than the Agent's, so each agent's harness policy admits it only on that Agent's own prefix and only with the Agent named in the header that gateway's harness guard stamps; every other route strips that header, and a request that names another Agent than the path is refused.
-The server then derives the principal itself and reads, live on every request, what a token could not have known: the Agent exists, it is an `assistant`, its owner label names the owner it acts for, that owner is still an admitted person, and the install still offers assistants to them.
-It acts as **that owner** over that owner's Agents and connections — `agents:read`, `agents:operate`, `agents:manage` and `credentials:read` — and never `credentials:manage`: adding or rotating a credential stays the person's.
-It is never an operator, and never a person, so the surfaces that need one refuse it: it cannot mint an API key, accept the Terms, set a feature flag, or decide an approval.
-It reaches the **app tRPC API and nothing else**: an agent's runtime tRPC, its file and import routes, and every relay socket — the ACP, terminal, SSH and browser-stream upgrades — refuse it outright, and the path takes no socket at all, so no long-lived surface can outlive it.
-
-One accepted exception, owned by [assistant](assistant.md#what-it-changes): a create is never reviewed, so an assistant may hand a new Agent its owner's own Connections, an owner-owned Secret and registry credential material.
-Tenancy still holds before anything is written ([Resource ownership](#resource-ownership)); the review is what is missing, and a create that grants anything waiting like any other change is the bridge.
-
-Everything it changes waits for the owner: the tRPC layer files the call on the owner's approval queue — the same queue a held network request lands in — and runs it, once, in a context composed for that owner's own authenticated identity, only when the owner approves it in their own signed-in session ([assistant](assistant.md#what-it-changes)).
+The one Agent each person is given may drive their install through the `dam` CLI from inside its own machine, over the harness path that machine alone reaches ([assistant](assistant.md#what-it-changes)): the proof is the one every harness call already rests on, so no secret exists in the machine and nothing in it can be replayed from elsewhere.
+The server derives the principal itself and reads, live on every request, what a token could not have known: the Agent exists, it is an `assistant`, its owner label names the owner it acts for, that owner is still an admitted person, and the install still offers assistants to them.
+It acts as **that owner** over their Agents and connections — `agents:read`, `agents:operate`, `agents:manage` and `credentials:read` — and never `credentials:manage`.
+It is never an operator nor a person, so the surfaces that need one refuse it — API keys, the Terms, feature flags, an approval's verdict — and it reaches the **app tRPC API and nothing else**: no runtime tRPC, no file or import route, no relay socket, no subscription.
+Everything it changes waits for the owner's approval, the same queue a held network request lands in, and runs once, in a context composed for that owner's own signed-in identity.
+An accepted exception, owned by [assistant](assistant.md#what-it-changes): a create is never reviewed, so it may hand a new Agent its owner's own Connections, an owner-owned Secret and registry credential material — reach without the review, though tenancy holds first ([Resource ownership](#resource-ownership)).
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.

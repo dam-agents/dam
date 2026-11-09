@@ -215,19 +215,30 @@ async function ensureDefault(deps: OwnerDeps): Promise<ProfileRow | null> {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the owner's default
  * for new agents, with the owner's oldest Connection of its template, which
- * the Agent is granted in place of the harness's provider order. Null while
- * the owner holds no profile or no such Connection, which leaves the new
- * Agent to that order and its first hello's conversion.
+ * the Agent is granted in place of the harness's provider order. The
+ * deployment-owned Connections come from the owner's Connection listing or a
+ * boot sweep over owners who already hold one, so a default naming one
+ * reconciles them first; a first create through the CLI or API would
+ * otherwise find none. Null while the owner holds no profile or no such
+ * Connection, which leaves the new Agent to that order and its first hello's
+ * conversion.
  */
 export async function newAgentDefault(
-  deps: OwnerDeps,
+  deps: OwnerDeps & { reconcileConnections?: () => Promise<void> },
 ): Promise<{ profile: ProfileRow; connectionId: string } | null> {
   const profile = await ensureDefault(deps);
-  const connection =
+  const connectionOf = async () =>
     profile &&
     (await deps.repo.ownerConnections(deps.owner)).find(
       (c) => c.templateId === profile.providerTemplate,
     );
+  let connection = await connectionOf();
+  const deploymentOwned =
+    profile?.providerTemplate === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
+  if (!connection && deploymentOwned && deps.reconcileConnections) {
+    await deps.reconcileConnections();
+    connection = await connectionOf();
+  }
   return profile && connection
     ? { profile, connectionId: connection.id }
     : null;
@@ -335,6 +346,7 @@ export function createProfilesService(
         ).length,
         channels: refs.channels.filter((c) => c.profileId === row.id).length,
         schedules: refs.schedules.filter((s) => s.profileId === row.id).length,
+        artifacts: refs.artifacts.filter((a) => a.profileId === row.id).length,
       },
       availability,
     };
@@ -388,6 +400,11 @@ export function createProfilesService(
         schedules: refs.schedules.map(({ id, name, agentId }) => ({
           id,
           name,
+          agentId,
+        })),
+        artifacts: refs.artifacts.map(({ id, title, agentId }) => ({
+          id,
+          title,
           agentId,
         })),
       };
@@ -514,6 +531,7 @@ export function createProfilesService(
             ...count(outcome.agents.length, "agent"),
             ...count(outcome.channels.length, "channel"),
             ...count(outcome.schedules.length, "schedule"),
+            ...count(outcome.artifacts.length, "artifact"),
           ].join(", ")}.`,
         });
       }

@@ -619,7 +619,8 @@ export const environments = pgTable(
       .$type<{ name: string; port: number; ready?: string }[]>()
       .notNull(),
     access: jsonb("access").$type<string[] | null>(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // UNIT_BOUNDARY_DESCRIPTION: when the expiry sweep deletes the Environment; null when its owner or Owning Agent keeps it with no expiry.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1190,6 +1191,16 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a Session that a prompt from this interactive page opens runs on, in the two slots a channel binding keeps; all four null follows the agent's channel pair. */
+    promptProfileId: text("prompt_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    promptSessionPair: jsonb("prompt_session_pair"),
+    promptSubagentProfile: text("prompt_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    promptSubagentSettings: jsonb("prompt_subagent_settings"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1207,6 +1218,14 @@ export const libraryArtifacts = pgTable(
     index("library_artifacts_expires_idx")
       .on(table.expiresAt)
       .where(sql`${table.expiresAt} is not null`),
+    check(
+      "library_artifacts_prompt_pair_xor_profile",
+      sql`${table.promptProfileId} is null or ${table.promptSessionPair} is null`,
+    ),
+    check(
+      "library_artifacts_prompt_subagent_xor_profile",
+      sql`${table.promptSubagentProfile} is null or ${table.promptSubagentSettings} is null`,
+    ),
   ],
 );
 
@@ -1482,6 +1501,23 @@ export const avatarImages = pgTable("avatar_images", {
     .defaultNow()
     .notNull(),
 });
+
+export const loginTestimonials = pgTable(
+  "login_testimonials",
+  {
+    id: text("id").primaryKey(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    quote: text("quote").notNull(),
+    photoId: text("photo_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: text("updated_by").notNull(),
+  },
+  (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
+);
 
 export const spendDaily = pgTable(
   "spend_daily",

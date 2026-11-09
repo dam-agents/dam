@@ -40,9 +40,6 @@ export function SandboxProvidersSection({
   return (
     <div className="flex flex-col gap-3">
       {header()}
-      <div className="mb-6">
-        <AgentModelPicker agentId={agentId} kind="chat" />
-      </div>
       {access && !managesProviders && (
         <OwnerOnlyNotice
           title="Only the owner adds and removes providers."
@@ -113,6 +110,9 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
+      <div className="mt-6">
+        <AgentModelPicker agentId={agentId} kind="chat" />
+      </div>
     </div>
   );
 }

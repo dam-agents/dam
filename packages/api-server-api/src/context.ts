@@ -4,6 +4,7 @@ import type {
   AgentTarget,
 } from "./modules/agents/permissions.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
+import type { LoginTestimonialsService } from "./modules/login-testimonials/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type {
   BudgetsService,
@@ -133,6 +134,7 @@ export interface ApiContext {
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
   userBudgets: UserBudgetsService;
+  loginTestimonials: LoginTestimonialsService;
   spend: SpendService;
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;

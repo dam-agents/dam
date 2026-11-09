@@ -1,4 +1,4 @@
-import { and, eq, lt, type Db, environments as table } from "db";
+import { and, eq, isNotNull, lt, type Db, environments as table } from "db";
 import type { EnvironmentRecord } from "../domain/environment.js";
 
 export interface EnvironmentsRepository {
@@ -72,7 +72,7 @@ export function createEnvironmentsRepository(db: Db): EnvironmentsRepository {
       const rows = await db
         .select()
         .from(table)
-        .where(lt(table.expiresAt, now));
+        .where(and(isNotNull(table.expiresAt), lt(table.expiresAt, now)));
       return rows.map(fromRow);
     },
 

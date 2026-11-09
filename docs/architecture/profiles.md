@@ -7,7 +7,7 @@ Last verified: 2026-11-05
 A **profile** is one owner's named harness, provider template, model, platform sub-agent and settings, usable on all their agents.
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
 Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from or matches one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
-Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels and schedules that name one), then by name.
+Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels, schedules and interactive pages that name one), then by name.
 Custom selection is one screen wherever a pick is made: a new or running chat's primary model, a channel's and a schedule's, and a profile in Settings; none of them holds tool approval.
 A channel and a schedule pick in the chat's own picker, both slots in it.
 A subagent is a model and the provider it runs on, under **More options**, or **Same as agent**, which lets the harness pick; a profile carries a subagent the same way, and its picker offers it beside the model.
@@ -24,12 +24,14 @@ A channel or schedule naming none follows its kind's pair, which is the chat def
 An edit that no agent using the profile can run is put back, and that revert never undoes a newer edit made meanwhile.
 A profile's platform sub-agent runs on the profile's harness and the agent's Connection of its own provider template, and its model is a model of that template; a slot with a subagent pick of its own never runs it, whole, and a null or absent sub-agent is **Same as agent**, which lets the harness pick.
 A subagent slot that holds a profile which can no longer run leaves the subagent to the agent, and a sub-agent the profile lends that cannot run refuses the run rather than running on another; an edit that breaks it is put back like any other no agent can run.
+An interactive page keeps the same two slots for the Sessions its prompts open ([a page's model](artifact-library.md#a-pages-model)).
 A profile in use cannot be deleted, and the refusal names what uses it.
 
 ## The default for new agents
 
 Each owner has exactly one **default for new agents**, which cannot be deleted while it is; another profile is made the default first, from its row in Settings.
 An owner with no profile is given "Default" on the deployment's shared CurveBender, with the harness and model the install sets under `apiServer.defaultProfile`.
+A new agent whose default names the shared CurveBender, for an owner who holds none of it yet, reconciles the deployment-owned Connections before it starts, so the first create on an account that never listed Connections still starts on it.
 An install without the shared CurveBender, or with either value empty, gives "Default" from the owner's first provider once it has listed its models: the install's default harness where that provider runs it, else the first harness it runs, and the model the platform prefers for work on that harness, else the first it lists.
 An owner who already has profiles gets no "Default"; their oldest becomes the default.
 A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.

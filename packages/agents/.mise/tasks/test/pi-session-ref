@@ -74,7 +74,7 @@ writeFileSync(join(home, "harness-chat"), harnessChat, { mode: 0o755 });
 const env = {
   PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
   PI_ACP_PI_COMMAND: join(home, "pi-platform"), PLATFORM_SESSION_REF: imageRef,
-  PLATFORM_MODEL_ROUTER_URL: `http://127.0.0.1:${router.address().port}`, PLATFORM_MODEL: MODEL,
+  PLATFORM_MODEL_ROUTER_URL: `http://127.0.0.1:${router.address().port}`, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL: MODEL,
 };
 const stderr = [];
 const acp = acpClient("/bin/sh", [join(home, "harness-chat")], { env, cwd: work, name: "pi-acp", log: (line) => stderr.push(line), onRequest: () => ({}) });

@@ -38,6 +38,7 @@ import { ArtifactListRow } from "./artifact-list-row.js";
 import { FolderActionsMenu } from "./folder-actions-menu.js";
 import { FolderDialog } from "./folder-dialog.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
+import { PromptModelDialog } from "./prompt-model-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -167,6 +168,8 @@ export function ChatArtifactsPanel({
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [retentionTarget, setRetentionTarget] =
     useState<LibraryArtifact | null>(null);
+  const [promptModelTarget, setPromptModelTarget] =
+    useState<LibraryArtifact | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -195,6 +198,7 @@ export function ChatArtifactsPanel({
       onMove={setMoveTarget}
       onShare={setShareTarget}
       onSetRetention={setRetentionTarget}
+      onSetPromptModel={setPromptModelTarget}
     />
   );
 
@@ -360,6 +364,13 @@ export function ChatArtifactsPanel({
         <RetentionDialog
           artifact={retentionTarget}
           onClose={() => setRetentionTarget(null)}
+        />
+      )}
+      {promptModelTarget?.agentId && (
+        <PromptModelDialog
+          artifact={promptModelTarget}
+          agentId={promptModelTarget.agentId}
+          onClose={() => setPromptModelTarget(null)}
         />
       )}
       {creatingFolder && (
