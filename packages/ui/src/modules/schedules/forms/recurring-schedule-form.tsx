@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 
 import { emitToast } from "../../../lib/toast.js";
 import type { Schedule } from "../../../types.js";
+import { useFlowOpened } from "../../usage/lib/ui-telemetry.js";
 import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
 import type { CreatedSchedule } from "../lib/just-ask.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
@@ -47,6 +48,7 @@ export function RecurringScheduleForm({
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const mutation = existing ? updateSchedule : createSchedule;
+  useFlowOpened("create_schedule", !existing);
 
   const form = useForm<ScheduleFormValues>({
     resolver: zodResolver(scheduleFormSchema),

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import type { FileContent } from "../../files/api/queries.js";
+import { recordFlowStep } from "../../usage/lib/ui-telemetry.js";
 import { useCreateArtifact, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifacts } from "../api/queries.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
@@ -51,6 +52,7 @@ export function useFilePromotion(
 
   const promote = async () => {
     if (!promotable) return;
+    if (!linked) recordFlowStep("publish_artifact", "open");
     setUploading(true);
     try {
       const name = basename(file.path);

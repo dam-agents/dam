@@ -953,6 +953,20 @@
       "when": 1793977243852,
       "tag": "0135_artifact_prompt_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1793994925661,
+      "tag": "0136_ui_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1793994927688,
+      "tag": "0137_ui_events_views",
+      "breakpoints": true
     }
   ]
 }

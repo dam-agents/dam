@@ -3,6 +3,7 @@ import type { AppRouter } from "api-server-api";
 
 import { getAccessToken } from "./auth.js";
 import { onFetchError, onFetchSuccess } from "./lib/api-health.js";
+import { requestLatencyLink } from "./modules/usage/lib/request-latency.js";
 
 export const wsClient = createWSClient({
   url: () =>
@@ -16,5 +17,5 @@ export const wsClient = createWSClient({
 });
 
 export const api = createTRPCClient<AppRouter>({
-  links: [wsLink({ client: wsClient })],
+  links: [requestLatencyLink, wsLink({ client: wsClient })],
 });
