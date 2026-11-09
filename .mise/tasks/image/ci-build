@@ -79,14 +79,21 @@ push_layout() {
   esac
 }
 
+# The output a component is pushed with: `<component>[:<output>]`, digest when
+# none is named.
+kind_of() { case "$1" in *:*) echo "${1#*:}" ;; *) echo digest ;; esac; }
+
 # One oci run for every agent named: each run builds the default image, which
 # every other is packed onto, so one run per image built it again for each.
+# The names may carry different outputs, the mock's source tag beside the
+# default image's digest, and each layout pushes as its own name says.
 build_mise() {
-  local kind=$1 c layout; shift
+  local arg c kind layout names=()
+  for arg in "$@"; do names+=("${arg%%:*}"); done
   # No tar: a push reads the layout, and the e2e lane imports the layout itself.
-  packages/agents/.mise/tasks/oci --build --no-tar "$@" || return 1
-  for c in "$@"; do
-    layout="$AGENT_OCI_OUT/$c"
+  packages/agents/.mise/tasks/oci --build --no-tar "${names[@]}" || return 1
+  for arg in "$@"; do
+    c="${arg%%:*}" kind="$(kind_of "$arg")" layout="$AGENT_OCI_OUT/$c"
     # Each plain layer's digest, so two runs' logs show which layers a change
     # rewrote and which a rebuild kept.
     jq -r '.manifests[0].digest | sub(":"; "/")' "$layout/index.json" |
@@ -103,7 +110,8 @@ build_mise() {
 # as a tarball, crane rewrites its OCI manifest as a Docker one around the OCI
 # config and layers, which quay.io refuses as invalid.
 build_tar() {
-  local c=$1 pkg=$2 kind=$3 layout="$AGENT_OCI_OUT/$1"
+  local c="${1%%:*}" pkg=$2 kind layout="$AGENT_OCI_OUT/${1%%:*}"
+  kind="$(kind_of "$1")"
   mise run "//packages/$pkg:oci" || return 1
   case "$kind" in cacheonly | load) return ;; esac
   rm -rf "$layout" && mkdir -p "$layout" && tar -C "$layout" -xf "$(tar_of "$c")" || return 1
@@ -111,10 +119,9 @@ build_tar() {
   rm -rf "$layout"
 }
 
-names=() kinds=()
+args=("$@") names=()
 for arg in "$@"; do
   names+=("${arg%%:*}")
-  case "$arg" in *:*) kinds+=("${arg#*:}") ;; *) kinds+=(digest) ;; esac
 done
 
 # Each :oci task is a `mise run`, which first runs the root's pnpm install:
@@ -125,50 +132,65 @@ for n in "${names[@]}"; do
   break
 done
 
-# One build, of one component or of agents with one output, its wall time
-# last in its output. Given CI_BUILD_READY_DIR, a file named after each
-# component lands there once it is built: e2e:ci-images sets it, and
-# cluster:install imports each image as it lands.
+# One build, of one component or of the agents in one run, its wall time last
+# in its output. Given CI_BUILD_READY_DIR, a file named after each component
+# lands there once it is built: e2e:ci-images sets it, and cluster:install
+# imports each image as it lands.
 timed_build() {
-  local kind=$1 start=$SECONDS code=0 pkg n; shift
-  pkg="$(package_of "$1")" || return 1
-  if [ "$pkg" = mise ]; then build_mise "$kind" "$@" || code=$?; else build_tar "$1" "$pkg" "$kind" || code=$?; fi
-  echo "$*: $((SECONDS - start))s"
+  local start=$SECONDS code=0 pkg n a names=()
+  for a in "$@"; do names+=("${a%%:*}"); done
+  pkg="$(package_of "${names[0]}")" || return 1
+  if [ "$pkg" = mise ]; then build_mise "$@" || code=$?; else build_tar "$1" "$pkg" || code=$?; fi
+  echo "${names[*]}: $((SECONDS - start))s"
   [ "$code" -eq 0 ] || return "$code"
-  [ -z "${CI_BUILD_READY_DIR:-}" ] || for n in "$@"; do touch "$CI_BUILD_READY_DIR/$n"; done
+  [ -z "${CI_BUILD_READY_DIR:-}" ] || for n in "${names[@]}"; do touch "$CI_BUILD_READY_DIR/$n"; done
+}
+
+# A run keeps every layout it makes until it returns, each paying its own
+# gzipped copy of the shared layers, so the one too large to hold beside the
+# rest builds alone: k-search's own layer is 6.9 GiB plain, 3.8 GB gzipped.
+# Ceiling: an oci run that pushed each layout as it built it would let k-search
+# join one too.
+alone=" k-search "
+
+# Whether a component can share a run with the one beside it: an agent image,
+# and none of the `alone` ones.
+shares_run() { [ "$(package_of "$1" 2>/dev/null)" = mise ] && [[ "$alone" != *" $1 "* ]]; }
+
+# The next run's components, as `<name>[:<kind>]`, in `group`, their names in
+# `group_names`, and the index after them in `next`: consecutive agent images,
+# since one run packs the default image once for all of them, where a run per
+# component packed it again each time (20-37 s for the tools, plus the runtime's
+# pnpm). Their outputs may differ, and each layout pushes as its own name says.
+next_group() { # <index> <component>...; sets group, group_names, next
+  local i=$1 a; shift
+  local words=("$@")
+  group=("${words[$i]}")
+  next=$((i + 1))
+  if shares_run "${words[$i]%%:*}"; then
+    while [ "$next" -lt ${#words[@]} ] && shares_run "${words[$next]%%:*}"; do
+      group+=("${words[$next]}")
+      next=$((next + 1))
+    done
+  fi
+  group_names=()
+  for a in "${group[@]}"; do group_names+=("${a%%:*}"); done
 }
 
 failed=()
 if [ "$serial" = true ]; then
-  # One build per run of consecutive agent components with one output: the run
-  # packs the default image once for all of them, where a run per component
-  # packed it again each time (20-37 s for the tools, plus the runtime's pnpm).
-  # A run keeps every layout until it returns, each paying its own gzipped copy
-  # of the shared layers, so the one too large to hold beside the rest builds
-  # alone: k-search's own layer is 6.9 GiB plain, 3.8 GB gzipped. Ceiling: an oci
-  # run that pushed each layout as it built it would let k-search join one too.
-  alone=" k-search "
   i=0
   while [ "$i" -lt "${#names[@]}" ]; do
-    group=("${names[$i]}")
-    if [ "$(package_of "${names[$i]}" 2>/dev/null)" = mise ] && [[ "$alone" != *" ${names[$i]} "* ]]; then
-      while [ $((i + 1)) -lt "${#names[@]}" ] && [ "${kinds[$((i + 1))]}" = "${kinds[$i]}" ] &&
-        [ "$(package_of "${names[$((i + 1))]}" 2>/dev/null)" = mise ] &&
-        [[ "$alone" != *" ${names[$((i + 1))]} "* ]]; do
-        i=$((i + 1))
-        group+=("${names[$i]}")
-      done
-    fi
-    echo "::group::${group[*]}"
-    timed_build "${kinds[$i]}" "${group[@]}" 2>&1 || failed+=("${group[@]}")
+    next_group "$i" "${args[@]}"
+    i=$next
+    echo "::group::${group_names[*]}"
+    timed_build "${group[@]}" 2>&1 || failed+=("${group_names[@]}")
     echo "::endgroup::"
-    i=$((i + 1))
   done
 else
   # The mise images share the oci task's stage and apt-base layout, one build
-  # per host at a time, so they take one lane beside the rest: one build for
-  # each output, one after another. A failure is named in a file, since the
-  # lane is one process.
+  # per host at a time, so they take one lane beside the rest, one run of it
+  # after another. A failure is named in a file, since the lane is one process.
   pids=() lane=()
   : > "$ci_tmp/ci-build/mise-failed"
   for i in "${!names[@]}"; do
@@ -176,16 +198,20 @@ else
       lane+=("$i")
       continue
     fi
-    timed_build "${kinds[$i]}" "${names[$i]}" > "$ci_tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
+    timed_build "${args[$i]}" > "$ci_tmp/ci-build/logs/${names[$i]}.log" 2>&1 &
     pids+=("$!:${names[$i]}")
   done
   if [ ${#lane[@]} -gt 0 ]; then
-    (for kind in $(for i in "${lane[@]}"; do echo "${kinds[$i]}"; done | sort -u); do
-      group=()
-      for i in "${lane[@]}"; do [ "${kinds[$i]}" != "$kind" ] || group+=("${names[$i]}"); done
-      timed_build "$kind" "${group[@]}" > "$ci_tmp/ci-build/logs/$(IFS=-; echo "${group[*]}").log" 2>&1 ||
-        printf '%s\n' "${group[@]}" >> "$ci_tmp/ci-build/mise-failed"
-    done) &
+    lane_args=()
+    for i in "${lane[@]}"; do lane_args+=("${args[$i]}"); done
+    (i=0
+     while [ "$i" -lt ${#lane_args[@]} ]; do
+       next_group "$i" "${lane_args[@]}"
+       i=$next
+       log="${group_names[*]}"
+       timed_build "${group[@]}" > "$ci_tmp/ci-build/logs/${log// /-}.log" 2>&1 ||
+         printf '%s\n' "${group_names[@]}" >> "$ci_tmp/ci-build/mise-failed"
+     done) &
     pids+=("$!:")
   fi
   for p in ${pids[@]+"${pids[@]}"}; do wait "${p%%:*}" || { [ -z "${p#*:}" ] || failed+=("${p#*:}"); }; done
@@ -198,7 +224,7 @@ fi
 if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to build: ${failed[*]}"; exit 1; fi
 
 for i in "${!names[@]}"; do
-  [ "${kinds[$i]}" = digest ] || continue
+  [ "$(kind_of "${args[$i]}")" = digest ] || continue
   d="$(jq -r '."containerimage.digest"' "$ci_tmp/ci-build/meta/${names[$i]}.json")"
   case "$d" in sha256:*) ;; *) echo "::error::no digest for ${names[$i]}"; exit 1 ;; esac
   mkdir -p "$ci_tmp/digests/${names[$i]}" && touch "$ci_tmp/digests/${names[$i]}/${d#sha256:}"

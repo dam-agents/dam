@@ -334,7 +334,6 @@ jobs:
           CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
           CI_IMAGES_CHANGES_JOB: build / detect stale images
           CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
-          CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
           # As build.yml's `changes` job sets them, so both resolve the same
           # images stale. EVENT lets a merge group reuse an earlier group's
