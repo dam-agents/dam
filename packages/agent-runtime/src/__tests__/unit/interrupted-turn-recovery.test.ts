@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { createActiveTurnStore } from "../../modules/acp/infrastructure/active-turn-store.js";
+import { InProcessRequestError } from "../../modules/acp/infrastructure/in-process-request.js";
 import { createSessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
+import { createUndeliveredPromptStore } from "../../modules/acp/infrastructure/undelivered-prompt-store.js";
 import {
   INTERRUPTION_NOTICE,
   MAX_RESUME_ATTEMPTS,
@@ -29,9 +31,20 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
+const NEVER_STORED = new InProcessRequestError(
+  "session/resume failed: Resource not found",
+  { platform: { unstored: true, undelivered: [] } },
+);
+
+function recoveryWorld(
+  onResume: (sessionId: string) => void = () => {},
+  neverStored: readonly string[] = [],
+) {
   const backend = createFileDocumentStoreBackend(dir);
   const sessionMetadata = createSessionMetadataStore(backend);
+  const undeliveredPrompts = createUndeliveredPromptStore(backend, () =>
+    new Date().toISOString(),
+  );
   const resumed: string[] = [];
   const tasks: string[] = [];
   const fresh: { meta: unknown; unattended: boolean | undefined }[] = [];
@@ -40,6 +53,8 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   const triggerDriver: TriggerSessionDriver = {
     cancel: async () => true,
     start({ task, resumeSessionId, platformMeta, unattended }) {
+      if (resumeSessionId && neverStored.includes(resumeSessionId))
+        return Promise.reject(NEVER_STORED);
       if (resumeSessionId) {
         resumed.push(resumeSessionId);
         tasks.push(task);
@@ -56,6 +71,7 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   return {
     backend,
     sessionMetadata,
+    undeliveredPrompts,
     resumed,
     tasks,
     fresh,
@@ -64,6 +80,7 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
       recoverInterruptedTurns({
         store,
         sessionMetadata,
+        undeliveredPrompts,
         triggerDriver,
         bindScheduleSession: (scheduleId, sessionId) =>
           bound.push({ scheduleId, sessionId }),
@@ -160,13 +177,13 @@ describe("interrupted-turn recovery", () => {
 
   /**
    * TEST_SCENARIO: a schedule fires on a hibernated agent and the machine then
-   * goes down while the new Session runs its first turn. A harness stores a
-   * Session only during its first turn, so there is nothing to resume: the
-   * fire's task must run anyway, unattended, in a fresh Session that keeps the
-   * dead one's schedule metadata.
+   * goes down at the very start of the new Session's first turn, before the
+   * harness stored it, so the resume's load fails as never stored. The fire's
+   * task must run anyway, unattended, in a fresh Session that keeps the dead
+   * one's schedule metadata, and the dead one leaves no undelivered prompt.
    */
   it("runs a scheduled fire's cut first turn again in a fresh session", async () => {
-    const world = recoveryWorld();
+    const world = recoveryWorld(undefined, ["sched-run"]);
     const meta = {
       mode: "chat",
       type: "schedule_once",
@@ -184,10 +201,20 @@ describe("interrupted-turn recovery", () => {
       droppedAttachments: [],
     });
 
+    world.undeliveredPrompts.remember("sched-run", [
+      {
+        id: "prompt-1",
+        recordedAt: new Date().toISOString(),
+        blocks: [{ type: "text", text: "append" }],
+        droppedAttachments: [],
+      },
+    ]);
+
     await world.recover(createActiveTurnStore(world.backend));
 
     expect(world.resumed).toEqual([]);
     expect(world.tasks).toEqual(["append the current date to ~/qa-sched.txt"]);
+    expect(world.undeliveredPrompts.readFor("sched-run")).toEqual([]);
     expect(world.fresh).toEqual([{ meta, unattended: true }]);
     expect(world.sessionMetadata.get("fresh-1")?.meta).toEqual(meta);
     expect(world.sessionMetadata.isTombstoned("sched-run")).toBe(true);
@@ -226,11 +253,7 @@ describe("interrupted-turn recovery", () => {
     const triggerDriver: TriggerSessionDriver = {
       cancel: async () => true,
       start({ platformMeta, resumeSessionId }) {
-        if (resumeSessionId)
-          return Promise.resolve({
-            sessionId: resumeSessionId,
-            openedOn: null,
-          });
+        if (resumeSessionId) return Promise.reject(NEVER_STORED);
         const sessionId = `rerun-${String(reran.length + 1)}`;
         reran.push(sessionId);
         sessionMetadata.set(sessionId, platformMeta ?? {});
@@ -245,6 +268,9 @@ describe("interrupted-turn recovery", () => {
       await recoverInterruptedTurns({
         store: booted,
         sessionMetadata,
+        undeliveredPrompts: createUndeliveredPromptStore(backend, () =>
+          new Date().toISOString(),
+        ),
         triggerDriver,
         log: () => {},
       });
@@ -276,5 +302,89 @@ describe("interrupted-turn recovery", () => {
 
     expect(world.resumed).toEqual(["sched-run"]);
     expect(world.fresh).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: a scheduled run works for hours in its first turn and the
+   * machine restarts before that turn ends, so its Session is still flagged
+   * unstored, but the harness stored the conversation long before. It is
+   * resumed in its own Session with the interruption notice; running the task
+   * again in a fresh Session would lose all the work the run knew.
+   */
+  it("resumes a scheduled session cut on a first turn the harness stored", async () => {
+    const world = recoveryWorld();
+    world.sessionMetadata.set("sched-run", {
+      mode: "chat",
+      type: "schedule_cron",
+      scheduleId: "sched-1",
+    });
+    world.sessionMetadata.markUnstored("sched-run");
+    createActiveTurnStore(world.backend).record("sched-run", {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [{ type: "text", text: "implement the next issue" }],
+      droppedAttachments: [],
+    });
+
+    await world.recover(createActiveTurnStore(world.backend));
+
+    expect(world.resumed).toEqual(["sched-run"]);
+    expect(world.tasks).toEqual([INTERRUPTION_NOTICE]);
+    expect(world.fresh).toEqual([]);
+    expect(world.sessionMetadata.isTombstoned("sched-run")).toBe(false);
+    expect(world.bound).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: the resume of a scheduled run cut on its first turn fails
+   * for another reason than a Session the harness never stored, as a load
+   * that timed out. The harness may still hold the conversation, so recovery
+   * gives up as it does on any failed resume rather than run the task twice.
+   */
+  it("does not re-run a scheduled first turn whose resume failed otherwise", async () => {
+    const backend = createFileDocumentStoreBackend(dir);
+    const sessionMetadata = createSessionMetadataStore(backend);
+    sessionMetadata.set("sched-run", {
+      mode: "chat",
+      type: "schedule_once",
+      scheduleId: "sched-1",
+    });
+    sessionMetadata.markUnstored("sched-run");
+    createActiveTurnStore(backend).record("sched-run", {
+      id: "prompt-1",
+      recordedAt: new Date().toISOString(),
+      blocks: [{ type: "text", text: "append the current date" }],
+      droppedAttachments: [],
+    });
+    const fresh: string[] = [];
+    const triggerDriver: TriggerSessionDriver = {
+      cancel: async () => true,
+      start({ task, resumeSessionId }) {
+        if (resumeSessionId)
+          return Promise.reject(
+            new InProcessRequestError(
+              "session/resume failed: the harness did not answer the session load in time",
+              undefined,
+            ),
+          );
+        fresh.push(task);
+        return Promise.resolve({ sessionId: "fresh-1", openedOn: null });
+      },
+    };
+    const booted = createActiveTurnStore(backend);
+
+    await recoverInterruptedTurns({
+      store: booted,
+      sessionMetadata,
+      undeliveredPrompts: createUndeliveredPromptStore(backend, () =>
+        new Date().toISOString(),
+      ),
+      triggerDriver,
+      log: () => {},
+    });
+
+    expect(fresh).toEqual([]);
+    expect(booted.leftovers()).toEqual([]);
+    expect(sessionMetadata.isTombstoned("sched-run")).toBe(false);
   });
 });

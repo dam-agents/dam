@@ -24,6 +24,22 @@ function describeError(
     : message;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a request the runtime answered with an error. It
+ * keeps the error's `data`, where the runtime puts what a caller acts on, such
+ * as `platform.unstored` on a failed load of a Session the harness never
+ * stored.
+ */
+export class InProcessRequestError extends Error {
+  constructor(
+    message: string,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "InProcessRequestError";
+  }
+}
+
 export interface InProcessCaller {
   request<T>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
@@ -83,7 +99,10 @@ export function createInProcessCaller(
         pending.set(id, (frame) => {
           if (frame.error) {
             reject(
-              new Error(`${method} failed: ${describeError(frame.error)}`),
+              new InProcessRequestError(
+                `${method} failed: ${describeError(frame.error)}`,
+                frame.error.data,
+              ),
             );
             return;
           }

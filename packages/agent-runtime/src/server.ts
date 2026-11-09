@@ -563,6 +563,7 @@ const {
   sessions: sessionsService,
   sessionChanges,
   activeTurns,
+  undeliveredPrompts,
   subAgentSessions,
   platformMcpEntry,
   warmHistory,
@@ -733,6 +734,7 @@ function scheduleRecovery(): void {
     void recoverInterruptedTurns({
       store: activeTurns,
       sessionMetadata,
+      undeliveredPrompts,
       triggerDriver,
       bindScheduleSession: (scheduleId, sessionId) =>
         runtimeChannel.triggerStateStore.setSessionForSchedule(
