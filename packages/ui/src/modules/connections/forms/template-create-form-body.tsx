@@ -144,7 +144,10 @@ export function TemplateCreateFormBody({
 
   const fieldsRegion = (
     <div className="flex flex-col gap-4">
-      <GithubStepsCallout templateId={template.id} />
+      <GithubStepsCallout
+        templateId={template.id}
+        host={hostChoices?.length ? fields?.host : undefined}
+      />
 
       <Controller
         control={control}

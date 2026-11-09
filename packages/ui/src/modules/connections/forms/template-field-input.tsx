@@ -5,7 +5,12 @@ import { FormField } from "@/components/form-field";
 import { Select } from "@/components/ui/select";
 
 import type { TemplateFormValues } from "../lib/template-form-schema.js";
-import { hintFor, labelFor, placeholderFor } from "./field-copy.js";
+import {
+  GHE_HOST_CHOICE_HINT,
+  hintFor,
+  labelFor,
+  placeholderFor,
+} from "./field-copy.js";
 import { LabeledInput } from "./labeled-input.js";
 
 export function TemplateFieldInput({
@@ -73,7 +78,11 @@ function TemplateFieldChoice({
       render={({ field, fieldState }) => (
         <FormField
           label={input.label ?? labelFor(input.name)}
-          hint={hintFor(templateId, input.name) ?? input.hint}
+          hint={
+            input.name === "host"
+              ? GHE_HOST_CHOICE_HINT
+              : (hintFor(templateId, input.name) ?? input.hint)
+          }
           error={fieldState.error?.message}
         >
           <Select

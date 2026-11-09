@@ -57,6 +57,11 @@ export function ConnectionMoveHostDialog({
           It keeps its name, the connections made from it and the agents that
           hold them. You authorize it again on the new host.
         </p>
+        <p className="text-sm text-muted-foreground">
+          The move happens before you authorize. If you stop before
+          authorizing, the sign-in stays on the new host and reads expired:
+          choose Re-authenticate on its row when you are ready.
+        </p>
         <FormField label="New host">
           <Select
             data-testid="move-host-select"

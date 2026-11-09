@@ -9,6 +9,7 @@ import { ConnectionRowActions } from "./connection-row-actions.js";
 import { ConnectionRowDetail } from "./connection-row-detail.js";
 import { FullAccessMark } from "./full-access-mark.js";
 import { GithubAppInstallations } from "./github-app-installations.js";
+import { RetiredHostNote } from "./retired-host-note.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -134,6 +135,7 @@ export function CatalogConnectionRow({
           </div>
         </div>
         <ConnectionRowDetail connection={connection} />
+        <RetiredHostNote connection={connection} />
         <GithubAppInstallations connection={connection} />
       </div>
     </div>

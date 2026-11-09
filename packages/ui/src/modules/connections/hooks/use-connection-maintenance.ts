@@ -5,7 +5,7 @@ import { useFeatures } from "../../features/api/queries.js";
 import { useConnectionTemplates } from "../api/queries.js";
 import type { RowMaintenanceActions } from "../components/catalog-connection-row.js";
 import {
-  gheSignInHostChoices,
+  gheSignInOfferedHosts,
   movesBetweenHosts,
   otherHosts,
 } from "../lib/github-enterprise-hosts.js";
@@ -17,8 +17,9 @@ export function useConnectionMaintenance() {
   const [movingHost, setMovingHost] = useState<ConnectionView | null>(null);
   const { reauthenticate, busyId } = useReauthenticateConnection();
   const hostsEnabled = useFeatures().data?.["github-enterprise-hosts"] ?? false;
-  const templates = useConnectionTemplates({ enabled: hostsEnabled }).data;
-  const hostChoices = hostsEnabled ? gheSignInHostChoices(templates ?? []) : [];
+  const offeredHosts = gheSignInOfferedHosts(
+    useConnectionTemplates().data ?? [],
+  );
 
   const openUpdate = (connection: ConnectionView) => {
     setEditingScope(null);
@@ -40,7 +41,8 @@ export function useConnectionMaintenance() {
     connection: ConnectionView,
   ): Pick<RowMaintenanceActions, "onMoveHost"> =>
     movesBetweenHosts(connection) &&
-    otherHosts(hostChoices, connection).length > 0
+    (hostsEnabled || connection.retiredHost) &&
+    otherHosts(offeredHosts, connection).length > 0
       ? { onMoveHost: () => openMoveHost(connection) }
       : {};
 
@@ -102,7 +104,7 @@ export function useConnectionMaintenance() {
     movingHost: movingHost
       ? {
           connection: movingHost,
-          hosts: otherHosts(hostChoices, movingHost),
+          hosts: otherHosts(offeredHosts, movingHost),
           onMoved: (connection: ConnectionView) => {
             setMovingHost(null);
             void reauthenticate(connection);

@@ -68,9 +68,9 @@ A GitHub Enterprise Server is a separate case: `gh` reads `GH_ENTERPRISE_TOKEN` 
 An install may offer several GitHub Enterprise hosts, each with the GitHub App registered on it, set in the chart values ([`helm/values.yaml`](../../helm/values.yaml)).
 With two or more, the connect form asks which host, and a sign-in authorizes, renews and narrows with the app of its own host; one host keeps the single-host form, where that host and its app are presets.
 The install can also retire a host its users have moved away from.
-No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected and cannot be authorized there.
-A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host.
+No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected with the retired host named, and cannot be authorized there.
+A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host; the move is written before the authorization, so a user who stops there re-authenticates from the row.
 The sign-in then uses the app the install registered on the new host, even where it had a user's own app before.
 A narrowed Connection keeps a scope that names an account of the old host, which GitHub refuses on the new one, so after the authorization it reads expired until its scope is picked again; a full-access one works at once.
 Tokens and installations do not move: they are made again on the new host.
-The UI's host list and the move stay behind the `github-enterprise-hosts` experimental feature; the api-server enforces the host list and the retired hosts for every caller.
+The UI's host list, and the move of a sign-in whose host still works, stay behind the `github-enterprise-hosts` experimental feature; a sign-in on a retired host offers the move without it, since retiring is the operator's act, and the api-server enforces the host list and the retired hosts for every caller.

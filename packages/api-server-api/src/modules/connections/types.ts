@@ -188,6 +188,7 @@ export const connectionView = z.object({
   category: connectionCategory,
   name: z.string(),
   status: connectionStatus,
+  retiredHost: z.string().min(1).optional(),
   authKind: authKind,
   contributions: z.array(contribution),
   connectedAt: z.string().optional(),

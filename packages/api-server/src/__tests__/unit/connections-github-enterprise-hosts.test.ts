@@ -272,13 +272,13 @@ describe("the GitHub Enterprise hosts an install offers", () => {
 });
 
 describe("a connection on a retired host", () => {
-  // TEST_SCENARIO: the connection must not be deleted or shown as working when its host goes away; it reads disconnected so its owner knows to move it.
+  // TEST_SCENARIO: the connection must not be deleted or shown as working when its host goes away; it reads disconnected, naming the retired host, so its owner knows why and to move it.
   it("reads disconnected, the sign-in and what was made from it", async () => {
     const { svc } = harness([signInOn(OLD), childOn(OLD)]);
     const views = await svc.listConnections();
-    expect(views.map((v) => [v.id, v.status])).toEqual([
-      ["conn-signin", "disconnected"],
-      ["conn-child", "disconnected"],
+    expect(views.map((v) => [v.id, v.status, v.retiredHost])).toEqual([
+      ["conn-signin", "disconnected", OLD],
+      ["conn-child", "disconnected", OLD],
     ]);
   });
 
@@ -350,6 +350,7 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
 
     const views = await svc.listConnections();
     expect(views.map((v) => v.status)).toEqual(["expired", "expired"]);
+    expect(views.some((v) => v.retiredHost)).toBe(false);
   });
 
   // TEST_SCENARIO: a move a failed write left halfway, the sign-in already on the new host and a connection made from it still on the old one, must finish when the user retries it; else that connection stays stranded on the retired host.
@@ -367,6 +368,34 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
     });
     expect(secrets.get("secret-child")!.fields.access_token).toBe("");
     expect(rows.get("conn-signin")!.auth).toMatchObject({ host: NEW });
+  });
+
+  // TEST_SCENARIO: a write that fails after a connection's injection rules were rewritten but before its host was, must leave it for the retry to finish; a row that already names the new host is one whose rules moved too.
+  it("finishes a connection whose rules were written but not its host", async () => {
+    const { svc, rows } = harness([signInOn(OLD), childOn(OLD)]);
+    const set = rows.set.bind(rows);
+    let failOnce = true;
+    rows.set = (id, row) => {
+      const before = rows.get(id);
+      if (failOnce && id === "conn-child" && before?.contributions !== row.contributions) {
+        failOnce = false;
+        throw new Error("write failed");
+      }
+      return set(id, row);
+    };
+    await expect(
+      svc.moveToHost({ id: "conn-signin", host: NEW }),
+    ).rejects.toThrow(/write failed/);
+    expect(rows.get("conn-child")!.auth).toMatchObject({ host: OLD });
+
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+    const child = rows.get("conn-child")!;
+    expect(child.auth).toMatchObject({ host: NEW });
+    expect(
+      child.contributions.flatMap((c) =>
+        c.kind === "egress-inject" ? [c.host] : [],
+      ),
+    ).toEqual([`api.${NEW}`, NEW]);
   });
 
   // TEST_SCENARIO: a sign-in may only move to a host the install offers, and a connection made from a sign-in moves with it, never alone.

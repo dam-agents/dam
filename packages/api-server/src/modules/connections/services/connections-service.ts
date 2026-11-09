@@ -425,16 +425,17 @@ export function createConnectionsService(deps: {
           }
         : {};
     const provider = providerView(conn.templateId);
+    const host = connectionHostOf(conn);
+    const retiredHost =
+      template && host && isRetiredHost(template, host) ? host : undefined;
     return {
       id: conn.id,
       ownerId: conn.ownerId,
       templateId: conn.templateId,
       category: template?.category ?? "other",
       name: conn.name,
-      status:
-        template && isRetiredHost(template, connectionHostOf(conn))
-          ? "disconnected"
-          : deriveStatus(conn),
+      status: retiredHost ? "disconnected" : deriveStatus(conn),
+      ...(retiredHost ? { retiredHost } : {}),
       authKind: conn.auth.kind,
       contributions: conn.contributions,
       hosts,
@@ -1590,9 +1591,9 @@ export function createConnectionsService(deps: {
       },
       injected,
     );
-    await deps.repo.updateAuth(conn.id, next);
     await deps.repo.updateContributions(conn.id, contributions);
     await deps.repo.mergeInputs(conn.id, { host: to });
+    await deps.repo.updateAuth(conn.id, next);
   }
 
   /**
