@@ -54,17 +54,17 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
   const client = new S3Client(clientConfig(endpoint));
   const store = withUnreachableAsUnavailable(
     createS3ArtifactStore({
-    client,
-    bucket: common.bucket,
-    agentSigner:
-      agentEndpoint === endpoint
-        ? client
-        : new S3Client(clientConfig(agentEndpoint)),
-    browserSigner: publicEndpoint
-      ? publicEndpoint === endpoint
-        ? client
-        : new S3Client(clientConfig(publicEndpoint))
-      : null,
+      client,
+      bucket: common.bucket,
+      agentSigner:
+        agentEndpoint === endpoint
+          ? client
+          : new S3Client(clientConfig(agentEndpoint)),
+      browserSigner: publicEndpoint
+        ? publicEndpoint === endpoint
+          ? client
+          : new S3Client(clientConfig(publicEndpoint))
+        : null,
     }),
   );
   const service = createArtifactService({ store, maxBytes: deps.maxBytes });
