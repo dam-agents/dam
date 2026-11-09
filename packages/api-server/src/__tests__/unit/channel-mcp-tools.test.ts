@@ -494,15 +494,22 @@ describe("read_channel_history MCP tool", () => {
     ]);
   });
 
-  it("refuses a time that is not an ISO 8601 date without reading anything", async () => {
+  it("refuses a time that is not an ISO 8601 date, or a range that ends before it starts, without reading anything", async () => {
     const h = await mcpHarness({ readsChannelHistory: true });
 
-    const result = await h.client.callTool({
-      name: "read_channel_history",
-      arguments: { since: "last tuesday" },
-    });
-
-    expect(result.isError).toBe(true);
+    for (const args of [
+      { since: "last tuesday" },
+      { since: "1" },
+      { since: "March 5" },
+      { since: "1969-12-31" },
+      { since: "2026-11-09", until: "2026-11-01" },
+    ]) {
+      const result = await h.client.callTool({
+        name: "read_channel_history",
+        arguments: args,
+      });
+      expect(result.isError).toBe(true);
+    }
     expect(h.historyQueries).toEqual([]);
   });
 });

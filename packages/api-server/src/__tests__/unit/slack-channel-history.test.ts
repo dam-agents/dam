@@ -136,6 +136,28 @@ describe("paging back through a conversation", () => {
     }
   });
 
+  /**
+   * TEST_SCENARIO: An Agent asked about the last week passes the start once
+   * and then follows cursors, so the cursor must keep that start or the walk
+   * runs on to the beginning of the conversation.
+   */
+  it("keeps the start of the range across pages", async () => {
+    const h = harness({ history: true });
+    h.gw.setThreadedHistory(topLevel(130));
+    await h.worker.connect();
+
+    const first = (await h.worker.readChannelHistory("agent-1", {
+      since: tsAt(10),
+    })) as Read;
+    expect(first.hasMore).toBe(true);
+    const second = (await h.worker.readChannelHistory("agent-1", {
+      cursor: first.cursor!,
+    })) as Read;
+    expect(second.messages).toHaveLength(20);
+    expect(second.messages[0]).toContain("message 10");
+    expect(second.hasMore).toBe(false);
+  });
+
   it("reads one stretch of time", async () => {
     const h = harness({ history: true });
     h.gw.setThreadedHistory(topLevel(30));
@@ -191,6 +213,11 @@ describe("threads a page shows", () => {
       threadTs: tsAt(0),
     })) as { messages: string[] };
     expect(thread.messages.join("\n")).toContain("friday, decided");
+
+    h.history.on = false;
+    expect(await h.worker.readThread("agent-1", { threadTs: tsAt(0) })).toEqual(
+      { error: expect.stringContaining("not a thread you were shown") },
+    );
   });
 });
 

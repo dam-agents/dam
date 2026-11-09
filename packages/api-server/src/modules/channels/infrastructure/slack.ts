@@ -2353,7 +2353,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function readsChannelHistoryIn(
     instanceName: string,
     channel: string,
+    roster: RosterEntry[] | undefined,
   ): Promise<boolean> {
+    const listed = roster?.find((e) => e.instanceName === instanceName);
+    if (listed) return listed.history;
     try {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
@@ -2369,6 +2372,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): { channel: string } | null {
     const channel = offeredThreads.get(`${instanceName} ${ts}`);
     return channel === undefined ? null : { channel };
+  }
+
+  const historyThreads = createTtlMap<string, string>({
+    ttlMs: OFFERED_THREAD_TTL_MS,
+  });
+
+  function noteHistoryThreads(
+    instanceName: string,
+    channel: string,
+    threadTss: string[],
+  ): void {
+    for (const ts of threadTss)
+      historyThreads.set(`${instanceName} ${ts}`, channel);
+  }
+
+  function readHistoryThread(
+    instanceName: string,
+    ts: string,
+    bound: readonly SlackBoundConversation[],
+  ): { channel: string } | null {
+    const channel = historyThreads.get(`${instanceName} ${ts}`);
+    if (channel === undefined) return null;
+    return bound.some((c) => c.id === channel && c.history === true)
+      ? { channel }
+      : null;
   }
 
   const AGENT_THREAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -3333,7 +3361,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }),
       resolveAgentDisplayName(instanceName),
       resolveChannelOwner(instanceName, ctx.teamId),
-      readsChannelHistoryIn(instanceName, ctx.channel),
+      readsChannelHistoryIn(instanceName, ctx.channel, ctx.roster),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -4226,10 +4254,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       })
       .with("ambient", async () => {
-        await handleAmbientCommand(rest, command, ack);
+        await handleSwitchCommand(AMBIENT_SWITCH, rest, command, ack);
       })
       .with("history", async () => {
-        await handleHistoryCommand(rest, command, ack);
+        await handleSwitchCommand(HISTORY_SWITCH, rest, command, ack);
       })
       .with("ignore", async () => {
         await handleIgnoreCommand(rest, command, ack);
@@ -5202,18 +5230,78 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function handleAmbientCommand(
+  interface BindingSwitch {
+    verb: "ambient" | "history";
+    title: string;
+    perAgentNote: string;
+    isOn: (entry: RosterEntry) => boolean;
+    state: (on: boolean) => string;
+    set: (
+      agentId: string,
+      slackChannelId: string,
+      on: boolean,
+    ) => Promise<void>;
+    auditEvent: string;
+    denyCopy: string;
+    turnedOn: (agentName: string) => string;
+    turnedOff: (agentName: string) => string;
+    warnsPendingTerms: boolean;
+  }
+
+  const AMBIENT_SWITCH: BindingSwitch = {
+    verb: "ambient",
+    title: "Ambient mode",
+    perAgentNote: "Ambient is set per agent",
+    isOn: (entry) => entry.ambient,
+    state: (on) =>
+      on
+        ? "on — it reads along and may chime in without being mentioned"
+        : "off — it only responds to mentions",
+    set: setSlackChannelAmbient,
+    auditEvent: "channel.ambient_toggled",
+    denyCopy:
+      "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
+    turnedOn: (name) =>
+      `Ambient mode turned on — \`${name}\` now reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient ${name} off\` to make it mentions-only again.`,
+    turnedOff: (name) =>
+      `Ambient mode turned off — \`${name}\` now only responds when mentioned.`,
+    warnsPendingTerms: true,
+  };
+
+  const HISTORY_SWITCH: BindingSwitch = {
+    verb: "history",
+    title: "Channel history",
+    perAgentNote: "Channel history is set per agent",
+    isOn: (entry) => entry.history,
+    state: (on) =>
+      on
+        ? "on — it can read this conversation's older messages and its threads when an answer needs them"
+        : "off — it sees only the newest messages it is handed here",
+    set: setSlackChannelHistory,
+    auditEvent: "channel.history_toggled",
+    denyCopy:
+      "Only the person who connected this channel, or the agent's owner, can change channel history.",
+    turnedOn: (name) =>
+      `Channel history turned on — from its next session, \`${name}\` can read this conversation's older messages and its threads when an answer needs them. What it reads lands in its sessions, which its owner can see. Run \`/${brandShort} history ${name} off\` to turn it off.`,
+    turnedOff: (name) =>
+      `Channel history turned off — \`${name}\` now sees only the newest messages it is handed here.`,
+    warnsPendingTerms: false,
+  };
+
+  async function handleSwitchCommand(
+    spec: BindingSwitch,
     rest: string,
     command: SlackSlashCommand,
     ack: SlackAck,
   ) {
     const { action, nameArg } = parseSwitchArgs(rest);
-    const subcommand = action ? `ambient ${action}` : "ambient";
+    const subcommand = action ? `${spec.verb} ${action}` : spec.verb;
 
     const picked = await pickRosterAgent(
       command.channelId,
       nameArg,
-      (name) => `/${brandShort} ambient ${name}${action ? ` ${action}` : ""}`,
+      (name) =>
+        `/${brandShort} ${spec.verb} ${name}${action ? ` ${action}` : ""}`,
     );
     if (!picked.ok) {
       await ack({ text: picked.text });
@@ -5221,24 +5309,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const binding = picked.entry;
 
-    const isAmbient = binding.ambient;
+    const isOn = spec.isOn(binding);
     if (!action) {
       const others = picked.roster.filter(
         (entry) => entry.instanceName !== binding.instanceName,
       );
       const othersNote =
         others.length > 0
-          ? ` Ambient is set per agent; the others here are ${others
-              .map((e) => `\`${e.name}\` (${e.ambient ? "on" : "off"})`)
+          ? ` ${spec.perAgentNote}; the others here are ${others
+              .map((e) => `\`${e.name}\` (${spec.isOn(e) ? "on" : "off"})`)
               .join(", ")}.`
           : "";
       await ack({
         text:
-          `Ambient mode for \`${binding.name}\` is ${
-            isAmbient
-              ? "on — it reads along and may chime in without being mentioned"
-              : "off — it only responds to mentions"
-          }. Use \`/${brandShort} ambient ${binding.name} on\` or \`/${brandShort} ambient ${binding.name} off\` to change it.` +
+          `${spec.title} for \`${binding.name}\` is ${spec.state(isOn)}. Use \`/${brandShort} ${spec.verb} ${binding.name} on\` or \`/${brandShort} ${spec.verb} ${binding.name} off\` to change it.` +
           othersNote,
       });
       return;
@@ -5250,22 +5334,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       subcommand,
       allowed: (invoker) => isBinderOrOwner(binding, invoker),
       denyReason: "not-binder-or-owner",
-      denyCopy:
-        "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
+      denyCopy: spec.denyCopy,
     });
     if (!invoker) return;
 
-    if (enable === isAmbient) {
-      await ack({ text: `Ambient mode is already ${enable ? "on" : "off"}.` });
+    if (enable === isOn) {
+      await ack({
+        text: `${spec.title} is already ${enable ? "on" : "off"}.`,
+      });
       return;
     }
 
-    await setSlackChannelAmbient(
-      binding.instanceName,
-      command.channelId,
-      enable,
-    );
-    securityLog("info", "channel.ambient_toggled", {
+    await spec.set(binding.instanceName, command.channelId, enable);
+    securityLog("info", spec.auditEvent, {
       category: "authz-list",
       actor: invoker,
       actorKind: "user",
@@ -5275,104 +5356,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       detail: {
         slackUserId: command.userId,
         channelId: command.channelId,
-        ambient: enable,
+        [spec.verb]: enable,
       },
     });
 
     const termsPending =
-      enable && !(await isTermsAccepted(binding.owner))
+      spec.warnsPendingTerms &&
+      enable &&
+      !(await isTermsAccepted(binding.owner))
         ? ` Heads-up: the person who connected this channel hasn't accepted the Terms of Use at ${uiBaseUrl} yet, so the agent stays silent until they do.`
         : "";
     await ack({
       text: enable
-        ? `Ambient mode turned on — \`${binding.name}\` now reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient ${binding.name} off\` to make it mentions-only again.${termsPending}`
-        : `Ambient mode turned off — \`${binding.name}\` now only responds when mentioned.`,
-    });
-  }
-
-  async function handleHistoryCommand(
-    rest: string,
-    command: SlackSlashCommand,
-    ack: SlackAck,
-  ) {
-    const { action, nameArg } = parseSwitchArgs(rest);
-    const subcommand = action ? `history ${action}` : "history";
-
-    const picked = await pickRosterAgent(
-      command.channelId,
-      nameArg,
-      (name) => `/${brandShort} history ${name}${action ? ` ${action}` : ""}`,
-    );
-    if (!picked.ok) {
-      await ack({ text: picked.text });
-      return;
-    }
-    const binding = picked.entry;
-
-    const readsHistory = binding.history;
-    if (!action) {
-      const others = picked.roster.filter(
-        (entry) => entry.instanceName !== binding.instanceName,
-      );
-      const othersNote =
-        others.length > 0
-          ? ` Channel history is set per agent; the others here are ${others
-              .map((e) => `\`${e.name}\` (${e.history ? "on" : "off"})`)
-              .join(", ")}.`
-          : "";
-      await ack({
-        text:
-          `Channel history for \`${binding.name}\` is ${
-            readsHistory
-              ? "on — it can read this conversation's older messages and its threads when an answer needs them"
-              : "off — it sees only the newest messages it is handed here"
-          }. Use \`/${brandShort} history ${binding.name} on\` or \`/${brandShort} history ${binding.name} off\` to change it.` +
-          othersNote,
-      });
-      return;
-    }
-    const enable = action === "on";
-
-    const invoker = await authorizeActor(command, ack, {
-      agentId: binding.instanceName,
-      subcommand,
-      allowed: (invoker) => isBinderOrOwner(binding, invoker),
-      denyReason: "not-binder-or-owner",
-      denyCopy:
-        "Only the person who connected this channel, or the agent's owner, can change channel history.",
-    });
-    if (!invoker) return;
-
-    if (enable === readsHistory) {
-      await ack({
-        text: `Channel history is already ${enable ? "on" : "off"}.`,
-      });
-      return;
-    }
-
-    await setSlackChannelHistory(
-      binding.instanceName,
-      command.channelId,
-      enable,
-    );
-    securityLog("info", "channel.history_toggled", {
-      category: "authz-list",
-      actor: invoker,
-      actorKind: "user",
-      surface: "slack",
-      agentId: binding.instanceName,
-      result: "success",
-      detail: {
-        slackUserId: command.userId,
-        channelId: command.channelId,
-        history: enable,
-      },
-    });
-
-    await ack({
-      text: enable
-        ? `Channel history turned on — from its next session, \`${binding.name}\` can read this conversation's older messages and its threads when an answer needs them. What it reads lands in its sessions, which its owner can see. Run \`/${brandShort} history ${binding.name} off\` to turn it off.`
-        : `Channel history turned off — \`${binding.name}\` now sees only the newest messages it is handed here.`,
+        ? `${spec.turnedOn(binding.name)}${termsPending}`
+        : spec.turnedOff(binding.name),
     });
   }
 
@@ -6539,7 +6536,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       turnContractContext(gw, args.channel, args.eventTs, args.teamId, {
         batched: args.messages.length > 1,
       }),
-      readsChannelHistoryIn(args.instanceName, args.channel),
+      readsChannelHistoryIn(args.instanceName, args.channel, args.roster),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -7952,7 +7949,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         .catch(() => null);
       const offered = owned
         ? { channel: owned.channelId }
-        : readOfferedThread(instanceName, query.threadTs);
+        : (readOfferedThread(instanceName, query.threadTs) ??
+          readHistoryThread(instanceName, query.threadTs, bound));
       if (!offered) {
         return {
           error:
@@ -8070,12 +8068,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!gw) return { error: "slack bot not running" };
 
       const latest = asked?.before ?? query.until;
+      const since = asked?.since ?? query.since;
       try {
         const read = await gw.getChannelHistory({
           channel: target.id,
           teamId: target.teamId,
           limit: CHANNEL_LOOKBACK,
-          ...(query.since !== undefined ? { oldest: query.since } : {}),
+          ...(since !== undefined ? { oldest: since } : {}),
           ...(latest !== undefined ? { latest } : {}),
         });
         const oldestFirst = read.messages.slice().reverse();
@@ -8092,7 +8091,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           showThreadMarkers: true,
           showTs: true,
         });
-        noteOfferedThreads(
+        noteHistoryThreads(
           instanceName,
           target.id,
           oldestFirst.flatMap((message) =>
@@ -8111,6 +8110,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 cursor: formatChannelHistoryCursor({
                   conversationId: target.id,
                   before: earliest,
+                  ...(since !== undefined ? { since } : {}),
                 }),
               }
             : {}),

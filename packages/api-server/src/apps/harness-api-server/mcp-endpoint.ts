@@ -227,11 +227,14 @@ const SESSION_SETTINGS_INSTRUCTIONS =
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
 
+const ISO_DATE_OR_TIME =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+
 function slackTsOf(label: string, raw: string): string | { error: string } {
-  const at = Date.parse(raw);
-  if (!Number.isFinite(at))
+  const at = ISO_DATE_OR_TIME.test(raw) ? Date.parse(raw) : Number.NaN;
+  if (!Number.isFinite(at) || at < 0)
     return {
-      error: `${label} is not an ISO 8601 date or date-time: ${raw}`,
+      error: `${label} is not an ISO 8601 date or date-time after 1970: ${raw}`,
     };
   return (at / 1000).toFixed(6);
 }
@@ -246,6 +249,12 @@ function slackTsRange(range: {
   const until =
     range.until === undefined ? undefined : slackTsOf("until", range.until);
   if (typeof until === "object") return until;
+  if (
+    since !== undefined &&
+    until !== undefined &&
+    Number(since) >= Number(until)
+  )
+    return { error: "since must be earlier than until" };
   return {
     ...(since !== undefined ? { since } : {}),
     ...(until !== undefined ? { until } : {}),

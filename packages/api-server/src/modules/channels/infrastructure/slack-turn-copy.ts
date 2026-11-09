@@ -207,7 +207,10 @@ export function slackTurnContract(ctx: {
             "answer needs messages older than the history you were handed, " +
             "or a thread you were not shown, read them with " +
             `${TOOL}read_channel_history (chatId="${ctx.reach.channelHistory.chatId}"), ` +
-            `then open a thread from its [thread: ...] tag with ${TOOL}read_thread.`,
+            `then open a thread from its [thread: ...] tag with ${TOOL}read_thread. ` +
+            "If your tools do not include read_channel_history, it was turned " +
+            "on after this session started and comes with your next session: " +
+            "say so rather than guessing at what older messages said.",
         ]
       : []),
     multi
