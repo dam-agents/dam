@@ -9,7 +9,7 @@ import {
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createAssistantsRepository } from "../../../modules/assistants/index.js";
 import { removeAssistant as removeAssistantForOwner } from "../../../modules/assistants/services/assistant-removal.js";
-import { assistantRequestWork } from "../../../modules/assistants/domain/on-request.js";
+import { provisionOnRequest } from "../../../modules/assistants/services/on-request.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -573,40 +573,38 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       : createDisabledTelemetryService();
 
     /* UNIT_BOUNDARY_DESCRIPTION: the assistant is provisioned only for a person who has accepted the Terms of Use: sign-ups closed for them means no Agent appears, and the call after a successful acceptance is what gives them one. A person the feature is off for is not forgotten either: a turn-off that could not take the owner's lock finishes here, so nobody is left opted out with an assistant they may neither use nor delete. An install whose mode is off reads nothing at all. */
-    const provisionAssistant = async () => {
-      const mode = config.featureModes.dambledore;
-      if (mode === "off") return;
-      if (user.keyId !== undefined || user.agentIds !== "*") return;
-      if (user.actingEditor !== undefined) return;
-      const work = assistantRequestWork(
-        mode,
-        mode === "on" || (await assistantOn()),
-      );
-      if (work === "none") return;
-      if (!(await isTermsAccepted(user.sub))) return;
-      if (work === "provision") await assistantProvisioner.ensure();
-      else await removeAssistant({ lockAttempts: 1 });
-    };
+    const provisionAssistant = async () =>
+      provisionOnRequest({
+        mode: config.featureModes.dambledore,
+        eligible:
+          user.keyId === undefined &&
+          user.agentIds === "*" &&
+          user.actingEditor === undefined,
+        admitted: () => isTermsAccepted(user.sub),
+        provision: () => assistantProvisioner.ensure(),
+      });
 
-    const removeAssistant = async (opts?: { lockAttempts?: number }) => {
-      if (user.keyId !== undefined || user.agentIds !== "*") return;
-      if (user.actingEditor !== undefined) return;
+    const removeAssistant = async (): Promise<boolean> => {
+      if (user.keyId !== undefined || user.agentIds !== "*") return false;
+      if (user.actingEditor !== undefined) return false;
       try {
-        await removeAssistantForOwner({
-          repo: createAssistantsRepository(db),
+        const repo = createAssistantsRepository(db);
+        const current = await repo.find(user.sub);
+        const outcome = await removeAssistantForOwner({
+          repo,
           agents,
           withLock: assistantOwnerLock.withLock,
           owner: user.sub,
-          ...(opts?.lockAttempts === undefined
-            ? {}
-            : { lockAttempts: opts.lockAttempts }),
+          expectedAgentId: current?.agentId ?? null,
+          optOutAllowed: async () => config.featureModes.dambledore !== "on",
         });
+        return outcome.ran && outcome.value;
       } catch (err) {
         getLogger().warn({ err, owner: user.sub }, "assistant.remove_failed");
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",
           message:
-            "Your assistant could not be deleted, so it is still there. Try again.",
+            "Your assistant could not be deleted, so the switch stays on. Try again.",
         });
       }
     };

@@ -10,33 +10,43 @@ const LOCK_WAIT_ATTEMPTS = 20;
 const LOCK_WAIT_MS = 150;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Turning the assistant off for one person deletes
- * their assistant and its data — the ordinary Agent delete, so its sessions,
- * files, grants, schedules and environment go the way any Agent's do — and then
- * forgets the record, so opting in again makes a **new** Agent under the next
- * incarnation with nothing initialized and nothing remembered. The Agent the
- * record renamed to free the reserved name is left exactly as it is: a person's
- * own Agent is never renamed back, and the notice that said so goes with the
- * record. It runs under the owner's provisioning lock, so it cannot interleave
- * with a create, and a person with no assistant is a no-op.
+ * UNIT_BOUNDARY_DESCRIPTION: The one thing that deletes an assistant — a person
+ * turning the feature off for themselves, after they confirmed it — and it unless
+ * someone else says otherwise, because nothing else may destroy an assistant's
+ * data. It is the ordinary Agent delete, so its sessions, files, grants,
+ * schedules and environment go the way any Agent's do, and then the record is
+ * forgotten: the next incarnation's Agent id, nothing initialized, never used,
+ * and no rename record or notice. The Agent a rename made room with keeps its new
+ * name — a person's own Agent is never renamed back.
+ *
+ * Everything is decided under the owner's provisioning lock, so it cannot
+ * interleave with a create, and two things are re-checked there rather than
+ * trusted from the request that asked: the record is still the one that request
+ * read (another incarnation means somebody opted in again, and their assistant is
+ * not this delete's), and the install still lets a person opt out at all (mode
+ * `on` leaves nobody opted out, so a stale turn-off must not fire). `false` says
+ * the delete did not happen: the caller keeps the switch on and says so.
  */
 export async function removeAssistant(deps: {
   repo: AssistantsRepository;
   agents: Pick<AgentsService, "delete">;
   withLock: OwnerLock["withLock"];
   owner: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: how many times to ask for the lock before giving up — the caller's switch waits a moment, the reconciliation on a later request asks once and leaves the rest to the next one. */
-  lockAttempts?: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: the record the caller is removing, as it read it; null when the caller saw none. */
+  expectedAgentId: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the install still lets a person opt out — false in mode `on`, where everyone has the assistant. */
+  optOutAllowed: () => Promise<boolean>;
   sleep?: (ms: number) => Promise<void>;
-}): Promise<LockOutcome<void>> {
+}): Promise<LockOutcome<boolean>> {
   const remove = () =>
-    deps.withLock(deps.owner, async () => {
+    deps.withLock(deps.owner, async (): Promise<boolean> => {
+      if (!(await deps.optOutAllowed())) return false;
       const row = await deps.repo.find(deps.owner);
-      if (row === null) return;
+      if (row === null) return true;
+      if (row.agentId !== deps.expectedAgentId) return false;
       try {
         await deps.agents.delete(row.agentId);
       } catch (err) {
-        // UNIT_BOUNDARY_DESCRIPTION: an Agent already gone is what the record's reset expects, so the removal goes on; any other failure is reported and the record is left as it was, so the next attempt tries again.
         getLogger().warn(
           { err, owner: deps.owner, agentId: row.agentId },
           "assistant.remove_failed",
@@ -48,32 +58,14 @@ export async function removeAssistant(deps: {
         row.agentId,
         assistantAgentId(deps.owner, row.incarnation + 1),
       );
+      return true;
     });
 
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const attempts = Math.max(1, deps.lockAttempts ?? LOCK_WAIT_ATTEMPTS);
   for (let attempt = 1; ; attempt += 1) {
     const outcome = await remove();
-    if (outcome.ran || attempt >= attempts) return outcome;
+    if (outcome.ran || attempt >= LOCK_WAIT_ATTEMPTS) return outcome;
     await sleep(LOCK_WAIT_MS);
   }
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the reconciliation a later request runs for a person
- * the feature is off for: a turn-off that could not take the lock leaves their
- * assistant behind, and this finishes that delete. One attempt per request, so a
- * lock held by a live worker costs nothing and the next request tries again.
- * A person with no assistant record is a no-op.
- */
-export async function reconcileOptOut(
-  deps: Parameters<typeof removeAssistant>[0],
-): Promise<void> {
-  const outcome = await removeAssistant({ ...deps, lockAttempts: 1 });
-  if (!outcome.ran)
-    getLogger().info(
-      { owner: deps.owner },
-      "assistant.opt_out_reconcile_deferred",
-    );
 }

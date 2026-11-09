@@ -22,7 +22,7 @@ const VERSION = "2026-01-01";
 
 function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   const provisionAssistant = vi.fn(async () => undefined);
-  const removeAssistant = vi.fn(async () => undefined);
+  const removeAssistant = vi.fn(async () => true);
   const setFlag = vi.fn(async (_feature: string, enabled: boolean) => ({
     dambledore: enabled,
   }));
@@ -67,14 +67,29 @@ describe("handing a person their assistant without a new context", () => {
     expect(closed.provisionAssistant).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: the delete goes first: when it cannot finish, the flag is never switched, so nobody is left opted out with an assistant they may neither use nor delete. Switching it on is the flag first, then the create.
-  it("leaves the flag on when the delete fails", async () => {
-    const w = world();
-    w.removeAssistant.mockRejectedValueOnce(new Error("the lock was busy"));
+  // TEST_SCENARIO: the delete goes first and the flag is switched only once it returned; a delete that did not happen — the lock was held, the record had changed, the server failed — leaves the switch on and tells the person to try again.
+  it("leaves the flag on when the delete did not happen", async () => {
+    const busy = world();
+    busy.removeAssistant.mockResolvedValueOnce(false);
     await expect(
-      w.caller.features.setFlag({ feature: "dambledore", enabled: false }),
-    ).rejects.toThrow(/the lock was busy/);
-    expect(w.setFlag).not.toHaveBeenCalled();
+      busy.caller.features.setFlag({ feature: "dambledore", enabled: false }),
+    ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(busy.setFlag).not.toHaveBeenCalled();
+
+    const failed = world();
+    failed.removeAssistant.mockRejectedValueOnce(new Error("the store failed"));
+    await expect(
+      failed.caller.features.setFlag({ feature: "dambledore", enabled: false }),
+    ).rejects.toThrow(/the store failed/);
+    expect(failed.setFlag).not.toHaveBeenCalled();
+
+    const done = world();
+    done.removeAssistant.mockResolvedValueOnce(true);
+    await done.caller.features.setFlag({
+      feature: "dambledore",
+      enabled: false,
+    });
+    expect(done.setFlag).toHaveBeenCalledTimes(1);
   });
 
   // TEST_SCENARIO: switching the assistant off deletes it, so the flag change is what runs the removal; switching it on provisions, and any other feature's switch does neither. An install's mode changing is not a flag change, so it deletes nothing.

@@ -15,10 +15,11 @@ The name is **reserved**: no other Agent may be created or renamed to it, and th
 
 The install decides whether people get one at all through the `dambledore` [feature](features.md) mode, which follows the chart's `featureDefault` like every other feature and is named only when an install wants another answer: `off` provisions nothing, `experimental` provisions for whoever switches the flag on in Settings › Experimental features, and `on` for everyone.
 Until a person switches it on, nothing of theirs exists: no record, no Agent, and no rename for an Agent that already holds the reserved name.
-Switching the mode off later stops provisioning and leaves the existing assistants where they are — an install's own change never deletes anybody's.
+Switching the mode off later stops provisioning and leaves the existing assistants where they are — an install's own change never deletes anybody's, and no request does either: only a person's own confirmed turn-off deletes.
 Switching the flag off **for oneself** does: the assistant and its data go, through the same Agent delete any Agent's owner runs, so its sessions, files, grants, schedule and environment go with it; the record is forgotten, so opting in again makes a new Agent under the next incarnation, unused, with nothing initialized.
 The Agent a rename made room with keeps its new name — nothing renames a person's Agent back — and the notice about it goes with the record.
-The removal runs under the owner's provisioning lock, so it cannot interleave with a create, and a person who has no assistant is a no-op.
+The removal runs under the owner's provisioning lock, so it cannot interleave with a create, and it re-checks two things there rather than trusting the request that asked: the record is still the one that request read — another incarnation means the person opted in again, and their new assistant is not this delete's — and the install still lets a person opt out at all, which mode `on` does not.
+A person who has no assistant is a no-op, and a delete that cannot finish — the lock held, the delete refused — leaves the switch **on** and says so: nothing is retried later, and no request ever deletes an assistant.
 The Experimental features switch asks first, since it is a delete.
 The UI asks the server for the assistant's record only for someone it is on for, and lands nobody in its chat otherwise, so an install that offers it experimentally costs a person who never opts in nothing.
 An install whose mode is off decides on the mode alone: no stored flag, no assistant record and no Agent is read, the UI does not ask for the assistant's state, and a Session report writes nothing.
