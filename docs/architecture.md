@@ -74,6 +74,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [slack-threads](architecture/slack-threads.md) — a Slack thread a Session started: its replies come back to that Session as turns.
 - [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
+- [access-list](architecture/access-list.md) — the email addresses an operator lets sign in, kept in the platform database and checked by Keycloak at every sign-in, failing closed.
 - [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.

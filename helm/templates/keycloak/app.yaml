@@ -143,6 +143,23 @@ spec:
             - name: DAM_ENVIRONMENTS_REALM
               value: {{ $.Values.keycloak.realm | quote }}
             {{- end }}
+            {{- if .Values.accessList.enabled }}
+            # Read by the access-list required action
+            # (packages/keycloak-environments): where it asks the api-server
+            # whether an email may sign in, with the secret only the two pods
+            # hold. The path is outside /api, so no ingress routes it.
+            - name: DAM_ACCESS_CHECK_URL
+              value: {{ printf "http://%s.%s.svc.cluster.local:%v/internal/access-check" (include "platform.apiserver.fullname" .) .Release.Namespace .Values.apiServer.port | quote }}
+            - name: DAM_ACCESS_CHECK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.keycloak.secrets.fullname" . }}
+                  key: ACCESS_LIST_CHECK_SECRET
+            - name: DAM_ACCESS_REALM
+              value: {{ .Values.keycloak.realm | quote }}
+            - name: DAM_ACCESS_OPERATOR_ROLE
+              value: {{ .Values.keycloak.operatorRole | quote }}
+            {{- end }}
             # Login-theme knobs — resolved by theme.properties `${env.…}`
             # placeholders in the Keycloakify-built theme.
             - name: PLATFORM_ALLOW_PASSWORD

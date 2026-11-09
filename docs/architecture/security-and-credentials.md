@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-06
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -89,6 +89,7 @@ Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who t
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
 Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
+An install can narrow who signs in with the [Access List](access-list.md), the email addresses an operator names, which Keycloak checks at the end of every sign-in.
 The chart's `signUps` value is the kill switch for growth the install cannot absorb.
 Set to `closed`, the api-server refuses the Terms acceptance of a user who has never accepted any Terms version, and the Terms page shows that sign-ups are closed.
 "New user" means exactly that — no acceptance on record — because the Terms gate already stands before every authenticated route, so a user who never accepted holds nothing to lose.
@@ -136,7 +137,7 @@ The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an
 The api-server reads the role from the token's realm roles, so only an interactive sign-in acts as an operator; an API key never does.
 Every operator action checks the role on each call, and a client asks the api-server whether the caller is an operator before it shows such an action.
 An install with no operator role has no operators, and every operator action is refused.
-Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-pool)).
+Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-pool)), and manage the [Access List](access-list.md).
 
 ## Keycloak event logging
 

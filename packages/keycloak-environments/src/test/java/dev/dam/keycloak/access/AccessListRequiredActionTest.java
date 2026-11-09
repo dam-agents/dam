@@ -19,13 +19,14 @@ import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RequiredActionProviderModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 class AccessListRequiredActionTest {
   private static final AccessListConfig ON = new AccessListConfig(
-      Optional.of(URI.create("http://api.local/internal/access-check")), "s3cret", "platform", Duration.ofSeconds(1));
-  private static final AccessListConfig OFF = new AccessListConfig(Optional.empty(), "", "platform", Duration.ofSeconds(1));
+      Optional.of(URI.create("http://api.local/internal/access-check")), "s3cret", "platform", "platform-operator", Duration.ofSeconds(1));
+  private static final AccessListConfig OFF = new AccessListConfig(Optional.empty(), "", "platform", "platform-operator", Duration.ofSeconds(1));
 
   // TEST_SCENARIO: an allowed address goes on with no page shown.
   @Test
@@ -45,6 +46,15 @@ class AccessListRequiredActionTest {
     assertEquals(List.of("challenge"), unavailable.outcomes);
     assertEquals(AccessListRequiredAction.UNAVAILABLE, unavailable.error);
     assertEquals(Response.Status.SERVICE_UNAVAILABLE, unavailable.status);
+  }
+
+  // TEST_SCENARIO: a holder of the operator role goes on without a check, even when the list would refuse them or the platform is unreachable, so the list's managers are never locked out.
+  @Test
+  void letsAnOperatorInUnchecked() {
+    Recorder r = new Recorder();
+    new AccessListRequiredAction(ON, email -> { throw new AssertionError("no check expected"); })
+        .requiredActionChallenge(context(r, "platform", true));
+    assertEquals(List.of("success"), r.outcomes);
   }
 
   // TEST_SCENARIO: the master realm, or an install that checks no list, is let through without asking the platform.
@@ -98,10 +108,20 @@ class AccessListRequiredActionTest {
   }
 
   private static RequiredActionContext context(Recorder r, String realmName) {
-    RealmModel realm = stub(RealmModel.class, (name, args) -> name.equals("getName") ? realmName : null);
+    return context(r, realmName, false);
+  }
+
+  private static RequiredActionContext context(Recorder r, String realmName, boolean operator) {
+    RoleModel operatorRole = stub(RoleModel.class, (name, args) -> null);
+    RealmModel realm = stub(RealmModel.class, (name, args) -> switch (name) {
+      case "getName" -> realmName;
+      case "getRole" -> "platform-operator".equals(args[0]) ? operatorRole : null;
+      default -> null;
+    });
     UserModel user = stub(UserModel.class, (name, args) -> switch (name) {
       case "getEmail" -> "ada@example.com";
       case "getId" -> "user-1";
+      case "hasRole" -> operator && args[0] == operatorRole;
       default -> null;
     });
     AuthenticationSessionModel authSession = stub(AuthenticationSessionModel.class, (name, args) -> {

@@ -381,6 +381,7 @@ See [`docs/architecture/spend-limits.md`](architecture/spend-limits.md).
 | Refusal           | The gateway stops a model call because a limit is reached, with a reply shaped for the call's API path. Not a Sleep, which a user does to an agent                                                                                                                                                                                              |
 | Spend Ceiling     | The operator's hard daily maximum of Metered Spend in dollars for one user, over all the user's agents. At the ceiling the gateway refuses the next model call and asks nothing. Resolved as the ceiling that a Platform Operator set for the user, kept in Postgres, else the chart-wide default (off at first)                                |
 | Platform Operator | A person who carries the configured operator realm role (`platform-operator` by default). Acts on the whole install, for all users. Only an interactive sign-in counts; an API key never acts as an operator                                                                                                                                    |
+| Access List       | The email addresses an install lets sign in, when the install turns the check on. Kept in the platform database and changed only by a Platform Operator. Keycloak checks it at the end of every sign-in to the platform realm and refuses an address not on it; a check that gets no answer refuses too. A Platform Operator is never checked   |
 
 ## Provider Status (bounded context)
 

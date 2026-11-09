@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 
 class AccessCheckTest {
   private static final AccessListConfig CONFIG = new AccessListConfig(
-      Optional.of(URI.create("http://api.local:4000/internal/access-check")), "s3cret", "platform", Duration.ofSeconds(1));
+      Optional.of(URI.create("http://api.local:4000/internal/access-check")), "s3cret", "platform", "platform-operator", Duration.ofSeconds(1));
 
   // TEST_SCENARIO: the platform's 200 answer decides: allowed lets the person in, not allowed refuses them; the request names the address lowercased and carries the secret.
   @Test
@@ -55,7 +55,7 @@ class AccessCheckTest {
     AccessCheck.Transport never = req -> { throw new AssertionError("no call expected"); };
     assertEquals(Verdict.DENIED, new AccessCheck(CONFIG, never).check(null));
     assertEquals(Verdict.DENIED, new AccessCheck(CONFIG, never).check(" "));
-    AccessListConfig noSecret = new AccessListConfig(CONFIG.checkUrl(), "", "platform", Duration.ofSeconds(1));
+    AccessListConfig noSecret = new AccessListConfig(CONFIG.checkUrl(), "", "platform", "platform-operator", Duration.ofSeconds(1));
     assertEquals(Verdict.UNAVAILABLE, new AccessCheck(noSecret, never).check("ada@example.com"));
   }
 
@@ -63,7 +63,7 @@ class AccessCheckTest {
   @Test
   void offWithoutAUrl() {
     assertTrue(CONFIG.enabled());
-    assertEquals(false, new AccessListConfig(Optional.empty(), "", "platform", Duration.ofSeconds(1)).enabled());
+    assertEquals(false, new AccessListConfig(Optional.empty(), "", "platform", "platform-operator", Duration.ofSeconds(1)).enabled());
   }
 
   private static String bodyOf(HttpRequest request) {

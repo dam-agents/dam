@@ -23,6 +23,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.templateDefaultsRenamed" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
+{{- include "platform.validate.accessListNeedsKeycloak" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
 {{- include "platform.validate.controllerGatewayEgress" . -}}
@@ -234,6 +235,16 @@ The api-server refuses to start on any other value, so catch it at install.
 {{- define "platform.validate.signUps" -}}
 {{- if not (has .Values.signUps (list "open" "closed")) -}}
 {{- fail (printf "signUps must be \"open\" or \"closed\", got %q." (toString .Values.signUps)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Only the chart's own Keycloak carries the access-list check; with an external
+one the list would be shown in Settings but never checked at sign-in.
+*/}}
+{{- define "platform.validate.accessListNeedsKeycloak" -}}
+{{- if and .Values.accessList.enabled (not .Values.keycloak.enabled) -}}
+{{- fail "accessList.enabled needs keycloak.enabled: the access-list check runs in the chart's own Keycloak." -}}
 {{- end -}}
 {{- end -}}
 

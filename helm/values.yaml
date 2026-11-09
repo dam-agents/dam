@@ -82,6 +82,23 @@ terms:
 # user who accepted before keeps working, including through a Terms re-accept.
 signUps: open
 
+# -- The Access List: the email addresses that may sign in, kept in the
+# platform's database and managed by operators under Settings → Access list.
+# With `enabled: true`, Keycloak asks the api-server at every sign-in to the
+# platform realm whether the person's email is on it, and refuses an address
+# that is not; a holder of `keycloak.operatorRole` is never checked, so the
+# list's managers cannot lock themselves out. A check the api-server cannot
+# answer refuses the sign-in as temporarily unavailable, never lets it
+# through. Off by default: everyone who can sign in to the identity provider
+# gets in, and operators can fill the list before turning it on.
+accessList:
+  enabled: false
+  # -- Addresses added to the list at every api-server start, for carrying an
+  # existing list over on rollout. An address already on the list is left as
+  # it is, and one an operator later removes comes back at the next start
+  # while it stays here, so drop the seed once the list lives in the app.
+  seed: []
+
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:

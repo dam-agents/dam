@@ -651,6 +651,19 @@ spec:
               value: {{ .Values.terms.text | quote }}
             - name: SIGN_UPS
               value: {{ .Values.signUps | quote }}
+            - name: ACCESS_LIST_ENABLED
+              value: {{ .Values.accessList.enabled | quote }}
+            {{- if .Values.accessList.enabled }}
+            - name: ACCESS_LIST_CHECK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.keycloak.secrets.fullname" . }}
+                  key: ACCESS_LIST_CHECK_SECRET
+            {{- end }}
+            {{- with .Values.accessList.seed }}
+            - name: ACCESS_LIST_SEED
+              value: {{ . | toJson | quote }}
+            {{- end }}
             {{- if .Values.links.docs }}
             - name: LINKS_DOCS
               value: {{ .Values.links.docs | quote }}
