@@ -93,14 +93,14 @@ const SCHEDULED_SESSION_TYPES: readonly string[] = [
   SessionType.ScheduleOnce,
 ];
 
-// ACP's resourceNotFound: the harness holds no conversation under the id.
 const RESOURCE_NOT_FOUND = -32002;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the runtime stamps `platform.unstored` on every
  * failed load of a Session it flagged unstored, whatever failed, so only the
- * harness's own not-found answer proves it never stored the Session; an
- * expired credential or a crashed harness says nothing about it.
+ * harness's own answer, ACP's resourceNotFound code, proves it never stored
+ * the Session; an expired credential or a crashed harness says nothing about
+ * it.
  */
 function neverStored(err: unknown): boolean {
   if (!(err instanceof InProcessRequestError)) return false;
