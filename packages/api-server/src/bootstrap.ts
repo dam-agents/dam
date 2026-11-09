@@ -110,6 +110,7 @@ import {
 } from "./modules/kb-shares/index.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { retryWhileUnreachable } from "./core/retry-unreachable.js";
+import { provisionBucketInBackground } from "./modules/artifacts/services/provision-bucket.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -485,11 +486,13 @@ export async function bootstrap() {
         }
       : null,
   });
-  await retryWhileUnreachable(
-    "object storage",
-    () => artifactsModule.ensureReady(),
-    bootRetry,
-  );
+  void provisionBucketInBackground(() => artifactsModule.ensureReady(), {
+    log: {
+      info: (msg) => getLogger().info(msg),
+      warn: (msg) => getLogger().warn(msg),
+      error: (msg) => getLogger().error(msg),
+    },
+  });
   const artifacts = artifactsModule.service;
   const snapshotStore = artifactsModule.store
     ? {
@@ -527,7 +530,12 @@ export async function bootstrap() {
     readsRows(config.agentStore) &&
     (config.agentStore === "postgres" || absorbsEmpty)
   ) {
-    if (agentStoreMarker?.store !== "postgres")
+    if (agentStoreMarker?.store !== "postgres") {
+      await retryWhileUnreachable(
+        "object storage",
+        () => artifactsModule.ensureReady(),
+        bootRetry,
+      );
       await absorbAgentStore({
         db,
         logger: getLogger(),
@@ -556,6 +564,7 @@ export async function bootstrap() {
         absorbedByVersion: config.appVersion,
         now: new Date(),
       });
+    }
   }
 
   if (readsRows(config.agentStore)) {

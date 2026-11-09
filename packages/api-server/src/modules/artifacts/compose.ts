@@ -6,6 +6,7 @@ import {
   ensureBucket,
 } from "./infrastructure/s3-artifact-store.js";
 import { createUnconfiguredArtifactStore } from "./infrastructure/unconfigured-artifact-store.js";
+import { withUnreachableAsUnavailable } from "./infrastructure/unreachable-artifact-store.js";
 import type { ArtifactService } from "./services/artifact-service.js";
 import { createArtifactService } from "./services/artifact-service.js";
 
@@ -51,7 +52,8 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
     ...(common.credentials ? { credentials: common.credentials } : {}),
   });
   const client = new S3Client(clientConfig(endpoint));
-  const store = createS3ArtifactStore({
+  const store = withUnreachableAsUnavailable(
+    createS3ArtifactStore({
     client,
     bucket: common.bucket,
     agentSigner:
@@ -63,7 +65,8 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
         ? client
         : new S3Client(clientConfig(publicEndpoint))
       : null,
-  });
+    }),
+  );
   const service = createArtifactService({ store, maxBytes: deps.maxBytes });
   return {
     service,
