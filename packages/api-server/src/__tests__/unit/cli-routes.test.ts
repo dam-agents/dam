@@ -192,7 +192,7 @@ describe("what the mount reaches", () => {
     expect(JSON.stringify(await response.json())).toContain("FORBIDDEN");
   });
 
-  // UNIT_BOUNDARY_DESCRIPTION: a create is not reviewed (D236A), so what keeps it inside the owner's own estate is the agent service's own checks, unchanged for every caller: the mount hands the input over untouched and adds no capability, so another owner's Secret or Connection is refused exactly where it always was.
+  // UNIT_BOUNDARY_DESCRIPTION: a create is not reviewed, so what keeps it inside the owner's own estate is the agent service's own checks, unchanged for every caller: the mount hands the input over untouched and adds no capability, so another owner's Secret or Connection is refused exactly where it always was.
   it("hands a create to the service untouched, adding nothing", async () => {
     const w = world();
     const response = await w.app.request(

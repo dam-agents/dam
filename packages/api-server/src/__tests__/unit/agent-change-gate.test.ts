@@ -149,7 +149,7 @@ describe("the change gate", () => {
     expect(w.filed).toEqual([]);
   });
 
-  /* TEST_SCENARIO: every create runs freely, including one that hands the new Agent the owner's Connections, a shared Secret or a registry credential — only changes and removals wait (D236A). */
+  /* TEST_SCENARIO: every create runs freely, including one that hands the new Agent the owner's Connections, a shared Secret or a registry credential — only changes and removals wait. */
   it("lets a create that carries grants run at once", async () => {
     const w = world();
     const caller = router.createCaller(contextOf(w.agentChanges));

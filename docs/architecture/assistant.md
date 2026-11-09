@@ -121,8 +121,8 @@ Anything that changes or removes something that already exists — a rename, a r
 The owner approves and it runs, once, as the owner; the owner refuses and nothing runs, and the CLI that asked is told so.
 
 **An accepted exception: a create is not reviewed.**
-D236A reads D230B literally, so an assistant's create runs without the owner seeing it first — and a create carries what the owner already holds: it may grant any of the owner's own Connections to a new Agent, name an owner-owned Secret as its `secretRef` and so hand that Agent its bytes, and write registry credential material.
-None of that crosses an owner boundary and none of it alters something that already exists, but it is reach **granted without the owner looking**, and closing it is a create-with-grants waiting like any other change ([security-and-credentials](security-and-credentials.md#resource-ownership)).
+A create runs without the owner seeing it first — and a create carries what the owner already holds: it may grant any of the owner's own Connections to a new Agent, name an owner-owned Secret as its `secretRef` and so hand that Agent its bytes, and write registry credential material.
+None of that crosses an owner boundary and none of it alters something that already exists, but it is reach gained without the owner looking, and closing it is a create that grants anything waiting like any other change ([security-and-credentials](security-and-credentials.md#resource-ownership)).
 A change nobody decides expires after a day, and the one unanswered at its expiry runs nothing.
 Its word is never the verdict: verdicts on approvals, API keys, the Terms, feature flags and the owner's own UI state are refused outright, not queued.
 Nor does it answer its own request: a change is decided by the owner in their own signed-in session, never by an API key, an editor standing or the assistant itself.

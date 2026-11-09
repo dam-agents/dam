@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { useAgentsList } from "../../agents/api/queries.js";
+import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
@@ -43,10 +43,11 @@ export function FeedApprovalCard({
   const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
   const reason = approvalReason(approval);
-  const agents = useAgentsList();
+  // UNIT_BOUNDARY_DESCRIPTION: a change may target an Agent shared with this owner as an editor, so the lookup is the shared-aware one — a raw id in the owner's face is not a name.
+  const agents = useAgents();
   const changeTarget = agentChangeTarget(
     approval,
-    (agentId) => agents.find((agent) => agent.id === agentId)?.name,
+    (agentId) => findAgent(agents.data, agentId)?.name,
   );
   const changeArguments = agentChangeArguments(approval);
   const { data: connections } = useAppConnections();

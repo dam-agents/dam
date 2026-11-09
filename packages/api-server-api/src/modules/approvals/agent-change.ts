@@ -51,6 +51,7 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "artifactLibrary.delete": "change",
   "artifactLibrary.deleteFolder": "change",
   "artifactLibrary.sendPrompt": "change",
+  "artifactLibrary.setPromptChoice": "change",
   "artifactLibrary.setSharing": "change",
   "artifactLibrary.update": "change",
   "artifactLibrary.updateFolder": "change",
@@ -113,6 +114,7 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "environments.delete": "change",
   "environments.extend": "change",
   "environments.setAgentMembers": "change",
+  "environments.setAwake": "change",
   "environments.setMembers": "change",
 
   "features.setFlag": "refuse",
@@ -129,6 +131,8 @@ const AGENT_CHANGE_KINDS: Readonly<Record<string, AgentChangeKind>> = {
   "harnessConfig.set": "change",
 
   "invocations.stop": "change",
+
+  "loginTestimonials.save": "refuse",
 
   "kbShares.create": "refuse",
   "kbShares.refresh": "refuse",
