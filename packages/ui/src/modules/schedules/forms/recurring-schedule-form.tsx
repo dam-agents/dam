@@ -11,6 +11,7 @@ import { ScheduleDialog } from "./schedule-dialog.js";
 import {
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
+  ScheduleRowGroup,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
@@ -55,6 +56,7 @@ export function RecurringScheduleForm({
   const { errors } = form.formState;
   const values = form.watch();
 
+  const { summary } = buildRRuleParts(values);
   const quietHoursError =
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
 
@@ -141,28 +143,34 @@ export function RecurringScheduleForm({
       leadingFields={leadingFields}
       extraFields={
         <>
-          <ScheduleRecurrenceFields
-            layout="stacked"
-            control={form.control}
-            register={form.register}
-            errors={errors}
-            values={values}
-          />
-          <QuietHoursEditor
-            control={form.control}
-            register={form.register}
-            error={quietHoursError}
-          />
+          <ScheduleRowGroup label="Frequency">
+            <ScheduleRecurrenceFields
+              control={form.control}
+              register={form.register}
+              errors={errors}
+              values={values}
+            />
+          </ScheduleRowGroup>
+          {summary && (
+            <p className="-mt-2 text-sm text-muted-foreground">{summary}</p>
+          )}
         </>
       }
       afterChoices={
         <>
+          <ScheduleRowGroup label="Options">
+            <ScheduleSessionTypeField control={form.control} />
+            <QuietHoursEditor
+              control={form.control}
+              register={form.register}
+              error={quietHoursError}
+            />
+          </ScheduleRowGroup>
           <SchedulePrecheckField
             layout="stacked"
             registration={form.register("precheck")}
             error={errors.precheck?.message}
           />
-          <ScheduleSessionTypeField layout="stacked" control={form.control} />
         </>
       }
     />

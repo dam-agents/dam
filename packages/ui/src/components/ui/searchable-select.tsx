@@ -15,6 +15,8 @@ interface Props {
   placeholder?: string;
   invalid?: boolean;
   className?: string;
+  /** Where the open list sits and how wide it is, for a trigger narrower than its options. */
+  listClassName?: string;
 }
 
 export function SearchableSelect({
@@ -24,6 +26,7 @@ export function SearchableSelect({
   placeholder = "Select…",
   invalid,
   className,
+  listClassName = "w-full",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -114,7 +117,12 @@ export function SearchableSelect({
         <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-popover mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div
+          className={cn(
+            "absolute z-popover mt-1 overflow-hidden rounded-md border border-border bg-popover shadow-md",
+            listClassName,
+          )}
+        >
           <div className="p-1.5">
             <input
               ref={inputRef}

@@ -1,5 +1,5 @@
-import { Information } from "@carbon/icons-react";
-import { useId } from "react";
+import { Add, ChevronDown, Information } from "@carbon/icons-react";
+import { useId, useState } from "react";
 import type {
   Control,
   FieldErrors,
@@ -10,6 +10,13 @@ import type {
 } from "react-hook-form";
 import { Controller, useController } from "react-hook-form";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -38,6 +45,7 @@ import {
 } from "../api/session-model.js";
 import {
   DAYS_ISO,
+  daysSummary,
   formatTime12,
   RUN_OPTIONS,
   TIME_OPTIONS,
@@ -54,103 +62,160 @@ import {
 const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
-type ScheduleFieldLayout = "stacked" | "rows";
+const PRECHECK_HINT =
+  "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
+
+const PRECHECK_PLACEHOLDER =
+  "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
 
 interface FieldsProps {
-  layout: ScheduleFieldLayout;
   control: Control<ScheduleFormValues>;
   register: UseFormRegister<ScheduleFormValues>;
   errors: FieldErrors<ScheduleFormValues>;
   values: ScheduleFormValues;
-  accentClassName?: string;
 }
 
-const DEFAULT_ACCENT = "bg-primary text-primary-foreground";
-
-function Field({
-  layout,
+/**
+ * One setting on one row: its label on the left, its value on the right, as
+ * every schedule form lays its settings out.
+ */
+export function ScheduleRow({
   label,
   hint,
   error,
   children,
 }: {
-  layout: ScheduleFieldLayout;
   label: string;
   hint?: React.ReactNode;
   error?: string | undefined;
   children: React.ReactNode;
 }) {
-  if (layout === "rows")
-    return (
-      <div className="px-4 py-2">
-        <div className="flex items-center justify-between gap-4">
-          <span className="flex shrink-0 items-center gap-1.5 text-sm text-foreground">
-            {label}
-            {hint}
-          </span>
-          <div className="w-[260px] shrink-0">{children}</div>
-        </div>
-        {error && (
-          <div className="mt-1 flex justify-end">
-            <FormError message={error} />
-          </div>
-        )}
-      </div>
-    );
-
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5">
-        <SectionLabel>{label}</SectionLabel>
-        {hint}
+    <div className="px-4 py-3">
+      <div className="flex min-h-7 items-center justify-between gap-4">
+        <span className="flex shrink-0 items-center gap-1.5 text-sm text-foreground">
+          {label}
+          {hint}
+        </span>
+        <div className="flex min-w-0 justify-end">{children}</div>
       </div>
-      {children}
-      <FormError message={error} />
+      {error && (
+        <div className="mt-1 flex justify-end">
+          <FormError message={error} />
+        </div>
+      )}
     </div>
   );
 }
 
-function Chip({
-  selected,
-  accentClassName,
-  compact,
-  onClick,
+/** A labelled, bordered group of schedule rows inside a dialog. */
+export function ScheduleRowGroup({
+  label,
   children,
 }: {
-  selected: boolean;
-  accentClassName: string;
-  compact: boolean;
-  onClick: () => void;
+  label: string;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full text-xs font-medium",
-        compact ? "px-2 py-0.5" : "px-3 py-1",
-        selected ? accentClassName : "bg-muted text-muted-foreground",
-      )}
+    <div role="group" aria-label={label} className="flex flex-col gap-2">
+      <SectionLabel>{label}</SectionLabel>
+      <div className="flex flex-col divide-y divide-border rounded-lg border border-border">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function RowHint({
+  content,
+  label,
+}: {
+  content: string;
+  label: string;
+}) {
+  return (
+    <HintTooltip
+      content={content}
+      label={label}
+      side="top"
+      className="text-muted-foreground"
     >
-      {children}
-    </button>
+      <Information size={14} />
+    </HintTooltip>
+  );
+}
+
+/** A dropdown that sits on a row as its value: as wide as what it shows, its arrow right beside it. */
+export function RowSelect({
+  className,
+  ...props
+}: React.ComponentProps<typeof Select>) {
+  return (
+    <div className="w-fit">
+      <Select
+        variant="ghost"
+        className={cn(
+          "h-7 w-auto field-sizing-content py-0 pr-7 pl-2 text-right text-sm",
+          className,
+        )}
+        {...props}
+      />
+    </div>
+  );
+}
+
+function DaysPicker({
+  value,
+  onChange,
+}: {
+  value: number[];
+  onChange: (days: number[]) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Days"
+          className="flex h-7 items-center rounded-md pr-3 pl-2 text-sm text-foreground hover:bg-background"
+        >
+          {daysSummary(value)}
+          <ChevronDown size={16} className="text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[180px]">
+        {DAYS_ISO.map((d) => (
+          <DropdownMenuCheckboxItem
+            key={d.iso}
+            checked={value.includes(d.iso)}
+            onCheckedChange={() =>
+              onChange(
+                value.includes(d.iso)
+                  ? value.filter((v) => v !== d.iso)
+                  : [...value, d.iso].sort(),
+              )
+            }
+            onSelect={(e) => e.preventDefault()}
+          >
+            {d.name}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 export function ScheduleRecurrenceFields({
-  layout,
   control,
   register,
   errors,
   values,
-  accentClassName = DEFAULT_ACCENT,
 }: FieldsProps) {
-  const rows = layout === "rows";
-  const selectProps = rows
-    ? ({ variant: "ghost", size: "sm" } as const)
-    : ({ className: "h-10" } as const);
   const cadence = buildRRuleParts(values);
+  const cadenceError = (field: ReturnType<typeof errorField>) =>
+    cadence.error && errorField(values.kind) === field
+      ? { error: cadence.error }
+      : {};
 
   const timeOptions = TIME_OPTIONS.some((o) => o.value === values.time)
     ? TIME_OPTIONS
@@ -161,55 +226,47 @@ export function ScheduleRecurrenceFields({
 
   return (
     <>
-      <Field layout={layout} label="Repeat">
-        <Select {...selectProps} {...register("kind")}>
+      <ScheduleRow label="Repeat" {...cadenceError("kind")}>
+        <RowSelect aria-label="Repeat" {...register("kind")}>
           {RUN_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
-        </Select>
-      </Field>
+        </RowSelect>
+      </ScheduleRow>
 
       {values.kind === "daily" && (
-        <Field layout={layout} label="Time">
-          <Select {...selectProps} {...register("time")}>
+        <ScheduleRow label="Time">
+          <RowSelect aria-label="Time" {...register("time")}>
             {timeOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </Select>
-        </Field>
+          </RowSelect>
+        </ScheduleRow>
       )}
 
       {(values.kind === "minutely" || values.kind === "hourly") && (
-        <Field
-          layout={layout}
-          label="Every"
-          {...(cadence.error ? { error: cadence.error } : {})}
-        >
-          <div
-            className={cn(
-              "flex items-center gap-2 text-sm text-foreground",
-              rows && "justify-end",
-            )}
-          >
+        <ScheduleRow label="Every" {...cadenceError("interval")}>
+          <div className="flex items-center gap-2 text-sm text-foreground">
             <Input
               type="number"
               min={1}
-              className={cn("w-[80px]", rows ? "h-8" : "h-10")}
+              size="sm"
+              aria-label="Every"
+              className="w-16 text-sm"
               variant={cadence.error ? "invalid" : undefined}
               {...register("interval")}
             />
             <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
           </div>
-        </Field>
+        </ScheduleRow>
       )}
 
       {values.kind !== "custom" && (
-        <Field
-          layout={layout}
+        <ScheduleRow
           label="Days"
           {...(errors.days?.message ? { error: errors.days.message } : {})}
         >
@@ -217,63 +274,26 @@ export function ScheduleRecurrenceFields({
             control={control}
             name="days"
             render={({ field }) => (
-              <div
-                className={cn(
-                  "flex flex-wrap gap-1.5",
-                  rows && "justify-end gap-1",
-                )}
-              >
-                {DAYS_ISO.map((d) => (
-                  <Chip
-                    key={d.iso}
-                    selected={field.value.includes(d.iso)}
-                    accentClassName={accentClassName}
-                    compact={rows}
-                    onClick={() =>
-                      field.onChange(
-                        field.value.includes(d.iso)
-                          ? field.value.filter((v) => v !== d.iso)
-                          : [...field.value, d.iso].sort(),
-                      )
-                    }
-                  >
-                    {d.label}
-                  </Chip>
-                ))}
-              </div>
+              <DaysPicker value={field.value} onChange={field.onChange} />
             )}
           />
-        </Field>
+        </ScheduleRow>
       )}
 
       {values.kind === "custom" && (
-        <Field
-          layout={layout}
-          label="RRULE"
-          {...(cadence.error ? { error: cadence.error } : {})}
-        >
+        <ScheduleRow label="RRULE" {...cadenceError("customRRule")}>
           <Input
-            className={cn("font-mono text-xs", rows ? "h-8" : "h-10")}
+            size="sm"
+            aria-label="RRULE"
+            className="w-[260px] font-mono"
             variant={cadence.error ? "invalid" : undefined}
             placeholder="FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"
             {...register("customRRule")}
           />
-        </Field>
+        </ScheduleRow>
       )}
 
-      {cadence.error
-        ? errorField(values.kind) === "kind" && (
-            <FormError message={cadence.error} />
-          )
-        : !rows &&
-          cadence.summary && (
-            <p className="-mt-1 text-sm text-muted-foreground">
-              {cadence.summary}
-            </p>
-          )}
-
-      <Field
-        layout={layout}
+      <ScheduleRow
         label="Timezone"
         {...(errors.timezone?.message
           ? { error: errors.timezone.message }
@@ -289,87 +309,60 @@ export function ScheduleRecurrenceFields({
               options={TIMEZONE_OPTIONS}
               placeholder="Select a timezone"
               invalid={!!errors.timezone}
-              {...(rows
-                ? {
-                    className:
-                      "h-8 border-transparent bg-transparent text-xs hover:border-input hover:bg-background",
-                  }
-                : {})}
+              className="h-7 w-auto gap-0 border-transparent bg-transparent pr-3 pl-2 hover:bg-background"
+              listClassName="right-0 w-[280px]"
             />
           )}
         />
-      </Field>
+      </ScheduleRow>
     </>
   );
 }
 
 export function ScheduleSessionTypeField<T extends FieldValues>({
-  layout,
   control,
-  accentClassName = DEFAULT_ACCENT,
 }: {
-  layout: ScheduleFieldLayout;
   control: Control<T>;
-  accentClassName?: string;
 }) {
   return (
-    <Field
-      layout={layout}
+    <ScheduleRow
       label="Session type"
-      hint={
-        <HintTooltip
-          content={SESSION_TOOLTIP}
-          label="About session types"
-          side="top"
-          className="text-muted-foreground"
-        >
-          <Information size={14} />
-        </HintTooltip>
-      }
+      hint={<RowHint content={SESSION_TOOLTIP} label="About session types" />}
     >
       <Controller
         control={control}
         name={"sessionMode" as Path<T>}
         render={({ field }) => (
-          <div
-            className={cn("flex gap-1.5", layout === "rows" && "justify-end")}
+          <RowSelect
+            aria-label="Session type"
+            value={field.value}
+            onChange={(e) => field.onChange(e.target.value)}
           >
-            {(["fresh", "continuous"] as const).map((mode) => (
-              <Chip
-                key={mode}
-                selected={field.value === mode}
-                accentClassName={accentClassName}
-                compact={false}
-                onClick={() => field.onChange(mode)}
-              >
-                <span className="capitalize">{mode}</span>
-              </Chip>
-            ))}
-          </div>
+            <option value="fresh">Fresh</option>
+            <option value="continuous">Continuous</option>
+          </RowSelect>
         )}
       />
-    </Field>
+    </ScheduleRow>
   );
 }
 
-const PRECHECK_HINT =
-  "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
-
-const PRECHECK_PLACEHOLDER =
-  "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
-
 interface PrecheckFieldProps {
-  layout: ScheduleFieldLayout;
+  layout: "stacked" | "rows";
   registration: UseFormRegisterReturn;
   error?: string | undefined;
+  /** On a row, whether the box shows from the start: a precheck already set does, an empty one waits for Add. */
+  defaultOpen?: boolean;
 }
 
 export function SchedulePrecheckField({
   layout,
   registration,
   error,
+  defaultOpen = false,
 }: PrecheckFieldProps) {
   const fieldId = useId();
+  const [open, setOpen] = useState(defaultOpen);
   const input = (
     <Textarea
       id={fieldId}
@@ -390,22 +383,43 @@ export function SchedulePrecheckField({
 
   return (
     <div className="px-4 py-3">
-      <div className="mb-2 flex items-center gap-1.5">
-        <label htmlFor={fieldId}>
-          <SectionLabel>Precheck (optional)</SectionLabel>
-        </label>
-        <HintTooltip
-          content={PRECHECK_HINT}
-          label="About prechecks"
-          side="top"
-          className="text-muted-foreground"
-        >
-          <Information size={14} />
-        </HintTooltip>
+      <div className="flex min-h-7 items-center justify-between gap-4">
+        <span className="flex items-center gap-1.5 text-sm text-foreground">
+          <label htmlFor={fieldId}>Precheck</label>
+          <RowHint content={PRECHECK_HINT} label="About prechecks" />
+        </span>
+        {!open && (
+          <RowAddButton label="Add a precheck" onClick={() => setOpen(true)} />
+        )}
       </div>
-      {input}
-      <FormError message={error} />
+      <div hidden={!open} className="mt-2">
+        {input}
+        <FormError message={error} />
+      </div>
     </div>
+  );
+}
+
+/** The inline "+ Add" a row shows on its right while it has nothing yet. */
+export function RowAddButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-label={label}
+      className="h-7 gap-1.5 pr-3 pl-2 text-muted-foreground"
+      onClick={onClick}
+    >
+      <Add size={16} />
+      Add
+    </Button>
   );
 }
 

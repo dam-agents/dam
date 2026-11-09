@@ -57,12 +57,27 @@ export const TIMEZONE_OPTIONS: { value: string; label: string }[] = [
   }),
 ];
 
-export const DAYS_ISO: { iso: number; label: string }[] = [
-  { iso: 1, label: "Mon" },
-  { iso: 2, label: "Tue" },
-  { iso: 3, label: "Wed" },
-  { iso: 4, label: "Thu" },
-  { iso: 5, label: "Fri" },
-  { iso: 6, label: "Sat" },
-  { iso: 7, label: "Sun" },
+export const DAYS_ISO: { iso: number; label: string; name: string }[] = [
+  { iso: 1, label: "Mon", name: "Monday" },
+  { iso: 2, label: "Tue", name: "Tuesday" },
+  { iso: 3, label: "Wed", name: "Wednesday" },
+  { iso: 4, label: "Thu", name: "Thursday" },
+  { iso: 5, label: "Fri", name: "Friday" },
+  { iso: 6, label: "Sat", name: "Saturday" },
+  { iso: 7, label: "Sun", name: "Sunday" },
 ];
+
+const WEEKDAYS = [1, 2, 3, 4, 5];
+const WEEKEND = [6, 7];
+
+/** The picked days in the words the Days dropdown shows: a named set when they make one, else the short names in week order. */
+export function daysSummary(days: readonly number[]): string {
+  const picked = DAYS_ISO.filter((d) => days.includes(d.iso));
+  const only = (set: number[]) =>
+    picked.length === set.length && set.every((d) => days.includes(d));
+  if (picked.length === 0) return "No days";
+  if (picked.length === DAYS_ISO.length) return "Every day";
+  if (only(WEEKDAYS)) return "Weekdays";
+  if (only(WEEKEND)) return "Weekends";
+  return picked.map((d) => d.label).join(", ");
+}
