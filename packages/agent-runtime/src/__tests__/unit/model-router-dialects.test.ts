@@ -229,6 +229,7 @@ beforeAll(async () => {
   upstreamBase = base;
   const envState = envStateOn(base);
   router = composeModelRouter({
+    leaseEnv: () => ({}),
     catalog: {
       providers: () => providers,
       forHarness: (harness) => forHarness(entries, harness, HARNESSES[harness]),
@@ -466,6 +467,7 @@ describe("a reasoning effort the route refuses", () => {
     ];
     const azureEntries = azureProviders.flatMap((p) => p.entries);
     const composed = composeModelRouter({
+      leaseEnv: () => ({}),
       catalog: {
         providers: () => azureProviders,
         forHarness: (harness) =>

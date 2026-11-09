@@ -39,6 +39,7 @@ function harness(initial: Record<string, string> = {}) {
       forLease({ harness: null, provider: value.providers[0]?.id ?? null }),
     providers: () => value.providers.map((p) => p.id),
     forLease,
+    connectionEnvFor: () => ({}),
     write: (e) => {
       value = e;
     },

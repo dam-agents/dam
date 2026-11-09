@@ -55,6 +55,7 @@ import {
   bedrockRouterEnv,
   createCallerSessionLookup,
   createModelCallExporter,
+  homeConnectionEnv,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
@@ -194,7 +195,16 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir, defaultHarness);
+const envStore = createEnvStateStore(
+  homeDir,
+  defaultHarness,
+  (harness, layers) =>
+    homeConnectionEnv({
+      harness,
+      binding: harnessManifests[harness]?.modelRouter,
+      layers,
+    }),
+);
 const browser = composeBrowser({ homeDir, envReader: envStore });
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
@@ -348,6 +358,7 @@ const terminalSessionOf = createTerminalSessionLookup(
   TERMINAL_PIN_REFRESH_MS,
 );
 const modelRouter = composeModelRouter({
+  leaseEnv: (harness) => envStore.forLease({ harness, provider: null }),
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;

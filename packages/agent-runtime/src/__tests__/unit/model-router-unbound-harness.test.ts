@@ -75,6 +75,7 @@ let router: ModelRouter;
 
 beforeAll(async () => {
   router = composeModelRouter({
+    leaseEnv: () => ({}),
     catalog: {
       providers: () => providers,
       forHarness: (harness) =>
