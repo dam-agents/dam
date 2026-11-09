@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-30
+Last verified: 2026-11-09
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -96,7 +96,7 @@ The image's entrypoint itself is supervised.
 smolvm launches a machine's workload once per boot, and platform-init, the first process of the workload's own PID namespace, cannot power the guest off, so it stays the entrypoint's parent: it reaps orphans, passes signals on, and when the entrypoint exits it says so on the machine's console, ends every process left in the namespace, and starts the entrypoint again on the same root and home, after a delay that doubles while it keeps failing.
 An agent that crashed is back in seconds instead of at the runner's ten-minute unhealthy restart.
 A stop signal ends the supervision instead.
-platform-init's refusals to boot, the steps of each boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
+platform-init's refusals to boot, the steps of each boot with how long each took, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
 What a machine keeps across a stop is its storage disk on the runner's one claim: `HOME`, and the upper layer of its root for as long as its images share a root generation ([vm storage](vm-storage.md#the-disk) owns the rule).
 It is the machine's one disk.
