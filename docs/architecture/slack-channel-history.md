@@ -21,7 +21,9 @@ The bot can read every conversation it sits in, so the switch, not the bot's rea
 A read names one conversation and is refused where that binding has channel history off; the refusal names the conversations where it is on.
 The check runs on every read, not when a Session starts, so turning the switch off stops the reading at once.
 The reading tool, `read_channel_history`, is offered only to an Agent with channel history on for at least one binding; a harness lists its tools when its session starts, so a switch turned on mid-session shows from the next one, and the turn's contract tells the Agent so.
-Any of the Agent's Sessions may read — a channel turn, a web chat, a scheduled run — since turning it on is the conversation's consent and the bot already reaches bound conversations from any of them.
+A web chat, a scheduled run or another Session outside a messenger may read any conversation where it is on, since turning it on is that conversation's consent.
+A turn in a messenger conversation reads only that conversation's history, and a Telegram chat's turn none, because the people there may not be in another conversation; the platform tells a running Slack turn by its own record, and any other Session by the runtime's.
+A call the platform cannot tie to a Session reads nothing.
 What the Agent reads lands in its Session, which its owner can see: the exposure ambient mode already carries.
 
 ## Reading

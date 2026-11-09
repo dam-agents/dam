@@ -124,6 +124,7 @@ export const threadResultSchema = z.object({
 export type ThreadResult = z.infer<typeof threadResultSchema>;
 
 export interface ChannelHistoryQuery {
+  sessionId?: string;
   conversationId?: string;
   cursor?: string;
   since?: string;

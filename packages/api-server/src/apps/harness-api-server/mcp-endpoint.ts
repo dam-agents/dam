@@ -710,7 +710,7 @@ export function createMcpSession(
   if (deps.readsChannelHistory) {
     server.tool(
       "read_channel_history",
-      "Read further back in a Slack conversation's history than the history you were handed. Only where channel history is on for you: a person turned it on when they connected you to that conversation, or later. The history you are handed covers the newest messages posted outside a thread; this reads the older ones, one page at a time, the newest page first. Returns { messages, conversationId, hasMore, cursor }, messages oldest first in the same labelled form as your conversation history, each line with its ts after the time, as [<time>, ts <ts>]. A line ending in a [thread: ...] tag opened a thread whose replies are not shown here: read them with read_thread, passing that ts. With hasMore true, call again with the cursor to read the page just before this one, as far back as you need; pass back only a cursor this same conversation gave you. Pass since and until to read one stretch of time, for example the last week. A conversation where channel history is not on for you is refused, and the refusal names the ones where it is on. Slack only.",
+      "Read further back in a Slack conversation's history than the history you were handed. Only where channel history is on for you: a person turned it on when they connected you to that conversation, or later. The history you are handed covers the newest messages posted outside a thread; this reads the older ones, one page at a time, the newest page first. Returns { messages, conversationId, hasMore, cursor }, messages oldest first in the same labelled form as your conversation history, each line with its ts after the time, as [<time>, ts <ts>]. A line ending in a [thread: ...] tag opened a thread whose replies are not shown here: read them with read_thread, passing that ts. With hasMore true, call again with the cursor to read the page just before this one, as far back as you need; pass back only a cursor this same conversation gave you. Pass since and until to read one stretch of time, for example the last week. A conversation where channel history is not on for you is refused, and the refusal names the ones where it is on. A turn that answers in a Slack conversation reads only that conversation; a web chat or a scheduled run reads any conversation where it is on. Slack only.",
       {
         chatId: z
           .string()
@@ -740,10 +740,12 @@ export function createMcpSession(
       async ({ chatId, cursor, since, until }) => {
         const bounds = slackTsRange({ since, until });
         if ("error" in bounds) return errorResult(bounds.error);
+        const sessionId = await callerSessionId();
         const result = await deps.channelManager.readChannelHistory(
           agentId,
           ChannelType.Slack,
           {
+            ...(sessionId ? { sessionId } : {}),
             ...(chatId !== undefined ? { conversationId: chatId } : {}),
             ...(cursor !== undefined ? { cursor } : {}),
             ...bounds,

@@ -30,6 +30,7 @@ import {
 import {
   ambientThreadKey,
   isAmbientThreadKey,
+  slackChannelIdFromThreadKey,
   slackThreadKey,
   ChannelType,
   SessionType,
@@ -92,6 +93,7 @@ import {
   AcpTurnAbandonedError,
   type AcpClient,
   type AcpClientFactory,
+  type AcpSessionInfo,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import type { ChannelPair } from "./channel-profile.js";
@@ -688,6 +690,21 @@ const STALE_CHANNEL_CURSOR =
   "you — a cursor comes back from read_channel_history and reaches only " +
   "backwards inside the conversation it came from. Drop it and read again " +
   "without a cursor.";
+
+const CHANNEL_HISTORY_UNIDENTIFIED =
+  "this call could not be tied to the session making it, so the " +
+  "conversation it may read is unknown and nothing was read";
+
+function channelTurnReachRefusal(own: string, asked: string): string {
+  const where = own
+    ? `only that conversation's history, ${own}`
+    : "no Slack history, since a Telegram chat has none";
+  return (
+    `a turn that answers in a messenger conversation reads ${where}; ` +
+    `the people there may not be in ${asked}. Your owner can ask you to ` +
+    "read it from a web chat."
+  );
+}
 
 function channelHistoryNotOn(
   asked: string,
@@ -2372,6 +2389,37 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch {
       return false;
     }
+  }
+
+  async function historyReachOf(
+    instanceName: string,
+    sessionId: string | undefined,
+  ): Promise<{ only: string | null } | { error: string }> {
+    if (sessionId === undefined) return { error: CHANNEL_HISTORY_UNIDENTIFIED };
+    const turn = findTurnRef(
+      instanceName,
+      (ref) => ref.sessionId === sessionId,
+    );
+    if (turn) return { only: turn.channel };
+    let sessions: AcpSessionInfo[];
+    try {
+      sessions = await makeAcpClient(instanceName).listSessions();
+    } catch (err) {
+      return {
+        error:
+          "could not tell which conversation this session answers in, so " +
+          `nothing was read: ${formatError(err)}`,
+      };
+    }
+    const caller = sessions.find((s) => s.sessionId === sessionId);
+    if (!caller) return { error: CHANNEL_HISTORY_UNIDENTIFIED };
+    if (caller.platform?.type === SessionType.ChannelSlack)
+      return {
+        only: slackChannelIdFromThreadKey(caller.platform.threadTs) ?? "",
+      };
+    if (caller.platform?.type === SessionType.ChannelTelegram)
+      return { only: "" };
+    return { only: null };
   }
 
   function readOfferedThread(
@@ -8020,6 +8068,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const bound =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (bound.length === 0) return { error: "no channel connected" };
+      const reach = await historyReachOf(instanceName, query.sessionId);
+      if ("error" in reach) return reach;
       const readable = bound.filter((c) => c.history === true);
 
       const asked =
@@ -8038,7 +8088,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const wanted =
         query.conversationId ??
         asked?.conversationId ??
+        (reach.only || undefined) ??
         (readable.length === 1 ? readable[0]!.id : undefined);
+      if (reach.only !== null && wanted !== reach.only)
+        return {
+          error: channelTurnReachRefusal(
+            reach.only,
+            wanted ?? "another conversation",
+          ),
+        };
       if (wanted === undefined) {
         return {
           error:

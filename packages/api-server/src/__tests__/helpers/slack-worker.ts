@@ -28,6 +28,7 @@ export function slackWorkerHarness(
     history?: boolean;
     otherBound?: string[];
     linkedSub?: string;
+    sessions?: AcpSessionInfo[];
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
     workspaceFiles?: AgentWorkspaceFilesFactory;
@@ -48,7 +49,7 @@ export function slackWorkerHarness(
   const created: AcpSessionInfo[] = [];
   const baseAcp: AcpClient = {
     steer: async () => "unsupported" as const,
-    listSessions: async () => [...created],
+    listSessions: async () => [...created, ...(opts.sessions ?? [])],
     sendPrompt: async (prompt, sendOpts) => {
       prompts.push(prompt);
       if ("platformMeta" in sendOpts && sendOpts.platformMeta) {
