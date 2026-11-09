@@ -38,6 +38,15 @@ export function agentFooterLabel(agentName?: string): string {
   return `Sent by ${agentName?.trim() || "an agent"}`;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the address that opens one of an agent's sessions in the web chat, through the public agent page, which signs a visitor in first. */
+export function agentSessionUrl(
+  uiBaseUrl: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return `${uiBaseUrl}${PUBLIC_AGENT_PATH}${agentId}?s=${encodeURIComponent(sessionId)}`;
+}
+
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.label);
   const params = [
