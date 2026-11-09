@@ -246,15 +246,9 @@ OAuth adds a placeholder Authorization header on the `mcp-entry`; a static-heade
 The OAuth client is found at create time, in the order the MCP authorization spec gives: a client ID the user entered, else the platform's **Client ID Metadata Document** when the authorization server says it accepts one, else Dynamic Client Registration.
 The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
 An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
-One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
 
-### Figma MCP
-
-A premade template for Figma's own MCP server, shown in the MCP servers section.
-It takes the Custom MCP server (OAuth) path with the server URL fixed in the template, so the user gives only a name before the sign-in.
-Figma's registration endpoint admits only the clients in its MCP client catalog, by the `client_name` they register with, and refuses the platform's own name.
-So the template registers under the name of a client Figma admits, `Claude Code`.
-Figma counts tool calls per user seat on its own side, and the template's description gives those limits; the platform keeps no counter of its own, and the agent sees Figma's `429` as Figma sends it.
+The premade Figma MCP template takes this path with Figma's server URL fixed, and registers under a client name Figma admits, since Figma refuses others.
+Figma limits tool calls per seat; the platform keeps no counter.
 
 ### Shared knowledge base
 
