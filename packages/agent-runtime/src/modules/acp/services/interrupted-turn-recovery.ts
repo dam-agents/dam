@@ -137,7 +137,8 @@ function promptText(prompt: PlatformUndeliveredPrompt): string {
  * again in a fresh unattended Session of the same schedule instead. That is
  * how a fire whose machine went down at the very start of its first turn
  * still does its work, where the person who would otherwise retry it never
- * exists.
+ * exists. A resume of an unstored Session that fails for another reason keeps
+ * its marker's prompt as undelivered, since the marker was its only copy.
  */
 export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
@@ -182,6 +183,8 @@ export async function recoverInterruptedTurns(deps: {
       continue;
     } catch (err) {
       if (!rerunnable || !neverStored(err)) {
+        if (entry?.unstored === true && marker.prompt)
+          deps.undeliveredPrompts.remember(marker.sessionId, [marker.prompt]);
         deps.store.remove(marker.sessionId);
         deps.log(
           `failed to resume ${marker.sessionId}, gave up: ${(err as Error).message}`,

@@ -339,7 +339,8 @@ describe("interrupted-turn recovery", () => {
    * TEST_SCENARIO: the resume of a scheduled run cut on its first turn fails
    * for another reason than a Session the harness never stored, as a load
    * that timed out. The harness may still hold the conversation, so recovery
-   * gives up as it does on any failed resume rather than run the task twice.
+   * gives up as it does on any failed resume rather than run the task twice,
+   * and keeps the task as undelivered for whoever opens the Session.
    */
   it("does not re-run a scheduled first turn whose resume failed otherwise", async () => {
     const backend = createFileDocumentStoreBackend(dir);
@@ -372,13 +373,14 @@ describe("interrupted-turn recovery", () => {
       },
     };
     const booted = createActiveTurnStore(backend);
+    const undeliveredPrompts = createUndeliveredPromptStore(backend, () =>
+      new Date().toISOString(),
+    );
 
     await recoverInterruptedTurns({
       store: booted,
       sessionMetadata,
-      undeliveredPrompts: createUndeliveredPromptStore(backend, () =>
-        new Date().toISOString(),
-      ),
+      undeliveredPrompts,
       triggerDriver,
       log: () => {},
     });
@@ -386,5 +388,8 @@ describe("interrupted-turn recovery", () => {
     expect(fresh).toEqual([]);
     expect(booted.leftovers()).toEqual([]);
     expect(sessionMetadata.isTombstoned("sched-run")).toBe(false);
+    expect(undeliveredPrompts.readFor("sched-run").map((p) => p.id)).toEqual([
+      "prompt-1",
+    ]);
   });
 });
