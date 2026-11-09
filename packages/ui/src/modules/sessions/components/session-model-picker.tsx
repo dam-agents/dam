@@ -1209,12 +1209,7 @@ function ProviderMenu({
             const usable = enabled(p.id);
             const why = reason(p.id);
             return (
-              <Tooltip
-                key={p.id}
-                content={why}
-                open={why === null ? false : undefined}
-                side="right"
-              >
+              <Tooltip key={p.id} content={why} side="right">
                 <DropdownMenuRadioItem
                   value={p.id}
                   indicator="check"
