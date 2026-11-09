@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -135,8 +135,8 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).
-  Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state.
-  An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only.
+  Slack connect binds a channel (optionally with ambient or channel history on); the channel listing shows each binding's ambient and channel history state.
+  An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).

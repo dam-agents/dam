@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -77,6 +77,8 @@ Where several Agents read along in one channel, they take each message **one at 
 Running them concurrently would have them talk over each other; in sequence, a later Agent is handed what the ones before it said — it has no other way to know — so it builds on that or stays silent rather than repeating it.
 The **default Agent goes first** where it reads along, being the conversation's primary; the rest follow **shuffled**, freshly per message — past the default there is nothing to rank them by, and a stable order would quietly hand one Agent every second look.
 The cost is deliberate: a channel with several read-along Agents spends that many turns per message, which is why ambient stays a per-Agent opt-in.
+
+A Slack binding can also carry **channel history**, which lets its Agent read the conversation's older messages ([slack-channel-history](slack-channel-history.md)).
 
 #### Posts by Agents and apps
 
