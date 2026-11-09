@@ -38,7 +38,9 @@ import {
 
 configureLogger({ level: "error", write: () => {} });
 
-const BASE_URL = "https://dam.example.com";
+const SERVICE_URL = "http://dam-apiserver.platform.svc.cluster.local:4000";
+const HOST = "dam-apiserver.platform.svc.cluster.local";
+const BASE_URL = `https://${HOST}`;
 const BRAND = "Acme";
 
 const templatesFor = (baseUrl = BASE_URL) =>
@@ -174,23 +176,33 @@ function secretOf(
 }
 
 describe("the DAM connection template", () => {
-  it("exists only where the install's own URL is one the gateway can inject on", () => {
+  it("exists wherever the install names its own Service, and nowhere else", () => {
     expect(damTemplate()?.name).toBe(BRAND);
-    expect(damTemplate("http://dam.example.com")).toBeUndefined();
-    expect(damTemplate("https://localhost:4444")).toBeUndefined();
-    expect(damTemplate("https://127.0.0.1")).toBeUndefined();
+    expect(damTemplate(SERVICE_URL)?.name).toBe(BRAND);
+    expect(damTemplate("http://localhost:4444")).toBeUndefined();
+    expect(damTemplate("http://127.0.0.1:4000")).toBeUndefined();
+    expect(damTemplate("http://*.platform.svc.cluster.local")).toBeUndefined();
     expect(buildCatalog({}).some((t) => t.id === DAM_TEMPLATE_ID)).toBe(false);
+  });
+
+  // TEST_SCENARIO: the Agent names the Service over HTTPS whatever scheme its own address carries, because its gateway is what terminates that TLS — the upstream port belongs to the gateway's chain, not to this name.
+  it("names the Service over HTTPS, with no port", () => {
+    expect(damTargetOf(SERVICE_URL)).toEqual({ baseUrl: BASE_URL, host: HOST });
+    expect(damTargetOf(`https://${HOST}:8443`)).toEqual({
+      baseUrl: BASE_URL,
+      host: HOST,
+    });
   });
 
   it("carries the install's host and path-scoped injection", () => {
     const template = templatesFor().get(DAM_TEMPLATE_ID);
     if (!template || template.authKind !== "header") throw new Error("absent");
-    expect(template.host).toBe("dam.example.com");
+    expect(template.host).toBe(HOST);
     const inject = template.contributions.find(
       (c) => c.kind === "egress-inject",
     );
     expect(inject).toMatchObject({
-      host: "dam.example.com",
+      host: HOST,
       pathPattern: "/api/",
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
@@ -219,11 +231,6 @@ describe("the DAM connection template", () => {
     expect(String(skill?.kind === "file" && skill.content)).toMatch(
       /^---\nname: dam\ndescription: >\n/,
     );
-    expect(damTargetOf("https://dam.example.com:8443")).toEqual({
-      baseUrl: "https://dam.example.com:8443",
-      host: "dam.example.com",
-      port: 8443,
-    });
   });
 });
 
@@ -249,7 +256,7 @@ describe("provisioning the DAM connection", () => {
       JSON.parse(secret!.annotations["agent-platform.ai/injection-hosts"]),
     ).toEqual([
       expect.objectContaining({
-        host: "dam.example.com",
+        host: HOST,
         pathPattern: "/api/",
         headerName: "Authorization",
       }),
@@ -505,7 +512,7 @@ describe("the install's own host", () => {
         templateId: "custom-header",
         name: "Another door to the install",
         authKind: "header",
-        host: "dam.example.com",
+        host: HOST,
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
         value: "whatever",

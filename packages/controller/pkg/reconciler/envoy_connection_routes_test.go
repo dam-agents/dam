@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"fmt"
 	"net/url"
 	"regexp"
 	"slices"
@@ -1018,4 +1019,88 @@ func TestChainsFromSecrets_DamChainKeepsItsOwnAddress(t *testing.T) {
 	assert.Equal(t, 0, chain.UpstreamPort, "the install published 443, not the peer's 8443")
 	assert.Equal(t, 443, chain.UpstreamPortValue())
 	assert.Empty(t, chain.UpstreamCAFile, "the install's host is validated against the system trust, not a peer's CA")
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the chain of the Connection that drives this install terminates TLS for the api-server Service's own name, injects the key under /api/ and takes the request to that Service by name and port inside the cluster — never to whatever the name resolves to — and the leaf covers the name the Agent dials. */
+func TestRenderEnvoyBootstrap_DamChainPinsTheApiServerService(t *testing.T) {
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	host := bootstrapTestCfg.APIServerHost()
+	dam.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"pathPattern":"/api/","headerName":"Authorization"}]`, host)
+	dam = withHostSDS(dam, host)
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chainsFromSecrets([]corev1.Secret{dam}, nil), false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	clusters := staticClusters(t, doc)
+	require.Len(t, clusters, 1)
+	cluster := clusters[0]
+	assert.Equal(t, "STRICT_DNS", cluster["type"])
+	assert.Nil(t, cluster["transport_socket"], "the api-server Service is reached inside the mesh, not over its own TLS")
+	assert.Equal(t, host, pinnedClusterHost(t, cluster))
+	assert.Equal(t, bootstrapTestCfg.APIServerPort, pinnedClusterPort(t, cluster))
+
+	assert.Len(t, injectorFilters(httpFiltersForHost(t, doc, host)), 1, "the key is injected on this chain, and only here")
+	routes := chainRoutesForHost(t, doc, host)
+	require.NotEmpty(t, routes)
+	for _, route := range routes {
+		match, _ := route["match"].(map[string]any)
+		prefix, _ := match["prefix"].(string)
+		assert.True(t,
+			strings.HasPrefix(prefix, "/api/") || strings.HasPrefix(prefix, "/"+connectionEgressPathSegment+"/conn-dam/api/"),
+			"only the API paths the CLI uses are routed, got %q", prefix)
+	}
+	assert.NotContains(t, fmt.Sprint(routes), `/api/messagesX`, "and nothing beyond them")
+
+	leaf := BuildEnvoyLeafCertificate("agent-a", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), []corev1.Secret{dam}, nil)
+	assert.Equal(t, []string{host}, leaf.Spec.DNSNames, "the leaf covers the name the Agent dials")
+}
+
+func staticClusters(t *testing.T, doc map[string]any) []map[string]any {
+	t.Helper()
+	sr, _ := doc["static_resources"].(map[string]any)
+	raw, _ := sr["clusters"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, c := range raw {
+		m, _ := c.(map[string]any)
+		if name, _ := m["name"].(string); strings.HasPrefix(name, "upstream_") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func pinnedClusterHost(t *testing.T, cluster map[string]any) string {
+	t.Helper()
+	endpoints := cluster["load_assignment"].(map[string]any)["endpoints"].([]any)
+	return endpoints[0].(map[string]any)["lb_endpoints"].([]any)[0].(map[string]any)["endpoint"].(map[string]any)["address"].(map[string]any)["socket_address"].(map[string]any)["address"].(string)
+}
+
+func pinnedClusterPort(t *testing.T, cluster map[string]any) int {
+	t.Helper()
+	endpoints := cluster["load_assignment"].(map[string]any)["endpoints"].([]any)
+	port := endpoints[0].(map[string]any)["lb_endpoints"].([]any)[0].(map[string]any)["endpoint"].(map[string]any)["address"].(map[string]any)["socket_address"].(map[string]any)["port_value"]
+	return int(port.(float64))
+}
+
+func chainRoutesForHost(t *testing.T, doc map[string]any, host string) []map[string]any {
+	t.Helper()
+	for _, fc := range internalFilterChains(t, doc) {
+		match, _ := fc["filter_chain_match"].(map[string]any)
+		serverNames, _ := match["server_names"].([]any)
+		if len(serverNames) != 1 || serverNames[0] != host {
+			continue
+		}
+		hcm := fc["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		hosts := hcm["route_config"].(map[string]any)["virtual_hosts"].([]any)
+		raw := hosts[0].(map[string]any)["routes"].([]any)
+		out := make([]map[string]any, 0, len(raw))
+		for _, r := range raw {
+			out = append(out, r.(map[string]any))
+		}
+		return out
+	}
+	require.FailNow(t, "no terminating chain for "+host)
+	return nil
 }

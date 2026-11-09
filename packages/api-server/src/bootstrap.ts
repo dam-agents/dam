@@ -1159,7 +1159,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
-    damBaseUrl: config.uiBaseUrl,
+    damBaseUrl: config.apiserverUrl,
     brandName: config.brand.name,
     curveBenderDeployment: config.curveBenderDeployment !== null,
     e2eEnabled: config.e2eEnabled,

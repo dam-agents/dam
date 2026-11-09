@@ -9,17 +9,16 @@ import {
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import { CONNECTION_TOKEN_PLACEHOLDER } from "./connection-sds.js";
-import {
-  isIpLiteral,
-  parseClusterEndpoint,
-} from "./kubernetes-contributions.js";
+import { isIpLiteral } from "./kubernetes-contributions.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Connection that lets an Agent holding it
- * drive this install as its owner. Its upstream is the install's own API host,
- * so the template exists only where that host is one the gateway can inject
- * on: an https URL on a DNS name, not a loopback one. The key is minted by the
- * platform and lives in the Connection's Secret; the Agent holds a placeholder.
+ * drive this install as its owner. Its upstream is the api-server's own public
+ * Service, named over HTTPS: the Agent's gateway terminates that TLS with the
+ * install's leaf and takes the request to the Service inside the cluster, so
+ * the route works on every install, a plain-HTTP localhost one included. The
+ * key is minted by the platform and lives in the Connection's Secret; the Agent
+ * holds a placeholder.
  */
 export const DAM_SERVER_ENV = "DAM_SERVER";
 export const DAM_TOKEN_ENV = "DAM_TOKEN";
@@ -30,32 +29,25 @@ const DAM_API_PATH = "/api/";
 const DAM_EGRESS_PATH = "/api/*";
 const DAM_SKILL_PATH = "$HOME/.agents/skills/dam/SKILL.md";
 
-const LOOPBACK_HOSTS = new Set(["localhost", "localhost.localdomain"]);
-
 export interface DamTarget {
   baseUrl: string;
   host: string;
-  port?: number;
 }
 
-export function damTargetOf(baseUrl: string): DamTarget | null {
+/* UNIT_BOUNDARY_DESCRIPTION: where the Connection points, from the api-server's own public Service address: the Agent names that Service by name over HTTPS, its gateway terminates that TLS with the install's own leaf, and the chain there takes the request to the Service inside the cluster. The name has to be a DNS name the gateway can match on — not a wildcard, not an IP, and never a loopback name, which a gateway pod would resolve to itself. */
+export function damTargetOf(apiserverUrl: string): DamTarget | null {
   let url: URL;
   try {
-    url = new URL(baseUrl);
+    url = new URL(apiserverUrl);
   } catch {
     return null;
   }
-  if (url.protocol !== "https:") return null;
-  if (!isGatewayHostname(url.hostname)) return null;
-  if (url.hostname.startsWith("*.")) return null;
-  if (isIpLiteral(url.hostname)) return null;
-  if (LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) return null;
-  const { host, port } = parseClusterEndpoint(url.origin);
-  return {
-    baseUrl: url.origin,
-    host,
-    ...(port !== undefined ? { port } : {}),
-  };
+  const host = url.hostname.toLowerCase();
+  if (!isGatewayHostname(host)) return null;
+  if (host.startsWith("*.")) return null;
+  if (isIpLiteral(host)) return null;
+  if (host === "localhost" || host.endsWith(".localhost")) return null;
+  return { baseUrl: `https://${host}`, host };
 }
 
 export const DAM_KEY_SCOPES: readonly Scope[] = [
@@ -122,7 +114,6 @@ export function damContributions(
   target: DamTarget,
   brandName: string,
 ): Contribution[] {
-  const hostPart = target.port !== undefined ? { port: target.port } : {};
   return [
     {
       kind: "env",
@@ -137,13 +128,11 @@ export function damContributions(
     {
       kind: "egress-allow",
       host: target.host,
-      ...hostPart,
       pathPattern: DAM_EGRESS_PATH,
     },
     {
       kind: "egress-inject",
       host: target.host,
-      ...hostPart,
       pathPattern: DAM_API_PATH,
       headerName: "Authorization",
       valueFormat: "Bearer {value}",

@@ -209,7 +209,7 @@ It warns and never asks, since an agent usually drives it, and a read it cannot 
 
 A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
 Every agent image builds the CLI of its commit into `/usr/local/lib/dam/dam.mjs`, and `/usr/local/bin/dam` on the PATH runs it, with no configuration of its own.
-The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the install's public base URL, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
+The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
 The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
 That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).
 Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — send their credential in a WebSocket's query string rather than in the header the Connection injects, so they are the person's own and fail from inside an Agent; the in-agent skill says so rather than leaving the Agent to guess.

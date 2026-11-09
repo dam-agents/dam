@@ -91,16 +91,18 @@ It carries every scope a person's own key can and none of the satellite scopes, 
 It is stored in the per-Connection Secret as a header credential, and the Connection remembers the key's id, so deleting the Connection revokes the key and a later provisioning mints another.
 Every key is written to a ledger before anything uses it and taken out only once this Connection names it, so a failure anywhere between minting and that write costs a key rather than leaving one live and unnamed: a queued key no Connection names is revoked by a sweep, which also drops the entries a Connection did take over.
 A delete revokes every key the Connection names and every key still queued under it, and a revoke the key store could not complete fails the delete and removes nothing; the delete and a rotation of one Connection take the same lock, so neither acts on a key the other has just replaced.
-The Agent holds only placeholders: `DAM_SERVER`, the install's public base URL, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
+The Agent holds only placeholders: `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
 
-Its contributions are the install's host allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.
+Its contributions are that Service's name allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.
 
-**Which host.** The upstream is the install's own public URL (`UI_BASE_URL`), and the template exists only where that URL is `https` on a DNS name that is neither loopback nor an IP literal: the credential chain terminates TLS, so a plain-HTTP install — the local cluster's — has no such Connection.
-That host belongs to this Connection alone: any other Connection naming it is refused at create, and a gateway chain that carries this Connection's key takes its upstream port and CA from this Connection, never from a peer on the same host, so the key only goes where the install published it.
-A gateway pod reaches that host over the public internet minus the private and loopback ranges, so an install whose name resolves inside the cluster or a private network needs that range opened ([security and credentials](security-and-credentials.md#hitl-ext_authz)).
+**Which host.** The name is the api-server's own public Service, as the api-server learns it from `PLATFORM_APISERVER_URL`: the Agent dials it over HTTPS, its gateway terminates that TLS with the install's own leaf and [takes the request to that Service inside the cluster](credential-gateway.md#the-chain-to-the-installs-own-service).
+So the route needs no public address of its own and works on every install, a plain-HTTP localhost one included — the leaf covers the name, and the DNS answer the machine gets for it is its gateway's, as for any host.
+That name belongs to this Connection alone: any other Connection naming it is refused at create, and a gateway chain that carries this Connection's key takes its upstream port and CA from this Connection, never from a peer on the same name.
 
 **When its key stops working.** A key the owner revokes by hand in Settings leaves the Connection reading expired, and the owner's own action puts it back: rotating mints a fresh key into the same Connection, keeping its id, its grants and every Agent's env.
 Nothing mints a replacement by itself, so a key revoked on purpose stays revoked until someone asks for a new one.
+
+**Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too (D257B), and each surface that decides it says so.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
 The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.

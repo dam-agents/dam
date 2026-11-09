@@ -1063,7 +1063,7 @@ func buildClusters(p bootstrapParams) []any {
 	}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA, p.APIServerHost, p.APIServerPort))
 		}
 	}
 	if p.Telemetry {
@@ -1147,7 +1147,11 @@ func pinnedTCPCluster(name, host string, port int) ev {
 	}
 }
 
-func buildUpstreamCluster(c envoyHostChain, trustedCA string) ev {
+/* UNIT_BOUNDARY_DESCRIPTION: a chain marked in-cluster dials the api-server's public Service by name and port, plain TCP — the ambient mesh carries it, as it carries the Agent Key chain — instead of the host the Agent named, so no Host, SNI or DNS answer can send the install's key anywhere else. */
+func buildUpstreamCluster(c envoyHostChain, trustedCA string, apiserverHost string, apiserverPort int) ev {
+	if c.InCluster {
+		return pinnedTCPCluster(c.UpstreamCluster, apiserverHost, apiserverPort)
+	}
 	if c.UpstreamCAFile != "" {
 		trustedCA = c.UpstreamCAFile
 	}

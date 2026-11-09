@@ -126,8 +126,18 @@ An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself be
   An install whose addresses are plain HTTP, as the local cluster's are, reaches the same filters: the proxy listener sends an authority of one label under the domain, any port, to an internal listener that runs them.
 - **Where it goes.** The route sends every request to the api-server's public Service inside the cluster, plain HTTP, Host kept, WebSocket upgrades included, and never to an address the name resolves to: that works on a cluster whose environments domain resolves only from outside, and behind a proxy.
   A Host outside the domain is answered 421 at the gateway, before ext_authz, so the key reaches the gate and no other route of the api-server; `X-Forwarded-For` and `X-Real-IP` are removed, as the ingress would.
-- **The port.** The gateway's egress policy admits the api-server's public port only on an install that serves Environments; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+- **The port.** The gateway's egress policy admits the api-server's public port on every install; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
   The controller reads the domain and the port from `PLATFORM_ENVIRONMENTS_DOMAIN` and `PLATFORM_APISERVER_PORT`.
+
+## The chain to the install's own Service
+
+The [Connection that drives the install](connection-presets.md#platform-preset-this-install-itself) points at the api-server's own public Service, by the name that Service answers to inside the cluster.
+The Agent dials that name over HTTPS, so the chain is an ordinary terminating one — the leaf names it like any other chain's host, and the install's own CA is what the Agent trusts — and its credential is injected on `/api/` exactly as any other's is.
+
+What differs is the upstream: the chain is **pinned** to the [api-server's public Service](security-and-credentials.md#credential-injection) by name and port, over plain TCP that the ambient mesh carries, instead of dialing whatever the name resolves to.
+So neither an Agent's `Host` header nor a name it caused to resolve can send that key anywhere but the Service the install published, and a peer Connection on the same name cannot move the port or the CA: the chain takes both from this Connection alone.
+Its routes are the API paths alone — `/api/` in all its spellings, including the addressed one — and a request to any other path on that name is answered 404 at the gateway, never forwarded.
+That is what makes the route work on every install: a plain-HTTP one, like the local cluster's, has no public name to reach, and this chain never needs one.
 
 ## Request signing
 

@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -20,12 +21,27 @@ const (
 	machineDNSGatewayIPEnv = "GATEWAY_IP"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: A name no public resolver could answer — a single label, or one under a special-use or cluster-internal suffix such as `svc`, `local` or `internal` — does not exist. A cluster inside the machine relies on that: its resolver asks upstream before its own search list, and a gateway address for `<service>.<namespace>.svc` would send it to the gateway instead of the Service. Every other name's A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
-var machineDNSCorefile = machineDNSServerBlock(gatewayMachineDNSPort, "{$"+machineDNSGatewayIPEnv+"}", "")
+// UNIT_BOUNDARY_DESCRIPTION: A name no public resolver could answer — a single label, or one under a special-use or cluster-internal suffix such as `svc`, `local` or `internal` — does not exist. A cluster inside the machine relies on that: its resolver asks upstream before its own search list, and a gateway address for `<service>.<namespace>.svc` would send it to the gateway instead of the Service. One name is the exception: the api-server's own Service, which the Connection that drives this install names over HTTPS, so that name answers with the gateway's address and its chain takes the request to the Service inside the cluster. Every other name's A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
+func machineDNSCorefile(cfg *config.Config) string {
+	return machineDNSServerBlock(gatewayMachineDNSPort, "{$"+machineDNSGatewayIPEnv+"}", "", cfg.APIServerHost())
+}
 
-func machineDNSServerBlock(port int, answer, extra string) string {
+func machineDNSServerBlock(port int, answer, extra, clusterService string) string {
+	allowed := ""
+	if clusterService != "" {
+		quoted := regexp.QuoteMeta(clusterService)
+		allowed = fmt.Sprintf(`    template IN A {
+        match "^%s\.$"
+        answer "{{ .Name }} 60 IN A %s"
+    }
+    template IN AAAA {
+        match "^%s\.$"
+        rcode NOERROR
+    }
+`, quoted, answer, quoted)
+	}
 	return fmt.Sprintf(`.:%d {
-%s    template ANY ANY {
+%s%s    template ANY ANY {
         match "^[^.]+\.$"
         match "\.(svc|local|localhost|internal|invalid|test|example|home\.arpa)\.$"
         rcode NXDOMAIN
@@ -41,12 +57,14 @@ func machineDNSServerBlock(port int, answer, extra string) string {
         rcode REFUSED
     }
 }
-`, port, extra, answer)
+`, port, extra, allowed, answer)
 }
 
 type ownerResolverBlock struct {
 	Port      int
 	ClusterIP string
+	/* UNIT_BOUNDARY_DESCRIPTION: the api-server Service name this resolver answers despite the cluster-internal suffixes it otherwise refuses, so an Agent of this owner can name the install it drives. */
+	ClusterService string
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner gateway's resolver, one CoreDNS for every vm Agent of the owner. Each agent's resolver port is a server block of its own that answers every public name with that agent's own gateway address as a literal, by the same rules as a per-agent resolver. With no agent, one block refuses everything, since CoreDNS with an empty file serves its default whoami on port 53. CoreDNS reads the file again when the volume changes it, so adding or removing an agent never restarts the container and never touches another agent's block.
@@ -58,7 +76,7 @@ func ownerResolverCorefile(blocks []ownerResolverBlock) string {
 	}
 	var out strings.Builder
 	for _, b := range sorted {
-		out.WriteString(machineDNSServerBlock(b.Port, b.ClusterIP, "    reload 2s\n"))
+		out.WriteString(machineDNSServerBlock(b.Port, b.ClusterIP, "    reload 2s\n", b.ClusterService))
 	}
 	return out.String()
 }

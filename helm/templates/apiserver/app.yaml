@@ -237,6 +237,11 @@ spec:
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL
               value: {{ include "platform.apiserver.harnessUrl" . | quote }}
+            # The api-server's own public Service, as a gateway pod reaches it.
+            # The Connection that lets an Agent drive this install names that
+            # address over HTTPS, and its gateway chain takes the request there.
+            - name: PLATFORM_APISERVER_URL
+              value: {{ include "platform.apiserver.serviceUrl" . | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL

@@ -210,7 +210,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   S3 authenticates by signing each request with the secret key, so there is no value to inject: the agent holds a placeholder key ID that names the Connection, and the gateway re-signs its requests with the real pair ([credential-gateway](credential-gateway.md#request-signing)).
   The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the machine: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
 
-A key the platform mints for a Connection of its own — the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) — is stored the same way and revoked with that Connection; the Agent holds a placeholder, and the Secret is the only copy.
+A key the platform mints for its own Connection — the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) — is stored and revoked with it.
 
 **Multi-host connections.** A single OAuth connection can inject the same token on more than one host with **different auth schemes per host**, all from one K8s Secret.
 The Secret carries an annotated list of per-host injection descriptors; the controller fans it into one Envoy filter chain per host, stacking entries that share a host, and mounts the Secret once.
@@ -266,9 +266,10 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
-A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — L7 promotion, per-host chains, injection steps, request signing, path rewriting, addressing between Connections, and how a bad Secret degrades rather than wedges the gateway — live on [credential-gateway](credential-gateway.md).
+Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
+A credentialed host is pinned to its upstream — for that Connection, the api-server's own Service, by name and port — so a request cannot carry a credential to a destination of the agent's choosing; route-confusion exfiltration is structurally closed.
+The api-server's ingress policy admits that hop on its public port as HBONE from the agent namespace alone, and the key the chain injects authenticates it: a gateway whose Agents hold no such Connection has no key to send.
+The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades instead of wedging the gateway — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
@@ -348,8 +349,6 @@ Every channel turn relays to the main agent ([channel-turns](channel-turns.md)) 
 Such a turn can also place a file in the Agent's workspace: an attachment sent in the conversation is written there for the agent to open, so a speaker with no platform identity is a writer to persistent state ([persistence](persistence.md)).
 What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above).
 The binding owner's Terms-of-Use acceptance gates each turn — the terms bind the party whose credentials run it — and the security log attributes the allow to the messenger-native sender id with basis *place*.
-
-An Agent that holds the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) lends its owner's access to whoever drives it (D257B), and the UI says so where that is decided.
 
 ## `dam-run`
 

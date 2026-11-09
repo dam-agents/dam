@@ -123,6 +123,8 @@ type envoyHostChain struct {
 	Upgrades        bool
 	UpstreamCAFile  string
 	PathRewrites    []envoyPathRewrite
+	// UNIT_BOUNDARY_DESCRIPTION: set on the chain that carries the install's own key: its upstream is the api-server's public Service inside the cluster, pinned by name and port, so the Agent's Host and SNI can never send that key anywhere else.
+	InCluster bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
 	AgentKey *envoyCredential
 }
@@ -226,8 +228,12 @@ func (c envoyHostChain) PathScopedCredentials() bool {
 }
 
 func (c envoyHostChain) PathScopes() []string {
-	seen := map[string]bool{"/": true}
-	scopes := []string{"/"}
+	seen := map[string]bool{}
+	scopes := []string{}
+	if !c.InCluster {
+		seen["/"] = true
+		scopes = append(scopes, "/")
+	}
 	for _, cred := range c.Credentials {
 		s := injectionScope(cred.PathPattern)
 		if seen[s] {
@@ -276,7 +282,7 @@ func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
 	seen := map[string]bool{}
 	var out []string
-	if c.Signs(connectionID) {
+	if c.Signs(connectionID) && !c.InCluster {
 		seen["/"] = true
 		out = append(out, "/")
 	}
@@ -838,6 +844,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			continue
 		}
 		port, caFile := b.opts.port, b.opts.caFile
+		inCluster := b.damOpts != nil
 		if b.damOpts != nil {
 			if port != b.damOpts.port || caFile != b.damOpts.caFile {
 				slog.Warn("a peer Connection tried to move the chain that carries the install's own key; keeping the address its Connection published",
@@ -857,6 +864,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			Upgrades:        b.opts.upgrades,
 			UpstreamCAFile:  caFile,
 			PathRewrites:    b.opts.pathRewrites,
+			InCluster:       inCluster,
 		})
 	}
 	if keyChain != nil {
@@ -967,7 +975,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
-	data[machineDNSCorefileKey] = machineDNSCorefile
+	data[machineDNSCorefileKey] = machineDNSCorefile(cfg)
 	if data[envoyLeafSDSKey], err = renderLeafSDS(""); err != nil {
 		return nil, err
 	}
