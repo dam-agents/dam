@@ -389,6 +389,13 @@ fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = grow_btrfs(target) {
         logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
     }
+    if let Some(stat) = statvfs(target) {
+        #[allow(clippy::unnecessary_cast)]
+        DISK_BYTES.store(
+            (stat.f_blocks as u64).saturating_mul(stat.f_frsize as u64),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
     if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
         fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
     }
@@ -403,12 +410,15 @@ struct VolArgs {
 }
 
 fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
+    btrfs_ioctl_at(&File::open(dir)?, request, name)
+}
+
+fn btrfs_ioctl_at(dir: &File, request: u8, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
         fd: 0,
         name: [0; 4088],
     };
     args.name[..name.len()].copy_from_slice(name.as_bytes());
-    let dir = File::open(dir)?;
     // SAFETY: _IOW(0x94, request, struct btrfs_ioctl_vol_args), on an open directory of the filesystem, with `args` alive for the call.
     succeeded(
         unsafe {
@@ -424,6 +434,79 @@ fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE with "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
 fn grow_btrfs(mount: &Path) -> io::Result<()> {
     btrfs_ioctl(mount, 3, "max")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the storage disk's whole size, as btrfs read it once it grew to the disk at mount: the most a resize may ask for (resize_btrfs). Nothing until the disk is mounted.
+pub static DISK_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE of device 1 to `bytes`, through any descriptor on the filesystem, so it works through the guard's descriptor after the disk's mount is detached. A growth only moves the end; a shrink past the end of the last chunk (allocated_end) moves it as well, while a smaller one would relocate those chunks first, which callers never ask for.
+pub fn resize_btrfs(dir: &File, bytes: u64) -> io::Result<()> {
+    btrfs_ioctl_at(dir, 3, &bytes.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_search_args: the key that selects the items of one tree, and the buffer the kernel fills with them, each after a 32-byte header of its transid, objectid, offset, type and length in the CPU's order; the items themselves are on-disk structures, little-endian.
+#[repr(C)]
+struct SearchArgs {
+    tree_id: u64,
+    min_objectid: u64,
+    max_objectid: u64,
+    min_offset: u64,
+    max_offset: u64,
+    min_transid: u64,
+    max_transid: u64,
+    min_type: u32,
+    max_type: u32,
+    nr_items: u32,
+    unused: u32,
+    unused1: [u64; 4],
+    buf: [u8; 3992],
+}
+
+const DEV_TREE: u64 = 4;
+const DEV_EXTENT_KEY: u32 = 204;
+
+// UNIT_BOUNDARY_DESCRIPTION: where the last chunk btrfs placed on device 1 ends: the largest end of its dev extents (BTRFS_IOC_TREE_SEARCH of the device tree, key type DEV_EXTENT, whose item holds the extent's length 24 bytes in). A filesystem resized to here or past it moves no data, and one resized below it relocates every chunk past the new end first. The device's own used bytes would not do, since a chunk btrfs removed leaves a hole below the end that they do not count.
+pub fn allocated_end(dir: &File) -> io::Result<u64> {
+    let (mut end, mut from) = (0u64, 0u64);
+    loop {
+        let mut args = SearchArgs {
+            tree_id: DEV_TREE,
+            min_objectid: 1,
+            max_objectid: 1,
+            min_offset: from,
+            max_offset: u64::MAX,
+            min_transid: 0,
+            max_transid: u64::MAX,
+            min_type: DEV_EXTENT_KEY,
+            max_type: DEV_EXTENT_KEY,
+            nr_items: u32::MAX,
+            unused: 0,
+            unused1: [0; 4],
+            buf: [0; 3992],
+        };
+        // SAFETY: _IOWR(0x94, 17, struct btrfs_ioctl_search_args) on an open descriptor of the filesystem, with `args` alive and writable for the call.
+        succeeded(
+            unsafe {
+                libc::ioctl(
+                    dir.as_raw_fd(),
+                    libc::_IOWR::<SearchArgs>(0x94, 17),
+                    &mut args,
+                )
+            } == 0,
+        )?;
+        if args.nr_items == 0 {
+            return Ok(end);
+        }
+        let mut at = 0;
+        for _ in 0..args.nr_items {
+            let bytes = |at: usize| -> [u8; 8] { args.buf[at..at + 8].try_into().unwrap() };
+            let offset = u64::from_ne_bytes(bytes(at + 16));
+            let len = u32::from_ne_bytes(args.buf[at + 28..at + 32].try_into().unwrap()) as usize;
+            end = end.max(offset.saturating_add(u64::from_le_bytes(bytes(at + 32 + 24))));
+            from = offset.saturating_add(1);
+            at += 32 + len;
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.

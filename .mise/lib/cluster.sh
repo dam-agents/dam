@@ -511,8 +511,8 @@ node_host_dirs_at_boot() {
 }
 
 # NODE_IMAGE_GC_DROPIN: no image garbage collection and no disk eviction in an
-# Environment's k3s. The outer guard's grant counts as used there, so the
-# kubelet reads the disk as nearly full whatever the files take: past 85% its
+# Environment's k3s. The outer guest's disk is held to its grant, so while the
+# owner's storage is short the kubelet reads the disk as nearly full: past 85% its
 # image collection deleted the agent image a minute after the install
 # imported it (#6128), and under 5% free, k3s's hard eviction thresholds,
 # its eviction manager deletes every image no container runs and evicts pods,

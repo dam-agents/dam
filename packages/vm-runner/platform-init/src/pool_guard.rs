@@ -42,6 +42,11 @@ impl PoolGuard {
         avail.saturating_sub(self.keep)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: forgets the ceiling a refused growth found: it measured the filesystem at the size it had, and a resize moved that size, so the next growth finds the ceiling again if it still has one.
+    pub fn resized(&mut self) {
+        self.ceiling = None;
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two until within POOL_GUARD_STEP, for the largest guard that fits, about 14 preallocations on a 200 GiB disk; which is what the guest could write without one. A coarser ceiling would hand its gap back to the guest at every look, past its grant. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
     pub fn grow(
         &mut self,
@@ -72,6 +77,16 @@ impl PoolGuard {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the size a guard move sets the guest's filesystem to: what the guest has written (`mine`) and the room it is to keep, so `df`, and a kubelet or anything else nested in the guest, reads the room the claim has rather than the whole disk with most of it held. Rounded up to the 4 KiB sector btrfs rounds a size down to. Never below `allocated`, the end of the last chunk btrfs placed (boot::vm::allocated_end): a smaller size has btrfs relocate the chunks past it first, which rewrites live data on the claim, takes up to a chunk more of it while it runs, lasts minutes on a slow disk and fails when the room is small, so the guard files hold what lies between `mine + keep` and the chunks' end instead. Without a grant (`keep` None) nothing is held and the filesystem is the whole disk; no size passes the disk.
+pub fn disk_size(keep: Option<u64>, mine: u64, allocated: u64, disk: u64) -> u64 {
+    keep.map_or(disk, |keep| {
+        mine.saturating_add(keep)
+            .next_multiple_of(4096)
+            .max(allocated)
+    })
+    .min(disk)
+}
+
 pub fn read_grant(text: &str) -> Option<(String, u64)> {
     let mut words = text.split_whitespace();
     let id = words.next()?.to_string();
@@ -87,17 +102,25 @@ pub fn guest_room(keep: u64, granted: bool, avail: u64) -> u64 {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the text of guest::STORAGE_GUARD_NOTE for a guard that holds `held` bytes and leaves the agent `room`, in GiB to a tenth, so it changes only when a reader would see it change.
-pub fn guard_note(held: u64, room: u64) -> String {
+// UNIT_BOUNDARY_DESCRIPTION: the text of guest::STORAGE_GUARD_NOTE for a guard that holds `held` bytes and leaves the agent `room`, in GiB to a tenth, so it changes only when a reader would see it change. Without a grant (`granted` false) the filesystem is the whole disk and nothing is held, so there is no size to explain.
+pub fn guard_note(granted: bool, held: u64, room: u64) -> String {
     let gib = |bytes: u64| format!("{:.1} GiB", bytes as f64 / f64::from(1u32 << 30));
-    if held == 0 {
+    let sized = "This disk is sparse, on the storage this owner's VM agents share. Every running VM agent may write what that storage has \
+         left above its reserve, and its filesystem is sized to that, so `df` reports the room the shared storage has rather than the whole disk.";
+    if !granted && held == 0 {
         return "The platform holds back none of this disk now.\n".to_string();
+    }
+    if held == 0 {
+        return format!(
+            "The platform holds back none of this disk now.\n{sized} This agent may write {} more now.\n",
+            gib(room)
+        );
     }
     format!(
         "The platform holds back {} of this disk, so it reads that much fuller than its files: \
          unnamed files that PID 1 (/mnt/init) keeps open under /system/{}, which `lsof +L1` lists as deleted. They are not a leak.\n\
-         This disk is sparse, on the storage this owner's VM agents share. Every running VM agent may write what that storage has \
-         left above its reserve, and the hold keeps this one to that: it may write {} more now.\n\
+         {sized} The filesystem cannot be made smaller than the space its data spans without rewriting that data, so the hold \
+         keeps the rest of it to the room: this agent may write {} more now.\n\
          The hold follows the shared storage within a minute, and a restart does not release it. To get room, delete files in \
          this or another VM agent, delete or put to sleep VM agents you no longer need, or request more storage.\n",
         gib(held),
@@ -274,7 +297,7 @@ mod tests {
     // TEST_SCENARIO: the note names what is held back, where the files are, that they are no leak and what frees room, in figures a reader can check against `df`; a guard that holds nothing says so instead of explaining a hold.
     #[test]
     fn the_note_explains_the_hold() {
-        let note = guard_note(73 * GIB + GIB / 2, 4 * GIB);
+        let note = guard_note(true, 73 * GIB + GIB / 2, 4 * GIB);
         for words in [
             "73.5 GiB",
             "/system/storage-guard",
@@ -284,8 +307,15 @@ mod tests {
         ] {
             assert!(note.contains(words), "{words:?} missing from {note}");
         }
+        let idle = guard_note(true, 0, 4 * GIB);
+        assert!(
+            idle.starts_with("The platform holds back none of this disk now.\n")
+                && idle.contains("`df` reports")
+                && idle.contains("4.0 GiB more"),
+            "a guard that holds nothing explains the hold instead of the size: {idle}"
+        );
         assert_eq!(
-            guard_note(0, 4 * GIB),
+            guard_note(false, 0, 4 * GIB),
             "The platform holds back none of this disk now.\n"
         );
     }
@@ -468,6 +498,41 @@ mod tests {
             assert_eq!(next, Room::Held, "{room}");
             mark = next;
         }
+    }
+
+    // TEST_SCENARIO: a guard move sizes the filesystem to what the guest wrote and the room it keeps, so `df` reads the claim's room and the guard holds nothing at all; where btrfs placed chunks past that, the size stops at their end, since a smaller one would relocate them, and the guard holds the rest, so the guest still writes no more than its room. Without a grant the filesystem is the whole disk, and no size passes the disk.
+    #[test]
+    fn the_filesystem_is_sized_to_the_room_and_the_guard_holds_the_rest() {
+        let (disk, mine) = (100 * GIB, 10 * GIB);
+        let grant = || Some(("1".to_string(), 5 * GIB));
+        let mut state = PoolGuard::default();
+        guard_look(&mut state, grant(), mine, disk - mine, 0, disk, true);
+        let size = disk_size(Some(state.keep), mine, 11 * GIB, disk);
+        assert_eq!(
+            size,
+            15 * GIB,
+            "the filesystem is not the guest's data and its room"
+        );
+        assert_eq!(
+            guard_look(&mut state, grant(), mine, size - mine, 0, size, true),
+            None,
+            "a filesystem sized to the room still had the guard hold some of it"
+        );
+        assert_eq!(guest_room(state.keep, true, size - mine), 5 * GIB);
+        let size = disk_size(Some(state.keep), mine, 18 * GIB, disk);
+        assert_eq!(
+            size,
+            18 * GIB,
+            "the size went below the chunks btrfs placed"
+        );
+        assert_eq!(
+            guard_look(&mut state, grant(), mine, size - mine, 0, size, true),
+            Some(3 * GIB),
+            "the guard does not hold what lies between the room and the chunks' end"
+        );
+        assert_eq!(disk_size(None, mine, 11 * GIB, disk), disk);
+        assert_eq!(disk_size(Some(200 * GIB), mine, 11 * GIB, disk), disk);
+        assert_eq!(disk_size(Some(1), 0, 0, disk), 4096);
     }
 
     // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
