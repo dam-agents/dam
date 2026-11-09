@@ -15,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
   createDefaultModelNoticeReader,
+  createRunBoundary,
   isNoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
@@ -43,7 +44,10 @@ import {
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
-import { composeProfilesForOwner } from "../../../modules/profiles/index.js";
+import {
+  composeProfileResolverOn,
+  composeProfilesForOwner,
+} from "../../../modules/profiles/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import {
   composeChatFormPreferencesForOwner,
@@ -58,6 +62,7 @@ import {
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
+import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
@@ -85,11 +90,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     seedSources,
     spendForOwner,
     spendCeilingsForOperator,
+    spendHold,
     userBudgetsForOperator,
+    loginTestimonials,
     providerStatus,
     outageAlerts,
     wrapperFrameSender,
     presetSeeder,
+    platformAccess,
     trustedHosts,
     agentCleanupHooks,
     environmentsFor,
@@ -169,6 +177,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      newAgentProvider: async () => {
+        const chosen = await defaultProfile();
+        return chosen
+          ? { connectionId: chosen.connectionId, harness: chosen.harness }
+          : null;
+      },
     });
     const secretRequests = composeSecretRequestsForOwner({
       ownerId: user.sub,
@@ -183,6 +197,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { budgets, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
+      cpuPool: {
+        defaultCpu: config.defaultUserCpuBudget,
+        machineCpus: config.vmMachineCpus,
+        agentStore: { authority: config.agentStore, db },
+      },
       listAgentIds: async () =>
         (await agentsRepo.list(user.sub)).map((a) => a.id),
       isSlackUnlinked: async () =>
@@ -199,6 +218,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         catalog: harnesses,
         seed: config.curveBenderDeployment && config.defaultProfileSeed,
         ownerCatalog: () => connections.modelCatalog(),
+        // UNIT_BOUNDARY_DESCRIPTION: the deployment owns that Connection only while its key is set, so only then does a create reconcile it.
+        ...(config.curveBenderDeployment && {
+          reconcileConnections: () => connections.reconcileManagedConnections(),
+        }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
@@ -295,9 +318,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
-      agentExists,
-    });
     const { features } = composeFeaturesForOwner({
       db,
       owner: user.sub,
@@ -323,6 +343,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       k8s: k8sClient,
       db,
     });
+    const chatSessionPair = (agentId: string) =>
+      firePair(agentId, "chat", {}).catch((err: unknown) => {
+        if (isNoDefaultModelError(err))
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
+          });
+        throw err;
+      });
     const { starterKits } = composeStarterKitsForOwner({
       owner: user.sub,
       repo: starterKitsRepo,
@@ -336,15 +365,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
-      sessionPair: (agentId) =>
-        firePair(agentId, "chat", {}).catch((err: unknown) => {
-          if (isNoDefaultModelError(err))
-            throw new TRPCError({
-              code: "PRECONDITION_FAILED",
-              message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
-            });
-          throw err;
-        }),
+      sessionPair: chatSessionPair,
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
@@ -371,6 +392,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       l7Hosts,
       presetSeeder,
       trustedHosts,
+      platformAccess,
     });
     const { service: approvals } = composeApprovalsService({
       db,
@@ -386,6 +408,26 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       wrapperFrameSender,
     });
+    const costReviews = composeCostReviewsForOwner({
+      db,
+      owner: user.sub,
+      floors: {
+        minWeeklyUsd: config.costReviewMinWeeklyUsd,
+        minWeeklyBobcoins: config.costReviewMinWeeklyBobcoins,
+      },
+      ownedAgents: async () =>
+        (await agentsRepo.list(user.sub)).flatMap((agent) =>
+          agent.createdAt
+            ? [{ id: agent.id, createdAt: new Date(agent.createdAt) }]
+            : [],
+        ),
+      spendHold,
+      sessionPair: chatSessionPair,
+      runtimeMutator,
+      wakeAgent,
+      interactiveReports: async () =>
+        (await features.flags())["interactive-artifacts"],
+    });
     const attention = composeAttentionService({
       db,
       ownerSub: user.sub,
@@ -399,6 +441,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           resolveProfile,
         )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
+      costReviews: () => costReviews.offers(),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -411,7 +454,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
     });
     const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
+    /* UNIT_BOUNDARY_DESCRIPTION: the defaults a runtime follows are settled for their run here, so the event carries the native subagent keys derived from each pair (D193B). */
+    const runBoundary = createRunBoundary({
+      inputsOf: async (agentId) => ({
+        capabilities: await getAgentCapabilities(agentId),
+        catalog: await connections.modelCatalog(agentId),
+      }),
+    });
     const { service: harnessConfig } = composeHarnessConfigModule({
+      boundary: runBoundary,
+      resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
       catalog: harnesses,
       resolveProfile,
       db,
@@ -421,12 +473,18 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
+      ownerCatalog: (agentId) => connections.modelCatalog(agentId),
       specHarness: async (agentId) =>
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
       hiddenHarnesses: async () =>
         new Set((await features.flags()).hermes ? [] : ["hermes"]),
+    });
+    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
+      agentExists,
+      validateChoice: (agentId, pair, references) =>
+        harnessConfig.validateChoice(agentId, pair, references),
     });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]
@@ -515,6 +573,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       skills,
       approvals,
       attention,
+      costReviews,
       egressRules,
       invocationsQuery,
       environments: environmentsFor(user.sub),
@@ -549,6 +608,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       }),
       spendCeilings: spendCeilingsForOperator(user.sub),
       userBudgets: userBudgetsForOperator(user.sub),
+      loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,

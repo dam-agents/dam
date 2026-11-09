@@ -16,6 +16,7 @@ import {
   unique,
   smallint,
   check,
+  uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -140,6 +141,32 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
     >()
     .notNull(),
 });
+
+/* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
+ * start_thread, so every message in it reaches that Session as a turn of its
+ * own. A thread has at most one owner across the install. The row lives in
+ * the platform, not the Agent, so a reply is routed without waking the Agent
+ * to list its Sessions, and a restart keeps it. `deliveredUpTo` is the newest
+ * message the Session was handed, the boundary a later turn catches up from. */
+export const slackOwnedThreads = pgTable(
+  "slack_owned_threads",
+  {
+    channelId: text("channel_id").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    teamId: text("team_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    firstLine: text("first_line").notNull(),
+    deliveredUpTo: text("delivered_up_to").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.threadTs] }),
+    index("slack_owned_threads_session_idx").on(table.agentId, table.sessionId),
+  ],
+);
 
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
@@ -430,6 +457,12 @@ export const profiles = pgTable(
     harness: text("harness").notNull(),
     providerTemplate: text("provider_template").notNull(),
     model: text("model").notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent the profile names, as a
+     * provider template and a model of it; a slot following the profile
+     * resolves to it while its own sub-agent slot is empty, and both null is
+     * "Same as agent" (D193B). */
+    subagentProviderTemplate: text("subagent_provider_template"),
+    subagentModel: text("subagent_model"),
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -444,6 +477,10 @@ export const profiles = pgTable(
       .on(table.owner, table.seed)
       .where(sql`${table.seed} is not null`),
     index("profiles_owner_idx").on(table.owner),
+    check(
+      "profiles_subagent_xor_template",
+      sql`(${table.subagentProviderTemplate} is null) = (${table.subagentModel} is null)`,
+    ),
   ],
 );
 
@@ -546,6 +583,17 @@ export const agentSessions = pgTable(
   ],
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the owner's answer to the platform's offer of a
+ * cost review for an Agent: accepted, which is final, or dismissed by Later,
+ * which hides the offer only until `decided_at` is old enough. */
+export const agentCostReviews = pgTable("agent_cost_reviews", {
+  agentId: text("agent_id").primaryKey(),
+  decision: text("decision").notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentEnv = pgTable(
   "agent_env",
   {
@@ -568,10 +616,11 @@ export const environments = pgTable(
     name: text("name").notNull(),
     host: text("host").notNull(),
     endpoints: jsonb("endpoints")
-      .$type<{ name: string; port: number }[]>()
+      .$type<{ name: string; port: number; ready?: string }[]>()
       .notNull(),
     access: jsonb("access").$type<string[] | null>(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // UNIT_BOUNDARY_DESCRIPTION: when the expiry sweep deletes the Environment; null when its owner or Owning Agent keeps it with no expiry.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -587,6 +636,105 @@ export const environments = pgTable(
   ],
 );
 
+// UNIT_BOUNDARY_DESCRIPTION: the Agent Environment Members of each Agent: one row per email its owner or an Agent Editor names, who may open every Environment of that Agent.
+export const agentEnvironmentMembers = pgTable(
+  "agent_environment_members",
+  {
+    owningAgentId: text("owning_agent_id").notNull(),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owningAgentId, table.email] }),
+    index("agent_environment_members_email_idx").on(table.email),
+  ],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: the Environment Members of each Environment: one row per email its owner adds to that one Environment, on top of its Agent's members.
+export const environmentMembers = pgTable(
+  "environment_members",
+  {
+    environmentId: text("environment_id")
+      .notNull()
+      .references(() => environments.agentId, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.environmentId, table.email] }),
+    index("environment_members_email_idx").on(table.email),
+  ],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agents, of any owner, an owner or an Agent Editor names on an Agent's page to open every Environment of that Agent, beside its people. A row per Agent id; an Agent's rows go when it is deleted, whichever side of the row it is.
+export const agentEnvironmentAgentMembers = pgTable(
+  "agent_environment_agent_members",
+  {
+    owningAgentId: text("owning_agent_id").notNull(),
+    memberAgentId: text("member_agent_id").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owningAgentId, table.memberAgentId] }),
+    index("agent_environment_agent_members_member_idx").on(table.memberAgentId),
+  ],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agents, of any owner, the owner adds to one Environment in its Share dialog, beside its people.
+export const environmentAgentMembers = pgTable(
+  "environment_agent_members",
+  {
+    environmentId: text("environment_id")
+      .notNull()
+      .references(() => environments.agentId, { onDelete: "cascade" }),
+    memberAgentId: text("member_agent_id").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.environmentId, table.memberAgentId] }),
+    index("environment_agent_members_member_idx").on(table.memberAgentId),
+  ],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: when an Agent last opened an Environment through the gate, at most once a minute, so its owner sees whether a listed Agent uses its access. Goes with the Environment and with the Agent.
+export const environmentAgentVisits = pgTable(
+  "environment_agent_visits",
+  {
+    environmentId: text("environment_id")
+      .notNull()
+      .references(() => environments.agentId, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.environmentId, table.agentId] }),
+    index("environment_agent_visits_agent_idx").on(table.agentId),
+  ],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: each Agent's Agent Key, as a hash only: the credential its gateway sends to the Environment gate, which reads the Agent from it. One per Agent at most, written while the Agent carries the platform's Environments rule and removed with it and with the Agent. The plaintext lives only in the Agent's gateway Secret.
+export const agentKeys = pgTable(
+  "agent_keys",
+  {
+    agentId: text("agent_id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    hash: text("hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [uniqueIndex("agent_keys_hash_idx").on(table.hash)],
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: no longer read or written; agent_environment_members holds the list. Kept for one release, with environments.access, so a rollback still finds them.
 export const environmentAccessLists = pgTable("environment_access_lists", {
   owningAgentId: text("owning_agent_id").primaryKey(),
   owner: text("owner").notNull(),
@@ -729,6 +877,7 @@ export const satellites = pgTable(
     maxConcurrent: integer("max_concurrent").notNull(),
     tools: jsonb("tools").notNull(),
     nextSequence: integer("next_sequence").notNull().default(1),
+    incarnation: uuid("incarnation").notNull().defaultRandom(),
     draining: boolean("draining").notNull().default(false),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -767,10 +916,13 @@ export const satelliteJobs = pgTable(
     isError: boolean("is_error").notNull().default(false),
     exitCode: integer("exit_code"),
     output: text("output"),
+    images: jsonb("images"),
     truncated: boolean("truncated").notNull().default(false),
     reason: text("reason"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),
     cancelSentAt: timestamp("cancel_sent_at", { withTimezone: true }),
+    transferTokenHash: text("transfer_token_hash"),
+    transferDirection: text("transfer_direction"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
@@ -1019,6 +1171,16 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a Session that a prompt from this interactive page opens runs on, in the two slots a channel binding keeps; all four null follows the agent's channel pair. */
+    promptProfileId: text("prompt_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    promptSessionPair: jsonb("prompt_session_pair"),
+    promptSubagentProfile: text("prompt_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    promptSubagentSettings: jsonb("prompt_subagent_settings"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1036,6 +1198,14 @@ export const libraryArtifacts = pgTable(
     index("library_artifacts_expires_idx")
       .on(table.expiresAt)
       .where(sql`${table.expiresAt} is not null`),
+    check(
+      "library_artifacts_prompt_pair_xor_profile",
+      sql`${table.promptProfileId} is null or ${table.promptSessionPair} is null`,
+    ),
+    check(
+      "library_artifacts_prompt_subagent_xor_profile",
+      sql`${table.promptSubagentProfile} is null or ${table.promptSubagentSettings} is null`,
+    ),
   ],
 );
 
@@ -1139,6 +1309,7 @@ export const invocations = pgTable(
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     reapedAt: timestamp("reaped_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")
@@ -1310,6 +1481,23 @@ export const avatarImages = pgTable("avatar_images", {
     .defaultNow()
     .notNull(),
 });
+
+export const loginTestimonials = pgTable(
+  "login_testimonials",
+  {
+    id: text("id").primaryKey(),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    role: text("role").notNull().default(""),
+    quote: text("quote").notNull(),
+    photoId: text("photo_id"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedBy: text("updated_by").notNull(),
+  },
+  (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
+);
 
 export const spendDaily = pgTable(
   "spend_daily",

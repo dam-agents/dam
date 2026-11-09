@@ -355,13 +355,14 @@ describe("the auto-mode classifier env", () => {
     const anthropicListing = provider(anthropic, [
       entry(anthropic, "claude-opus-5-5", 1_000_000),
       entry(anthropic, "claude-sonnet-5-5", 1_000_000),
+      entry(anthropic, "claude-sonnet-5", 1_000_000),
     ]);
     const env = envOf(anthropicListing);
     expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe(
       "claude/anthropic/claude-sonnet-5-5",
     );
     expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(
-      "claude/anthropic/claude-sonnet-5-5",
+      "claude/anthropic/claude-sonnet-5",
     );
   });
 
@@ -369,8 +370,8 @@ describe("the auto-mode classifier env", () => {
   it("writes the name processClassifierName returns", () => {
     for (const providers of [
       [cbListing([CB_WORK, CB_CLASSIFIER])],
-      [provider(anthropic, [entry(anthropic, "claude-sonnet-5-5", 1_000_000)])],
-      [provider(ibm, [entry(ibm, "aws/claude-sonnet-5-5", 200_000)])],
+      [provider(anthropic, [entry(anthropic, "claude-sonnet-5", 1_000_000)])],
+      [provider(ibm, [entry(ibm, "aws/claude-sonnet-5", 200_000)])],
     ]) {
       expect(
         routerEnvFor({

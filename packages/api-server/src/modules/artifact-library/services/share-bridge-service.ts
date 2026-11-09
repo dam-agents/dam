@@ -16,11 +16,16 @@ import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 
 export type ViewerPromptOutcome =
-  "accepted" | "spend-limit" | "agent-unreachable";
+  | { ok: true; sessionId: string | null }
+  | {
+      ok: false;
+      reason: "spend-limit" | "agent-unreachable" | "profile-unavailable";
+    };
 
 export interface ViewerPromptDelivery {
   deliver(input: {
     agentId: string;
+    artifactId: string;
     sessionKey: string;
     sessionTitle: string;
     prompt: string;
@@ -121,6 +126,7 @@ export function createShareBridgeService(deps: {
       const name = viewerName(viewer);
       const outcome = await deps.prompts.deliver({
         agentId,
+        artifactId: artifact.id,
         sessionKey: viewerSessionKey(artifact.id, viewer.sub),
         sessionTitle: viewerSessionTitle(name, artifact.title),
         prompt: viewerPromptText({
@@ -130,9 +136,7 @@ export function createShareBridgeService(deps: {
           prompt,
         }),
       });
-      return outcome === "accepted"
-        ? { ok: true }
-        : { ok: false, reason: outcome };
+      return outcome.ok ? { ok: true } : outcome;
     },
 
     refuse(artifact, viewer, kind, denial) {

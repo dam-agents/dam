@@ -1,7 +1,11 @@
 import type { z } from "zod";
+import type { SessionChoiceSlots } from "../harness-config/types.js";
 import type {
   artifactCallAgentApiInputSchema,
+  artifactPromptChoiceInputSchema,
   artifactCallAgentApiResultSchema,
+  artifactSendPromptInputSchema,
+  artifactSendPromptResultSchema,
 } from "./schemas.js";
 
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
@@ -157,6 +161,28 @@ export interface ArtifactLibraryService {
     input: ArtifactCallAgentApiInput,
     caller: { agentIds: readonly string[] | "*"; email: string | null },
   ): Promise<ArtifactCallAgentApiResult>;
+  sendPrompt(
+    input: ArtifactSendPromptInput,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<ArtifactSendPromptResult>;
+  promptChoice(
+    id: string,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<SessionChoiceSlots>;
+  setPromptChoice(
+    input: ArtifactPromptChoiceInput,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<void>;
+  agentPromptChoices(
+    agentId: string,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<ArtifactPromptChoiceRow[]>;
+}
+
+export interface ArtifactPromptChoiceRow {
+  id: string;
+  title: string;
+  choice: SessionChoiceSlots;
 }
 
 export interface ArtifactTouch {
@@ -181,4 +207,13 @@ export type ArtifactCallAgentApiInput = z.infer<
 >;
 export type ArtifactCallAgentApiResult = z.infer<
   typeof artifactCallAgentApiResultSchema
+>;
+export type ArtifactSendPromptInput = z.infer<
+  typeof artifactSendPromptInputSchema
+>;
+export type ArtifactPromptChoiceInput = z.infer<
+  typeof artifactPromptChoiceInputSchema
+>;
+export type ArtifactSendPromptResult = z.infer<
+  typeof artifactSendPromptResultSchema
 >;

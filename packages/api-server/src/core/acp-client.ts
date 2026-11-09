@@ -25,6 +25,7 @@ import {
   type Stream,
 } from "@agentclientprotocol/sdk";
 import { agentServiceAddress } from "../modules/agents/infrastructure/k8s.js";
+import type { RunBoundary } from "../modules/harness-config/domain/run-boundary.js";
 import { getLogger } from "./logger.js";
 import { isPlatformMcpTool } from "./platform-mcp.js";
 import { securityLog } from "./security-log.js";
@@ -121,15 +122,33 @@ function connectClient(
     .connect(stream);
 }
 
-function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+function wsStream(
+  url: string,
+  agentId: string,
+): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
-          ws.on("message", (data) =>
-            controller.enqueue(JSON.parse(data.toString())),
-          );
+          ws.on("message", (data) => {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            const text = data.toString();
+            let frame: AnyMessage;
+            try {
+              frame = JSON.parse(text) as AnyMessage;
+            } catch {
+              getLogger().warn(
+                { agentId, frameLength: text.length },
+                "acp frame is not JSON; closing the connection",
+              );
+              ws.close(1007, "invalid JSON frame");
+              return;
+            }
+            try {
+              controller.enqueue(frame);
+            } catch {}
+          });
           ws.on("close", () => {
             try {
               controller.close();
@@ -185,7 +204,10 @@ const platformSessionMetaSchema = z.object({
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
-  customTitle: z.string().optional(),
+  customTitle: z
+    .string()
+    .nullish()
+    .transform((title) => title ?? undefined),
 });
 
 export interface TriggerSessionResult {
@@ -247,6 +269,7 @@ export type SendPromptOpts = (
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string, promptId?: string) => void;
   signal?: AbortSignal;
+  surface?: string;
 };
 
 export type TriggerSessionOpts = {
@@ -315,7 +338,7 @@ async function withAcpConnection<T>(
   watch: ConnectionWatch,
   fn: (connection: ClientConnection, init: InitializeResponse) => Promise<T>,
 ): Promise<T> {
-  const { stream, ws } = await wsStream(url);
+  const { stream, ws } = await wsStream(url, agentId);
 
   const ac = new AbortController();
   let abortError: Error = new AcpTurnAbandonedError(
@@ -484,6 +507,7 @@ function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
 async function resolvePair(
   firePair:
     ((agentId: string) => Promise<SessionPair | null | undefined>) | undefined,
+  runBoundary: RunBoundary | undefined,
   agentId: string,
 ): Promise<SessionPair | undefined> {
   const pair = await firePair?.(agentId);
@@ -491,7 +515,8 @@ async function resolvePair(
     throw new Error(
       "no model provider granted to this agent can run its harness",
     );
-  return pair;
+  if (!pair || !runBoundary) return pair;
+  return (await runBoundary.pair(agentId, pair)) ?? undefined;
 }
 
 const refusedForNoModel = (err: unknown): boolean =>
@@ -531,12 +556,14 @@ export function createAcpClient(opts: {
   instanceName: string;
   stallProbeMs: number;
   firePair?: (agentId: string) => Promise<SessionPair | null | undefined>;
+  /* UNIT_BOUNDARY_DESCRIPTION: every pair this client starts a session on, or pins a default onto, is settled here by the one helper, so the native subagent keys a run takes are never left out of the payload (D193B). */
+  runBoundary?: RunBoundary;
 }): AcpClient {
   const url = `ws://${agentServiceAddress(opts.instanceName, opts.namespace)}/api/acp`;
   const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
-      const { stream, ws } = await wsStream(url);
+      const { stream, ws } = await wsStream(url, agentId);
 
       const connection = connectClient(stream, {
         async requestPermission() {
@@ -634,7 +661,9 @@ export function createAcpClient(opts: {
             const caller = sendOpts.platformMeta;
             const platform = {
               ...(caller?.harness === undefined &&
-                pairMeta(await resolvePair(opts.firePair, agentId))),
+                pairMeta(
+                  await resolvePair(opts.firePair, opts.runBoundary, agentId),
+                )),
               ...caller,
             };
             const newSession: NewSessionRequest = {
@@ -680,7 +709,14 @@ export function createAcpClient(opts: {
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
-              _meta: { platform: { promptId } },
+              _meta: {
+                platform: {
+                  promptId,
+                  ...(sendOpts.surface !== undefined && {
+                    surface: sendOpts.surface,
+                  }),
+                },
+              },
             });
           const cancel = () => {
             connection.agent
@@ -694,7 +730,7 @@ export function createAcpClient(opts: {
           try {
             ended = await ("resumeSessionId" in sendOpts
               ? promptPinningDefault(connection, sessionId, send, () =>
-                  resolvePair(opts.firePair, agentId),
+                  resolvePair(opts.firePair, opts.runBoundary, agentId),
                 )
               : send());
           } finally {
@@ -808,7 +844,11 @@ export function createAcpClient(opts: {
             sessionId = triggerOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const pair = await resolvePair(opts.firePair, agentId);
+            const pair = await resolvePair(
+              opts.firePair,
+              opts.runBoundary,
+              agentId,
+            );
             const s = await connection.agent.request("session/new", {
               cwd: ".",
               mcpServers,
@@ -826,7 +866,7 @@ export function createAcpClient(opts: {
             });
           const r = await ("resumeSessionId" in triggerOpts
             ? promptPinningDefault(connection, sessionId, send, () =>
-                resolvePair(opts.firePair, agentId),
+                resolvePair(opts.firePair, opts.runBoundary, agentId),
               )
             : send());
 

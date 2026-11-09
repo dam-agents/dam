@@ -43,6 +43,12 @@ const OWN_KEY: AliasedConnection = {
   name: "CurveBender (own key)",
   templateId: "curve-bender",
 };
+const ANTHROPIC: AliasedConnection = {
+  id: "conn-anthropic",
+  name: "Anthropic",
+  templateId: "anthropic",
+};
+const HAIKU = "anthropic/claude-haiku-5";
 
 const profile = (overrides: Partial<ProfileRow> = {}): ProfileRow => ({
   id: "profile-1",
@@ -52,13 +58,20 @@ const profile = (overrides: Partial<ProfileRow> = {}): ProfileRow => ({
   harness: "claude-code",
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  subagentProviderTemplate: null,
+  subagentModel: null,
   settings: {},
   createdAt: new Date(0),
   updatedAt: new Date(0),
   ...overrides,
 });
 
-const none: ProfileReferences = { agents: [], channels: [], schedules: [] };
+const none: ProfileReferences = {
+  agents: [],
+  channels: [],
+  schedules: [],
+  artifacts: [],
+};
 
 function fakeRepo(
   opts: {
@@ -203,6 +216,68 @@ describe("what a profile runs on, for one agent", () => {
     const { repo } = fakeRepo();
     expect(await resolve(repo, "owner-2")).toBeNull();
   });
+
+  /** TEST_SCENARIO: a profile names a platform sub-agent too (D193B), kept beside the primary's pair, on the profile's own harness, so a slot following the profile spawns it without a pick of its own. */
+  it("lends the platform sub-agent it names", async () => {
+    const { repo } = fakeRepo({
+      rows: [
+        profile({
+          subagentProviderTemplate: "anthropic",
+          subagentModel: HAIKU,
+        }),
+      ],
+      owned: [SHARED, ANTHROPIC],
+      granted: [SHARED, ANTHROPIC],
+    });
+    const resolved = await resolve(repo);
+    expect(resolved?.pair.settings).toBeUndefined();
+    expect(resolved?.subagentUnavailable).toBeNull();
+    expect(resolved?.subagent).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": HAIKU,
+    });
+  });
+
+  /** TEST_SCENARIO: a profile lends its sub-agent as the slot it would be by the one mapping the picker uses too (D193B): its own harness and its sub-agent's model, with the effort it keeps as native `subagentEffort` riding as the slot's effort. */
+  it("lends the effort a profile keeps as a slot effort", async () => {
+    const { repo } = fakeRepo({
+      rows: [
+        profile({
+          subagentProviderTemplate: "anthropic",
+          subagentModel: HAIKU,
+          settings: { subagentEffort: "high" },
+        }),
+      ],
+      owned: [SHARED, ANTHROPIC],
+      granted: [SHARED, ANTHROPIC],
+    });
+    expect((await resolve(repo))?.subagent).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": HAIKU,
+      "platformSubagent.effort": "high",
+    });
+  });
+
+  /** TEST_SCENARIO: the profile's sub-agent runs on the agent's Connection of its own template, and its absence is kept apart from the primary's availability: the profile itself still runs, so a slot with a sub-agent of its own is never refused for one it does not use (D193B). */
+  it("reports a sub-agent on a provider the agent does not hold beside the primary", async () => {
+    const rows = [
+      profile({ subagentProviderTemplate: "anthropic", subagentModel: HAIKU }),
+    ];
+    const unconnected = await resolve(
+      fakeRepo({ rows, owned: [SHARED], granted: [SHARED] }).repo,
+    );
+    expect(unconnected?.unavailable).toBeNull();
+    expect(unconnected?.subagentUnavailable).toBe(
+      "Anthropic, its sub-agent's provider, is not connected",
+    );
+    const unattached = await resolve(
+      fakeRepo({ rows, owned: [SHARED, ANTHROPIC], granted: [SHARED] }).repo,
+    );
+    expect(unattached?.unavailable).toBeNull();
+    expect(unattached?.subagentUnavailable).toBe(
+      "Anthropic, its sub-agent's provider, isn't attached to this agent",
+    );
+  });
 });
 
 describe("the owner's profiles", () => {
@@ -224,7 +299,7 @@ describe("the owner's profiles", () => {
     expect(unserved.writes.seeds).toBe(0);
   });
 
-  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work over the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
+  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work on that harness — Claude for the default harness here, over the DeepSeek the same provider lists — rather than the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
   it("seeds Default from the first listed provider without the shared CurveBender", async () => {
     const model = (upstreamId: string, harnesses: string[]) => ({
       name: `ibm/${upstreamId}`,
@@ -254,6 +329,7 @@ describe("the owner's profiles", () => {
             models: [
               model("aws/claude-sonnet-6", ["claude-code", "pi"]),
               model("aws/claude-opus-5-5", ["claude-code", "pi"]),
+              model("azure/DeepSeek-V4.1-Flash", ["claude-code", "pi"]),
             ],
           },
         ],
@@ -408,6 +484,66 @@ describe("the owner's profiles", () => {
     }).update({ id: "profile-1", name: "Renamed" });
     expect(republished).toBe(0);
   });
+
+  /** TEST_SCENARIO: the platform sub-agent a profile names is stored beside its model and given back in its view (D193B). */
+  it("keeps and returns the platform sub-agent it names", async () => {
+    const { repo, writes } = fakeRepo();
+    const updated = await service(repo).update({
+      id: "profile-1",
+      subagent: { providerTemplate: "anthropic", model: HAIKU },
+    });
+    expect(writes.updates.at(-1)).toMatchObject({
+      subagentProviderTemplate: "anthropic",
+      subagentModel: HAIKU,
+    });
+    expect(updated.subagent).toEqual({
+      providerTemplate: "anthropic",
+      model: HAIKU,
+    });
+    const cleared = await service(repo).update({
+      id: "profile-1",
+      subagent: null,
+    });
+    expect(cleared.subagent).toBeNull();
+  });
+
+  /** TEST_SCENARIO: a sub-agent the profile did not name before changes what its slots spawn, so the edit reaches the agents using the profile and a sub-agent none of them can run is put back. */
+  it("sends a new sub-agent to the agents using the profile, and puts back one none can run", async () => {
+    const { repo, writes } = fakeRepo({
+      references: {
+        ...none,
+        agents: [{ id: "a1", chat: "profile-1", platform: null }],
+      },
+    });
+    let republished = 0;
+    await service(repo, {
+      republish: async () => {
+        republished += 1;
+        return null;
+      },
+    }).update({
+      id: "profile-1",
+      subagent: { providerTemplate: "anthropic", model: HAIKU },
+    });
+    expect(republished).toBe(1);
+    const err = await refusal(
+      service(repo, {
+        republish: async () =>
+          "Anthropic, its sub-agent's provider, isn't attached to this agent",
+      }).update({
+        id: "profile-1",
+        subagent: {
+          providerTemplate: "anthropic",
+          model: "anthropic/claude-opus-5",
+        },
+      }),
+    );
+    expect(err.message).toContain("sub-agent");
+    expect(writes.updates.at(-1)).toMatchObject({
+      subagentProviderTemplate: "anthropic",
+      subagentModel: HAIKU,
+    });
+  });
 });
 
 /**
@@ -458,14 +594,21 @@ describe("a new agent's default", () => {
     seed: null,
   });
 
-  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile. */
+  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile; a Connection the owner holds reconciles nothing. */
   it("starts a new agent on the default profile", async () => {
     const { repo, writes } = fakeRepo();
-    const chosen = await newAgentDefault(owner(repo));
+    let reconciled = 0;
+    const chosen = await newAgentDefault({
+      ...owner(repo),
+      reconcileConnections: async () => {
+        reconciled += 1;
+      },
+    });
     expect(chosen).toMatchObject({
       profile: { id: "profile-1", harness: "claude-code" },
       connectionId: SHARED.id,
     });
+    expect(reconciled).toBe(0);
     await bindDefaultProfile(owner(repo), "agent-1", chosen!.profile);
     expect(writes.binds).toEqual(["agent-1"]);
   });
@@ -495,5 +638,33 @@ describe("a new agent's default", () => {
   it("offers nothing without a Connection of the template", async () => {
     const { repo } = fakeRepo({ owned: [OWN_KEY] });
     expect(await newAgentDefault(owner(repo))).toBeNull();
+  });
+
+  /** TEST_SCENARIO: the deployment-owned CurveBender comes from a Connection listing or a boot sweep over owners who already hold one, neither of which a first create through the CLI or API runs, so that create reconciles it and still starts on "Default": Pi on that Connection. */
+  it("starts an owner's first agent on Pi over the shared CurveBender it has not listed yet", async () => {
+    const owned: AliasedConnection[] = [];
+    const { repo } = fakeRepo({ rows: [], owned, granted: [] });
+    let reconciled = 0;
+    expect(
+      await newAgentDefault({
+        ...owner(repo),
+        seed: {
+          harness: "pi",
+          model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        },
+        reconcileConnections: async () => {
+          reconciled += 1;
+          owned.push(SHARED);
+        },
+      }),
+    ).toMatchObject({
+      profile: {
+        harness: "pi",
+        providerTemplate: "curve-bender-deployment",
+        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      },
+      connectionId: SHARED.id,
+    });
+    expect(reconciled).toBe(1);
   });
 });

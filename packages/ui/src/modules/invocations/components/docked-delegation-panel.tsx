@@ -45,7 +45,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
   const node = tree?.nodes[0];
   const driverName =
     findAgent(agentsData, driverAgentId)?.name ?? driverAgentId;
-  const agentState = findAgent(agentsData, id)?.state;
+  const target = findAgent(agentsData, id) ?? undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -62,9 +62,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         >
           {node ? delegationTitle(node) : id}
         </span>
-        {node && (
-          <DelegationStatePill state={delegationState(node, agentState)} />
-        )}
+        {node && <DelegationStatePill state={delegationState(node, target)} />}
         <SidePanelCloseButton onClose={() => setDock(null)} />
       </div>
       {node ? (

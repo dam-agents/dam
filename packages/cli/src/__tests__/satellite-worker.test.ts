@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WorkItem } from "api-server-api";
+import type { SatelliteManifest, WorkItem } from "api-server-api";
+import { createBackoff } from "../modules/shared/backoff.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import {
   createCommandBackend,
@@ -7,9 +8,12 @@ import {
 } from "../modules/satellite/services/command-backend.js";
 import {
   createWorker,
+  describeOffline,
+  FenceUnsupportedError,
   SatelliteRemovedError,
   type WorkerTransport,
 } from "../modules/satellite/services/worker.js";
+import { AuthRequiredAtTransportError } from "../modules/shared/trpc/trpc-client.js";
 
 /**
  * TEST_OVERVIEW: The satellite worker and the command-surface backend, which is
@@ -457,5 +461,1065 @@ describe("the tool a command surface advertises", () => {
     expect(runTool(surface()).description).toContain(
       "/bin/echo (hello|goodbye)",
     );
+  });
+});
+describe("surviving a drop", () => {
+  const FAST = { baseMs: 2, capMs: 4 };
+
+  type Poll = {
+    resolve: (items: WorkItem[]) => void;
+    reject: (err: Error) => void;
+  };
+
+  function pollQueue() {
+    const polls: Poll[] = [];
+    return {
+      polls,
+      binding: () =>
+        new Promise<WorkItem[]>((resolve, reject) => {
+          polls.push({ resolve, reject });
+        }),
+      release: () => {
+        for (const poll of polls.splice(0)) poll.resolve([]);
+      },
+    };
+  }
+
+  function workerWith(
+    transport: WorkerTransport,
+    backend?: Parameters<typeof createWorker>[0]["backend"],
+  ) {
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const lines: string[] = [];
+    return {
+      lines,
+      worker: createWorker({
+        name: parsed.value.pushed.name,
+        maxConcurrent: IDENTITY.maxConcurrent,
+        backend: backend ?? createCommandBackend(parsed.value),
+        transport,
+        log: { line: (text) => lines.push(text) },
+        host: "test-host",
+        retry: FAST,
+        drainGraceMs: 200,
+        drainRetryMs: 10,
+        childCloseMs: 2000,
+      }),
+    };
+  }
+
+  /**
+   * TEST_SCENARIO: The platform stops answering, and answers again later.
+   * Neither ends the process: it waits, says so on each attempt, registers the
+   * same Satellite again under the same name with the same tools, and names the
+   * registration it was already serving so a different one is never taken over.
+   */
+  it("keeps trying, registers the same satellite again, and resumes claiming", async () => {
+    const connects: { manifest: SatelliteManifest; resume?: string }[] = [];
+    const reports: { sequence: number; incarnation?: string }[] = [];
+    const queue = pollQueue();
+    let down = false;
+    const transport: WorkerTransport = {
+      connect: async (input) => {
+        connects.push({
+          manifest: input.manifest,
+          ...(input.resume === undefined ? {} : { resume: input.resume }),
+        });
+        if (down) throw new Error("fetch failed");
+        return { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reports.push({
+          sequence: input.sequence,
+          ...(input.incarnation === undefined
+            ? {}
+            : { incarnation: input.incarnation }),
+        });
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    down = true;
+    queue.polls[0]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connects.length).toBeGreaterThanOrEqual(3));
+    down = false;
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2));
+
+    queue.polls[1]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(reports).toEqual([{ sequence: 1, incarnation: "reg-1" }]),
+    );
+    await worker.drain();
+    await running;
+
+    expect(
+      connects.map((entry) => entry.manifest.name),
+      "a reconnect registers the same Satellite, never a second one",
+    ).toEqual(connects.map(() => "test-box"));
+    expect(connects.at(-1)?.manifest.tools).toEqual(
+      connects[0]?.manifest.tools,
+    );
+    expect(connects[0]?.resume, "the first registration resumes nothing").toBe(
+      undefined,
+    );
+    expect(
+      connects.slice(1).map((entry) => entry.resume),
+      "a reconnect names the registration it already served",
+    ).toEqual(connects.slice(1).map(() => "reg-1"));
+    expect(
+      lines.filter((line) => line.startsWith("connected as ")),
+      "the tools are announced once, not on every reconnect",
+    ).toHaveLength(1);
+    expect(
+      lines.filter((line) => line === 'reconnected as "test-box"'),
+      "saying so is what makes a service log readable",
+    ).toHaveLength(1);
+    expect(
+      lines.some((line) =>
+        line.startsWith("offline: Error: fetch failed — retrying in"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A call that finished just as the connection went away has an
+   * outcome nobody else can supply: the lease sweep reports the Job as unknown
+   * a minute later. The worker holds it and sends it once the platform is back,
+   * so a short drop costs no result.
+   */
+  it("sends an outcome that could not be reported once the platform is back", async () => {
+    const reports: number[] = [];
+    let reportCalls = 0;
+    let claimCalls = 0;
+    let drained: () => void = () => {};
+    let failedOnce: () => void = () => {};
+    const reportFailed = new Promise<void>((resolve) => {
+      failedOnce = resolve;
+    });
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) {
+          await reportFailed;
+          throw new Error("fetch failed");
+        }
+        return new Promise<WorkItem[]>((resolve) => {
+          drained = () => resolve([]);
+        });
+      },
+      heartbeat: async () => {},
+      drain: async () => drained(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) {
+          failedOnce();
+          throw new Error("fetch failed");
+        }
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(reports).toEqual([1]));
+    await worker.drain();
+    await running;
+    expect(
+      lines.some((line) => line.startsWith("could not report test-box#1 yet")),
+      "the loss is said out loud rather than left to the lease",
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A report can fail while the platform answers every claim, so
+   * there is no reconnect to carry the result. The worker sends what it holds
+   * before it takes more work, because the finished Job's lease runs out a
+   * minute after its last heartbeat whether or not the worker is connected.
+   */
+  it("reports again before taking more work, without waiting for a reconnect", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    let connects = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connects += 1;
+        return { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push(input.sequence);
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2), {
+      timeout: 3000,
+    });
+    queue.polls[1]?.resolve([]);
+    await vi.waitFor(() => expect(reports).toEqual([1]), { timeout: 5000 });
+    await worker.drain();
+    await running;
+
+    expect(connects, "a failed report alone does not reconnect").toBe(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A name can be registered again from another machine, whose
+   * Job sequence starts at one. An outcome held from the old registration must
+   * not be replayed onto the new one — it would settle an unrelated Job — so it
+   * is dropped, and the drop is said out loud.
+   */
+  it("drops an outcome that belongs to a registration the platform replaced", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    const registrations = ["reg-1", "reg-2"];
+    let connectCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({
+        incarnation: registrations[connectCalls++] ?? "reg-2",
+      }),
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reports.push(input.sequence);
+        throw new Error("fetch failed");
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) => line.startsWith("could not report test-box#1")),
+      ).toBe(true),
+    );
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) =>
+          line.startsWith("dropping the outcome of test-box#1"),
+        ),
+      ).toBe(true),
+    );
+    await worker.drain();
+    await running;
+
+    expect(
+      reports,
+      "the outcome never reaches a registration it was not claimed under",
+    ).toEqual([1]);
+  });
+
+  /**
+   * TEST_SCENARIO: A restarted MCP server can come back with a different set of
+   * tools, and the platform's Snapshot is what an Agent is offered. The new
+   * list is registered before the worker takes any more work, with the platform
+   * answering every claim, so no reconnect is there to carry it.
+   */
+  it("registers a restarted MCP server's tool list before claiming more work", async () => {
+    const queue = pollQueue();
+    const connects: SatelliteManifest[] = [];
+    const offered = [runTool(surface())];
+    let current = offered;
+    let died = false;
+    const backend = {
+      get tools() {
+        return current;
+      },
+      ensureReady: async () => {
+        if (!died) return { restarted: false };
+        died = false;
+        current = [];
+        return { restarted: true, livedMs: 60_000 };
+      },
+      call: createCommandBackend(surface()).call,
+      describeCall: () => "run",
+      cancel: () => {},
+      killAll: () => {},
+      close: () => Promise.resolve(),
+    };
+    const transport: WorkerTransport = {
+      connect: async (input) => {
+        connects.push(input.manifest);
+        return { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport, backend);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    died = true;
+    queue.polls[0]?.resolve([]);
+    await vi.waitFor(() => expect(connects.length).toBe(2), { timeout: 4000 });
+    await worker.drain();
+    await running;
+
+    expect(connects[0]?.tools).toEqual(offered);
+    expect(connects[1]?.tools, "the new tool list is registered").toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker whose own MCP server will not start has nothing to
+   * serve. Claiming work anyway leases Jobs to a machine that cannot run them,
+   * and each one is reported back as interrupted, so readiness is retried
+   * before any claim.
+   */
+  it("does not claim work while its MCP server is not ready", async () => {
+    const queue = pollQueue();
+    const violations: string[] = [];
+    let ready = false;
+    let ensureCalls = 0;
+    const backend = {
+      get tools() {
+        return [runTool(surface())];
+      },
+      ensureReady: async () => {
+        ensureCalls += 1;
+        if (ensureCalls === 1)
+          throw new Error("the MCP server would not start");
+        ready = true;
+        return { restarted: false };
+      },
+      call: createCommandBackend(surface()).call,
+      describeCall: () => "run",
+      cancel: () => {},
+      killAll: () => {},
+      close: () => Promise.resolve(),
+    };
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        if (!ready) violations.push("claim before the machine was ready");
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport, backend);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    await worker.drain();
+    await running;
+
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A server that exits seconds after it starts is a crash loop,
+   * and restarting it on every pass fills the log and the process table. Its
+   * own backoff waits between restarts, which a server that ran a while does
+   * not need.
+   */
+  it("waits before starting a crash-looping server again", async () => {
+    const queue = pollQueue();
+    const restarts: { livedMs: number }[] = [
+      { livedMs: 60_000 },
+      {
+        livedMs: 5,
+      },
+    ];
+    let died = false;
+    const backend = {
+      get tools() {
+        return [runTool(surface())];
+      },
+      ensureReady: async () => {
+        if (!died) return { restarted: false };
+        died = false;
+        return {
+          restarted: true,
+          ...(restarts.shift() as { livedMs: number }),
+        };
+      },
+      call: createCommandBackend(surface()).call,
+      describeCall: () => "run",
+      cancel: () => {},
+      killAll: () => {},
+      close: () => Promise.resolve(),
+    };
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport, backend);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    died = true;
+    queue.polls[0]?.resolve([]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2), {
+      timeout: 4000,
+    });
+    died = true;
+    queue.polls[1]?.resolve([]);
+    await vi.waitFor(
+      () =>
+        expect(
+          lines.some((line) =>
+            line.startsWith("the MCP server exited 0.0s after it started"),
+          ),
+        ).toBe(true),
+      { timeout: 4000 },
+    );
+    await worker.drain();
+    await running;
+
+    expect(
+      lines.filter((line) =>
+        line.startsWith("the MCP server exited 0.0s after it started"),
+      ),
+      "a server that ran is not treated as a crash loop",
+    ).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that reconnects after its Satellite was removed has
+   * only the registration it served, and the platform refuses it. Retrying that
+   * fills the log with an error that never resolves, so it stops the same way a
+   * refused claim does.
+   */
+  it("stops when the platform no longer holds the registration it served", async () => {
+    const transport: WorkerTransport = {
+      connect: async () => {
+        throw new SatelliteRemovedError("test-box");
+      },
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    const outcome = await Promise.race([
+      running.then(() => "stopped"),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 3000)),
+    ]);
+    expect(outcome).toBe("stopped");
+    expect(
+      lines.some((line) => line.includes("was removed on the platform")),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A server from before the registration identity answers a
+   * reconnect with no incarnation of its own. The worker already knows which
+   * registration it serves, and that knowledge must not be replaced by nothing:
+   * every later call it makes names the registration, so a rollout that lands the
+   * worker on an older replica does not lose track of the machine it is.
+   */
+  it("keeps the registration it knows when the server does not name one", async () => {
+    const queue = pollQueue();
+    const claims: (string | undefined)[] = [];
+    const reports: (string | undefined)[] = [];
+    let connectCalls = 0;
+    let claimCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? { incarnation: "reg-1" } : undefined;
+      },
+      claim: async (input) => {
+        claims.push(input.incarnation);
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) throw new Error("fetch failed");
+        if (claimCalls === 3) return [runItem(2, ["/bin/echo", "hello"])];
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reports.push(input.incarnation);
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(reports).toHaveLength(2), { timeout: 5000 });
+    await worker.drain();
+    await running;
+
+    expect(connectCalls).toBeGreaterThanOrEqual(2);
+    expect(
+      reports,
+      "the registration outlives a server that stopped naming it",
+    ).toEqual(["reg-1", "reg-1"]);
+    expect(claims.at(-1)).toBe("reg-1");
+  });
+
+  /**
+   * TEST_SCENARIO: A stop arrives while a claim is open, and the platform hands
+   * work back anyway. Starting it would run a tool call nobody is waiting for on
+   * a machine that is leaving, so the work is dropped and its lease runs out.
+   */
+  it("starts no work a claim hands back after a stop", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async (input) => {
+        reports.push(input.sequence);
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+    ]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2));
+
+    const draining = worker.drain();
+    queue.polls[1]?.resolve([runItem(2, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() => expect(worker.runningCount).toBe(1));
+    await worker.forceStop();
+    await draining;
+    await running;
+
+    expect(
+      lines.some((line) => line.startsWith("REQUEST #2")),
+      "work returned after the stop is not started",
+    ).toBe(false);
+    expect(reports).not.toContain(2);
+  });
+
+  /**
+   * TEST_SCENARIO: A reconnect finds the Satellite removed while a job is still
+   * running on this machine. Closing the MCP server there would kill work the
+   * architecture says finishes, so the removal drains exactly as a removed
+   * claim does and the result is still reported.
+   */
+  it("drains a running job when a reconnect finds the satellite removed", async () => {
+    const queue = pollQueue();
+    const reports: number[] = [];
+    const closed: string[] = [];
+    let connectCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        if (connectCalls > 1) throw new SatelliteRemovedError("test-box");
+        return { incarnation: "reg-1" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reports.push(input.sequence);
+        closed.push("report");
+      },
+    };
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const backend = createCommandBackend(parsed.value);
+    const { worker } = workerWith(transport, {
+      ...backend,
+      close: async () => {
+        closed.push("close");
+      },
+    });
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+    ]);
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(2));
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(() => expect(connectCalls).toBeGreaterThanOrEqual(2));
+    backend.cancel(1);
+    await vi.waitFor(() => expect(reports).toEqual([1]));
+    await running;
+
+    expect(
+      closed.indexOf("report"),
+      "the job is reported before the machine's server is closed",
+    ).toBeLessThan(closed.indexOf("close"));
+  });
+
+  /**
+   * TEST_SCENARIO: A removal found by a claim leaves a result that cannot be
+   * reported. Waiting on that report forever is the hang the drain grace exists
+   * to prevent, so the worker stops on its own.
+   */
+  it("stops when a held result cannot be sent after the satellite was removed", async () => {
+    const queue = pollQueue();
+    let claimCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        if (claimCalls === 2) throw new SatelliteRemovedError("test-box");
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        return new Promise<never>(() => {});
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const outcome = await Promise.race([
+      worker.start().then(() => "stopped"),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 5000)),
+    ]);
+    expect(outcome).toBe("stopped");
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that runs for weeks completes millions of calls.
+   * Each one racing the shutdown must not leave its losing subscription behind,
+   * or the process grows until it is restarted for no reason.
+   */
+  it("keeps no shutdown subscription once a call has settled", async () => {
+    const queue = pollQueue();
+    let claims = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claims += 1;
+        if (claims > 30) return queue.binding();
+        return [runItem(claims, ["/bin/echo", "hello"])];
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(claims).toBeGreaterThan(30), {
+      timeout: 15_000,
+    });
+    expect(worker.waitingOnPlatform).toBeLessThanOrEqual(1);
+    await worker.drain();
+    await running;
+  }, 30_000);
+
+  /**
+   * TEST_SCENARIO: A result claimed through a server that named no registrations
+   * carries no identity, and the name can be registered again while the worker
+   * is away. Number 1 of the old machine and number 1 of the new one are
+   * different Jobs, and the worker cannot tell which it holds, so it never sends
+   * one — the lease settles the Job as interrupted instead.
+   */
+  it("never replays an outcome that was claimed without a registration", async () => {
+    const queue = pollQueue();
+    const reports: { sequence: number; incarnation?: string }[] = [];
+    let connectCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connectCalls += 1;
+        return connectCalls === 1 ? undefined : { incarnation: "reg-2" };
+      },
+      claim: queue.binding,
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        reports.push({
+          sequence: input.sequence,
+          ...(input.incarnation === undefined
+            ? {}
+            : { incarnation: input.incarnation }),
+        });
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(queue.polls).toHaveLength(1));
+    queue.polls[0]?.resolve([runItem(1, ["/bin/echo", "hello"])]);
+    await vi.waitFor(() =>
+      expect(
+        lines.some((line) => line.startsWith("could not report test-box#1")),
+      ).toBe(true),
+    );
+    queue.polls[1]?.reject(new Error("fetch failed"));
+    await vi.waitFor(
+      () =>
+        expect(
+          lines.some((line) =>
+            line.startsWith("dropping the outcome of test-box#1"),
+          ),
+        ).toBe(true),
+      { timeout: 5000 },
+    );
+    await worker.drain();
+    await running;
+
+    expect(
+      reports,
+      "the replacement's $1 is never settled with this machine's result",
+    ).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that knows the registration it serves must not
+   * reach an older replica that would register the removed name again from the
+   * resume it silently drops. The resume goes to a procedure that requires it,
+   * the refusal is the older replica, and the worker waits for one that
+   * enforces the fence rather than taking the unfenced path.
+   */
+  it("waits for a platform that enforces the registration it resumes", async () => {
+    let connects = 0;
+    const transport: WorkerTransport = {
+      connect: async () => {
+        connects += 1;
+        throw new FenceUnsupportedError("test-box");
+      },
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(connects).toBeGreaterThanOrEqual(3), {
+      timeout: 5000,
+    });
+    await worker.drain();
+    await running;
+
+    expect(
+      lines.some((line) =>
+        line.startsWith(
+          "this platform does not enforce registrations, so it cannot serve a worker that knows its own",
+        ),
+      ),
+      "the refusal is said out loud, not hidden as a drop",
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A claim that names its registration is refused by an older
+   * replica. Claiming through the plain procedure in its place would lease the
+   * Jobs of the machine that replaced this one, so nothing is claimed and the
+   * worker keeps trying the fenced one.
+   */
+  it("claims nothing where the platform cannot enforce the registration", async () => {
+    const queue = pollQueue();
+    let claims = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claims += 1;
+        throw new FenceUnsupportedError("test-box");
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(claims).toBeGreaterThanOrEqual(3), {
+      timeout: 5000,
+    });
+    await worker.drain();
+    await running;
+
+    expect(worker.runningCount).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: A stop with nothing running used to release every waiter,
+   * including the one the machine's own MCP server is closed under, so the
+   * process could exit before the SDK finished stopping the child. The close is
+   * awaited on its own, and `start()` returns only once it has finished.
+   */
+  it("closes the machine's own server before it exits", async () => {
+    const closed: string[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const parsed = parseCommandSurface(PATTERNS, IDENTITY);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const backend = createCommandBackend(parsed.value);
+    const { worker } = workerWith(transport, {
+      ...backend,
+      close: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        closed.push("closed");
+      },
+    });
+
+    const running = worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await worker.drain();
+    await running;
+
+    expect(
+      closed,
+      "the child's termination finished before the worker exited",
+    ).toEqual(["closed"]);
+  });
+
+  /**
+   * TEST_SCENARIO: The platform behind a held result has no fenced procedure, so
+   * it cannot be trusted with a call that names a registration — a rolling
+   * deployment can answer the connect with one version and the replay with
+   * another. The result is given up rather than sent unfenced, and the lease
+   * settles that Job.
+   */
+  it("gives up a held result the platform cannot fence", async () => {
+    const queue = pollQueue();
+    let claimCalls = 0;
+    let reportCalls = 0;
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1) return [runItem(1, ["/bin/echo", "hello"])];
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => queue.release(),
+      report: async (input) => {
+        if (input.incarnation === undefined) return;
+        reportCalls += 1;
+        throw new FenceUnsupportedError("test-box");
+      },
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(
+      () =>
+        expect(
+          lines.some((line) =>
+            line.startsWith("dropping the outcome of test-box#1"),
+          ),
+        ).toBe(true),
+      { timeout: 5000 },
+    );
+    const attempts = reportCalls;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await worker.drain();
+    await running;
+
+    expect(
+      reportCalls,
+      "an unfenceable result is not retried against the same endpoint",
+    ).toBe(attempts);
+  });
+
+  /**
+   * TEST_SCENARIO: Telling the platform this machine is draining names the
+   * registration, and an older server refuses that call. A bare-name drain is
+   * never sent in its place — it would drain whichever machine holds the name
+   * now — so the worker retries while it still has time and then says the
+   * Satellite goes offline on its own.
+   */
+  it("drains only where the fence is enforced", async () => {
+    const drains: { satellite: string; incarnation?: string }[] = [];
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => new Promise<WorkItem[]>(() => {}),
+      heartbeat: async () => {},
+      drain: async (input) => {
+        drains.push(input);
+        throw new FenceUnsupportedError(input.satellite);
+      },
+      report: async () => {},
+    };
+    const { worker, lines } = workerWith(transport);
+
+    const running = worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await worker.drain();
+    const outcome = await Promise.race([
+      running.then(() => "stopped"),
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+
+    expect(outcome).toBe("stopped");
+    expect(
+      drains.every((input) => input.incarnation === "reg-1"),
+      "every attempt names the registration it serves",
+    ).toBe(true);
+    expect(
+      drains.length,
+      "the attempt is repeated while there is time",
+    ).toBeGreaterThan(1);
+    expect(
+      lines.some((line) =>
+        line.startsWith("could not tell the platform this machine is draining"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A stop arrives while a held result is still being replayed
+   * and another job is running. Claiming after the replay would reopen admission
+   * on a machine that is leaving, so the loop ends there instead.
+   */
+  it("claims nothing after a replay that outlived a stop", async () => {
+    const queue = pollQueue();
+    let claimCalls = 0;
+    let reportCalls = 0;
+    let replayStarted: () => void = () => {};
+    const replaying = new Promise<void>((resolve) => {
+      replayStarted = resolve;
+    });
+    const transport: WorkerTransport = {
+      connect: async () => ({ incarnation: "reg-1" }),
+      claim: async () => {
+        claimCalls += 1;
+        if (claimCalls === 1)
+          return [
+            runItem(1, ["/bin/echo", "hello"]),
+            runItem(2, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+          ];
+        if (claimCalls === 2) return [];
+        return queue.binding();
+      },
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async (input) => {
+        if (input.sequence === 2) return;
+        reportCalls += 1;
+        if (reportCalls === 1) throw new Error("fetch failed");
+        replayStarted();
+        return new Promise<never>(() => {});
+      },
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await vi.waitFor(() => expect(reportCalls).toBe(2), { timeout: 5000 });
+    await replaying;
+    const draining = worker.drain();
+    await draining;
+    const claimsAtStop = claimCalls;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await worker.forceStop();
+    await running;
+
+    expect(
+      claimCalls,
+      "no claim is issued after a stop that arrived during the replay",
+    ).toBe(claimsAtStop);
+  });
+
+  /**
+   * TEST_SCENARIO: A stop must not wait on a request that never answers. The
+   * supervisor would kill the process instead of getting a clean stop, and the
+   * drain already knows nothing is running.
+   */
+  it("stops without waiting for a platform call that never answers", async () => {
+    const transport: WorkerTransport = {
+      connect: () => new Promise<never>(() => {}),
+      claim: async () => [],
+      heartbeat: async () => {},
+      drain: async () => {},
+      report: async () => {},
+    };
+    const { worker } = workerWith(transport);
+
+    const running = worker.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await worker.drain();
+    const outcome = await Promise.race([
+      running.then(() => "stopped"),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 3000)),
+    ]);
+    expect(outcome).toBe("stopped");
+  });
+
+  /**
+   * TEST_SCENARIO: A worker that is not signed in retries like any other drop,
+   * but the line has to name the command that ends it. A service left running
+   * with a revoked key would otherwise repeat a class name nobody can act on,
+   * and the transport delivers the failure wrapped in its own error.
+   */
+  it("says what ends a missing sign-in instead of naming an error class", () => {
+    expect(
+      describeOffline(new AuthRequiredAtTransportError("session expired")),
+    ).toContain("set DAM_TOKEN");
+    expect(
+      describeOffline(
+        new Error("TRPCClientError", {
+          cause: new AuthRequiredAtTransportError("session expired"),
+        }),
+      ),
+      "the transport wraps the failure the worker has to name",
+    ).toContain("set DAM_TOKEN");
+    expect(describeOffline(new Error("fetch failed"))).toBe(
+      "offline: Error: fetch failed",
+    );
+  });
+});
+
+describe("the wait before trying again", () => {
+  it("doubles from the base to the cap and stays there", () => {
+    const backoff = createBackoff({
+      baseMs: 1_000,
+      capMs: 30_000,
+      random: () => 0.5,
+    });
+    expect(
+      Array.from({ length: 7 }, () => backoff.next()),
+      "a machine offline for a week still says so once every cap",
+    ).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
+  });
+
+  it("spreads machines that start again together, within a fifth of the wait", () => {
+    const lowest = createBackoff({ random: () => 0 });
+    const highest = createBackoff({ random: () => 1 });
+    expect(lowest.next()).toBe(800);
+    expect(highest.next()).toBe(1_200);
+  });
+
+  it("starts over from the base once the platform answers", () => {
+    const backoff = createBackoff({ random: () => 0.5 });
+    backoff.next();
+    backoff.next();
+    backoff.reset();
+    expect(backoff.next()).toBe(1_000);
   });
 });

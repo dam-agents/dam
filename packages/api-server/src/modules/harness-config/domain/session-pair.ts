@@ -1,12 +1,19 @@
 import {
+  effectiveSubagentSettings,
+  harnessCapability,
   isPlatformSubagentSetting,
   withoutApproval,
+  type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
+import { z } from "zod";
 import {
   aliasForProviderType,
   parseQualifiedModel,
+  preferredModelOf,
   resolveDefaultProvider,
+  type OwnerModelCatalogView,
+  type ProviderCatalogView,
   type ProviderPresetType,
   type SessionChoiceReferences,
   type SessionChoiceSlots,
@@ -28,26 +35,38 @@ export function platformSubagentOf(slot: SessionPair): Record<string, string> {
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a slot of its own replaces every platform sub-agent value, including one a profile lent the pair, so a profile's sub-agent never half-applies beside the slot's (D193B). */
 export function withPlatformSubagent(
   pair: SessionPair,
   slot: Record<string, string> | null,
 ): SessionPair {
-  return slot ? { ...pair, settings: { ...pair.settings, ...slot } } : pair;
+  if (!slot) return pair;
+  const [own] = splitSubagent(pair.settings);
+  return { ...pair, settings: { ...own, ...slot } };
 }
 
 export function splitPlatformSubagent(
   pair: SessionPair,
 ): [SessionPair, Record<string, string> | null] {
   const { settings = {}, ...rest } = pair;
-  const own = Object.entries(settings).filter(
-    ([id]) => !isPlatformSubagentSetting(id),
-  );
-  const slot = Object.entries(settings).filter(([id]) =>
-    isPlatformSubagentSetting(id),
-  );
+  const [own, slot] = splitSubagent(settings);
+  return [own ? { ...rest, settings: own } : rest, slot];
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a settings record split into the primary's values and the platform sub-agent's, each null where it holds none of them. */
+export function splitSubagent(
+  settings: Readonly<Record<string, string>> | undefined,
+): [Record<string, string> | null, Record<string, string> | null] {
+  const entries = Object.entries(settings ?? {});
+  const pick = (own: boolean) =>
+    Object.fromEntries(
+      entries.filter(([id]) => isPlatformSubagentSetting(id) === own),
+    );
+  const primary = pick(false);
+  const slot = pick(true);
   return [
-    own.length > 0 ? { ...rest, settings: Object.fromEntries(own) } : rest,
-    slot.length > 0 ? Object.fromEntries(slot) : null,
+    Object.keys(primary).length > 0 ? primary : null,
+    Object.keys(slot).length > 0 ? slot : null,
   ];
 }
 
@@ -69,24 +88,106 @@ export function choiceSlots(
   };
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the subagent slot as a run takes it: a profile lends its harness and model (D93), values are taken as they are, and a profile that cannot run leaves the subagent to the agent. */
-export async function resolvedSubagent(
+/* UNIT_BOUNDARY_DESCRIPTION: the harness a pair runs on, as its agent's runtime last reported it; undefined before the agent reports any, which reads as a harness that keeps no native subagents. */
+export function harnessCapabilityOf(
+  capabilities: unknown,
+  harness: string,
+): HarnessCapability | undefined {
+  const carried = z
+    .array(harnessCapability)
+    .safeParse(
+      (capabilities as { harnesses?: unknown } | null)?.harnesses,
+    ).data;
+  return carried?.find((h) => h.name === harness);
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent a profile lends a slot that holds none of its own, and why it cannot run on the agent; null is a profile that names none. */
+export interface LentSubagent {
+  settings: Record<string, string> | null;
+  unavailable: string | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent a composed pair runs, the
+ * one place a chat, a channel and a schedule decide it (D193B). A slot names a
+ * profile, holds values of its own, or holds nothing: a named profile lends its
+ * harness and model (D93) and one that cannot run leaves the subagent to the
+ * agent, values are taken as they are, and nothing follows the profile's lent
+ * sub-agent. An own slot never inherits the lent one, even an unresolvable one,
+ * but a lent sub-agent that would run and cannot refuses the run, so an edit
+ * that breaks it is put back rather than silently dropped. The slot holds
+ * platform keys only; `withEffectiveSubagent` is what makes it drive the
+ * harness's own subagents.
+ */
+export async function composedSubagent(
   slots: Pick<
     SessionChoiceSlots,
     "platformSubagentProfileId" | "platformSubagentSettings"
   >,
+  lent: LentSubagent | null,
   resolveProfile: ProfileResolver,
   agentId: string,
-): Promise<Record<string, string> | null> {
-  if (!slots.platformSubagentProfileId) return slots.platformSubagentSettings;
-  const slot = await resolveProfile({
-    profileId: slots.platformSubagentProfileId,
-    agentId,
-  });
-  return slot?.unavailable === null ? platformSubagentOf(slot.pair) : null;
+  owner?: string,
+): Promise<
+  | { settings: Record<string, string> | null; refused?: undefined }
+  | { refused: string; settings?: undefined }
+> {
+  const named = slots.platformSubagentProfileId;
+  if (named) {
+    const slot = await resolveProfile({
+      profileId: named,
+      agentId,
+      ...(owner !== undefined && { owner }),
+    });
+    return {
+      settings:
+        slot?.unavailable === null ? platformSubagentOf(slot.pair) : null,
+    };
+  }
+  if (slots.platformSubagentSettings)
+    return { settings: slots.platformSubagentSettings };
+  if (lent?.unavailable) return { refused: lent.unavailable };
+  return { settings: lent?.settings ?? null };
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot merged; a primary profile that cannot run refuses with its reason rather than running on another model. */
+/* UNIT_BOUNDARY_DESCRIPTION: whether the harness's own subagents can run a model: the primary's own Connection lists it for the primary harness, which is the listing the picker offers. An unknown listing, or none, offers nothing (D193B). */
+export function runsNativelyIn(
+  catalog: Pick<OwnerModelCatalogView, "providers"> | null | undefined,
+  pair: Pick<SessionPair, "harness" | "provider">,
+): (model: string) => boolean {
+  const provider = catalog?.providers.find(
+    (p) => p.connectionId === pair.provider,
+  );
+  return (model) =>
+    provider?.models.some(
+      (m) => m.harnesses.includes(pair.harness) && sameModelName(m.name, model),
+    ) ?? false;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the settings a run's payload carries instead of what it was given, for the boundary that builds that payload: a chat's session/new, a channel's turn, a schedule's fire (D193B). */
+export type RunSettingsSource = (
+  agentId: string,
+  pair: Pick<SessionPair, "harness" | "provider" | "model">,
+  settings: Record<string, string> | undefined,
+) => Promise<Record<string, string>>;
+
+/* UNIT_BOUNDARY_DESCRIPTION: the settings a run's payload carries, the one place the subagent choice becomes both kinds of subagent (D193B): the primary's own settings, the platform slot, and the native keys derived from it against the model the run actually starts on. */
+export function runSubagentSettings(
+  capability: HarnessCapability | undefined,
+  catalog: Pick<OwnerModelCatalogView, "providers"> | null | undefined,
+  pair: Pick<SessionPair, "harness" | "provider" | "model">,
+  settings: Record<string, string> | undefined,
+): Record<string, string> {
+  const [primary, platform] = splitSubagent(settings);
+  return effectiveSubagentSettings(
+    capability,
+    primary ?? {},
+    platform,
+    runsNativelyIn(catalog, pair),
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot composed; a primary profile that cannot run, or a lent sub-agent that would run and cannot, refuses with its reason rather than running on another model. */
 export async function resolvedChoice(
   slots: SessionChoiceSlots,
   resolveProfile: ProfileResolver,
@@ -96,6 +197,8 @@ export async function resolvedChoice(
   | { refused: { profile: string; detail: string } }
 > {
   let primary = slots.pair;
+  let lent: LentSubagent | null = null;
+  let profileName = "";
   if (slots.profileId) {
     const resolved = await resolveProfile({
       profileId: slots.profileId,
@@ -113,15 +216,17 @@ export async function resolvedChoice(
         },
       };
     primary = resolved.pair;
+    profileName = resolved.profile.name;
+    lent = {
+      settings: resolved.subagent,
+      unavailable: resolved.subagentUnavailable,
+    };
   }
-  return {
-    pair:
-      primary &&
-      withPlatformSubagent(
-        primary,
-        await resolvedSubagent(slots, resolveProfile, agentId),
-      ),
-  };
+  if (!primary) return { pair: null };
+  const subagent = await composedSubagent(slots, lent, resolveProfile, agentId);
+  if (subagent.refused)
+    return { refused: { profile: profileName, detail: subagent.refused } };
+  return { pair: withPlatformSubagent(primary, subagent.settings ?? null) };
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: tool approval is one session's own pick, so a saved default never holds one and a stored one is never read. */
@@ -199,7 +304,8 @@ export function sameModelName(listed: string | null, model: string): boolean {
  * model the person or the schedule chose and that model's provider, never a
  * model or provider the platform picks in their place. A model that names no
  * granted provider, or a saved default with no model, comes back with no
- * model, which a run reports as the agent having no default model. No
+ * model; the caller runs the second on the automatic model and reports the
+ * first as a provider the agent no longer holds. No
  * provider that fits the harness is a failed run, never a jump to another
  * harness; with nothing granted at all the run goes ahead with no provider,
  * for an agent that holds its model key some other way.
@@ -307,4 +413,46 @@ function resolveLeasedPair(input: SessionPairInputs): SessionPair | null {
   return fallback
     ? { harness: input.defaultHarness, provider: fallback.id, model: null }
     : null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a run takes when nothing is saved for
+ * its harness, so an agent that holds a usable provider never fails for lack
+ * of a saved default: the platform's preferred work model across the
+ * agent's providers in the owner catalog's order, else the first model the
+ * first of them lists for the harness. A "not set" default that names a
+ * provider the agent still holds keeps to it, so the run never moves off the
+ * provider it ran on; one the agent no longer holds pins nothing. A
+ * provider that has not listed offers nothing. Null when no provider lists a
+ * model for the harness, which the caller reports as the agent having no
+ * model provider to run on.
+ */
+export function automaticModel(
+  providers: readonly ProviderCatalogView[],
+  pair: Pick<SessionPair, "harness" | "provider">,
+): { provider: string; model: string } | null {
+  const pinned = providers.some((p) => p.connectionId === pair.provider);
+  const listings = providers.flatMap((p) => {
+    const models =
+      p.status === "listed" && (!pinned || p.connectionId === pair.provider)
+        ? p.models.filter((m) => m.harnesses.includes(pair.harness))
+        : [];
+    return models.length > 0 ? [{ ...p, models }] : [];
+  });
+  const preferred = preferredModelOf(
+    "work",
+    listings.map((p) => ({
+      alias: p.alias,
+      listed: p.models.map((m) => m.upstreamId),
+    })),
+    pair.harness,
+  );
+  for (const p of listings) {
+    const model = preferred
+      ? p.alias === preferred.alias &&
+        p.models.find((m) => m.upstreamId === preferred.upstreamId)
+      : p.models[0];
+    if (model) return { provider: p.connectionId, model: model.name };
+  }
+  return null;
 }

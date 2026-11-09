@@ -13,6 +13,7 @@ export {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
   composeScriptOutputs,
@@ -41,7 +42,6 @@ export type {
 export type { DriverProvider } from "./domain/provider-inheritance.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
 export { runtimeRunsScripts } from "./domain/script-output.js";
-export { REPORT_GRACE_MS } from "./services/target-reaper.js";
 export { createDelegationFramesClient } from "./infrastructure/delegation-frames-client.js";
 export { invocationScheduleId } from "./domain/target-name.js";
 export type { DelegationFramesPort } from "./services/delegation-frames.js";

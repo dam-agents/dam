@@ -132,6 +132,17 @@ spec:
               value: "xforwarded"
             - name: KC_HTTP_ENABLED
               value: "true"
+            {{- with include "platform.url.environments" . }}
+            # Read by the Environments extension
+            # (packages/keycloak-environments): the addresses a token may
+            # name as its audience, the callbacks a client may register.
+            - name: DAM_ENVIRONMENTS_URL_TEMPLATE
+              value: {{ . | quote }}
+            - name: DAM_ENVIRONMENTS_REDIRECTS
+              value: {{ join " " $.Values.environments.oauth.redirects | quote }}
+            - name: DAM_ENVIRONMENTS_REALM
+              value: {{ $.Values.keycloak.realm | quote }}
+            {{- end }}
             # Login-theme knobs — resolved by theme.properties `${env.…}`
             # placeholders in the Keycloakify-built theme.
             - name: PLATFORM_ALLOW_PASSWORD
@@ -140,6 +151,14 @@ spec:
               value: {{ .Values.keycloak.shareClientId | quote }}
             - name: PLATFORM_BRAND_NAME_MEANINGS
               value: {{ .Values.brand.nameMeanings | default (list) | toJson | quote }}
+            - name: PLATFORM_DOCS_URL
+              value: {{ .Values.links.docs | quote }}
+            - name: PLATFORM_LOGIN_COMMUNITY_LABEL
+              value: {{ dig "community" "label" "" .Values.keycloak.login | quote }}
+            - name: PLATFORM_LOGIN_COMMUNITY_URL
+              value: {{ dig "community" "url" "" .Values.keycloak.login | quote }}
+            - name: PLATFORM_API_URL
+              value: {{ include "platform.url.ui" . | quote }}
             {{- with .Values.keycloak.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -16,7 +16,7 @@ pub fn stage0() -> ! {
         fatal!("the VMM names no share at {}", guest::SHARE_PATH);
     };
     let at = Path::new(guest::STAGE0_SHARE);
-    if let Err(e) = mount_virtiofs(&share.tag, at, true) {
+    if let Err(e) = mount_virtiofs(&share.tag, at, true, ShareRead::Dax) {
         fatal!("mounting the share {} at {}: {e}", share.tag, at.display());
     }
     let init = at.join("init");
@@ -53,19 +53,56 @@ pub fn boot_mounts() -> Vec<BootMount> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share, with DAX where the VMM gave the share a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. A share without a window refuses the option, and is mounted without it. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, which is how a host tells whether its machines' mounts are DAX-mapped.
-fn mount_virtiofs(tag: &str, target: &Path, read_only: bool) -> io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: how a virtiofs share is read. A share is mapped with DAX where the VMM gave it a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. The image tree is copied instead, through a large read-ahead: it holds the image's tools, and a DAX-mapped one reads at about 10 MB/s whatever its read-ahead, so Chrome (400 MB) and the Claude binary (290 MB) took 30–40 s to start the first time and the browser panel gave up on Chrome. Copied with a 4 MiB read-ahead the same reads run at about 70 MB/s; the cost is the guest's RAM, as each machine keeps its own page cache of the tools it read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ShareRead {
+    Dax,
+    Copied { read_ahead_kib: u32 },
+}
+
+const IMAGE_TREE_READ: ShareRead = ShareRead::Copied {
+    read_ahead_kib: 4096,
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share read as `read` says. A share without a DAX window refuses the option, and is mounted without it; a read-ahead the guest cannot set is a warning, since the share still reads, only slower. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, with the read-ahead after it when one was set, which is how a host tells how its machines' mounts are read.
+fn mount_virtiofs(tag: &str, target: &Path, read_only: bool, read: ShareRead) -> io::Result<()> {
     mkdir_all(target)?;
     let flags = if read_only { libc::MS_RDONLY } else { 0 };
-    let dax = mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
+    let dax = read == ShareRead::Dax && mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
     if !dax {
         mount_typed(tag, target, "virtiofs", flags, "")?;
     }
-    announce(&format!(
+    let mut line = format!(
         "virtiofs mount active: {tag} at {}, dax={dax}",
         target.display()
-    ));
+    );
+    if let ShareRead::Copied { read_ahead_kib } = read {
+        match set_read_ahead(target, read_ahead_kib) {
+            Ok(()) => line.push_str(&format!(", read_ahead={read_ahead_kib}KiB")),
+            Err(e) => logf!(
+                "WARNING: setting a {read_ahead_kib} KiB read-ahead on {}: {e}",
+                target.display()
+            ),
+        }
+    }
+    announce(&line);
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a FUSE mount's read-ahead is its backing device's, which sysfs names by the mount's anonymous device number.
+fn set_read_ahead(target: &Path, kib: u32) -> io::Result<()> {
+    fs::write(
+        read_ahead_path(fs::metadata(target)?.dev()),
+        format!("{kib}\n"),
+    )
+}
+
+fn read_ahead_path(dev: u64) -> PathBuf {
+    PathBuf::from(format!(
+        "/sys/class/bdi/{}:{}/read_ahead_kb",
+        libc::major(dev),
+        libc::minor(dev)
+    ))
 }
 
 pub fn mount_typed(
@@ -135,7 +172,7 @@ pub fn prepare() -> Machine {
         fatal!("the VMM shares no image tree (SMOLVM_PACKED_LAYERS)");
     };
     let image = Path::new(STAGE).join("image");
-    if let Err(e) = mount_virtiofs(&tag, &image, true) {
+    if let Err(e) = mount_virtiofs(&tag, &image, true, IMAGE_TREE_READ) {
         fatal!("mounting the image tree {tag}: {e}");
     }
     let mut shares = vec![(
@@ -147,7 +184,7 @@ pub fn prepare() -> Machine {
             continue;
         }
         let staged = Path::new(STAGE).join("shares").join(&share.tag);
-        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only) {
+        if let Err(e) = mount_virtiofs(&share.tag, &staged, share.read_only, ShareRead::Dax) {
             fatal!(
                 "mounting the share {} for {}: {e}",
                 share.tag,
@@ -352,6 +389,10 @@ fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = grow_btrfs(target) {
         logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
     }
+    match File::open(STORAGE_DEVICE).and_then(|mut disk| disk.seek(SeekFrom::End(0))) {
+        Ok(bytes) => DISK_BYTES.store(bytes, std::sync::atomic::Ordering::Relaxed),
+        Err(e) => logf!("WARNING: reading the storage disk's size ({e}); its filesystem keeps the size it has, and the guard files alone hold the agent to its room"),
+    }
     if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
         fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
     }
@@ -366,12 +407,15 @@ struct VolArgs {
 }
 
 fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
+    btrfs_ioctl_at(&File::open(dir)?, request, name)
+}
+
+fn btrfs_ioctl_at(dir: &File, request: u8, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
         fd: 0,
         name: [0; 4088],
     };
     args.name[..name.len()].copy_from_slice(name.as_bytes());
-    let dir = File::open(dir)?;
     // SAFETY: _IOW(0x94, request, struct btrfs_ioctl_vol_args), on an open directory of the filesystem, with `args` alive for the call.
     succeeded(
         unsafe {
@@ -387,6 +431,81 @@ fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE with "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
 fn grow_btrfs(mount: &Path) -> io::Result<()> {
     btrfs_ioctl(mount, 3, "max")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the storage disk's whole size, read from the block device at mount and not from btrfs, so a growth refused at mount does not become the most a resize may ask for (resize_btrfs). Nothing until the disk is mounted, or when the device could not be read.
+pub static DISK_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE of device 1 to `bytes`, through any descriptor on the filesystem, so it works through the guard's descriptor after the disk's mount is detached. A growth only moves the end; a shrink past the end of the last chunk (allocated_end) moves it as well, while a smaller one would relocate those chunks first, which callers never ask for.
+pub fn resize_btrfs(dir: &File, bytes: u64) -> io::Result<()> {
+    btrfs_ioctl_at(dir, 3, &bytes.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_search_args: the key that selects the items of one tree, and the buffer the kernel fills with them, each after a 32-byte header of its transid, objectid, offset, type and length in the CPU's order; the items themselves are on-disk structures, little-endian.
+#[repr(C)]
+struct SearchArgs {
+    tree_id: u64,
+    min_objectid: u64,
+    max_objectid: u64,
+    min_offset: u64,
+    max_offset: u64,
+    min_transid: u64,
+    max_transid: u64,
+    min_type: u32,
+    max_type: u32,
+    nr_items: u32,
+    unused: u32,
+    unused1: [u64; 4],
+    buf: [u8; 3992],
+}
+
+const DEV_TREE: u64 = 4;
+const DEV_EXTENT_KEY: u32 = 204;
+
+// UNIT_BOUNDARY_DESCRIPTION: where the last chunk btrfs placed on device 1 ends, and the largest chunk it placed: the largest end and length of its dev extents (BTRFS_IOC_TREE_SEARCH of the device tree, key type DEV_EXTENT, whose item holds the extent's length 24 bytes in). A filesystem resized to the end or past it moves no data, and one resized below it relocates every chunk past the new end first. The device's own used bytes would not do, since a chunk btrfs removed leaves a hole below the end that they do not count. The read is no barrier: the guest may place another chunk before a resize that follows it, which is what the margin in pool_guard::disk_size is for.
+pub fn allocated_end(dir: &File) -> io::Result<(u64, u64)> {
+    let (mut end, mut largest, mut from) = (0u64, 0u64, 0u64);
+    loop {
+        let mut args = SearchArgs {
+            tree_id: DEV_TREE,
+            min_objectid: 1,
+            max_objectid: 1,
+            min_offset: from,
+            max_offset: u64::MAX,
+            min_transid: 0,
+            max_transid: u64::MAX,
+            min_type: DEV_EXTENT_KEY,
+            max_type: DEV_EXTENT_KEY,
+            nr_items: u32::MAX,
+            unused: 0,
+            unused1: [0; 4],
+            buf: [0; 3992],
+        };
+        // SAFETY: _IOWR(0x94, 17, struct btrfs_ioctl_search_args) on an open descriptor of the filesystem, with `args` alive and writable for the call.
+        succeeded(
+            unsafe {
+                libc::ioctl(
+                    dir.as_raw_fd(),
+                    libc::_IOWR::<SearchArgs>(0x94, 17),
+                    &mut args,
+                )
+            } == 0,
+        )?;
+        if args.nr_items == 0 {
+            return Ok((end, largest));
+        }
+        let mut at = 0;
+        for _ in 0..args.nr_items {
+            let bytes = |at: usize| -> [u8; 8] { args.buf[at..at + 8].try_into().unwrap() };
+            let offset = u64::from_ne_bytes(bytes(at + 16));
+            let len = u32::from_ne_bytes(args.buf[at + 28..at + 32].try_into().unwrap()) as usize;
+            let length = u64::from_le_bytes(bytes(at + 32 + 24));
+            end = end.max(offset.saturating_add(length));
+            largest = largest.max(length);
+            from = offset.saturating_add(1);
+            at += 32 + len;
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
@@ -945,6 +1064,21 @@ mod tests {
     fn the_storage_disk_discards_before_it_reuses() {
         assert!(STORAGE_DISK_OPTIONS.contains("discard=sync"));
         assert!(STORAGE_DISK_OPTIONS.contains("compress=zstd:1"));
+    }
+
+    // TEST_SCENARIO: the image tree, which holds the image's tools, is copied through a 4 MiB read-ahead rather than DAX-mapped, and that read-ahead is set on the backing device sysfs names by the mount's device number.
+    #[test]
+    fn the_image_tree_is_read_through_a_large_read_ahead() {
+        assert_eq!(
+            IMAGE_TREE_READ,
+            ShareRead::Copied {
+                read_ahead_kib: 4096
+            }
+        );
+        assert_eq!(
+            read_ahead_path(libc::makedev(0, 42)),
+            Path::new("/sys/class/bdi/0:42/read_ahead_kb")
+        );
     }
 
     // TEST_SCENARIO: the shares reach the guest as smolvm's launcher names them, `tag:target:mode`. A target is any absolute path, a colon included, and anything but `rw` is read-only, so a share is never writable by a misread.

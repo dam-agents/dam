@@ -18,13 +18,15 @@ function PopoverContent({
   align = "center",
   sideOffset = 8,
   tail = true,
+  container,
   children,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content> & {
   tail?: boolean;
+  container?: HTMLElement | null;
 }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container ?? undefined}>
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}

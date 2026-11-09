@@ -74,6 +74,8 @@ export interface LeaseRouterDeps {
     settings: SessionSettings | undefined,
   ) => Record<string, string> | undefined;
   modelRequired: (harness: string) => boolean;
+  envReady?: () => boolean;
+  envWaitMs?: number;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
     harness: string,
@@ -136,6 +138,7 @@ interface Attachment {
 
 const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
+const DEFAULT_ENV_WAIT_MS = 15_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
 const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
 const REWRITE_FROM_METHOD = "platform/rewriteFrom";
@@ -491,15 +494,18 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a turn on a harness that reaches its models
-   * through the Model Router runs on the session's model; with none, the
-   * router or the harness would pick one the user never chose, so the turn
-   * is refused and the user picks.
+   * through the Model Router runs on the session's model. The api-server
+   * fills a session with no model from the agent's providers, and a session a
+   * client opened before the agent's first state settles takes its kind's
+   * default, so a session still without one belongs to an agent that has no
+   * model provider to run on; the router or the harness would pick a model
+   * nobody set up, so the turn is refused and says to connect a provider.
    */
   function noModel(): object {
     return {
       code: -32001,
       message:
-        "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+        "This agent has no model provider to run this session on. Connect a model provider on its Providers page, then pick a model for this session.",
       data: { platform: { reason: NO_MODEL_REASON } },
     };
   }
@@ -507,13 +513,83 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const missesModel = (choice: SessionChoice): boolean =>
     choice.model === null && deps.modelRequired(choice.harness);
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: before the agent's first state settles, a
+   * model-less session or turn cannot be decided: the env says whether the
+   * harness reaches its models through the Model Router, and the defaults the
+   * api-server publishes carry the model a run of each kind takes. A delivery
+   * whose chat default is still null is the one a hello publishes before that
+   * default is converted, so its absence is not yet known to be final and a
+   * model may still arrive; a delivered chat default, with or without a
+   * model, settles the state, since the channel and scheduled defaults follow
+   * it. Until then a session/new or a prompt with no model is held, for the
+   * bound of a harness's own warm start, and then decided on what is known
+   * rather than refused as no-model on a guess; a held session/new that the
+   * settled state answers with its kind's default takes that default's model,
+   * settings and follow marker, as the api-server fills a session a client
+   * names no model for.
+   */
+  const heldForFirstState: { real: ClientChannel; data: string }[] = [];
+  let firstStateTimer: ReturnType<typeof setTimeout> | null = null;
+  let firstStateWaitOver = false;
+
+  function firstStateSettled(): boolean {
+    if (deps.envReady !== undefined && !deps.envReady()) return false;
+    if (deps.sessionDefaults === undefined) return true;
+    return deps.sessionDefaults.get()?.chat != null;
+  }
+
+  function holdForFirstState(real: ClientChannel, data: string): boolean {
+    if (firstStateWaitOver || firstStateSettled()) return false;
+    heldForFirstState.push({ real, data });
+    firstStateTimer ??= setTimeout(() => {
+      firstStateWaitOver = true;
+      releaseHeldForFirstState(false);
+    }, deps.envWaitMs ?? DEFAULT_ENV_WAIT_MS);
+    firstStateTimer.unref?.();
+    return true;
+  }
+
+  function releaseHeldForFirstState(settled: boolean): void {
+    if (firstStateTimer) {
+      clearTimeout(firstStateTimer);
+      firstStateTimer = null;
+    }
+    for (const held of heldForFirstState.splice(0))
+      if (attachments.has(held.real)) route(held.real, held.data, settled);
+  }
+
+  function choiceOnKindDefault(
+    frame: Record<string, unknown>,
+    choice: SessionChoice,
+  ): { choice: SessionChoice; follows: SessionDefaultKind } | null {
+    const type = platformOf(frame)?.type;
+    const kind = defaultKindOfType(typeof type === "string" ? type : undefined);
+    const target = kind ? deps.sessionDefaults?.get()?.[kind] : null;
+    if (!kind || !target || target.model === null) return null;
+    if (target.harness !== choice.harness) return null;
+    return {
+      choice: {
+        ...choice,
+        model: canonicalModel(target.model),
+        ...(choice.settings === undefined &&
+          target.settings && { settings: target.settings }),
+      },
+      follows: kind,
+    };
+  }
+
   function isSessionRunning(sessionId: string): boolean {
     return (
       leaseOfSession(sessionId)?.runtime.isSessionRunning(sessionId) ?? false
     );
   }
 
-  function route(real: ClientChannel, data: string): void {
+  function route(
+    real: ClientChannel,
+    data: string,
+    firstStateHere = false,
+  ): void {
     const attachment = attachments.get(real);
     if (!attachment) return;
     const frame = parseFrame(data) as
@@ -573,11 +649,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         });
         return;
       }
-      const choice: SessionChoice = {
+      let choice: SessionChoice = {
         harness: requested.harness ?? deps.defaultHarness,
         model: requested.model ?? null,
         ...(requested.settings && { settings: requested.settings }),
       };
+      let follows: SessionDefaultKind | undefined;
       const invalid =
         choice.settings &&
         deps.settingsError?.(choice.harness, choice.settings, choice.model);
@@ -598,12 +675,20 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         return;
       }
       if (missesModel(choice)) {
-        refuse(real, frame.id, noModel());
-        return;
+        if (holdForFirstState(real, data)) return;
+        const onDefault = firstStateHere
+          ? choiceOnKindDefault(frame, choice)
+          : null;
+        if (onDefault === null) {
+          refuse(real, frame.id, noModel());
+          return;
+        }
+        choice = onDefault.choice;
+        follows = onDefault.follows;
       }
       const v = channelOn(real, leaseFor(leasePairOf(choice)));
       v.used = true;
-      v.deliver(JSON.stringify(withPlatformChoice(frame, choice)));
+      v.deliver(JSON.stringify(withPlatformChoice(frame, choice, follows)));
       return;
     }
 
@@ -699,6 +784,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       (method === "session/prompt" || method === REWRITE_FROM_METHOD) &&
       missesModel(choice)
     ) {
+      if (isRequest(frame) && holdForFirstState(real, data)) return;
       if (isRequest(frame)) refuse(real, frame.id, noModel());
       else
         deps.log(`dropped a prompt for ${sessionId}: the session has no model`);
@@ -723,12 +809,19 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
    * A change that moves the session to another process waits while its turn
    * runs. Only the metadata changes here: the prompt that follows sends the
    * session's settings to the harness, after loading the session again when
-   * the harness closed it.
+   * the harness closed it. A session with no model on a harness that needs
+   * one has no pick to keep, so it takes its kind's default once, following
+   * or not, rather than be refused while the agent has a model to run on.
    */
   function followDefault(sessionId: string): void {
     const entry = deps.sessionMetadata.get(sessionId);
-    const kind = entry?.meta.follows;
-    if (!entry || !kind) return;
+    if (!entry) return;
+    const kind =
+      entry.meta.follows ??
+      (missesModel(sessionChoice(sessionId, false))
+        ? defaultKindOfType(entry.meta.type)
+        : null);
+    if (!kind) return;
     const after = entry.meta.followsAfter;
     if (after !== undefined && (deps.sessionDefaults?.revision() ?? 0) <= after)
       return;
@@ -1002,6 +1095,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       if (!deps.sessionDefaults) return;
       deps.sessionDefaults.set(defaults);
       convertSessions(defaults);
+      if (firstStateSettled()) releaseHeldForFirstState(true);
     },
 
     sessionFrames(sessionId) {
@@ -1049,6 +1143,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
           force: hits.some((hit) => hit.namesChanged),
         });
       }
+      if (firstStateSettled()) releaseHeldForFirstState(true);
     },
 
     recycleForConfig() {
@@ -1097,6 +1192,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     shutdown() {
       clearInterval(idleTimer);
+      if (firstStateTimer) clearTimeout(firstStateTimer);
       for (const lease of leases.values()) lease.runtime.shutdown("process");
       leases.clear();
     },
@@ -1120,7 +1216,12 @@ function defaultKindOfType(
   if (!parsed.success) return null;
   return match(parsed.data)
     .with("regular", "cli_run", () => "chat" as const)
-    .with("channel_slack", "channel_telegram", () => "channel" as const)
+    .with(
+      "channel_slack",
+      "channel_telegram",
+      "artifact",
+      () => "channel" as const,
+    )
     .with("schedule_cron", "schedule_once", () => "scheduled" as const)
     .with("invocation", () => null)
     .exhaustive();
@@ -1164,6 +1265,7 @@ function platformChoice(
 function withPlatformChoice(
   frame: Record<string, unknown>,
   choice: SessionChoice,
+  follows?: SessionDefaultKind,
 ): object {
   return withPlatform(frame, (platform) => {
     const { provider: _provider, settings: _settings, ...rest } = platform;
@@ -1172,6 +1274,7 @@ function withPlatformChoice(
       harness: choice.harness,
       ...(choice.model !== null && { model: choice.model }),
       ...(choice.settings && { settings: choice.settings }),
+      ...(follows !== undefined && rest.follows === undefined && { follows }),
     };
   });
 }

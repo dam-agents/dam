@@ -88,7 +88,9 @@ A *linked* worktree never gets the default install, `main` included: only the re
 **A port per install, one Traefik.**
 Every install serves the same host names (`localhost`, `keycloak.localhost`, `share.`, `content.`, `*.env.localhost`) on a port of its own: 4444 for the default install, otherwise the first free port of 4400–4499.
 One Lima port-forward rule carries that whole range to this host (`etc/lima/k3s.yaml`); the first install of a cluster adds it and restarts the VM once (Lima reads forwards at start), and `cluster:install` checks for it on every run, so it happens at most once per VM.
-The cluster's one `HelmChartConfig traefik` holds an entrypoint per install (`platform`, `platform-<name>`), merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
+The cluster's one `HelmChartConfig traefik` holds an entrypoint per install, merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
+An entrypoint's name is a Kubernetes port name, which stops at 15 characters: the default install's is `platform`, and a named install's is `p-<the name's first 6 characters>-<5 hex of the name>`, so two installs whose names share a prefix never collide (`platform-<name>` collided once Traefik's chart truncated it, and failed its release for every install).
+An entrypoint an install recorded under that old name is read from there and rewritten under the short one, and `cluster:uninstall` drops both.
 Each install's Ingress names its entrypoint (`ingress.annotations.traefik.ingress.kubernetes.io/router.entrypoints`), because Traefik attaches a router with no entrypoints to all of them.
 A named install also sets `router.priority=1000`: an Ingress installed before the annotation existed — the default install's, until its next `cluster:install` — still claims `Host(localhost)` on every entrypoint, and Traefik breaks that tie by rule length.
 Traefik gives every router an Ingress makes that Ingress's priority, so the host-less catch-all rule (`ingress.catchAllAppHost`) has an Ingress of its own.
@@ -144,6 +146,9 @@ What it installs beside the chart:
   The gate hands each request to `127.0.0.1:<port>` with `Host: 127.0.0.1:<port>`, and the ingress routes by host name, so the bridge puts `X-Forwarded-Host` back as the host, and states the public scheme and port.
 - **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
   Only the node's loopback reaches that entrypoint.
+- **No image garbage collection and no disk eviction in k3s** (`60-image-gc-off.yaml`, `image-gc-high-threshold=100`, `eviction-hard=memory.available<100Mi`): the outer grant makes the disk look nearly full, so the kubelet deleted the agent image a minute after the import (#6128), and under 5% free its eviction manager deleted every unused platform image and evicted pods, which left the install in `ErrImageNeverPull` (#6272).
+  An Environment installed before #6272 takes it at its next `cluster:install`, which restarts k3s; one whose images are gone already needs that install to put them back.
+  Nothing in an Environment pulls an image back, since the install puts every one in itself; one the install no longer needs stays until a person removes it.
 
 **Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
 `--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.
@@ -158,7 +163,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 
 - `mise run e2e` — full from-scratch run: nuke the test VM, install a fresh cluster, run specs, tear down (the CI path)
 - `mise run e2e:loop` — fast rerun against a warm test cluster: bootstrap once if missing, optionally rebuild components, wipe data, run specs.
-  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking)
+  Options: `--headed --full --rebuild=controller,api-server,ui,keycloak,agents --test=<filter>` (`--rebuild=` rebuilds nothing without asking); in an Environment also `--no-install`
 - `mise run e2e:reset` — data wipe only: drop+recreate the platform DB, delete agents (CMs/sts/pods/PVCs) and VM runners, clear stored Playwright auth.
   Leaves the cluster running
 
@@ -167,7 +172,7 @@ The cluster tasks load the tools' PATH from the image's mise themselves; in a sh
 Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 
 **Suite tiers.** **Smoke** (`src/tests/smoke/`) is what CI (both jobs, see [VM runner](#vm-runner-kvm)) and plain `e2e` / `e2e:loop` run.
-**Full** adds the slow scenario specs under `src/tests/full/`, on demand only: `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`).
+**Full** adds the slow scenario specs under `src/tests/full/`: locally on demand, `mise run e2e:loop -- --full` (fresh cluster: `mise run e2e -- --full`), and in CI on the nightly run alone, in the default lane.
 `src/tests/full/` specs: one `<area>-full` Playwright project per area, self-contained (own agents, own token via `getAccessToken` + `acceptTerms`, no smoke-chain fixtures), motivating ticket in the test title.
 
 ### The e2e suite in an Environment
@@ -176,9 +181,13 @@ Iterate with `e2e:loop`; use `e2e` after helm/realm/infra changes.
 It is the command the agent kit's `verify_environment` names: `mise run e2e:loop -- --environment {environment}`.
 The Environment is one made as in [In an Environment](#in-an-environment), on an install whose agents nest, since every agent the suite creates is a machine.
 
-1. **Install what changed.** `e2e:install -- --environment <name>` runs every time, through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, one vCPU and 1Gi a boot) and the default harness Template.
+1. **Install what changed.** `e2e:install -- --environment <name>` runs through `cluster:install -- --environment <name> --backchannel`, with the lane's values (mock agents, the e2e control API, four vCPUs and 1Gi a boot) and the default harness Template.
    An image the registry has for this checkout's source is pulled by the node; one it lacks is built here and streamed in, unless the node already holds that build.
    Only a deployment whose image changed is restarted, and only an agent image that changed is staged again, from the node's own copy, so a second run that changed nothing changes nothing.
+   It still takes minutes, so `e2e:loop` skips it when the Environment's last lane install that passed its gate was of the checkout's commit from a clean tree, into the same cluster: `~/.cache/platform-cluster/env-<name>/e2e-installed` records that commit and the UID of the cluster's `kube-system` namespace, so an Environment made again under the same name installs, and `cluster:install` and `cluster:build` there clear it.
+   A new commit or any local change, tracked or not, installs as before.
+   `--no-install` skips it whatever the checkout changed, for a rerun that changed only specs.
+   A skipped install prints one line that says so and which commit the Environment runs.
 2. **Reset and gate**, as on the test cluster: `e2e:reset` and `e2e:gate` take `--environment` too.
 3. **Run the suite on the backchannel.** The lane's backchannel answers at `localhost:<port>` and `keycloak.localhost:<port>`, on a port of the Environment's own from 6560–6599, so the local lane's 6555 and several Environments run side by side on one agent.
    The port is the one the install already answers on, else the first one no other of this agent's Environments holds; the agent's `~/.cache/platform-cluster/env-<name>/e2e-port` records it.
@@ -186,6 +195,18 @@ The Environment is one made as in [In an Environment](#in-an-environment), on an
    The specs run here, and the browser they drive runs in the Environment: Playwright's browser server, from this checkout's `playwright-core`, on the Environment's loopback, reached over its own forward through `PW_TEST_CONNECT_WS_ENDPOINT`, so a busy agent slows the specs' own calls but not the pages they load.
    The browser is the image's when it is this Playwright's revision, else one installed into the Environment's home once; traces, videos and the report come back over the connection into the checkout, as a local run leaves them, and `--headed` is refused, since there is no window to open there.
    Each lane has its own Keycloak login lock port, so two suites never wait on each other's logins.
+
+**Debugging one failure** in an Environment:
+
+1. Install once: a plain `e2e:loop -- --environment <name>`, or `e2e:install -- --environment <name>`.
+2. Iterate on the one spec with `e2e:loop -- --environment <name> --test <spec>`, and add `--no-install` once nothing outside `packages/e2e/` changed, so a rerun goes straight to the reset.
+   A change to the app, a chart or an image needs the install again: drop `--no-install` for that run.
+   Or reproduce it by hand in the Environment (`cluster:kubectl`, `cluster:shell`, `ssh env-<name>`) and read the logs with timestamps (`kubectl logs --timestamps`), which says more per minute than a rerun.
+   `--test` on a smoke spec still runs its whole dependency chain (the comment at the top of `e2e:loop` says why); only a full-only spec, with `--full`, runs alone.
+3. Run the full suite once, at the end, on the final commit with a clean tree: that run is the one a pull request reports.
+
+When a setup step fails — the install, `e2e:reset`, `e2e:gate`, image staging — stop and fix its cause before the next run.
+Never rerun the same failing setup unchanged: it fails the same way and costs a whole cycle before a single spec runs.
 
 Two Environments share nothing but this agent, which builds their changed images and runs their specs: each has its own k3s, install, browser, data and port.
 Two runs on one Environment at once are not supported: they would reset each other's data.
@@ -196,9 +217,12 @@ What differs from the local lane:
 - **No mesh**: the Environment's kernel cannot run ambient, so no AuthorizationPolicy is enforced there, and the run says nothing about isolation; CI's lanes still cover it.
 - **`mise run e2e` refuses `--environment`**: it deletes its cluster before and after the suite, and an Environment's install goes with the Environment.
   For a fresh Environment, delete it and create it again.
-- **`--rebuild`** does nothing there: the install already took every change of the checkout.
+- **`--rebuild`** does nothing there: the install already took every change of the checkout, or `--no-install` asked for none.
+- **`--no-install`** is for an Environment only: on the test cluster `e2e:loop` never reinstalls a warm cluster anyway, and refuses the flag.
 - **No spec is skipped there by design**: the specs that reach into the cluster or a runner (`19-agent-machine`, `22-harness-tools`, `27-vm-boot-matrix`, `28-runner-release`, `29-vm-storage-trim`) reach the Environment's own through its API.
   `28-runner-release` derives its second runner release from the registry's runner image the Environment pulled, or from the one built here, and streams it in.
+- **A slower host**: an Environment's 4 vCPUs carry k3s, the controller, the browser and every nested machine, so its load runs at 10–25 while the agent specs run, and a guest's boot, stop and wake take 12–20 s each.
+  A spec that waits on an agent sets a test timeout above the wait it makes (`waitForAgentRunning` waits up to 240 s), and a spec that reads what a stop did puts what it reads first in the stop, since openrc's shutdown window is shared and a loaded stop spends it.
 
 ## No mesh (local only)
 
@@ -224,7 +248,8 @@ Everywhere else, and in the e2e install, the runner pods need a usable `/dev/kvm
 The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod.
 In a sandbox or an Environment whose machine root is an overlay (the platform's own agent images), the runner pod, which runs in a user namespace, cannot idmap a volume on that root and stays in `StartError: ... MOUNT_ATTR_IDMAP ... invalid argument`.
 `cluster:install` therefore moves the kubelet's root to `~/.local/share/kubelet` (the drop-in `/etc/rancher/k3s/config.yaml.d/60-kubelet-root.yaml`, written once k3s has stopped, so it restarts k3s once and a stop that failed is tried again) and bind-mounts `~/.local/share/host-<name>` over each node directory the install's values name (`virtualization.imageCache.hostPath`, `.legacyPath`, `virtualization.runner.releaseHostPath`).
-A bind mount does not outlive a restart, so every install makes it again and deletes the pods that started on the overlay directory; run `cluster:install` (or `e2e:install`) after a restart before anything that boots an agent.
+A bind mount does not outlive a restart, so the install also writes the openrc service `/etc/init.d/platform-host-dirs`, in the default runlevel and before k3s, which makes those mounts again at every boot; a node with no OpenRC has none, and there `cluster:install` (or `e2e:install`) after a restart comes before anything that boots an agent.
+Every install makes the mounts again too, and deletes the pods that started on the overlay directory.
 A host where those paths are no overlay keeps them as they are.
 `mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) stages the mock image for the VM runners and runs the smoke suite; `E2E_GATEWAY_PER_OWNER=1` installs with one gateway pod per owner (`virtualization.gateway.perOwner`) instead of the default gateway pod per agent.
 Boot waits are four minutes for a boot and five for a smoke test, so a guest that stops answering fails the run in minutes.

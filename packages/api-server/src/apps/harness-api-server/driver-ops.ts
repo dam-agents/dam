@@ -71,9 +71,9 @@ const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
   "nothing names the sub-agent's model: pass a provider-qualified model, as the agent's Config panel lists it, or spawn on the harness of this agent's default model to run on that model; an agent with no default gets one on its Providers page";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the model of the driver's saved chat default, when
- * that default runs on the harness asked for; null when it runs on another
- * harness or names no model, so nothing is ever picked in the owner's place.
+ * UNIT_BOUNDARY_DESCRIPTION: the model of the driver's chat default, saved or
+ * automatic, when it runs on the harness asked for; null when it runs on
+ * another harness or has no model.
  * An older runtime's bare model name is none either, since the spawn route
  * takes provider-qualified names only.
  */
@@ -81,12 +81,10 @@ export function driverDefaultModel(
   firePair: FirePair,
 ): NonNullable<DriverOpsDeps["defaultModel"]> {
   return async (driverId, harness) => {
-    const pair = await firePair(driverId, "chat", { harness }).catch(
-      (err: unknown) => {
-        if (isNoDefaultModelError(err)) return null;
-        throw err;
-      },
-    );
+    const pair = await firePair(driverId, "chat", {}).catch((err: unknown) => {
+      if (isNoDefaultModelError(err)) return null;
+      throw err;
+    });
     return pair?.harness === harness && isQualifiedModel(pair.model)
       ? pair.model
       : null;

@@ -6,6 +6,7 @@ import type {
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import type { AgentModelsService } from "../services/agent-models-service.js";
+import { defaultHarnessOf } from "../domain/agent-models.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import { renderTable } from "../../shared/render-table.js";
@@ -79,9 +80,16 @@ export function buildModelsCommand(deps: {
 
         let harness = opts.harness;
         if (harness === undefined) {
-          const status = await svc.status(agent.id);
+          const [status, defaults] = await Promise.all([
+            svc.status(agent.id),
+            svc.savedDefaults(agent.id),
+          ]);
           exitOnServiceError(status, host);
-          harness = status.value.defaultHarness ?? undefined;
+          harness =
+            defaultHarnessOf(
+              defaults.ok ? defaults.value.chat : null,
+              status.value.defaultHarness,
+            ) ?? undefined;
         }
         if (harness === undefined) {
           process.stderr.write(

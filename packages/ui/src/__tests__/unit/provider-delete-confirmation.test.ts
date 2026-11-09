@@ -44,16 +44,18 @@ vi.mock("../../modules/connections/api/queries.js", () => ({
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
-    itemByType: new Map([
+    itemsByType: new Map([
       [
         "openai",
-        {
-          id: "c1",
-          conn: { id: "c1", name: "My OpenAI", templateId: "openai" },
-        },
+        [
+          {
+            id: "c1",
+            conn: { id: "c1", name: "My OpenAI", templateId: "openai" },
+          },
+        ],
       ],
     ]),
-    itemByTemplateId: new Map(),
+    itemsByTemplateId: new Map(),
     isPending: false,
   }),
 }));
@@ -113,6 +115,9 @@ vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
 }));
 vi.mock("../../modules/sessions/components/detach-provider-message.js", () => ({
   DetachProviderMessage: () => "Revoke this agent's grant",
+}));
+vi.mock("../../modules/sandboxes/components/agent-model-picker.js", () => ({
+  AgentModelPicker: () => null,
 }));
 vi.mock("../../modules/providers/components/provider-spend-row.js", () => ({
   ProviderSpendRow: ({

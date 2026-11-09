@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { getBrand } from "../../../brand.js";
 import { UserBudgetsSection } from "../../budgets/components/user-budgets-section.js";
+import { LoginTestimonialsSection } from "../../login-testimonials/components/login-testimonials-section.js";
 import { SpendCeilingsSection } from "../../spend/components/spend-ceilings-section.js";
 
 export function OperatorView() {
@@ -13,6 +14,7 @@ export function OperatorView() {
       />
       <SpendCeilingsSection />
       <UserBudgetsSection />
+      <LoginTestimonialsSection />
     </div>
   );
 }

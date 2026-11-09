@@ -6,7 +6,11 @@ import {
   sessionSettingsError,
   type SessionSettings,
 } from "agent-runtime-api";
-import { aliasForProviderType, type HarnessCatalog } from "api-server-api";
+import {
+  aliasForProviderType,
+  type HarnessCatalog,
+  type OwnerModelCatalogView,
+} from "api-server-api";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { harnessFits } from "../../templates/index.js";
@@ -14,6 +18,7 @@ import { NoDefaultModelError } from "../domain/no-default-model.js";
 import {
   legacyModelName,
   qualifiedPairModel,
+  runSubagentSettings,
   sameModelName,
 } from "../domain/session-pair.js";
 import { harnessesOf, sessionModelChoices } from "./harness-config-service.js";
@@ -39,11 +44,22 @@ export function createSessionChoicesValidator(deps: {
   pairRepo: Pick<SessionPairRepo, "grantedProviders" | "read">;
   snapshotRepo: Pick<HarnessConfigSnapshotRepo, "read">;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   firePair: (
     agentId: string,
     kind: "scheduled",
     preferred: { harness?: string; model?: string },
-  ) => Promise<{ harness: string; model: string | null } | null | undefined>;
+  ) => Promise<
+    | {
+        harness: string;
+        provider?: string | null;
+        model: string | null;
+      }
+    | null
+    | undefined
+  >;
 }): SessionChoicesValidator {
   /**
    * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
@@ -75,25 +91,43 @@ export function createSessionChoicesValidator(deps: {
    * Router or a provider it runs natively (Bedrock), so a model-valued
    * setting (the subagent model) must be on the side of the model the fire
    * runs, resolved as the fire resolves it (the schedule's own, else the
-   * saved default; with no default model the fire's side is unknown and the
-   * check passes, since the fire reports the missing default). As in the
+   * saved default, else the automatic model; with no model to run on the
+   * fire's side is unknown and the check passes, since the fire reports
+   * it). As in the
    * runtime, a model is native only on a granted provider the harness runs
    * natively. A runtime that names no native templates splits nothing.
    */
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a schedule's fire runs on, resolved the way the runner resolves it: its own harness and model where it names them, else the scheduled default (D193B). */
+  const fireOf = async (
+    agentId: string,
+    choices: SessionChoices,
+  ): Promise<{
+    harness: string;
+    provider: string | null;
+    model: string | null;
+  } | null> => {
+    try {
+      const fire = await deps.firePair(agentId, "scheduled", {
+        ...(choices.harness !== undefined && { harness: choices.harness }),
+        ...(choices.model !== undefined && { model: choices.model }),
+      });
+      return fire ? { ...fire, provider: fire.provider ?? null } : null;
+    } catch (err) {
+      if (err instanceof NoDefaultModelError) return null;
+      throw err;
+    }
+  };
+
   const crossedSubagentModel = async (
     agentId: string,
     carried: readonly HarnessCapability[],
     choices: SessionChoices,
+    fire: {
+      harness: string;
+      provider: string | null;
+      model: string | null;
+    } | null,
   ): Promise<string | undefined> => {
-    const fire = await deps
-      .firePair(agentId, "scheduled", {
-        ...(choices.harness !== undefined && { harness: choices.harness }),
-        ...(choices.model !== undefined && { model: choices.model }),
-      })
-      .catch((err: unknown) => {
-        if (err instanceof NoDefaultModelError) return undefined;
-        throw err;
-      });
     if (!fire) return undefined;
     const capability = carried.find((h) => h.name === fire.harness);
     const nativeTemplates = capability?.nativeTemplates ?? [];
@@ -167,26 +201,48 @@ export function createSessionChoicesValidator(deps: {
         return `the ${harness} harness does not list ${model} on this agent`;
     }
     if (choices.settings !== undefined) {
-      const unsupported = Object.keys(choices.settings).find(
+      /* UNIT_BOUNDARY_DESCRIPTION: the settings checked are the ones a fire runs, native subagent values derived by the one rule against the pair the fire resolves, so save and fire agree on what the sub-agent is (D193B). */
+      const fire = await fireOf(agentId, choices);
+      const effectiveHarness = fire?.harness ?? harness;
+      const effectiveCapability =
+        carried.find((h) => h.name === effectiveHarness) ?? harnessCapability;
+      const settings = runSubagentSettings(
+        effectiveCapability,
+        await deps.ownerCatalog(agentId),
+        {
+          harness: effectiveHarness,
+          provider: fire?.provider ?? null,
+          model:
+            fire?.model ??
+            (choices.model ? qualifiedPairModel(choices.model) : null),
+        },
+        choices.settings,
+      );
+      const unsupported = Object.keys(settings).find(
         (id) =>
           !(isPlatformSubagentSetting(id)
-            ? harnessCapability?.platformSubagentSettings
-            : harnessCapability?.sessionSettings?.includes(id)),
+            ? effectiveCapability?.platformSubagentSettings
+            : effectiveCapability?.sessionSettings?.includes(id)),
       );
       if (unsupported)
-        return `the ${harness} harness cannot set ${unsupported} for a schedule`;
-      const platform = platformSubagentSettingsError(
-        choices.settings,
+        return `the ${effectiveHarness} harness cannot set ${unsupported} for a schedule`;
+      const slotIssue = platformSubagentSettingsError(
+        settings,
         (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
       );
-      if (platform) return platform;
+      if (slotIssue) return slotIssue;
       const invalid = sessionSettingsError(
-        harnessCapability?.harnessConfigCatalog,
-        choices.settings,
+        effectiveCapability?.harnessConfigCatalog,
+        settings,
         choices.model ? qualifiedPairModel(choices.model) : null,
       );
       if (invalid) return invalid;
-      const crossed = await crossedSubagentModel(agentId, carried, choices);
+      const crossed = await crossedSubagentModel(
+        agentId,
+        carried,
+        { ...choices, settings },
+        fire,
+      );
       if (crossed) return crossed;
     }
     return undefined;

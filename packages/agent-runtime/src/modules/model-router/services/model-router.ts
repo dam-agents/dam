@@ -25,6 +25,7 @@ import {
   bedrockModelCallOf,
   bedrockRootOf,
   bedrockRouteOf,
+  converseUsageOfBody,
   createBedrockUsageScanner,
   type BedrockRoute,
 } from "../domain/bedrock.js";
@@ -145,7 +146,13 @@ export interface ModelRouter {
   close(): Promise<void>;
 }
 
-const REQ_DROP = new Set([
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the request headers that never go upstream, the
+ * hop-by-hop set plus the client's own credential and the platform's stamps,
+ * and the reply headers that never come back, since the router re-frames the
+ * body; one list for the model calls and the Bob gateway pass-through alike.
+ */
+export const REQ_DROP = new Set([
   "host",
   "connection",
   "keep-alive",
@@ -163,7 +170,7 @@ const REQ_DROP = new Set([
   SESSION_HEADER,
   CALL_HEADER,
 ]);
-const RES_DROP = new Set([
+export const RES_DROP = new Set([
   "content-encoding",
   "content-length",
   "transfer-encoding",
@@ -207,7 +214,7 @@ function reply(
     .end(errorBody(dialect, `model-router: ${message}`));
 }
 
-const keep = (
+export const keepHeaders = (
   entries: Iterable<[string, string | string[] | undefined]>,
   drop: Set<string>,
 ): Record<string, string> =>
@@ -217,6 +224,7 @@ const keep = (
         !drop.has(pair[0]) && typeof pair[1] === "string",
     ),
   );
+const keep = keepHeaders;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Model Router, the loopback listener every
@@ -561,7 +569,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   };
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: a call of a Claude Code process on a Bedrock
+   * UNIT_BOUNDARY_DESCRIPTION: a call of a harness process on a Bedrock
    * Connection, passed on unchanged to the Connection's region with its key
    * placeholder, which the gateway swaps: Bedrock speaks its own paths and
    * streams AWS event-stream frames, so nothing is resolved or rewritten. The
@@ -689,8 +697,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const eventStream = (upstream.headers.get("content-type") ?? "").includes(
       "vnd.amazon.eventstream",
     );
-    if (upstream.ok && upstream.body && eventStream && call?.messages) {
-      const scanner = createBedrockUsageScanner();
+    if (upstream.ok && upstream.body && eventStream && call) {
+      const scanner = createBedrockUsageScanner(call.messages);
       streamed = scanner;
       res.writeHead(upstream.status, resHeaders);
       res.on("finish", () => record(upstream.status, scanner.usage()));
@@ -714,9 +722,11 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     res.on("finish", () =>
       record(
         upstream.status,
-        upstream.ok && call?.messages
-          ? usageOfBody("anthropic-messages", text)
-          : null,
+        !upstream.ok || !call
+          ? null
+          : call.messages
+            ? usageOfBody("anthropic-messages", text)
+            : converseUsageOfBody(text),
       ),
     );
     res.end(text);
@@ -725,9 +735,15 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const bobHarness = Object.entries(deps.harnesses).find(
     ([, binding]) => binding?.bobGateway,
   )?.[0];
+  /* UNIT_BOUNDARY_DESCRIPTION: a path no route and no extension serves is logged once per method and path, so the log names what a harness relies on without a retry loop filling it; the oldest entry leaves when the set is full, so a path carrying an id per call cannot grow it without bound. */
+  const loggedUnrouted = new Set<string>();
+  const LOGGED_UNROUTED_MAX = 200;
+  /* UNIT_BOUNDARY_DESCRIPTION: Pi names itself on its Bedrock calls and Claude Code does not, so an unnamed call is from the harness that runs Bedrock on names of its own. */
   const bedrockHarness =
-    Object.entries(deps.harnesses).find(([, binding]) =>
-      binding?.native?.templates.includes(BEDROCK_TEMPLATE),
+    Object.entries(deps.harnesses).find(
+      ([, binding]) =>
+        binding?.native?.templates.includes(BEDROCK_TEMPLATE) &&
+        binding.native.models !== "listed",
     )?.[0] ?? deps.defaultHarness;
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -768,12 +784,16 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       for (const ext of deps.extensions ?? []) {
         if (await ext.handle({ req, res, path: route.path, harness })) return;
       }
-      reply(
-        res,
-        404,
-        null,
-        `no route for ${req.method ?? "GET"} ${route.path}`,
-      );
+      const unrouted = `${req.method ?? "GET"} ${route.path}`;
+      if (!loggedUnrouted.has(unrouted)) {
+        if (loggedUnrouted.size >= LOGGED_UNROUTED_MAX)
+          loggedUnrouted.delete(loggedUnrouted.values().next().value!);
+        loggedUnrouted.add(unrouted);
+        deps.log(
+          `[model-router] ${harness}: no route for ${unrouted}, answered 404 (logged once per path)`,
+        );
+      }
+      reply(res, 404, null, `no route for ${unrouted}`);
     })().catch((err: Error) => {
       deps.log(
         `[model-router] ${req.method ?? ""} ${url.pathname}: ${err.message}`,

@@ -1,11 +1,12 @@
 # Artifact library
 
-Last verified: 2026-10-30
+Last verified: 2026-11-06
 
 ## Overview
 
 The **Artifact Library** is where agents and users publish work products — HTML pages, React/JSX components, markdown, code, plain text, and binary files — organize them into **Folders**, and share them with people outside the platform.
 An **Artifact** is owner-scoped like every other resource, is attributed to the Agent it came from — the Agent that published it, or the sandbox's Agent when a person promotes a workspace file (or to the user, for manual uploads) — and outlives both the sandbox and the agent that produced it.
+An Agent's own artifact tools see only the artifacts that Agent published, as its environment tools see only its own [Environments](environments.md); the owner sees the whole library in the app ([agents](#publishing-and-download-paths)).
 Publishing a new revision keeps the same identity and share link and appends to a per-artifact **version history** the owner can flip through in the app; the share link itself only ever serves the current version ([sharing model](#sharing-model)).
 The history holds every version including the current one — creation writes the first row, each revision writes its own — and a version records the session that produced it when one is known, which is how the Home feed shows an artifact on the card of the session that made it.
 The session becomes known after the fact: the platform's artifact tools mark their results, the agent-runtime spots the marker in the session's ACP stream — frames it already proxies, each carrying its session id — and reports the touch over its runtime channel.
@@ -67,11 +68,25 @@ The frame is sandboxed without modals, so browser dialogs are blocked.
 A link the page opens in a new tab escapes the sandbox, so a link to a shared page loads as if the viewer pasted it.
 
 Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized and full page, and work in a newly started conversation without reloading the page.
-The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
+The same preview on a page outside that chat sends no requests, and refuses a plain prompt with a notice that the button works in the Agent's chat.
+A prompt there that asks for a session of its own (`sendPrompt(text, { newSession: true })`) starts or continues the owner's own Session for that page on the publishing Agent, one per owner and artifact, as a viewer's prompt does below.
+The server checks the artifact again, as for a request, and that the owner has the feature on; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the page's [model](#a-pages-model).
+The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
+In the publishing Agent's chat the open chat stays the destination, with or without the option.
+Historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
 The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
+
+### A page's model
+
+The owner picks what the Sessions a page's prompts open run on with **Set model** in the artifact's menu, offered for an interactive HTML page an Agent published.
+The pick is the chat's own picker, in the two slots a Slack channel keeps, a profile or values of their own, saved as it is made; **Use agent default** clears it, and a page with no pick follows the Agent's channel [pair](harness-config.md).
+It reaches only a Session that a prompt opens, the owner's own for the page and each viewer's: a Session that already runs keeps the values it started on, as a Slack thread does, and a prompt sent into the open chat runs on that chat.
+A profile that cannot run on the Agent refuses the prompt before the Agent wakes, and the person is told so, rather than running on a model the owner did not pick.
+A page that names a profile is among its uses, so the profile cannot be deleted while it does ([profiles](profiles.md)).
+Detaching a provider from the Agent names the pages whose pick runs on it, since their prompts stop with it.
 
 ### Viewers of a shared page
 
@@ -91,9 +106,10 @@ A page the owner makes private or plain, a viewer the owner removes, and turning
 
 - **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
+  It is typed `artifact`, as the owner's Session for the page is, so the session list files it with the channels and the Home feed can filter it on its own.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.
-  The turn runs on the Agent's channel default and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
+  The turn runs on the page's [model](#a-pages-model) and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
   An Agent at a spend limit or the Spend Ceiling is not woken, and the viewer is told why ([spend limits](spend-limits.md#unattended-work)).
 
 Every call, allowed or refused, is in the security log under the viewer, with the artifact and the owner, and never with the prompt or the request ([logging](logging.md)).
@@ -149,13 +165,29 @@ The code is redeemed server-side and no token ever reaches the browser: the brow
 On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
 On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
 Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
+A visitor with no session first gets a small page that sends the browser to sign-in with the fragment of the link added to the return path, because the identity provider's sign-in form drops the fragment.
+The return path accepts a fragment of printable ASCII after a share page or an Environment's front door, and the callback sends the browser back to it.
 Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
 **The artifact frame.** A share page is two documents from two origins.
 The outer page, on the share host, is platform chrome (title banner and source download); the inner document is the user content, loaded from the content host in an iframe.
 The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
 The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
+A popup the artifact opens is a normal top-level tab, an app-origin one included, and the artifact cannot read it: its document never runs on the app's origin, so the two are cross-origin.
 The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
+
+**Fragment links.** A page can open an item named in the URL fragment (`/a/<slug>#C-35`), and only the share page's own address carries the fragment of a shared link: the server never sees it.
+So the share page gives the frame its address from a script, as the content address plus the page's fragment, and the frame loads once.
+When the page's fragment changes later, the frame follows it without loading the document again.
+A frame that changes its own fragment does not change the page's address.
+
+**Printing.** The browser's own print (Cmd/Ctrl+P or its menu) prints the whole artifact, not only the part in view.
+The frame is sandboxed without modals, so the artifact's document cannot print itself, and the browser prints the outer page even when the keyboard focus is inside the frame.
+Instead every document the frame renders reports its content height to the page around it, and on `beforeprint` that page stretches the frame to the reported height, so the browser breaks it across sheets.
+A frame wider than a sheet keeps its layout width and is scaled down to fit, so its right side is not clipped.
+A print stylesheet hides the banner and every other part of the page, and on `afterprint` the frame returns to its normal size.
+The page takes a height only from its own frame's document, and the reported height grants nothing but a size.
+The in-app preview prints the same way, without the app's navigation, chat or toolbar.
 
 The content host cannot see the share session, so a restricted frame carries a **render token**: minted by the share page for exactly one artifact and its current version after the viewer passed, with a short expiry, redeemed by the content host on the document and on its raw bytes.
 It is a short-lived, single-purpose bearer grant — not a session and not an identity; anyone holding it can replay it until expiry, after which a pasted frame address answers unauthorized.
@@ -170,7 +202,7 @@ Rendering is entirely client-side — the server never compiles or sanitizes use
   Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
-No search engine may index user content: every share- and content-host response, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
+No search engine may index user content: every response of a share page, the share sign-in routes and the content host, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.
 
 Blob bytes relay through the api-server with constant memory: raw views stream store → response without ever buffering the object (the store is deliberately never exposed to the public side — no presigned links leave this origin), page renders buffer only size-capped text sources (anything bigger falls back to the download card), and the public folder listing is bounded.
 What remains on the api-server per public view is bounded work: a small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
@@ -195,7 +227,9 @@ flowchart LR
 - **Agents** publish through artifact tools on the per-agent platform MCP server (the same outbound MCP surface as channels, skills, and schedules).
   Small text content travels inline; anything bigger takes the **direct-transfer** path: the tool mints a short-lived presigned upload link, the harness PUTs bytes straight to the store through its paired gateway, and the create call references the completed upload.
   The platform verifies the upload (existence, size cap) before the artifact row lands, and an upload reference outside the caller's own staging namespace reads as unknown.
-  Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the owner-scoped service means it can only ever touch its owner's library.
+  Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the same identity scopes every other artifact tool to the artifacts that Agent published.
+  An Agent may be shared, so a person who talks to it must not reach, through it, what the owner's other Agents published or what the owner uploaded: another Agent's artifact, or an upload, reads as not found, to list, read, download, revise, share and delete alike, and a public one stays readable by its link as before.
+  Folders belong to the owner's library, so an Agent lists every folder and files into any of them, each counted by the Agent's own artifacts, and renames or deletes only a folder that holds no artifact but its own.
   Reads mirror this: small text content returns inline, and a download tool mints a short-lived presigned link — signed for the same agent-dialed store authority — that the harness GETs straight into its sandbox (any kind or size, current or a past version), so work products published from one sandbox are consumable in another without transiting the conversation.
 - **Users** publish from the Artifacts tab in the UI: bytes go through an authenticated upload route on the app origin (avoiding browser↔store CORS), then the same create call.
   Downloads answer with a presigned direct link when the store has a browser-reachable endpoint, a relayed blob otherwise.
@@ -215,6 +249,8 @@ flowchart LR
   Folders are listed first and unfiled artifacts after them at the top level.
   The whole library lists every user folder, empty ones included; a list of one Agent's artifacts lists only the folders that hold at least one of them, because a folder belongs to the user's library and not to one Agent.
   That list still shows every folder while an artifact is dragged, so any folder can take the drop, and keeps a folder created there or dropped on in view, empty or not; the artifact menu's **Move** offers every folder.
+  With the `environments` feature on, the owner's [Environments](environments.md#surfaces) are an **Environments** group above the folders, which folds like one, shown only while it has an Environment to show: in an Agent's chat that Agent's alone, and filtered by name with a search.
+  The list and the page's introduction count them too, so an owner with Environments and no artifact sees the list.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with both experiments off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
   An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.

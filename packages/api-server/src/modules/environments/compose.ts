@@ -1,8 +1,10 @@
 import type { Redis } from "ioredis";
 import type { Hono } from "hono";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
+import type { JWTVerifyGetKey } from "jose";
 import {
   domainOf,
+  portOf,
   SESSION_TTL_MS,
   type PlatformCredentials,
 } from "./domain/gate.js";
@@ -20,9 +22,9 @@ import {
   type EnvironmentSignIn,
 } from "./services/environment-signin.js";
 import {
-  createAccessListsRepository,
-  type AccessListsRepository,
-} from "./infrastructure/access-lists-repository.js";
+  createMembersRepository,
+  type MembersRepository,
+} from "./infrastructure/members-repository.js";
 import { agentServiceAddress } from "../agents/infrastructure/k8s.js";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
@@ -34,6 +36,7 @@ import {
 } from "./infrastructure/environments-repository.js";
 import {
   createEnvironmentsService,
+  type AgentDirectory,
   type EnvironmentsConfig,
   type EnvironmentsServiceImpl,
 } from "./services/environments-service.js";
@@ -55,6 +58,8 @@ export interface ComposeEnvironmentsDeps {
   runtimeMutator: RuntimeMutator;
   config: EnvironmentsConfig;
   listAgents: () => Promise<ListedAgent[]>;
+  editorsOf: (owningAgentId: string) => Promise<string[]>;
+  describeAgent: AgentDirectory["describe"];
 }
 
 export interface EnvironmentsComposition {
@@ -98,7 +103,8 @@ export function environmentNameLookup(
  * UNIT_BOUNDARY_DESCRIPTION: Wires the environments module once per install.
  * The service is built per owner; the cleanup source, run when any Agent is
  * deleted, deletes the Environments it owned and the row of an Environment
- * itself, so neither outlives its Agent; the sweep deletes every Environment
+ * itself, so neither outlives its Agent, and takes the Agent off every list
+ * that names it; the sweep deletes every Environment
  * whose expiry passed, as its owner, and every Environment Agent left without
  * a row by a create that died between its two writes. An Environment's `start` command is
  * delivered as a one-shot workspace command that writes it as a Startup Item,
@@ -110,20 +116,32 @@ export function composeEnvironments(
   return composeEnvironmentsOver(
     createEnvironmentsRepository(deps.db),
     deps,
-    createAccessListsRepository(deps.db),
+    createMembersRepository(deps.db),
   );
 }
 
 export function composeEnvironmentsOver(
   repo: EnvironmentsRepository,
   deps: Omit<ComposeEnvironmentsDeps, "db">,
-  accessLists: AccessListsRepository,
+  members: MembersRepository,
 ): EnvironmentsComposition {
+  const directory: AgentDirectory = {
+    describe: deps.describeAgent,
+    async environmentState(agentId) {
+      const record = await repo.get(agentId);
+      if (!record) return "unknown";
+      return (
+        (await deps.agentsFor(record.owner).get(agentId))?.state ?? "unknown"
+      );
+    },
+  };
   const environmentsFor = (owner: string) =>
     createEnvironmentsService({
       owner,
       repo,
-      accessLists,
+      members,
+      editorsOf: deps.editorsOf,
+      directory,
       agents: deps.agentsFor(owner),
       config: deps.config,
       startCommand: async (agentId, command) => {
@@ -147,13 +165,15 @@ export function composeEnvironmentsOver(
       listAgentIds: async () => {
         const ids = new Set(await repo.listAgentIds());
         for (const id of await repo.listOwningAgentIds()) ids.add(id);
+        for (const id of await members.listMemberAgentIds()) ids.add(id);
         return [...ids];
       },
       cleanup: async (agentId) => {
         for (const record of await repo.listByOwningAgent(agentId))
           await environmentsFor(record.owner).remove(record, record.owner);
         await repo.delete(agentId);
-        await accessLists.delete(agentId);
+        await members.deleteOfAgent(agentId);
+        await members.forgetMemberAgent(agentId);
       },
     },
 
@@ -207,11 +227,17 @@ export interface ComposeEnvironmentGateDeps {
   shareBaseUrl: string;
   share: ShareSignIn;
   platform: PlatformCredentials;
-  ensureReady: (agentId: string) => Promise<unknown>;
+  // UNIT_BOUNDARY_DESCRIPTION: the identity provider's public issuer and signing keys a person's OAuth client gets its token from; see EnvironmentGateDeps.oauth.
+  oauth?: { issuer: string; keys: JWTVerifyGetKey };
+  ensureReady: (
+    agentId: string,
+    opts: { onWaking: () => void },
+  ) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   namespace: string;
   brandName: string;
   editorsOf: (owningAgentId: string) => Promise<string[]>;
+  agentOfKey: (key: string) => Promise<{ agentId: string } | null>;
 }
 
 export interface EnvironmentGateComposition {
@@ -242,12 +268,28 @@ export function composeEnvironmentGate(
     template.replace("{host}", () => address);
   const shareBase = deps.shareBaseUrl.replace(/\/+$/, "");
   const repo = createEnvironmentsRepository(deps.db);
-  const ownerList = (owningAgentId: string) =>
-    createAccessListsRepository(deps.db).get(owningAgentId);
+  const members = createMembersRepository(deps.db);
+  const agentMembers = (owningAgentId: string) =>
+    members.ofAgent(owningAgentId);
+  const environmentMembers = (environmentId: string) =>
+    members.ofEnvironment(environmentId);
+  const memberAgents = async (record: {
+    agentId: string;
+    owningAgentId: string;
+  }) => [
+    ...(await members.agentsOfAgent(record.owningAgentId)),
+    ...(await members.agentsOfEnvironment(record.agentId)),
+  ];
   const signIn: EnvironmentSignIn = createEnvironmentSignIn({
     handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
     sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
     chains: createRedisTtlStore(deps.redis, "env:signin-chain", CHAIN_TTL_MS),
+    signedIn: createRedisTtlStore(deps.redis, "env:signed-in", SESSION_TTL_MS),
+    completions: createRedisTtlStore(
+      deps.redis,
+      "env:signin-completion",
+      CHAIN_TTL_MS,
+    ),
     share: deps.share,
     addressUrl,
     now: () => Date.now(),
@@ -255,6 +297,8 @@ export function composeEnvironmentGate(
   const gate = createEnvironmentGate({
     domain,
     scheme: template.startsWith("https:") ? "https" : "http",
+    port: portOf(template),
+    ...(deps.oauth ? { oauth: deps.oauth } : {}),
     frontDoorUrl: (address, next, binding, chain) => {
       const url = new URL(`${shareBase}${FRONT_DOOR_PREFIX}${address}`);
       url.searchParams.set("next", next);
@@ -265,8 +309,13 @@ export function composeEnvironmentGate(
     signOutUrl: (address) =>
       deps.share.logoutUrl(`${FRONT_DOOR_PREFIX}${address}`),
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf: deps.editorsOf,
+    memberAgents,
+    agentOfKey: deps.agentOfKey,
+    recordAgentVisit: (environmentId, agentId) =>
+      members.recordVisit(environmentId, agentId, new Date()),
     signIn,
     platform: deps.platform,
     ensureReady: deps.ensureReady,
@@ -283,7 +332,8 @@ export function composeEnvironmentGate(
     domain,
     addressUrl,
     repo,
-    ownerList,
+    agentMembers,
+    environmentMembers,
     editorsOf: deps.editorsOf,
     signIn,
     share: deps.share,

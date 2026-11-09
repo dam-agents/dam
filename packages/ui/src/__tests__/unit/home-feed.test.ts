@@ -129,6 +129,16 @@ describe("the activity filters", () => {
     expect(byId["chat"]).toBe("chat");
   });
 
+  // TEST_SCENARIO: a session an artifact's prompt opened is filed as an artifact session, not a chat, so it can be filtered on its own.
+  it("files an artifact prompt's session under artifact", () => {
+    expect(
+      channelTypeOfSession({
+        type: SessionType.Artifact,
+        mode: SessionMode.Chat,
+      }),
+    ).toBe("artifact");
+  });
+
   // TEST_SCENARIO: unchecking a type hides only that type, and the default set hides nothing.
   it("keeps only the checked channel types", () => {
     const base = defaultActivityFilters();

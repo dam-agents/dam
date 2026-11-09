@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
+import type { HarnessCapability } from "agent-runtime-api";
 import {
+  choiceSlots,
+  composedSubagent,
+  resolvedChoice,
+  runsNativelyIn,
+  runSubagentSettings,
   resolveSessionPair,
   type SessionPairInputs,
 } from "../../modules/harness-config/domain/session-pair.js";
+import type {
+  ProfileResolver,
+  ResolvedProfile,
+} from "../../modules/profiles/index.js";
 import {
   createHarnessCatalog,
   harnessFits,
@@ -262,7 +272,14 @@ describe("resolveFirePair", () => {
   it("keeps the remembered provider for a schedule that names only a model", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => ({
             harness: "claude-code",
             provider: "second",
@@ -319,7 +336,14 @@ describe("resolveRememberedPair before the agent's first hello", () => {
     expect(
       await resolveRememberedPair(
         {
+          ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
+            readSaved: async () => ({
+              chat: null,
+              channel: null,
+              scheduled: null,
+              chatProfileId: null,
+            }),
             read: async () => null,
             grantedProviders: async () => [
               { id: "claude", type: "anthropic" },
@@ -363,7 +387,14 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
   it("names no pair when a configured harness lacks session settings", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => ({
             harness: "pi",
             provider: "curve",
@@ -405,7 +436,14 @@ describe("resolveFirePair on a harness outside the catalog", () => {
   it("names no pair for an agent whose harness the catalog does not list", async () => {
     const pair = await resolveFirePair(
       {
+        ownerCatalog: async () => ({ providers: [] }),
         pairRepo: {
+          readSaved: async () => ({
+            chat: null,
+            channel: null,
+            scheduled: null,
+            chatProfileId: null,
+          }),
           read: async () => null,
           grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
         },
@@ -436,7 +474,14 @@ describe("resolveFirePair on a harness outside the catalog", () => {
     expect(
       await resolveRememberedPair(
         {
+          ownerCatalog: async () => ({ providers: [] }),
           pairRepo: {
+            readSaved: async () => ({
+              chat: null,
+              channel: null,
+              scheduled: null,
+              chatProfileId: null,
+            }),
             read: async () => null,
             grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
           },
@@ -465,6 +510,334 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         "chat",
       ),
     ).toBeNull();
+  });
+});
+
+describe("the platform sub-agent a slot runs", () => {
+  const LENT = {
+    "platformSubagent.harness": "claude-code",
+    "platformSubagent.model": "anthropic/claude-haiku-5",
+  };
+  const OWN = {
+    "platformSubagent.harness": "codex",
+    "platformSubagent.model": "openai/gpt-6.1-sol",
+  };
+  const PAIR = {
+    harness: "claude-code",
+    provider: "conn-1",
+    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  };
+  const UNAVAILABLE =
+    "Anthropic, its sub-agent's provider, isn't attached to this agent";
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's listing for the primary's Connection and harness, which is what says a model runs natively (D193B). */
+  const CATALOG = {
+    providers: [
+      {
+        connectionId: "conn-1",
+        alias: "anthropic",
+        template: "anthropic",
+        displayName: "Anthropic",
+        status: "listed",
+        listedAt: null,
+        harnesses: ["claude-code"],
+        models: [
+          {
+            name: "anthropic/claude-sonnet-5",
+            upstreamId: "claude-sonnet-5",
+            contextWindow: null,
+            maxOutputTokens: null,
+            reasoning: null,
+            vision: null,
+            prices: null,
+            source: { limits: "none", prices: "none" },
+            harnesses: ["claude-code"],
+          },
+        ],
+      },
+    ],
+  } as unknown as Parameters<typeof runsNativelyIn>[0];
+  /* UNIT_BOUNDARY_DESCRIPTION: Claude Code's real capability: it keeps the harness's own subagents' model and effort, and takes a platform sub-agent's harness and model (D193B). */
+  const CLAUDE: HarnessCapability = {
+    name: "claude-code",
+    harnessConfig: true,
+    sessionModel: true,
+    sessionSettings: ["subagentModel", "subagentEffort"],
+    harnessConfigCatalog: {
+      options: [
+        {
+          id: "subagentModel",
+          name: "Subagent model",
+          category: "model",
+          subagents: true,
+          choices: [
+            { value: "anthropic/claude-haiku-5", name: "Haiku" },
+            { value: "anthropic/claude-sonnet-5", name: "Sonnet" },
+            { value: "anthropic/claude-opus-5", name: "Opus" },
+          ],
+        },
+        {
+          id: "subagentEffort",
+          name: "Subagent effort",
+          category: "thought_level",
+          subagents: true,
+          choices: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ],
+    },
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: one resolver for both profiles a case names, the primary and a subagent profile, by id. */
+  const resolver =
+    (
+      byId: Record<
+        string,
+        {
+          pair?: ResolvedProfile["pair"];
+          unavailable?: string | null;
+          subagent?: Record<string, string> | null;
+          subagentUnavailable?: string | null;
+        }
+      >,
+      primary = "p1",
+    ): ProfileResolver =>
+    async ({ profileId }) => {
+      const entry = byId[profileId] ?? byId[primary]!;
+      return {
+        profile: { name: profileId },
+        pair: entry.pair ?? PAIR,
+        unavailable: entry.unavailable ?? null,
+        subagent: entry.subagent ?? null,
+        subagentUnavailable: entry.subagentUnavailable ?? null,
+        attachable: false,
+      } as unknown as ResolvedProfile;
+    };
+
+  /** TEST_SCENARIO: a profile names a platform sub-agent too (D193B), so a slot that follows it and holds no sub-agent of its own spawns it. */
+  it("spawns the profile's sub-agent where the slot holds none", async () => {
+    await expect(
+      composedSubagent(
+        { platformSubagentProfileId: null, platformSubagentSettings: null },
+        { settings: LENT, unavailable: null },
+        resolver({}),
+        "agent-1",
+      ),
+    ).resolves.toEqual({ settings: LENT });
+  });
+
+  /** TEST_SCENARIO: a slot with values of its own replaces the profile's whole sub-agent, even one on another provider whose own provider is detached, so the turn never refuses over a sub-agent it does not use (D193B). */
+  it("lets an own sub-agent slot win over the profile's", async () => {
+    const profiles = resolver({
+      p1: { subagent: LENT, subagentUnavailable: UNAVAILABLE },
+    });
+    await expect(
+      resolvedChoice(
+        {
+          profileId: "p1",
+          pair: null,
+          platformSubagentProfileId: null,
+          platformSubagentSettings: OWN,
+        },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({ pair: { ...PAIR, settings: OWN } });
+    await expect(
+      composedSubagent(
+        { platformSubagentProfileId: null, platformSubagentSettings: OWN },
+        { settings: LENT, unavailable: UNAVAILABLE },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({ settings: OWN });
+  });
+
+  /** TEST_SCENARIO: a slot that names a subagent profile which cannot run clears the subagent for the agent to pick; it never falls back to the sub-agent the primary profile lends, and that holds for a chat and a schedule alike, which share this composition (D193B). */
+  it("clears the slot when the subagent profile it names cannot run", async () => {
+    const profiles = resolver({
+      p1: { subagent: LENT },
+      gone: { unavailable: "Pi isn't attached to this agent" },
+    });
+    await expect(
+      resolvedChoice(
+        {
+          profileId: "p1",
+          pair: null,
+          platformSubagentProfileId: "gone",
+          platformSubagentSettings: null,
+        },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({ pair: PAIR });
+    await expect(
+      composedSubagent(
+        { platformSubagentProfileId: "gone", platformSubagentSettings: null },
+        { settings: LENT, unavailable: null },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({ settings: null });
+  });
+
+  /** TEST_SCENARIO: a slot holds platform keys only (D193B): the store drops the native keys the picker sent beside it, and the read-back that follows carries the platform slot and the primary's own settings alone. */
+  it("stores platform keys only and answers platform-level", async () => {
+    const picked = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+      "platformSubagent.effort": "high",
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "high",
+    };
+    const stored = choiceSlots(
+      { ...PAIR, settings: picked },
+      { profileId: "p1", platformSubagentProfileId: null },
+    );
+    expect(stored.pair).toBeNull();
+    expect(stored.platformSubagentSettings).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+      "platformSubagent.effort": "high",
+    });
+    const profiles = resolver({
+      p1: {
+        pair: {
+          ...PAIR,
+          settings: {
+            subagentModel: "anthropic/claude-haiku-5",
+            subagentEffort: "low",
+          },
+        },
+        subagent: LENT,
+      },
+    });
+    await expect(
+      resolvedChoice(
+        {
+          profileId: "p1",
+          pair: stored.pair ?? null,
+          platformSubagentProfileId: stored.platformSubagentProfileId ?? null,
+          platformSubagentSettings: stored.platformSubagentSettings ?? null,
+        },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({
+      pair: {
+        ...PAIR,
+        settings: {
+          ...stored.platformSubagentSettings,
+          subagentModel: "anthropic/claude-haiku-5",
+          subagentEffort: "low",
+        },
+      },
+    });
+  });
+
+  /** TEST_SCENARIO: the run's payload is where the one rule applies (D193B): with no effective sub-agent the pair keeps its own native values as they stand, which is what an old-shaped custom default carries, and with one it takes that sub-agent's, its own dropped. */
+  it("derives at the run boundary, not before it", () => {
+    const natives = {
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "high",
+    };
+    const runs = {
+      harness: "claude-code",
+      provider: "conn-1",
+      model: "anthropic/claude-opus-5",
+    };
+    expect(runSubagentSettings(CLAUDE, CATALOG, runs, natives)).toEqual(
+      natives,
+    );
+    expect(
+      runSubagentSettings(CLAUDE, CATALOG, runs, {
+        subagentModel: "anthropic/claude-haiku-5",
+        subagentEffort: "low",
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "anthropic/claude-sonnet-5",
+        "platformSubagent.effort": "high",
+      }),
+    ).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "anthropic/claude-sonnet-5",
+      "platformSubagent.effort": "high",
+      subagentModel: "anthropic/claude-sonnet-5",
+      subagentEffort: "high",
+    });
+  });
+
+  /** TEST_SCENARIO: a model runs natively only where the primary's own Connection lists it for the primary harness — the same listing the picker offers — so a missing or unknown listing offers nothing and a routed model of another provider never becomes the harness's own subagent model (D193B). */
+  it("takes a native model only from the primary's own Connection", () => {
+    const runs = runsNativelyIn(CATALOG, {
+      harness: "claude-code",
+      provider: "conn-1",
+    });
+    expect(runs("anthropic/claude-sonnet-5")).toBe(true);
+    expect(runs("openai/gpt-6.1-sol")).toBe(false);
+    expect(runs("anthropic/claude-opus-5")).toBe(false);
+    expect(
+      runsNativelyIn(null, { harness: "claude-code", provider: "conn-1" })(
+        "anthropic/claude-sonnet-5",
+      ),
+    ).toBe(false);
+    expect(
+      runsNativelyIn(CATALOG, { harness: "claude-code", provider: null })(
+        "anthropic/claude-sonnet-5",
+      ),
+    ).toBe(false);
+    expect(
+      runSubagentSettings(
+        CLAUDE,
+        CATALOG,
+        {
+          harness: "claude-code",
+          provider: "conn-1",
+          model: "anthropic/claude-opus-5",
+        },
+        {
+          "platformSubagent.harness": "claude-code",
+          "platformSubagent.model": "openai/gpt-6.1-sol",
+        },
+      ),
+    ).toEqual({
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "openai/gpt-6.1-sol",
+    });
+  });
+
+  /** TEST_SCENARIO: a sub-agent the profile lends and the agent cannot run refuses the run with its reason, rather than dropping a choice the owner made; a subagent profile lends only its primary model, so a nested sub-agent is never checked. */
+  it("refuses a lent sub-agent it cannot run", async () => {
+    const profiles = resolver({
+      p1: { subagent: LENT, subagentUnavailable: UNAVAILABLE },
+      nested: { subagent: LENT, subagentUnavailable: UNAVAILABLE },
+    });
+    await expect(
+      resolvedChoice(
+        {
+          profileId: "p1",
+          pair: null,
+          platformSubagentProfileId: null,
+          platformSubagentSettings: null,
+        },
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({
+      refused: { profile: "p1", detail: UNAVAILABLE },
+    });
+    await expect(
+      composedSubagent(
+        { platformSubagentProfileId: "nested", platformSubagentSettings: null },
+        null,
+        profiles,
+        "agent-1",
+      ),
+    ).resolves.toEqual({
+      settings: {
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": PAIR.model,
+      },
+    });
   });
 });
 

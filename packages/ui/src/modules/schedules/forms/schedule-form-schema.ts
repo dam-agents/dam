@@ -1,5 +1,4 @@
 import { isPlatformSubagentSetting } from "agent-runtime-api";
-import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import type { SessionChoiceSlots, SessionPair } from "api-server-api";
 import {
   ALL_DAYS,
@@ -8,36 +7,18 @@ import {
   detectTimezone,
   type FrequencyPreset,
   hasVisibleOccurrence,
-  PRECHECK_MAX_LENGTH,
   rruleNextFire,
   rruleToText,
 } from "api-server-api";
 import { z } from "zod";
 
 import type { Schedule } from "../../../types.js";
+import { scheduleWorkFields } from "./schedule-work-fields.js";
 
 export const scheduleFormSchema = z
   .object({
-    name: z.string().trim().min(1, "Required"),
-    task: z.string().trim().min(1, "Required"),
-    precheck: z
-      .string()
-      .trim()
-      .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
-    harness: z.string(),
-    model: z.string(),
-    settings: z.record(z.string(), z.string()),
-    profile: z.string(),
-    platformSubagentProfile: z.string(),
-    sessionTitle: z
-      .string()
-      .trim()
-      .max(
-        SESSION_TITLE_MAX_LENGTH,
-        `Max ${SESSION_TITLE_MAX_LENGTH} characters`,
-      ),
+    ...scheduleWorkFields,
     timezone: z.string().trim().min(1, "Required"),
-    sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),
     interval: z.string(),
     time: z.string(),
@@ -212,13 +193,10 @@ export function scheduleChoices(v: ChoiceValues, clear: boolean) {
     ),
   );
   if (v.profile) {
-    const own = Object.fromEntries(
-      Object.entries(settings).filter(([id]) => isPlatformSubagentSetting(id)),
-    );
     return {
       profile: v.profile,
       platformSubagentProfile,
-      ...(Object.keys(own).length > 0 && { settings: own }),
+      ...(Object.keys(settings).length > 0 && { settings }),
     };
   }
   const values = {
@@ -309,8 +287,8 @@ export function scheduleInheritsChoices(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's Custom selection cannot
- * save: it names no model. Only a row written before profiles that still
+ * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's own pick cannot save:
+ * it names no model. Only a row written before profiles that still
  * follows the chat default, with no harness of its own either, saves without
  * one (D123); null when the save may go ahead.
  */

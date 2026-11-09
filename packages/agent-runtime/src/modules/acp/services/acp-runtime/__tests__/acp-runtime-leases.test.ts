@@ -3,6 +3,7 @@ import {
   CONFIGURE_SESSION_METHOD,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
+  type SessionDefaultsEventPayload,
 } from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
@@ -24,7 +25,15 @@ import {
 } from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
+import type { SessionDefaultsStore } from "../../../infrastructure/session-defaults-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
+import {
+  catalogOn,
+  curveBender,
+  keptCatalogPath,
+  removeKeptCatalogs,
+  stateOf,
+} from "../../../../../__tests__/unit/model-catalog-fixture.js";
 import {
   createLeaseRouter,
   PROVIDER_REMOVED_REASON,
@@ -51,6 +60,7 @@ import {
 
 const IDLE_CHECK_MS = 10_000;
 const LEASE_IDLE_MS = 60_000;
+const ENV_WAIT_MS = 15_000;
 
 const SESSION_SETTINGS: Record<string, "process" | "session"> = {
   mode: "session",
@@ -67,7 +77,10 @@ const ALIAS_OF: Record<string, string> = {
 function createLeaseWorld(opts: {
   providers: string[];
   agentRequests?: AgentRequestObserver;
-  modelRequired?: boolean;
+  modelRequired?: boolean | (() => boolean);
+  envReady?: () => boolean;
+  sessionDefaults?: SessionDefaultsStore;
+  beforeSpawn?: () => Promise<void>;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -95,7 +108,12 @@ function createLeaseWorld(opts: {
       [model, settings?.subagentModel].some((m) => m?.includes("/gpt-"))
         ? { CLAUDE_CODE_AUTO_MODE_SERVER: "0" }
         : undefined,
-    modelRequired: () => opts.modelRequired === true,
+    modelRequired: () =>
+      typeof opts.modelRequired === "function"
+        ? opts.modelRequired()
+        : opts.modelRequired === true,
+    ...(opts.envReady && { envReady: opts.envReady, envWaitMs: ENV_WAIT_MS }),
+    ...(opts.sessionDefaults && { sessionDefaults: opts.sessionDefaults }),
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -160,6 +178,7 @@ function createLeaseWorld(opts: {
               : []),
           ];
         },
+        ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         spawnAgent: () => {
           scoped.harnessSpawned();
           const { harness, process } = createHarness();
@@ -642,6 +661,236 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harnessCount("claude-code")).toBe(0);
   });
 
+  /** TEST_SCENARIO: A client that opens a session on a booting agent before
+   * the platform's env has reached it is not refused as having no model:
+   * nothing is known yet about the agent's providers, so session/new is held
+   * until the env lands and then decided on what it says. Here the env names
+   * no provider the harness reaches through the Model Router, so the session
+   * opens on the harness's own model configuration. With no env in time, the
+   * held session/new is decided on what is known then. */
+  it("holds a session/new with no model until the env reaches a booting agent", () => {
+    vi.useFakeTimers();
+    let envArrived = false;
+    const world = createLeaseWorld({
+      providers: [],
+      modelRequired: () => !envArrived,
+      envReady: () => envArrived,
+    });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: { namesChanged: true },
+      providers: [],
+      harnesses: [],
+    });
+    world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
+    expect(client.reply(1)?.error).toBeUndefined();
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
+
+    const late = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => false,
+    });
+    const other = late.connect();
+    other.send(newSessionOn(2, {}));
+    expect(other.reply(2)).toBeUndefined();
+    vi.advanceTimersByTime(ENV_WAIT_MS);
+    expect(other.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+  });
+
+  /** TEST_SCENARIO: A wake whose machine kept its model catalog. The runtime
+   * prestarts the default lease at listen, from that catalog, before the
+   * agent's first state arrives, and the person opens a session in that
+   * second. A prestart gives the lease a process, not a state: the model-less
+   * session/new is still held, and opens on the chat default once the env and
+   * the converted default land, on the process the prestart started. */
+  it("holds a session opened after a prestart from the kept catalog", async () => {
+    vi.useFakeTimers();
+    const cachePath = keptCatalogPath();
+    const models = (): string[] => ["rits/zai-org/glm-5-3"];
+    const state = stateOf(() => [curveBender("256000")]);
+    try {
+      await catalogOn({ cachePath, models, state }).catalog.refresh();
+      const kept = catalogOn({ cachePath, models, state, held: true });
+      expect(kept.catalog.entries().map((e) => e.name)).toEqual([
+        "cb/rits/zai-org/glm-5-3",
+      ]);
+
+      const chat = {
+        harness: "claude-code",
+        provider: "conn-a",
+        model: "ibm/aws/claude-sonnet-4-6",
+      };
+      let envArrived = false;
+      let defaults: SessionDefaultsEventPayload | null = null;
+      const world = createLeaseWorld({
+        providers: ["conn-a"],
+        modelRequired: true,
+        envReady: () => envArrived,
+        sessionDefaults: {
+          get: () => defaults,
+          revision: () => (defaults === null ? 0 : 1),
+          set: (next) => {
+            defaults = next;
+          },
+        },
+        beforeSpawn: () => kept.catalog.settled(),
+      });
+
+      world.router.prestart();
+      for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+      expect(world.harnessCount("claude-code")).toBe(1);
+      const client = world.connect();
+      client.send(newSessionOn(1, {}));
+      expect(client.reply(1)).toBeUndefined();
+
+      envArrived = true;
+      world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+      world.harness("claude-code").replyTo("session/new", {
+        sessionId: "s-kept",
+      });
+      expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-kept" });
+      expect(world.metadata.store.get("s-kept")?.meta).toMatchObject({
+        model: chat.model,
+        follows: "chat",
+      });
+      expect(world.harnessCount("claude-code")).toBe(1);
+    } finally {
+      removeKeptCatalogs();
+    }
+  });
+
+  /** TEST_SCENARIO: A session opened before a new agent's runtime has its
+   * state, as when a create publishes Ready before the runtime's first
+   * applyState, is not refused as no-model: it waits for that state, and once
+   * both the env and the agent's converted chat default are here it opens on
+   * its kind's default model, settings and follow marker, so its first prompt
+   * runs. The all-null defaults a hello publishes before the conversion are
+   * not that state. An agent whose converted default carries no model for the
+   * harness is still refused at once. */
+  it("opens a session held for the agent's first state on its default", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+      settings: { mode: "acceptEdits" },
+    };
+    let envArrived = false;
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => envArrived,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: { namesChanged: true },
+      providers: [],
+      harnesses: [],
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
+    expect(client.reply(1)?.error).toBeUndefined();
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
+    expect(world.metadata.store.get("s-1")?.meta).toMatchObject({
+      model: chat.model,
+      settings: chat.settings,
+      follows: "chat",
+    });
+    const harness = world.harness("claude-code");
+    client.send(frames.prompt(2, "s-1", "hi"));
+    harness.replyToSession("session/set_config_option", "s-1", {});
+    harness.replyToSession("session/set_mode", "s-1", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+
+    const settled = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => true,
+      sessionDefaults: {
+        get: () => ({
+          chat: { harness: "claude-code", provider: null, model: null },
+          channel: null,
+          scheduled: null,
+        }),
+        revision: () => 1,
+        set: () => {},
+      },
+    });
+    const other = settled.connect();
+    other.send(newSessionOn(2, {}));
+    expect(other.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+  });
+
+  /** TEST_SCENARIO: A prompt that reaches a model-less session while the
+   * runtime still has no state is held rather than refused, and once the
+   * agent's converted chat default lands it runs on that kind's model. */
+  it("holds a prompt with no model until the agent's defaults land", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+    };
+    let envArrived = false;
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => envArrived,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    world.metadata.store.set("old", { type: "regular" });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old", "hi"));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+    expect(world.metadata.store.get("old")?.meta.model).toBe(chat.model);
+  });
+
   /** TEST_SCENARIO: On a harness that reaches its models through the Model
    * Router, a session with no model never reaches the harness, which would
    * otherwise run a model the user never chose: session/new without one is
@@ -693,6 +942,33 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/set_config_option", "old", {});
     expect(promptTextsOf(harness)).toEqual(["now"]);
+  });
+
+  /** TEST_SCENARIO: An old session with no model and no follow marker has no
+   * pick of its own to keep, so while the agent holds a chat default with a
+   * model, its next prompt takes that model instead of being refused. */
+  it("runs an old session with no model on its kind's default", () => {
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+    };
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      sessionDefaults: {
+        get: () => ({ chat, channel: null, scheduled: null }),
+        revision: () => 1,
+        set: () => {},
+      },
+    });
+    world.metadata.store.set("old", { mode: "chat" });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old", "hi"));
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+    expect(world.metadata.store.get("old")?.meta.model).toBe(chat.model);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is

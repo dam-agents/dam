@@ -15,9 +15,10 @@ import type {
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
-import type {
-  AgentsRepository,
-  RuntimeProgressPort,
+import {
+  type AgentsRepository,
+  type RuntimeProgressPort,
+  startWaitOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -101,6 +102,8 @@ export interface HarnessApiServerAppDeps {
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
   environmentsFor: (owner: string) => EnvironmentsServiceImpl;
+  // UNIT_BOUNDARY_DESCRIPTION: whether the install gives Environments addresses, so an Agent may be shared one and should be able to list it, whatever its owner turned on.
+  servesEnvironments: boolean;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
@@ -118,6 +121,7 @@ export interface HarnessApiServerAppDeps {
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
   spendHold: SpendHoldGate;
+  openCalls: (agentId: string) => Promise<number>;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
   agentSecretRequestsFor: (
@@ -193,9 +197,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
       },
+      readStartWait: async (agentId) =>
+        startWaitOf(agentsRepo.peekCached(agentId)),
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
+      openCalls: deps.openCalls,
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
@@ -252,6 +259,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeBudgetsModule({
         k8s: k8sClient,
         owner,
+        cpuPool: {
+          defaultCpu: config.defaultUserCpuBudget,
+          machineCpus: config.vmMachineCpus,
+          agentStore: { authority: config.agentStore, db },
+        },
         listAgentIds: async () =>
           (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
@@ -276,7 +288,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     markOnboardingComplete,
     onboardingChecklist,
     kitUpdateReporter,
-    artifactLibraryFor: mcpArtifactLibraryFor,
+    artifactLibraryFor: (owner, agentId) =>
+      artifactLibraryFor(owner, "mcp", {
+        scope: { kind: "agent", agentId },
+      }),
     invocationsServiceFor,
     driverOpsFor: createDriverOps(driverOpsDeps),
     subAgentAwaitsFor: composeSubAgentAwaitMarks(db),
@@ -292,11 +307,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       ),
     agentImage: createAgentImageReader((id) => deps.agentStateCache.get(id)),
     environments: async (owner, agentId) => {
-      const flags = await featureFlagsFor(owner);
-      if (!flags.environments) return null;
+      const manage = Boolean((await featureFlagsFor(owner)).environments);
+      if (!manage && !deps.servesEnvironments) return null;
       const agent = await agentsRepo.get(agentId, owner);
       if (!agent || agent.spec.environmentOf) return null;
-      return deps.environmentsFor(owner).forOwningAgent(agentId);
+      return deps.environmentsFor(owner).forOwningAgent(agentId, { manage });
     },
     agentTelemetry,
     spendStatusFor,

@@ -16,7 +16,11 @@ export type EgressRuleSource =
   | "kit"
   | `connection:${string}`
   | "preset:trusted"
-  | "preset:all";
+  | "preset:all"
+  | typeof PLATFORM_ENVIRONMENTS_SOURCE;
+
+// UNIT_BOUNDARY_DESCRIPTION: the source of the one rule the platform itself adds to every Agent on an install that serves Environments: the environments domain, allowed, with the Agent's key sent to the Environment gate. Shown to its owner as a rule of its own, which they can remove and restore, never edit.
+export const PLATFORM_ENVIRONMENTS_SOURCE = "platform:environments";
 
 export interface EgressRuleView {
   id: string;
@@ -44,4 +48,12 @@ export interface EgressRulesService {
   update(input: EgressRuleUpdateInput): Promise<EgressRuleView>;
   revoke(id: string): Promise<void>;
   applyPreset(agentId: string, preset: EgressPreset): Promise<void>;
+  platformRule(agentId: string): Promise<PlatformRuleState>;
+  restorePlatformRule(agentId: string): Promise<EgressRuleView>;
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent carries the platform's Environments rule: `active` (listed among its rules), `removed` (its owner removed it, and it can be restored), or `unavailable` (the install serves no Environments, or the Agent is an Environment).
+export type PlatformRuleState =
+  | { state: "active"; host: string }
+  | { state: "removed"; host: string }
+  | { state: "unavailable" };

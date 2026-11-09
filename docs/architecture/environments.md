@@ -1,12 +1,12 @@
 # Environments
 
-Last verified: 2026-10-27
+Last verified: 2026-11-09
 
 ## Overview
 
 An **Environment** is a sandbox an Agent creates and controls to run software for other people and agents to open — typically one per pull request, running its build.
 The Agent that creates it is its **Owning Agent**.
-Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count, and shows only with its Owning Agent, as an Environment.
+Users see an Environment as its own kind of thing, never as an agent: it is left out of every agent list, picker and count, and its owner finds it in the Artifacts list, beside what the agent publishes.
 The api-server's agent list leaves it out, so the app, the CLI and an API key's agent picker never show it; it is still found by id.
 
 The feature is behind the per-user `environments` [feature](features.md).
@@ -23,7 +23,10 @@ It is created with nothing that would let it act as its Owning Agent:
 - **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
-A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints, the access list, and its expiry.
+A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints and its expiry.
+Who may open it is two lists of rows, at most as many as an artifact's viewers each: per Owning Agent, `agent_environment_members` for people and `agent_environment_agent_members` for Agents; per Environment, `environment_members` and `environment_agent_members`, which go with it.
+People and Agents sit in tables of their own, so an email never matches an Agent.
+`environment_agent_visits` holds when each Agent last opened each Environment.
 
 ## Lifecycle
 
@@ -32,9 +35,18 @@ A row in the `environments` table holds what only this module reads: its name am
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
-- **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
-  The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
+- **Sleep.** An Environment sleeps like any machine when it sits idle, and keeps its disk, but after an idle timeout of its own: what it runs, Docker, k3s and an install of an app, takes far longer to come back than an agent's harness.
+  The Owning Agent gives it at create or update (`idle_timeout`, in minutes, hours or days, as `"90m"` or `"4h"`), and the api-server writes it as the Environment Agent's `hibernationTimeout`, which the controller's idle sweep reads in place of the install's `vmIdleTimeout`.
+  Without one, a new Environment gets `environments.idleTimeout` (default 60 minutes); one created before the setting existed carries none and keeps the install's `vmIdleTimeout` until an update gives it one.
+  One past `environments.idleTimeoutMax` (default 24 hours) is cut to it, as an expiry is.
+  `never`, or a zero, keeps it awake, for a server people rely on: the api-server writes `hibernationTimeout: 0s`, which the idle sweep reads as never sleeping and the memory reclaim skips, so the machine holds its memory on the owner's runner all the time; `environments.idleTimeoutMax` does not bound it, and any other word or a bare number is refused.
+  Otherwise the memory reclaim that puts an idle machine to sleep early when its owner needs the room still applies.
+  The owner keeps one awake, or lets one the agent kept awake sleep again after `environments.idleTimeout`, from its row's menu (`environments.setAwake`); the last change wins, as with the expiry.
+  `list_environments` shows each one's idle timeout, `never` for one that never sleeps.
+- **Expiry.** An Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
+  Its expiry can also be `never`, so it is kept until someone deletes it, with no install-wide switch and no maximum, since it spends its owner's own runner; the row's `expires_at` is then null.
+  The Owning Agent and the owner set, extend or turn it off, and the last change wins, whoever made it; a sweep every five minutes deletes an Environment whose expiry passed and never one with none.
+  The cap per agent counts kept ones too.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
   Deleting an Owning Agent deletes its Environments through the same cleanup, and the periodic sweep of agent artifacts catches any left behind.
 
@@ -62,6 +74,29 @@ An Environment runs the app its agent built, which reaches registries, mirrors a
 - **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
   A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
 
+## Agents at the gate
+
+An Agent opens an Environment as itself, from its sandbox, with whatever tool it uses — `curl`, a test suite, its browser — and nothing to set up.
+
+- **The Agent Key.** Every ordinary Agent, of any owner, on an install with an environments domain holds an opaque key, `ak_` and 32 random bytes, created with it; an Environment never holds one, since an Environment is never a visitor.
+  The database keeps only its HMAC, under the install's API key pepper, in `agent_keys`; the plaintext is in an `agent-key` Secret labelled with its Agent, which only that Agent's gateway mounts, paired or [owner gateway](credential-gateway.md#owner-gateway) alike.
+  The Agent never holds the key.
+- **The gateway sends it.** A chain for `*.<environments domain>` terminates TLS with the gateway's leaf, still asks ext_authz, injects the key in `x-platform-agent-key` over any value the agent sent, and sends the request to the api-server's public port inside the cluster, Host kept, WebSocket upgrades included ([credential gateway](credential-gateway.md#the-agent-key-chain)).
+  A Host outside the domain is answered 421 there, and the client address headers the agent could set are removed.
+- **The key decides.** A request that carries it is the Agent's, whatever cookie it carries, so a person's sign-in in the Agent's browser panel never opens more than the Agent's own lists do.
+  The Owning Agent is always let in, as its owner is; any other Agent, the owner's own included, only when the Environment's list or its Owning Agent's list names it.
+  Being of the same owner, or the agent of someone on a list, counts for nothing.
+  A key gets no session and no sign-in: the reserved paths refuse it, but for the loading page's status and retry, and a refusal is a page, not a redirect to the front door.
+  Let in, an Agent meets the app's start as a person does: a 503 to try again until the endpoint is ready.
+  The cross-origin check holds for keyed requests too, so another site's page in the Agent's browser cannot use the key.
+- **The key reaches only the gate.** The relay strips it before the app; a request that carries it to any other host of the api-server is refused before any route reads it.
+- **A visible rule.** The key is sent only while the Agent carries the platform's Environments egress rule: an allow for the environments domain, `source: platform:environments`, added with the key and listed in its own group on the agent's egress rules, labelled as the platform's.
+  It cannot be edited.
+  Its owner can remove it, which revokes the row, deletes the key and its Secret, and so stops the gateway sending it; the agent's requests to the domain then need approval like any other host.
+  The platform never adds a removed rule back; the owner restores it from the same list, which issues a new key, so the old one opens nothing.
+  An Agent created before this, or while the api-server was down, gets the rule and its key from a pass every half hour, unless it ever held the rule.
+- **Deleting an Agent** deletes its key and Secret, takes it off every list that names it, and removes its visits, so a later Agent can never inherit an entry.
+
 ## Addresses
 
 Each endpoint an Environment declares (`app` → 4444) gets an address of its own: `<endpoint>-<host>` under the install's environments domain (`environments.domain`), so each is its own origin and no Environment can read another's cookies or storage.
@@ -77,30 +112,58 @@ The local cluster serves `*.env.localhost` over plain HTTP.
 **The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
 The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
 
-- **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner and the agent's [Agent Editors](agent-editors.md) are always in, and an empty list means only them.
-  The Owning Agent can narrow the list for one Environment (`access`), never widen it: an email off the owner's list is refused, and the agent cannot read the owner's list.
+- **Who may open it.** Its owner, the Owning Agent's [Agent Editors](agent-editors.md), the agent's **Agent Environment Members** and the Environment's own **Environment Members** — people by email, and Agents of any owner by id, who come in by their key ([Agents at the gate](#agents-at-the-gate)).
+  The agent's members open every Environment of that agent, read at each request, so a change reaches every one of them at once and nothing is copied into each; an Environment's members add people to that one only.
+  Each list only adds people: nobody narrows an Environment below its agent's list.
+  Only people set the lists: the owner and the agent's editors set the agent's on its page, and the owner sets one Environment's in its Share dialog.
+  The Owning Agent sets neither and reads neither: its tools refuse an `access` list with a message that a person shares it in the app, and say only how many people may open each Environment, never who, so a prompt the agent reads cannot share the owner's app with a stranger.
   A visitor matches by the email their identity provider verified, compared trimmed and lowercased; an account without one matches nobody's list.
+  An Environment is never public.
 - **The share host is the front door.** An address without a session gives the browser a sign-in secret in a cookie of its own and sends a page load to `/e/<address>` on the [share host](artifact-library.md#the-share-host--trust-boundary), with the secret's hash.
   The share host signs the visitor in with its own session and identity provider client, the ones a restricted artifact uses, so a visitor signs in once for both; one already signed in passes straight through, with no page and no click.
-  It checks the owner and the effective list, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
+  It checks the owner and the people who may open it, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
   The address trades the code for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
 - **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
   So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
-- **The address checks again on every request**, by its session and the list as it stands, so a person taken off the list is refused at their next request.
+  When an endpoint has no session while the one a page loads from still does, because its step of the sign-in never landed or its session ended first, that page load sends the browser through the endpoints that miss one and back to the page.
+  It does so once per session in five minutes, so a step that keeps failing never loops, and never for a frame or a script's call.
+  Without it the app would stay broken: its own address still has a session, so no page load goes through the front door again.
+- **A person's own OAuth client signs in with their platform account** — an MCP client in an IDE, a desktop app or a CLI, any client of the MCP authorization standard.
+  A request with no session, no Agent Key and no bearer token that is not a page load gets a 401 whose `WWW-Authenticate` names `<address>/.well-known/oauth-protected-resource` and the scopes `environments offline_access` (RFC 9728); a page load keeps the redirect to the front door.
+  The gate answers that path itself on every endpoint, before the app, and the same path suffixed with a path: `resource` is the endpoint's address exactly as a client compares it (`<scheme>://<address>.<environments domain>`, the port only when the install's URL has one, no trailing slash), `authorization_servers` the realm's public issuer; the app can no longer serve that path.
+  The client then registers itself with Keycloak (RFC 7591), signs the person in there with PKCE, and asks for a token naming the address as its `resource` (RFC 8707); Keycloak's `keycloak-environments` extension makes that address the token's only audience and keeps it on every refresh, and the person allows the client once on Keycloak's consent page.
+  A bearer JWT whose issuer is one of the platform's is checked at the gate: RS256 against the realm's keys, that issuer, an audience of exactly this endpoint's address and nothing else, and its expiry; then the same rule a browser session gets, read from the lists at that request — the owner by `sub`, anyone else by an `email` the token marks verified.
+  A token that fails gets a 401 with `error="invalid_token"`, a valid token whose person is not on the lists a 403; a token for one Environment opens no other, and none opens the platform's API, whose audience it never names.
+  The same holds for a WebSocket upgrade, and the relay drops the token before the app as it drops every platform token.
+  An Agent Key request is unchanged.
+- **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
-  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out, which never reach the app.
+  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status and retry, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
   The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
   A CORS preflight from another endpoint of the same Environment carries no cookie, so the gate answers it itself, allowing the method and headers asked for with credentials; the call that follows is checked as any other, and its answer is the app's.
   A refusal of a call from another endpoint carries CORS headers for that endpoint, so its page reads the status instead of a network error.
+  A script's call with no session gets a plain-text 401, never the sign-in redirect or an HTML page its script would read as data; only a page load is sent to the front door, and an install that serves OAuth clients adds the `WWW-Authenticate` header below.
 - **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret), passes on every cookie the app set itself, and never lets the app set the platform's.
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
-- **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers, not until the app does: a request that comes before the app listens gets the gate's "not answering" page, and the visitor tries again.
-  Requests refresh its activity at most once a minute, and no open connection holds it awake, so a forgotten tab lets it sleep.
+- **Wake.** A request to a sleeping Environment starts its wake; only a request with a valid token waits for it, up to a minute until the machine runs, then goes on, and past that gets the 503 below, so a connected client's call answers instead of failing.
+  Every other request never waits.
+  While the machine wakes, a page load (a `GET` navigation) gets the loading page below, and every other request — a script's call, an API client, a WebSocket — a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
+- **The app answers for itself.** Once the machine runs, every request but a page load goes to the app as it is, whatever its answer: the gate never stands in for a script, a stylesheet or an API call of an app that is up.
+  The gate's own paths are the exceptions: `/.platform/` and the resource metadata at `/.well-known/oauth-protected-resource`.
+  The other exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.
+- **When a page load waits.** A page load to a running machine gets the loading page instead of the app's answer only while nothing behind the endpoint can answer it: nothing listens on the port, or, for an endpoint without a readiness path, a proxy in front of the app answers 502, 503 or 504, as a bridge or a k3s ingress does before the app behind it is up.
+  An endpoint may declare a readiness path (`ready: "/healthz"` on create, or set by endpoint name on update); a page load to it waits until that path answers 2xx or 3xx, for an app that answers before it can serve.
+  The gate keeps a "not ready" for a few seconds, so a burst of page loads costs one probe, and a "ready" until a relay finds nothing listening or the Environment wakes again.
+- **The loading page.** It has status 503, `Retry-After` and no caching.
+  It shows a working indicator and asks the gate's status at `/.platform/status` every few seconds; it reloads once the status says ready, into the app, or failed, into the gate's "did not start" page, which offers one "Try again" (`/.platform/start`, which wakes it again at once and returns to the page).
+  A start that takes longer than five minutes, such as an install, is not a failure: the page says it is still starting and asks every fifteen seconds.
+- **Activity.** Requests refresh its activity at most once a minute, the loading page's status checks included, so a visitor waiting on the page does not let it fall asleep again.
+  No open connection holds it awake, so a forgotten tab lets it sleep.
 - **Every response is uncacheable**, and the security log records each new session and each refusal.
 
 ## An install inside an Environment
@@ -131,28 +194,44 @@ Nothing in the create asks for nesting: the Environment's machine nests through 
 An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
-Beside the chart it installs two pieces the gate needs:
+Beside the chart it installs two pieces the gate needs, two the Environment's disk needs, and one its nested machines need:
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
+- **No image garbage collection and no disk eviction** in its k3s: the Environment's own disk is held to the room its owner's storage has left ([VM storage](vm-storage.md)), so whenever that storage runs short the kubelet would read the disk as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
+  Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
+- **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
+- **Transparent huge pages `always`, after every restart too**: the kernel's default is `madvise`, and the runner does not advise guest RAM, so a nested machine's boot often outlasts the VM runner's 30 s window; the install sets `always`, fails when the kernel keeps `madvise`, and leaves a boot service that sets it again before k3s starts.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
 A second install of the same checkout changes nothing: an image the node already holds is not sent again, only a deployment whose image changed is restarted, and an agent image is staged again only when the node's copy changed.
-The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, then runs the suite over the link.
+The [end-to-end suite](e2e.md#running-it) runs against such an install on its backchannel: `e2e:loop -- --environment <name>` installs the lane's values there, unless the Environment already runs that install of the checkout's commit or `--no-install` asks, then runs the suite over the link.
 
 ## Surfaces
 
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
+`list_environments` also lists, after them, the Environments other Agents' lists share with the caller, each marked `sharedWithYou: true`, with its name, whose Agent it is, its addresses, its expiry (`never` for one kept) and whether it runs — never who else may open it — from the same lists the gate reads; none of the other tools reaches one, and `platform-env` keeps to the Agent's own.
+An Agent whose owner does not have the feature gets `list_environments` alone, listing only what is shared with it, on an install that serves Environments, since a person needs no feature to open one either.
 
-**The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
-The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address with its empty text, so a stale link still works.
-While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
-What an Environment runs, its Startup Items and their output, is not shown there yet.
-The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
+**The owner** lists their Environments, extends, shares or deletes one, and reads and sets an agent's Environment Members through the `environments` tRPC router, under the same scopes as the agent's own management; listing every Environment and setting the agent's members refuse a key bound to one Agent, which the agent itself may hold.
+In the app, behind the feature:
+
+- **The Artifacts list** has an **Environments** group above its folders, which only the owner sees, as with artifacts, and only while there is one to show (see [artifact library](artifact-library.md#ui-surfaces)).
+  In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
+  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `kept` for one with no expiry, `awake` for one that never sleeps, its agent, and a link per address that opens a new tab.
+  Its menu has the artifact's delete-after control for the expiry, with **Keep until deleted**, whose text says what the chosen value does; **Keep awake** or **Let it sleep when idle**; and Delete.
+  The owner's `extend` takes `never` for no expiry.
+- **The Share dialog** of an Environment says when it is kept with no expiry and when it is kept awake, and who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
+  An id is looked up before it is added, so the row shows the Agent's name and its owner's display name, marked as an agent, and an id that names no Agent, or names an Environment, is refused; saving checks every id again.
+  Each Agent row says when it last opened the Environment, which the gate records at most once a minute.
+- **An agent's page** has an **Environments** section with the agent's Environment Members, people and Agents as in the Share dialog, edited once the list has loaded, and a link to the Artifacts list; an editor, who has no Artifacts list of the owner's, reads there that the owner manages each Environment.
+  The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address, so a stale link still works.
+  While the agent has none, the Manage card of its General section links to the section, because the members can be named before the first Environment exists.
+
+What an Environment runs, its Startup Items and their output, is not shown yet.
 The owner creates none there; the agent does.
-Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
+Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the lists that decide whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up, and the Artifacts list polls while it shows them, because the agent's own changes to an Environment raise no hint.
 
-The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.
+The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's or an Environment's members with the Agents on it, each new session with the person's email, an Agent's admitted access at most once a minute per Agent and Environment, and each refusal, a person's or an Agent's.

@@ -1,6 +1,6 @@
 # VM storage
 
-Last verified: 2026-10-23
+Last verified: 2026-11-09
 
 A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
@@ -73,16 +73,29 @@ It grows in place when the pool rises and is never shrunk, so a lowered pool onl
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
-So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
+So the runner measures the claim itself, as the blocks its own directories hold — the machine disks and the bookkeeping — against those plus what the filesystem still gives an unprivileged writer; so a claim that is a directory of a shared disk, as k3s's local-path provisioner hands out, counts only the owner's files and not every other writer of that disk, and a mount inside the claim, such as a pod's image cache, counts nothing.
+In an Environment the node's disk is the outer guest's, whose own filesystem is held to the outer grant: the runner's claim there is still a local-path directory, its use is the runner's own blocks, and what it may still take is the room the outer grant leaves ([environments](environments.md)).
+Past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
 A guest a grant holds is judged by the room its guard leaves it, not by the disk's share.
-A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.
+A guest is held to the claim's room too: each look grants every machine that is neither asleep nor absent all that is left below 95% of the claim, not a part of it, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init holds the guest to what is left of its grant.
+It sizes the guest's btrfs to what the guest has written plus that room, so `df`, and a kubelet or anything else nested in the guest, reads the room the claim has rather than the whole disk with most of it held back.
+A shrink stops at the end of the last chunk btrfs placed plus one chunk: below that end btrfs would relocate those chunks first, which rewrites live data on the claim, takes up to a chunk more of it while it runs and fails when the room is small.
+platform-init reads the end and resizes back to back, but no call does both at once and a freeze would block the resize, so the extra chunk is for one the guest places in between, a window with no bound on its length.
+A guest that places more than that in it has btrfs relocate those chunks after all, with the claim scratch, the time and the refusal a relocation brings: an accepted risk, since the window holds no wait of platform-init's own.
+That bound only stops a shrink and never grows the filesystem, which would grow ahead of a guest writing toward its size.
+So unnamed files platform-init preallocates on the disk hold what lies between the room and that bound, mostly free space inside chunks the guest's data once filled, and nothing once the guest's data and its room reach past it.
+The first refused shrink of a failing run grows the filesystem by 64 MiB instead, since a refused relocation leaves btrfs refusing writes into about a chunk of the room it still reports until it grows again, and later ones grow nothing until a resize succeeds; a disk whose chunks cannot be read keeps its size, which holds the guest to less than its room rather than more.
+Until the files may move, the size counts the blocks they still hold, so a size that leaves the guest its room under the hold the files will move to does not leave it less under the hold they have.
+Without a grant the filesystem is the whole disk, and a boot grows it back to the whole disk before anything writes, since the size a guest was held to outlasts its stop.
+The last 5% of the claim is the reserve: one agent that needs the room gets all of it above the reserve whatever number of idle siblings run beside it, and its guard keeps it out of the reserve but for its floor and the writes it had not flushed when the runner looked.
+The claim is overcommitted on purpose: agents that write at once may each write the whole room before the next look, and the reserve is what absorbs them.
+The reserve covers what the other writers add in the time a grant takes to shrink under a writer: a look (30 s), after which the new size holds once its resize returns, which moves no data but waits on a sync, plus, while preallocated files hold part of the room, their move interval (30 s): 5 GiB of a 100 GiB claim in a minute is about 85 MiB/s from the other agents together, above what builds, installs and checkouts write, and below two agents unpacking images at full speed; the reserve scales with the claim, so on a 20 GiB claim it is about 17 MiB/s, which a busy install can pass.
+A burst past it fills the claim, and every guest's writes then fail as a broken disk's would; a shorter look narrows the window only while the size alone holds the guest, since the preallocated files move once per btrfs commit however often it is granted.
 No grant is more than that room, so a write larger than all of it plus the floor a guest may write past its grant is refused whatever the guest has been granted.
 A claim the runner cannot measure grants nothing, so no guest is held to it, and it says so each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
-One writer that fills its part before the next look meets "no space left on device" at its part, not at 95%: at roughly 85% with eight machines up, 87% with four, and higher with fewer, since the room below 95% is split between them and renewed every 30 s.
-The next look renews its part once the claim has moved, so its next write succeeds, and an agent that handles the error carries on.
-That is accepted for now, since the agent survives the error and its next write succeeds; a fix would renew a short machine's part in seconds rather than at the look's cadence.
+The guard explains itself: `/run/storage-guard.txt` in the guest says that the filesystem is sized to the claim's room, how much it holds back besides, that the space is unnamed files PID 1 keeps open under `/system/storage-guard` and no leak, what the agent may still write and what frees room, and the files' directory carries the same name, so the deleted files `lsof +L1` lists lead to it.
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 Their blocks are only marked in the guest's filesystem, never written, so they take nothing from the claim, and they have no names, so the filesystem frees them when the guest stops.

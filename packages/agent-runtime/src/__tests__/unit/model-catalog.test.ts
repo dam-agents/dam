@@ -9,8 +9,8 @@
  * offered to Claude Code alone. Bob's gateway is offered to the Bob harness
  * alone, though Pi speaks its dialect. A Connection the router never serves
  * (Bedrock) is listed as unsupported with no models; a harness that runs it
- * natively sees that Connection's models as its own names, which the router
- * never routes.
+ * natively sees that Connection's models as its own names, or as the models
+ * the Connection lists, which the router never routes.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -35,7 +35,10 @@ const HARNESSES: Record<string, ModelRouterBinding | undefined> = {
   },
   codex: { dialects: ["openai-responses"] },
   bob: { dialects: ["openai-chat"] },
-  pi: { dialects: ["anthropic-messages", "openai-chat", "openai-responses"] },
+  pi: {
+    dialects: ["anthropic-messages", "openai-chat", "openai-responses"],
+    native: { templates: ["bedrock"], models: "listed" },
+  },
   custom: undefined,
 };
 
@@ -85,7 +88,10 @@ const oauthLayer = {
 const bedrockLayer = {
   id: "conn-bedrock",
   template: "bedrock",
-  env: { AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock" },
+  env: {
+    AWS_BEARER_TOKEN_BEDROCK: "platform:conn:conn-bedrock",
+    AWS_ENDPOINT_URL_BEDROCK: "https://bedrock.example",
+  },
 };
 
 type Listing = Record<
@@ -99,7 +105,8 @@ function discoveryFor(listing: Listing): ModelDiscovery & { calls: string[] } {
     const base =
       env.OPENAI_BASE_URL ??
       env.BOB_DEFAULT_GATEWAY_URL ??
-      env.ANTHROPIC_BASE_URL;
+      env.ANTHROPIC_BASE_URL ??
+      env.AWS_ENDPOINT_URL_BEDROCK;
     calls.push(base ?? "?");
     const answer = base ? listing[base] : undefined;
     if (!answer) return { status: "not-configured" as const };
@@ -359,12 +366,25 @@ describe("the model catalog", () => {
     });
   });
 
-  /** TEST_SCENARIO: Bedrock never passes the router, but Claude Code runs it
-   * natively: Claude Code's view lists the Connection under its alias with
-   * Claude Code's own tier names, while Codex still sees it as unsupported,
-   * and the router neither lists nor resolves those names. */
+  /** TEST_SCENARIO: Bedrock never passes the router, but Claude Code and Pi
+   * run it natively: Claude Code's view lists the Connection under its alias
+   * with Claude Code's own tier names, Pi's with the inference profiles the
+   * Connection lists but its image models, while Codex still sees it as unsupported, and the
+   * router neither lists nor resolves those names. */
   it("lists a natively run Connection's models for that harness only", async () => {
-    const { catalog } = catalogWith(BOTH, [ibmLayer, bedrockLayer]);
+    const { catalog } = catalogWith(
+      {
+        ...BOTH,
+        "https://bedrock.example": {
+          ids: [
+            "us.anthropic.claude-opus-5-5",
+            "us.amazon.nova-pro-v1:0",
+            "us.stability.stable-outpaint-v1:0",
+          ],
+        },
+      },
+      [ibmLayer, bedrockLayer],
+    );
     await catalog.refresh();
     const bedrock = catalog
       .view("claude-code")
@@ -376,11 +396,47 @@ describe("the model catalog", () => {
     ]);
     expect(
       catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "listed",
+      native: true,
+      models: [
+        { name: "bedrock/us.anthropic.claude-opus-5-5" },
+        { name: "bedrock/us.amazon.nova-pro-v1:0" },
+      ],
+    });
+    expect(
+      catalog
         .view("codex")
         .providers.find((p) => p.connectionId === "conn-bedrock")?.status,
     ).toBe("unsupported");
     expect(catalog.entries().some((e) => e.alias === "bedrock")).toBe(false);
     expect(catalog.resolve("claude/bedrock/sonnet", "claude-code")).toBeNull();
+  });
+
+  /** TEST_SCENARIO: a Bedrock key may invoke models without the right to
+   * list profiles; Pi is then offered the model the Connection pins, as
+   * listed, so the agent still gets a model. */
+  it("offers a natively run Connection's pinned model when its listing fails", async () => {
+    const { catalog } = catalogWith({ "https://bedrock.example": "down" }, [
+      {
+        ...bedrockLayer,
+        env: {
+          ...bedrockLayer.env,
+          AWS_BEDROCK_MODEL: "us.anthropic.claude-sonnet-5-5",
+        },
+      },
+    ]);
+    await catalog.refresh();
+    expect(
+      catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "listed",
+      models: [{ name: "bedrock/us.anthropic.claude-sonnet-5-5" }],
+    });
   });
 
   /** TEST_SCENARIO: Bob's gateway serves chat completions only, so Claude
@@ -433,6 +489,48 @@ describe("the model catalog", () => {
     ]);
     await ready.catalog.refresh();
     expect(ready.catalog.providers()[0]?.status).toBe("listed");
+  });
+
+  /** TEST_SCENARIO: A granted provider is shown unavailable with no models
+   * before its first listing, so a first listing that fails changes nothing a
+   * reader sees, and no listener is told: a listener recycles every idle
+   * harness, and a recycle for nothing loses what the process held. A listing
+   * that later lands is a change, and is told. */
+  it("tells no listener when a failed first listing leaves the providers as they were", async () => {
+    const listing: Listing = { "https://ibm.example": "down" };
+    const { catalog } = catalogWith(listing, [ibmLayer]);
+    const changed = vi.fn();
+    catalog.onChange(changed);
+    await catalog.refresh();
+    expect(catalog.providers()[0]?.status).toBe("unavailable");
+    expect(changed).not.toHaveBeenCalled();
+    listing["https://ibm.example"] = { ids: ["gpt-5.5"] };
+    await catalog.refresh();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  /** TEST_SCENARIO: Pi's Bedrock profiles were listed, then the region's
+   * control plane stops answering: the known profiles stay, now marked
+   * unavailable, and the readers are told, though no model name changed. */
+  it("tells the listeners when a native listing fails with its models kept", async () => {
+    const listing: Listing = {
+      "https://bedrock.example": { ids: ["us.anthropic.claude-opus-5-5"] },
+    };
+    const { catalog } = catalogWith(listing, [bedrockLayer]);
+    await catalog.refresh();
+    const changed = vi.fn();
+    catalog.onChange(changed);
+    listing["https://bedrock.example"] = "down";
+    await catalog.refresh();
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(
+      catalog
+        .view("pi")
+        .providers.find((p) => p.connectionId === "conn-bedrock"),
+    ).toMatchObject({
+      status: "unavailable",
+      models: [{ name: "bedrock/us.anthropic.claude-opus-5-5" }],
+    });
   });
 
   /** TEST_SCENARIO: A grant restarts the agent's egress gateway, so the

@@ -659,9 +659,9 @@ describe("run service: session choices", () => {
   });
 
   /**
-   * TEST_SCENARIO: the runtime refuses a session with no model and names the
-   * web app's Providers page; the CLI adds the commands that fix it from
-   * the terminal.
+   * TEST_SCENARIO: the runtime refuses a session with no model, which means
+   * the agent has no model provider, and names the web app's Providers page;
+   * the CLI adds the commands that grant one from the terminal.
    */
   it("adds the CLI's way out to a no-model refusal", async () => {
     relay = startRelay((ws, frame) => {
@@ -690,8 +690,7 @@ describe("run service: session choices", () => {
     const reason =
       !result.ok && "reason" in result.error ? result.error.reason : "";
     expect(reason).toContain("This session has no model.");
-    expect(reason).toContain("dam agent models <agent>");
-    expect(reason).toContain("dam agent update <agent> --model");
+    expect(reason).toContain("dam agent update <agent> --provider");
   });
 });
 

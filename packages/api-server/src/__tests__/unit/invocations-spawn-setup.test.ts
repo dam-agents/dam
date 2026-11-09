@@ -21,6 +21,8 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     insert: async () => {},
     get: async () => null,
     complete: async () => true,
+    markStarted: async () => null,
+    failExpired: async () => false,
     fail: async (id, reason) => {
       failed.push([id, reason]);
     },
@@ -78,6 +80,7 @@ function makeService(opts: { failPin?: boolean } = {}) {
     } as never,
     wakeAgent: async () => {},
     reaper: { reap: async () => {} },
+    reportedReap: { afterReport: () => {} },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,
     skills: {
@@ -222,6 +225,7 @@ function makeFailingSkillsService(
         deleted.push(row.id);
       },
     },
+    reportedReap: { afterReport: () => {} },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,
     skills: { applyEntries } as never,

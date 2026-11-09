@@ -1,9 +1,13 @@
 import {
   approvalOption,
   type HarnessCapability,
+  isNativeSubagentSetting,
   isPlatformSubagentSetting,
+  lentSubagentOfProfile,
   PLATFORM_SUBAGENT_PREFIX,
   platformSubagentChoice,
+  SUBAGENT_EFFORT_SETTING,
+  SUBAGENT_EFFORT_SLOT,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
 import type {
@@ -13,6 +17,7 @@ import type {
   SessionPair,
 } from "api-server-api";
 
+import { shortProviderName } from "../../providers/lib/provider-rows.js";
 import {
   type ProviderConnectionRef,
   providerOfModel,
@@ -31,19 +36,15 @@ type SubagentPick = Pick<ProfileWithUsage, "harness" | "model"> & {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: one subagent choice drives both kinds of
- * subagent. A platform sub-agent is another agent, so it takes the harness,
- * the model and the choice's own settings. A native sub-agent runs inside the
- * primary harness, so it takes the model only where that harness keeps
- * `subagentModel` and can run it (the same harness, or a model the agent lists
- * for it), with the choice's effort where the harness offers it; otherwise the
- * agent picks. Null clears both.
+ * UNIT_BOUNDARY_DESCRIPTION: one subagent choice as the platform slot, the
+ * only shape the UI writes: its harness, its model and any settings of its own.
+ * The native sub-agent keys a run takes from it are derived at the run
+ * boundary, where the server knows the primary's own model listing, so nothing
+ * here guesses them. Null clears the slot and every old native key.
  */
 export function withSubagent(
   pair: SessionPair,
   choice: SubagentPick | null,
-  capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
 ): SessionPair {
   const { settings: current = {}, ...rest } = pair;
   const settings = Object.fromEntries(
@@ -53,30 +54,12 @@ export function withSubagent(
         !isPlatformSubagentSetting(id),
     ),
   );
-  const keeps = (id: string) =>
-    capability?.sessionSettings?.includes(id) === true;
-  const effort = choice?.settings?.effort;
   if (choice) {
     for (const [id, value] of Object.entries(choice.settings ?? {}))
       if (!(SUBAGENT_KEYS as readonly string[]).includes(id))
         settings[`${PLATFORM_SUBAGENT_PREFIX}${id}`] = value;
     settings["platformSubagent.harness"] = choice.harness;
     settings["platformSubagent.model"] = choice.model;
-    if (
-      keeps(SUBAGENT_MODEL_SETTING) &&
-      (choice.harness === pair.harness ||
-        models.some((m) => m.name === choice.model))
-    ) {
-      settings[SUBAGENT_MODEL_SETTING] = choice.model;
-      if (
-        effort &&
-        keeps("subagentEffort") &&
-        capability?.harnessConfigCatalog?.options
-          .find((o) => o.id === "subagentEffort")
-          ?.choices.some((c) => c.value === effort)
-      )
-        settings.subagentEffort = effort;
-    }
   }
   return Object.keys(settings).length > 0 ? { ...rest, settings } : rest;
 }
@@ -104,17 +87,14 @@ export function subagentPair(pair: SessionPair | null): SessionPair | null {
 export function withSubagentPair(
   pair: SessionPair,
   sub: SessionPair,
-  capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
 ): SessionPair {
   if (sub.model !== null)
-    return withSubagent(
-      pair,
-      { harness: sub.harness, model: sub.model, settings: sub.settings ?? {} },
-      capability,
-      models,
-    );
-  const cleared = withSubagent(pair, null, capability, models);
+    return withSubagent(pair, {
+      harness: sub.harness,
+      model: sub.model,
+      settings: sub.settings ?? {},
+    });
+  const cleared = withSubagent(pair, null);
   return {
     ...cleared,
     settings: { ...cleared.settings, "platformSubagent.harness": sub.harness },
@@ -139,8 +119,6 @@ export function heldSubagent(
       withSubagent(
         { harness: profile.harness, provider: null, model: null },
         profile,
-        undefined,
-        [],
       ).settings ?? null
     );
   return saved?.platformSubagentSettings
@@ -167,11 +145,79 @@ export function subagentSummary(
 ): string | null {
   const sub = subagentPair(pair);
   if (!sub?.model) return null;
+  const connection = providerOfModel(sub.model, providers);
   return pairSummary(sub.model, {
     settings: sub.settings,
     capability: carried.find((h) => h.name === sub.harness),
-    provider: providerOfModel(sub.model, providers)?.name,
+    provider: connection ? shortProviderName(connection) : undefined,
   });
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a pair with its platform sub-agent slot replaced by `slot`, the primary's own settings kept, so a profile's lent slot and the pair a pick writes share one shape. */
+export function withPlatformSlot(
+  pair: SessionPair,
+  slot: Record<string, string>,
+): SessionPair {
+  const { settings: _all, ...rest } = pair;
+  const primary = Object.fromEntries(
+    Object.entries(pair.settings ?? {}).filter(
+      ([id]) => !isPlatformSubagentSetting(id) && !isNativeSubagentSetting(id),
+    ),
+  );
+  return { ...rest, settings: { ...primary, ...slot } };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a pair with the platform keys split off and no slot, the primary's own native keys kept, as a profile that names no subagent reads. */
+function withoutPlatformSlot(pair: SessionPair): SessionPair {
+  const { settings: _all, ...rest } = pair;
+  const primary = Object.fromEntries(
+    Object.entries(pair.settings ?? {}).filter(
+      ([id]) => !isPlatformSubagentSetting(id),
+    ),
+  );
+  return Object.keys(primary).length > 0
+    ? { ...rest, settings: primary }
+    : rest;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: a profile as the pair its picker edits: its provider named by the owner's Connection, and the sub-agent it names as the platform slot, effort included; a profile that names none keeps its settings untouched, so native subagent values a pre-D193B profile carries survive an unrelated edit. */
+export function profileEditPair(
+  profile: ProfileWithUsage,
+  provider: string | null,
+): SessionPair {
+  const pair: SessionPair = {
+    harness: profile.harness,
+    provider,
+    model: profile.model,
+    settings: profile.settings,
+  };
+  const lent = lentSubagentOfProfile(profile);
+  return lent ? withPlatformSlot(pair, lent) : pair;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the settings a profile stores from a pair's read-back shape: its own settings; with a platform slot, no derived native model, and the slot's effort back as `subagentEffort`, the native key a profile keeps it in, so edit and save round-trip it losslessly. */
+export function profileSettings(
+  pair: SessionPair,
+  capability: HarnessCapability | undefined,
+): Record<string, string> {
+  const all = pair.settings ?? {};
+  const slot = Object.fromEntries(
+    Object.entries(all).filter(([id]) => isPlatformSubagentSetting(id)),
+  );
+  const own = Object.fromEntries(
+    Object.entries(all).filter(
+      ([id]) =>
+        !isPlatformSubagentSetting(id) && isProfileSetting(id, capability),
+    ),
+  );
+  if (Object.keys(slot).length === 0) return own;
+  const withoutDerived = Object.fromEntries(
+    Object.entries(own).filter(([id]) => !isNativeSubagentSetting(id)),
+  );
+  const effort = slot[SUBAGENT_EFFORT_SLOT];
+  return effort === undefined
+    ? withoutDerived
+    : { ...withoutDerived, [SUBAGENT_EFFORT_SETTING]: effort };
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the setting changes that turn one pair's settings into another's, a removed one as the empty value that unsets it. */
@@ -191,24 +237,20 @@ export function pickProfile(
   pair: SessionPair | null,
   profile: ProfileWithUsage,
   capability: HarnessCapability | undefined,
-  models: readonly { name: string }[],
 ): SessionPair {
   const kept = Object.fromEntries(
     Object.entries(pair?.settings ?? {}).filter(
       ([id]) => !isProfileSetting(id, capability),
     ),
   );
-  return withSubagent(
-    {
-      harness: profile.harness,
-      provider: null,
-      model: profile.model,
-      settings: { ...kept, ...profile.settings },
-    },
-    subagentOf(pair),
-    capability,
-    models,
-  );
+  const primary: SessionPair = {
+    harness: profile.harness,
+    provider: null,
+    model: profile.model,
+    settings: { ...kept, ...profile.settings },
+  };
+  const lent = lentSubagentOfProfile(profile);
+  return lent ? withPlatformSlot(primary, lent) : withoutPlatformSlot(primary);
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: a setting a profile holds: not the subagent slot's, and not tool approval, which is a session's own pick. */

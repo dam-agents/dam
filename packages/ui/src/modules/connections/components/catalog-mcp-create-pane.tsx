@@ -12,7 +12,7 @@ import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "@/lib/toast";
 
 import { getBrand } from "../../../brand.js";
-import { CLI_REFERENCE_URL, MCP_DOCS_URL } from "../../../constants.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { DisclosureBox } from "../forms/disclosure-box.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
@@ -21,6 +21,7 @@ import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { validateConnectionName } from "../lib/connection-name.js";
 import { validateMcpUrl } from "../lib/mcp-url.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
+import { OAuthPopupWait } from "./oauth-popup-wait.js";
 
 const MCP_OAUTH_TEMPLATE_ID = "custom-mcp-oauth";
 const MCP_NONE_TEMPLATE_ID = "custom-mcp-none";
@@ -108,6 +109,8 @@ export function McpCreatePane({
 
   const { detected, detecting } = useMcpAuthDetection(url);
   const cli = getBrand().short;
+  const cliReferenceUrl = useDocsUrl("cliReference");
+  const mcpDocsUrl = useDocsUrl("mcpServers");
 
   const overriding = filled(clientId) || filled(headerValue);
   const wantsOAuth = filled(clientId)
@@ -128,6 +131,8 @@ export function McpCreatePane({
     needsOAuth,
     awaitingPopup,
     refocusPopup,
+    cancelAuthorization,
+    popupDeadlineAt,
   } = useTemplateCreateSubmit({
     template: template ?? EMPTY_TEMPLATE,
     popupOAuth: true,
@@ -160,18 +165,10 @@ export function McpCreatePane({
   const submitLabel = useMemo(() => {
     if (showDetecting) return "Checking URL…";
     if (verifying) return "Verifying…";
-    if (awaitingPopup) return "Waiting for authorization — reopen";
     if (authorizing) return "Redirecting…";
     if (pending) return "…";
     return needsOAuth ? "Create + Authorize" : "Create";
-  }, [
-    showDetecting,
-    verifying,
-    awaitingPopup,
-    authorizing,
-    pending,
-    needsOAuth,
-  ]);
+  }, [showDetecting, verifying, authorizing, pending, needsOAuth]);
 
   return (
     <>
@@ -193,13 +190,17 @@ export function McpCreatePane({
             help={
               <>
                 Running an MCP server on your own machine? Install the{" "}
-                <a
-                  href={CLI_REFERENCE_URL}
-                  {...externalLinkProps}
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
-                >
-                  {cli} CLI
-                </a>{" "}
+                {cliReferenceUrl ? (
+                  <a
+                    href={cliReferenceUrl}
+                    {...externalLinkProps}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
+                  >
+                    {cli} CLI
+                  </a>
+                ) : (
+                  `${cli} CLI`
+                )}{" "}
                 and run{" "}
                 <code className="whitespace-nowrap">
                   {cli} satellite --help
@@ -212,17 +213,19 @@ export function McpCreatePane({
             title="Advanced configuration"
             variant="section"
             description={
-              <>
-                See{" "}
-                <a
-                  href={MCP_DOCS_URL}
-                  {...externalLinkProps}
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
-                >
-                  documentation
-                </a>{" "}
-                for more details
-              </>
+              mcpDocsUrl && (
+                <>
+                  See{" "}
+                  <a
+                    href={mcpDocsUrl}
+                    {...externalLinkProps}
+                    className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
+                  >
+                    documentation
+                  </a>{" "}
+                  for more details
+                </>
+              )
             }
           >
             <div className="flex flex-col gap-4">
@@ -257,24 +260,31 @@ export function McpCreatePane({
         </div>
       </div>
       <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
-        <Button variant="outline" onClick={onBack} disabled={pending}>
-          Cancel
-        </Button>
-        <Button
-          onClick={awaitingPopup ? refocusPopup : onSubmit}
-          disabled={
-            !awaitingPopup &&
-            (pending || !template || showDetecting || !formState.isValid)
-          }
-          tooltip={
-            awaitingPopup
-              ? "Bring the authorization window back to the front"
-              : undefined
-          }
-          data-testid="connection-create-submit"
-        >
-          {submitLabel}
-        </Button>
+        {awaitingPopup ? (
+          <OAuthPopupWait
+            deadlineAt={popupDeadlineAt}
+            onReopen={refocusPopup}
+            onDiscard={() => {
+              cancelAuthorization();
+              onBack();
+            }}
+          />
+        ) : (
+          <>
+            <Button variant="outline" onClick={onBack} disabled={pending}>
+              Cancel
+            </Button>
+            <Button
+              onClick={onSubmit}
+              disabled={
+                pending || !template || showDetecting || !formState.isValid
+              }
+              data-testid="connection-create-submit"
+            >
+              {submitLabel}
+            </Button>
+          </>
+        )}
       </div>
     </>
   );

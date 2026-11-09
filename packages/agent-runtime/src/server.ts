@@ -35,16 +35,20 @@ import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { startMemReaper, startRuntimeMetrics } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { RESERVED } from "./modules/workspace-path.js";
 import { composeArtifactApi } from "./modules/artifact-api/compose.js";
 import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
+import { createTransferHandlers } from "./modules/transfer/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  modelCatalogCachePath,
   servesHarness,
   VENDORED_PRICE_TABLE,
+  watchHarnessCatalog,
 } from "./modules/model-catalog/index.js";
 import {
   composeModelRouter,
@@ -53,6 +57,7 @@ import {
   bedrockRouterEnv,
   createCallerSessionLookup,
   createModelCallExporter,
+  homeConnectionEnv,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
@@ -192,7 +197,16 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir, defaultHarness);
+const envStore = createEnvStateStore(
+  homeDir,
+  defaultHarness,
+  (harness, layers) =>
+    homeConnectionEnv({
+      harness,
+      binding: harnessManifests[harness]?.modelRouter,
+      layers,
+    }),
+);
 const browser = composeBrowser({ homeDir, envReader: envStore });
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
@@ -254,6 +268,11 @@ const sshUpgrade = createSshUpgrade({
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+const transferHandlers = createTransferHandlers({
+  root: homeDir,
+  reserved: [...RESERVED],
+  log: (msg) => process.stderr.write(`[transfer] ${msg}\n`),
+});
 
 const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
@@ -285,6 +304,7 @@ const modelCatalog = createModelCatalog({
     Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
   ),
   table: VENDORED_PRICE_TABLE,
+  cachePath: modelCatalogCachePath(homeDir),
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 
@@ -341,6 +361,7 @@ const terminalSessionOf = createTerminalSessionLookup(
   TERMINAL_PIN_REFRESH_MS,
 );
 const modelRouter = composeModelRouter({
+  leaseEnv: (harness) => envStore.forLease({ harness, provider: null }),
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;
@@ -628,7 +649,7 @@ const {
   },
   beforeSpawn: async () => {
     await Promise.race([
-      modelCatalog.listed(),
+      modelCatalog.settled(),
       new Promise<void>((resolve) => {
         setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
       }),
@@ -758,7 +779,7 @@ const runtimeChannel = await composeRuntimeChannel({
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
         applyStartupItemEnv();
-        void modelCatalog.refresh();
+        void modelCatalog.refreshForEnvChange();
         scheduleRecovery();
       },
     }),
@@ -1258,6 +1279,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/transfer/stage") {
+    void transferHandlers.handleStage(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/transfer/publish") {
+    void transferHandlers.handlePublish(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/transfer/read?")) {
+    void transferHandlers.handleRead(
+      req,
+      res,
+      new URL(req.url, "http://agent"),
+    );
+    return;
+  }
+
   if (
     jsonPost(
       req,
@@ -1401,18 +1441,24 @@ server.listen(config.PORT, () => {
     applyStartupItemEnv();
   }
 
-  modelCatalog.onChange(() =>
-    acpRuntime.applyEnvChange({
-      namesChanged: false,
-      base: null,
-      providers: [],
-      harnesses: Object.keys(harnessManifests).map((id) => ({
-        id,
+  watchHarnessCatalog({
+    catalog: modelCatalog,
+    harnesses: Object.keys(harnessManifests),
+    changed: () =>
+      acpRuntime.applyEnvChange({
         namesChanged: false,
-      })),
-    }),
-  );
-  if (environmentOf === "") acpRuntime.prestart();
+        base: null,
+        providers: [],
+        harnesses: Object.keys(harnessManifests).map((id) => ({
+          id,
+          namesChanged: false,
+        })),
+      }),
+  });
+  if (environmentOf === "") {
+    acpRuntime.prestart();
+    void sessionsService.adoptHarnessTitles();
+  }
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));

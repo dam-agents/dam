@@ -5,7 +5,7 @@ import type {
   CredentialProbeTarget,
 } from "../domain/credential-check.js";
 import { isIpLiteral } from "../domain/kubernetes-contributions.js";
-import { stripControlChars } from "./github-identity.js";
+import { displayLabel } from "./github-identity.js";
 
 const SELF_SUBJECT_REVIEW_PATH =
   "/apis/authentication.k8s.io/v1/selfsubjectreviews";
@@ -173,7 +173,7 @@ export async function probeKubernetesToken(
     return {
       status: "passed",
       ...(review.success
-        ? { account: stripControlChars(review.data.status.userInfo.username) }
+        ? { account: displayLabel(review.data.status.userInfo.username) }
         : {}),
       ...(expiresAt ? { expiresAt } : {}),
     };

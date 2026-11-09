@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command, Option } from "commander";
@@ -10,19 +10,23 @@ import * as exitCodes from "../modules/shared/exit-codes.js";
  * TEST_OVERVIEW: The `dam` skill that users install into their own agent, so
  * that agent can drive DAM through this CLI. The skill lives in the
  * repository's top-level skills folder and must not drift from the CLI it
- * teaches: every `dam …` command it names must
- * resolve to a real command in the program that `compose()` builds, every flag
- * on such a command must belong to that command, every flag it mentions on its
- * own must exist somewhere in the CLI, its exit-code table must list
- * exactly the codes the CLI defines, and the CLI version it names must be this
- * package's version.
+ * teaches. On SKILL.md and on every page beside it, such as the security
+ * advisory, every `dam …` command named must resolve to a real command in the
+ * program that `compose()` builds, every flag on such a command must belong to
+ * that command, and every flag mentioned on its own must exist somewhere in the
+ * CLI. SKILL.md's exit-code table must list exactly the codes the CLI defines,
+ * and the CLI version it names must be this package's version.
  */
 
-const SKILL_PATH = resolve(
+const SKILL_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../../skills/dam/SKILL.md",
+  "../../../../skills/dam",
 );
-const skill = readFileSync(SKILL_PATH, "utf-8");
+const skill = readFileSync(resolve(SKILL_DIR, "SKILL.md"), "utf-8");
+const pages = readdirSync(SKILL_DIR, { recursive: true, encoding: "utf-8" })
+  .filter((path) => path.endsWith(".md"))
+  .map((path) => readFileSync(resolve(SKILL_DIR, path), "utf-8"));
+const everyPage = pages.join("\n");
 const PACKAGE_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../package.json",
@@ -118,7 +122,7 @@ function check(invocation: string): string | undefined {
 describe("the dam skill", () => {
   /** TEST_SCENARIO: an agent copies these commands verbatim, so a renamed or removed command or flag must fail here before the skill ships with it. */
   it("names only commands and flags the CLI has", () => {
-    const found = invocations(skill);
+    const found = invocations(everyPage);
     expect(found.length).toBeGreaterThan(30);
     const broken = found
       .map((invocation) => ({ invocation, problem: check(invocation) }))
@@ -129,7 +133,7 @@ describe("the dam skill", () => {
   /** TEST_SCENARIO: prose such as "pass `--yes`" names a flag without its command, so each such flag must at least exist on some command. */
   it("mentions no flag that no command has", () => {
     const commands = allCommands(program);
-    const unknown = standaloneFlags(skill).filter(
+    const unknown = standaloneFlags(everyPage).filter(
       (flag) => !commands.some((c) => knowsFlag(c, flag)),
     );
     expect(unknown).toEqual([]);

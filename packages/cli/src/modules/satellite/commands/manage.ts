@@ -9,6 +9,12 @@ import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import { errorMessage } from "../../shared/error-message.js";
+import {
+  audienceOf,
+  type SharingService,
+  sharingUnchecked,
+  sharingWarning,
+} from "../../sharing/index.js";
 
 export interface ManageDeps {
   compatService: CompatService;
@@ -106,7 +112,10 @@ export function buildJobsCommand(deps: ManageDeps): Command {
   });
 }
 
-export function buildGrantCommand(deps: ManageDeps, revoke: boolean): Command {
+export function buildGrantCommand(
+  deps: ManageDeps & { createSharingService: (host: string) => SharingService },
+  revoke: boolean,
+): Command {
   const verb = revoke ? "revoke" : "grant";
   return serverOption(
     new Command(verb)
@@ -119,11 +128,12 @@ export function buildGrantCommand(deps: ManageDeps, revoke: boolean): Command {
       .argument("<agent>", "Agent Ref — name or 'agent-…' ID"),
   ).action(async (name: string, ref: string, opts: CommonOpts) => {
     const at = await resolveActiveHost(deps, opts.server);
-    const { id: agentId } = await resolveAgentOrExit(
+    const agent = await resolveAgentOrExit(
       deps.createAgentService(at),
       ref,
       at,
     );
+    const agentId = agent.id;
     const trpc = deps.createTrpc(at);
     await attempt(at, () =>
       revoke
@@ -135,6 +145,17 @@ export function buildGrantCommand(deps: ManageDeps, revoke: boolean): Command {
         ? `${ref} can no longer reach ${name}.\n`
         : `${ref} can now reach ${name}. Its harness picks the tools up when it next starts.\n`,
     );
+    if (!revoke) {
+      const chats = await deps.createSharingService(at).telegramChats(agentId);
+      if (!chats.ok)
+        process.stderr.write(sharingUnchecked(agent.name, chats.error.reason));
+      const warning = sharingWarning(
+        agent.name,
+        audienceOf(agent, chats.ok ? chats.value : []),
+        { connections: [], satellites: [name] },
+      );
+      if (warning) process.stderr.write(warning);
+    }
     return process.exit(EXIT_SUCCESS);
   });
 }

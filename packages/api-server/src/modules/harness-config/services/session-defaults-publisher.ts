@@ -1,7 +1,11 @@
 import { sql, type Db, type DbTx } from "db";
+import { routesByModelName } from "agent-runtime-api";
+import type { SessionPair } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { sessionDefaultsEvent } from "../domain/session-defaults-event.js";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
+import type { RunBoundary } from "../domain/run-boundary.js";
+import { automaticModel } from "../domain/session-pair.js";
 
 export type PublishSessionDefaults = (agentId: string) => Promise<void>;
 
@@ -13,23 +17,44 @@ export type PublishSessionDefaults = (agentId: string) => Promise<void>;
  * snapshot still waiting is superseded, so a runtime that comes back from
  * refusing the kind gets only the newest one. The event's timestamp is above
  * every one the agent already holds, since the runtime skips an event no newer
- * than the last it ran and two publishes can share a millisecond.
+ * than the last it ran and two publishes can share a millisecond. A default
+ * with no model goes out on the automatic model, so a chat that follows it
+ * runs on the model a fire would.
  */
 export function createSessionDefaultsPublisher(deps: {
   db: Db;
   pairRepo: Pick<SessionPairRepo, "readSaved">;
   runtimeMutator: RuntimeMutator;
+  /* UNIT_BOUNDARY_DESCRIPTION: the defaults a runtime follows are a run boundary: a following session takes these settings at its next turn, so they carry the native subagent keys derived for each pair (D193B). */
+  boundary: RunBoundary;
   now?: () => number;
 }): PublishSessionDefaults {
   const now = deps.now ?? (() => Date.now());
   return async (agentId) => {
+    /* UNIT_BOUNDARY_DESCRIPTION: the inputs the derivation needs are read before the transaction opens, since the owner catalog lists models from the providers and the pool stays free for the read-and-enqueue that follows; inside it only the pure settle runs (D193B). */
+    const inputs = await deps.boundary.inputs(agentId);
+    const settle = deps.boundary.settle(inputs);
+    const run = (pair: SessionPair | null) =>
+      settle.pair(
+        pair?.model === null && routesByModelName(inputs.capabilities)
+          ? {
+              ...pair,
+              ...automaticModel(inputs.catalog?.providers ?? [], pair),
+            }
+          : pair,
+      ) ?? null;
     await deps.db.transaction(async (tx) => {
       const saved = await deps.pairRepo.readSaved(agentId, tx);
+      const defaults = {
+        chat: run(saved.chat),
+        channel: run(saved.channel),
+        scheduled: run(saved.scheduled),
+      };
       const at = Math.max(now(), (await lastEventAt(tx, agentId)) + 1);
       await deps.runtimeMutator.supersede(agentId, "session-defaults", tx);
       await deps.runtimeMutator.bump(
         agentId,
-        [sessionDefaultsEvent(agentId, saved, at)],
+        [sessionDefaultsEvent(agentId, defaults, at)],
         tx,
       );
     });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Cluster tooling resolves one target and one install, and a worktree's name never reaches an Environment"
+#MISE description="Cluster tooling resolves one target and one install, a worktree's name never reaches an Environment, and e2e:loop skips only a current install"
 #MISE sources=[".mise/lib/cluster.sh", ".mise/tasks/cluster/*", ".mise/tasks/e2e/*", ".mise/tasks/check/cluster-resolve"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -94,6 +94,79 @@ E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 E2E_ENVIRONMENT=pr-123 expect "the e2e lan
 E2E_LANE=1 CLUSTER_ENVIRONMENT=pr-123 E2E_ENVIRONMENT=pr-7 refuses "the e2e lane, another Environment than its task's" "only when its task is given --environment" "$WT"
 E2E_LANE=1 DAM_INSTALL=default expect "the e2e lane pins the default install there" "environment|default|" "$WT" --environment pr-123
 
+# --- an install's entrypoint fits a Kubernetes port name -------------------
+# Traefik's chart makes each entrypoint the Service's and the container's port
+# name, which Kubernetes stops at 15 characters, so the old `platform-<name>`
+# was truncated: two installs whose names share a prefix then shared one port
+# name (`spec.ports[N].name: Duplicate value`) and the chart failed for every
+# install on the cluster. The two branches below are that collision.
+entrypoint() { # <install name>
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    traefik_entrypoint_name "$1"
+  )
+}
+entrypoints() { # <what> <install name> <want>
+  local got
+  got="$(entrypoint "$2")"
+  [ "$got" = "$3" ] || { echo "FAIL: $1: got '$got', want '$3'" >&2; fail=1; }
+}
+entrypoints "the default install keeps its name" "" "platform"
+[ "$(entrypoint fix-profile-rename-m)" != "$(entrypoint fix-providers-defaul)" ] || {
+  echo "FAIL: two installs whose names share a prefix share one entrypoint" >&2
+  fail=1
+}
+[ "$(entrypoint fix-profile-rename-m)" = "$(entrypoint fix-profile-rename-m)" ] || {
+  echo "FAIL: an install's entrypoint changed between two runs" >&2
+  fail=1
+}
+for install in fix-profile-rename-m fix-providers-defaul sidebar "a$(printf 'b%.0s' $(seq 1 19))"; do
+  ep="$(entrypoint "$install")"
+  [ ${#ep} -le 15 ] || { echo "FAIL: install $install's entrypoint '$ep' is ${#ep} characters; a port name stops at 15" >&2; fail=1; }
+  case "$ep" in
+    [a-z]*[a-z0-9]) ;;
+    *) echo "FAIL: install $install's entrypoint '$ep' is not a port name" >&2; fail=1 ;;
+  esac
+  case "$ep" in
+    *[!a-z0-9-]*) echo "FAIL: install $install's entrypoint '$ep' holds more than lowercase letters, digits and dashes" >&2; fail=1 ;;
+  esac
+done
+
+# An install that recorded its port before the rename is migrated: its entry is
+# read under the old name, and the rewrite leaves it under the short one alone.
+values_port() { # <values> <install name>
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    traefik_values_port "$1" "$2"
+  )
+}
+values_set() { # <values> <install name> <port>
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    traefik_values_set "$1" "$2" "$3"
+  )
+}
+same() { # <what> <got> <want>
+  [ "$2" = "$3" ] || { echo "FAIL: $1: got '$2', want '$3'" >&2; fail=1; }
+}
+before="ports:
+  platform: {port: 4444, exposedPort: 4444}
+  platform-fix-profile-rename-m: {port: 4403, exposedPort: 4403}
+  platform-sidebar: {port: 4402, exposedPort: 4402}"
+after="$(values_set "$before" fix-profile-rename-m 4403)"
+same "a port recorded under the old name is read" "$(values_port "$before" fix-profile-rename-m)" 4403
+same "a migrated port is read under the short name" "$(values_port "$after" fix-profile-rename-m)" 4403
+case "$after" in
+  *platform-fix-profile-rename-m*) echo "FAIL: the rewrite kept the old entry beside the new one" >&2; fail=1 ;;
+esac
+same "the rewrite keeps the default install" "$(values_port "$after" "")" 4444
+same "the rewrite keeps another install" "$(values_port "$after" sidebar)" 4402
+same "the rewrite lists the install once" \
+  "$(printf '%s' "$after" | yq -r '[.ports[] | .exposedPort] | sort | join(" ")' 2>/dev/null)" "4402 4403 4444"
+
 # --- every task that declares flags declares both --------------------------
 # mise validates a declared task's flags before the script runs, so a task that
 # documents one of the two and not the other rejects the other outright. The
@@ -113,5 +186,38 @@ for task in install loop reset gate run; do
     fail=1
   }
 done
+
+# --- an Environment's install is skipped only on its recorded, clean commit --
+# e2e:loop skips e2e:install when the Environment's last lane install was of
+# the checkout's commit from a clean tree, into the same cluster
+# (e2e_install_current), and says so.
+# current <checkout> <record> <cluster-id>: what e2e_install_current makes of it.
+current() {
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    if MISE_CONFIG_ROOT="$1" e2e_install_current "$2" "$3" >/dev/null; then echo current; else echo install; fi
+  )
+}
+skips() { # <what> <current|install> <checkout> <record> [cluster-id]
+  local got
+  got="$(current "$3" "$4" "${5-cluster-a}")"
+  [ "$got" = "$2" ] || { echo "FAIL: $1: got '$got', want '$2'" >&2; fail=1; }
+}
+record="$work/e2e-installed"
+skips "no record installs" install "$WT" "$record"
+echo "$(git -C "$WT" rev-parse HEAD) cluster-a" > "$record"
+skips "the recorded commit, clean, skips" current "$WT" "$record"
+skips "the recorded commit on a cluster made again installs" install "$WT" "$record" cluster-b
+skips "a cluster that does not answer installs" install "$WT" "$record" ""
+touch "$WT/untracked"
+skips "an untracked file installs" install "$WT" "$record"
+rm "$WT/untracked"
+git -C "$WT" -c user.email=check@example.com -c user.name=check commit -q --allow-empty -m next
+skips "another commit installs" install "$WT" "$record"
+grep -q '^#USAGE flag "--no-install"' "$MISE_CONFIG_ROOT/.mise/tasks/e2e/loop" || {
+  echo "FAIL: .mise/tasks/e2e/loop: takes no --no-install, which the cluster-ops skill's debugging loop names" >&2
+  fail=1
+}
 
 exit "$fail"

@@ -42,6 +42,11 @@ impl PoolGuard {
         avail.saturating_sub(self.keep)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: forgets the ceiling a refused growth found: it measured the filesystem at the size it had, and a resize moved that size, so the next growth finds the ceiling again if it still has one.
+    pub fn resized(&mut self) {
+        self.ceiling = None;
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two until within POOL_GUARD_STEP, for the largest guard that fits, about 14 preallocations on a 200 GiB disk; which is what the guest could write without one. A coarser ceiling would hand its gap back to the guest at every look, past its grant. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
     pub fn grow(
         &mut self,
@@ -72,6 +77,19 @@ impl PoolGuard {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the room past the last chunk's end a size keeps, at least: one chunk of the largest btrfs placed, and no less than the 1 GiB a data chunk takes on one device.
+pub const CHUNK_MARGIN: u64 = 1 << 30;
+
+// UNIT_BOUNDARY_DESCRIPTION: the size a guard move sets the guest's filesystem to, from its size `now`: `base`, what the guest has written (and the guard holds, until it may move), and the room it is to keep, so `df`, and a kubelet or anything else nested in the guest, reads the room the claim has rather than the whole disk with most of it held. Rounded up to the 4 KiB sector btrfs rounds a size down to. A shrink stops at `end`, the end of the last chunk btrfs placed (boot::vm::allocated_end), plus a chunk: a smaller size has btrfs relocate the chunks past it first, which rewrites live data on the claim, takes up to a chunk more of it while it runs, lasts minutes on a slow disk and fails when the room is small, and the chunk past the end is for the one the guest may place between the read of the end and the resize, which no read can rule out. That bound only ever stops a shrink and never grows the filesystem: a guest writing toward its size places chunks up to it, and a bound that followed them would grow the filesystem ahead of every write. The guard files hold what lies between `base + keep` and the size. Without a grant (`keep` None) nothing is held and the filesystem is the whole disk; no size passes the disk.
+pub fn disk_size(keep: Option<u64>, base: u64, end: u64, chunk: u64, now: u64, disk: u64) -> u64 {
+    keep.map_or(disk, |keep| {
+        base.saturating_add(keep)
+            .next_multiple_of(4096)
+            .max(end.saturating_add(chunk.max(CHUNK_MARGIN)).min(now))
+    })
+    .min(disk)
+}
+
 pub fn read_grant(text: &str) -> Option<(String, u64)> {
     let mut words = text.split_whitespace();
     let id = words.next()?.to_string();
@@ -85,6 +103,39 @@ pub fn guest_room(keep: u64, granted: bool, avail: u64) -> u64 {
     } else {
         avail
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the text of guest::STORAGE_GUARD_NOTE for a guard that holds `held` bytes and leaves the agent `room`, in GiB to a tenth, so it changes only when a reader would see it change. `sized` says whether the filesystem is sized to the room as well: not without a grant, where it is the whole disk, nor when its size or chunks could not be read, where the guard files alone hold the agent.
+pub fn guard_note(sized: bool, held: u64, room: u64) -> String {
+    let gib = |bytes: u64| format!("{:.1} GiB", bytes as f64 / f64::from(1u32 << 30));
+    let shared = "This disk is sparse, on the storage this owner's VM agents share. Every running VM agent may write what that storage has \
+         left above its reserve";
+    if held == 0 {
+        if !sized {
+            return "The platform holds back none of this disk now.\n".to_string();
+        }
+        return format!(
+            "The platform holds back none of this disk now.\n{shared}, and this disk's filesystem is sized to that, so `df` reports \
+             the room the shared storage has rather than the whole disk: this agent may write {} more now.\n",
+            gib(room)
+        );
+    }
+    let how = if sized {
+        ", and this disk's filesystem is sized to that; it cannot be made smaller than the space its data spans without \
+         rewriting that data, so the hold keeps the rest of it to the room"
+    } else {
+        ", and the hold keeps this one to that"
+    };
+    format!(
+        "The platform holds back {} of this disk, so it reads that much fuller than its files: \
+         unnamed files that PID 1 (/mnt/init) keeps open under /system/{}, which `lsof +L1` lists as deleted. They are not a leak.\n\
+         {shared}{how}: it may write {} more now.\n\
+         The hold follows the shared storage within a minute, and a restart does not release it. To get room, delete files in \
+         this or another VM agent, delete or put to sleep VM agents you no longer need, or request more storage.\n",
+        gib(held),
+        crate::guest::STORAGE_GUARD_DIR,
+        gib(room),
+    )
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. A mark that gets worse is made at once; one that gets better holds until the room passes its level by ROOM_BAND. Without that band a room hovering on a level — an agent that fills and frees around one, a guard that moves by a step — alternates its mark at every look, and each look is a console line.
@@ -171,7 +222,7 @@ impl EvictionPass {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant is a small share of it — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from, and it is run at most once per that age (`swept_at`): an agent held at its floor by its own home's files has no room whatever it evicts, so a pass at every look would delete its scratch entry by entry as each crossed the hour, and one pass per shortage would never clear a burst younger than the age it spares, which keeps the agent at its floor for good. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
+// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant can be a small share of it — 4.5 GiB of 100 GiB on a nearly full pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from, and it is run at most once per that age (`swept_at`): an agent held at its floor by its own home's files has no room whatever it evicts, so a pass at every look would delete its scratch entry by entry as each crossed the hour, and one pass per shortage would never clear a burst younger than the age it spares, which keeps the agent at its floor for good. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
 pub fn eviction_pass(
     granted: bool,
     room: u64,
@@ -252,6 +303,32 @@ mod tests {
 
     const GIB: u64 = 1 << 30;
 
+    // TEST_SCENARIO: the note names what is held back, where the files are, that they are no leak and what frees room, in figures a reader can check against `df`; a guard that holds nothing says so instead of explaining a hold.
+    #[test]
+    fn the_note_explains_the_hold() {
+        let note = guard_note(true, 73 * GIB + GIB / 2, 4 * GIB);
+        for words in [
+            "73.5 GiB",
+            "/system/storage-guard",
+            "not a leak",
+            "4.0 GiB more",
+            "request more storage",
+        ] {
+            assert!(note.contains(words), "{words:?} missing from {note}");
+        }
+        let idle = guard_note(true, 0, 4 * GIB);
+        assert!(
+            idle.starts_with("The platform holds back none of this disk now.\n")
+                && idle.contains("`df` reports")
+                && idle.contains("4.0 GiB more"),
+            "a guard that holds nothing explains the hold instead of the size: {idle}"
+        );
+        assert_eq!(
+            guard_note(false, 0, 4 * GIB),
+            "The platform holds back none of this disk now.\n"
+        );
+    }
+
     // TEST_SCENARIO: a guest that has run out of room is marked full on the console and marked again only when its room changes, and the room it is judged by is what it may really write: a grant's leftovers, no more than the disk has free, and the disk's own free space when no grant holds it back. Eviction counts the guard's blocks as the guest's free space only up to the room the last look left it, so a guest at its grant reads its disk as full: counting the guard's blocks in full is what kept the disk reading as free while every write failed.
     #[test]
     fn a_guest_at_its_grant_is_marked_full() {
@@ -283,7 +360,7 @@ mod tests {
         assert_eq!(eviction_pass(false, 0, None, None, None, None, 0), None);
     }
 
-    // TEST_SCENARIO: a grant is an even part of the claim, so a healthy one is a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
+    // TEST_SCENARIO: a grant is what the claim has left above its reserve, so a healthy one can be a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB on a nearly full pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
     #[test]
     fn a_healthy_grant_is_not_a_short_disk() {
         let grant = 4_608 << 20;
@@ -430,6 +507,65 @@ mod tests {
             assert_eq!(next, Room::Held, "{room}");
             mark = next;
         }
+    }
+
+    // TEST_SCENARIO: a guard move sizes the filesystem to what the guest wrote and the room it keeps, so `df` reads the claim's room and the guard holds nothing at all. A shrink keeps a chunk past the end of the chunks btrfs placed — the largest it placed, and no less than 1 GiB — since a smaller size relocates them and the guest may place another between the read and the resize; the guard holds what lies between, so the guest still writes no more than its room. That chunk never grows the filesystem: a writer places chunks up to the size, and a size that followed their end plus a chunk let one guest write five times its grant. Until the guard may move, the size counts the blocks it still holds, so a hold that has not moved yet leaves the guest its room and not less. Without a grant the filesystem is the whole disk, and no size passes the disk.
+    #[test]
+    fn the_filesystem_is_sized_to_the_room_and_the_guard_holds_the_rest() {
+        let (disk, mine) = (100 * GIB, 10 * GIB);
+        let grant = || Some(("1".to_string(), 5 * GIB));
+        let mut state = PoolGuard::default();
+        guard_look(&mut state, grant(), mine, disk - mine, 0, disk, true);
+        let size = disk_size(Some(state.keep), mine, 9 * GIB, GIB, disk, disk);
+        assert_eq!(
+            size,
+            15 * GIB,
+            "the filesystem is not the guest's data and its room"
+        );
+        assert_eq!(
+            guard_look(&mut state, grant(), mine, size - mine, 0, size, true),
+            None,
+            "a filesystem sized to the room still had the guard hold some of it"
+        );
+        assert_eq!(guest_room(state.keep, true, size - mine), 5 * GIB);
+        let size = disk_size(Some(state.keep), mine, 17 * GIB, GIB, disk, disk);
+        assert_eq!(
+            size,
+            18 * GIB,
+            "the size kept no chunk past the chunks btrfs placed"
+        );
+        assert_eq!(
+            guard_look(&mut state, grant(), mine, size - mine, 0, size, true),
+            Some(3 * GIB),
+            "the guard does not hold what lies between the room and the size"
+        );
+        assert_eq!(
+            disk_size(Some(GIB), mine, 12 * GIB, 4 * GIB, disk, disk),
+            16 * GIB
+        );
+        assert_eq!(
+            disk_size(Some(GIB), mine, 12 * GIB, 256 << 20, disk, disk),
+            13 * GIB
+        );
+        assert_eq!(
+            disk_size(Some(GIB), mine, 12 * GIB, GIB, 12 * GIB, disk),
+            12 * GIB,
+            "the chunk kept past the end grew the filesystem ahead of a writer"
+        );
+        let held = 3 * GIB;
+        let size = disk_size(Some(state.keep), mine + held, 9 * GIB, GIB, disk, disk);
+        assert_eq!(
+            size - mine - held,
+            state.keep,
+            "a hold that has not moved yet left the guest less than its room"
+        );
+        assert_eq!(disk_size(None, mine, 11 * GIB, GIB, disk, disk), disk);
+        assert_eq!(
+            disk_size(Some(200 * GIB), mine, 11 * GIB, GIB, disk, disk),
+            disk
+        );
+        assert_eq!(disk_size(Some(1), 0, 0, 0, disk, disk), CHUNK_MARGIN);
+        assert_eq!(disk_size(Some(GIB + 1), 0, 0, 0, disk, disk), GIB + 4096);
     }
 
     // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.

@@ -45,6 +45,12 @@ on:
           real there, rather than all of them.
         type: boolean
         required: true
+      full-tier:
+        description: >-
+          The nightly run: the default lane also runs the specs under
+          src/tests/full/ (E2E_FULL).
+        type: boolean
+        required: true
     secrets:
       QUAY_USERNAME:
         required: false
@@ -103,7 +109,7 @@ jobs:
     # Every step e2e-owner-gateway runs is anchored here (&e2e-*), so the two
     # jobs bring their clusters up the same way, and a phase of one is compared
     # with the same phase of the other. The jobs differ only in the gateway
-    # flag.
+    # flag, and on the nightly run in the full/ tier this job adds.
     # The job summary carries this job's per-phase timings (e2e:timings), from
     # the marks E2E_TIMINGS collects and the Playwright JSON report.
     needs: [docs-only]
@@ -111,8 +117,8 @@ jobs:
     runs-on: ubuntu-latest
     # The runner release build on a PR, the node staging of the mock image and
     # every machine's boot share this runner, so the budget is the one the
-    # suite needs on a KVM machine.
-    timeout-minutes: 90
+    # suite needs on a KVM machine. The nightly run's full/ tier adds an hour.
+    timeout-minutes: ${{ inputs.full-tier && 150 || 90 }}
     permissions:
       contents: read
       actions: read
@@ -122,6 +128,9 @@ jobs:
       # queue, the nightly run and a tag run them all. The Playwright config
       # applies it; see docs/architecture/e2e.md.
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      # The nightly run adds the full/ tier here, in this lane alone; the
+      # summary says so beside the scope.
+      E2E_FULL: ${{ inputs.full-tier && '1' || '' }}
       E2E_TIMINGS: &e2e-timings /tmp/e2e-timings
       E2E_REPORT_JSON: &e2e-report-json /tmp/playwright-report.json
       # This job restores the release build's `packages/vm-runner/target`, so
@@ -157,6 +166,32 @@ jobs:
           sudo sysctl -w net.ipv6.conf.default.addr_gen_mode=1
           nohup bash -c ".mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo \$? > '$RUNNER_TEMP/k3s-provision.status'" \
             > "$RUNNER_TEMP/k3s-provision.log" 2>&1 &
+      # The runner image carries toolchains this lane never uses: every tool the
+      # lane runs comes from mise. They hold several gigabytes, which is the room
+      # the agent images' import needs — it once ran out of disk and the kubelet
+      # evicted the pods the install had just started. A rename is instant and
+      # stays on the same filesystem; the delete then runs in the background,
+      # under the cluster provision and the image builds. The df lines say what
+      # it freed here.
+      - &e2e-free-disk
+        name: Free the toolchains this lane never uses
+        run: |
+          set -euo pipefail
+          start="$(date +%s)"
+          df -h /
+          for d in /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup; do
+            [ ! -e "$d" ] || sudo mv "$d" "$d.gone" ||
+              echo "::warning::$d could not be set aside; the lane runs with less room"
+          done
+          # shellcheck disable=SC2016 # expanded by the clean-up's own shell
+          nohup sudo sh -c '
+            for d in /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup; do
+              [ ! -d "$d.gone" ] || rm -rf "$d.gone"
+            done
+            echo "freed in $(( $(date +%s) - $1 ))s"
+            df -h /
+            touch "$2"
+          ' free-disk "$start" "$RUNNER_TEMP/free-disk.done" > "$RUNNER_TEMP/free-disk.log" 2>&1 &
       # GitHub's standard x64 Linux runners expose /dev/kvm, root-owned; a udev
       # rule opens it to the runner's user, whom cluster:install probes it as.
       - &e2e-kvm
@@ -375,16 +410,35 @@ jobs:
           else
             echo "E2E_HOST_PROVISIONED=1" >> "$GITHUB_ENV"
           fi
+      # Just before the install, which imports the images whose import ran out
+      # of disk: the delete above must be done, not just started, and its room
+      # is what the import counts on. Five minutes is longer than the delete
+      # takes on a fast run and shorter than the job can spare; one still
+      # running then is stuck, and a warning: the lane is slow, not broken.
+      - &e2e-free-disk-wait
+        name: Wait for the disk clean-up
+        run: |
+          set -o pipefail
+          waited_from="$(date +%s)"
+          if ! timeout 300 bash -c "until [ -e '$RUNNER_TEMP/free-disk.done' ]; do sleep 2; done"; then
+            echo "::warning::the disk clean-up did not finish within 5 minutes"
+          fi
+          df -h /
+          {
+            cat "$RUNNER_TEMP/free-disk.log" 2>/dev/null || true
+            printf 'waited %ss for the disk clean-up\n' "$(( $(date +%s) - waited_from ))"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # Under the job's timeout, so a hung image build fails the step and the
       # log steps below still run; the job's own timeout cancels them too.
       # The budget covers the runner release build on a PR, the node staging of
       # the mock image, each agent's boots under nested virtualization and the
-      # backend spec, which runs after the rest of the suite.
+      # backend spec, which runs after the rest of the suite; the full/ tier,
+      # in the one lane that sets E2E_FULL, adds an hour.
       - &e2e-suite
         name: Run the e2e suite
         run: &e2e-run |
           mise run e2e
-        timeout-minutes: 70
+        timeout-minutes: ${{ env.E2E_FULL && 130 || 70 }}
         env: &e2e-run-env
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: ${{ runner.temp }}/ci-images.status
@@ -453,6 +507,10 @@ jobs:
           fi
           [ "$canary" != 0 ] || echo "::warning::the seccomp canary left no record, so the kernel log may not keep seccomp records here, and a low count proves nothing"
           grep -h 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true
+          # A container whose processes may not signal each other hangs rather
+          # than fails (etc/lima/k3s-test.yaml says why), so its denials are named.
+          signals="$(grep -c 'apparmor="DENIED" operation="signal"' /tmp/kernel-log/kernel.log || true)"
+          [ "$signals" = 0 ] || echo "::warning::AppArmor denied $signals signals between processes; a pod that hung may be why"
       - &e2e-kernel-log-artifact
         if: ${{ failure() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -522,6 +580,7 @@ jobs:
       - *e2e-timing-start
       - *e2e-checkout
       - *e2e-provision
+      - *e2e-free-disk
       - *e2e-kvm
       - *e2e-keycloak-theme-cache
       - *e2e-pnpm-cache
@@ -542,6 +601,7 @@ jobs:
       - *e2e-playwright-version
       - *e2e-playwright-cache
       - *e2e-provision-wait
+      - *e2e-free-disk-wait
       - *e2e-suite
       - *e2e-playwright-save
       - *e2e-image-log

@@ -3,7 +3,6 @@ import { useMemo } from "react";
 
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { deniableApprovalIds } from "../../approvals/lib/deny-all.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
@@ -14,6 +13,7 @@ import { useGettingStarted } from "../../getting-started/api/queries.js";
 import { deriveChecklist } from "../../getting-started/lib/derive-checklist.js";
 import { useAttention, useFeed } from "../../home/api/queries.js";
 import { useDismissals } from "../../home/hooks/use-dismissals.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { useAgentSession } from "../../sessions/api/queries.js";
 import { useSettingsTabs } from "../../settings/hooks/use-settings-tabs.js";
@@ -61,13 +61,13 @@ export function usePaletteInput(): PaletteInput {
   const artifactList = useArtifacts({}).data;
   const kits = useStarterKits().data;
   const { tabs } = useSettingsTabs();
-  const chatForms = useChatFormsEnabled();
   const environments = useEnvironmentsEnabled();
   const openSession = useAgentSession(chatAgentId, sessionId).data ?? null;
   const changeSets = useChangeSets(chatAgentId, sessionId);
   const { items: feed } = useFeed();
   const { isDismissed } = useDismissals();
   const progress = useGettingStarted().data;
+  const docsUrl = useDocsUrl("home");
   const checklist = progress ? deriveChecklist(progress) : null;
 
   const freshSessions = useMemo(
@@ -125,9 +125,7 @@ export function usePaletteInput(): PaletteInput {
     kits: kits ?? [],
     settingsTabs: tabs,
     sections: SECTIONS.filter(
-      (e) =>
-        (chatForms || e.section !== "chat-forms") &&
-        (environments || e.section !== "environments"),
+      (e) => environments || e.section !== "environments",
     ),
     channels: agentsData?.availableChannels ?? {},
     browserOpen: chatAgent?.requireConnectionAddress
@@ -151,5 +149,6 @@ export function usePaletteInput(): PaletteInput {
         ? pendingApprovals
         : NO_APPROVALS,
     brandShort: getBrand().short,
+    docsUrl,
   };
 }

@@ -1,10 +1,12 @@
 import type { Subscription } from "rxjs";
-import type { Db } from "db";
+import type { Db, DbTx } from "db";
 import type { ProfileResolver } from "../profiles/index.js";
+import type { RunBoundary } from "./domain/run-boundary.js";
 import type {
   DefaultKind,
   HarnessCatalog,
   HarnessConfigService,
+  OwnerModelCatalogView,
   SessionPair,
 } from "api-server-api";
 import {
@@ -78,14 +80,21 @@ export function composeHarnessConfigModule(deps: {
   ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  ownerCatalog: (agentId: string) => Promise<OwnerModelCatalogView>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
   resolveProfile: ProfileResolver;
+  resolveProfileOn?: (executor: Db | DbTx) => ProfileResolver;
+  boundary: RunBoundary;
   hiddenHarnesses: () => Promise<ReadonlySet<string>>;
 }): { service: HarnessConfigService } {
   const { db, outboxRepo, ...serviceDeps } = deps;
   const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
-  const pairRepo = createSessionPairRepo(db, deps.resolveProfile);
+  const pairRepo = createSessionPairRepo(
+    db,
+    deps.resolveProfile,
+    deps.resolveProfileOn,
+  );
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
@@ -98,6 +107,7 @@ export function composeHarnessConfigModule(deps: {
         db,
         pairRepo,
         runtimeMutator: deps.runtimeMutator,
+        boundary: deps.boundary,
       }),
     }),
   };
@@ -107,6 +117,9 @@ export function composeSessionChoicesValidator(deps: {
   db: Db;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   firePair: FirePair;
   resolveProfile: ProfileResolver;
 }): SessionChoicesValidator {
@@ -115,6 +128,7 @@ export function composeSessionChoicesValidator(deps: {
     pairRepo: createSessionPairRepo(deps.db, deps.resolveProfile),
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
     getCapabilities: deps.getCapabilities,
+    ownerCatalog: deps.ownerCatalog,
     firePair: deps.firePair,
   });
 }
@@ -130,6 +144,9 @@ export function composeFirePair(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   resolveProfile: ProfileResolver;
 }): FirePair {
   const resolver = {
@@ -156,14 +173,25 @@ export function composeDefaultConverter(deps: {
   runtimeMutator: RuntimeMutator;
   log: (msg: string) => void;
   resolveProfile: ProfileResolver;
+  resolveProfileOn?: (executor: Db | DbTx) => ProfileResolver;
+  boundary: RunBoundary;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, runtimeMutator, resolveProfile, ...rest } =
-    deps;
-  const pairRepo = createSessionPairRepo(db, resolveProfile);
+  const {
+    db,
+    namespace,
+    ownerOf,
+    runtimeMutator,
+    resolveProfile,
+    resolveProfileOn,
+    boundary,
+    ...rest
+  } = deps;
+  const pairRepo = createSessionPairRepo(db, resolveProfile, resolveProfileOn);
   const publishDefaults = createSessionDefaultsPublisher({
     db,
     pairRepo,
     runtimeMutator,
+    boundary,
   });
   const converter = createDefaultConverter({
     ...rest,

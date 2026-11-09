@@ -2,6 +2,7 @@ import type {
   CatalogEntry,
   CatalogProvider,
 } from "../../model-catalog/index.js";
+import { refusesReasoningEffort } from "./replay.js";
 
 const displayNameOf = (
   entry: CatalogEntry,
@@ -94,14 +95,23 @@ export function codexModelCatalog(
 ): unknown {
   return {
     models: entries.map((e, index) => {
-      const reasoning = e.metadata.reasoning === true;
+      /* UNIT_BOUNDARY_DESCRIPTION: a level the router drops on the way out is
+       * one the picker must not offer, or the person picks an effort that
+       * silently does nothing on that deployment. */
+      const effort =
+        e.metadata.reasoning === true &&
+        !refusesReasoningEffort({
+          dialect: "openai-responses",
+          template: e.template,
+          upstreamId: e.upstreamId,
+        });
       const window = e.metadata.contextWindow ?? 128_000;
       return {
         slug: e.name,
         display_name: e.upstreamId,
         description: describe(e, displayNameOf(e, providers)),
-        default_reasoning_level: reasoning ? "medium" : null,
-        supported_reasoning_levels: reasoning ? CODEX_REASONING_LEVELS : [],
+        default_reasoning_level: effort ? "medium" : null,
+        supported_reasoning_levels: effort ? CODEX_REASONING_LEVELS : [],
         shell_type: "shell_command",
         visibility: "list",
         supported_in_api: true,

@@ -52,6 +52,7 @@ function service(ownerSub: string, owned: readonly string[]) {
       ownsAgent: async (agentId) => owned.includes(agentId),
       defaultModelNotices: async () => [],
       outageAlerts: async () => [],
+      costReviews: async () => [],
       log: () => {},
     }),
   };

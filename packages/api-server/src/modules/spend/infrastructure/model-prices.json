@@ -1,7 +1,7 @@
 {
-  "source": "https://github.com/BerriAI/litellm/blob/29edcee9ebff4b7d759eafa2610d90633ca4b652/model_prices_and_context_window.json",
-  "commit": "29edcee9ebff4b7d759eafa2610d90633ca4b652",
-  "committedAt": "2026-10-24T22:08:37Z",
+  "source": "https://github.com/BerriAI/litellm/blob/ff3983c1f627ad09a5e36e45cc92a0cec91afb72/model_prices_and_context_window.json",
+  "commit": "ff3983c1f627ad09a5e36e45cc92a0cec91afb72",
+  "committedAt": "2026-11-02T06:29:14Z",
   "models": {
     "claude-fable-5": {
       "cache_creation_input_token_cost": 0.0000125,

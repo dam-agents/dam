@@ -16,7 +16,7 @@ import type {
 } from "../hooks/use-approval-actions.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: an approval's controls: the `inline` actions as buttons, every other action in one "⋯" menu with the way to the network rules under them. The Home feed and the chat prompt both render it, so an approval offers the same actions and the same labels wherever the owner meets it; the caller names the inline actions and the button variant its surface uses.
+ * UNIT_BOUNDARY_DESCRIPTION: an approval's controls: the `inline` actions as buttons, every other action in one "⋯" menu with the way to the network rules under them, and no menu when it would hold nothing. The Home feed and the chat prompt both render it, so an approval offers the same actions and the same labels wherever the owner meets it; the caller names the inline actions and the button variant its surface uses.
  */
 export function ApprovalActionsMenu({
   actions,
@@ -57,34 +57,36 @@ export function ApprovalActionsMenu({
           {action.label}
         </Button>
       ))}
-      <RowActionsMenu
-        label="More approval actions"
-        variant="outline"
-        className={cn("h-8 w-8", className)}
-        disabled={inflight}
-        contentProps={contentProps}
-      >
-        {menu.map((action) => (
-          <DropdownMenuItem
-            key={action.id}
-            disabled={action.disabled}
-            tone={action.danger ? "danger" : "default"}
-            onSelect={() => onRun(action)}
-            title={action.tooltip}
-          >
-            {action.label}
-          </DropdownMenuItem>
-        ))}
-        {hostLabel !== null && (
-          <>
-            <DropdownMenuSeparator className="-mx-1" />
-            <DropdownMenuItem onSelect={openSettings}>
-              <Settings size={16} />
-              Network settings
+      {(menu.length > 0 || hostLabel !== null) && (
+        <RowActionsMenu
+          label="More approval actions"
+          variant="outline"
+          className={cn("h-8 w-8", className)}
+          disabled={inflight}
+          contentProps={contentProps}
+        >
+          {menu.map((action) => (
+            <DropdownMenuItem
+              key={action.id}
+              disabled={action.disabled}
+              tone={action.danger ? "danger" : "default"}
+              onSelect={() => onRun(action)}
+              title={action.tooltip}
+            >
+              {action.label}
             </DropdownMenuItem>
-          </>
-        )}
-      </RowActionsMenu>
+          ))}
+          {hostLabel !== null && (
+            <>
+              <DropdownMenuSeparator className="-mx-1" />
+              <DropdownMenuItem onSelect={openSettings}>
+                <Settings size={16} />
+                Network settings
+              </DropdownMenuItem>
+            </>
+          )}
+        </RowActionsMenu>
+      )}
     </>
   );
 }

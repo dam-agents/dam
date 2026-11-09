@@ -38,7 +38,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
     );
   }
   const { memory, storage } = usage;
-  // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard gives each running agent only its part of the pool: the breakdown that names it opens on either, not only on the pool's own level, and it asks the shares whether a home is full rather than the rows it renders, so a disk the runner could not read cannot close it.
+  // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard holds each running agent to the pool's room above its reserve, and a home also fills on its own: the breakdown that names it opens on either, not only on the pool's own level, and it asks the shares whether a home is full rather than the rows it renders, so a disk the runner could not read cannot close it.
   const rows = storageRows(usage, ownAgents);
   const slackLogin = usage.slackUnlinked
     ? `/${getBrand().short} login`

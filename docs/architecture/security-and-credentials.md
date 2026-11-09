@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-26
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -77,8 +77,14 @@ It runs in-cluster as a Helm subchart and is the OIDC provider for every authent
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
 The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
-Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
-An install with no meanings shows only the heading.
+The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
+The shared-artifact sign-in keeps the short single-screen layout.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The page's "Read the docs" links point at the install's documentation site, the chart's `links.docs` value, and its community channel link is the `keycloak.login.community` value; both reach the theme the same way, and a value set empty, or a docs value that is not an http(s) URL, hides that link.
+The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, from the Operator settings page or `dam login-testimonials`, so a change reaches the page within a minute, with no redeploy.
+The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
+While the call is pending, failed or empty, the page hides the section, and sign-in never waits for it.
+An install with no meanings shows the brand name as the heading.
 Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
 The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
@@ -100,6 +106,12 @@ An install with a [backchannel](environments.md#an-install-inside-an-environment
 Keycloak then takes its address from the forwarded host, which only the ingress in front of it sets.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 The share host is also the front door of [Environments](environments.md#addresses): it signs their visitors in with the same client and session, and hands each address a one-time code, bound to the visitor's browser, for a session of its own that lasts while the share session does.
+
+A person's own OAuth clients reach [Environments](environments.md#addresses) without a browser session: on an install that serves Environments, the realm lets a client register itself anonymously (RFC 7591), and its sign-in for the `environments` scope gets a token whose only audience is the one Environment address it named as its `resource` (RFC 8707), never `platform-api`.
+The `keycloak-environments` extension, baked into the platform's Keycloak image beside the theme, enforces it: its mapper sets that audience and keeps it on refresh; a client policy refuses such a sign-in without one valid address (`invalid_target`) or without `offline_access` (`invalid_scope`), and a code exchange or refresh naming another address, and requires PKCE.
+It takes the place of Keycloak's Trusted Hosts registration policy under the same id: a registering client's callbacks must each match `environments.oauth.redirects` — loopback on any port and path (RFC 8252), the listed web sites, the listed app schemes — and Consent Required, the `environments` and `offline_access` scopes only and a cap of `environments.oauth.maxClients` clients still apply.
+A daily task deletes such clients older than 30 days that hold no session and no offline session.
+The api-server gains no Keycloak admin rights for any of it.
 
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
 Both park that destination and resume it once cleared, so a deep link survives them — an in-chat bind link ([channels](channels.md)) is single-use, so losing its target would cost the user a fresh bind command rather than a retry.

@@ -1,5 +1,10 @@
 import { claudeTierOf, newestOfTier } from "agent-runtime-api";
-import { preferredModelOf, type ProviderListing } from "api-server-api";
+import {
+  aliasOrder,
+  preferredModelOf,
+  type ProviderAlias,
+  type ProviderListing,
+} from "api-server-api";
 
 const plain = (name: string, alias: string): string =>
   name
@@ -63,18 +68,23 @@ export function declaredModelOf(input: {
  * another tier in its place, and a model id is kept when the provider lists
  * it, under that name or as the one listed id ending in it. A model the calls
  * ran less never stands in for it, and a model id no provider lists is the
- * owner's call, never another version's. Only a tier word names nothing on
- * several providers, so only a tier word is left to the next step there; an id
- * the setting or the history names is resolved against each provider in turn,
+ * owner's call, never another version's. A tier word is answered on the first
+ * fitting provider the harness's own provider order reaches that lists that
+ * tier, so several providers no longer send it to the next step; an id the
+ * setting or the history names is resolved against each provider in turn,
  * since it names the same model wherever it is. Second the platform's model
- * preference list, across every fitting provider: it fills the gaps the first
- * step leaves — a tier word the provider lists no model of (CurveBender's ids
- * carry no tier word at all), a history whose models it does not list — and it
- * decides an Agent that fits several providers, where the list's order beats
- * the providers' own. Null when neither holds, so the owner picks the default
- * instead of the platform guessing it.
+ * preference list, for the harness these runs use, across every fitting
+ * provider: it fills the gaps the first step leaves — a tier word no provider
+ * lists a model of (CurveBender's ids carry no tier word at all), a history
+ * whose models it does not list — and it decides an Agent that fits several
+ * providers, where the list's order beats the providers' own and the
+ * harness's own models come before the list's fallback, so an Agent that fits
+ * several providers still gets the models its harness was built for. Null when
+ * neither holds, so the owner picks the default instead of the platform
+ * guessing it.
  */
 export function convertedDefaultModel(input: {
+  harness: string;
   setting: string | null;
   providers: readonly ProviderListing[];
   ran: readonly string[];
@@ -82,16 +92,23 @@ export function convertedDefaultModel(input: {
 }): string | null {
   const declared = declaredModelOf(input);
   if (declared) return declared;
-  const preferred = preferredModelOf("work", input.providers);
+  const preferred = preferredModelOf("work", input.providers, input.harness);
   const listed = preferred
     ? `${preferred.alias}/${preferred.upstreamId}`
     : null;
   const setting = input.setting?.trim() ?? "";
   const tier = claudeTierOf(setting);
   if (tier) {
-    const one = input.providers.length === 1 ? input.providers[0] : undefined;
-    const newest = one ? newestOfTier(one.listed, tier) : undefined;
-    return newest ? `${one!.alias}/${newest}` : listed;
+    const inOrder = [...input.providers].sort(
+      (a, b) =>
+        aliasOrder(a.alias as ProviderAlias, input.harness) -
+        aliasOrder(b.alias as ProviderAlias, input.harness),
+    );
+    for (const { alias, listed: ids } of inOrder) {
+      const newest = newestOfTier(ids, tier);
+      if (newest) return `${alias}/${newest}`;
+    }
+    return listed;
   }
 
   const resolved = input.providers

@@ -9,6 +9,7 @@ import {
   eq,
   inArray,
   isNull,
+  libraryArtifacts,
   or,
   profileDefaults,
   profileSeeds,
@@ -32,13 +33,23 @@ export type ProfileRow = Omit<typeof profiles.$inferSelect, "settings"> & {
 export type ProfileWrite = Pick<
   ProfileRow,
   "name" | "harness" | "providerTemplate" | "model" | "settings"
->;
+> & {
+  /* UNIT_BOUNDARY_DESCRIPTION: the sub-agent a profile names, absent where it names none, so a seed or a new-agent default writes no sub-agent. */
+  subagentProviderTemplate?: string | null;
+  subagentModel?: string | null;
+};
 
 /** UNIT_BOUNDARY_DESCRIPTION: every row that points at a profile, which is both the usage a list counts and what refuses a delete; `profileId` lets one query serve one profile or all of them. */
 export interface ProfileReferences {
   agents: { id: string; chat: string | null; platform: string | null }[];
   channels: { profileId: string; agentId: string; label: string }[];
   schedules: { profileId: string; id: string; name: string; agentId: string }[];
+  artifacts: {
+    profileId: string;
+    id: string;
+    title: string;
+    agentId: string;
+  }[];
 }
 
 const toRow = (row: typeof profiles.$inferSelect): ProfileRow => ({
@@ -56,7 +67,7 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
     profileId?: string,
   ): Promise<ProfileReferences> {
     if (agentIds?.length === 0)
-      return { agents: [], channels: [], schedules: [] };
+      return { agents: [], channels: [], schedules: [], artifacts: [] };
     const scoped = (column: Parameters<typeof inArray>[0]) =>
       agentIds === undefined ? undefined : inArray(column, [...agentIds]);
     const scheduleProfile = sql<string | null>`${schedules.spec}->>'profile'`;
@@ -84,7 +95,7 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
           )
           .map((id) => ({ ...row, profileId: id })),
       );
-    const [agentRows, channelRows, telegramRows, scheduleRows] =
+    const [agentRows, channelRows, telegramRows, scheduleRows, artifactRows] =
       await Promise.all([
         executor
           .select({
@@ -156,11 +167,31 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
               scoped(schedules.agentId),
             ),
           ),
+        executor
+          .select({
+            primary: libraryArtifacts.promptProfileId,
+            subagent: libraryArtifacts.promptSubagentProfile,
+            id: libraryArtifacts.id,
+            title: libraryArtifacts.title,
+            agentId: sql<string>`${libraryArtifacts.agentId}`,
+          })
+          .from(libraryArtifacts)
+          .where(
+            and(
+              eq(libraryArtifacts.owner, owner),
+              naming(
+                libraryArtifacts.promptProfileId,
+                libraryArtifacts.promptSubagentProfile,
+              ),
+              scoped(libraryArtifacts.agentId),
+            ),
+          ),
       ]);
     return {
       agents: agentRows,
       channels: [...perProfile(channelRows), ...perProfile(telegramRows)],
       schedules: perProfile(scheduleRows),
+      artifacts: perProfile(artifactRows),
     };
   }
 
@@ -268,7 +299,10 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
         if (held.length === 0) return "missing";
         const used = await references(tx, owner, agentIds, id);
         if (
-          used.agents.length + used.channels.length + used.schedules.length >
+          used.agents.length +
+            used.channels.length +
+            used.schedules.length +
+            used.artifacts.length >
           0
         )
           return used;

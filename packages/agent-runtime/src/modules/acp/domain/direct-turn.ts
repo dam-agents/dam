@@ -13,7 +13,7 @@ export function directTurnContract(): string {
       "you directly here, and your reply text reaches them as you write it. " +
       "Answer in plain text.",
     "Don't answer it with a messenger tool — whichever ones your channel " +
-      "gives you (reply, react, no_reply_needed, send_channel_message): they " +
+      "gives you (reply, react, no_reply_needed, post, start_thread): they " +
       "belong to a messenger turn and deliver nothing here. Post to a " +
       "messenger on this turn only if you're asked to.",
     "</how-to-respond>",

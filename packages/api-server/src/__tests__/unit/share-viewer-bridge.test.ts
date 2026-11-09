@@ -21,6 +21,7 @@ import {
 } from "../../modules/artifact-library/domain/viewer-bridge.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createViewerPromptDelivery } from "../../modules/artifact-library/infrastructure/viewer-prompt-delivery.js";
+import type { ArtifactPromptPair } from "../../modules/artifact-library/infrastructure/artifact-prompt-profile.js";
 import { createRelayTokenService } from "../../modules/artifact-library/services/relay-token-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import {
@@ -161,7 +162,11 @@ function world(overrides: Partial<World> = {}) {
     prompts: {
       deliver: (input) => {
         w.delivered.push(input);
-        return Promise.resolve(w.deliverOutcome);
+        return Promise.resolve(
+          w.deliverOutcome === "accepted"
+            ? { ok: true, sessionId: "s-1" }
+            : { ok: false, reason: w.deliverOutcome },
+        );
       },
     },
   });
@@ -726,7 +731,11 @@ describe("delivering a viewer's prompt", () => {
 
   function delivery(
     acp: AcpClient,
-    opts: { hold?: "limit" | null; wakeFails?: boolean } = {},
+    opts: {
+      hold?: "limit" | null;
+      wakeFails?: boolean;
+      choice?: Awaited<ReturnType<ArtifactPromptPair>>;
+    } = {},
   ) {
     const open: string[] = [];
     let woke = 0;
@@ -745,12 +754,14 @@ describe("delivering a viewer's prompt", () => {
           return () => open.splice(open.indexOf(agentId), 1);
         },
       },
+      promptPair: () => Promise.resolve(opts.choice ?? { pair: null }),
     });
     return { d, open, woke: () => woke };
   }
 
   const turn = {
     agentId: "agent-1",
+    artifactId: "a1",
     sessionKey: "artifact:a1:alice-sub",
     sessionTitle: "alice@example.com · Team dashboard",
     prompt: "framed prompt",
@@ -761,16 +772,20 @@ describe("delivering a viewer's prompt", () => {
   /**
    * TEST_SCENARIO: The first prompt opens the viewer's Session, named for the
    * owner to read and keyed so it can be found again. The turn runs as an
-   * unattended channel turn, and the viewer gets their answer as soon as the
-   * Agent is awake, not when the turn ends.
+   * unattended channel turn, and the answer, with the Session's id, comes as
+   * soon as the Agent names the Session, not when the turn ends.
    */
   it("opens a named session, unattended, and answers before the turn ends", async () => {
     const { acp, sent, finishTurns } = fakeAcp([]);
     const { d, open } = delivery(acp);
-    await expect(d.deliver(turn)).resolves.toBe("accepted");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]!.opts).toMatchObject({
       platformMeta: {
+        type: "artifact",
         threadTs: "artifact:a1:alice-sub",
         customTitle: "alice@example.com · Team dashboard",
       },
@@ -788,11 +803,28 @@ describe("delivering a viewer's prompt", () => {
   it("continues the viewer's session, even after a quick double click", async () => {
     const { acp, sent, finishTurns } = fakeAcp([]);
     const { d } = delivery(acp);
-    await d.deliver(turn);
-    await d.deliver({ ...turn, prompt: "second" });
+    const first = d.deliver(turn);
+    const second = d.deliver({ ...turn, prompt: "second" });
+    await expect(first).resolves.toEqual({ ok: true, sessionId: "s-1" });
+    await expect(second).resolves.toEqual({ ok: true, sessionId: "s-1" });
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]!.opts).toMatchObject({ resumeSessionId: "s-1" });
     finishTurns();
+  });
+
+  /**
+   * TEST_SCENARIO: The Agent is awake but does not name a Session in time.
+   * The prompt still counts as sent, without a Session to open, so the
+   * person is not left waiting on the page.
+   */
+  it("answers without a session when the agent does not name one in time", async () => {
+    vi.useFakeTimers();
+    const { acp } = fakeAcp([]);
+    acp.sendPrompt = () => new Promise<string>(() => {});
+    const { d } = delivery(acp);
+    const answer = d.deliver(turn);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(answer).resolves.toEqual({ ok: true, sessionId: null });
   });
 
   it("starts fresh when the stored session cannot be loaded", async () => {
@@ -819,7 +851,45 @@ describe("delivering a viewer's prompt", () => {
   it("neither wakes nor prompts an agent at a spend limit", async () => {
     const { acp, sent } = fakeAcp([]);
     const { d, woke } = delivery(acp, { hold: "limit" });
-    await expect(d.deliver(turn)).resolves.toBe("spend-limit");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "spend-limit",
+    });
+    expect(woke()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The owner picked a model for the page. A Session that the page's prompt opens runs on that pick as its own, so it does not follow the agent's channel pair. */
+  it("opens the session on the page's own pick", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d } = delivery(acp, {
+      choice: {
+        pair: { harness: "claude-code", provider: "p-1", model: "p/opus" },
+      },
+    });
+    await d.deliver(turn);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.opts).toMatchObject({
+      platformMeta: {
+        type: "artifact",
+        harness: "claude-code",
+        provider: "p-1",
+        model: "p/opus",
+      },
+    });
+    finishTurns();
+  });
+
+  /** TEST_SCENARIO: The page's profile cannot run on the agent. The prompt is refused with its reason before the Agent wakes, rather than running on a model the owner did not pick. */
+  it("refuses a page whose profile cannot run, without waking the agent", async () => {
+    const { acp, sent } = fakeAcp([]);
+    const { d, woke } = delivery(acp, {
+      choice: { refused: { profile: "Fast", detail: "no such provider" } },
+    });
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "profile-unavailable",
+    });
     expect(woke()).toBe(0);
     expect(sent).toEqual([]);
   });
@@ -827,7 +897,10 @@ describe("delivering a viewer's prompt", () => {
   it("reports an agent that does not wake", async () => {
     const { acp, sent } = fakeAcp([]);
     const { d } = delivery(acp, { wakeFails: true });
-    await expect(d.deliver(turn)).resolves.toBe("agent-unreachable");
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "agent-unreachable",
+    });
     expect(sent).toEqual([]);
   });
 });

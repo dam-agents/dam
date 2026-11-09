@@ -292,7 +292,7 @@ export function useSessionPages(
 export function useAgentSessionQuery(
   agentId: string | null,
   query: SessionListQuery,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; refetchInterval?: number },
 ) {
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
@@ -301,6 +301,10 @@ export function useAgentSessionQuery(
       ? async () => (await listAgentSessionPage(agentId, query)).sessions
       : skipToken,
     staleTime: 5_000,
+    ...(live &&
+      options?.refetchInterval !== undefined && {
+        refetchInterval: options.refetchInterval,
+      }),
   });
 }
 

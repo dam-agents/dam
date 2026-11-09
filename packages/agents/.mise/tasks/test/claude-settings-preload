@@ -93,7 +93,7 @@ for (const broken of ['{"theme": "dark", "hooks": {', '{"theme": "dark",}\n']) {
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d));
     const exited = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(child.exitCode, null, "the sync must wait for the lock another writer holds");
     assert.equal(readFileSync(settings, "utf8"), JSON.stringify({ theme: "dark" }));
     writeFileSync(`${settings}.tmp`, JSON.stringify({ theme: "dark", hooks: { Stop: [{ hooks: [{ type: "command", command: kitStop }] }] } }));

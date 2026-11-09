@@ -41,6 +41,14 @@ vi.mock("../../modules/artifacts/api/queries.js", () => ({
     refetch: async () => {},
   }),
 }));
+vi.mock("../../modules/environments/api/queries.js", () => ({
+  useListedEnvironments: () => ({
+    data: [],
+    loading: false,
+    failed: false,
+    refetch: () => {},
+  }),
+}));
 vi.mock("../../modules/artifacts/api/mutations.js", () => ({
   useDeleteFolder: () => ({ mutate: () => {} }),
   useUpdateArtifact: () => ({

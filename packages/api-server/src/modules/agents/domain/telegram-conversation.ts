@@ -3,7 +3,7 @@
  * (`telegram:<chatId>[:<topicId>]` or `telegram:biz:<connectionId>:<chatId>`).
  * It tells a one-to-one chat from a group: Telegram gives groups and channels
  * negative chat ids and private chats the user's positive id, and business
- * connections are always one-to-one. The UI warns about connections shared
+ * connections are always one-to-one. The UI and the CLI warn about connections shared
  * with a chat only when other people are in it. It also names the chat a
  * forum topic belongs to, because a binding covers its whole chat.
  */

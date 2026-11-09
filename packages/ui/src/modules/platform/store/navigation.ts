@@ -18,6 +18,7 @@ export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  settingsProfileId: string | null;
   usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
@@ -28,7 +29,7 @@ export interface NavigationSlice {
   navigateBack: () => void;
   navigateToSettings: (
     tab?: SettingsTab,
-    options?: { period?: string },
+    options?: { period?: string; profileId?: string },
   ) => void;
   setUsagePeriod: (period: string) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
@@ -100,6 +101,8 @@ export const createNavigationSlice: StateCreator<
     leaveView(get, () => {
       const settingsTab = tab ?? "account";
       const period = options?.period ?? null;
+      const profileId =
+        settingsTab === "profiles" ? (options?.profileId ?? null) : null;
       history.pushState(
         null,
         "",
@@ -107,12 +110,14 @@ export const createNavigationSlice: StateCreator<
           view: "settings",
           settingsTab,
           ...(period ? { period } : {}),
+          ...(profileId ? { profileId } : {}),
         }),
       );
       set({
         view: "settings",
         settingsTab,
         usagePeriod: period,
+        settingsProfileId: profileId,
         agentId: null,
       });
     }),

@@ -31,6 +31,12 @@ export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
 } from "./modules/channels/types.js";
+export {
+  isSlackDirectMessageId,
+  type SharedChannel,
+  sharedChannels,
+  type TelegramChatAudience,
+} from "./modules/channels/shared-conversations.js";
 
 export {
   spawnInvocationRequestSchema,
@@ -75,6 +81,9 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
@@ -153,6 +162,7 @@ export type {
   AgentState,
   AgentsService,
   AgentCreateInput,
+  AgentDefaultProvider,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,
@@ -223,6 +233,19 @@ export {
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
+export {
+  LOGIN_TESTIMONIAL_LIMITS,
+  LOGIN_TESTIMONIALS_MAX,
+  loginTestimonialInputSchema,
+  loginTestimonialPhotoIdSchema,
+  loginTestimonialsSaveInputSchema,
+} from "./modules/login-testimonials/schemas.js";
+export type {
+  LoginTestimonial,
+  LoginTestimonialInput,
+  LoginTestimonialsSaveInput,
+  LoginTestimonialsService,
+} from "./modules/login-testimonials/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -431,11 +454,16 @@ export type {
   ArtifactTouchService,
   ArtifactCallAgentApiInput,
   ArtifactCallAgentApiResult,
+  ArtifactSendPromptInput,
+  ArtifactSendPromptResult,
+  ArtifactPromptChoiceInput,
+  ArtifactPromptChoiceRow,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
   artifactPromptSchema,
+  type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_REQUEST_MAX_IN_FLIGHT,
@@ -444,6 +472,9 @@ export {
   artifactRequestMessageSchema,
   ARTIFACT_WHOAMI_TYPE,
   artifactWhoamiMessageSchema,
+  ARTIFACT_SIZE_TYPE,
+  ARTIFACT_PRINT_MAX_WIDTH,
+  artifactSizeMessageSchema,
   type ArtifactResponseMessage,
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
@@ -552,6 +583,7 @@ export {
   CURVE_BENDER_WORK_MODEL,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
+  shortNameForTemplate,
   BOB_HOST,
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
@@ -613,7 +645,10 @@ export type {
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export { DEFAULT_PROFILE_UNDELETABLE } from "./modules/profiles/schemas.js";
+export {
+  DEFAULT_PROFILE_UNDELETABLE,
+  PROFILE_NAME_MAX_LENGTH,
+} from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
@@ -743,6 +778,12 @@ export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
 } from "./modules/attention/types.js";
+export type {
+  CostReviewOffer,
+  CostReviewStarted,
+  CostReviewsService,
+} from "./modules/cost-reviews/types.js";
+export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
@@ -860,7 +901,9 @@ export type {
   EgressRuleCreateInput,
   EgressRuleUpdateInput,
   EgressRulesService,
+  PlatformRuleState,
 } from "./modules/egress-rules/types.js";
+export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,
@@ -986,6 +1029,7 @@ export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
 export { linksSchema } from "./modules/links/types.js";
+export type { Links } from "./modules/links/types.js";
 
 export { publicAgentResponseSchema } from "./modules/agents/public-agent.js";
 export type {
@@ -1023,6 +1067,10 @@ export type {
   SlackFireMessageInput,
   SlackOutboundRecord,
 } from "./modules/e2e/types.js";
+export {
+  E2E_CONTROL_CALL_TIMEOUT_MS,
+  E2E_PERFORM_FETCH_MAX_TIMEOUT_MS,
+} from "./modules/e2e/schemas.js";
 
 export type { SecretRef } from "./modules/secret-store/types.js";
 
@@ -1095,14 +1143,39 @@ export type {
 export {
   DEFAULT_MAX_CONCURRENT,
   INLINE_OUTPUT_LIMIT,
+  MAX_JOB_IMAGES,
+  claimFencedInputSchema,
+  claimInputSchema,
+  connectFencedInputSchema,
+  drainFencedInputSchema,
+  heartbeatFencedInputSchema,
+  heartbeatInputSchema,
+  drainInputSchema,
+  reportFencedInputSchema,
   MAX_JOB_OUTPUT_BYTES,
+  PAYLOAD_ENVELOPE_BYTES,
+  SATELLITE_FILE_MAX_BYTES,
+  SATELLITE_IMAGE_MIME_TYPES,
+  SATELLITE_TRANSFER_CLAIM_HEADER,
+  escapedTextBytes,
   formatJobRef,
+  isBase64,
+  reportInputSchema,
+  satelliteFileNameSchema,
+  satelliteFileWrittenSchema,
+  satelliteImageOf,
+  satelliteConnectInputSchema,
+  satelliteImageSchema,
+  satelliteImagesSchema,
   satelliteNameSchema,
+  satelliteTransferTokenSchema,
+  storedPayloadBytes,
   RESERVED_TOOL_NAMES,
   satelliteToolNameSchema,
   satelliteToolSchema,
   toolArgsSchema,
 } from "./modules/satellites/schemas.js";
+export type { SatelliteFileWritten } from "./modules/satellites/schemas.js";
 export type {
   ClaimInput,
   HeartbeatInput,
@@ -1111,6 +1184,7 @@ export type {
   JobStatus,
   JobView,
   ReportInput,
+  SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
   SatelliteView,
@@ -1124,12 +1198,20 @@ export {
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
 export type {
+  AgentEnvironmentMembersView,
+  AgentEnvironmentView,
+  EnvironmentAgentLookup,
   EnvironmentEndpoint,
+  EnvironmentMemberAgent,
   EnvironmentView,
+  MembersUpdate,
+  SharedEnvironmentView,
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
-  environmentAccessSchema,
+  ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentEndpointNameSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
+  environmentReadyPathSchema,
 } from "./modules/environments/schemas.js";

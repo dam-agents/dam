@@ -1,4 +1,8 @@
-import type { Sender, SessionRepository } from "agent-runtime-api";
+import type {
+  Sender,
+  SessionPurpose,
+  SessionRepository,
+} from "agent-runtime-api";
 import { z } from "zod";
 
 export const SessionType = {
@@ -9,6 +13,7 @@ export const SessionType = {
   ScheduleOnce: "schedule_once",
   CliRun: "cli_run",
   Invocation: "invocation",
+  Artifact: "artifact",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -56,6 +61,7 @@ export interface SessionView {
   scheduleId?: string | null;
   continuedScheduleIds?: readonly string[];
   initialization?: boolean | null;
+  purpose?: SessionPurpose;
   title?: string | null;
   customTitle?: string | null;
   autoTitle?: string | null;

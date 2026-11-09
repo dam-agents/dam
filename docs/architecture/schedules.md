@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-27
+Last verified: 2026-11-04
 
 ## Overview
 
@@ -25,6 +25,7 @@ Fires are idempotent per occurrence, so at-least-once delivery cannot run one tw
 The next occurrence is computed from the schedule's cron or RRULE expression in its timezone, skipping any occurrence that falls inside an enabled quiet-hours window.
 Suppressed fires are dropped, not deferred — quiet hours mean "skip these," not "queue for later" — and a schedule whose every occurrence is quiet is rejected at save time.
 Every RRULE counts its steps from one fixed start — midnight on 1 January 2001 in the schedule's timezone, a Monday and the first of a month — so its occurrences never depend on when they are computed and stay put across restarts and re-arms: an unanchored rule defaults to midnight, weekly to Monday, monthly to the 1st.
+A `FREQ=HOURLY` or `FREQ=MINUTELY` rule with `BYHOUR` is the exception: it starts at its first `BYHOUR` hour that day (a minutely one at its first `BYMINUTE` minute of that hour) and steps in local wall-clock time, so a clock change does not move its steps off the hours it lists.
 `COUNT` is rejected, because counted from that start it would be spent, and so is `FREQ=SECONDLY`, because schedules fire at minute granularity.
 A rule with no future occurrence is rejected at save time; the occurrence search runs on the api-server's event loop, so every search is capped in the periods and candidate times it may examine, and a rule that can never fire answers at once instead of blocking it.
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
@@ -34,7 +35,7 @@ A cron expression always fires in UTC, and a cron schedule has no timezone and n
 A user edits a cron schedule they created as cron, or converts it to an RRULE to get both.
 The conversion keeps the cron fields' values and reads them in a timezone the user picks — UTC by default, so the schedule fires at the same moments — and it shows the next runs before and after.
 An expression with no exact RRULE match is not converted and stays a cron schedule: one that names both days of the month and days of the week, which cron matches as either, or one that uses `L`, `W`, `#`, `H` or seconds.
-A local time erased by the spring-forward jump is skipped, as RFC 5545 requires.
+A local time erased by the spring-forward jump is skipped, as RFC 5545 requires — except in a sub-daily rule with `BYHOUR`, which fires it one hour later, as the jump moved it.
 An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 
 When a fire is due:
@@ -192,16 +193,16 @@ How the title reaches the session list belongs to [platform topology](platform-t
 A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode), which include the session's platform sub-agent settings ([session settings](harness-config.md#session-settings)).
 A schedule's choices live on its sessions alone.
 A new schedule names a **profile** rather than its own choices: one harness, model and settings the agent's owner holds, kept on the schedule and resolved when the schedule is read, so an edit of the profile reaches every later fire.
-Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and picks in the chat's own picker, Custom selection included, for a schedule with a reason of its own.
+Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else the owner's seeded Default, and picks in the chat's own picker panel for a schedule with a reason of its own.
 The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
-The form saves a Custom selection only with a model; a schedule written before profiles that still follows the chat default is the one exception, and its form shows the default's values as a hint, not as a selection.
+The form saves an own pick only with a model; a schedule that keeps no choice of its own, and so follows the agent's model for schedules, is the one exception, and its form shows that default's values as a hint, not as a selection.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
 A schedule row names the profile it runs on, or its own choices where it carries them, in the picker's summary.
 Its details read the same, or the reason its profile cannot run, never the chat default the fire would not fall back to.
-With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
+With no default model saved, a fire runs on the [automatic model](harness-config.md#session-settings); with no model to run on, or a saved model on a provider the agent no longer holds, it fails with the `no-default-model` reason on its first attempt, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.

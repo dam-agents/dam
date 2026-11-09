@@ -59,7 +59,7 @@ export const SECTIONS: SectionEntry[] = [
     section: "chat-forms",
     title: "Chat forms",
     description:
-      "How this agent may use forms, choices and cards in its web chat replies.",
+      "How this agent may use forms, choices and cards in its web chat replies, and how its thinking shows while it streams.",
   },
   {
     section: "skills",
@@ -76,7 +76,7 @@ export const SECTIONS: SectionEntry[] = [
     section: "environments",
     title: "Environments",
     description:
-      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
+      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It runs them; people, never the agent, decide who may open them.",
   },
   {
     section: "usage",

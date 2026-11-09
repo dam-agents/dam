@@ -5,6 +5,7 @@ import {
   type Sender,
   type Session,
   type SessionMode,
+  type SessionPurpose,
   type SessionType,
   type SessionDirectoryEntry,
   type SessionListCursor,
@@ -26,6 +27,7 @@ export interface SessionMetaLike {
     type?: string;
     scheduleId?: string;
     initialization?: boolean;
+    purpose?: SessionPurpose;
     threadTs?: string;
     harness?: string;
     provider?: string;
@@ -81,6 +83,7 @@ function fromEntry(
       continuedScheduleIds: entry.continuedScheduleIds,
     }),
     initialization: entry.meta.initialization === true,
+    ...(entry.meta.purpose !== undefined && { purpose: entry.meta.purpose }),
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,
     runStartedAt: entry.runStartedAt ?? null,

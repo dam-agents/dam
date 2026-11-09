@@ -18,8 +18,10 @@ import {
   subagentSessionOf,
 } from "./domain/session-of.js";
 import type { CallerSessionLookup } from "./infrastructure/caller-session.js";
+import { createBobGatewayPassthrough } from "./services/bob-gateway.js";
 import { createCallCostsEndpoint } from "./services/call-costs-endpoint.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
+import { unboundHarnessModels } from "./domain/unbound-harness-models.js";
 import {
   createModelRouter,
   type ModelCallRecord,
@@ -31,6 +33,7 @@ import {
 export interface ComposeModelRouterOpts {
   catalog: Pick<ModelCatalog, "providers" | "forHarness">;
   envState: () => RuntimeEnvState;
+  leaseEnv: (harness: string) => Record<string, string>;
   harnesses: Readonly<Record<string, ModelRouterBinding | undefined>>;
   defaultHarness: string;
   sessionModelOf?: (sessionId: string) => SessionModelChoice | null;
@@ -44,11 +47,14 @@ export interface ComposeModelRouterOpts {
   onCallStarted?: (session: string | null) => void;
   onCallEnded?: (session: string | null, answered: boolean) => void;
   onRefused?: (refusal: ModelRefusal) => void;
+  fetchImpl?: typeof globalThis.fetch;
   port?: number;
   log: (msg: string) => void;
 }
 
 export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
+  const bound = (harness: string): boolean =>
+    Object.hasOwn(opts.harnesses, harness) && !!opts.harnesses[harness];
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a Codex or Bob terminal runs under the
    * harness's own id, so an id that is no Session of the runtime is looked up
@@ -168,20 +174,40 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
               maxOutputTokens: entry.metadata.maxOutputTokens,
             },
           ),
-          { dialect, reasoning: entry.metadata.reasoning },
+          {
+            dialect,
+            reasoning: entry.metadata.reasoning,
+            template: entry.template,
+            upstreamId: entry.upstreamId,
+          },
         ),
         dialect,
       ),
     extensions: [
-      createCatalogEndpoints(opts.catalog),
+      createCatalogEndpoints({
+        ...opts.catalog,
+        forHarness: (harness) =>
+          bound(harness)
+            ? opts.catalog.forHarness(harness)
+            : unboundHarnessModels(opts.catalog.providers()),
+        ordered: (harness) => !bound(harness),
+      }),
       ...(opts.callCosts
         ? [createCallCostsEndpoint(opts.callCosts, opts.log)]
         : []),
+      createBobGatewayPassthrough({
+        envState: opts.envState,
+        leaseEnv: opts.leaseEnv,
+        harnesses: opts.harnesses,
+        ...(opts.fetchImpl && { fetchImpl: opts.fetchImpl }),
+        log: opts.log,
+      }),
     ],
     ...(opts.onCall && { onCall: opts.onCall }),
     ...(opts.onCallStarted && { onCallStarted: opts.onCallStarted }),
     ...(opts.onCallEnded && { onCallEnded: opts.onCallEnded }),
     ...(opts.onRefused && { onRefused: opts.onRefused }),
+    ...(opts.fetchImpl && { fetchImpl: opts.fetchImpl }),
     ...(opts.port !== undefined && { port: opts.port }),
     log: opts.log,
   });

@@ -66,9 +66,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
     With the dialog open, call `connectSlackChannel({ screen })` from `suite/lib/sandbox.ts`: it adds the sandbox channel and taps *Connect*.
     The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text, threadTs?)`, `botReplies(ts)`.
     A **second test person** (`slack2`) in the same channel writes with `personSays(text, threadTs?, 'second')`; `sandbox.slack('second')` says whether this instance has it, and `botReplies` never counts either person's post as the agent's.
-    DAM drops the fourth bot or app post in a row in one conversation (a channel's top level, or one thread) until a person writes there, and the test person's posts count as app posts.
+    The test person's posts count as app posts, and DAM rate-limits bot and app posts per conversation (a channel's top level, or one thread).
+    When more than ten of them arrive in one conversation within a minute, DAM drops them there for five minutes and posts one notice that starts with `:pause_button:`; `botReplies` would return that notice as a reply.
     So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
-    A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would follow earlier runs' posts there and be dropped.
+    A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would share one count with every other run's posts there and could be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
   - **Testability limit — Slack account linking.**
     A user links their Slack account only inside Slack: `/dam login` (then a DAM sign-in page), or `/dam bind` typed in the channel itself.
@@ -127,6 +128,13 @@ A flow that needs real Slack, real GitHub, a real model or real time passing is 
 
 Builds are chart versions: `0.0.0-main.<n>` after every merge to main, `X.Y.Z` releases.
 Candidate `main` = the newest dev chart; baseline `release` = the newest release.
+There is no build of a pull request: a change is tested after it merges, in the next `0.0.0-main.<n>`.
+
+## Design
+
+- The words DAM retired are `design.retired_words` in `profile.json`, from its glossary.
+  "Sandbox" is still right for the machine an agent runs in (an Environment, a "sandbox image"), "image" for a picture or what an agent runs, and "shell" in *Bob Shell* or a shell command.
+- The UI follows the system's light or dark theme until the user picks one under Settings → Appearance.
 
 ## CLI and API
 

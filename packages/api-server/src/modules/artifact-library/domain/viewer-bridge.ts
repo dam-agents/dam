@@ -30,7 +30,11 @@ export type ViewerPromptResult =
   | {
       ok: false;
       reason:
-        "invalid-request" | "not-allowed" | "agent-unreachable" | "spend-limit";
+        | "invalid-request"
+        | "not-allowed"
+        | "agent-unreachable"
+        | "spend-limit"
+        | "profile-unavailable";
     };
 
 /**
@@ -78,11 +82,22 @@ export function viewerSessionKey(artifactId: string, viewerSub: string) {
   return `artifact:${artifactId}:${viewerSub}`;
 }
 
-export function viewerSessionTitle(viewer: string, title: string): string {
-  const full = `${viewer} · ${title}`;
+function sessionTitle(full: string): string {
   return full.length <= SESSION_TITLE_MAX_LENGTH
     ? full
     : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
+}
+
+export function viewerSessionTitle(viewer: string, title: string): string {
+  return sessionTitle(`${viewer} · ${title}`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the owner's Session for a page is theirs alone,
+ * so the page's title names it; a viewer's also names the viewer.
+ */
+export function ownerSessionTitle(title: string): string {
+  return sessionTitle(title);
 }
 
 export function viewerPromptText(input: {
@@ -95,6 +110,20 @@ export function viewerPromptText(input: {
     `${input.viewer} sent this from a button on the interactive artifact "${input.artifactTitle}" (id ${input.artifactId}).`,
     "Your owner shared that page with them, so they act under your owner's authority, as a person in a shared channel does.",
     "They see only the page: your reply text never reaches them. To show them a result, change the data the page reads from you, or publish a new version of the artifact.",
+    "Nobody answers permission prompts on this turn: a tool call that asks is refused.",
+    "",
+    `Message: ${input.prompt}`,
+  ].join("\n");
+}
+
+export function ownerPromptText(input: {
+  artifactId: string;
+  artifactTitle: string;
+  prompt: string;
+}): string {
+  return [
+    `Your owner sent this from a button on the interactive artifact "${input.artifactTitle}" (id ${input.artifactId}), opened outside a chat with you, so it starts or continues a Session of its own.`,
+    "They see the page, and this Session only when they open it. To show them a result, change the data the page reads from you, or publish a new version of the artifact.",
     "Nobody answers permission prompts on this turn: a tool call that asks is refused.",
     "",
     `Message: ${input.prompt}`,

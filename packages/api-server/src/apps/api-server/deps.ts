@@ -1,3 +1,4 @@
+import type { AgentAccess } from "../../modules/agent-keys/index.js";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
@@ -13,9 +14,12 @@ import type {
   ReposService,
   TermsService,
 } from "api-server-api";
-import type { FirePair } from "../../modules/harness-config/index.js";
+import type {
+  FirePair,
+  RunBoundary,
+} from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
-import type { SpendSystem } from "../../modules/spend/index.js";
+import type { SpendHoldGate, SpendSystem } from "../../modules/spend/index.js";
 import type { UserBudgetsForOperator } from "../../modules/budgets/index.js";
 import type { OutageAlertNotices } from "../../modules/outage-alerts/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
@@ -73,6 +77,10 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { AddressSets } from "../../core/address-sets.js";
+import type {
+  LoginTestimonialsForOperator,
+  PublicTestimonials,
+} from "../../modules/login-testimonials/index.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
@@ -102,12 +110,19 @@ export interface ApiServerDeps {
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
   spendCeilingsForOperator: SpendSystem["ceilingsForOperator"];
+  spendHold: SpendHoldGate;
   userBudgetsForOperator: UserBudgetsForOperator;
+  loginTestimonials: {
+    forOperator: LoginTestimonialsForOperator;
+    readPublic: PublicTestimonials;
+  };
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
+  // UNIT_BOUNDARY_DESCRIPTION: what follows the platform's Environments egress rule: the Agent's key.
+  platformAccess: AgentAccess;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
   environmentsFor: (owner: string) => EnvironmentsServiceImpl;
@@ -143,6 +158,7 @@ export interface ApiServerDeps {
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
   firePair: FirePair;
+  runBoundary: RunBoundary;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
   linkedKits: LinkedKits;

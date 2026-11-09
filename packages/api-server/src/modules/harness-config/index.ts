@@ -15,6 +15,16 @@ export {
   harnessConfigSupportOf,
 } from "./services/harness-config-service.js";
 export { harnessConfigEvent } from "./domain/harness-config-event.js";
+export {
+  harnessCapabilityOf,
+  runSubagentSettings,
+  type RunSettingsSource,
+} from "./domain/session-pair.js";
+export {
+  createRunBoundary,
+  type ResolvePair,
+  type RunBoundary,
+} from "./domain/run-boundary.js";
 export { createHarnessConfigSnapshotWriter } from "./infrastructure/snapshot-writer.js";
 export type {
   SessionChoices,

@@ -127,7 +127,9 @@ describe("isSafeNext", () => {
     expect(isSafeNext("//evil.example/a/x")).toBe(false);
     expect(isSafeNext("https://evil.example")).toBe(false);
     expect(isSafeNext("/a/xyz/../../auth/login")).toBe(false);
-    expect(isSafeNext("/a/xyz#frag")).toBe(false);
+    expect(isSafeNext("/a/xyz?v=1#C-35")).toBe(true);
+    expect(isSafeNext("/a/xyz#C 35")).toBe(false);
+    expect(isSafeNext("/a/xyz#\u00e9")).toBe(false);
     expect(isSafeNext("/e/app-pr-42-ab12cd?next=%2Fpage")).toBe(true);
     expect(isSafeNext("/e/App.evil.example")).toBe(false);
     expect(isSafeNext("/e/")).toBe(false);
@@ -151,6 +153,16 @@ describe("share host sign-in", () => {
     expect(stored?.nonce).toBe(to.searchParams.get("nonce"));
     expect(to.searchParams.has("code_verifier")).toBe(false);
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  /**
+   * TEST_SCENARIO: A link to an item of a shared page carries the item in its
+   * fragment. The Keycloak sign-in form drops the fragment, so the callback
+   * must put it back on the page it returns to.
+   */
+  it("returns to the requested page with the fragment it was opened with", async () => {
+    const res = await signIn(setup(), "/a/xyz#C-35");
+    expect(res.headers.get("location")).toBe("/a/xyz#C-35");
   });
 
   /**

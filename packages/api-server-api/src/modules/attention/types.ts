@@ -1,4 +1,5 @@
 import type { Sender } from "agent-runtime-api";
+import type { CostReviewOffer } from "../cost-reviews/types.js";
 import type { DefaultKind } from "../harness-config/types.js";
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
@@ -12,12 +13,12 @@ export type AttentionItemKind =
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: why an Agent's saved default needs its owner:
- * none is set, the Agent holds no model provider to pick one from, its
- * model's provider is no longer the Agent's, or the conversion of an old
- * default runs it on another model than the one its setting named.
+ * the Agent holds no model provider to run on, its model's provider is no
+ * longer the Agent's, or the conversion of an old default runs it on another
+ * model than the one its setting named. A default with no model is none of
+ * these, since its runs take the automatic model.
  */
-export type DefaultModelState =
-  "not-set" | "no-provider" | "provider-gone" | "changed";
+export type DefaultModelState = "no-provider" | "provider-gone" | "changed";
 
 export interface DefaultModelNotice {
   id: string;
@@ -79,6 +80,7 @@ export interface AttentionList {
   dismissed: DismissedEntry[];
   defaultModels: DefaultModelNotice[];
   outageAlerts: OutageAlertNotice[];
+  costReviews: CostReviewOffer[];
 }
 
 export interface AttentionListCursor {

@@ -16,6 +16,7 @@ import {
   scheduleInheritsChoices,
   scheduleSlots,
 } from "../../modules/schedules/forms/schedule-form-schema.js";
+import { nextSlots } from "../../modules/sessions/lib/subagent-choice.js";
 import type { Schedule } from "../../types.js";
 
 const state = vi.hoisted(() => ({
@@ -144,6 +145,7 @@ const profile = (
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   settings: {},
+  subagent: null,
   newAgentDefault: true,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
@@ -239,14 +241,18 @@ describe("what a schedule save sends", () => {
     expect(scheduleChoices({ ...values, profile: "p1" }, true)).toEqual({
       profile: "p1",
       platformSubagentProfile: null,
-      settings: subagent,
+      settings: { effort: "high", ...subagent },
     });
     expect(
       scheduleChoices(
         { ...values, profile: "p1", platformSubagentProfile: "p2" },
         true,
       ),
-    ).toEqual({ profile: "p1", platformSubagentProfile: "p2" });
+    ).toEqual({
+      profile: "p1",
+      platformSubagentProfile: "p2",
+      settings: { effort: "high" },
+    });
     expect(scheduleChoices({ ...values, profile: "" }, false)).toEqual({
       profile: null,
       platformSubagentProfile: null,
@@ -314,6 +320,59 @@ describe("what a schedule save sends", () => {
       platformSubagentSettings: null,
     });
   });
+
+  /** TEST_SCENARIO: one rule across the schedule converters: the slot holds platform keys only, native keys of the primary stay in the primary, and an unrelated edit of a schedule with an existing subagent drops neither. */
+  it("keeps native keys in the primary and platform keys in the slot through a round trip", () => {
+    const subagent = {
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "ibm/aws/claude-haiku-5-5",
+    };
+    const fields = {
+      profile: "",
+      harness: "claude-code",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: {
+        effort: "high",
+        subagentModel: "ibm/aws/claude-haiku-5-5",
+        subagentEffort: "low",
+        ...subagent,
+      },
+      platformSubagentProfile: "",
+    };
+    const slots = scheduleSlots(fields);
+    expect(slots.pair?.settings).toEqual({
+      effort: "high",
+      subagentModel: "ibm/aws/claude-haiku-5-5",
+      subagentEffort: "low",
+    });
+    expect(slots.platformSubagentSettings).toEqual(subagent);
+
+    const pair = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: {
+        effort: "high",
+        subagentModel: "ibm/aws/claude-haiku-5-5",
+        subagentEffort: "low",
+      },
+    };
+    const next = scheduleSlots(
+      scheduleFields(nextSlots(slots, pair, {}), pair),
+    );
+    expect(next.platformSubagentSettings).toEqual(subagent);
+    expect(next.pair?.settings).toEqual(pair.settings);
+
+    expect(
+      scheduleChoices({ ...fields, profile: "p1" }, true).settings,
+    ).toEqual(fields.settings);
+    expect(scheduleChoices(fields, false)).toMatchObject({
+      profile: null,
+      harness: "claude-code",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: fields.settings,
+    });
+  });
 });
 
 describe("what a schedule edit sends for quiet hours", () => {
@@ -345,11 +404,11 @@ describe("the schedule form's Runs on field", () => {
     expect(onProfile).toContain("&quot;profileId&quot;:&quot;p1&quot;");
   });
 
-  /** TEST_SCENARIO: a schedule written before profiles that follows the
-   * agent's chat default says so, which is what its empty values mean now
-   * that nothing writes a scheduled default (D90/D92), and names the default
-   * in the one summary; a new one does not offer it (D123). */
-  it("names the empty choice the agent's chat default, only where it is the row's own", () => {
+  /** TEST_SCENARIO: a schedule that names no choice of its own follows the
+   * agent's model for schedules, says so, and names what that is now in the one
+   * summary; a form with concrete values does not offer the empty choice
+   * (D123). */
+  it("names the empty choice the agent's model for schedules, only where it is the row's own", () => {
     state.profiles = [profile()];
     state.fallback = {
       harness: "claude-code",
@@ -361,17 +420,17 @@ describe("the schedule form's Runs on field", () => {
       createElement(Field, { profile: "", inheritChoice: true }),
     );
     state.fallback = undefined;
-    expect(follows).toContain("fable · Low (AWS Bedrock)");
-    expect(follows).toContain("follows the agent&#x27;s chat default");
-    expect(follows).not.toContain("Scheduled default");
+    expect(follows).toContain("fable · Low · AWS Bedrock");
+    expect(follows).toContain("follows the agent&#x27;s model for schedules");
+    expect(follows).not.toContain("The agent&#x27;s chat default");
     expect(
       renderToStaticMarkup(createElement(Field, { profile: "" })),
     ).not.toContain("follows the agent");
   });
 });
 
-describe("a Custom selection without a model", () => {
-  /** TEST_SCENARIO: a new schedule, or one with its own harness, cannot save a Custom selection that names no model, so it never silently follows the chat default (QA N1, D123); a profile, a model, a row written before profiles that still follows, and a runtime without the Model Router save as before. */
+describe("an own pick without a model", () => {
+  /** TEST_SCENARIO: a new schedule, or one with its own harness, cannot save an own pick that names no model, so it never silently follows the chat default (QA N1, D123); a profile, a model, a row written before profiles that still follows, and a runtime without the Model Router save as before. */
   it("refuses to save unless the row already follows the chat default", () => {
     const empty = { profile: "", harness: "claude-code", model: "" };
     expect(customChoiceError(empty, undefined, true)).toMatch(/Pick a model/);
@@ -390,7 +449,7 @@ describe("a Custom selection without a model", () => {
   });
 });
 
-describe("the chat default choice on Custom selection", () => {
+describe("the chat default choice on the panel", () => {
   /** TEST_SCENARIO: the empty choice stays only for a schedule written before profiles that follows the chat default, so such a row opens and saves untouched; a row with a harness or a profile asks for concrete values (D123). */
   it("keeps the empty choice only for a schedule that inherits", () => {
     expect(scheduleInheritsChoices(schedule(null))).toBe(true);
@@ -437,7 +496,7 @@ describe("what a schedule's details say it runs on", () => {
           },
         }),
       );
-      expect(custom).toContain("fable · Low (AWS Bedrock)");
+      expect(custom).toContain("fable · Low · AWS Bedrock");
       expect(custom).not.toContain("chat default");
     } finally {
       state.fallback = undefined;

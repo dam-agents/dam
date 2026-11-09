@@ -10,7 +10,7 @@ function fakeSlackWorker(): SlackWorker {
     connect: vi.fn(async () => {}),
     conversationStanding: vi.fn(async () => "unknown" as const),
     channelChoices: vi.fn(async () => ({ linked: false as const })),
-    channelMembership: vi.fn(async () => "unlinked" as const),
+    channelMembership: vi.fn(async () => ({ kind: "unlinked" as const })),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -26,6 +26,11 @@ function fakeSlackWorker(): SlackWorker {
       conversationId: "C1",
       messageTs: "1.1",
     })),
+    getMessageLink: vi.fn(async () => ({
+      link: "https://example.slack.com/archives/C1/p11",
+      conversationId: "C1",
+      messageTs: "1.1",
+    })),
     resolveConversationLabels: vi.fn(async () => []),
     readThread: vi.fn(async () => ({
       messages: [],
@@ -33,6 +38,13 @@ function fakeSlackWorker(): SlackWorker {
       threadTs: "1.1",
       hasMore: false,
     })),
+    startThread: vi.fn(async () => ({
+      ok: true as const,
+      conversationId: "C1",
+      threadTs: "1.0",
+    })),
+    listThreads: vi.fn(async () => ({ threads: [] })),
+    leaveThread: vi.fn(async () => ({ ok: true as const })),
     fetchAttachment: vi.fn(async () => ({
       path: "/home/agent/.uploads/C1/a-table.png",
       name: "table.png",

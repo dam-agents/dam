@@ -1,6 +1,6 @@
 use std::path::Path;
 
-// UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is: every machine disk, the runner's bookkeeping and, on a runner that caches its own images, the image cache. The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails, and its filesystem reports the loss. So the runner watches the claim itself. Used is what the filesystem has handed out, and usable is that plus what an unprivileged writer may still take, so the blocks kept back for root do not hide the point where the runner's writes start to fail.
+// UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is: every machine disk, the runner's bookkeeping and, on a runner that caches its own images, the image cache. The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails, and its filesystem reports the loss. So the runner watches the claim itself. Used is the blocks the runner's own directories hold (see `measure`), and usable is that plus what an unprivileged writer may still take, so the blocks kept back for root do not hide the point where the runner's writes start to fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StorageUse {
     pub used: u64,
@@ -64,11 +64,11 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `up` machines may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. `up` counts the machines that are neither stopped nor absent, since a group woken together writes as soon as it boots, and no machine at all reads as one.
-    pub fn guest_room(&self, up: usize) -> u64 {
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes every machine that is up may still add to the claim: all that is left before it reaches FULL_PERCENT, not a part of it, so the one agent that needs the room gets it whatever number of idle siblings run beside it. The claim is overcommitted on purpose: guests that write at once can together pass FULL_PERCENT before the next look, and the last 100 - FULL_PERCENT of the claim is the reserve that absorbs them. A single guest reaches into the reserve by at most its floor and the writes it had not flushed when the runner looked, since its guard holds it to this grant.
+    pub fn guest_room(&self) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
-        limit.saturating_sub(self.used) / u64::try_from(up.max(1)).unwrap_or(1)
+        limit.saturating_sub(self.used)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below FULL_PERCENT, that running ones may be failing to write from it, and the ways to free space.
@@ -96,10 +96,11 @@ fn gib(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / f64::from(1u32 << 30))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the use of the filesystem holding `dir`, or nothing when it cannot be asked. A provisioner that hands out a directory of the node's disk rather than a volume of its own reports the node's disk, so there the guard watches that disk instead of the claim's size.
-pub fn measure(dir: &Path) -> Option<StorageUse> {
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use, as the blocks the runner's own directories hold (`dirs`: the machine disks and the bookkeeping), and its usable size as that plus what the filesystem under the first of them still gives an unprivileged writer, or nothing when it cannot be asked. Counting the runner's own blocks rather than the filesystem's used space is what makes a claim that is a directory of a shared disk read as the claim: k3s's local-path provisioner hands out such a directory, and there statvfs reports every other writer of the disk as the owner's use. A guest whose disk is held back by its host's storage guard showed that: its runner read 271 of 300 GiB used and refused every new agent, while its machine disks held a few MiB. On a volume of its own the two figures differ only by the filesystem's own metadata. The walk reads a few dozen entries per machine (its disk, its logs and sockets, its record), so a look every STORAGE_CHECK and at each admission costs little beside the statvfs it replaces. A sparse disk counts the blocks it took, not its length, and the walk follows no symlink and enters no other mount below the directories, such as the image cache a pod mounts inside its claim.
+pub fn measure(dirs: &[&Path]) -> Option<StorageUse> {
     use std::os::unix::ffi::OsStrExt;
-    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    let first = dirs.first()?;
+    let path = std::ffi::CString::new(first.as_os_str().as_bytes()).ok()?;
     // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
@@ -108,17 +109,79 @@ pub fn measure(dir: &Path) -> Option<StorageUse> {
         return None;
     }
     #[allow(clippy::unnecessary_cast)]
-    let (blocks, free, available, size) = (
-        stat.f_blocks as u64,
-        stat.f_bfree as u64,
-        stat.f_bavail as u64,
-        stat.f_frsize as u64,
-    );
-    let used = blocks.saturating_sub(free).saturating_mul(size);
+    let (available, size) = (stat.f_bavail as u64, stat.f_frsize as u64);
+    let mounts = mount_points();
+    let used = dirs
+        .iter()
+        .map(|dir| blocks_under(dir, &mounts))
+        .sum::<u64>();
     Some(StorageUse {
         used,
         usable: used.saturating_add(available.saturating_mul(size)),
     })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes of blocks the files under `dir` hold, `dir` itself included, following no symlink and entering no mount below it (`mounts`, the mount points from /proc/self/mountinfo). Mounts are told by their points and not by a file's device number, because overlayfs reports another device for a file than for its directory. A name that vanishes while it is walked counts nothing, since a machine disk is replaced by a rename.
+fn blocks_under(dir: &Path, mounts: &std::collections::HashSet<std::path::PathBuf>) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(top) = std::fs::symlink_metadata(dir) else {
+        return 0;
+    };
+    let mut total = top.blocks().saturating_mul(512);
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(at) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&at) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if meta.is_dir() && mounts.contains(&path) {
+                continue;
+            }
+            total = total.saturating_add(meta.blocks().saturating_mul(512));
+            if meta.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+    total
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every mount point this process sees, from the fifth field of /proc/self/mountinfo with its octal escapes undone; none where the file does not exist, as on macOS, whose host runner keeps its claim on one filesystem.
+fn mount_points() -> std::collections::HashSet<std::path::PathBuf> {
+    let Ok(info) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return Default::default();
+    };
+    info.lines()
+        .filter_map(|line| line.split(' ').nth(4))
+        .map(|point| std::path::PathBuf::from(unescape_mount(point)))
+        .collect()
+}
+
+fn unescape_mount(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && i + 3 < bytes.len()
+            && bytes[i + 1..i + 4]
+                .iter()
+                .all(|b| (b'0'..=b'7').contains(b))
+        {
+            let code =
+                (bytes[i + 1] - b'0') * 64 + (bytes[i + 2] - b'0') * 8 + (bytes[i + 3] - b'0');
+            out.push(code);
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -156,12 +219,19 @@ mod tests {
         assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
     }
 
-    // TEST_SCENARIO: each guest of a machine that is up may add its even part of what is left below 95%, and nothing once the claim is full.
+    // TEST_SCENARIO: every guest that is up may add all that is left below 95%, however many run, so the reserve is the last 5% of the claim and its edge is exact: one byte short of it grants one byte, and at or past it nothing. The figures are a 100 GiB claim, so the reserve is 5 GiB whatever the claim's use.
     #[test]
-    fn each_guest_up_may_add_its_part_of_the_room() {
-        assert_eq!(at(55).guest_room(2), 20);
-        assert_eq!(at(55).guest_room(0), 40);
-        assert_eq!(at(95).guest_room(1), 0);
+    fn every_guest_up_may_add_all_the_room_above_the_reserve() {
+        const GIB: u64 = 1 << 30;
+        let claim = |used| StorageUse {
+            used,
+            usable: 100 * GIB,
+        };
+        assert_eq!(claim(55 * GIB).guest_room(), 40 * GIB);
+        assert_eq!(claim(95 * GIB - 1).guest_room(), 1);
+        assert_eq!(claim(95 * GIB).guest_room(), 0);
+        assert_eq!(claim(99 * GIB).guest_room(), 0);
+        assert_eq!(StorageUse { used: 0, usable: 0 }.guest_room(), 0);
     }
 
     // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.
@@ -196,8 +266,59 @@ mod tests {
     #[test]
     fn a_directory_measures_its_filesystem() {
         let dir = crate::testdir::TempDir::new("storage");
-        let use_ = measure(dir.path()).expect("statvfs answers for a directory");
+        let use_ = measure(&[dir.path()]).expect("statvfs answers for a directory");
         assert!(use_.usable >= use_.used && use_.usable > 0);
-        assert_eq!(measure(&dir.path().join("missing")), None);
+        assert_eq!(measure(&[&dir.path().join("missing")]), None);
+        assert_eq!(measure(&[]), None);
+        assert_eq!(unescape_mount("/var/lib/a\\040b"), "/var/lib/a b");
+    }
+
+    // TEST_SCENARIO: the claim's use is what the runner's own directories hold, not what the filesystem under them reports used: a directory claim on a shared disk must not read another writer's files as the owner's. A file outside the runner's directories adds nothing, one inside adds its blocks, and a sparse disk adds the blocks it took and not its length.
+    #[test]
+    fn the_claim_counts_its_own_blocks_only() {
+        use std::io::Write;
+        let root = crate::testdir::TempDir::new("storage-own");
+        let disks = root.path().join("disks");
+        let machines = root.path().join("machines");
+        std::fs::create_dir_all(disks.join("m1")).unwrap();
+        std::fs::create_dir_all(&machines).unwrap();
+        let empty = measure(&[&disks, &machines]).unwrap().used;
+
+        let mut outside = std::fs::File::create(root.path().join("someone-else")).unwrap();
+        outside.write_all(&vec![1u8; 8 << 20]).unwrap();
+        outside.sync_all().unwrap();
+        assert_eq!(
+            measure(&[&disks, &machines]).unwrap().used,
+            empty,
+            "another writer's file is not the claim's use"
+        );
+        // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let path = std::ffi::CString::new(root.path().as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
+        assert_eq!(unsafe { libc::statvfs(path.as_ptr(), &mut stat) }, 0);
+        #[allow(clippy::unnecessary_cast)]
+        let fs_used = (stat.f_blocks as u64)
+            .saturating_sub(stat.f_bfree as u64)
+            .saturating_mul(stat.f_frsize as u64);
+        assert!(
+            empty < fs_used.min(8 << 20),
+            "the claim does not read the filesystem's use, {fs_used} bytes, as its own: {empty}"
+        );
+
+        let mut record = std::fs::File::create(machines.join("m1.json")).unwrap();
+        record.write_all(&vec![2u8; 1 << 20]).unwrap();
+        record.sync_all().unwrap();
+        let sparse = std::fs::File::create(disks.join("m1/storage.raw")).unwrap();
+        sparse.set_len(40 << 30).unwrap();
+        let used = measure(&[&disks, &machines]).unwrap().used;
+        assert!(
+            used >= empty + (1 << 20),
+            "the runner's own file counts: {used} after {empty}"
+        );
+        assert!(
+            used < empty + (16 << 20),
+            "a sparse disk counts the blocks it took, not its 40 GiB: {used}"
+        );
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Localhost bridge: Nous native channel webhook -> platform `send_channel_message`.
+"""Localhost bridge: Nous native channel webhook -> platform `post`.
 
 Nous (``orchestrator/channels.py``) POSTs a markdown gate summary to each
 configured channel at every DESIGN/FINDINGS gate — and it does so even under
@@ -11,7 +11,7 @@ at this bridge:
         url: http://127.0.0.1:8765/gate?channel=slack
 
 and the bridge forwards each summary to the platform's per-agent MCP
-``send_channel_message`` tool, which delivers it into the agent's bound
+``post`` tool, which delivers it into the agent's bound
 Slack/Telegram thread. The campaign keeps using Nous's *own* channel feature;
 this just re-targets it at the platform's messaging instead of an external
 webhook — so no external egress and no webhook secret on disk.
@@ -128,8 +128,8 @@ def _resolve_chat_id(channel: str, session_id: str | None) -> str | None:
     return None
 
 
-def send_channel_message(channel: str, text: str, chat_id: str | None) -> None:
-    """Run the MCP handshake and call send_channel_message."""
+def post(channel: str, text: str, chat_id: str | None) -> None:
+    """Run the MCP handshake and call post."""
     # 1. initialize -> mints the session id (returned in the mcp-session-id header).
     headers, _ = _mcp_post(
         {
@@ -161,14 +161,14 @@ def send_channel_message(channel: str, text: str, chat_id: str | None) -> None:
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {"name": "send_channel_message", "arguments": args},
+            "params": {"name": "post", "arguments": args},
         },
         sid,
     )
     result = (parsed or {}).get("result", {})
     if result.get("isError"):
         detail = " ".join(c.get("text", "") for c in result.get("content", []))
-        raise RuntimeError(f"send_channel_message rejected: {detail or 'unknown error'}")
+        raise RuntimeError(f"post rejected: {detail or 'unknown error'}")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -191,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply(400, {"ok": False, "error": "empty message"})
                 return
             try:
-                send_channel_message(channel, text, chat_id)
+                post(channel, text, chat_id)
             except urllib.error.HTTPError as exc:
                 if exc.code != 404:
                     raise
@@ -200,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
                 # sequence and 404 the follow-up. A fresh handshake lands
                 # on the new replica.
                 log.info("mcp session lost (404); retrying with a fresh session")
-                send_channel_message(channel, text, chat_id)
+                post(channel, text, chat_id)
             log.info("forwarded gate notification to channel %r", channel)
             self._reply(200, {"ok": True})
         except Exception as exc:  # never hard-fail; Nous's notifier is best-effort

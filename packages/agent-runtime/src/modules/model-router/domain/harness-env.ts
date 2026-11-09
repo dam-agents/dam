@@ -24,10 +24,10 @@ const ROUTER_PLACEHOLDER = "platform:conn:router";
  * `servedModels`). A credential variable the manifest names gets the router's
  * placeholder because the client will not start without one, and a model
  * variable it names gets the default provider's first model for the same
- * reason. Provider env
- * never reaches a harness process, so PLATFORM_MODEL_ROUTER_SERVES is what
- * an image script keys on to point its harness at the router. A harness whose
- * manifest names a classifier variable gets the platform's preferred
+ * reason. Provider env reaches a harness process only through the names its
+ * manifest declares (`homeConnectionEnv`), so PLATFORM_MODEL_ROUTER_SERVES is
+ * what an image script keys on to point its harness at the router. A harness
+ * whose manifest names a classifier variable gets the platform's preferred
  * classifier on the default provider, by its qualified name so the router
  * resolves it without guessing among providers; that is Claude Code's
  * auto-mode permission check, whose own Sonnet slot stays the person's, and a

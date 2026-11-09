@@ -108,7 +108,10 @@ export async function submitKeycloakLoginForm(page: Page): Promise<void> {
   await oneKeycloakLoginAtATime(async () => {
     await page.locator("#username").fill(testUser.username);
     await page.locator("#password").fill(testUser.password);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page
+      .locator("#kc-form-login")
+      .getByRole("button", { name: /sign in/i })
+      .click();
     await page.waitForURL(
       (url) =>
         url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
@@ -125,7 +128,10 @@ export async function answerDeviceGrant(
     await page.goto(verificationUri);
     await page.locator("#username").fill(testUser.username);
     await page.locator("#password").fill(testUser.password);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page
+      .locator("#kc-form-login")
+      .getByRole("button", { name: /sign in/i })
+      .click();
     const consent = page.waitForResponse((res) =>
       new URL(res.url()).pathname.endsWith("/login-actions/consent"),
     );

@@ -738,6 +738,41 @@ describe("github-app credential check", () => {
     expect(Date.parse(check!.at)).not.toBeNaN();
   });
 
+  // TEST_SCENARIO: a custom Enterprise endpoint can answer the check with an app slug, an account or repository names that carry terminal escape bytes or no end, and the check is shown in a terminal and kept on the connection, so the labels arrive stripped of control bytes and capped.
+  it("strips control bytes and caps the labels a hostile endpoint returns", async () => {
+    const esc = "\u001b[31m";
+    const { svc } = makeService((url) => {
+      if (url.includes("/access_tokens"))
+        return json(
+          { token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" },
+          201,
+        );
+      if (url.endsWith("/app/installations/987654"))
+        return json({
+          app_slug: `${esc}dam-bot`,
+          account: { login: `dam\u009b2J\r\nag\u0007ents` },
+        });
+      if (url.includes("/installation/repositories"))
+        return json({
+          total_count: 2,
+          repositories: [
+            { id: 12, name: `${esc}docs` },
+            { id: 34, name: "r".repeat(5000) },
+          ],
+        });
+      return new Response(null, { status: 204 });
+    });
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = (await svc.getConnection(id))?.check;
+    expect(check).toMatchObject({
+      status: "passed",
+      account: "[31mdam-bot[bot]",
+      installedOn: "dam2Jagents",
+    });
+    expect(check!.repositories).toEqual(["[31mdocs", "r".repeat(200)]);
+  });
+
   // TEST_SCENARIO: the token the check minted for itself is revoked, and the one the save minted stays the connection's own, so a check on demand leaves no extra live token behind.
   it("checks a stored connection again and revokes the token it minted", async () => {
     let mints = 0;

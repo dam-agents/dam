@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-30
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -43,7 +43,7 @@ Two persistence concerns split across the XDG directories: editable configuratio
 ## Compatibility negotiation
 
 Before any networked verb runs, the CLI hits the api-server's unauthenticated version endpoint (plain HTTP, outside the tRPC surface) to learn the server's version, the minimum CLI version it accepts, and the CLI version it recommends.
-The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
+The server's version is the release it was built from, the chart's `appVersion`: a tagged release reports `X.Y.Z` or `X.Y.Z-rc.N`, a release cut before that spelling reports `X.Y.Z-rcN`, and a build from `main` reports `X.Y.Z-dev-<sha>`.
 A tagged release recommends the CLI of its own version, which CD publishes to npm with it; a build from `main` recommends none, because no CLI is published at its version.
 Three verdicts:
 
@@ -146,6 +146,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
   "Continue" at a limit is an `approval` verb, because the question is an approval.
 - **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-pool).
+- **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions
@@ -165,7 +166,7 @@ The recurring patterns, stated once:
   When no sentence comes back — the run relay closes its socket, or a gateway gives up on a slow wake and answers with its own page — the CLI reads the reason from the agent's state: the refusal of an agent waiting for room, or the error of a failed one.
 - **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
-- **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
+- **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text, which bound conversations share an Agent — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 
 ## Agent skill
 
@@ -179,13 +180,15 @@ The user installs it from the repository with an open skills installer, pinned t
 The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
 
 A deployment also serves the skill itself, so an agent given only its URL finds the CLI and the skill that matches that server.
-The api-server image carries the `dam` skill of the commit it was built from, and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` (and the legacy `/.well-known/skills/`), with the digest of the file it serves, which an open skills installer pointed at the deployment's URL installs.
+The api-server image carries the `dam` skill of the commit it was built from — its main page and the pages beside it, such as its security advisory — and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` as one archive of those files, with the archive's digest, which an open skills installer pointed at the deployment's URL installs.
+Every replica builds the same archive bytes from the same files, because an installer may read the index from one replica and the archive from another.
+The legacy index under `/.well-known/skills/` names each file instead, for older installers.
 It answers `/llms.txt` too: what the deployment is, the CLI version it recommends, how to install the skill and sign in, and the rules on secrets and the API.
 The web app's shell, which an agent's fetch reads without running its JavaScript, names the deployment in its title and points to `/llms.txt`, and the UI's web server answers 404 for any other `/.well-known/` path or root text file instead of the shell, so a file the deployment lacks does not look present.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
 The CLI's test suite checks the `dam` skill against the CLI.
-It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
+It resolves every command any of the skill's pages names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
 A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
 
 The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
@@ -199,6 +202,10 @@ A name a parent shares with its first connection means the connection, so the ag
 An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as its [default account](connections.md#addressing-a-connection) among them, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.
+The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
+The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
+It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
 A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.
@@ -213,10 +220,12 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
   `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
+  The create then prints a `Provider:` line naming the one granted and what chose it (`defaultProvider` in `--json`), so a caller sees a provider it did not expect.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
-- **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--same-as-chat` still write the legacy channel pair that channels bound before profiles follow; `models` lists a harness's model catalog from the agent-runtime.
+- **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--kind scheduled` write that kind's own pair, the one its page's picker shows, and `--same-as-chat` clears it, so the kind follows the chat default again; `models` lists a harness's model catalog from the agent-runtime.
   An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
+  Revoking a provider changes only the grants on the server, so `update --remove-provider` then moves each saved default that named the revoked Connection to a granted provider of the same alias that offers its model, and warns about each default it cannot move; a default the same `update` sets is left as set.
   A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
 - **Name and avatar** are the identity the web app edits in place: `update --name` renames through the same procedure, with the server's name rules, and `--avatar`, `--avatar-file` and `--avatar-default` pick a character or an emoji, upload an image through the same endpoint and limits as the picker, or go back to the default ([agent avatars](agent-avatars.md)); `create` takes the avatar flags too.
   The CLI keeps the picker's rules: a character only once it is unlocked, an emoji or an image only with custom avatars on; `avatars` lists the characters, which are unlocked, and whether custom avatars are on.
@@ -251,8 +260,11 @@ On exit, on a drop that does not reconnect, and when it gives up or the user sto
 `dam session list` reads the same agent-owned session list.
 `dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls.
 A tool call's duration is the time between the stamps the runtime puts on the frame that started it and the frame that finished it, since no harness reports one.
-The load answer says whether a turn is running and when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
-`--follow` keeps the connection open and prints each new step and the turn's end as they come.
+A call its turn left open, by a stop or an error, is closed when the turn ends, or by the load when no turn runs: it gets an end time and no duration.
+The load answer says whether a turn is running, and the runtime adds when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.
+A runtime that does not send the start leaves it unknown, and the CLI says so.
+`--follow` keeps the connection open and prints each new step, the turn's start and the turn's end as they come.
+It does not reconnect, unlike an attach: a lost connection ends it with exit code 1 and a hint to run it again.
 
 ## Headless runs
 

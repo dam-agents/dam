@@ -13,10 +13,11 @@ import {
   ARTIFACT_SHARED_BRIDGE_SHIM_BODY,
   SHARED_BRIDGE_REFUSAL,
 } from "../../modules/artifact-library/viewer/bridge-shim.js";
+import { ARTIFACT_SIZE_REPORTER } from "../../modules/artifact-library/viewer/print-size.js";
 import { renderHtmlInner } from "../../modules/artifact-library/viewer/renderer.js";
 
 interface PageApi {
-  sendPrompt(prompt: unknown): void;
+  sendPrompt(prompt: unknown, options?: unknown): void;
   request(input?: unknown): Promise<unknown>;
 }
 
@@ -55,6 +56,32 @@ describe("artifact prompt buttons", () => {
       "*",
     );
   });
+
+  it("asks for a session of its own only when the page opts in", () => {
+    const { platform, postMessage } = page();
+    platform.sendPrompt("Refresh this dashboard.", { newSession: true });
+    platform.sendPrompt("Refresh this dashboard.", { newSession: "yes" });
+    expect(postMessage.mock.calls).toEqual([
+      [
+        {
+          type: ARTIFACT_PROMPT_TYPE,
+          prompt: "Refresh this dashboard.",
+          newSession: true,
+        },
+        "*",
+      ],
+      [{ type: ARTIFACT_PROMPT_TYPE, prompt: "Refresh this dashboard." }, "*"],
+    ]);
+  });
+
+  it.each([null, "new", 1])(
+    "refuses options that are not an object: %j",
+    (options) => {
+      const { platform, postMessage } = page();
+      expect(() => platform.sendPrompt("Refresh.", options)).toThrow();
+      expect(postMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([null, {}, 42, "", "  ", "x".repeat(ARTIFACT_PROMPT_MAX_LENGTH + 1)])(
     "refuses an invalid prompt: %j",
@@ -274,13 +301,15 @@ describe("artifact bridge on a public interactive page", () => {
 });
 
 describe("artifact preview rendering", () => {
-  it("leaves ordinary HTML rendering unchanged", () => {
+  it("leaves ordinary HTML rendering unchanged apart from the size reporter", () => {
     const source = "<html><head></head><body>Report</body></html>";
     expect(renderHtmlInner(source)).toBe(
-      '<html><head><base target="_blank"></head><body>Report</body></html>',
+      `<html><head>${ARTIFACT_SIZE_REPORTER}<base target="_blank"></head><body>Report</body></html>`,
     );
     const withBase = '<head><base target="_self"></head><p>Report</p>';
-    expect(renderHtmlInner(withBase)).toBe(withBase);
+    expect(renderHtmlInner(withBase)).toBe(
+      `<head>${ARTIFACT_SIZE_REPORTER}<base target="_self"></head><p>Report</p>`,
+    );
   });
 
   it("installs the API before authored scripts even with an existing base", () => {

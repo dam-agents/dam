@@ -12,12 +12,15 @@ import {
   approvalGroupKey,
   groupBy,
 } from "../../approvals/lib/group-approvals.js";
+import { FeedCostReviewCard } from "../../cost-reviews/components/feed-cost-review-card.js";
+import { useCostReviewOffers } from "../../cost-reviews/hooks/use-cost-review-offers.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useFeed } from "../api/queries.js";
 import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useOutageAlerts } from "../hooks/use-outage-alerts.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
+import { ALL_AGENTS_SUBJECT, countsAllAgents } from "../lib/approval-copy.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
@@ -32,6 +35,7 @@ function useApprovals() {
   const { denyAll, denying } = useDenyApprovals();
   const defaultModels = useDefaultModelNotices();
   const outageAlerts = useOutageAlerts();
+  const costReviews = useCostReviewOffers();
   const now = useNow(MINUTE_MS);
 
   const approvals = sticky
@@ -59,6 +63,7 @@ function useApprovals() {
     denying,
     defaultModels,
     outageAlerts,
+    costReviews,
     loadingFeed,
     now,
   };
@@ -117,24 +122,35 @@ function ApprovalsList({ view }: { view: ApprovalsView }) {
           })}
         </div>
       )}
+      {(view.costReviews.offers.length > 0 ||
+        view.costReviews.startingAgentId !== null) && (
+        <div className="mb-1 flex flex-col gap-1">
+          <FeedCostReviewCard view={view.costReviews} agentOf={agentOf} />
+        </div>
+      )}
       {view.loadingFeed && approvals.length === 0 ? (
         <FeedCardSkeleton rows={3} />
       ) : approvals.length === 0 ? (
         view.defaultModels.waiting.length === 0 &&
-        view.outageAlerts.waiting.length === 0 && (
+        view.outageAlerts.waiting.length === 0 &&
+        view.costReviews.offers.length === 0 &&
+        view.costReviews.startingAgentId === null && (
           <EmptyState bordered={false}>No approvals waiting.</EmptyState>
         )
       ) : (
         <div className="flex flex-col gap-1">
           {groups.map((group) => {
             const item = group[0]!;
-            const agent = agentOf(item.agentId);
+            const allAgents = countsAllAgents(item.approval);
+            const agent = allAgents ? undefined : agentOf(item.agentId);
             return (
               <FeedApprovalCard
                 key={groupKeyOf(item)}
                 approval={item.approval}
                 ids={group.map((member) => member.approval.id)}
-                agentName={agent?.name ?? item.agentId}
+                agentName={
+                  allAgents ? ALL_AGENTS_SUBJECT : (agent?.name ?? item.agentId)
+                }
                 avatarName={agent?.name}
                 avatar={agent?.avatar}
                 meta={item.at ? timeAgo(item.at, now) : "—"}

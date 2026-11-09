@@ -165,21 +165,68 @@ fi
 export CLUSTER_RELEASE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
 export CLUSTER_NAMESPACE="${CLUSTER_INSTALL:+platform-}${CLUSTER_INSTALL:-default}"
 export CLUSTER_AGENT_NAMESPACE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}-agents"
-# The entrypoint this install's Ingress attaches to in the cluster's one Traefik
+# traefik_entrypoint_name <install name, empty for the default one>: the
+# entrypoint this install's Ingress attaches to in the cluster's one Traefik
 # config. Every install serves the same host names (`localhost`,
 # `keycloak.localhost`, …) on a port of its own, so the entrypoint is what tells
-# them apart; the default install keeps the name it had before there were several.
-export CLUSTER_ENTRYPOINT="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
+# them apart, and the default install keeps the name it had before there were
+# several. Traefik's chart makes the entrypoint the Service's and the container's
+# port name, and Kubernetes stops a port name at 15 characters: `platform-<name>`
+# is longer for a named install, so the chart truncated it, and two installs whose
+# names share a prefix shared one port name (`spec.ports[N].name: Duplicate
+# value`), which failed the chart for every install on the cluster. A named
+# install's is therefore `p-<the name's first 6>-<5 hex of the name>`: inside the
+# limit, and equal only for two names that agree on both.
+traefik_entrypoint_name() {
+  local crc
+  [ -n "${1:-}" ] || { printf 'platform'; return 0; }
+  crc="$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+  printf 'p-%s-%s' "${1:0:6}" "$(printf '%08x' "$crc" | cut -c4-8)"
+}
+
+CLUSTER_ENTRYPOINT="$(traefik_entrypoint_name "${CLUSTER_INSTALL:-}")"
+export CLUSTER_ENTRYPOINT
+# What that entrypoint was called before it had to fit 15 characters: an install
+# made then holds its port under that name, which the merge below rewrites.
+export CLUSTER_ENTRYPOINT_LEGACY="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
 # A named install's port comes from this range, which one Lima port-forward rule
 # carries from the VM to this host's loopback (`etc/lima/k3s.yaml`).
 export CLUSTER_PORT_MIN=4400 CLUSTER_PORT_MAX=4499
 
-# cluster_install_port: the port this install's entrypoint listens on, read from
-# the cluster's Traefik config — the only record of it, and the reason two
-# worktrees never take one port. Empty when the install is not there.
+# traefik_values_port <values> <install name>: the port that install's entrypoint
+# listens on in the cluster's Traefik values, under its short name or the one it
+# had before. Empty when neither names one.
+traefik_values_port() {
+  ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" \
+    yq -r '.ports[env(ENTRY)].exposedPort // .ports[env(LEGACY)].exposedPort // ""' <<<"$1" 2>/dev/null
+}
+
+# traefik_values_set <values> <install name> <port> [insecure]: those values with
+# that install's entrypoint on that port, and no entry left under the name it had
+# before, so an install made under the old scheme is rewritten rather than listed
+# twice — twice would claim two ports and make two Service ports of one name.
+traefik_values_set() {
+  local out
+  out="$(ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" PORT="$3" yq -r '
+    .ports = (((.ports // {}) | del(.[env(LEGACY)])) | .[env(ENTRY)] = {
+      "port": (env(PORT) | tonumber),
+      "expose": {"default": true},
+      "exposedPort": (env(PORT) | tonumber),
+      "protocol": "TCP"
+    })' <<<"$1")" || return 1
+  [ "${4:-}" = insecure ] || { printf '%s' "$out"; return 0; }
+  ENTRY="$(traefik_entrypoint_name "$2")" \
+    yq -r '.ports[env(ENTRY)].forwardedHeaders = {"insecure": true}' <<<"$out"
+}
+
+# cluster_install_port [install name]: the port that install's entrypoint listens
+# on, read from the cluster's Traefik config — the only record of it, and the
+# reason two worktrees never take one port. This install when no name is given,
+# and empty when the install is not there.
 cluster_install_port() {
-  kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
-    ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].exposedPort // ""' 2>/dev/null
+  traefik_values_port \
+    "$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null)" \
+    "${1-$CLUSTER_INSTALL}"
 }
 
 # install_url: where this install answers from this host. Empty when it is not
@@ -197,16 +244,16 @@ install_url() {
 # resourceVersion: two installs starting at once take two ports, and neither
 # drops the other's entrypoint. A fixed port is the default install's (and an
 # Environment's); a named install takes the first port of the range no entrypoint
-# names yet, and keeps it on the next run.
-# yq reads the entrypoint name and port from ENTRY/PORT: mikefarah's yq has no
-# --arg.
+# names yet, and keeps it on the next run. An install whose port is recorded
+# under the name its entrypoint had before the 15-character limit is migrated:
+# the write drops that entry, so the config never holds both.
 traefik_entrypoint_port() {
   local fixed="${1:-}" insecure="${2:-}" values json port used p i
   for i in $(seq 1 20); do
     json="$(kubectl -n kube-system get helmchartconfig traefik -o json 2>/dev/null)" || json=""
     values=""
     [ -z "$json" ] || values="$(printf '%s' "$json" | jq -r '.spec.valuesContent // ""')"
-    port="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].exposedPort // ""' 2>/dev/null)"
+    port="$(traefik_values_port "$values" "$CLUSTER_INSTALL")"
     if [ -n "$port" ]; then
       # This install's already. A fixed port that agrees with the record needs no
       # write; one that differs is the caller moving the install (a changed
@@ -226,16 +273,7 @@ traefik_entrypoint_port() {
         return 1
       }
     fi
-    values="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" PORT="$port" yq -r '
-      .ports = ((.ports // {}) | .[env(ENTRY)] = {
-        "port": (env(PORT) | tonumber),
-        "expose": {"default": true},
-        "exposedPort": (env(PORT) | tonumber),
-        "protocol": "TCP"
-      })')" || return 1
-    if [ "$insecure" = insecure ]; then
-      values="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].forwardedHeaders = {"insecure": true}')" || return 1
-    fi
+    values="$(traefik_values_set "$values" "$CLUSTER_INSTALL" "$port" "$insecure")" || return 1
     if [ -z "$json" ]; then
       kubectl apply -f - >/dev/null <<YAML || continue
 apiVersion: helm.cattle.io/v1
@@ -258,13 +296,15 @@ YAML
 }
 
 # traefik_entrypoint_drop: takes this install's entrypoint out of the cluster's
-# Traefik config, so its port is free for the next install.
+# Traefik config, so its port is free for the next install — under either name, so
+# an install made before the 15-character limit leaves no entry behind.
 traefik_entrypoint_drop() {
   local json values i
   for i in $(seq 1 20); do
     json="$(kubectl -n kube-system get helmchartconfig traefik -o json 2>/dev/null)" || return 0
     values="$(printf '%s' "$json" | jq -r '.spec.valuesContent // ""' |
-      ENTRY="$CLUSTER_ENTRYPOINT" yq -r 'del(.ports[env(ENTRY)])' 2>/dev/null)" || return 0
+      ENTRY="$CLUSTER_ENTRYPOINT" LEGACY="$CLUSTER_ENTRYPOINT_LEGACY" \
+        yq -r 'del(.ports[env(ENTRY)], .ports[env(LEGACY)])' 2>/dev/null)" || return 0
     printf '%s' "$json" | jq --arg v "$values" '.spec.valuesContent = $v' | kubectl replace -f - >/dev/null 2>&1 && return 0
   done
   echo "WARN: could not drop install $CLUSTER_INSTALL's Traefik entrypoint; its port stays reserved" >&2
@@ -399,28 +439,137 @@ node_dir_roots() {
 
 # node_host_dirs <dir>...: bind-mounts $NODE_HOME_SHARE/host-<name> over each
 # node directory that is on an overlay and not yet a mount point, and names
-# the ones it mounted in NODE_MOUNTED. A bind mount does not outlive the
-# machine, so every install makes it again, and the directory behind it keeps
+# the ones it mounted in NODE_MOUNTED. The directory behind the mount keeps
 # what was staged there; what a directory held before its first mount is
-# copied over, so a node that staged images on the overlay keeps them.
+# copied over, so a node that staged images on the overlay keeps them. A bind
+# mount does not outlive the machine, so every mount it made or found from
+# the home disk is named in NODE_HOST_MOUNTS, as a source and a target entry
+# in turn, which node_host_dirs_at_boot makes again at every boot (#6017).
 node_host_dirs() {
   local dir src
   NODE_MOUNTED=()
+  NODE_HOST_MOUNTS=()
   for dir in "$@"; do
     [ -n "$dir" ] || continue
-    ! node_sh mountpoint -q "$dir" 2>/dev/null || continue
+    src="$NODE_HOME_SHARE/host-$(basename "$dir")"
+    if node_sh mountpoint -q "$dir" 2>/dev/null; then
+      ! node_sh test -d "$src" || NODE_HOST_MOUNTS+=("$src" "$dir")
+      continue
+    fi
     on_overlay "$dir" || continue
     on_overlay "$NODE_HOME_SHARE" && {
       echo "WARNING: $dir and $NODE_HOME_SHARE are both on an overlay; the VM runner pod cannot mount it." >&2
       continue
     }
-    src="$NODE_HOME_SHARE/host-$(basename "$dir")"
     echo "Mounting $src over $dir (the machine root is an overlay)..."
     node_sh mkdir -p "$src" "$dir"
     node_sh sh -c '[ -z "$(ls -A "$2")" ] || [ -n "$(ls -A "$1")" ] || cp -a "$2/." "$1/"' _ "$src" "$dir"
     node_sh mount --bind "$src" "$dir"
     NODE_MOUNTED+=("$dir")
+    NODE_HOST_MOUNTS+=("$src" "$dir")
   done
+}
+
+# NODE_HOST_DIRS_SERVICE: the openrc service that makes node_host_dirs' bind
+# mounts again at every boot, before k3s starts, so the VM runner pod starts
+# after a restart with no new install (#6017).
+NODE_HOST_DIRS_SERVICE=/etc/init.d/platform-host-dirs
+
+# node_host_dirs_at_boot: writes NODE_HOST_DIRS_SERVICE for the mounts in
+# NODE_HOST_MOUNTS and puts it in the default runlevel, beside k3s; with none,
+# a service an earlier install wrote is removed. A node with no OpenRC keeps
+# the mounts until it restarts, and a new install makes them again.
+node_host_dirs_at_boot() {
+  local i src dir mounts="" name
+  name="$(basename "$NODE_HOST_DIRS_SERVICE")"
+  for ((i = 0; i + 1 < ${#NODE_HOST_MOUNTS[@]}; i += 2)); do
+    src="'${NODE_HOST_MOUNTS[i]//\'/\'\\\'\'}'"
+    dir="'${NODE_HOST_MOUNTS[i + 1]//\'/\'\\\'\'}'"
+    mounts+="    mountpoint -q $dir || { mkdir -p $dir && mount --bind $src $dir; } || return 1"$'\n'
+  done
+  if [ -z "$mounts" ]; then
+    if node_sh test -x /sbin/openrc-run && node_sh test -e "$NODE_HOST_DIRS_SERVICE"; then
+      node_sh rc-update del "$name" default >/dev/null 2>&1 || true
+      node_sh rm -f "$NODE_HOST_DIRS_SERVICE"
+    fi
+    return 0
+  fi
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# The VM runner's node directories, bind-mounted from the home disk over the" \
+      "# overlay root, where runc cannot idmap them (cluster:install, #6017)." \
+      'description="VM runner node directories on the home disk"' \
+      'depend() { before k3s; }' \
+      'start() {' "${mounts%$'\n'}" '}' |
+      node_sh tee "$NODE_HOST_DIRS_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_HOST_DIRS_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart loses the runner's node directories' mounts" >&2
+  else
+    echo "WARNING: no OpenRC on the node, so nothing makes the runner's node directories' mounts again after a restart; run cluster:install again then" >&2
+  fi
+}
+
+# NODE_IMAGE_GC_DROPIN: no image garbage collection and no disk eviction in an
+# Environment's k3s. The outer guest's disk is held to its grant, so while the
+# owner's storage is short the kubelet reads the disk as nearly full: past 85% its
+# image collection deleted the agent image a minute after the install
+# imported it (#6128), and under 5% free, k3s's hard eviction thresholds,
+# its eviction manager deletes every image no container runs and evicts pods,
+# whatever the collection thresholds say (#6272). Nothing in an Environment
+# pulls an image back: the install puts every one in itself. So hard
+# eviction keeps memory alone; a single `eviction-hard` names every signal,
+# and the ones it leaves out have no threshold. The guard and the VM runner
+# hold the disk. After 50-container-log-rotation.yaml, whose plain
+# `kubelet-arg:` replaces every append in a drop-in that sorts before it.
+NODE_IMAGE_GC_DROPIN=/etc/rancher/k3s/config.yaml.d/60-image-gc-off.yaml
+
+# node_image_gc_off: writes NODE_IMAGE_GC_DROPIN, and succeeds only when it
+# changed, so the caller knows a running k3s must restart to take it.
+node_image_gc_off() {
+  local want
+  want="$(printf '%s\n' "# An Environment's k3s keeps every image the install put in, and evicts on memory alone (cluster:install)." \
+    "kubelet-arg+:" '  - "image-gc-high-threshold=100"' '  - "image-gc-low-threshold=99"' \
+    '  - "eviction-hard=memory.available<100Mi"')"
+  [ "$(node_sh cat "$NODE_IMAGE_GC_DROPIN" 2>/dev/null)" != "$want" ] || return 1
+  node_sh mkdir -p "$(dirname "$NODE_IMAGE_GC_DROPIN")"
+  printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null
+}
+
+# NODE_THP_SERVICE: transparent huge pages on, at every boot of an
+# Environment. Its kernel defaults to `madvise`, and the runner maps guest
+# RAM without advising it, so under `madvise` a nested guest's RAM is mapped
+# 4 KiB at a time: a VM start took 11 to 28 s there, and 3.5 to 6.3 s with
+# `always`, in turns on one quiet Environment (#6199). Each start past the
+# VMM's 30 s of no progress fails. The lima VMs pin `always` for the same
+# reason (etc/lima/k3s.yaml). An Environment's sysfs write is lost when it
+# sleeps, so an openrc service makes it again before k3s starts.
+NODE_THP_SERVICE=/etc/init.d/platform-thp
+NODE_THP_ENABLED=/sys/kernel/mm/transparent_hugepage/enabled
+
+# node_thp_always: turns huge pages on now, writes NODE_THP_SERVICE and puts
+# it in the default runlevel, beside k3s, and checks that the kernel took it.
+# A node with no OpenRC keeps the setting until it restarts, and a new install
+# makes it again.
+node_thp_always() {
+  local name
+  name="$(basename "$NODE_THP_SERVICE")"
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# Transparent huge pages on for the nested VM runners (cluster:install, #6199)." \
+      'description="Transparent huge pages always"' \
+      'depend() { before k3s; }' \
+      "start() { echo always > $NODE_THP_ENABLED; }" |
+      node_sh tee "$NODE_THP_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_THP_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart turns huge pages back to madvise" >&2
+  else
+    echo "WARNING: no OpenRC on the node, so nothing turns huge pages on again after a restart; run cluster:install again then" >&2
+  fi
+  node_sh sh -c 'echo always > "$1"' _ "$NODE_THP_ENABLED" 2>/dev/null || true
+  node_sh grep -q '\[always\]' "$NODE_THP_ENABLED" ||
+    { echo "FATAL: transparent huge pages did not turn on, so nested VMs boot past their 30 s window" >&2; return 1; }
 }
 
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
@@ -428,6 +577,36 @@ node_host_dirs() {
 # turns the marks into the job's per-phase timing summary.
 e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"
+}
+
+# e2e_checkout_commit: the commit this checkout is on, when its tree is clean
+# — nothing changed, tracked or not, outside what git ignores. Prints nothing
+# for a dirty tree: what an install of it holds is no commit's.
+e2e_checkout_commit() {
+  [ -z "$(git -C "$MISE_CONFIG_ROOT" status --porcelain 2>/dev/null)" ] || return 0
+  git -C "$MISE_CONFIG_ROOT" rev-parse HEAD 2>/dev/null || true
+}
+
+# e2e_cluster_id: the identity of the cluster kubectl reaches, the UID of its
+# kube-system namespace: a cluster made again, as a recreated Environment's
+# is, has another. Prints nothing when the cluster does not answer.
+e2e_cluster_id() {
+  kubectl get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null || true
+}
+
+# e2e_install_current <record> <cluster-id>: prints the commit the e2e lane's
+# install that <record> names is of, and succeeds, when it is this checkout's
+# on this cluster: e2e:install recorded it as `<commit> <cluster-id>`, the
+# cluster is still the one it installed into, and the checkout is still on
+# that commit with a clean tree. A missing record, another cluster, another
+# commit or a dirty tree is not current, and the next run installs as it
+# always did.
+e2e_install_current() {
+  local recorded head
+  recorded="$(cat "$1" 2>/dev/null)" || return 1
+  head="$(e2e_checkout_commit)"
+  [ -n "$head" ] && [ -n "$2" ] && [ "$recorded" = "$head $2" ] || return 1
+  printf '%s' "$head"
 }
 
 # The port the e2e lane answers on from this agent: the test cluster's, which

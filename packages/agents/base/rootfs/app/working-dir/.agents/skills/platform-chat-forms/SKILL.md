@@ -150,7 +150,7 @@ A `regex` `pattern` is a JavaScript pattern with no flags and no implicit anchor
 In a later reply you can change a form you created earlier: send `updateComponents` (replaces components by id) and `updateDataModel` (`{"surfaceId", "path": "/status", "value": "Applied"}`; `"value": null` deletes the key) with the same `surfaceId`.
 The form re-renders where it is and becomes the active one again.
 `deleteSurface` removes it.
-Only the form the newest reply created or updated accepts input; older ones are locked.
+A form accepts input until the user sends it or a newer form, so a later reply without a form does not lock it.
 
 ## What comes back
 

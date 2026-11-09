@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-27
+Last verified: 2026-11-09
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -30,7 +30,8 @@ A Slack "conversation" is any surface the bot is party to: a public/private **ch
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
-So a conversation carries at most one **default Agent** — the first connected, and the one a bare mention reaches — while a mention opening with an Agent's name reaches that Agent.
+So a conversation carries at most one **default Agent** — the first connected, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
+A mention that is a command runs it instead (**Commands by mention**, below).
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
@@ -56,7 +57,7 @@ Every turn relays single-track to the main agent; the **binding owner's** Terms-
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
-Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+Members use every granted Connection and Satellite; the UI and the CLI warn, never block, when a group binding and grants meet.
 
 #### Ambient mode
 
@@ -95,8 +96,11 @@ An unignore command takes the app back by name or by link.
 The list belongs to the **conversation**, not a binding, so anyone who connected an Agent there or owns one connected there may change it; every change is security-logged.
 Other Agents' posts are never ignored.
 
-Bot posts can answer each other — two readers, or an Agent and a webhook — so a conversation admits at most **three bot posts since a person last posted there**; later ones start nothing until a person posts.
-The count is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows a new run of the same size.
+Bot posts can answer each other — two readers, or an Agent and a webhook — and a routing or prompt bug can make them wake each other without end.
+Such an echo loop runs far faster than a real discussion, so a conversation admits at most **ten bot posts in any one minute**; the first one over the limit **pauses bot posts there for five minutes**, and later ones start nothing until the pause ends.
+When the pause starts, the platform posts one footer-less notice into the conversation saying why the Agents went quiet; it starts nothing.
+A person's post neither counts nor lifts the pause, and still starts turns as usual.
+The limit is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows one more minute of the same size.
 A dropped post leaves a record for its channel in Postgres — how many were dropped, the time of the last one, and the newest few with their sender — and every connected Agent's Channels page shows it until a day passes without a drop; the record is only a view of the guard, which never reads it.
 A bot sender gets no private notices, since a notice needs a person, and a bot post in a 1:1 DM starts nothing — that conversation is with one person.
 A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.
@@ -116,6 +120,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 - **Thread-session binding.** A thread maps to one resumable session, so the agent gets real conversational continuity.
   The binding is carried on the session itself, resolved by listing sessions over ACP and matching — there is no server-side session store.
+  The one exception is a thread a Session started with `start_thread`: the platform records that Session as its owner, so a reply there reaches it without a session of its own ([slack-threads](slack-threads.md)).
 
 ## Topology
 
@@ -140,6 +145,7 @@ flowchart LR
 
   subgraph DB[Postgres]
     LNK[(identity_links<br/>provider=slack)]
+    OWN[(slack_owned_threads<br/>thread → session)]
   end
 
   POD[machine]
@@ -149,9 +155,10 @@ flowchart LR
   CM --> SW
   SW --> IL
   IL --> LNK
+  SW -- owned thread? --> OWN
   SW -- ACP session/list + relay frames --> REL
   REL <--> POD
-  POD -- send_channel_message --> MCP
+  POD -- post / reply --> MCP
   MCP --> CM
 ```
 
@@ -185,7 +192,7 @@ flowchart LR
   TW -- resolve binding --> BND
   TW -- ACP session/list + relay frames --> REL
   REL <--> POD
-  POD -- send_channel_message --> MCP
+  POD -- post / reply --> MCP
   MCP --> CM
 ```
 
@@ -252,12 +259,12 @@ The differences are transport, identity model, and where the bot token comes fro
   An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
   Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
   The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
-- **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert or an outage alert, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
+- **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, an outage alert or a spend stop, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
-  `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other eight); the flows that need a linked identity still point users at `/platform login` in context.
+  `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.
@@ -266,6 +273,20 @@ The differences are transport, identity model, and where the bot token comes fro
   The commands take the Agent's name where more than one is connected, refusing and listing candidates rather than guessing.
   Changing the default is **in-chat only** — choosing well means seeing who else is connected, and only the channel shows that — and only its Agent's **owner** may take it, since the default absorbs every unnamed mention and that load runs on their credentials.
   The owner can also disconnect from the platform UI/CLI as an escape hatch.
+- **A conversation shows who stands behind its Agents.** Every connect, in-chat, from the UI or from the CLI, posts one notice in the conversation that tags the person who connected the Agent, because members otherwise find an Agent there with nobody to ask about it.
+  That person is always the Agent's owner, since only the owner may manage its channels.
+  A 1:1 DM is the exception: the notice there names no one, as the person reading it is the one who connected.
+  Afterwards `/platform who` lists the conversation's Agents, and `/platform default` with no name shows the same list.
+  Each line gives the owner's tag, the default, what the Agent reads, the mention that reaches it, and the Agent's own description, cut to 200 characters; one equal to its template's is left out, and a new Agent no longer copies it.
+  The tag is the owner's link in that workspace; an owner with none there, after a logout or from a connect that predates the membership check, is named by display name instead, so a member never needs the Public Agent Page to find them, and an owner with neither is left out.
+  The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
+  The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
+  The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **Commands by mention.** Every command except `whisper` and `delete` also runs as `@bot <command>`, for people who never use slash commands.
+  A mention is a command only when its words parse as one, such as `@bot ambient <agent> on`; any other, such as `@bot who owns this?`, is a message to the default Agent.
+  A bare `@bot` runs `who`, a command word wins over a same-named Agent, and the reply is ephemeral.
+  Only a person's mention runs a command, so one Agent can never disconnect another.
+  `whisper` has none, as the mention shows its text to everyone; `@bot delete` only points to `/platform delete`, whose dialog Slack opens only from a slash command.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
   Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.
@@ -318,7 +339,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Degrade to a smaller result**, when a partial answer is still useful: attempted reactively, with a missing-scope failure caught and turned into a narrower result rather than an outright failure.
   `describe_channel` without the channel-list scopes still returns the bound conversations; a user profile without `users:read.email` still resolves, minus its `email` field; a bound conversation's label, shown beside the binding in the UI, is the channel's name, the person a 1:1 DM is with, or a group DM's members; it falls back to the raw conversation id when Slack refuses the lookup or does not answer within a short budget, and a conversation Slack no longer knows (deleted, or private with the bot removed) is marked unavailable so its binding can be disconnected — the agent list is a core read and never waits on Slack for long, and names are cached briefly so it rarely asks at all.
 - **Agent persona on posts** is the one optional scope read proactively.
-  With `chat:write.customize`, an agent's own posts (`send_channel_message`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
+  With `chat:write.customize`, an agent's own posts (`post`, `start_thread`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
   Slack does not say whether it refuses or ignores those fields without the scope, so the override is sent only where the granted set is **known** to include it; an unknown set posts under the app's identity, the same message as before.
   Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the one the owner sees in the UI: the one stored on the Agent, or else the character picked from the owner and the Agent name — to a PNG, or reads the uploaded one, and uploads it to ImgBB, named by a hash.
   An emoji avatar is not uploaded: the icon is the public Twemoji PNG for it.

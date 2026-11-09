@@ -183,7 +183,7 @@ export function ScheduleDetails({
  * picker's one summary: the values its profile resolves to or its own, with
  * the subagent slot beside them. A profile that cannot run says so and offers
  * no default, since the fire refuses rather than falling back; only a schedule
- * that names no choice at all follows the agent's chat default.
+ * that names no choice at all follows the agent's model for schedules.
  */
 function ScheduleRunsOn({ schedule }: { schedule: Schedule }) {
   const { data: profiles = [] } = useProfiles(schedule.agentId);
@@ -215,7 +215,7 @@ function ScheduleRunsOn({ schedule }: { schedule: Schedule }) {
         </span>
       ) : (
         <>
-          The agent&apos;s chat default
+          The agent&apos;s model for schedules
           {fallback?.model && (
             <span className="mt-1 flex min-w-0 items-center gap-1 text-xs font-normal text-muted-foreground">
               Now:

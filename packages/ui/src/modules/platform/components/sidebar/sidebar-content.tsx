@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
 import { SidebarSharedAgents } from "../../../agents/components/sidebar-shared-agents.js";
+import { GettingStartedNavItem } from "../../../getting-started/components/getting-started-nav-item.js";
 import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import {
   type SidebarDestination,
@@ -12,9 +13,11 @@ import { SidebarNavItem } from "./sidebar-nav-item.js";
 export function SidebarContent({
   stickyHeaderClassName,
   onNavigate,
+  inDrawer,
 }: {
   stickyHeaderClassName: string;
   onNavigate?: () => void;
+  inDrawer?: boolean;
 }) {
   const { primary, secondary } = useSidebarDestinations();
   const item = (destination: SidebarDestination) => (
@@ -55,7 +58,14 @@ export function SidebarContent({
           />
         </div>
       </div>
-      <div className="mb-2 flex flex-col gap-px">{secondary.map(item)}</div>
+      <div className="mb-2 flex flex-col gap-px">
+        <GettingStartedNavItem
+          expanded
+          inDrawer={inDrawer}
+          onNavigate={onNavigate}
+        />
+        {secondary.map(item)}
+      </div>
     </>
   );
 }

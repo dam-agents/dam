@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
+import {
+  sessionChoiceReferencesSchema,
+  sessionPairSchema,
+} from "../harness-config/schemas.js";
+import { ARTIFACT_PROMPT_MAX_LENGTH } from "./prompt.js";
+
 export const artifactKindSchema = z.enum([
   "html",
   "jsx",
@@ -18,7 +24,7 @@ export const artifactVisibilitySchema = z.enum([
 
 const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
 
-export const VIEWER_ALLOWLIST_MAX = 50;
+export const VIEWER_ALLOWLIST_MAX = 100;
 
 export const viewerEmailSchema = z
   .string()
@@ -165,6 +171,39 @@ export const artifactCallAgentApiInputSchema =
   artifactApiRequestInputSchema.safeExtend({
     artifactId: z.string().min(1),
   });
+
+export const artifactSendPromptInputSchema = z.object({
+  artifactId: z.string().min(1),
+  prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+});
+
+export const artifactAgentInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const artifactPromptChoiceInputSchema = z
+  .object({
+    id: z.string().min(1),
+    pair: sessionPairSchema.nullable(),
+  })
+  .merge(sessionChoiceReferencesSchema);
+
+export const artifactSendPromptResultSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    agentId: z.string(),
+    sessionId: z.string().nullable(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    reason: z.enum([
+      "not-allowed",
+      "agent-unreachable",
+      "spend-limit",
+      "profile-unavailable",
+    ]),
+  }),
+]);
 
 export const artifactCallAgentApiResultSchema = z.discriminatedUnion("ok", [
   z.object({

@@ -135,14 +135,19 @@ export const agentsRouter = t.router({
     .input(agentCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.create(input);
-      return toListedAgentView({
-        agent,
-        access: {
-          role: "owner",
-          editors: [],
-          permissions: [...AGENT_PERMISSIONS],
-        },
-      });
+      return {
+        ...toListedAgentView({
+          agent,
+          access: {
+            role: "owner",
+            editors: [],
+            permissions: [...AGENT_PERMISSIONS],
+          },
+        }),
+        ...(agent.defaultProvider && {
+          defaultProvider: agent.defaultProvider,
+        }),
+      };
     }),
 
   update: manageAgentsProcedure

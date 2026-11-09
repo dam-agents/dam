@@ -19,9 +19,17 @@ export function stripControlChars(name: string): string {
   return [...name]
     .filter((c) => {
       const code = c.codePointAt(0) ?? 0;
-      return code >= 0x20 && code !== 0x7f;
+      return code >= 0x20 && !(code >= 0x7f && code <= 0x9f);
     })
     .join("");
+}
+
+export function displayLabel(label: string): string {
+  const kept = [...stripControlChars(label)].filter((c) => {
+    const code = c.codePointAt(0) ?? 0;
+    return code < 0xd800 || code > 0xdfff;
+  });
+  return kept.slice(0, 200).join("");
 }
 
 export async function resolveGitHubIdentity(

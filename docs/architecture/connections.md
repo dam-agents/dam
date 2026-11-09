@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-29
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -76,15 +76,17 @@ Exact field shapes live in the [Connections contract types](../../packages/api-s
 
 An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
 A session picks its model per turn, and the provider follows from the name.
-Creation grants the one it names, else one provider Connection the owner holds that the harness runs on: the first in the harness's provider order, taken from the providers its [starter kit](starter-kits.md) lists when the owner holds one of them ([agent-lifecycle](agent-lifecycle.md#create)).
+Creation grants the one it names, else one provider Connection the owner holds that the harness runs on: the provider of the owner's [default for new agents](profiles.md#the-default-for-new-agents) when the agent starts on that profile, else the first in the harness's provider order, taken from the providers its [starter kit](starter-kits.md) lists when the owner holds one of them ([agent-lifecycle](agent-lifecycle.md#create)).
 The agent's Providers section lists every provider Connection the owner holds with a grant toggle; picking a profile grants the provider it runs on ([profiles](profiles.md)).
-A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider gives the install's default harness first, unless a starter kit lists other providers.
+A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider grants — the provider of the owner's [default for new agents](profiles.md#the-default-for-new-agents) where they hold one, else the first in the provider order of the harness a plain create boots on (the default's, else the install's), and none while the owner holds no active provider that harness runs on — unless a starter kit lists other providers.
 A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-machine).
 
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
+A key that passes names its account where the provider tells that key: an Anthropic OAuth token the email and organization of its profile, an Anthropic or OpenAI API key the organization its provider answers with, an IBM LiteLLM or Bob key the user it belongs to, and a Bedrock key its AWS account.
+The account is extra: a lookup that fails leaves the key passed, with no account.
 A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which Settings › Providers also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
@@ -126,6 +128,7 @@ A **GitHub App** installation and a **GitHub sign-in** made through a GitHub App
 A Connection that acts as a person rather than as the Agent records **whose account** it acts as, so the product can name that person wherever the Connection is listed.
 The platform asks the provider with the Connection's own credential (Slack, GitHub and the Google services today) when the credential first works: at the OAuth callback, at create for a token, and again on every re-consent or rotation, since a new credential may belong to someone else.
 The answer is a platform-derived fact on the Connection, never a user input.
+A label the provider chooses, such as an account or a repository name, is cleaned of control characters and capped in length before it is stored or shown, so a hostile host cannot spoof the terminal or the page with it.
 A lookup that fails costs nothing but the label.
 Connections made before this existed are labelled by a background sweep that tries each one once per api-server process, so a credential the provider refuses is not retried in a loop.
 
@@ -177,12 +180,12 @@ Naming refuses them and delivery drops them, and the Agents already holding one 
 
 Naming a Connection is only *required* where two of them genuinely collide: the same header on the same host over paths that overlap.
 Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address.
-Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
+Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end — unless the Agent requires naming (below), where it carries no credential of the Agent's at all.
 
 An Agent can make naming *required* for every one of its Connections; a new one does unless its create or starter kit says otherwise.
 The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
-Contested scopes still fail closed.
+That holds on contested scopes too: a request naming none of two rival Connections goes upstream unchanged, so a public download from a host where the Agent holds two accounts answers as it does to anyone, and nothing is ambiguous, since no credential is chosen.
 It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
 Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
@@ -196,7 +199,7 @@ How two GitHub accounts share one host, through gh's own hosts file, is on [gith
 
 Two limits follow.
 First, an address exists only where the platform writes one or the Agent can send one.
-A Connection reached with no credential of the Agent's own — a Custom Header credential that sets no env — has no address the Agent can use, and two Connections whose placeholders would land in one env — two accounts of one Google service, both writing the same variable — can deliver only one of them, so in either case two such Connections that collide can never both work: every request where their paths overlap is refused.
+A Connection reached with no credential of the Agent's own — a Custom Header credential that sets no env — has no address the Agent can use, and two Connections whose placeholders would land in one env — two accounts of one Google service, both writing the same variable — can deliver only one of them, so in either case two such Connections that collide can never both work: every request where their paths overlap is refused, or, on an Agent requiring naming, sent with neither credential.
 GitHub is the collision the platform resolves, through gh's hosts file.
 The Connections context therefore refuses to grant an Agent a Connection that collides with one it holds unless both are addressed — when a grant is added and when an Agent is created with its first grants — and the connection pickers say which granted Connection is in the way.
 An Agent that already holds such a pair can still change its other grants, and is shown a warning naming the pair until one is revoked.
@@ -290,7 +293,7 @@ Which model provider an agent runs against follows from the Connection it is gra
 Bob is the case that needs more than a base URL.
 It prefixes every gateway call with its own service path, and that prefix is not configurable, so the Connection also declares the prefix rewrite the gateway applies; the auth scheme needs no such treatment, because the gateway overwrites the credential header outright.
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
-Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
+Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since only the Bob Shell Connection's own settings reach one.
 The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
 The [owner model catalog](owner-model-catalog.md) lists the same models without an agent, reading the stored key in the api-server itself.
 Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
@@ -303,8 +306,9 @@ A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude a
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender (own key)` so it cannot be confused with the deployment's own.
+Where the deployment offers CurveBender, Settings / Providers lists the own-key row only to a user who already connected their own key.
 
-Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness.
+Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness beyond what its manifest claims.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
 A smaller number compacts well below the real ceiling, and a larger one makes it compact too late and the endpoint refuses the call.
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
@@ -321,7 +325,8 @@ Its **Try now** button attaches the shared Connection and selects its work model
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
-The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
+The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on the default profile while the user holds none.
+It follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender (shared)` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
@@ -340,12 +345,17 @@ Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API 
 Such a key authenticates as a bearer token on both the Bedrock and Bedrock Runtime APIs, so this is an ordinary header Connection: the gateway overwrites `Authorization` with `Bearer <key>` on the region's runtime host, and the agent holds only a placeholder in `AWS_BEARER_TOKEN_BEDROCK`.
 The region is a required input at connect time and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a Connection serves one region; it also lands in `AWS_REGION`.
 The key is injected on the region's control-plane host too, `bedrock.<region>.amazonaws.com`, which the Connection names in `AWS_ENDPOINT_URL_BEDROCK`: that is where the region's inference profiles are listed, so an agent is offered only models Bedrock can invoke there.
+That listing names the profiles that can be invoked from the region, each carrying a region prefix a bare model ID lacks, which is why a typed ID is the wrong unit to offer.
+Models Bedrock also serves on demand under their bare ID are not in that listing, so they are not offered either; the Anthropic models a coding harness runs on are reachable only through a profile.
+What no listing can say is whether the account has been granted a model: that is learned at the first call, as an error the turn reports.
 The key check lists those profiles too, before the key is saved: Bedrock answers a wrong, malformed or expired key with a 403 that says so, which refuses it, and any other answer leaves it unverified, since a key may invoke models without the right to list profiles.
 An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).
 
-**Claude Code** runs on it in Bedrock mode, through the Model Router; a routed Pi does not reach it ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
+**Claude Code** and **Pi** run on it in their own Bedrock mode, through the Model Router ([harness configuration](harness-config.md#the-model-catalog)).
+Pi is offered the inference profiles the control-plane host lists, but its image and video models, and runs them on its own Bedrock provider with the router as its Bedrock Runtime endpoint (`AWS_ENDPOINT_URL_BEDROCK_RUNTIME`).
+The Connection's pinned model is always offered, and alone when the key may not list profiles.
 Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present in a process the runtime did not mark as routed, and leaves model choice to Claude Code itself.
 At start it resolves each of its model tiers to the region's profile, falling back to an earlier version, or from Opus to Sonnet, when the account cannot invoke the default; the platform pins no tier, which would lose that fallback.
 The pin is a new session's default only, and Claude Code ignores it when the account cannot invoke it.

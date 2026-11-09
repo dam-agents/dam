@@ -83,9 +83,11 @@ export interface SlackLoopGuardDrop {
   name: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first.
+// UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first. `limit` bot posts per `windowMs` start turns, and the first one over pauses them for `cooldownMs`.
 export interface SlackLoopGuardDrops {
   limit: number;
+  windowMs: number;
+  cooldownMs: number;
   dropped: number;
   lastDroppedAt: string;
   recent: SlackLoopGuardDrop[];
@@ -162,6 +164,7 @@ export interface Agent {
   disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  startWaitMessage?: string;
   reclaimed?: AgentReclaim;
   podTerminationReason?: string;
   podTerminationCode?: string;
@@ -185,6 +188,14 @@ export interface Agent {
   kitUpdateSkipped?: string;
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
+  defaultProvider?: AgentDefaultProvider;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the provider a create that named none was granted, and why. `source` names what chose it: the owner's default for new agents when the agent starts on that profile (`profile` then holds it), else the starter kit's providers list, else the providers its Template lists for a harness the catalog does not know, else the first the harness runs on in its provider order; `profile` is null for all but the first. Only the create's own answer carries it. */
+export interface AgentDefaultProvider {
+  connectionId: string;
+  source: "profile" | "kit" | "template" | "harness";
+  profile: { name: string; model: string; harness: string } | null;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
@@ -366,7 +377,9 @@ export interface AgentsService {
     slackChannelId: string,
     ambient?: boolean,
     customEmoji?: string[] | null,
+    options?: { quiet?: boolean },
   ) => Promise<ConnectSlackResult>;
+  announceSlackConnect: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (
     id: string,
     slackChannelId?: string,

@@ -83,6 +83,8 @@ export function createCatalogEndpoints(
   catalog: {
     providers(): CatalogProvider[];
     forHarness(harness: string): CatalogEntry[];
+    /* UNIT_BOUNDARY_DESCRIPTION: a harness whose list already comes in serving order, which the endpoints keep instead of putting the harness's home provider first. */
+    ordered?(harness: string): boolean;
     listed?(): Promise<void>;
   },
   firstListingWaitMs = FIRST_LISTING_WAIT_MS,
@@ -125,7 +127,10 @@ export function createCatalogEndpoints(
             },
           });
       }
-      const entries = homeFirst(catalog.forHarness(harness), harness);
+      const listed = catalog.forHarness(harness);
+      const entries = catalog.ordered?.(harness)
+        ? listed
+        : homeFirst(listed, harness);
       if (path === "/v1/models")
         return json(res, 200, openAiModelList(entries, catalog.providers()));
       if (path === CODEX_CATALOG_PATH)
@@ -140,11 +145,6 @@ export function createCatalogEndpoints(
         );
       if (path === "/v1/model/info")
         return json(res, 200, liteLlmModelInfo(entries));
-      if (path.startsWith("/admin/"))
-        return json(res, 404, {
-          error:
-            "not served by the model router: Bob's admin API belongs to its own gateway",
-        });
       return false;
     },
   };

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The palette's Get started command drives the floating checklist itself: opening goes through the same entry the avatar picker uses, which also brings back a dismissed checklist, and closing collapses the open card to its pill.
+// TEST_OVERVIEW: The palette's Get started command drives the sidebar checklist itself: opening goes through the same entry the avatar picker uses, which also brings back a dismissed checklist, and closing closes the popover it opened.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -17,7 +17,7 @@ const { useStore } = await import("../../store.js");
 const { usePaletteActions } =
   await import("../../modules/command-palette/hooks/use-palette-actions.js");
 
-// TEST_SCENARIO: "get started: open checklist" asks the checklist's own opener, and "close checklist" collapses the card.
+// TEST_SCENARIO: "get started: open checklist" asks the checklist's own opener, and "close checklist" closes the popover.
 it("opens and closes the floating checklist", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let actions: PaletteActions | undefined;

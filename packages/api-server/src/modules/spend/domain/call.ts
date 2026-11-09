@@ -51,6 +51,15 @@ export interface CallRecord {
   readonly durationMs: number;
 }
 
+export type EstimateReason =
+  | "stream-cut"
+  | "output-uncounted"
+  | "providers-ambiguous"
+  | "model-unpriced"
+  | "usage-missing"
+  | "cost-unknown"
+  | "record-missing";
+
 export type CallMeasure =
   | { readonly kind: "forget" }
   | { readonly kind: "skip" }
@@ -61,6 +70,7 @@ export type CallMeasure =
       readonly model: string;
       readonly priceSource: PriceSource;
       readonly needsReferenceCost: boolean;
+      readonly estimateReasons: readonly EstimateReason[];
       readonly amounts: CallAmounts;
     };
 
@@ -95,11 +105,17 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
   });
   const cost = callCostMicros(price, metered);
   const needsReferenceCost = record.final && (cost === null || !reported);
-  const estimated =
-    outputShort ||
-    ambiguous ||
-    price.source === "estimate" ||
-    needsReferenceCost;
+  const estimateReasons = (
+    [
+      [outputShort && !record.complete, "stream-cut"],
+      [outputShort && record.complete, "output-uncounted"],
+      [ambiguous, "providers-ambiguous"],
+      [price.source === "estimate", "model-unpriced"],
+      [record.final && !reported, "usage-missing"],
+      [record.final && reported && cost === null, "cost-unknown"],
+    ] as const
+  ).flatMap(([applies, reason]) => (applies ? [reason] : []));
+  const estimated = estimateReasons.length > 0;
   return {
     kind: "measured",
     provider,
@@ -107,6 +123,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     model: record.model ?? UNKNOWN_MODEL,
     priceSource: price.source,
     needsReferenceCost,
+    estimateReasons,
     amounts: {
       costMicros: cost ?? 0,
       uncachedInputTokens: metered.uncachedInputTokens,

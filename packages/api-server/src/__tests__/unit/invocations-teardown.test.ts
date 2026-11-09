@@ -39,6 +39,7 @@ function row(
     exitCode: null,
     output: null,
     outputExpiresAt: null,
+    startedAt: null,
     harnessConfig: null,
     driverSessionId: null,
     ...overrides,
@@ -56,6 +57,8 @@ function fakeRepo(rows: InvocationRow[]) {
   const repo: InvocationsRepository = {
     insert: async () => {},
     get: async (id) => byId.get(id) ?? null,
+    markStarted: async () => null,
+    failExpired: async () => false,
     complete: async () => true,
     fail: calls.fail,
     listExpiredRunning: async () => [],

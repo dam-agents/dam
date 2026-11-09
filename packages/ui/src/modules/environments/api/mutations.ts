@@ -16,6 +16,16 @@ export function useExtendEnvironment() {
   });
 }
 
+export function useSetEnvironmentAwake() {
+  return useMutation({
+    ...trpc.environments.setAwake.mutationOptions(),
+    meta: {
+      ...invalidatesEnvironments,
+      errorToast: "Couldn't change whether it sleeps",
+    },
+  });
+}
+
 export function useDeleteEnvironment() {
   return useMutation({
     ...trpc.environments.delete.mutationOptions(),
@@ -26,12 +36,22 @@ export function useDeleteEnvironment() {
   });
 }
 
-export function useSetEnvironmentAccessList() {
+export function useSetAgentEnvironmentMembers() {
   return useMutation({
-    ...trpc.environments.setAccessList.mutationOptions(),
+    ...trpc.environments.setAgentMembers.mutationOptions(),
     meta: {
       ...invalidatesEnvironments,
-      errorToast: "Couldn't save who may open Environments",
+      errorToast: "Couldn't save the agent's Environment members",
+    },
+  });
+}
+
+export function useSetEnvironmentMembers() {
+  return useMutation({
+    ...trpc.environments.setMembers.mutationOptions(),
+    meta: {
+      ...invalidatesEnvironments,
+      errorToast: "Couldn't save who may open the Environment",
     },
   });
 }

@@ -1,8 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { LiteLlmProxyForm } from "../../modules/providers/components/litellm-proxy/form.js";
+
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 
 describe("LiteLLM provider labels and documentation", () => {
   it.each(["wizard", "edit"] as const)(

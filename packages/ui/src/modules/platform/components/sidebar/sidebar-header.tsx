@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { BrandLogoSlot } from "@/components/brand-logo-slot";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -26,9 +26,9 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           type="button"
           onClick={onHome}
           aria-label={getBrand().name}
-          className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-10 items-center rounded-lg px-2.5 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
         >
-          <BrandLogo />
+          <BrandLogoSlot />
         </button>
       )}
       <Tooltip content={toggleLabel} side="right">
@@ -38,22 +38,21 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
           aria-label={toggleLabel}
           aria-expanded={expanded}
           className={cn(
-            "group relative flex items-center justify-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
+            "group relative flex items-center rounded-lg transition-colors hover:bg-muted hover:text-foreground",
             expanded
-              ? "p-1.5 text-muted-foreground"
-              : "h-10 w-10 text-foreground/80",
+              ? "justify-center p-1.5 text-muted-foreground"
+              : "h-10 w-full justify-start pl-2.5 text-foreground/80",
           )}
         >
           {expanded ? (
             <ChevronLeft size={16} />
           ) : (
-            <>
-              <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
+            <BrandLogoSlot logoClassName="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0">
               <ChevronRight
                 size={16}
                 className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
               />
-            </>
+            </BrandLogoSlot>
           )}
         </button>
       </Tooltip>

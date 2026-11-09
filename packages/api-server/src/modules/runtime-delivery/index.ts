@@ -11,6 +11,7 @@ export type {
   EventLifecycleTransition,
 } from "./services/event-lifecycle.js";
 export {
+  costReviewEvent,
   initializationEvent,
   kitUpdateEvent,
   sessionPairFields,

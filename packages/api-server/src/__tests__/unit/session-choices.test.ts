@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import type { HarnessCatalog } from "api-server-api";
+import { describe, expect, it } from "vitest";
+import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
 import type { SessionPair } from "api-server-api";
 import { resolveFirePair } from "../../modules/harness-config/services/harness-config-service.js";
 import { createSessionChoicesValidator } from "../../modules/harness-config/services/session-choices.js";
@@ -52,7 +52,7 @@ const ROUTED = {
             ],
           },
         ],
-        modelConstraints: { mini: { effort: ["low"] } },
+        modelConstraints: { "gpt-5-mini": { effort: ["low"] } },
       },
     },
     { name: "codex", harnessConfig: true, sessionModel: true },
@@ -63,6 +63,12 @@ function validator(over?: {
   capabilities?: unknown;
   granted?: { id: string; type: "ibm-litellm" | "openai" | "anthropic" }[];
   listed?: Record<string, string[] | null>;
+  catalog?: Record<string, string[]>;
+  firePair?: {
+    harness: string;
+    provider: string | null;
+    model: string | null;
+  } | null;
 }) {
   return createSessionChoicesValidator({
     catalog: CATALOG,
@@ -82,7 +88,20 @@ function validator(over?: {
       },
     },
     getCapabilities: async () => over?.capabilities ?? ROUTED,
-    firePair: async () => undefined,
+    /* UNIT_BOUNDARY_DESCRIPTION: the owner's listing for one Connection and harness, which says what runs natively there (D193B). */
+    ownerCatalog: async () =>
+      ({
+        providers: Object.entries(over?.catalog ?? {}).map(
+          ([connectionId, models]) => ({
+            connectionId,
+            models: models.map((name) => ({
+              name,
+              harnesses: ["claude-code", "codex"],
+            })),
+          }),
+        ),
+      }) as unknown as Pick<OwnerModelCatalogView, "providers">,
+    firePair: async () => over?.firePair ?? undefined,
   });
 }
 
@@ -244,6 +263,12 @@ describe("a subagent model beside a natively run provider", () => {
     saved: SessionPair | null = null,
   ) => {
     const pairRepo = {
+      readSaved: async () => ({
+        chat: null,
+        channel: null,
+        scheduled: null,
+        chatProfileId: null,
+      }),
       read: async () => saved,
       write: async () => {},
       grantedProviders: async () => granted as never,
@@ -253,11 +278,13 @@ describe("a subagent model beside a natively run provider", () => {
       pairRepo,
       snapshotRepo: { read: async () => null },
       getCapabilities: async () => capabilities,
+      ownerCatalog: async () => ({ providers: [] }),
       firePair: (agentId, kind, preferred) =>
         resolveFirePair(
           {
             catalog,
             pairRepo,
+            ownerCatalog: async () => ({ providers: [] }),
             getCapabilities: async () => capabilities,
             specHarness: async () => undefined,
           },
@@ -315,5 +342,124 @@ describe("a subagent model beside a natively run provider", () => {
     expect(
       await check("a", { settings: { subagentModel: "claude/ibm/gpt-5.5" } }),
     ).toBeUndefined();
+  });
+});
+
+describe("an inheriting schedule's subagent", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: an agent whose runtime default harness is Claude Code and whose scheduled default is Codex, the pair a fire inheriting it runs on (D193B). */
+  const CAPABILITIES = {
+    modelRouter: true,
+    defaultHarness: "claude-code",
+    harnesses: [
+      { name: "claude-code", harnessConfig: true, sessionModel: true },
+      {
+        name: "codex",
+        harnessConfig: true,
+        sessionModel: true,
+        platformSubagentSettings: true,
+        sessionSettings: ["subagentModel", "subagentEffort"],
+        harnessConfigCatalog: {
+          options: [
+            {
+              id: "subagentModel",
+              name: "Subagent model",
+              category: "model",
+              subagents: true,
+              choices: [{ value: "openai/gpt-5.5", name: "GPT 5.5" }],
+            },
+            {
+              id: "subagentEffort",
+              name: "Subagent effort",
+              category: "thought_level",
+              subagents: true,
+              choices: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+            {
+              id: "effort",
+              name: "Effort",
+              category: "thought_level",
+              choices: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+          ],
+          modelConstraints: { "gpt-5.5": { subagentEffort: ["high"] } },
+        },
+      },
+    ],
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's listing for the scheduled default's Connection, which says the sub-agent's model runs natively there (D193B). */
+  const OWNER_CATALOG = {
+    providers: [
+      {
+        connectionId: "oai",
+        models: [{ name: "openai/gpt-5.5", harnesses: ["codex"] }],
+      },
+    ],
+  } as unknown as OwnerModelCatalogView;
+
+  function validator(
+    firePair: (
+      agentId: string,
+      kind: "scheduled",
+      preferred: { harness?: string; model?: string },
+    ) => Promise<{ harness: string; provider: string; model: string }>,
+  ) {
+    return createSessionChoicesValidator({
+      catalog: CATALOG,
+      pairRepo: {
+        read: async () => null,
+        grantedProviders: async () => [
+          { id: "oai", type: "openai" as const },
+          { id: "lite", type: "ibm-litellm" as const },
+        ],
+      },
+      snapshotRepo: { read: async () => null },
+      getCapabilities: async () => CAPABILITIES,
+      ownerCatalog: async () => OWNER_CATALOG,
+      firePair,
+    });
+  }
+
+  const inherited = {
+    "platformSubagent.harness": "codex",
+    "platformSubagent.model": "openai/gpt-5.5",
+  };
+
+  /** TEST_SCENARIO: a schedule naming no harness or model inherits the scheduled default, and its sub-agent is derived against that pair, not against the runtime's default: the derived effort is judged by the effective harness's model constraints, so a value it disallows is refused and one it allows passes (D193B). */
+  it("derives against the pair the fire inherits", async () => {
+    const asked: { harness?: string; model?: string }[] = [];
+    const firePair = async (
+      _agentId: string,
+      _kind: "scheduled",
+      preferred: { harness?: string; model?: string },
+    ) => {
+      asked.push(preferred);
+      return {
+        harness: "codex",
+        provider: "oai",
+        model: "openai/gpt-5.5",
+      };
+    };
+    const check = validator(firePair);
+    await expect(
+      check("a", {
+        settings: { ...inherited, "platformSubagent.effort": "low" },
+      }),
+    ).resolves.toMatch(
+      /subagentEffort setting is not available for openai\/gpt-5.5/,
+    );
+    await expect(
+      check("a", {
+        settings: { ...inherited, "platformSubagent.effort": "high" },
+      }),
+    ).resolves.toBeUndefined();
+    expect(
+      asked.every((preferred) => Object.keys(preferred).length === 0),
+    ).toBe(true);
   });
 });

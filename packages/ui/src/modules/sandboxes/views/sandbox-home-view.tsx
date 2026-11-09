@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   findAgent,
   useAgents,
@@ -21,14 +20,18 @@ import {
   useEnvironments,
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
-import { EnvironmentsSection } from "../../environments/components/environments-section.js";
+import { AgentEnvironmentsSection } from "../../environments/components/agent-environment-members.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
-import { AgentModelSettingsSection } from "../components/agent-config-sections.js";
+import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
+import {
+  AgentDescriptionSection,
+  AgentModelSettingsSection,
+} from "../components/agent-config-sections.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
@@ -88,20 +91,16 @@ function AgentHome({ agent }: { agent: AgentView }) {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  const chatFormsEnabled = useChatFormsEnabled();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     environmentsEnabled && agent ? agent.id : null,
-    { poll: false },
   );
   const agentHasEnvironments = environmentsShown({
     enabled: environmentsEnabled,
     count: environments.data?.length,
   });
   const sections = SECTIONS.filter(
-    (e) =>
-      (chatFormsEnabled || e.section !== "chat-forms") &&
-      (agentHasEnvironments || e.section !== "environments"),
+    (e) => agentHasEnvironments || e.section !== "environments",
   );
   const locked = new Set(
     sections
@@ -137,6 +136,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
+              <AgentDescriptionSection agent={agent} />
               {holds(agent.access, "sessions") && (
                 <AgentUsageActions agent={agent} />
               )}
@@ -154,7 +154,10 @@ function AgentHome({ agent }: { agent: AgentView }) {
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
           ) : section === "chat-forms" ? (
-            <ChatFormSettings agentId={agent.id} />
+            <>
+              <ChatFormSettings agentId={agent.id} />
+              <ThinkingSetting />
+            </>
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
           ) : section === "schedules" ? (
@@ -166,7 +169,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
               }
             />
           ) : section === "environments" ? (
-            <EnvironmentsSection agentId={agent.id} header={header} />
+            <AgentEnvironmentsSection agentId={agent.id} header={header} />
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (

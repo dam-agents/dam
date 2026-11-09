@@ -7,6 +7,7 @@ import { AddRow, ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
+import { AgentModelPicker } from "../../sandboxes/components/agent-model-picker.js";
 import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
@@ -135,6 +136,7 @@ export function SchedulesPanel({
           )}
         </section>
       )}
+      {!panel && <AgentModelPicker agentId={agentId} kind="scheduled" />}
 
       {form && (
         <ScheduleFormModal

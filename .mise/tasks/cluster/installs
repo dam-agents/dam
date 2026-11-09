@@ -10,11 +10,16 @@ set -eo pipefail
 # An install is a `platform*` Helm release in a namespace of its own, so the
 # release list is the install list: nothing else records one. Its port is in the
 # cluster's one Traefik config, one entrypoint per install, which is also what
-# the installs read to find a free port.
+# the installs read to find a free port; the entrypoint is named after the
+# install, so it is looked up per release rather than read off the config.
 ONLY="$CLUSTER_RELEASE"
 [ "${usage_all:-false}" != true ] || ONLY=""
-PORTS="$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
-  yq -r '.ports // {} | to_entries[] | .key + "=" + (.value.exposedPort | tostring)' 2>/dev/null || true)"
+PORTS="$(helm list -A -q 2>/dev/null | while read -r release; do
+  install=""
+  [ "$release" = platform ] || install="${release#platform-}"
+  port="$(cluster_install_port "$install" 2>/dev/null || true)"
+  [ -z "$port" ] || printf '%s=%s\n' "$release" "$port"
+done)"
 export ONLY PORTS
 helm list -A -o json 2>/dev/null | python3 -c '
 import json, os, sys

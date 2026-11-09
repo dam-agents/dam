@@ -20,16 +20,25 @@ import {
 import type { AgentApiClient } from "./infrastructure/agent-api-client.js";
 import { createArtifactLibraryRepository } from "./infrastructure/artifact-library-repository.js";
 import {
+  createArtifactPromptChoices,
+  createArtifactPromptPair,
+} from "./infrastructure/artifact-prompt-profile.js";
+import type { RunBoundary } from "../harness-config/domain/run-boundary.js";
+import type { ProfileResolver } from "../profiles/index.js";
+import {
   createKeycloakShareIdentity,
   keycloakShareJwksUrl,
 } from "./infrastructure/keycloak-share-identity.js";
 import {
   createArtifactLibraryService,
+  type ArtifactLibraryDeps,
   type ArtifactLibraryServiceImpl,
+  type ArtifactScope,
 } from "./services/artifact-library-service.js";
 import {
   createShareBridgeService,
   type ShareBridgeService,
+  type ViewerPromptDelivery,
 } from "./services/share-bridge-service.js";
 import { createViewerPromptDelivery } from "./infrastructure/viewer-prompt-delivery.js";
 import {
@@ -58,16 +67,23 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   artifacts: ArtifactService;
   owner: string;
   surface: string;
+  scope?: ArtifactScope;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
+  featureOn: (owner: string) => Promise<boolean>;
+  prompts: ViewerPromptDelivery;
+  validateChoice?: ArtifactLibraryDeps["validateChoice"];
 }
 
 export type ArtifactLibraryFor = (
   owner: string,
   surface: string,
-  opts?: Pick<ComposeArtifactLibraryForOwnerOpts, "agentExists">,
+  opts?: Pick<
+    ComposeArtifactLibraryForOwnerOpts,
+    "agentExists" | "scope" | "validateChoice"
+  >,
 ) => ArtifactLibraryServiceImpl;
 
 export function composeArtifactLibraryForOwner(
@@ -82,10 +98,15 @@ export function composeArtifactLibraryForOwner(
         .enum(["ui", "cli", "mcp", "system", "other"])
         .catch("other")
         .parse(opts.surface),
+      ...(opts.scope ? { scope: opts.scope } : {}),
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
       ensureReady: opts.ensureReady,
       agentApi: opts.agentApi,
+      featureOn: () => opts.featureOn(opts.owner),
+      prompts: opts.prompts,
+      promptChoices: createArtifactPromptChoices(opts.db),
+      ...(opts.validateChoice ? { validateChoice: opts.validateChoice } : {}),
     }),
   };
 }
@@ -182,23 +203,27 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
   });
 }
 
+export function composeArtifactPromptDelivery(opts: {
+  makeAcpClient: AcpClientFactory;
+  ensureReady: (agentId: string) => Promise<void>;
+  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
+  attendance: ChannelTurnAttendance;
+  db: Db;
+  resolveProfile: ProfileResolver;
+  boundary?: RunBoundary;
+}): ViewerPromptDelivery {
+  const { db, resolveProfile, boundary, ...rest } = opts;
+  return createViewerPromptDelivery({
+    ...rest,
+    promptPair: createArtifactPromptPair(db, resolveProfile, boundary),
+  });
+}
+
 export function composeShareBridge(opts: {
   featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  makeAcpClient: AcpClientFactory;
-  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
-  attendance: ChannelTurnAttendance;
+  prompts: ViewerPromptDelivery;
 }): ShareBridgeService {
-  return createShareBridgeService({
-    featureOn: opts.featureOn,
-    ensureReady: opts.ensureReady,
-    agentApi: opts.agentApi,
-    prompts: createViewerPromptDelivery({
-      makeAcpClient: opts.makeAcpClient,
-      ensureReady: opts.ensureReady,
-      spendHold: opts.spendHold,
-      attendance: opts.attendance,
-    }),
-  });
+  return createShareBridgeService(opts);
 }

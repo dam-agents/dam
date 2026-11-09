@@ -1,4 +1,6 @@
+import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
+import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
@@ -89,6 +91,7 @@ import {
   MAX_AVATAR_BYTES,
   storeAvatarImage,
   sweepAvatarImages,
+  startWaitOf,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -119,6 +122,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackOwnedThreadsRepository } from "./modules/channels/infrastructure/slack-owned-threads-repository.js";
 import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
   createFakeSlackGateway,
@@ -186,6 +190,7 @@ import {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   createInitializationPairResolver,
+  createRunBoundary,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -254,6 +259,7 @@ import {
   composeShareAuth,
   composeShareRelayTokens,
   composeShareRenderTokens,
+  composeArtifactPromptDelivery,
   composeShareBridge,
   composeShareViewer,
   createAgentApiClient,
@@ -298,6 +304,7 @@ import {
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
+  createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
@@ -312,7 +319,10 @@ import {
   composeEnvironments,
   createEgressIdentityResolver,
   environmentNameLookup,
+  environmentsDomainOf,
+  environmentsPortOf,
 } from "./modules/environments/index.js";
+import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
@@ -324,13 +334,17 @@ import {
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
+import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
   listSpendLimitAgentIds,
+  type SpendHoldGate,
 } from "./modules/spend/index.js";
+import type { ChannelSpendHold } from "./modules/channels/infrastructure/spend-hold-copy.js";
 import { composeProviderStatus } from "./modules/provider-status/index.js";
 import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
+import { startSpendAlerts } from "./modules/spend-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -383,7 +397,10 @@ import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { composeProfileResolver } from "./modules/profiles/index.js";
+import {
+  composeProfileResolver,
+  composeProfileResolverOn,
+} from "./modules/profiles/index.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -769,6 +786,10 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  const loginTestimonials = composeLoginTestimonialsModule({
+    db,
+    photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -816,6 +837,26 @@ export async function bootstrap() {
       : []),
   ];
   const { auth: shareAuth, cookie: shareCookie } = publicShareSignIn;
+  const agentKeys = composeAgentKeys({
+    db,
+    k8s: k8sClient,
+    hmacKey: config.apiKeyHmacKey,
+    domain: environmentsDomainOf(config.environmentsUrl),
+    port: environmentsPortOf(config.environmentsUrl),
+    listAgents: async () =>
+      (await agentsRepo.list()).flatMap((a) =>
+        a.owner
+          ? [{ id: a.id, owner: a.owner, environmentOf: a.spec.environmentOf }]
+          : [],
+      ),
+    identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+    log: (m) => getLogger().warn(`[agent-keys] ${m}`),
+  });
+  const environmentTokenKeys = createRemoteJWKSet(
+    new URL(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    ),
+  );
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -851,7 +892,11 @@ export async function bootstrap() {
         ],
         isApiKey: isApiKeyToken,
       },
-      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      oauth: {
+        issuer: keycloakRealmUrl(addresses.public, config.keycloakRealm),
+        keys: environmentTokenKeys,
+      },
+      ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
         agentsRepo.patchAnnotation(
           agentId,
@@ -860,6 +905,10 @@ export async function bootstrap() {
         ),
       namespace: config.namespace,
       brandName: config.brand.name,
+      agentOfKey: async (key) => {
+        const found = await agentKeys.access.resolve(key);
+        return found ? { agentId: found.agentId } : null;
+      },
     });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
@@ -867,6 +916,7 @@ export async function bootstrap() {
     const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
       ...agents.map((a) => a.spec.avatar),
       ...kits.map((k) => k.kit.avatar),
+      ...(await loginTestimonials.photoIds()).map((id) => `image:${id}`),
     ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
@@ -924,7 +974,10 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
-    resolveEvent: (agentId, event) => resolveInitializationPair(agentId, event),
+    resolveEvent: async (agentId, event) => {
+      const paired = await resolveInitializationPair(agentId, event);
+      return paired && resolveInvocationStart(agentId, paired);
+    },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -934,17 +987,37 @@ export async function bootstrap() {
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
   const resolveProfile = composeProfileResolver(db, subPseudonymizer);
 
+  const capabilitiesOf = async (agentId: string) =>
+    (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+      ?.runtimeCapabilities ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's catalog for one agent's Connections, the same listing the picker offers, and the settings a run's payload carries: the one place the server derives the native subagent keys (D193B). */
+  const ownerCatalogOf = async (agentId: string) => {
+    const owner = await resolveAgentOwner(agentId);
+    return owner === null
+      ? { providers: [] }
+      : connectionsServiceFor(owner).modelCatalog(agentId);
+  };
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    ownerCatalog: ownerCatalogOf,
     resolveProfile,
-    getCapabilities: async (agentId) =>
-      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-        ?.runtimeCapabilities ?? null,
+    getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
   });
+  /* UNIT_BOUNDARY_DESCRIPTION: the one helper every path that builds a run's payload uses, so a channel fallback, a schedule following its default and the defaults event cannot skip the derivation (D193B). */
+  const runBoundary = createRunBoundary({
+    inputsOf: async (agentId) => ({
+      capabilities: await capabilitiesOf(agentId).catch(() => null),
+      catalog: await ownerCatalogOf(agentId).catch(() => null),
+    }),
+    resolvePair: firePair,
+  });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
+  const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
+    getLogger().warn(msg),
+  );
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -1199,6 +1272,15 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
   });
   const publicAgentProfileSub = publicAgentPage.startSaga();
+  const agentKeysSub = agentKeys.startSaga();
+  await periodicJobs.register("agent-keys-issue", 30 * 60_000, async () => {
+    const issued = await agentKeys.issueAll();
+    if (issued > 0)
+      getLogger().info(
+        { issued },
+        "agent-keys: Agents checked for their Environments access",
+      );
+  });
   const attachFirstProviderSub = startAttachFirstProviderSaga(
     async (owner, connectionId) =>
       attachProviderToBareAgents(
@@ -1320,6 +1402,8 @@ export async function bootstrap() {
       namespace: config.namespace,
       catalog: harnessCatalog,
       resolveProfile,
+      resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
+      boundary: runBoundary,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1578,17 +1662,16 @@ export async function bootstrap() {
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
-  const spendHold = async ({
+  const spendHold: SpendHoldGate = async ({
     agentId,
     connectionId,
-  }: {
-    agentId: string;
-    connectionId?: string;
+    tellOwner,
   }) => {
     const payer = await payerOf(agentId);
     const hold = await spend.check.holdFor({
       payer,
       ...(connectionId ? { connectionId } : {}),
+      ...(tellOwner ? { tellOwner } : {}),
     });
     if (hold === null) return null;
     await spendQuestions.ask({
@@ -1598,7 +1681,7 @@ export async function bootstrap() {
     });
     return hold.reason;
   };
-  const channelSpendHold = async (agentId: string) => {
+  const channelSpendHold: ChannelSpendHold = async (agentId, tellOwner) => {
     const provider = (
       await firePair(agentId, "channel", {}).catch((err: unknown) => {
         if (isNoDefaultModelError(err)) return undefined;
@@ -1608,6 +1691,7 @@ export async function bootstrap() {
     return spendHold({
       agentId,
       ...(provider ? { connectionId: provider } : {}),
+      ...(tellOwner ? { tellOwner } : {}),
     });
   };
 
@@ -1644,7 +1728,11 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
-  const channelPair = createChannelProfiles(db, resolveProfile).pair;
+  const channelPair = createChannelProfiles(
+    db,
+    resolveProfile,
+    runBoundary,
+  ).pair;
   const grantedTemplates = createGrantedConnectionTemplates(db);
   const channelProviderOutage = createChannelProviderOutage({
     channelPair,
@@ -1662,24 +1750,33 @@ export async function bootstrap() {
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
       firePair: (agentId) => channelFirePair(agentId, "channel"),
+      runBoundary,
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const shareBridge = composeShareBridge({
-    featureOn: async (owner) =>
-      (
-        await composeFeaturesForOwner({
-          db,
-          owner,
-          surface: "system",
-          modes: config.featureModes,
-        }).features.flags()
-      )["interactive-artifacts"],
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiClient,
+  const interactiveArtifactsOn = async (owner: string) =>
+    (
+      await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "system",
+        modes: config.featureModes,
+      }).features.flags()
+    )["interactive-artifacts"];
+  const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+    db,
+    resolveProfile,
+    boundary: runBoundary,
+  });
+  const shareBridge = composeShareBridge({
+    featureOn: interactiveArtifactsOn,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiClient,
+    prompts: artifactPrompts,
   });
   const kbShareServing = composeKbShareServing({
     db,
@@ -1735,6 +1832,8 @@ export async function bootstrap() {
       : null;
   void agentIcons?.warm();
 
+  const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1752,11 +1851,14 @@ export async function bootstrap() {
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
+        templateDescription: async (id) =>
+          (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
+        ownedThreads: slackOwnedThreads,
         loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
@@ -1962,11 +2064,11 @@ export async function bootstrap() {
       db,
       catalog: harnessCatalog,
       resolveProfile,
-      getCapabilities: async (agentId) =>
-        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-          ?.runtimeCapabilities ?? null,
+      getCapabilities: capabilitiesOf,
+      ownerCatalog: ownerCatalogOf,
       firePair,
     }),
+    boundary: runBoundary,
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -2012,6 +2114,19 @@ export async function bootstrap() {
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
   const outageAlertsSaga = outageAlerts.startSaga();
+  const spendAlertsConnectionNames = createConnectionNames(db);
+  const spendAlertsSaga = startSpendAlerts({
+    redis: sharedRedis,
+    notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
+    agentName: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent && !agent.disabled ? agent.name : null;
+    },
+    connectionNames: (ownerSub) => spendAlertsConnectionNames.namesOf(ownerSub),
+    sessionCategories: (agentIds, sessionIds) =>
+      sessionDirectory.categorize(agentIds, sessionIds),
+    uiBaseUrl: config.uiBaseUrl,
+  });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
@@ -2054,8 +2169,12 @@ export async function bootstrap() {
       surface,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
+      scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
+      featureOn: interactiveArtifactsOn,
+      prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,
@@ -2074,10 +2193,24 @@ export async function bootstrap() {
           : [],
       ),
     runtimeMutator: runtimeDelivery.runtimeMutator,
+    editorsOf: composeAgentEditors(db).editorsOf,
+    describeAgent: async (agentId) => {
+      const agent = await agentsRepo.get(agentId).catch(() => null);
+      if (!agent?.owner) return null;
+      return {
+        name: agent.name,
+        ownerName: await userDirectory
+          .resolveDisplayNameBySub(agent.owner)
+          .catch(() => null),
+        environment: Boolean(agent.spec.environmentOf),
+      };
+    },
     config: {
       urlTemplate: config.environmentsUrl,
       maxPerAgent: config.environmentsMaxPerAgent,
       expiryMaxDays: config.environmentExpiryMaxDays,
+      idleTimeoutDefaultMin: config.environmentIdleTimeoutMinutes,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     },
   });
 
@@ -2090,6 +2223,7 @@ export async function bootstrap() {
 
   const agentCleanupSources: AgentCleanupSource[] = [
     environments.cleanupSource,
+    agentKeys.cleanupSource,
     {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
@@ -2121,8 +2255,17 @@ export async function bootstrap() {
       cleanup: satellitesBoot.onAgentDeleted,
     },
     {
+      name: "slack-owned-threads",
+      listAgentIds: () => slackOwnedThreads.listAgentIds(),
+      cleanup: (agentId: string) => slackOwnedThreads.forgetAgent(agentId),
+    },
+    {
       name: "chat-form-preferences",
       ...createChatFormPreferencesCleanup(db),
+    },
+    {
+      name: "cost-reviews",
+      ...createCostReviewsCleanup(db),
     },
     {
       name: "sidebar-order",
@@ -2334,9 +2477,12 @@ export async function bootstrap() {
           }
         : null;
     },
+    readStartWait: async (agentId) =>
+      startWaitOf(agentsRepo.peekCached(agentId)),
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
+    openCalls: spend.openCalls,
   });
   const invocationPinReconciler = composeInvocationPinReconciler({
     db,
@@ -2464,6 +2610,8 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    spendHold,
+    loginTestimonials,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },
@@ -2483,6 +2631,7 @@ export async function bootstrap() {
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
+    platformAccess: agentKeys.access,
     trustedHosts,
     agentCleanupHooks,
     environmentsFor: environments.environmentsFor,
@@ -2525,6 +2674,7 @@ export async function bootstrap() {
     kitUpstream,
     linkedKits,
     firePair,
+    runBoundary,
     reposService,
     apiKeysModule,
     satellitesBoot,
@@ -2570,6 +2720,7 @@ export async function bootstrap() {
     satellitesBoot,
     secretStore,
     spendHold,
+    openCalls: spend.openCalls,
     spendStatusFor: async (agentId: string, owner: string) =>
       spend
         .forOwner({
@@ -2599,6 +2750,7 @@ export async function bootstrap() {
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     environmentsFor: environments.environmentsFor,
+    servesEnvironments: environmentsDomainOf(config.environmentsUrl) !== null,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
@@ -2645,6 +2797,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
+    agentKeysSub.unsubscribe();
     attachFirstProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
@@ -2654,6 +2807,7 @@ export async function bootstrap() {
     spend.connectionLimitsSaga.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
+    spendAlertsSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();

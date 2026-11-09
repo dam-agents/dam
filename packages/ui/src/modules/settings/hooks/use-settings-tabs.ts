@@ -10,6 +10,7 @@ const BASE_TABS: readonly { value: SettingsTab; label: string }[] = [
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
   { value: "providers", label: "Providers" },
+  { value: "profiles", label: "Profiles" },
   { value: "connections", label: "Connections" },
   { value: "api-keys", label: "API keys" },
   { value: "usage", label: "Usage" },

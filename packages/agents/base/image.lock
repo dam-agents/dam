@@ -3,18 +3,18 @@
 lockfile_version = 2
 
 [[tools.aube]]
-version = "2.7.0"
+version = "2.8.3"
 backend = "packslip:github.com/aubepkg/aube"
 specifiers = ["latest"]
 
 [tools.aube."platforms.linux-arm64"]
-checksum = "sha256:51ae6018283347ca5c8d663066c77145bb1f5ff4d5e432fbc808d012d82aea03"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.0/aube-v2.7.0-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:a66fdb0676b44f3046f6e8de34ef394efcb654cde2b35d977686c00df8778634"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.3/aube-v2.8.3-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64"]
-checksum = "sha256:1a1c1771a7ee3619e774f2108124f4c8c2aa877e7deacf747be9847b3bbc1231"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.0/aube-v2.7.0-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:ad727102618a0e1b92e6ffc08762196d2fc8856faad883056e6e1db2c938cfda"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.3/aube-v2.8.3-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [[tools.fd]]
@@ -50,20 +50,7 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854672"
 provenance = "github-attestations"
 
 [[tools."github:docker/buildx"]]
-version = "0.38.0"
-backend = "github:docker/buildx"
-specifiers = ["latest"]
-
-[tools."github:docker/buildx".options]
-asset_pattern = "buildx-v{{ version }}.linux-arm64"
-
-[tools."github:docker/buildx"."platforms.linux-arm64"]
-checksum = "sha256:38e890e1a162bfdbf32fbe91404991dc4fc28e55b0de901b34374a061bab4d2c"
-url = "https://github.com/docker/buildx/releases/download/v0.38.0/buildx-v0.38.0.linux-arm64"
-url_api = "https://api.github.com/repos/docker/buildx/releases/assets/619849315"
-
-[[tools."github:docker/buildx"]]
-version = "0.38.0"
+version = "0.38.1"
 backend = "github:docker/buildx"
 specifiers = ["latest"]
 
@@ -71,24 +58,37 @@ specifiers = ["latest"]
 asset_pattern = "buildx-v{{ version }}.linux-amd64"
 
 [tools."github:docker/buildx"."platforms.linux-x64"]
-checksum = "sha256:4fe4cc38adf48169132749b6ca22a990928db0118e3407584ee553723115d287"
-url = "https://github.com/docker/buildx/releases/download/v0.38.0/buildx-v0.38.0.linux-amd64"
-url_api = "https://api.github.com/repos/docker/buildx/releases/assets/619849327"
+checksum = "sha256:e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4"
+url = "https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.linux-amd64"
+url_api = "https://api.github.com/repos/docker/buildx/releases/assets/660618355"
+
+[[tools."github:docker/buildx"]]
+version = "0.38.1"
+backend = "github:docker/buildx"
+specifiers = ["latest"]
+
+[tools."github:docker/buildx".options]
+asset_pattern = "buildx-v{{ version }}.linux-arm64"
+
+[tools."github:docker/buildx"."platforms.linux-arm64"]
+checksum = "sha256:3b83b3731916ba433feccaaa689fe5bcdc81c641d92c8e6c2ea865dfa141c97a"
+url = "https://github.com/docker/buildx/releases/download/v0.38.1/buildx-v0.38.1.linux-arm64"
+url_api = "https://api.github.com/repos/docker/buildx/releases/assets/660618318"
 
 [[tools."github:docker/compose"]]
-version = "5.6.0"
+version = "5.6.1"
 backend = "github:docker/compose"
 specifiers = ["latest"]
 
 [tools."github:docker/compose"."platforms.linux-arm64"]
-checksum = "sha256:733ec76717ceb59052a9609b9dadfb523b2df8eab57a54212872d10a58078ea2"
-url = "https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-aarch64"
-url_api = "https://api.github.com/repos/docker/compose/releases/assets/605922781"
+checksum = "sha256:42cfa75f51ad0ccf290bad37899e0038a8c10a0069e85233ecc1d53e3ff1347d"
+url = "https://github.com/docker/compose/releases/download/v5.6.1/docker-compose-linux-aarch64"
+url_api = "https://api.github.com/repos/docker/compose/releases/assets/661714743"
 
 [tools."github:docker/compose"."platforms.linux-x64"]
-checksum = "sha256:40343e21ca777173e69cff5dbafeb37c6f81f3b0d57d9e597f036e95eb63e76a"
-url = "https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64"
-url_api = "https://api.github.com/repos/docker/compose/releases/assets/605922749"
+checksum = "sha256:47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0"
+url = "https://github.com/docker/compose/releases/download/v5.6.1/docker-compose-linux-x86_64"
+url_api = "https://api.github.com/repos/docker/compose/releases/assets/661714739"
 
 [[tools."http:docker"]]
 version = "29.9.1"
@@ -179,53 +179,53 @@ checksum = "sha256:65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e2
 url = "https://dl.k8s.io/v1.37.1/bin/linux/amd64/kubectl"
 
 [[tools.node]]
-version = "26.11.1"
+version = "26.12.1"
 backend = "core:node"
 specifiers = ["26"]
 
 [tools.node."platforms.linux-arm64"]
-checksum = "sha256:170454fb022f5e9b5f6cc76c25fa32ef5100895be44eb04e92f9780591491bbf"
-url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-linux-arm64.tar.gz"
+checksum = "sha256:a6c01af459dd8972ab3fb08ee5da81244d26ba8c4944a62d5bbba8c597ae154f"
+url = "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:15fc043a51a5783f2f4b634561091658f5a7f0e3db03f997dca3a8033a33e45b"
-url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-linux-x64.tar.gz"
+checksum = "sha256:0fd1eb7770598f52a21995edf6ed35fc690400fa437c2386af329519e9143132"
+url = "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
-version = "0.94.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.94.0", digest = "sha256:7aada9961b23cb02cdb84c6eee9021d811681c2f29dfa2422f0ec0c48c898e69" }
+version = "0.96.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.96.0", digest = "sha256:97c97ec010b5d00c343acabb6ab1838558c73a2d7ec2e11e2b91a1f82b603a36" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
-specifiers = ["0.94.0"]
+specifiers = ["0.96.0"]
 
 [[tools."npm:@agentclientprotocol/codex-acp"]]
 version = "2.1.1"
-aube = { path = ".mise/locks/npm-agentclientprotocol-codex-acp/2.1.1", digest = "sha256:cacb313208130e5aacc3cc1b2eff051920e0e1b709d4decbe0ac20a7a2dceff5" }
+aube = { path = ".mise/locks/npm-agentclientprotocol-codex-acp/2.1.1", digest = "sha256:798dc64b37ae1e656c4a236992aecdda9ebf393ce49daaa695db5f1b3f1ff400" }
 backend = "npm:@agentclientprotocol/codex-acp"
 specifiers = ["2.1.1"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
-version = "1.7.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.7.0", digest = "sha256:f0416f25d62fdaeae4dda43e78a8317a710b32299a3387f99b82e26566440b51" }
+version = "2.0.2"
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/2.0.2", digest = "sha256:e7eca89dbcd5578c4d06fa1eacd417b0aedc9f07170e9a4387197de061688e2e" }
 backend = "npm:@agentclientprotocol/sdk"
-specifiers = ["1.7.0"]
+specifiers = ["2.0.2"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
-version = "1.3.0"
-aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.3.0", digest = "sha256:dc90f10d0bbe046249db98c8b60b292f0d96ff2752caa34413c7a81f3368a02b" }
+version = "1.4.0"
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.4.0", digest = "sha256:869e87cb7cde76dc8dc9d2c7c3d8c877a43b9b542c979ac964b38c7812024680" }
 backend = "npm:@earendil-works/pi-coding-agent"
-specifiers = ["1.3.0"]
+specifiers = ["1.4.0"]
 
 [[tools."npm:@github/copilot"]]
-version = "1.0.96"
-aube = { path = ".mise/locks/npm-github-copilot/1.0.96", digest = "sha256:fd1d7f241b68a58e936150897a39b7de590e71b804b3d111c8a94d188849bc05" }
+version = "1.0.103"
+aube = { path = ".mise/locks/npm-github-copilot/1.0.103", digest = "sha256:389f6fbc1f36bfc26492b8aa36c4377fd52ce4c95400b3b8bce064bb8433d1d9" }
 backend = "npm:@github/copilot"
-specifiers = ["1.0.96"]
+specifiers = ["1.0.103"]
 
 [[tools."npm:@ibm/bob"]]
-version = "2.0.8"
-aube = { path = ".mise/locks/npm-ibm-bob/2.0.8", digest = "sha256:7a97cfc9c20140ffc4f059162cc01a322849c6be27d4fbb5771940b5c57fdd62" }
+version = "2.0.9"
+aube = { path = ".mise/locks/npm-ibm-bob/2.0.9", digest = "sha256:24a6297fbcda1b3e3871aaccb1adce963b3b246bf3bde24016b350f1058b7ce8" }
 backend = "npm:@ibm/bob"
-specifiers = ["2.0.8"]
+specifiers = ["2.0.9"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"
@@ -269,7 +269,7 @@ specifiers = ["v0.5.0"]
 version = "0.19.0"
 backend = "pipx:hermes-agent"
 specifiers = ["0.19.0"]
-uv = { path = ".mise/locks/pipx-hermes-agent/0.19.0~857ab2fa", digest = "sha256:e4c9eec9e50b3f092192ebcc31eefbf323ac21fb38a85fec5ace50de0fb20613" }
+uv = { path = ".mise/locks/pipx-hermes-agent/0.19.0~857ab2fa", digest = "sha256:860feaf45cdbbf9327521b01ff0f4e71e9bf80489e592f9c8d956abc89d1c018" }
 
 [tools."pipx:hermes-agent".options]
 extras = "acp,mcp"
@@ -278,21 +278,21 @@ extras = "acp,mcp"
 version = "0.4.0"
 backend = "pipx:openevolve"
 specifiers = ["0.4.0"]
-uv = { path = ".mise/locks/pipx-openevolve/0.4.0", digest = "sha256:02c9016b156809eb24f8b1126629a7d56549e700c4732f9cd65db81009b2b0a1" }
+uv = { path = ".mise/locks/pipx-openevolve/0.4.0", digest = "sha256:9981b26b664fec3eaeae2a56a4e3abff36581cc8be3dfc53af69d7854f93514e" }
 
 [[tools.python]]
-version = "3.12.14"
+version = "3.12.16"
 backend = "core:python"
 specifiers = ["3.12"]
 
 [tools.python."platforms.linux-arm64"]
-checksum = "sha256:706111f834ae1557314f48b7293ddc72cc96e952aa75c5d31f56c2b7ddeac3d3"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260929/cpython-3.12.14+20260929-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:bb4b6392670c5d3f93876996fcaa19858a4a413a0c7720144c18b0d6f1f0db2d"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64"]
-checksum = "sha256:ef605200f8174e87ecfc308e52a88127543f85dd5c940dc5e92cab244b98a003"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260929/cpython-3.12.14+20260929-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:ce4f6d0a6cfdb3bed6e44c2f9affd85943c76a42e25ad3a259002f31d6fb8a20"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [[tools.rg]]
@@ -311,18 +311,18 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15
 url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478120097"
 
 [[tools.uv]]
-version = "0.13.0"
+version = "0.13.5"
 backend = "aqua:astral-sh/uv"
 specifiers = ["latest"]
 
 [tools.uv."platforms.linux-arm64"]
-checksum = "sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003012"
+checksum = "sha256:4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/664335837"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
-url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003332"
+checksum = "sha256:f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/664336023"
 provenance = "github-attestations"

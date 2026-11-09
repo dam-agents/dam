@@ -129,7 +129,10 @@ export function hintFor(event: DomainEvent): {
     case EventType.AgentResourceRemoved:
     case EventType.SpendLimitsChanged:
     case EventType.GatewayCallEnded:
+    case EventType.SpendWorkStopped:
     case EventType.ProviderStatusEvaluated:
+    case EventType.CostReviewStarted:
+    case EventType.CostReviewDismissed:
       return null;
     default: {
       const unhandled: never = event;

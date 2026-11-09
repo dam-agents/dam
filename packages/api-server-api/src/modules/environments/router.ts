@@ -8,10 +8,13 @@ import {
   requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
-  environmentAccessListInputSchema,
+  environmentAgentLookupInputSchema,
+  environmentAgentMembersInputSchema,
   environmentExtendInputSchema,
   environmentIdInputSchema,
   environmentListInputSchema,
+  environmentMembersInputSchema,
+  environmentSetAwakeInputSchema,
 } from "./schemas.js";
 import type { AgentTarget } from "../agents/permissions.js";
 
@@ -28,17 +31,21 @@ export const environmentsRouter = t.router({
       return ctx.environments.list(input.owningAgentId);
     }),
 
-  accessList: readAgentProcedure
+  listAll: readAgentProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.environments.listAll()),
+
+  agentMembers: readAgentProcedure
     .use(requireWildcardBinding)
     .input(environmentListInputSchema)
     .use(agentPermission("view", (input) => agentTarget(input.owningAgentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.accessList(input.owningAgentId);
+      return ctx.environments.agentMembers(input.owningAgentId);
     }),
 
-  setAccessList: manageAgentsProcedure
-    .input(environmentAccessListInputSchema)
+  setAgentMembers: manageAgentsProcedure
+    .input(environmentAgentMembersInputSchema)
     .use(
       agentPermission("environments", (input) =>
         agentTarget(input.owningAgentId),
@@ -46,8 +53,29 @@ export const environmentsRouter = t.router({
     )
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
-      return ctx.environments.setAccessList(input.owningAgentId, input.emails);
+      return ctx.environments.setAgentMembers(input.owningAgentId, {
+        emails: input.emails,
+        ...(input.agentIds ? { agentIds: input.agentIds } : {}),
+      });
     }),
+
+  setMembers: manageAgentsProcedure
+    .input(environmentMembersInputSchema)
+    .use(
+      agentPermission("environments", (input) => environmentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.environments.setMembers(input.id, {
+        emails: input.emails,
+        ...(input.agentIds ? { agentIds: input.agentIds } : {}),
+      }),
+    ),
+
+  // UNIT_BOUNDARY_DESCRIPTION: names the Agent an id a person typed into a list stands for, before they save it. An id is unguessable, so its holder already knew it; the answer says no more than the Public Agent Page does for the same id.
+  lookupAgent: readAgentProcedure
+    .use(requireWildcardBinding)
+    .input(environmentAgentLookupInputSchema)
+    .query(({ ctx, input }) => ctx.environments.lookupAgent(input.agentId)),
 
   extend: manageAgentsProcedure
     .input(environmentExtendInputSchema)
@@ -55,7 +83,19 @@ export const environmentsRouter = t.router({
       agentPermission("environments", (input) => environmentTarget(input.id)),
     )
     .mutation(({ ctx, input }) =>
-      ctx.environments.extend(input.id, new Date(input.expiresAt)),
+      ctx.environments.extend(
+        input.id,
+        input.expiresAt === "never" ? "never" : new Date(input.expiresAt),
+      ),
+    ),
+
+  setAwake: manageAgentsProcedure
+    .input(environmentSetAwakeInputSchema)
+    .use(
+      agentPermission("environments", (input) => environmentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.environments.setAwake(input.id, input.awake),
     ),
 
   delete: manageAgentsProcedure

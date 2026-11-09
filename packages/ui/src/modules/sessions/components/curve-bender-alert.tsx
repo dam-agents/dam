@@ -16,11 +16,11 @@ import {
   safeGetItem,
   safeSetItem,
 } from "../../../lib/safe-storage.js";
+import { useCurveBenderCommunityUrl } from "../../links/api/queries.js";
 import { CURVE_BENDER_DOCS_URL } from "../../providers/components/curve-bender-info-dialog.js";
 import { ChatColumn } from "./chat-column.js";
 
 const DISMISSED_KEY = "platform-curvebender-alert-dismissed";
-const COMMUNITY_URL = "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1";
 
 export function CurveBenderAlert({
   visible,
@@ -98,20 +98,27 @@ export function CurveBenderAlert({
 }
 
 function CurveBenderThanksDialog({ onClose }: { onClose: () => void }) {
+  const communityUrl = useCurveBenderCommunityUrl();
   return (
     <Modal onClose={onClose} size="sm">
       <DialogHeader title="CurveBender" onClose={onClose} />
       <DialogBody>
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Thank you for trying CurveBender! Join{" "}
-          <a
-            href={COMMUNITY_URL}
-            {...externalLinkProps}
-            className="font-medium text-accent underline underline-offset-2 hover:text-primary"
-          >
-            #curvebender-community
-          </a>{" "}
-          to learn more and share feedback.
+          Thank you for trying CurveBender!
+          {communityUrl && (
+            <>
+              {" "}
+              Join{" "}
+              <a
+                href={communityUrl}
+                {...externalLinkProps}
+                className="font-medium text-accent underline underline-offset-2 hover:text-primary"
+              >
+                #curvebender-community
+              </a>{" "}
+              to learn more and share feedback.
+            </>
+          )}
         </p>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           Your agent is now set to use CurveBender. Change provider anytime

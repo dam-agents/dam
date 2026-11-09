@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a harness Template's agent runs on the harness tools the default image bakes. The Template boots the default image, and the agent's harness is picked from the Template. Only a run with the Claude Code Template enabled takes it; the mock agents of the rest of the suite carry their own tools. The same tools are what the guest kernel is held to: a guest that maps them with DAX must not corrupt the pages a running process maps, nor stall when its working set outgrows the DAX window.
+// TEST_OVERVIEW: a harness Template's agent runs on the harness tools the default image bakes. The Template boots the default image, and the agent's harness is picked from the Template. Only a run with the Claude Code Template enabled takes it; the mock agents of the rest of the suite carry their own tools. The runner maps those tools in a way of their own, so the mounts its machines boot with are checked here too.
 import { expect, test } from "@playwright/test";
 
 import {
@@ -92,42 +92,8 @@ test("boots on the baked tools and opens a Claude Code session, twice", async ()
   }
 });
 
-const DAX_CHECKS = `uname -r
-grep ' /usr/share/mise ' /proc/mounts | head -1
-node=$(ls -d /usr/share/mise/installs/node/*/bin/node | head -1)
-python=$(ls -d /usr/share/mise/installs/python/3.*/bin/python3 | head -1)
-$node -e 'const t = Date.now(); while (Date.now() - t < 2000) require("zlib").deflateSync(Buffer.alloc(1e5));' &
-long=$!
-i=0; while [ $i -lt 300 ]; do head -c 1 $node >/dev/null; i=$((i+1)); done
-wait $long; echo "reproducer rc=$?"
-for n in 1 2 3; do
-  ( timeout -s KILL 20 $python -c '
-import mmap, sys, time
-maps, size = [], 0
-for path in sys.argv[2:]:
-    if size >= 3 << 30: break
-    with open(path, "rb") as f: maps.append(mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ))
-    size += len(maps[-1])
-maps = maps[int(sys.argv[1]):] + maps[:int(sys.argv[1])]
-end, passes = time.monotonic() + 2, 0
-while passes == 0 or time.monotonic() < end:
-    for m in maps:
-        for offset in range(0, len(m), 2 << 20): m[offset]
-    passes += 1
-print("mapped", size >> 20, "MiB")
-' $((n * 7)) $FILES; echo "reclaim rc=$?" ) >/tmp/reclaim.$n 2>&1 &
-done
-end=$(($(date +%s) + 22))
-while [ $(date +%s) -lt $end ] && [ $(cat /tmp/reclaim.* | grep -c '^reclaim rc=') -lt 3 ]; do sleep 0.2; done
-cat /tmp/reclaim.*
-stuck=$(grep -l '^State:.*(disk sleep)' /proc/[0-9]*/status 2>/dev/null)
-[ -z "$stuck" ] || sleep 1
-for s in $stuck; do grep -qs '^State:.*(disk sleep)' $s && echo "stuck $(grep '^Name:' $s | cut -f2)"; done
-if dmesg | grep -qE 'Bad page map|Bad rss-counter|cut here'; then echo '--- guest kernel log ---'; dmesg; fi`;
-
-// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with its own tools mounted again where the image reads them, a mount of their own, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
-test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner maps its machines' mounts with DAX", async () => {
-  test.setTimeout(300_000);
+// TEST_SCENARIO: the runner maps every mount of its own machines with DAX but the image tree, which holds the tools: that one platform-init copies through a 4 MiB read-ahead, since a DAX-mapped one reads too slowly for a cold start of Chrome or the Claude binary (boot::vm::ShareRead). Each machine's console logs the mounts it made, so the check reads them in the runner pod, after the machine above has booted. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
+test("the runner maps its machines' mounts with DAX, and the image tree through a read-ahead", async () => {
   const owner = kubectl(
     "-n",
     AGENT_NS,
@@ -155,54 +121,6 @@ test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner m
     inRunner("uname", "-m") !== "x86_64",
     "smolvm maps no DAX window on arm64",
   );
-  const image = inRunner("ls", "/var/lib/platform/images")
-    .split("\n")
-    .find((entry) => entry.includes("default") && !entry.endsWith(".tar"));
-  expect(image, "the staged default image").toBeDefined();
-  const tools = `/var/lib/platform/images/${image}/rootfs/usr/share/mise`;
-  const bigTools = inRunner("find", tools, "-type", "f", "-size", "+4M")
-    .split("\n")
-    .sort()
-    .map((path) => path.replace(tools, "/usr/share/mise"));
-  const guest = inRunner(
-    "env",
-    "HOME=/tmp/e2e-dax-guard",
-    "SMOLVM_MOUNT_DAX=1",
-    "timeout",
-    "240",
-    "/opt/smolvm/smolvm",
-    "machine",
-    "run",
-    "--mem",
-    "6144",
-    "--cpus",
-    "2",
-    "--image",
-    `/var/lib/platform/images/${image}/rootfs`,
-    "-v",
-    `${tools}:/usr/share/mise:ro`,
-    "-e",
-    `FILES=${bigTools.join(" ")}`,
-    "--",
-    "sh",
-    "-c",
-    DAX_CHECKS,
-  );
-  expect(guest).toMatch(/ \/usr\/share\/mise virtiofs \S*dax=always/);
-  expect(guest).toMatch(/^reproducer rc=0$/m);
-  expect(guest.match(/^reclaim rc=\d+$/gm)).toEqual([
-    "reclaim rc=0",
-    "reclaim rc=0",
-    "reclaim rc=0",
-  ]);
-  expect(
-    [...guest.matchAll(/^mapped (\d+) MiB$/gm)].map(
-      ([, mib]) => Number(mib) > 2048,
-    ),
-    "each process maps more than the 2 GiB DAX window",
-  ).toEqual([true, true, true]);
-  expect(guest).not.toMatch(/^stuck /m);
-  expect(guest).not.toMatch(/Bad page map|Bad rss-counter|cut here/);
 
   const mounts = inRunner(
     "sh",
@@ -215,8 +133,19 @@ test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner m
     mounts.length,
     "the runner's machines log their mounts",
   ).toBeGreaterThan(0);
+  const imageTree = (line: string) =>
+    line.includes(" at /run/platform-boot/image,");
   expect(
-    mounts.filter((line) => !line.includes("dax=true")),
-    "every mount of the runner's own machines is DAX-mapped",
+    mounts.filter((line) => !imageTree(line) && !line.includes("dax=true")),
+    "every mount of the runner's own machines but the image tree is DAX-mapped",
+  ).toEqual([]);
+  const trees = mounts.filter(imageTree);
+  expect(
+    trees.length,
+    "the runner's machines log their image tree",
+  ).toBeGreaterThan(0);
+  expect(
+    trees.filter((line) => !line.includes("dax=false, read_ahead=4096KiB")),
+    "the image tree, which holds the tools, is copied through a 4 MiB read-ahead",
   ).toEqual([]);
 });

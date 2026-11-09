@@ -26,6 +26,7 @@ import type { SpendHoldGate, SpendHoldReason } from "../../spend/index.js";
 import {
   isNoDefaultModelError,
   type FirePair,
+  type RunBoundary,
 } from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
@@ -78,6 +79,8 @@ export interface SchedulerRunner {
 
 export interface SchedulerRunnerDeps {
   firePair?: FirePair;
+  /* UNIT_BOUNDARY_DESCRIPTION: a fire is a run, so its payload carries the settings the one rule derives against the pair it resolved, native subagent keys included, when the schedule holds none of its own (D193B). */
+  boundary?: RunBoundary;
   validateSessionChoices?: (
     agentId: string,
     choices: {
@@ -232,11 +235,34 @@ export function createSchedulerRunner(
       ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
       : sched.spec.model;
     if (model) payload.model = model;
-    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them: the primary's settings with the subagent slot's values. */
-    const settings =
+    const pair = continues
+      ? undefined
+      : await deps.firePair?.(sched.agentId, "scheduled", {
+          ...(sched.spec.harness && { harness: sched.spec.harness }),
+          ...(model && { model }),
+        });
+    if (pair === null)
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "no model provider granted to this agent can run its harness; grant one to run this schedule",
+      });
+    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them, the native subagent keys derived against the pair the fire runs on rather than against a default it may not; a schedule holding none follows its default, whose settings are derived here too (D193B). */
+    const slotsSettings =
       sched.spec.settings || sched.subagentSettings
         ? { ...sched.spec.settings, ...sched.subagentSettings }
         : undefined;
+    const heldSettings = slotsSettings ?? pair?.settings;
+    const settings =
+      heldSettings && pair && deps.boundary
+        ? await deps.boundary.settings(sched.agentId, pair, heldSettings)
+        : heldSettings;
+    const namesOwnChoices = Boolean(
+      sched.spec.harness ||
+      sched.spec.model ||
+      (sched.spec.settings && Object.keys(sched.spec.settings).length > 0) ||
+      sched.subagentSettings,
+    );
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
       ...(model && { model }),
@@ -250,28 +276,16 @@ export function createSchedulerRunner(
       if (refusal)
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
     }
-    const pair = continues
-      ? undefined
-      : await deps.firePair?.(sched.agentId, "scheduled", {
-          ...(sched.spec.harness && { harness: sched.spec.harness }),
-          ...(model && { model }),
-        });
-    if (pair === null)
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message:
-          "no model provider granted to this agent can run its harness; grant one to run this schedule",
-      });
     if (pair) {
       rememberFiredHarness(sched.id, pair.harness);
       payload.harness = pair.harness;
       if (pair.provider !== null) payload.provider = pair.provider;
       if (pair.model !== null) payload.model = pair.model;
       else delete payload.model;
-      if (pair.settings) payload.settings = pair.settings;
     }
     if (settings) payload.settings = settings;
-    if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
+    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names no choices of its own follows its default, and says so even though its payload carries the settings settled from that default (D193B). */
+    if (pair && !namesOwnChoices) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;
@@ -284,6 +298,7 @@ export function createSchedulerRunner(
   async function spendHeld(
     sched: Schedule,
     payload: Record<string, unknown>,
+    fire: "scheduled" | "run-now",
   ): Promise<(typeof SPEND_HOLD)[SpendHoldReason] | null> {
     if (!deps.spendHold) return null;
     const reason = await deps.spendHold({
@@ -291,6 +306,7 @@ export function createSchedulerRunner(
       ...(typeof payload.provider === "string" && {
         connectionId: payload.provider,
       }),
+      ...(fire === "scheduled" && { tellOwner: { kind: "schedule" } }),
     });
     return reason ? SPEND_HOLD[reason] : null;
   }
@@ -409,7 +425,7 @@ export function createSchedulerRunner(
         const payload = await triggerPayload(sched, fireAt, {
           wakeFirst: true,
         });
-        const held = await spendHeld(sched, payload);
+        const held = await spendHeld(sched, payload, "scheduled");
         if (held) {
           const until = new Date(
             Math.min(
@@ -515,7 +531,7 @@ export function createSchedulerRunner(
     let stage: "commit" | "poke" = "commit";
     try {
       const payload = await triggerPayload(sched, fireAt, { wakeFirst: true });
-      const held = await spendHeld(sched, payload);
+      const held = await spendHeld(sched, payload, "scheduled");
       if (held) {
         log(`fire: agent ${sched.agentId} ${held.result}`);
         noteFire("held", { holdReason: held.holdReason });
@@ -619,7 +635,7 @@ export function createSchedulerRunner(
         const payload = await triggerPayload(sched, firedAt, {
           wakeFirst: false,
         });
-        const held = await spendHeld(sched, payload);
+        const held = await spendHeld(sched, payload, "run-now");
         if (held) {
           log(`run-now: agent ${sched.agentId} ${held.result}; refusing`);
           return held.runNow;

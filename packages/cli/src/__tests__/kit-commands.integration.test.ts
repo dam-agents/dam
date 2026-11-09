@@ -129,6 +129,8 @@ describe("dam kit and dam agent create --kit (integration)", () => {
   let started: string[];
   let scopes: readonly string[];
   let inspected: Record<string, StarterKitView>;
+  let defaultProvider: Agent["defaultProvider"];
+  let owned: ConnectionView[];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-kit-"));
@@ -138,6 +140,8 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     started = [];
     scopes = ALL_SCOPES;
     inspected = {};
+    defaultProvider = undefined;
+    owned = CONNECTIONS;
 
     const apiContext = {
       user: {
@@ -156,7 +160,7 @@ describe("dam kit and dam agent create --kit (integration)", () => {
       }),
       connections: {
         listTemplates: async () => TEMPLATES,
-        listAndReconcileConnections: async () => CONNECTIONS,
+        listAndReconcileConnections: async () => owned,
         getAgentConnections: async (agentId: string) => ({
           agentId,
           connections: [],
@@ -177,7 +181,11 @@ describe("dam kit and dam agent create --kit (integration)", () => {
             starterKit: `${input.catalog}/${input.kitId}@${KIT_COMMIT}`,
           });
           agents.push(created);
-          return { agent: created, skills: null, skillsError: null };
+          return {
+            agent: defaultProvider ? { ...created, defaultProvider } : created,
+            skills: null,
+            skillsError: null,
+          };
         },
         updates: async () => updates,
         updateChanges: async () => null,
@@ -337,6 +345,52 @@ describe("dam kit and dam agent create --kit (integration)", () => {
     expect(table.stdout).toMatch(/Modal \(suggested\)/);
   });
 
+  /** TEST_SCENARIO: with two GitHub connections, each scoped to another
+   * repository, the first one is no better a guess than the second: kit show
+   * names neither and says to pick, and a create that names one reports
+   * that one as met, never the other (#6162). */
+  it("names a connection only when it is the one the need takes", async () => {
+    owned = [
+      { id: "conn-a", name: "gh-other-repo", templateId: "github" },
+      { id: "conn-b", name: "gh-target-repo", templateId: "github" },
+    ] as ConnectionView[];
+
+    const shown = await dam("kit", "show", "research", "--json");
+    expect(shown.exitCode, shown.stderr).toBe(0);
+    const github = (
+      JSON.parse(shown.stdout) as {
+        needs: { what: string; note?: string; command: string }[];
+      }
+    ).needs.find((n) => n.what === "GitHub")!;
+    expect(github.command).toBe(
+      "dam agent create <name> --kit <kit> --connection <github-connection>",
+    );
+    expect(github.note).toContain("gh-other-repo, gh-target-repo");
+    expect(github.note).toContain("pick the one scoped to");
+
+    const r = await dam(
+      "agent",
+      "create",
+      "desk",
+      "--kit",
+      "research",
+      "--connection",
+      "gh-target-repo",
+      "--json",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(applied[0]!.connectionIds).toEqual(["conn-b"]);
+    const step = (
+      JSON.parse(r.stdout) as {
+        steps: { what: string; done: boolean; command: string }[];
+      }
+    ).steps.find((s) => s.what === "GitHub")!;
+    expect(step).toMatchObject({
+      done: true,
+      command: "dam connection grant desk --connection gh-target-repo",
+    });
+  });
+
   /** TEST_SCENARIO: a mistyped kit must fail loud with the kit's name and where to look, not show an empty kit (AC-3). */
   it("refuses an unknown kit, naming it and dam kit list", async () => {
     const r = await dam("kit", "show", "reserch");
@@ -387,6 +441,46 @@ describe("dam kit and dam agent create --kit (integration)", () => {
       "dam channel slack connect desk --channel-id <channel-id>",
     );
   });
+
+  /** TEST_SCENARIO: a kit create that names no provider is granted one by
+   * the platform, and the output names it and why — the default for new
+   * agents, or the kit's own providers list — in text and in --json, as a
+   * plain create's does (#6142). */
+  it.each([
+    [
+      {
+        connectionId: "conn-ibm",
+        source: "profile" as const,
+        profile: { name: "Default", model: "cb/some-model", harness: "pi" },
+      },
+      /Provider: IBM proxy \(conn-ibm\), from your default for new agents, profile "Default": cb\/some-model on pi\./,
+    ],
+    [
+      { connectionId: "conn-ibm", source: "kit" as const, profile: null },
+      /Provider: IBM proxy \(conn-ibm\), the first of the starter kit's providers you hold; your default for new agents does not apply to it\./,
+    ],
+  ])(
+    "names the provider the platform granted a kit create (%o)",
+    async (granted, line) => {
+      defaultProvider = granted;
+      const text = await dam("agent", "create", "desk", "--kit", "plain");
+      expect(text.exitCode, text.stderr).toBe(0);
+      expect(text.stdout).toMatch(line);
+      const json = await dam(
+        "agent",
+        "create",
+        "desk2",
+        "--kit",
+        "plain",
+        "--json",
+      );
+      expect(json.exitCode, json.stderr).toBe(0);
+      expect(
+        (JSON.parse(json.stdout) as { agent: { defaultProvider: unknown } })
+          .agent.defaultProvider,
+      ).toEqual(granted);
+    },
+  );
 
   /** TEST_SCENARIO: a schedule the kit does not have is refused before anything is created, so a typo cannot leave an agent behind with the wrong schedules. */
   it("refuses a schedule the kit does not have, creating nothing", async () => {

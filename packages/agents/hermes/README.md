@@ -22,6 +22,8 @@ Both launch scripts run [`hermes_platform.py`](rootfs/usr/local/share/hermes-pla
 On every start it writes these keys into `~/.hermes/config.yaml` and keeps every other key the owner set:
 
 - `model.provider: platform` and `providers.platform`: one custom OpenAI-compatible provider at the [Model Router](../../../docs/architecture/harness-config.md#the-model-router) over Chat Completions, with the router's placeholder key.
+- `model.base_url` and `model.api_key`: the router again.
+  Hermes stores a session's provider as plain `custom`, and when a new `hermes acp` process loads a stored session it finds that provider only through these keys; without them `session/load` finds no provider and replays nothing.
 - `X-Platform-Harness: hermes` both on the provider and in `model.default_headers`, since Hermes's auxiliary calls (titles, compression) read only the latter.
 - `mcp_servers`: the entries of `~/.hermes/platform-mcp.json`, which the runtime writes as JSON; Hermes reads its MCP servers only from YAML.
 - `approvals.mode: off`, since nobody answers a prompt on a schedule or a channel turn.

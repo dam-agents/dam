@@ -51,7 +51,7 @@ export function assembleSpecFromTemplate(
     name,
     image: tmplSpec.image,
     harness: tmplSpec.harness,
-    description: opts.description ?? tmplSpec.description,
+    description: opts.description,
     mounts: tmplSpec.mounts,
     env: tmplSpec.env,
     resources: concreteResources(tmplSpec.resources, defaultLimits),
