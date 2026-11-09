@@ -62,3 +62,13 @@ The commit identity git uses follows that default too: the active account's name
 Because the env is gone, the platform states gh's availability explicitly in that case, and the runtime's own GitHub client reads the active token from the same file.
 The Agent learns all of this from a skill every agent image ships, `platform-github`: how to list its accounts, how to switch or act as one for a single command, and what the gateway's refusal means.
 A GitHub Enterprise Server is a separate case: `gh` reads `GH_ENTERPRISE_TOKEN` for such a host and never `GH_TOKEN`, which it reserves for github.com and `ghe.com` tenants, so a Connection to an Enterprise Server hands the Agent `GH_ENTERPRISE_TOKEN` and never competes with a github.com account for one env.
+
+## GitHub Enterprise hosts
+
+An install may offer several GitHub Enterprise hosts, each with the GitHub App registered on it, set in the chart values ([`helm/values.yaml`](../../helm/values.yaml)).
+With two or more, the connect form asks which host, and a sign-in authorizes, renews and narrows with the app of its own host; one host keeps the single-host form, where that host and its app are presets.
+The install can also retire a host its users have moved away from.
+No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected and cannot be authorized there.
+A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host.
+Tokens and installations do not move: they are made again on the new host.
+The UI's host list and the move stay behind the `github-enterprise-hosts` experimental feature; the api-server enforces the host list and the retired hosts for every caller.

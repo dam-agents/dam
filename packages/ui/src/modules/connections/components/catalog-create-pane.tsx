@@ -4,12 +4,14 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
 
+import { useFeatures } from "../../features/api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import {
   type CatalogProviderGroup,
   templateCreateHeading,
   templateMethodCopy,
 } from "../lib/catalog-providers.js";
+import { hostChoicesOf } from "../lib/github-enterprise-hosts.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
 
 interface Props {
@@ -56,6 +58,7 @@ export function CatalogCreatePane({
       ?.focus();
   }, [selectedId]);
 
+  const hostsEnabled = useFeatures().data?.["github-enterprise-hosts"] ?? false;
   const multiMethod = templates.length > 1;
   const template = multiMethod
     ? templates.find((t) => t.id === selectedId)
@@ -114,6 +117,7 @@ export function CatalogCreatePane({
         initialName={editedName}
         onNameChange={setEditedName}
         autoFocusName={!multiMethod}
+        hostChoices={hostsEnabled ? hostChoicesOf(template) : undefined}
         layout={(fields, footer) => (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">

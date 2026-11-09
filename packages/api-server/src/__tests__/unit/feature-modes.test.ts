@@ -27,6 +27,7 @@ describe("feature modes", () => {
         "custom-avatars": "experimental",
         environments: "experimental",
         hermes: "experimental",
+        "github-enterprise-hosts": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

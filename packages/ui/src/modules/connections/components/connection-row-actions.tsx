@@ -46,13 +46,15 @@ export function ConnectionRowActions({
   const updateLabel =
     credentialCopyFor(connection.authKind)?.action ?? "Update credential";
   const inlineFix =
-    connection.status !== "expired"
-      ? undefined
-      : maintenance?.onReauthenticate
-        ? { label: reauthLabel, run: maintenance.onReauthenticate }
-        : maintenance?.onUpdateCredential
-          ? { label: updateLabel, run: maintenance.onUpdateCredential }
-          : undefined;
+    connection.status === "disconnected" && maintenance?.onMoveHost
+      ? { label: "Move to another host", run: maintenance.onMoveHost }
+      : connection.status !== "expired"
+        ? undefined
+        : maintenance?.onReauthenticate
+          ? { label: reauthLabel, run: maintenance.onReauthenticate }
+          : maintenance?.onUpdateCredential
+            ? { label: updateLabel, run: maintenance.onUpdateCredential }
+            : undefined;
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 @max-md:justify-start gap-y-1.5 empty:hidden">
@@ -106,6 +108,15 @@ export function ConnectionRowActions({
             data-testid={`catalog-reauth-${connection.id}`}
           >
             {reauthLabel}
+          </DropdownMenuItem>
+        )}
+        {maintenance?.onMoveHost && (
+          <DropdownMenuItem
+            disabled={maintenance.busy}
+            onSelect={maintenance.onMoveHost}
+            data-testid={`catalog-move-host-${connection.id}`}
+          >
+            Move to another host
           </DropdownMenuItem>
         )}
         {maintenance?.onEditScope && (

@@ -233,7 +233,11 @@ export function ConnectionCatalogModal({
   const groupById = (providerId: string) =>
     (narrowed ?? allGroups).find((g) => g.provider.id === providerId);
 
-  if (maintenance.updating || maintenance.editingScope) {
+  if (
+    maintenance.updating ||
+    maintenance.editingScope ||
+    maintenance.movingHost
+  ) {
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 

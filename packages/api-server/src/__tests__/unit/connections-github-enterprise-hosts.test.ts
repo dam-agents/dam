@@ -13,6 +13,7 @@ import {
 import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-sds.js";
 import { resolveOAuthClientSecret } from "../../modules/connections/services/oauth-token.js";
 import { createOAuthFlowService } from "../../modules/connections/services/oauth-flow.js";
+import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import {
   newConnectionsStore,
   serviceHarness,
@@ -287,8 +288,8 @@ describe("a connection on a retired host", () => {
     const flow = createOAuthFlowService({
       engine: unused(),
       githubAppEngine: unused(),
-      repo: unused({
-        get: async (id: string) => rows.get(id) ?? null,
+      repo: unused<ConnectionsRepository>({
+        get: async (id) => rows.get(id) ?? null,
       }),
       templates: createConnectionTemplateRegistry(buildCatalog(CREDS)),
       secretStore: unused(),
