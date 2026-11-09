@@ -5,7 +5,11 @@ import { configureLogger } from "../../core/logger.js";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 import { createApprovalsService } from "../../modules/approvals/services/approvals-service.js";
-import { createEgressProposals } from "../../modules/approvals/services/egress-proposals.js";
+import {
+  createEgressProposals,
+  EGRESS_PROPOSALS_PENDING_MAX,
+} from "../../modules/approvals/services/egress-proposals.js";
+import { createWildcardEgressRequests } from "../../modules/approvals/services/wildcard-egress-requests.js";
 
 /**
  * TEST_OVERVIEW: an Agent proposes an egress rule to its owner ahead of need. The proposal waits as an approval; the same rule proposed again joins it, only the owner's verdict writes a rule, and the Agent reads back the verdict.
@@ -72,7 +76,7 @@ function world(opts: { allowed?: boolean } = {}) {
     actorEmail: null,
     agentBinding: "*",
   });
-  return { proposals, approvals, written };
+  return { proposals, approvals, written, repo };
 }
 
 const issues = {
@@ -130,5 +134,29 @@ describe("egress proposals", () => {
       expect(egressProposalInputSchema.safeParse(bad).success).toBe(false);
     }
     expect(egressProposalInputSchema.safeParse(issues).success).toBe(true);
+  });
+
+  // TEST_SCENARIO: a driver asking for wildcard rules on its child files one request per host, the same host asked again joins it, and once the child has as many requests waiting as an agent may propose, the next is not filed, so a driver cannot flood its owner's Home.
+  it("files a child's wildcard requests up to the pending limit", async () => {
+    const { repo } = world();
+    const requests = createWildcardEgressRequests({
+      repo,
+      ownerOf: async () => "owner-1",
+      nameOf: async () => null,
+    });
+    const ask = (host: string) =>
+      requests.request({
+        childId: "agent-child",
+        driverId: "agent-1",
+        rule: { host, verdict: "allow" },
+      });
+    const first = await ask("*.host0.com");
+    expect(await ask("*.host0.com")).toEqual(first);
+    for (let i = 1; i < EGRESS_PROPOSALS_PENDING_MAX; i++)
+      expect(await ask(`*.host${i}.com`)).not.toBeNull();
+    expect(await ask("*.one-too-many.com")).toBeNull();
+    expect(await repo.listPendingForInstance("agent-child", {})).toHaveLength(
+      EGRESS_PROPOSALS_PENDING_MAX,
+    );
   });
 });
