@@ -150,6 +150,7 @@ export const modelRouterBinding = z.object({
     .nonempty()
     .optional(),
   classifierModelEnv: z.string().min(1).optional(),
+  preferredModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
     .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
     .optional(),
