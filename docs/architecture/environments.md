@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-06
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -126,6 +126,9 @@ The api-server names the declared ports on every request, so a port the Environm
 - **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
   So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
+  When an endpoint has no session while the one a page loads from still does, because its step of the sign-in never landed or its session ended first, that page load sends the browser through the endpoints that miss one and back to the page.
+  It does so once per session in five minutes, so a step that keeps failing never loops, and never for a frame or a script's call.
+  Without it the app would stay broken: its own address still has a session, so no page load goes through the front door again.
 - **A person's own OAuth client signs in with their platform account** — an MCP client in an IDE, a desktop app or a CLI, any client of the MCP authorization standard.
   A request with no session, no Agent Key and no bearer token that is not a page load gets a 401 whose `WWW-Authenticate` names `<address>/.well-known/oauth-protected-resource` and the scopes `environments offline_access` (RFC 9728); a page load keeps the redirect to the front door.
   The gate answers that path itself on every endpoint, before the app, and the same path suffixed with a path: `resource` is the endpoint's address exactly as a client compares it (`<scheme>://<address>.<environments domain>`, the port only when the install's URL has one, no trailing slash), `authorization_servers` the realm's public issuer; the app can no longer serve that path.
@@ -142,6 +145,7 @@ The api-server names the declared ports on every request, so a port the Environm
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
   A CORS preflight from another endpoint of the same Environment carries no cookie, so the gate answers it itself, allowing the method and headers asked for with credentials; the call that follows is checked as any other, and its answer is the app's.
   A refusal of a call from another endpoint carries CORS headers for that endpoint, so its page reads the status instead of a network error.
+  A script's call with no session gets a plain-text 401, never the sign-in redirect or an HTML page its script would read as data; only a page load is sent to the front door, and an install that serves OAuth clients adds the `WWW-Authenticate` header below.
 - **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret), passes on every cookie the app set itself, and never lets the app set the platform's.
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
