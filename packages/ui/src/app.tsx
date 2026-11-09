@@ -62,7 +62,9 @@ function useDocumentTitle() {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
-  const pageArtifactId = useStore((s) => s.pageArtifactId);
+  const pageArtifactId = useStore((s) =>
+    s.view === "artifact" ? s.pageArtifactId : null,
+  );
   const agent = useAgent(agentId);
   const session = useAgentSession(agentId, sessionId).data;
   const kit = useStarterKit(kitCatalog, kitId).data;
