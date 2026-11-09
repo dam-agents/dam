@@ -504,9 +504,10 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
 
   build-workloads:
-    # One job per arch, one workload after another, like build-agents, and
-    # beside it: each workload is packed onto the default image the job builds
-    # itself, not onto a published one. Every workload builds even after one fails,
+    # One job per arch, beside build-agents: image:ci-build builds the small
+    # workloads in one run and k-search in a run of its own, so the job packs
+    # the default image twice, and each workload is packed onto that image, not
+    # onto a published one. Every workload builds even after one fails,
     # but merge-workloads then merges none. A PR builds none: image:resolve
     # lists no workload for it, and this job pushes, which a PR must not.
     needs: [changes]
