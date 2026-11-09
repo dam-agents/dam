@@ -87,10 +87,12 @@ describe("the record's used mark", () => {
     expect(cached()).toEqual({ ...row, used: true });
   });
 
-  // TEST_SCENARIO: an answer that was in flight when the tab sent its first message — or one from a replica that has not seen the report — carries `used: false` at the same onboarding epoch, and must not take the mark back.
-  it("keeps the mark against a stale answer of the same epoch", () => {
+  // TEST_SCENARIO: the tab's own optimistic write is read back by its mounted observer, which must not take the mark away with it; so an answer that was in flight when the tab sent its first message — or one from a replica that has not seen the report — carries `used: false` at the same onboarding epoch, and must not bring the greeting back either.
+  it("keeps the mark through its own optimistic write and a stale answer", () => {
     queryClient.setQueryData(trpc.assistants.state.queryKey(), record(false));
     markAssistantUsed(ASSISTANT);
+    // UNIT_BOUNDARY_DESCRIPTION: the mounted observer reads the optimistic record back, and that read must keep the mark rather than retire it.
+    expect(assistantStateFor(cached())).toEqual(record(true));
     expect(assistantStateFor(record(false))).toEqual(record(true));
     expect(greetingWouldShow(assistantStateFor(record(false)))).toBe(false);
   });
@@ -129,11 +131,17 @@ describe("the record's used mark", () => {
     );
   });
 
-  // TEST_SCENARIO: the server's own used answer retires the mark, and a record with no mark on it is answered as the server sent it.
-  it("retires the mark once the server says used", () => {
+  // TEST_SCENARIO: an answer that says the assistant is used is passed on as the server sent it, and the mark stays — it is the reset's epoch, not that answer, that ends it — so a later stale answer still reads as used.
+  it("passes a used answer on and keeps the mark for the same epoch", () => {
     queryClient.setQueryData(trpc.assistants.state.queryKey(), record(false));
     markAssistantUsed(ASSISTANT);
     expect(assistantStateFor(record(true))).toEqual(record(true));
+    expect(assistantStateFor(record(false))).toEqual(record(true));
+  });
+
+  // TEST_SCENARIO: a record with no mark on it is answered exactly as the server sent it.
+  it("answers an unmarked record as the server sent it", () => {
     expect(usedAfterLocalMark(record(false), new Map())).toEqual(record(false));
+    expect(usedAfterLocalMark(null, new Map())).toBeNull();
   });
 });

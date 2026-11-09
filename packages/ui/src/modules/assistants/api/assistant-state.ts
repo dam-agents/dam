@@ -51,12 +51,18 @@ export function useAssistantOn(): boolean {
  * server's answer may not know yet, each with the onboarding epoch the record
  * carried when the mark was made. A response that was in flight when the mark was
  * set — or any response from a replica that has not seen the report — carries
- * `used: false`, and must not take the mark back; a response from a **newer
- * epoch** is a reset, here or in another tab, and takes it away.
+ * `used: false`, and must not take the mark back; a response from another
+ * **epoch** is a reset, here or in another tab, and takes it away.
  */
 const markedUsedHere = new Map<string, string | null>();
 
-/** UNIT_BOUNDARY_DESCRIPTION: the local mark as one answer leaves it: the answer's own epoch decides, and an epoch that moved is a reset, so the mark goes and the greeting comes back. */
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the local mark as one answer leaves it. Only an
+ * epoch that moved retires the mark, since that is a reset and nothing else; an
+ * answer saying `used: true` never does, because this tab's own optimistic write
+ * is one of those, and dropping the mark there would let the next server answer —
+ * `used: false` until the report lands — bring the greeting back.
+ */
 export function usedAfterLocalMark(
   state: AssistantState | null | undefined,
   marked: Map<string, string | null>,
@@ -67,11 +73,8 @@ export function usedAfterLocalMark(
     marked.delete(state.agentId);
     return state;
   }
-  if (state.used) {
-    marked.delete(state.agentId);
-    return state;
-  }
-  return epoch === undefined ? state : { ...state, used: true };
+  if (state.used || epoch === undefined) return state;
+  return { ...state, used: true };
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the record as the query answers it, with this tab's unconfirmed marks applied. */
