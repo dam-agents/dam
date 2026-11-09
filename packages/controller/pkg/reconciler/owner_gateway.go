@@ -259,14 +259,15 @@ func buildOwnerGatewayEgressPolicy(owner string, cfg *config.Config, ownerRefs [
 	return np
 }
 
-func (r *AgentReconciler) ownerGatewayServices(ctx context.Context, agents []string) ([]corev1.Service, error) {
+// UNIT_BOUNDARY_DESCRIPTION: a gateway Service that still selects the owner gateway holds its slot until it is gone, even when its agent already is: its machine can still be running and dialling it.
+func (r *AgentReconciler) ownerGatewayServices(ctx context.Context, owner string, agents []string) ([]corev1.Service, error) {
 	list, err := r.client.CoreV1().Services(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelRole + "=" + RoleGateway})
 	if err != nil {
 		return nil, fmt.Errorf("listing gateway Services: %w", err)
 	}
 	var out []corev1.Service
 	for _, svc := range list.Items {
-		if slices.Contains(agents, svc.Labels[LabelAgent]) {
+		if slices.Contains(agents, svc.Labels[LabelAgent]) || svc.Spec.Selector[envoyOwnerLabel] == owner {
 			out = append(out, svc)
 		}
 	}
@@ -302,7 +303,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		vmAgents = append(vmAgents, agent)
 		vmNames = append(vmNames, agent.Name)
 	}
-	services, err := r.ownerGatewayServices(ctx, vmNames)
+	services, err := r.ownerGatewayServices(ctx, owner, vmNames)
 	if err != nil {
 		return nil, err
 	}
@@ -771,7 +772,7 @@ func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *c
 	}
 	agent := desired.Labels[LabelAgent]
 	if !r.ownerGatewayOn(owner) && r.podCurrentAndReady(ctx, desired.Name) {
-		if err := r.clearOwnerGatewayMark(ctx, desired.Name); err != nil {
+		if err := r.clearOwnerGatewayMark(ctx, desired); err != nil {
 			return nil, err
 		}
 		slog.Info("owner gateway: the agent's Service selects its own gateway again", "agent", agent, "owner", owner)
@@ -780,15 +781,18 @@ func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *c
 	return retargetedGatewayService(desired, owner, slot), nil
 }
 
-func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, svcName string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the slot goes in the same write that stops the Service selecting the owner gateway, so no reconcile of the owner can give a slot away while a Service still maps it.
+func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, desired *corev1.Service) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, svcName, metav1.GetOptions{})
+		svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		delete(svc.Annotations, annOwnerGatewayServed)
 		delete(svc.Annotations, annOwnerGatewaySlot)
 		delete(svc.Annotations, annDesiredUp)
+		svc.Spec.Selector = desired.Spec.Selector
+		svc.Spec.Ports = desired.Spec.Ports
 		_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
 		return err
 	})
