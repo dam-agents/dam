@@ -700,6 +700,8 @@ export type {
 export type {
   ClusterCaProbe,
   GitHubAppInstallationProbe,
+  GitHubAppInstallationAccount,
+  GitHubAppInstallations,
   GitHubUserTokenInstallation,
   GitHubUserTokenProbe,
   GitHubUserTokenScope,

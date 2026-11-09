@@ -53,7 +53,7 @@ export function ConnectionRowActions({
           : undefined;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 empty:hidden">
         <GithubAppInstallButton connection={connection} />
         {narrow && (
           <Button

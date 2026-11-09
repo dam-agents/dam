@@ -1011,6 +1011,19 @@ export function createConnectionsService(deps: {
     return { conn, auth: conn.auth };
   }
 
+  async function userInstallationsReadOf(connectionId: string) {
+    const { conn } = await requireGitHubUserTokenConnection(connectionId);
+    const source = conn.parentId ? await parentOf(conn) : conn;
+    if (source.auth.kind !== "oauth") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED" });
+    }
+    return {
+      id: `connection:${source.id}:${source.templateId}`,
+      apiBaseUrl: gitHubUserTokenApiBase(source.auth.host),
+      accessToken: await readGitHubUserToken(source.auth),
+    };
+  }
+
   async function readGitHubUserToken(auth: OAuthAuth): Promise<string> {
     const token = await deps.secretStore.getField(auth.accessTokenRef);
     if (!token) {
@@ -2656,21 +2669,16 @@ export function createConnectionsService(deps: {
     },
 
     async probeGitHubUserTokenForConnection(input) {
-      const { conn } = await requireGitHubUserTokenConnection(
-        input.connectionId,
-      );
-      const source = conn.parentId ? await parentOf(conn) : conn;
-      if (source.auth.kind !== "oauth") {
-        throw new TRPCError({ code: "PRECONDITION_FAILED" });
-      }
-      const accessToken = await readGitHubUserToken(source.auth);
-      const apiBaseUrl = gitHubUserTokenApiBase(source.auth.host);
+      const opts = await userInstallationsReadOf(input.connectionId);
       return rejectIfInvalid(() =>
-        deps.githubAppEngine.readUserInstallations({
-          id: `connection:${source.id}:${source.templateId}`,
-          apiBaseUrl,
-          accessToken,
-        }),
+        deps.githubAppEngine.readUserInstallations(opts),
+      );
+    },
+
+    async listGitHubAppInstallations(input) {
+      const opts = await userInstallationsReadOf(input.connectionId);
+      return rejectIfInvalid(() =>
+        deps.githubAppEngine.listUserInstallationAccounts(opts),
       );
     },
 

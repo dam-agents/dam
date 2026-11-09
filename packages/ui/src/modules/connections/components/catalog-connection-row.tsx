@@ -8,6 +8,7 @@ import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
 import { ConnectionRowDetail } from "./connection-row-detail.js";
 import { FullAccessMark } from "./full-access-mark.js";
+import { GithubAppInstallations } from "./github-app-installations.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -60,10 +61,10 @@ export function CatalogConnectionRow({
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
-      className="px-4 py-3"
+      className="px-4 py-2.5"
     >
-      <div className="flex items-center gap-2">
-        <div className="flex min-w-[160px] flex-1 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-[1_1_240px] items-center gap-2">
           {iconSlug && (
             <ConnectionIcon
               iconSlug={iconSlug}
@@ -72,15 +73,25 @@ export function CatalogConnectionRow({
               className="shrink-0 text-foreground/80"
             />
           )}
-          <p className="max-w-[50%] shrink-0 truncate text-md font-medium text-foreground">
+          <p
+            className="min-w-[4rem] truncate text-md font-medium text-foreground"
+            title={connection.name}
+          >
             {connection.name}
           </p>
-          <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
+          <Badge
+            variant="muted"
+            className="min-w-0 shrink-[100] font-normal"
+            title={tag}
+          >
             <span className="truncate">{tag}</span>
           </Badge>
           <FullAccessMark connection={connection} />
           {connection.status !== "active" && (
-            <Badge variant={STATUS_PRESENTATION[connection.status].variant}>
+            <Badge
+              variant={STATUS_PRESENTATION[connection.status].variant}
+              className="shrink-0"
+            >
               {STATUS_PRESENTATION[connection.status].label}
             </Badge>
           )}
@@ -88,6 +99,7 @@ export function CatalogConnectionRow({
             connection.check?.status === "failed" && (
               <Badge
                 variant="danger"
+                className="shrink-0"
                 title={connection.check.reason}
                 data-testid={`catalog-connection-check-${connection.id}`}
               >
@@ -95,29 +107,32 @@ export function CatalogConnectionRow({
               </Badge>
             )}
         </div>
-        <ConnectionRowActions
-          connection={connection}
-          grant={grant}
-          maintenance={maintenance}
-          onManage={onManage}
-          onDelete={onDelete}
-          deleting={deleting}
-          onNewChild={onNewChild}
-        />
-        {onRemove && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Remove ${connection.name} from this agent`}
-            tooltip="Remove from this agent"
-            onClick={onRemove}
-            data-testid={`catalog-remove-${connection.id}`}
-          >
-            <TrashCan size={16} />
-          </Button>
-        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <ConnectionRowActions
+            connection={connection}
+            grant={grant}
+            maintenance={maintenance}
+            onManage={onManage}
+            onDelete={onDelete}
+            deleting={deleting}
+            onNewChild={onNewChild}
+          />
+          {onRemove && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Remove ${connection.name} from this agent`}
+              tooltip="Remove from this agent"
+              onClick={onRemove}
+              data-testid={`catalog-remove-${connection.id}`}
+            >
+              <TrashCan size={16} />
+            </Button>
+          )}
+        </div>
       </div>
       <ConnectionRowDetail connection={connection} indented={!!iconSlug} />
+      <GithubAppInstallations connection={connection} indented={!!iconSlug} />
     </div>
   );
 }
