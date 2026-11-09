@@ -12,7 +12,9 @@ import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.keycloak.authentication.RequiredActionContext;
@@ -64,12 +66,27 @@ class AccessListRequiredActionTest {
     assertEquals(List.of("success"), run(OFF, "platform", null).outcomes);
   }
 
-  // TEST_SCENARIO: the action triggers on every sign-in to the platform realm when the list is on, and on none otherwise.
+  // TEST_SCENARIO: the check runs when Keycloak evaluates triggers, and the action is added only for a refused person, with the verdict noted for its page; an allowed person, an operator, another realm and an install with no list add nothing, so a password grant for them is not held up.
   @Test
-  void triggersOnEverySignIn() {
-    assertEquals(List.of(AccessListRequiredActionFactory.ID), trigger(ON, "platform"));
-    assertEquals(List.of(), trigger(ON, "master"));
-    assertEquals(List.of(), trigger(OFF, "platform"));
+  void addsTheActionOnlyForARefusedPerson() {
+    Recorder denied = trigger(ON, "platform", false, Verdict.DENIED);
+    assertEquals(List.of(AccessListRequiredActionFactory.ID), denied.added);
+    assertEquals("DENIED", denied.notes.get(AccessListRequiredAction.VERDICT_NOTE));
+    assertEquals(List.of(AccessListRequiredActionFactory.ID), trigger(ON, "platform", false, Verdict.UNAVAILABLE).added);
+    assertEquals(List.of(), trigger(ON, "platform", false, Verdict.ALLOWED).added);
+    assertEquals(List.of(), trigger(ON, "platform", true, null).added);
+    assertEquals(List.of(), trigger(ON, "master", false, null).added);
+    assertEquals(List.of(), trigger(OFF, "platform", false, null).added);
+  }
+
+  // TEST_SCENARIO: the page follows the verdict noted at the trigger, without asking the platform again.
+  @Test
+  void showsTheNotedVerdict() {
+    Recorder r = new Recorder();
+    r.notes.put(AccessListRequiredAction.VERDICT_NOTE, "UNAVAILABLE");
+    new AccessListRequiredAction(ON, email -> { throw new AssertionError("no check expected"); })
+        .requiredActionChallenge(context(r, "platform", false));
+    assertEquals(AccessListRequiredAction.UNAVAILABLE, r.error);
   }
 
   // TEST_SCENARIO: at start the action is added to a realm that lacks it when the list is on, turned off when it is not, and a realm with no action and no list is left alone.
@@ -88,6 +105,7 @@ class AccessListRequiredActionTest {
   private static final class Recorder {
     final List<String> outcomes = new ArrayList<>();
     final List<String> added = new ArrayList<>();
+    final Map<String, String> notes = new HashMap<>();
     String error;
     Response.Status status;
   }
@@ -101,10 +119,13 @@ class AccessListRequiredActionTest {
     return r;
   }
 
-  private static List<String> trigger(AccessListConfig config, String realmName) {
+  private static Recorder trigger(AccessListConfig config, String realmName, boolean operator, Verdict verdict) {
     Recorder r = new Recorder();
-    new AccessListRequiredAction(config, null).evaluateTriggers(context(r, realmName));
-    return r.added;
+    new AccessListRequiredAction(config, email -> {
+      if (verdict == null) throw new AssertionError("no check expected");
+      return verdict;
+    }).evaluateTriggers(context(r, realmName, operator));
+    return r;
   }
 
   private static RequiredActionContext context(Recorder r, String realmName) {
@@ -124,9 +145,11 @@ class AccessListRequiredActionTest {
       case "hasRole" -> operator && args[0] == operatorRole;
       default -> null;
     });
-    AuthenticationSessionModel authSession = stub(AuthenticationSessionModel.class, (name, args) -> {
-      if (name.equals("addRequiredAction")) r.added.add(String.valueOf(args[0]));
-      return null;
+    AuthenticationSessionModel authSession = stub(AuthenticationSessionModel.class, (name, args) -> switch (name) {
+      case "addRequiredAction" -> { r.added.add(String.valueOf(args[0])); yield null; }
+      case "setAuthNote" -> { r.notes.put((String) args[0], (String) args[1]); yield null; }
+      case "getAuthNote" -> r.notes.get((String) args[0]);
+      default -> null;
     });
     LoginFormsProvider[] form = new LoginFormsProvider[1];
     form[0] = stub(LoginFormsProvider.class, (name, args) -> switch (name) {

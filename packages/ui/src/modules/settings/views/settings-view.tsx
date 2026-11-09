@@ -10,12 +10,12 @@ import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
 import { useStore } from "../../../store.js";
+import { AccessListView } from "../../access-list/views/access-list-view.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
-import { AccessListView } from "../../access-list/views/access-list-view.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
