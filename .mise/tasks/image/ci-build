@@ -1,7 +1,7 @@
 #!/usr/bin/env -S usage bash
 #MISE description="CI only: build several component images for one arch in one job"
 #MISE hide=true
-#USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk"
+#USAGE flag "--serial" help="One run at a time, for images too large to build side by side on one runner's disk"
 #USAGE arg "<arch>"
 #USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write digests/<component>/<hex> under the runner temp directory), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses), mq (push <component>:mq-<content hash>, the cache tag only a merge group reuses) or load (keep the component's image where the e2e cluster imports it: an agent's OCI layout, every other component's dist/oci tar, named platform-<component>:latest)"
 # build.yml builds all of one arch's images, agents or workloads in one job
@@ -140,10 +140,29 @@ timed_build() {
 
 failed=()
 if [ "$serial" = true ]; then
-  for i in "${!names[@]}"; do
-    echo "::group::${names[$i]}"
-    timed_build "${kinds[$i]}" "${names[$i]}" 2>&1 || failed+=("${names[$i]}")
+  # One build per run of consecutive agent components with one output: the run
+  # packs the default image once for all of them, where a run per component
+  # packed it again each time (20-37 s for the tools, plus the runtime's pnpm).
+  # A run keeps every layout until it returns, each paying its own gzipped copy
+  # of the shared layers, so the one too large to hold beside the rest builds
+  # alone: k-search's own layer is 6.9 GiB plain, 3.8 GB gzipped. Ceiling: an oci
+  # run that pushed each layout as it built it would let k-search join one too.
+  alone=" k-search "
+  i=0
+  while [ "$i" -lt "${#names[@]}" ]; do
+    group=("${names[$i]}")
+    if [ "$(package_of "${names[$i]}" 2>/dev/null)" = mise ] && [[ "$alone" != *" ${names[$i]} "* ]]; then
+      while [ $((i + 1)) -lt "${#names[@]}" ] && [ "${kinds[$((i + 1))]}" = "${kinds[$i]}" ] &&
+        [ "$(package_of "${names[$((i + 1))]}" 2>/dev/null)" = mise ] &&
+        [[ "$alone" != *" ${names[$((i + 1))]} "* ]]; do
+        i=$((i + 1))
+        group+=("${names[$i]}")
+      done
+    fi
+    echo "::group::${group[*]}"
+    timed_build "${kinds[$i]}" "${group[@]}" 2>&1 || failed+=("${group[@]}")
     echo "::endgroup::"
+    i=$((i + 1))
   done
 else
   # The mise images share the oci task's stage and apt-base layout, one build
