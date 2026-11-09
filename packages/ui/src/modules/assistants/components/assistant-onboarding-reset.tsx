@@ -6,6 +6,7 @@ import { getBrand } from "../../../brand.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
+import { agentsKeys } from "../../agents/api/queries.js";
 import { useAssistantState } from "../api/assistant-state.js";
 import { runResetOnboarding } from "../lib/reset-onboarding.js";
 
@@ -50,6 +51,8 @@ export function AssistantOnboardingReset() {
                 queryClient.invalidateQueries({
                   queryKey: trpc.gettingStarted.progress.queryKey(),
                 }),
+                // UNIT_BOUNDARY_DESCRIPTION: the reset may have created the assistant again, and the landing needs it in the list before it decides.
+                queryClient.invalidateQueries({ queryKey: agentsKeys.root }),
               ]),
             releaseLanding: () => {
               void state.refetch();
