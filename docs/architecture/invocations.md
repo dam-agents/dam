@@ -252,6 +252,6 @@ The client a Driver uses, baked into every agent image in two languages with one
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 A wait for a sub-agent logs why it has not started each time that reason changes, and its default client timeout is twice the deadline plus five minutes, since a sub-agent may wait its deadline for room and then run its whole deadline.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
-A spawn names the Driver's Session the script runs in, when its environment has one, so the chat scopes the child to that Session ([the delegation record](#the-delegation-record)).
+Every spawn, a clean slate's too, names the Driver's Session the script runs in, when its environment has one, so the chat scopes the child to that Session ([the delegation record](#the-delegation-record)).
 The HTTP routes are the contract; the clients stay thin.
 Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

@@ -44,9 +44,10 @@ def test_spawns_send_pis_session_ref_and_id(stub, monkeypatch):
 
     d.spawn("go", "integer", harness="pi", poll_seconds=0)
     d.spawn_script("make", harness="pi", poll_seconds=0)
+    d.spawn_slate(harness="pi")
 
     posted = _posted(stub)
-    assert len(posted) == 2
+    assert len(posted) == 3
     for headers in posted:
         assert headers["x-platform-session-ref"] == "ref-a"
         assert headers["x-platform-session-id"] == "pi-1"

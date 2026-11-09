@@ -44,15 +44,17 @@ describe("the spawning Session", () => {
   });
 
   // TEST_SCENARIO: Pi hands each chat Session a ref, and also sets its own id on shell commands; both go, and the platform resolves the ref.
-  it("sends Pi's Session ref with the spawn and the script spawn", async () => {
+  it("sends Pi's Session ref with every kind of spawn", async () => {
     vi.stubEnv("PLATFORM_SESSION_REF", "ref-a");
     vi.stubEnv("PI_SESSION_ID", "pi-1");
     const posted = fakePlatform();
-    const { spawn, spawnScript } = await loadSdk();
+    const { spawn, spawnScript, spawnSlate } = await loadSdk();
 
     await spawn({ prompt: "go", schema: "integer", harness: "pi", pollMs: 0 });
     await spawnScript({ script: "make", harness: "pi", pollMs: 0 });
+    await spawnSlate({ harness: "pi" });
 
+    expect(posted).toHaveLength(3);
     for (const headers of posted)
       expect(headers).toMatchObject({
         "x-platform-session-ref": "ref-a",

@@ -3,7 +3,7 @@ import type {
   SpawnInvocationResponse,
   SpawnScriptInvocationRequest,
 } from "api-server-api";
-import { log, req } from "./http.js";
+import { log, req, spawningSessionHeaders } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
 import { ScriptFailed, ScriptOutput } from "./script.js";
 import {
@@ -157,6 +157,7 @@ export async function spawnSlate(opts: SpawnSlateOptions): Promise<SubAgent> {
     "POST",
     "/invocations",
     body,
+    spawningSessionHeaders(),
   );
   const tag = label ?? harness ?? image ?? id;
   log(`spawned clean slate ${tag} -> ${id}`);

@@ -581,7 +581,9 @@ def spawn_slate(
         ttl_ms=ttl_ms,
         label=label,
     )
-    invocation_id = _request("POST", "/invocations", body)["id"]
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
     name = label or harness or image or invocation_id
     _log(f"spawned clean slate {name} ({invocation_id})")
     return SubAgent(invocation_id, name)
