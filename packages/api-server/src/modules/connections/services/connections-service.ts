@@ -2731,7 +2731,12 @@ export function createConnectionsService(deps: {
             : [];
           let count = 0;
           for (const c of [fresh, ...kids]) {
-            if (c.auth.kind !== "oauth" || c.auth.host === to) continue;
+            if (
+              c.auth.kind !== "oauth" ||
+              (c.auth.host && hostnameOf(c.auth.host) === to)
+            ) {
+              continue;
+            }
             await rehost(c, c.auth, to, { ...app, clientId }, template);
             count++;
           }

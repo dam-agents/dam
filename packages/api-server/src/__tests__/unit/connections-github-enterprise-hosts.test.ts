@@ -402,6 +402,16 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
     ).toEqual([`api.${NEW}`, NEW]);
   });
 
+  // TEST_SCENARIO: a sign-in stored with its host in other letter case is already on that host; moving it there must not rewrite its credential or drop its token.
+  it("leaves a sign-in alone when it is already on the host in other case", async () => {
+    const signIn = signInOn(NEW);
+    if (signIn.auth.kind !== "oauth") throw new Error("not oauth");
+    signIn.auth.host = NEW.toUpperCase();
+    const { svc, secrets } = harness([signIn]);
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+    expect(secrets.get("secret-signin")!.fields.access_token).toBe("ghu_old");
+  });
+
   // TEST_SCENARIO: a sign-in may only move to a host the install offers, and a connection made from a sign-in moves with it, never alone.
   it("refuses a host the install does not offer, and a connection made from a sign-in", async () => {
     const { svc } = harness([signInOn(OLD), childOn(OLD)]);

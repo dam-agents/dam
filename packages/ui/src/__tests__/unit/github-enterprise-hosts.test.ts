@@ -177,6 +177,9 @@ describe("the hosts a GitHub Enterprise template offers", () => {
     expect(
       otherHosts(HOSTS, { host: "research.github.ibm.com" } as ConnectionView),
     ).toEqual(["consulting.github.ibm.com"]);
+    expect(
+      otherHosts(HOSTS, { host: "Research.GitHub.ibm.com" } as ConnectionView),
+    ).toEqual(["consulting.github.ibm.com"]);
   });
 });
 
@@ -274,10 +277,20 @@ describe("a sign-in on a retired host", RENDER_TIMEOUT, () => {
     expect(actions[1]?.onMoveHost).toBeTypeOf("function");
   });
 
-  // TEST_SCENARIO: "Disconnected" alone reads like a network fault; the row says the host is retired and what fixes it, for the sign-in, a connection made from it, and a token that cannot move.
+  // TEST_SCENARIO: "Disconnected" alone reads like a network fault; the row says the host is retired and what fixes it, for the sign-in, a connection made from it, and a token or installation (or one made from an installation) that cannot move.
   it("says the host is retired and what to do", () => {
     expect(retiredHostNote(SIGN_IN)).toBe(
       "github.ibm.com is retired. Move this sign-in to another host.",
+    );
+    expect(
+      retiredHostNote({
+        ...SIGN_IN,
+        templateId: "github-enterprise-app",
+        authKind: "github-app",
+        parentId: "conn-install",
+      } as ConnectionView),
+    ).toBe(
+      "github.ibm.com is retired. Make a new one on another host, then remove this one.",
     );
     expect(
       retiredHostNote({ ...SIGN_IN, parentId: "conn-ghe" } as ConnectionView),

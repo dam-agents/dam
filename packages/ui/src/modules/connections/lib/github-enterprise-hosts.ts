@@ -38,7 +38,8 @@ export function otherHosts(
   choices: readonly string[],
   connection: Pick<ConnectionView, "host">,
 ): string[] {
-  return choices.filter((h) => h !== connection.host);
+  const current = connection.host?.trim().toLowerCase();
+  return choices.filter((h) => h.toLowerCase() !== current);
 }
 
 export function retiredHostNote(
@@ -47,7 +48,7 @@ export function retiredHostNote(
 ): string | undefined {
   const host = connection.retiredHost;
   if (!host) return undefined;
-  if (connection.parentId)
+  if (connection.parentId && connection.authKind === "oauth")
     return `${host} is retired. Move the sign-in this connection was made from.`;
   if (movesBetweenHosts(connection as ConnectionView))
     return `${host} is retired. Move this sign-in to another host.`;
