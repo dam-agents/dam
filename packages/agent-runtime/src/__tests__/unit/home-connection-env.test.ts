@@ -8,7 +8,7 @@
  * since the Model Router a Connection's layer stays out of the process
  * otherwise.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { leaseSpawnEnv } from "../../core/runtime-env.js";
 import { homeConnectionEnv } from "../../modules/model-router/index.js";
 import type { ModelRouterBinding } from "../../modules/runtime-channel/manifest.js";
@@ -100,27 +100,29 @@ describe("homeConnectionEnv", () => {
 });
 
 describe("leaseSpawnEnv with a home Connection", () => {
+  beforeEach(() => {
+    for (const name of bob.connectionEnv ?? []) vi.stubEnv(name, undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   /** TEST_SCENARIO: An owner pins team-B on the Connection and sets
-   * BOB_TEAM_ID=team-C in Configure Agent → Env for one agent. That agent's
+   * BOB_TEAM_ID=team-C in Configure Agent → Env for one agent, and a
+   * harness-scoped contribution of Bob's own carries the mode. That agent's
    * Bob process, chat or terminal, runs on team-C, as the README promises and
-   * as the router's profile rewrite resolves the same pair, while the cost
-   * cap that only the Connection sets still reaches it and the router's
-   * placeholder key outranks the Connection's. */
-  it("lays the Connection's settings under the agent's own env", () => {
+   * as the router's profile rewrite resolves the same pair; the harness layer
+   * outranks the Connection's mode; the cost cap that only the Connection
+   * sets still reaches it. */
+  it("lays the Connection's settings under the agent's own env and the layers", () => {
     const reader = {
       current: () => ({}),
       ready: () => true,
       providers: () => [bobShell.id],
-      forLease: () => ({ BOB_TEAM_ID: "team-C" }),
-      layerEnvFor: () => ({ BOBSHELL_API_KEY: "platform:conn:router" }),
+      forLease: () => ({ BOB_TEAM_ID: "team-C", BOB_CHAT_MODE: "ask" }),
+      layerEnvFor: () => ({ BOB_CHAT_MODE: "ask" }),
       connectionEnvFor: (harness: string) =>
-        homeConnectionEnv({
-          harness,
-          binding: bob,
-          layers: [
-            { ...bobShell, env: { ...bobShell.env, BOBSHELL_API_KEY: "x" } },
-          ],
-        }),
+        homeConnectionEnv({ harness, binding: bob, layers: [bobShell] }),
     };
     const env = leaseSpawnEnv(reader, {
       harness: "bob",
@@ -128,9 +130,8 @@ describe("leaseSpawnEnv with a home Connection", () => {
       model: null,
     });
     expect(env.BOB_TEAM_ID).toBe("team-C");
+    expect(env.BOB_CHAT_MODE).toBe("ask");
     expect(env.BOB_MAX_COINS).toBe("1");
-    expect(env.BOB_CHAT_MODE).toBe("plan");
-    expect(env.BOBSHELL_API_KEY).toBe("platform:conn:router");
     expect(env.PLATFORM_HARNESS).toBe("bob");
   });
 });

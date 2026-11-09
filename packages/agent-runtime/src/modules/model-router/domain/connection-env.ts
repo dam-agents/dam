@@ -20,16 +20,18 @@ export function homeConnectionEnv(input: {
 }): Record<string, string> {
   const names = input.binding?.connectionEnv;
   if (names === undefined) return {};
-  const aliasOf = (layer: { template?: string }) =>
-    layer.template === undefined ? null : aliasForTemplateId(layer.template);
-  const layer = (HARNESS_HOME_PROVIDERS[input.harness] ?? [])
-    .map((alias) => input.layers.find((l) => aliasOf(l) === alias))
-    .find((l) => l !== undefined);
-  if (layer === undefined) return {};
-  return Object.fromEntries(
-    names.flatMap((name) => {
-      const value = layer.env[name];
-      return value === undefined ? [] : [[name, value] as const];
-    }),
-  );
+  for (const alias of HARNESS_HOME_PROVIDERS[input.harness] ?? []) {
+    const layer = input.layers.find(
+      (l) =>
+        l.template !== undefined && aliasForTemplateId(l.template) === alias,
+    );
+    if (layer === undefined) continue;
+    return Object.fromEntries(
+      names.flatMap((name) => {
+        const value = layer.env[name];
+        return value === undefined ? [] : [[name, value] as const];
+      }),
+    );
+  }
+  return {};
 }

@@ -145,6 +145,7 @@ Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate a
 
 `bob acp` parses only `--trust`, `--auto-approve`, `--accept-license`, `--log-level` and `--disable-{mcp,subagents}` — model, mode and cost have no flag on that surface, so they ride `~/.bob/settings/settings.json`, which `bob-settings.mjs` merge-writes from the env before either surface starts.
 Settings come from three places, in this order of precedence: the agent's **Config panel**, then free-form **Configure Agent → Env**, then the **Bob Shell provider** pins.
+The model has one more rung: the agent's default provider for Bob (`PLATFORM_BOB_DEFAULT_MODEL`, set when that provider is not Bob's own gateway) outranks a `BOB_SHELL_MODEL` from either env.
 
 Bob cannot switch a live session's model and reads one settings file per process, so every model call goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): the runtime sets `BOB_GATEWAY_URL` (the variable Bob's own client reads) to the router with a placeholder key, and the router routes each call by the model the runtime set for the session, keyed by the `X-Task-Id` Bob stamps on its calls (the root task id is the ACP session id).
 Bob stamps it on every call except the first call of a new task, which asks for the model `background`.
@@ -191,7 +192,7 @@ A listing that cannot be read keeps that Connection's last known list and never 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 
 These ride on the secret's `envMappings`, so every agent granted the Bob secret inherits them automatically — no per-agent re-entry.
-A routed Connection's env stays out of a harness process, so the manifest names the five settings in `modelRouter.connectionEnv`, and the runtime lays them under the agent's own env of the Bob processes it starts, the chat process and the web terminal alike; a change on the provider recycles an idle Bob process at once, a busy one after its turn.
+A routed Connection's env stays out of a harness process, so the manifest names the five settings in `modelRouter.connectionEnv`, and the runtime lays them under the agent's own env of the Bob processes it starts, the chat process and the web terminal alike; a change on the provider recycles the chat process the way any env change does, and reaches a terminal when it is next opened.
 An SSH shell keeps the env it always had, the first provider's whole layer, so a `bob chat` started by hand follows that provider rather than these settings.
 
 | Env var                   | Translated to                                    | Effect                                                                                                                                                                                                                                                                                                      |

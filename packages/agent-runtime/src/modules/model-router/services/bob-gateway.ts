@@ -1,5 +1,8 @@
 import { Readable } from "node:stream";
-import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-state-store.js";
+import {
+  leaseEnvOf,
+  type RuntimeEnvState,
+} from "../../runtime-channel/infrastructure/env-state-store.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 import { rewriteBobProfile } from "../domain/bob-profile.js";
 import {
@@ -52,9 +55,10 @@ export function createBobGatewayPassthrough(
         (l) => l.template === BOB_TEMPLATE && !!l.env.BOB_DEFAULT_GATEWAY_URL,
       );
       if (!layer) return false;
-      /* UNIT_BOUNDARY_DESCRIPTION: a pin is read the way a harness process reads its env, the agent's own env over the Connection's setting, so an override in Configure Agent → Env wins for chat sessions as it does for a terminal's flags. */
+      /* UNIT_BOUNDARY_DESCRIPTION: a pin is read on the ladder a harness process reads its env on, the harness layer over the agent's own env over the Connection's setting, so chat sessions and a terminal's flags resolve one team and instance and an override in Configure Agent → Env wins for both. */
+      const lease = leaseEnvOf(state, { harness, provider: null });
       const pin = (name: string): string | null =>
-        state.env[name] ?? layer.env[name] ?? null;
+        lease[name] ?? layer.env[name] ?? null;
       const method = req.method ?? "GET";
       const where = `bob gateway ${method} ${url.pathname}`;
       const target = `${layer.env.BOB_DEFAULT_GATEWAY_URL!.replace(/\/+$/, "")}${url.pathname}${url.search}`;
