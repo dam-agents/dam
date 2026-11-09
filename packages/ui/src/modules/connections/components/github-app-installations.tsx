@@ -96,7 +96,7 @@ export function GithubAppInstallations({
           onToggle={() => setOpen(!open)}
           chevronSize={12}
           testId={`${testId}-toggle`}
-          className="min-w-0 max-w-full gap-1.5 text-muted-foreground hover:text-foreground"
+          className="min-w-0 max-w-full flex-wrap gap-1.5 text-muted-foreground hover:text-foreground"
         >
           <span className="flex shrink-0 items-center gap-0.5">
             {accounts.slice(0, AVATARS_SHOWN).map((account) => (
@@ -108,7 +108,7 @@ export function GithubAppInstallations({
               </span>
             )}
           </span>
-          <span className="min-w-0 truncate">
+          <span className="min-w-0">
             Installed on {installationsCountLabel(installations.data)}
           </span>
         </DisclosureToggle>
@@ -125,22 +125,22 @@ export function GithubAppInstallations({
               data-testid={`${testId}-account-${account.login}`}
             >
               <AccountAvatar account={account} />
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate font-medium text-foreground">
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="break-words font-medium text-foreground">
                   {account.login}
                 </span>
-                <span className="truncate text-muted-foreground">
+                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-muted-foreground">
                   {account.kind === "user" ? "Personal account · " : ""}
                   {account.repositorySelection === "all"
                     ? "All repositories"
                     : "Selected repositories"}
+                  {account.suspended && (
+                    <Badge size="sm" variant="warning" className="shrink-0">
+                      Suspended
+                    </Badge>
+                  )}
                 </span>
               </span>
-              {account.suspended && (
-                <Badge size="sm" variant="warning" className="shrink-0">
-                  Suspended
-                </Badge>
-              )}
             </li>
           ))}
           {installations.data.truncated && (

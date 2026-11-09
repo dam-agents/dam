@@ -24,6 +24,10 @@ interface Props {
   onNewChild?: () => void;
 }
 
+// A row narrower than a button lets its label wrap rather than spill out of the row.
+const ROW_BUTTON =
+  "max-w-full shrink-0 @max-xs:h-auto @max-xs:min-h-8 @max-xs:whitespace-normal @max-xs:py-1 @max-xs:text-left";
+
 function reauthLabelOf(connection: ConnectionView): string {
   if (connection.parentId) return "Re-authenticate sign-in";
   return connection.status === "pending" ? "Authorize" : "Re-authenticate";
@@ -57,7 +61,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             onClick={narrow}
             data-testid={`catalog-narrow-${connection.id}`}
           >
@@ -68,7 +72,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             onClick={onNewChild}
             data-testid={`connection-new-child-${connection.id}`}
           >
@@ -80,7 +84,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}
@@ -183,7 +187,7 @@ export function RowGrantAction({
     <Button
       variant="outline"
       size="sm"
-      className="shrink-0"
+      className={ROW_BUTTON}
       onClick={() => grant.onToggle(true)}
       data-testid={`catalog-add-${rowId}`}
     >
