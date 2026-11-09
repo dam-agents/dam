@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@ibm/bob':
-        specifier: 2.0.9
-        version: 2.0.9
+        specifier: 2.1.0
+        version: 2.1.0
 
 packages:
 
-  '@ibm/bob@2.0.9':
-    resolution: {integrity: sha512-o/au6XXaXynhl9ictqIkxwlBVOHg7v6Anvv67SufUvQGDb26qfUcktH/PiMhvQ0zn41bxspiw83QAGU6ERSdiw==}
-    engines: {node: '>=22'}
+  '@ibm/bob@2.1.0':
+    resolution: {integrity: sha512-cVVYYIs2od5bETiXZJt9T0rru2eVXUS/8Jjv4Z+LlvHYq4o39hDrBuYAc+eZz+fMssdjXL4gqTdQk9nNq8Ie/A==}
+    engines: {node: '>=22.15.0'}
     hasBin: true
 
   '@lydell/node-pty-darwin-arm64@1.1.0':
@@ -124,7 +124,7 @@ packages:
 
 snapshots:
 
-  '@ibm/bob@2.0.9':
+  '@ibm/bob@2.1.0':
     optionalDependencies:
       '@lydell/node-pty': 1.1.0
       '@officecli/officecli': 1.0.152
