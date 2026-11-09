@@ -48,27 +48,42 @@ export function useAssistantOn(): boolean {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Sessions this tab has seen start, which the
- * server's answer may not know yet. A response that was in flight when the mark
- * was set — or any response from a replica that has not seen the report — carries
- * `used: false`, and must not take the mark back: only the server's own `used:
- * true` retires it, so a reset's answer shows the greeting again.
+ * server's answer may not know yet, each with the onboarding epoch the record
+ * carried when the mark was made. A response that was in flight when the mark was
+ * set — or any response from a replica that has not seen the report — carries
+ * `used: false`, and must not take the mark back; a response from a **newer
+ * epoch** is a reset, here or in another tab, and takes it away.
  */
-const markedUsedHere = new Set<string>();
+const markedUsedHere = new Map<string, string | null>();
 
+/** UNIT_BOUNDARY_DESCRIPTION: the local mark as one answer leaves it: the answer's own epoch decides, and an epoch that moved is a reset, so the mark goes and the greeting comes back. */
 export function usedAfterLocalMark(
   state: AssistantState | null | undefined,
-  marked: ReadonlySet<string>,
+  marked: Map<string, string | null>,
 ): AssistantState | null | undefined {
-  if (!state || state.used || !marked.has(state.agentId)) return state;
-  return { ...state, used: true };
+  if (!state) return state;
+  const epoch = marked.get(state.agentId);
+  if (epoch !== undefined && epoch !== state.resetAt) {
+    marked.delete(state.agentId);
+    return state;
+  }
+  if (state.used) {
+    marked.delete(state.agentId);
+    return state;
+  }
+  return epoch === undefined ? state : { ...state, used: true };
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the record as the query answers it: the local mark decides until the server says the assistant is used, which retires the mark so a later reset — the server saying unused again — brings the greeting back. */
+/** UNIT_BOUNDARY_DESCRIPTION: the record as the query answers it, with this tab's unconfirmed marks applied. */
 export function assistantStateFor(
   state: AssistantState | null | undefined,
 ): AssistantState | null | undefined {
-  if (state?.used) markedUsedHere.delete(state.agentId);
   return usedAfterLocalMark(state, markedUsedHere);
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: forgets this tab's unconfirmed marks, so the reset the person just confirmed brings the greeting and the first landing back in the same page load rather than after a reload. */
+export function forgetAssistantUsed(): void {
+  markedUsedHere.clear();
 }
 
 /**
@@ -92,7 +107,13 @@ export function useAssistantState() {
  * not bring the greeting back.
  */
 export function markAssistantUsed(agentId: string): void {
-  markedUsedHere.add(agentId);
+  const record = queryClient.getQueryData<AssistantState>(
+    trpc.assistants.state.queryKey(),
+  );
+  markedUsedHere.set(
+    agentId,
+    record?.agentId === agentId ? record.resetAt : null,
+  );
   queryClient.setQueryData(trpc.assistants.state.queryKey(), (prev) =>
     prev?.agentId === agentId && !prev.used ? { ...prev, used: true } : prev,
   );

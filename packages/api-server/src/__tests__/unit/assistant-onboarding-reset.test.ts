@@ -25,7 +25,13 @@ function rowStore(rows: readonly AssistantRow[]) {
     find: async (owner) => byOwner.get(owner) ?? null,
     claim: async (owner, agentId) => {
       if (byOwner.has(owner)) return false;
-      byOwner.set(owner, { owner, agentId, state: "creating", used: false });
+      byOwner.set(owner, {
+        owner,
+        agentId,
+        state: "creating",
+        used: false,
+        resetAt: null,
+      });
       return true;
     },
     release: async (owner, agentId) => {
@@ -44,13 +50,14 @@ function rowStore(rows: readonly AssistantRow[]) {
         agentId: toAgentId,
         state: "creating",
         used: false,
+        resetAt: new Date(),
       });
       return true;
     },
     usageOf: async (agentId) => {
       for (const row of byOwner.values())
         if (row.agentId === agentId)
-          return { owner: row.owner, used: row.used, resetAt: null };
+          return { owner: row.owner, used: row.used, resetAt: row.resetAt };
       return null;
     },
     markUsed: async (agentId) => {
@@ -59,7 +66,7 @@ function rowStore(rows: readonly AssistantRow[]) {
     },
     resetUsed: async (owner) => {
       const row = byOwner.get(owner);
-      if (row) byOwner.set(owner, { ...row, used: false });
+      if (row) byOwner.set(owner, { ...row, used: false, resetAt: new Date() });
     },
   };
   return { byOwner, repo };
@@ -125,15 +132,21 @@ describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: the person has an assistant they have used; the reset forgets that, starts the checklist over and records its first Agent again, so they meet a first-timer's checklist — nothing is deleted.
   it("forgets the use and starts the checklist over", async () => {
     const rows = rowStore([
-      { owner: "alice", agentId: "agent-a", state: "ready", used: true },
+      {
+        owner: "alice",
+        agentId: "agent-a",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
     ]);
     const agents = agentStore("alice", ["agent-a"]);
     const w = service({ owner: "alice", rows, agents });
     await w.assistants.resetOnboarding();
-    expect(await w.assistants.state()).toEqual({
-      agentId: "agent-a",
-      used: false,
-    });
+    const state = await w.assistants.state();
+    expect(state).toMatchObject({ agentId: "agent-a", used: false });
+    // UNIT_BOUNDARY_DESCRIPTION: the reset's moment is the epoch a tab reads its own unconfirmed use against, so another tab's reset clears its mark.
+    expect(state?.resetAt).toEqual(expect.any(String));
     expect(w.resetChecklist).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(1);
     expect(agents.create).not.toHaveBeenCalled();
@@ -142,7 +155,13 @@ describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: the person deleted their assistant, so the reset makes a new ordinary Agent and points the record at it, unused: the next landing greets them in its chat.
   it("creates the assistant again when it was deleted", async () => {
     const rows = rowStore([
-      { owner: "alice", agentId: "agent-gone", state: "ready", used: true },
+      {
+        owner: "alice",
+        agentId: "agent-gone",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
     ]);
     const agents = agentStore("alice", []);
     const w = service({ owner: "alice", rows, agents });
@@ -158,7 +177,13 @@ describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: two resets meet the same deleted assistant at once; the record's compare-and-set gives one of them the replacement, and the other adopts the Agent it names, so one Agent is made between them and the checklist's first task is recorded once.
   it("makes one agent when two resets meet", async () => {
     const rows = rowStore([
-      { owner: "alice", agentId: "agent-gone", state: "ready", used: true },
+      {
+        owner: "alice",
+        agentId: "agent-gone",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
     ]);
     const agents = agentStore("alice", []);
     const w = service({ owner: "alice", rows, agents });
@@ -213,8 +238,20 @@ describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: two people reset at once; each reset touches only its caller's record, and the other person's assistant keeps the use it had.
   it("resets only the caller's assistant", async () => {
     const rows = rowStore([
-      { owner: "alice", agentId: "agent-a", state: "ready", used: true },
-      { owner: "bob", agentId: "agent-b", state: "ready", used: true },
+      {
+        owner: "alice",
+        agentId: "agent-a",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
+      {
+        owner: "bob",
+        agentId: "agent-b",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
     ]);
     const alice = service({
       owner: "alice",
@@ -229,7 +266,13 @@ describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: the feature is off for the caller — the install pins it off, or they turned it off — so the reset is refused rather than quietly recreating anything.
   it("is refused while the feature is off for the caller", async () => {
     const rows = rowStore([
-      { owner: "alice", agentId: "agent-a", state: "ready", used: true },
+      {
+        owner: "alice",
+        agentId: "agent-a",
+        state: "ready",
+        used: true,
+        resetAt: null,
+      },
     ]);
     const w = service({
       owner: "alice",

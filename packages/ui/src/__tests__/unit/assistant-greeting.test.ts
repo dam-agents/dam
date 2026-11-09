@@ -97,7 +97,7 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: the first Session of the chat appears before the api-server has learned of it, so the cached record learns it here — and the greeting's own gate then stays shut for a New chat in the same page load.
   it("closes the gate the moment a session exists", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false };
+    const row = { agentId: ASSISTANT, used: false, resetAt: null };
     queryClient.setQueryData(key, row);
     markAssistantUsed(ASSISTANT);
     expect(queryClient.getQueryData(key)).toEqual({ ...row, used: true });
@@ -112,7 +112,7 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: a session on another Agent is not the assistant's, so a record that does not name it is left alone.
   it("leaves a record that names another agent alone", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false };
+    const row = { agentId: ASSISTANT, used: false, resetAt: null };
     queryClient.setQueryData(key, row);
     markAssistantUsed("agent-2");
     expect(queryClient.getQueryData(key)).toEqual(row);

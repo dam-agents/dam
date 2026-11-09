@@ -26,7 +26,13 @@ function rowStore(initial?: AssistantRow) {
     find: async (owner) => rows.get(owner) ?? null,
     claim: async (owner, agentId) => {
       if (rows.has(owner)) return false;
-      rows.set(owner, { owner, agentId, state: "creating", used: false });
+      rows.set(owner, {
+        owner,
+        agentId,
+        state: "creating",
+        used: false,
+        resetAt: null,
+      });
       return true;
     },
     release: async (owner, agentId) => {
@@ -44,6 +50,7 @@ function rowStore(initial?: AssistantRow) {
         agentId: toAgentId,
         state: "creating",
         used: false,
+        resetAt: null,
       });
       return true;
     },
@@ -201,6 +208,7 @@ describe("giving a person their assistant", () => {
       agentId: "agent-a",
       state: "ready",
       used: false,
+      resetAt: null,
     });
     const agents = agentStore();
     const admitted = vi.fn(async () => false);
@@ -248,6 +256,7 @@ describe("giving a person their assistant", () => {
       agentId: "agent-gone",
       state: "ready",
       used: true,
+      resetAt: null,
     });
     const w = service({ rows });
     await w.ensure();

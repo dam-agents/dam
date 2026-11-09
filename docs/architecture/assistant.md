@@ -48,6 +48,7 @@ A person whose assistant has never been used lands in its chat rather than on Ho
 That answer is the record's own mark, set by the first Session that began after the person's last onboarding reset — and only while the install offers assistants — so an asleep assistant is decided without waking it, and an install that offers none writes nothing.
 A Session that began before the reset does not count however late it is reported: a runtime that boots re-reports the Sessions it already had, and those are no use of a first-timer's assistant.
 Setting the mark is announced to the owner's open tabs, since a Session started in another tab, or a turn from a Slack or Telegram conversation, marks the assistant used without this tab having sent anything.
+A tab also keeps its own mark for a Session it just started, before the report lands, and that mark belongs to one onboarding: the reset's moment is part of the record, so a reset — the person's own, or another tab's — takes the mark away with it rather than leaving a tab that never greets them again.
 The UI asks the server for the record only for someone the feature is on for.
 
 ## The first chat

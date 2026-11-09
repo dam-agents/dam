@@ -114,7 +114,13 @@ export function createAssistantsService(deps: {
     assistants: {
       async state() {
         const row = await deps.repo.find(deps.owner);
-        return row === null ? null : { agentId: row.agentId, used: row.used };
+        return row === null
+          ? null
+          : {
+              agentId: row.agentId,
+              used: row.used,
+              resetAt: row.resetAt?.toISOString() ?? null,
+            };
       },
 
       async resetOnboarding() {
@@ -174,6 +180,7 @@ export function createAssistantsService(deps: {
           agentId,
           state: "creating",
           used: false,
+          resetAt: null,
         });
       } catch (err) {
         getLogger().warn(

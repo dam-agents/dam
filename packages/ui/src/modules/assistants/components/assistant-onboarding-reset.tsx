@@ -7,7 +7,10 @@ import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import { agentsKeys } from "../../agents/api/queries.js";
-import { useAssistantState } from "../api/assistant-state.js";
+import {
+  forgetAssistantUsed,
+  useAssistantState,
+} from "../api/assistant-state.js";
 import { runResetOnboarding } from "../lib/reset-onboarding.js";
 
 /**
@@ -55,6 +58,8 @@ export function AssistantOnboardingReset() {
                 queryClient.invalidateQueries({ queryKey: agentsKeys.root }),
               ]),
             releaseLanding: () => {
+              // UNIT_BOUNDARY_DESCRIPTION: this tab may still hold its own unconfirmed mark for the message that brought it here, and the reset would not bring the greeting back while it does.
+              forgetAssistantUsed();
               void state.refetch();
               useStore.getState().releaseAssistantLanding();
             },

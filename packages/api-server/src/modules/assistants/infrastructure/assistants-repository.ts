@@ -8,6 +8,7 @@ export interface AssistantRow {
   agentId: string;
   state: AssistantState;
   used: boolean;
+  resetAt: Date | null;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a Session report needs to know about the record it may mark as used. */
@@ -64,6 +65,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         agentId: row.agentId,
         state: row.state === "ready" ? "ready" : "creating",
         used: row.usedAt !== null,
+        resetAt: row.resetAt,
       };
     },
 
