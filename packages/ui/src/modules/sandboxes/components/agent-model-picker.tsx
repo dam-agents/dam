@@ -25,23 +25,17 @@ import { SessionPairPicker } from "../../sessions/components/session-pair-picker
 import { pairSummary } from "../../sessions/lib/session-settings.js";
 import { nextSlots } from "../../sessions/lib/subagent-choice.js";
 
-const COPY: Record<
-  DefaultKind,
-  { label: string; hint: string; placeholder: string }
-> = {
+const COPY: Record<DefaultKind, { label: string; placeholder: string }> = {
   chat: {
     label: "Default model",
-    hint: "New chats start on this model. A channel or schedule with no pick of its own follows its page's model, which is this one until that page sets it.",
     placeholder: "Choose a model",
   },
   channel: {
     label: "Model for channels",
-    hint: "Channels that pick nothing of their own run on this.",
     placeholder: "Use agent default",
   },
   scheduled: {
     label: "Model for schedules",
-    hint: "Schedules that pick nothing of their own run on this.",
     placeholder: "Use agent default",
   },
 };
@@ -130,14 +124,7 @@ export function AgentModelPicker({
 
   return (
     <section className="flex flex-col gap-2">
-      <div>
-        <SectionLabel>{copy.label}</SectionLabel>
-        <p className="text-sm text-muted-foreground">
-          {kind === "chat" && automatic
-            ? `Nothing is saved, so new chats and runs use ${defaultSummary}, picked automatically from this agent's providers. Pick a model to keep one.`
-            : copy.hint}
-        </p>
-      </div>
+      <SectionLabel>{copy.label}</SectionLabel>
       <fieldset
         disabled={!!access && !holds(access, "settings")}
         className="min-w-0"

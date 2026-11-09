@@ -181,6 +181,7 @@ function makeHarness(
         calls.slack.push({ agentId, channel, ambient });
         return { ok: true, value: fakeAgent(agentId) } as never;
       },
+      async announceSlackConnect() {},
     },
     schedules: {
       async createCron(input) {
@@ -692,6 +693,7 @@ describe("starter kits: apply", () => {
         connectSlack: async () => {
           throw new Error("nope");
         },
+        announceSlackConnect: async () => {},
       },
       schedules: {
         createCron: async () => {
@@ -812,6 +814,7 @@ describe("starter kits: apply", () => {
         get: async () => null,
         list: async () => [],
         connectSlack: async () => ({}) as never,
+        announceSlackConnect: async () => {},
       },
       schedules: {
         createCron: async (input) =>
@@ -920,6 +923,7 @@ describe("starter kits: onboarding turn", () => {
         connectSlack: async () => {
           throw new Error("unreachable");
         },
+        announceSlackConnect: async () => {},
       },
       schedules: {
         createCron: async (input) =>

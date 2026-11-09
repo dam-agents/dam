@@ -99,6 +99,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     spendCeilingsForOperator,
     spendHold,
     userBudgetsForOperator,
+    loginTestimonials,
     providerStatus,
     outageAlerts,
     wrapperFrameSender,
@@ -229,6 +230,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         catalog: harnesses,
         seed: config.curveBenderDeployment && config.defaultProfileSeed,
         ownerCatalog: () => connections.modelCatalog(),
+        // UNIT_BOUNDARY_DESCRIPTION: the deployment owns that Connection only while its key is set, so only then does a create reconcile it.
+        ...(config.curveBenderDeployment && {
+          reconcileConnections: () => connections.reconcileManagedConnections(),
+        }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
@@ -325,9 +330,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         totalMaxBytes: config.kbShareTotalMaxBytes,
         maxFiles: config.kbShareMaxFiles,
       },
-    });
-    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
-      agentExists,
     });
     const { features } = composeFeaturesForOwner({
       db,
@@ -519,6 +521,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       hiddenHarnesses: async () =>
         new Set((await features.flags()).hermes ? [] : ["hermes"]),
     });
+    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
+      agentExists,
+      validateChoice: (agentId, pair, references) =>
+        harnessConfig.validateChoice(agentId, pair, references),
+    });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]
     > => {
@@ -680,6 +687,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       }),
       spendCeilings: spendCeilingsForOperator(user.sub),
       userBudgets: userBudgetsForOperator(user.sub),
+      loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
       assistants,

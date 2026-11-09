@@ -303,7 +303,11 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
       ),
     }),
   ]),
-  slackChannelMembership: z.enum(["member", "not-member", "unlinked"]),
+  slackChannelMembership: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("member"), slackUserId: z.string() }),
+    z.object({ kind: z.literal("not-member") }),
+    z.object({ kind: z.literal("unlinked") }),
+  ]),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   fetchAttachment: z.union([
     attachmentResultSchema,

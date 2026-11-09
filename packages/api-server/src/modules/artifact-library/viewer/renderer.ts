@@ -74,6 +74,8 @@ export const VIEWER_PROMPT_NOTICES = {
   "spend-limit":
     "The agent reached its spend limit for today, so it did not get this.",
   "agent-unreachable": "The agent could not be reached. Try again in a moment.",
+  "profile-unavailable":
+    "The model this page is set to use cannot run now, so the agent did not get this.",
   "not-allowed": "This page can no longer ask the agent.",
   "invalid-request": "The page sent a prompt the agent cannot take.",
 } as const;

@@ -398,7 +398,9 @@ export interface AgentsService {
     slackChannelId: string,
     ambient?: boolean,
     customEmoji?: string[] | null,
+    options?: { quiet?: boolean },
   ) => Promise<ConnectSlackResult>;
+  announceSlackConnect: (id: string, slackChannelId: string) => Promise<void>;
   disconnectSlack: (
     id: string,
     slackChannelId?: string,

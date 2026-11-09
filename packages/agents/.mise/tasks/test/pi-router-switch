@@ -70,7 +70,7 @@ const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--n
   cwd: home,
   env: {
     PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
-    PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_PROVIDER: "conn-ibm", PLATFORM_MODEL: GPT,
+    PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_PROVIDER: "conn-ibm", PLATFORM_MODEL: GPT,
     OPENAI_API_KEY: "platform:conn:conn-ibm", OPENAI_BASE_URL: "https://ete-litellm.example", ANTHROPIC_AUTH_TOKEN: "sk-platform:conn:conn-ibm",
   },
   stdio: ["pipe", "pipe", "pipe"],

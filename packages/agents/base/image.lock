@@ -222,10 +222,10 @@ backend = "npm:@github/copilot"
 specifiers = ["1.0.103"]
 
 [[tools."npm:@ibm/bob"]]
-version = "2.0.8"
-aube = { path = ".mise/locks/npm-ibm-bob/2.0.8", digest = "sha256:7a97cfc9c20140ffc4f059162cc01a322849c6be27d4fbb5771940b5c57fdd62" }
+version = "2.0.9"
+aube = { path = ".mise/locks/npm-ibm-bob/2.0.9", digest = "sha256:24a6297fbcda1b3e3871aaccb1adce963b3b246bf3bde24016b350f1058b7ce8" }
 backend = "npm:@ibm/bob"
-specifiers = ["2.0.8"]
+specifiers = ["2.0.9"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"

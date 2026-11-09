@@ -15,6 +15,7 @@ import {
   readAgentSkill,
 } from "./agent-discovery.js";
 import { createBrandRoutes } from "./brand.js";
+import { createLoginTestimonialsRoutes } from "./login-testimonials.js";
 import { mountBrowserStreamPage } from "./browser-stream.js";
 import {
   createAvatarImageRoutes,
@@ -72,6 +73,13 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     createAvatarImagesRepository(boot.db),
   );
   app.route("/api/public/avatars", avatarImages.serve);
+  app.route(
+    "/api/public/login-testimonials",
+    createLoginTestimonialsRoutes({
+      read: boot.loginTestimonials.readPublic,
+      addresses: boot.addresses,
+    }),
+  );
   app.route("/api/avatars", avatarImages.upload);
   app.route(
     "/api/public",
