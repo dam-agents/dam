@@ -93,12 +93,18 @@ export interface SlackLoopGuardDrops {
   recent: SlackLoopGuardDrop[];
 }
 
+export interface SlackBindingModes {
+  ambient?: boolean | undefined;
+  history?: boolean | undefined;
+}
+
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   teamId?: string;
   label?: SlackConversationLabel;
   ambient?: boolean;
+  history?: boolean;
   default?: boolean;
   customEmoji?: string[] | null;
   loopGuard?: SlackLoopGuardDrops;
@@ -375,7 +381,7 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes?: SlackBindingModes,
     customEmoji?: string[] | null,
     options?: { quiet?: boolean },
   ) => Promise<ConnectSlackResult>;

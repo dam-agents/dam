@@ -15,6 +15,7 @@ import {
 import type {
   AttachmentQuery,
   AttachmentResult,
+  ChannelHistoryQuery,
   ChannelReply,
   ChannelSendResult,
   MessageReactionsResult,
@@ -43,11 +44,13 @@ async function mcpHarness(opts?: {
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
   artifacts?: Record<string, { title: string; shareUrl: string | null }>;
+  readsChannelHistory?: boolean;
 }) {
   const replies: ChannelReply[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
+  const historyQueries: ChannelHistoryQuery[] = [];
   const attachmentQueries: AttachmentQuery[] = [];
   const channelManager = {
     postMessage: vi.fn(
@@ -92,6 +95,22 @@ async function mcpHarness(opts?: {
         );
       },
     ),
+    readChannelHistory: vi.fn(
+      async (
+        _agentId: string,
+        _type: ChannelType,
+        query: ChannelHistoryQuery,
+      ) => {
+        historyQueries.push(query);
+        return {
+          messages: [
+            "U999 [Wed 2026-09-17 09:12 UTC, ts 1758100320.000000]: the plan",
+          ],
+          conversationId: "C-BOUND",
+          hasMore: false,
+        };
+      },
+    ),
     fetchAttachment: vi.fn(
       async (_agentId: string, _type: ChannelType, query: AttachmentQuery) => {
         attachmentQueries.push(query);
@@ -116,6 +135,7 @@ async function mcpHarness(opts?: {
     artifactLibrary: {
       get: async (id: string) => opts?.artifacts?.[id] ?? null,
     },
+    readsChannelHistory: opts?.readsChannelHistory ?? false,
   } as unknown as McpSessionDeps);
 
   const [clientTransport, serverTransport] =
@@ -130,6 +150,7 @@ async function mcpHarness(opts?: {
     replies,
     reactionQueries,
     threadQueries,
+    historyQueries,
     attachmentQueries,
     channelManager,
   };
@@ -404,6 +425,85 @@ describe("describe_message_reactions MCP tool", () => {
     );
     expect(lookups).toHaveLength(1);
     expect(lookups[0].detail).toEqual({ messageTs: "9.9" });
+  });
+});
+
+describe("read_channel_history MCP tool", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: Channel history is an opt-in on a binding, so an agent
+   * that has it on nowhere must not be offered a tool that only refuses.
+   */
+  it("is listed only while channel history is on for one of the agent's conversations", async () => {
+    const off = await mcpHarness();
+    expect(
+      (await off.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(false);
+
+    const on = await mcpHarness({ readsChannelHistory: true });
+    expect(
+      (await on.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An agent asked about "last week" names times, not Slack
+   * timestamps, so the tool takes ISO dates and hands the worker the Slack
+   * times it pages by. The read returns message bodies, so it is logged.
+   */
+  it("turns since and until into Slack times, passes the query through, and logs what it read", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    const result = await h.client.callTool({
+      name: "read_channel_history",
+      arguments: {
+        chatId: "C-BOUND",
+        since: "2026-11-02T00:00:00Z",
+        until: "2026-11-09",
+      },
+    });
+
+    expect(h.historyQueries).toEqual([
+      {
+        conversationId: "C-BOUND",
+        since: "1793577600.000000",
+        until: "1794182400.000000",
+      },
+    ]);
+    expect(
+      JSON.parse((result.content as { text: string }[])[0]!.text),
+    ).toMatchObject({ conversationId: "C-BOUND", hasMore: false });
+    expect(auditLines).toEqual([
+      {
+        event: "channel.history_read",
+        detail: {
+          conversationId: "C-BOUND",
+          since: "2026-11-02T00:00:00Z",
+          until: "2026-11-09",
+          messages: 1,
+          hasMore: false,
+        },
+      },
+    ]);
+  });
+
+  it("refuses a time that is not an ISO 8601 date without reading anything", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    const result = await h.client.callTool({
+      name: "read_channel_history",
+      arguments: { since: "last tuesday" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(h.historyQueries).toEqual([]);
   });
 });
 

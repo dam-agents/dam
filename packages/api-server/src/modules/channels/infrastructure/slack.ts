@@ -1417,6 +1417,11 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
+  setSlackChannelHistory: (
+    agentId: string,
+    slackChannelId: string,
+    history: boolean,
+  ) => Promise<void>;
   agentsFor: (owner: string) => AgentsService;
   ignoredApps: SlackIgnoredApps;
   loopGuardDrops?: Pick<SlackLoopGuardDropsRepository, "record">;
@@ -1462,6 +1467,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
+    setSlackChannelHistory,
     agentsFor,
     ignoredApps,
     loopGuardDrops,
@@ -2406,6 +2412,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         owner: binding.owner,
         teamId: binding.teamId,
         ambient: binding.ambient,
+        history: binding.history,
         isDefault: binding.isDefault,
       })),
     );
@@ -4221,6 +4228,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
+      .with("history", async () => {
+        await handleHistoryCommand(rest, command, ack);
+      })
       .with("ignore", async () => {
         await handleIgnoreCommand(rest, command, ack);
       })
@@ -4244,7 +4254,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` and \`delete\` also works as a mention, for example \`@${brand.name} who\`.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` and \`delete\` also works as a mention, for example \`@${brand.name} who\`.`,
         });
       })
       .exhaustive();
@@ -4641,6 +4651,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           (entry.ambient
             ? "Reads every message here. "
             : "Reads only messages that tag it. ") +
+          (entry.history ? "Can read this conversation's history. " : "") +
           (entry.isDefault
             ? `Reach it with ${tag} &lt;message&gt; or ${named}.`
             : `Reach it with ${named}.`) +
@@ -5276,6 +5287,92 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       text: enable
         ? `Ambient mode turned on — \`${binding.name}\` now reads along in this channel and may chime in without being mentioned when it can clearly help. It still answers mentions as usual; run \`/${brandShort} ambient ${binding.name} off\` to make it mentions-only again.${termsPending}`
         : `Ambient mode turned off — \`${binding.name}\` now only responds when mentioned.`,
+    });
+  }
+
+  async function handleHistoryCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const { action, nameArg } = parseSwitchArgs(rest);
+    const subcommand = action ? `history ${action}` : "history";
+
+    const picked = await pickRosterAgent(
+      command.channelId,
+      nameArg,
+      (name) => `/${brandShort} history ${name}${action ? ` ${action}` : ""}`,
+    );
+    if (!picked.ok) {
+      await ack({ text: picked.text });
+      return;
+    }
+    const binding = picked.entry;
+
+    const readsHistory = binding.history;
+    if (!action) {
+      const others = picked.roster.filter(
+        (entry) => entry.instanceName !== binding.instanceName,
+      );
+      const othersNote =
+        others.length > 0
+          ? ` Channel history is set per agent; the others here are ${others
+              .map((e) => `\`${e.name}\` (${e.history ? "on" : "off"})`)
+              .join(", ")}.`
+          : "";
+      await ack({
+        text:
+          `Channel history for \`${binding.name}\` is ${
+            readsHistory
+              ? "on — it can read this conversation's older messages and its threads when an answer needs them"
+              : "off — it sees only the newest messages it is handed here"
+          }. Use \`/${brandShort} history ${binding.name} on\` or \`/${brandShort} history ${binding.name} off\` to change it.` +
+          othersNote,
+      });
+      return;
+    }
+    const enable = action === "on";
+
+    const invoker = await authorizeActor(command, ack, {
+      agentId: binding.instanceName,
+      subcommand,
+      allowed: (invoker) => isBinderOrOwner(binding, invoker),
+      denyReason: "not-binder-or-owner",
+      denyCopy:
+        "Only the person who connected this channel, or the agent's owner, can change channel history.",
+    });
+    if (!invoker) return;
+
+    if (enable === readsHistory) {
+      await ack({
+        text: `Channel history is already ${enable ? "on" : "off"}.`,
+      });
+      return;
+    }
+
+    await setSlackChannelHistory(
+      binding.instanceName,
+      command.channelId,
+      enable,
+    );
+    securityLog("info", "channel.history_toggled", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: binding.instanceName,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        history: enable,
+      },
+    });
+
+    await ack({
+      text: enable
+        ? `Channel history turned on — from its next session, \`${binding.name}\` can read this conversation's older messages and its threads when an answer needs them. What it reads lands in its sessions, which its owner can see. Run \`/${brandShort} history ${binding.name} off\` to turn it off.`
+        : `Channel history turned off — \`${binding.name}\` now sees only the newest messages it is handed here.`,
     });
   }
 

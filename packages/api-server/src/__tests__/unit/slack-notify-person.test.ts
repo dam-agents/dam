@@ -33,6 +33,7 @@ async function harness(links: ExternalLink[], workspaces: string[]) {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],

@@ -266,7 +266,7 @@ export const agentsRouter = t.router({
       const res = await ctx.agents.connectSlack(
         input.id,
         input.slackChannelId,
-        input.ambient,
+        { ambient: input.ambient, history: input.history },
         input.customEmoji,
       );
       if (res.ok) return toAgentView(res.value);

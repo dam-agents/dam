@@ -14,6 +14,7 @@ const MENTION_COMMAND_WORDS = new Set([
   "unbind",
   "default",
   "ambient",
+  "history",
   "ignore",
   "unignore",
   "delete",
@@ -69,6 +70,7 @@ export async function parseMentionCommand(
     case "default":
       return namesAgent(rest) ? run : null;
     case "ambient":
+    case "history":
       return namesAgent(parseSwitchArgs(rest).nameArg) ? run : null;
     case "ignore":
       return !rest || isLink(rest) ? run : null;
