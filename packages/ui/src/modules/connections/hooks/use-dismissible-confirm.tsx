@@ -40,7 +40,11 @@ export function useDismissibleConfirms(): DismissibleConfirms {
       { title, body, confirmLabel }: DismissibleConfirmRequest,
       storageKeys: readonly string[],
     ) => {
-      if (storageKeys.every((key) => readPersistedFlag(key, false)))
+      /* UNIT_BOUNDARY_DESCRIPTION: no storage key means the question cannot be dismissed — it is asked again every time, because nothing about it has been decided. `every` holds for an empty list, so the emptiness has to be tested first: a caller that passes none is asking for a dialog that must always show. */
+      if (
+        storageKeys.length > 0 &&
+        storageKeys.every((key) => readPersistedFlag(key, false))
+      )
         return true;
       const choice = { dontShowAgain: false };
       const ok = await showConfirm(

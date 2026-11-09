@@ -2827,6 +2827,9 @@ export function createConnectionsService(deps: {
           throw new TRPCError({ code: "NOT_FOUND" });
         }
         const previous = rememberedInput(current, DAM_KEY_INPUT);
+        const previousValue = await deps.secretStore
+          .getField(current.auth.valueRef)
+          .catch(() => null);
         const minted = await damKey.mint();
         if (!(await queueDamKey(minted.id, current.id)))
           throw new TRPCError({
@@ -2835,11 +2838,6 @@ export function createConnectionsService(deps: {
           });
         try {
           await rotateHeaderValue(current, current.auth, minted.plaintext);
-        } catch (err) {
-          await settleQueuedDamKey(minted.id);
-          throw withoutKeyMaterial(err, minted.plaintext);
-        }
-        try {
           await deps.repo.adoptDamKey({
             id: current.id,
             ownerSub: deps.ownerId,
@@ -2847,6 +2845,24 @@ export function createConnectionsService(deps: {
             previousKeyId: previous,
           });
         } catch (err) {
+          /* UNIT_BOUNDARY_DESCRIPTION: the Secret may already hold the new key, so it is put back before that key is revoked: a failed rotation leaves the Connection working on the key it had, never holding one that no longer authenticates. A restore that fails is reported rather than hidden — the Connection is then broken until it is rotated again. */
+          if (previousValue !== null) {
+            await rotateHeaderValue(current, current.auth, previousValue).catch(
+              (restoreErr: unknown) => {
+                securityLog("warn", "connection.dam_key_restore_failed", {
+                  category: "credential",
+                  actor: deps.ownerId,
+                  actorKind: "user",
+                  target: current.id,
+                  result: "failure",
+                  reason:
+                    restoreErr instanceof Error
+                      ? restoreErr.message
+                      : "unknown",
+                });
+              },
+            );
+          }
           await settleQueuedDamKey(minted.id);
           throw withoutKeyMaterial(err, minted.plaintext);
         }

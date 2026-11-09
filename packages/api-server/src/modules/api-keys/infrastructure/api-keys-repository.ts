@@ -119,7 +119,9 @@ export function insertApiKeyRevocation(db: Db) {
 }
 
 export function listApiKeyRevocations(db: Db) {
-  return async (): Promise<
+  return async (
+    olderThanSeconds: number,
+  ): Promise<
     { keyId: string; ownerSub: string; connectionId: string | null }[]
   > =>
     db
@@ -128,7 +130,10 @@ export function listApiKeyRevocations(db: Db) {
         ownerSub: apiKeyRevocations.ownerSub,
         connectionId: apiKeyRevocations.connectionId,
       })
-      .from(apiKeyRevocations);
+      .from(apiKeyRevocations)
+      .where(
+        sql`${apiKeyRevocations.createdAt} < now() - make_interval(secs => ${olderThanSeconds})`,
+      );
 }
 
 export function listApiKeyRevocationsForConnection(db: Db) {

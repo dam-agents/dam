@@ -27,6 +27,7 @@ import {
   type OwnerDirectoryPort,
 } from "./services/owner-active-probe.js";
 import { createApiKeyTokenCodec } from "./domain/token.js";
+import { createKeyRevocationSweep } from "./services/key-revocation-sweep.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: the record a key is written to before anything uses it, and removed from once a Connection names it. An entry means the key is not a Connection's and must be revoked; the sweep reads it that way, which is what makes a crash between minting and recording cost a key rather than leave one live. */
 export interface ApiKeyLedger {
@@ -85,19 +86,13 @@ export function composeApiKeysModule(deps: {
       pendingFor: listForConnection,
       forget: deleteForConnection,
     }),
-    /* UNIT_BOUNDARY_DESCRIPTION: revokes every queued key no Connection names, and drops every record it has settled, so a key the platform could not revoke at the time does not stay live under a name nothing holds, and one a Connection did take over is not revoked for having been queued first. */
-    async sweepRevocations() {
-      const pending = await listRevocations();
-      let revoked = 0;
-      for (const rec of pending) {
-        if (!(await namedByAConnection(rec.keyId))) {
-          await revoke(rec.keyId, rec.ownerSub);
-          revoked += 1;
-        }
-        await deleteRevocation(rec.keyId);
-      }
-      return revoked;
-    },
+    sweepRevocations: () =>
+      createKeyRevocationSweep({
+        pending: listRevocations,
+        revoke,
+        namedByAConnection,
+        drop: deleteRevocation,
+      }).run(),
     createService: ({ ownerSub, surface }) =>
       createApiKeysService({
         ownerSub,

@@ -427,8 +427,8 @@ describe("rotating the key", () => {
     expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
   });
 
-  // TEST_SCENARIO: the Connection cannot take over the new key — its row write fails after the Secret already holds it — so the rotation fails with the new key revoked, and the Connection still names the key it named before.
-  it("revokes the new key when the Connection cannot take it over", async () => {
+  // TEST_SCENARIO: the Connection cannot take over the new key — its row write fails after the Secret already holds it — so the rotation fails with the new key revoked, the Secret put back on the old key, and the Connection still naming what it named before: it answers with the credential it had, not with one that no longer works.
+  it("puts the old key back when the Connection cannot take the new one over", async () => {
     const { svc, store, keys } = harness(BASE_URL, {
       adoptDamKey: async () => {
         throw new Error("row write failed");
@@ -442,7 +442,45 @@ describe("rotating the key", () => {
     expect(keys.revoked).toEqual(["key-2"]);
     expect(keys.live).toEqual(new Set(["key-1"]));
     expect(keys.queued.size).toBe(0);
+    const conn = damRows(store.rows)[0]!;
+    expect(conn.inputs[DAM_KEY_INPUT]).toBe("key-1");
+    expect(secretOf(store.secrets, conn)?.fields.value).toBe("pk_secret_key-1");
+    const injected = JSON.stringify(
+      secretOf(store.secrets, conn)?.fields ?? {},
+    );
+    expect(injected).toContain("pk_secret_key-1");
+    expect(injected).not.toContain("pk_secret_key-2");
+    expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
+  });
+
+  // TEST_SCENARIO: the Secret itself refuses the new key, which the rotation fails on before anything was adopted: the old key is still in the Secret, the new one is revoked, and the Connection keeps working.
+  it("keeps the old key when the Secret write itself fails", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    const conn = damRows(store.rows)[0]!;
+    const secretPath =
+      conn.auth.kind === "header" ? conn.auth.valueRef.path : "";
+    const before = { ...store.secrets.get(secretPath)! };
+    let writes = 0;
+    const originalPut = store.secrets.set;
+    store.secrets.set = ((key: string, value: unknown) => {
+      writes += 1;
+      if (writes === 1) throw new Error("secret store down");
+      return originalPut.call(store.secrets, key, value as never);
+    }) as typeof store.secrets.set;
+    try {
+      await expect(svc.rotateDamConnection(id!)).rejects.toThrow(
+        /secret store down/,
+      );
+    } finally {
+      store.secrets.set = originalPut;
+    }
+    expect(keys.revoked).toEqual(["key-2"]);
+    expect(keys.queued.size).toBe(0);
     expect(damRows(store.rows)[0]!.inputs[DAM_KEY_INPUT]).toBe("key-1");
+    expect(store.secrets.get(secretPath)?.fields.value).toBe(
+      before.fields.value,
+    );
   });
 
   // TEST_SCENARIO: a rotation and a delete of the same Connection started together are serialized on one lock, so whichever runs second sees the other's key: no key minted for the Connection is left live.

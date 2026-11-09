@@ -7,8 +7,9 @@
 // TEST_OVERVIEW: nothing once the library is there and the Agent holds no such
 // TEST_OVERVIEW: Connection.
 import type { ConnectionView } from "api-server-api";
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentView } from "../../types.js";
@@ -27,6 +28,9 @@ const { useHoldsDamConnection } =
   await import("../../modules/agents/hooks/use-holds-dam-connection.js");
 const { useBindSharingConfirm } =
   await import("../../modules/agents/hooks/use-bind-sharing-confirm.js");
+const { useConfirmSharedConnection } =
+  await import("../../modules/connections/hooks/use-confirm-shared-connection.js");
+const { useStore } = await import("../../store.js");
 const { getBrand } = await import("../../brand.js");
 
 const DAM: ConnectionView = {
@@ -76,7 +80,28 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   library.data = undefined;
+  useStore.setState({ dialog: null });
 });
+
+function GrantProbe({ connection }: { connection: ConnectionView }) {
+  const { confirm } = useConfirmSharedConnection({
+    editors: [],
+    channels: [],
+  });
+  useEffect(() => {
+    void confirm({ name: connection.name, templateId: connection.templateId });
+  }, [confirm, connection]);
+  return null;
+}
+
+const dialogText = () => {
+  const dialog = useStore.getState().dialog;
+  if (dialog === null) return null;
+  return {
+    title: dialog.title,
+    body: renderToStaticMarkup(createElement("div", null, dialog.message)),
+  };
+};
 
 describe("the warning in the channel-bind flow", () => {
   // TEST_SCENARIO: the Agent's library has not arrived yet, so the page cannot say whether it holds the Connection — the warning shows all the same.
@@ -111,5 +136,24 @@ describe("the warning in the channel-bind flow", () => {
 
     render(createElement(BindProbe, { agent: agentHolding(["conn-github"]) }));
     expect(host.textContent).not.toContain(`${getBrand().name} connection`);
+  });
+});
+
+describe("the confirmation before the grant", () => {
+  // TEST_SCENARIO: the Agent has no editors and no shared chat, so there is no audience to warn about — and the grant still asks, because the Connection itself is the thing being given away: the agent it is granted to acts as its owner.
+  it("asks before granting the Connection to an agent with no audience", () => {
+    render(createElement(GrantProbe, { connection: DAM }));
+    const dialog = dialogText();
+    expect(dialog).not.toBeNull();
+    expect(dialog!.title).toBe("Let this agent act as you?");
+    expect(dialog!.body).toContain(getBrand().name);
+    expect(dialog!.body).toContain("act as you");
+    act(() => useStore.getState().closeDialog(false));
+  });
+
+  // TEST_SCENARIO: a Connection that is not the install's own asks nothing of its own when there is no audience to warn, as before.
+  it("asks nothing for another Connection with no audience", () => {
+    render(createElement(GrantProbe, { connection: GITHUB }));
+    expect(dialogText()).toBeNull();
   });
 });
