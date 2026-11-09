@@ -70,5 +70,7 @@ With two or more, the connect form asks which host, and a sign-in authorizes, re
 The install can also retire a host its users have moved away from.
 No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected and cannot be authorized there.
 A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host.
+The sign-in then uses the app the install registered on the new host, even where it had a user's own app before.
+A narrowed Connection keeps a scope that names an account of the old host, which GitHub refuses on the new one, so after the authorization it reads expired until its scope is picked again; a full-access one works at once.
 Tokens and installations do not move: they are made again on the new host.
 The UI's host list and the move stay behind the `github-enterprise-hosts` experimental feature; the api-server enforces the host list and the retired hosts for every caller.
