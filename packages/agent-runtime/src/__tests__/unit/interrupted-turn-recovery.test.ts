@@ -33,6 +33,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const NEVER_STORED = new InProcessRequestError(
   "session/resume failed: Resource not found",
+  -32002,
   { platform: { unstored: true, undelivered: [] } },
 );
 
@@ -337,8 +338,10 @@ describe("interrupted-turn recovery", () => {
 
   /**
    * TEST_SCENARIO: the resume of a scheduled run cut on its first turn fails
-   * for another reason than a Session the harness never stored, as a load
-   * that timed out. The harness may still hold the conversation, so recovery
+   * for another reason than a Session the harness never stored, as an expired
+   * credential. The runtime still stamps the error unstored, since it flagged
+   * the Session so, but the harness never said it holds no such Session. It
+   * may still hold the conversation, so recovery
    * gives up as it does on any failed resume rather than run the task twice,
    * and keeps the task as undelivered for whoever opens the Session.
    */
@@ -364,8 +367,9 @@ describe("interrupted-turn recovery", () => {
         if (resumeSessionId)
           return Promise.reject(
             new InProcessRequestError(
-              "session/resume failed: the harness did not answer the session load in time",
-              undefined,
+              "session/resume failed: Authentication required",
+              -32000,
+              { platform: { unstored: true, undelivered: [] } },
             ),
           );
         fresh.push(task);

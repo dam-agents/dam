@@ -26,13 +26,14 @@ function describeError(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a request the runtime answered with an error. It
- * keeps the error's `data`, where the runtime puts what a caller acts on, such
- * as `platform.unstored` on a failed load of a Session the harness never
- * stored.
+ * keeps the error's `code` and `data`, which a caller acts on: a harness's
+ * resource-not-found code, and the `platform.unstored` the runtime puts on a
+ * failed load of a Session it flagged unstored.
  */
 export class InProcessRequestError extends Error {
   constructor(
     message: string,
+    readonly code: number | undefined,
     readonly data: unknown,
   ) {
     super(message);
@@ -101,6 +102,7 @@ export function createInProcessCaller(
             reject(
               new InProcessRequestError(
                 `${method} failed: ${describeError(frame.error)}`,
+                frame.error.code,
                 frame.error.data,
               ),
             );

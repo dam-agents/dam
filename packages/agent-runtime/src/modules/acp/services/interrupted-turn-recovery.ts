@@ -93,8 +93,18 @@ const SCHEDULED_SESSION_TYPES: readonly string[] = [
   SessionType.ScheduleOnce,
 ];
 
+// ACP's resourceNotFound: the harness holds no conversation under the id.
+const RESOURCE_NOT_FOUND = -32002;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the runtime stamps `platform.unstored` on every
+ * failed load of a Session it flagged unstored, whatever failed, so only the
+ * harness's own not-found answer proves it never stored the Session; an
+ * expired credential or a crashed harness says nothing about it.
+ */
 function neverStored(err: unknown): boolean {
   if (!(err instanceof InProcessRequestError)) return false;
+  if (err.code !== RESOURCE_NOT_FOUND) return false;
   const data = err.data as { platform?: { unstored?: unknown } } | null;
   return data?.platform?.unstored === true;
 }
@@ -132,8 +142,8 @@ function promptText(prompt: PlatformUndeliveredPrompt): string {
  * window belongs to their turn, not to recovery.
  * A Session cut on its first turn is still flagged unstored, however long
  * that turn ran, yet a harness stores a Session early in its first turn, so it
- * is resumed like any other. Only when the load fails because the harness
- * never stored it does a scheduled Session's task, kept in its marker, run
+ * is resumed like any other. Only when the harness answers the load that it
+ * holds no such Session does a scheduled Session's task, kept in its marker, run
  * again in a fresh unattended Session of the same schedule instead. That is
  * how a fire whose machine went down at the very start of its first turn
  * still does its work, where the person who would otherwise retry it never
