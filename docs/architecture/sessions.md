@@ -12,7 +12,9 @@ Before each turn of a session on the default, the runtime applies the newest def
 A default on another harness is not applied, since a session keeps its harness; the session runs on what it last took and follows again when the default is back on its harness.
 A pick by hand in the session, or a configure call, makes it its own choice.
 A session from before this marker follows its default once, when the runtime first holds the defaults, only if its harness, model and settings all equal that default; every other one keeps its own choice.
-A `session/new` or a prompt with no model that reaches the runtime before the agent's first state — the env, then the defaults — is held until both are here, or for the harness's own warm-start bound, and the session opens on its kind's default model instead of being refused as having none.
+A `session/new` or a prompt with no model is held, rather than refused as having none, until the agent's first state settles: its env, and a chat default the api-server has converted (a delivery that still carries no chat default is the one a `hello` publishes before that conversion, so the runtime waits for the next one).
+The wait is bounded by the harness's own warm-start limit, 15 s, and after it the frame is decided on what is known, which for an agent whose default model arrived too late is still the refusal.
+A session released on a converted default opens on its kind's default model, settings and follow marker, as the api-server fills them into a run that names no model; a harness that does not reach its models through the Model Router needs no model, so it bypasses the gate, and a sub-agent session has no kind default to take.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.

@@ -698,15 +698,18 @@ describe("acp-runtime: one harness process per harness", () => {
   /** TEST_SCENARIO: A session opened before a new agent's runtime has its
    * state, as when a create publishes Ready before the runtime's first
    * applyState, is not refused as no-model: it waits for that state, and once
-   * both the env and the agent's defaults are here it opens on its kind's
-   * default model, so its first prompt runs. An agent whose settled defaults
-   * carry no model for the harness is still refused at once. */
+   * both the env and the agent's converted chat default are here it opens on
+   * its kind's default model, settings and follow marker, so its first prompt
+   * runs. The all-null defaults a hello publishes before the conversion are
+   * not that state. An agent whose converted default carries no model for the
+   * harness is still refused at once. */
   it("opens a session held for the agent's first state on its default", () => {
     vi.useFakeTimers();
     const chat = {
       harness: "claude-code",
       provider: "conn-a",
       model: "ibm/aws/claude-sonnet-4-6",
+      settings: { mode: "acceptEdits" },
     };
     let envArrived = false;
     let defaults: SessionDefaultsEventPayload | null = null;
@@ -733,22 +736,37 @@ describe("acp-runtime: one harness process per harness", () => {
       harnesses: [],
     });
     expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
     world.router.receiveDefaults({ chat, channel: null, scheduled: null });
     world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
     expect(client.reply(1)?.error).toBeUndefined();
     expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
-    expect(world.metadata.store.get("s-1")?.meta.model).toBe(chat.model);
+    expect(world.metadata.store.get("s-1")?.meta).toMatchObject({
+      model: chat.model,
+      settings: chat.settings,
+      follows: "chat",
+    });
     const harness = world.harness("claude-code");
     client.send(frames.prompt(2, "s-1", "hi"));
     harness.replyToSession("session/set_config_option", "s-1", {});
+    harness.replyToSession("session/set_mode", "s-1", {});
     expect(promptTextsOf(harness)).toEqual(["hi"]);
 
     const settled = createLeaseWorld({
-      providers: [],
+      providers: ["conn-a"],
       modelRequired: true,
       envReady: () => true,
       sessionDefaults: {
-        get: () => ({ chat: null, channel: null, scheduled: null }),
+        get: () => ({
+          chat: { harness: "claude-code", provider: null, model: null },
+          channel: null,
+          scheduled: null,
+        }),
         revision: () => 1,
         set: () => {},
       },
@@ -762,7 +780,7 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: A prompt that reaches a model-less session while the
    * runtime still has no state is held rather than refused, and once the
-   * agent's defaults land it runs on its kind's default model. */
+   * agent's converted chat default lands it runs on that kind's model. */
   it("holds a prompt with no model until the agent's defaults land", () => {
     vi.useFakeTimers();
     const chat = {
@@ -789,6 +807,12 @@ describe("acp-runtime: one harness process per harness", () => {
     client.send(frames.prompt(1, "old", "hi"));
     expect(client.reply(1)).toBeUndefined();
     envArrived = true;
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
     world.router.receiveDefaults({ chat, channel: null, scheduled: null });
     const harness = world.harness("claude-code");
     harness.replyToSession("session/set_config_option", "old", {});
