@@ -29,7 +29,8 @@ Measured on main in November 2026:
 
 The waste grows with the deploy rate, the node count and the number of workloads, and it is in the boot path: a machine on a new image waits for the whole fetch.
 
-Neither step changes the runner, virtiofs, platform-init or the guest: a machine still boots one read-only tree.
+Neither step changes the runner, virtiofs, platform-init or the guest: a machine still boots one read-only tree, at the path the runner already derives from the image's digest.
+Step 2 keeps that path by its naming rule (below), not by a new answer from the cache.
 
 ## Step 1: a blob cache
 
@@ -134,7 +135,10 @@ These contracts must be settled in step 2's own plan before it is built:
   The link farm of an image with no missing layer is reserved too.
 - **Dependencies across restarts.** Each image tree records its layers and their bindings, and the service rebuilds the references from those records at open, before any eviction.
   An image tree whose layers were not all flushed is fetched again.
-- **Naming beside the old tree.** A tree linked from layers lives in a namespace of its own, so an old flattened tree of the same digest stays in place until it is evicted, and the runner is told which of the two to boot.
+- **One name per digest.** The runner derives a tree's path from the image digest alone, so a linked tree takes the same `sha256_<digest>` name a flattened tree has today, and the runner does not change.
+  A digest has one content, so a flattened tree and a linked tree of it are the same image: a flattened tree already in place is served and stays until it is evicted, and the service links a tree for that digest only when none is there.
+  The two kinds differ only in what the service records beside them, which is how it knows which layers a tree links.
+  A design that kept both kinds of a digest at once would have to tell the runner which to boot, a runner change that rolls out behind busy agents for up to a day.
 
 Each needs a test on a real node with two images that share layers.
 Boot both, then read and stat the shared files from both guests while one copies a shared file up.
