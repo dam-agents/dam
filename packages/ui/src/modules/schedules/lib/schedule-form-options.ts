@@ -70,12 +70,12 @@ export const DAYS_ISO: { iso: number; label: string; name: string }[] = [
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const WEEKEND = [6, 7];
 
-/** UNIT_BOUNDARY_DESCRIPTION: the picked days in the words the Days dropdown shows: a named set when they make one, else the short names in week order. */
-export function daysSummary(days: readonly number[]): string {
+/** UNIT_BOUNDARY_DESCRIPTION: none picked is not a value but an error the form names, so it has no summary; else the picked days in the words the Days dropdown shows: a named set when they make one, else the short names in week order. */
+export function daysSummary(days: readonly number[]): string | null {
   const picked = DAYS_ISO.filter((d) => days.includes(d.iso));
   const only = (set: number[]) =>
     picked.length === set.length && set.every((d) => days.includes(d));
-  if (picked.length === 0) return "No days";
+  if (picked.length === 0) return null;
   if (picked.length === DAYS_ISO.length) return "Every day";
   if (only(WEEKDAYS)) return "Weekdays";
   if (only(WEEKEND)) return "Weekends";

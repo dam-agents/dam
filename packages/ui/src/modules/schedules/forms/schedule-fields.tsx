@@ -65,6 +65,8 @@ const SESSION_TOOLTIP =
 const PRECHECK_HINT =
   "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
 
+const PRECHECK_NOTE = "A command that decides whether each run goes ahead.";
+
 const PRECHECK_PLACEHOLDER =
   "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
 
@@ -167,9 +169,11 @@ export function RowSelect({
 function DaysPicker({
   value,
   onChange,
+  invalid,
 }: {
   value: number[];
   onChange: (days: number[]) => void;
+  invalid: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -177,9 +181,13 @@ function DaysPicker({
         <button
           type="button"
           aria-label="Days"
-          className="flex h-7 items-center rounded-md pr-3 pl-2 text-sm text-foreground hover:bg-background"
+          aria-invalid={invalid || undefined}
+          className={cn(
+            "flex h-7 items-center rounded-md border border-transparent pr-3 pl-2 text-sm text-foreground hover:bg-background",
+            invalid && "border-danger text-danger",
+          )}
         >
-          {daysSummary(value)}
+          {daysSummary(value) ?? "Pick days"}
           <ChevronDown size={16} className="text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -274,7 +282,11 @@ export function ScheduleRecurrenceFields({
             control={control}
             name="days"
             render={({ field }) => (
-              <DaysPicker value={field.value} onChange={field.onChange} />
+              <DaysPicker
+                value={field.value}
+                onChange={field.onChange}
+                invalid={field.value.length === 0}
+              />
             )}
           />
         </ScheduleRow>
@@ -382,22 +394,33 @@ export function SchedulePrecheckField({
     );
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex min-h-7 items-center justify-between gap-4">
-        <span className="flex items-center gap-1.5 text-sm text-foreground">
-          <label htmlFor={fieldId}>Precheck</label>
-          <RowHint content={PRECHECK_HINT} label="About prechecks" />
-        </span>
-        {!open && (
-          <RowAddButton label="Add a precheck" onClick={() => setOpen(true)} />
-        )}
+    <>
+      <div className="px-4 py-3">
+        <div className="flex min-h-7 items-center justify-between gap-4">
+          <span className="flex items-center gap-1.5 text-sm text-foreground">
+            <label htmlFor={fieldId}>Precheck</label>
+            <RowHint content={PRECHECK_HINT} label="About prechecks" />
+          </span>
+          {!open && (
+            <RowAddButton
+              label="Add a precheck"
+              onClick={() => setOpen(true)}
+            />
+          )}
+        </div>
+        <RowNote>{PRECHECK_NOTE}</RowNote>
       </div>
-      <div hidden={!open} className="mt-2">
+      <div hidden={!open} className="bg-muted/30 px-4 py-3">
         {input}
         <FormError message={error} />
       </div>
-    </div>
+    </>
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the one line under a row's label that says what the setting does, visible where a tooltip cannot open, as on a touch screen. */
+export function RowNote({ children }: { children: React.ReactNode }) {
+  return <p className="mt-0.5 text-xs text-muted-foreground">{children}</p>;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the inline "+ Add" a row shows on its right while it has nothing yet. */
