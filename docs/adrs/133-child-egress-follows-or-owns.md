@@ -24,7 +24,7 @@ When a driver launches a sub-agent or an Environment, it picks which rules decid
 
 - **The driver's rules** (the default, as before): the child uses the driver's rules as they are at the time, so any change to them applies to the child too.
 - **Rules set by the driver ("open"):** the child gets rules of its own, which the driver sets at launch and can replace at any time; any host they don't allow is denied, and no person is asked.
-  The one exception is access to any host, or to a whole top-level domain such as `.com`: that rule is never the driver's to give; it waits as a request to the owner, and only a person's approval adds it.
+  The one exception is a rule that allows a wildcard host, from any host (`*`) to every subdomain of one domain (`*.github.com`): that rule is never the driver's to give; it waits as a request to the owner, and only a person's approval adds it.
 - **A copy the user widens ("scoped"):** the child starts with a copy of the driver's rules for the hosts the driver names, and the copy doesn't follow later changes.
   A request to any other host waits for a person, never the driver, shows on the driver's page naming the child, and approving it widens the child's rules only.
 
@@ -45,6 +45,6 @@ Also:
 ## Consequences
 
 - **Easier:** a driver can run untrusted work under a narrow copy of its rules, and a throwaway sandbox under rules of its own, without the user reviewing each request.
-- **Harder:** the hosts an open child may reach are the driver's call, with no prompt except for access to any host or a whole top-level domain; data the driver copies into such a child can reach any host the driver allows without the user seeing it.
+- **Harder:** the hosts an open child may reach are the driver's call, with no prompt except for a wildcard host; data the driver copies into such a child can reach any host the driver allows without the user seeing it.
 - **Harder:** each child with rules of its own is one more set of rules to look after; they are listed on the driver's network rules page.
 - **Committed-to:** every request a sub-agent makes is checked against the right set of rules by walking up its chain of drivers, so that chain has to stay correct.

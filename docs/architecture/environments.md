@@ -78,7 +78,7 @@ An Environment runs the app its agent built, which reaches registries, mirrors a
   The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
 - **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
 - **Connections.** An Environment holds none, all of the Owning Agent's when created with them, mirrored as a sub-agent's are, or a subset copied once ([invocations](invocations.md#spawning)); their credentials are injected by its own gateway, while its egress is decided under the Owning Agent.
-  A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
+  What it holds is set when it is created: afterwards only the Owning Agent's own grants reach a mirroring one, the Owning Agent passes on nothing else, and a newly connected provider is never given to one.
 
 ## Agents at the gate
 

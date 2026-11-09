@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -78,7 +78,7 @@ An image target declares nothing, so nothing is narrowed.
 
 **The driver can enter its target.** A target accepts the [Environment Link](environments.md#the-environment-link) from its driver alone (`linkFrom`, set at spawn), so the driver reaches the target's machine over SSH, while the target still dials Environments of its own; nothing in a target reaches its driver, and no other agent, the driver's own driver included, reaches the target.
 
-**Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once in the target's inheritance (`agent_inheritance`): `parent`, the default, gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none` leaves it only its provider, and is the default, and the only choice, for a target whose egress is open.
+**Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once in the target's inheritance (`agent_inheritance`): `parent` gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none`, the default, leaves it only its provider, and is the only choice for a target whose egress is open.
 Network reach needs no grant of its own: by default a target has no egress identity and runs under its Driver's rules, unless the spawn gives it egress of its own, open or scoped ([detached egress](security-and-credentials.md)), though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
 **Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
