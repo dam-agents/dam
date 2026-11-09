@@ -40,7 +40,10 @@ export function hintFor(event: DomainEvent): {
     case EventType.ApprovalResolved:
       return {
         ownerSub: event.ownerSub,
-        hint: { topic: "approvals", agentId: event.agentId },
+        hint: {
+          topic: "approvals",
+          agentId: event.forAgentId ?? event.agentId,
+        },
       };
     case EventType.ScheduleFired:
     case EventType.ScheduleCreated:

@@ -7,9 +7,11 @@ import {
   isNull,
   lt,
   lte,
+  or,
   sql,
   type Db,
   invocations as invocationsTable,
+  invocationRuns as runsTable,
 } from "db";
 import type {
   InvocationHarnessConfig,
@@ -17,7 +19,9 @@ import type {
   InvocationOutputStream,
 } from "api-server-api";
 
-export type InvocationStatus = "running" | "done" | "failed";
+export type InvocationStatus = "idle" | "running" | "done" | "failed";
+
+export type RunStatus = Exclude<InvocationStatus, "idle">;
 
 export type InvocationOrigin = "tool" | "script";
 
@@ -31,6 +35,7 @@ export interface InvocationSpec {
   ttlMs: number | null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a target and one of its runs, as every reader sees it: the target's latest run when it is read by its id, each running run when runs are listed. A target with no run yet reads as idle, with the spawn's time limit and expiry.
 export interface InvocationRow extends InvocationSpec {
   id: string;
   driverAgentId: string;
@@ -44,8 +49,13 @@ export interface InvocationRow extends InvocationSpec {
   output: InvocationOutput | null;
   outputExpiresAt: Date | null;
   createdAt: Date;
+  runCreatedAt: Date | null;
   startedAt: Date | null;
   expiresAt: Date;
+  keepUntil: Date | null;
+  runId: string | null;
+  sessionId: string | null;
+  cancelPending: boolean;
   completedAt: Date | null;
   reapedAt: Date | null;
   transcriptCaptured: boolean;
@@ -54,45 +64,17 @@ export interface InvocationRow extends InvocationSpec {
   driverSessionId: string | null;
 }
 
-export interface InvocationsRepository {
-  insert(
-    input: InvocationSpec & {
-      id: string;
-      driverAgentId: string;
-      rootDriverId: string;
-      owner: string;
-      resultSchema: unknown;
-      expiresAt: Date;
-      harnessConfig: InvocationHarnessConfig | null;
-      origin?: InvocationOrigin;
-      driverSessionId?: string | null;
-    },
-  ): Promise<void>;
-  get(id: string): Promise<InvocationRow | null>;
-  markStarted(id: string, at: Date): Promise<InvocationStart | null>;
-  complete(id: string, result: unknown): Promise<boolean>;
-  fail(id: string, reason: string): Promise<void>;
-  failExpired(id: string, reason: string, now: Date): Promise<boolean>;
-  finishScript(id: string, finish: ScriptFinish): Promise<boolean>;
-  dropOutputStream(id: string, stream: InvocationOutputStream): Promise<void>;
-  clearOutput(id: string): Promise<void>;
-  listExpiredOutputs(now: Date, limit: number): Promise<InvocationRow[]>;
-  listScriptsByRoot(rootDriverId: string): Promise<InvocationRow[]>;
-  listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
-  listRunning(limit: number): Promise<InvocationRow[]>;
-  listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
-  listRunningAgentIds(olderThan: Date): Promise<string[]>;
-  listRootDriverIds(): Promise<string[]>;
-  listTerminalUnreaped(before: Date, limit: number): Promise<InvocationRow[]>;
-  markReaped(id: string): Promise<void>;
-  markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
-  listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
-  listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
-  listTargetsByOwner(
-    owner: string,
-  ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
-  delete(id: string): Promise<void>;
-  deleteReapedByRoot(rootDriverId: string): Promise<number>;
+// UNIT_BOUNDARY_DESCRIPTION: one run in a target: the id of its task event, its task or script, the schema a task's result must match, its time limit, the caller its result goes to, and the target's session it continues, when it continues one.
+export interface InvocationRun {
+  runId: string;
+  prompt: string;
+  script: string | null;
+  resultSchema: unknown;
+  ttlMs: number;
+  expiresAt: Date;
+  origin: InvocationOrigin;
+  driverSessionId: string | null;
+  sessionId: string | null;
 }
 
 export interface InvocationStart {
@@ -115,59 +97,246 @@ export type ScriptFinish =
       outputExpiresAt: Date | null;
     };
 
-export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
+export interface InvocationsRepository {
+  insert(
+    input: Omit<InvocationSpec, "prompt" | "script"> & {
+      id: string;
+      driverAgentId: string;
+      rootDriverId: string;
+      owner: string;
+      expiresAt: Date;
+      keepUntil?: Date | null;
+      harnessConfig: InvocationHarnessConfig | null;
+      driverSessionId?: string | null;
+    },
+    run: InvocationRun | null,
+  ): Promise<void>;
+  get(id: string): Promise<InvocationRow | null>;
+  getRun(runId: string): Promise<InvocationRow | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: a run named by its own id, or a target's latest run named by the target's id, as a driver names either.
+  find(id: string): Promise<InvocationRow | null>;
+  listRuns(invocationId: string, limit: number): Promise<InvocationRow[]>;
+  listRunningRuns(invocationId: string): Promise<InvocationRow[]>;
+  markStarted(
+    invocationId: string,
+    eventId: string,
+    at: Date,
+  ): Promise<InvocationStart | null>;
+  complete(
+    runId: string,
+    result: unknown,
+    sessionId: string | null,
+  ): Promise<boolean>;
+  fail(
+    runId: string,
+    reason: string,
+    sessionId?: string | null,
+  ): Promise<{ cancelPending: boolean } | null>;
+  failExpired(
+    runId: string,
+    reason: string,
+    now: Date,
+  ): Promise<{ cancelPending: boolean } | null>;
+  finishScript(runId: string, finish: ScriptFinish): Promise<boolean>;
+  dropOutputStream(
+    runId: string,
+    stream: InvocationOutputStream,
+  ): Promise<void>;
+  clearOutput(runId: string): Promise<void>;
+  listExpiredOutputs(now: Date, limit: number): Promise<InvocationRow[]>;
+  listScriptsByRoot(rootDriverId: string): Promise<InvocationRow[]>;
+  listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
+  listRunning(limit: number): Promise<InvocationRow[]>;
+  listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
+  listUnreapedByDriver(driverAgentId: string): Promise<InvocationRow[]>;
+  listRunningAgentIds(olderThan: Date): Promise<string[]>;
+  listRootDriverIds(): Promise<string[]>;
+  listTerminalUnreaped(before: Date, limit: number): Promise<InvocationRow[]>;
+  hasRunning(invocationId: string): Promise<boolean>;
+  markReaped(id: string): Promise<void>;
+  setKeepUntil(id: string, keepUntil: Date): Promise<void>;
+  // UNIT_BOUNDARY_DESCRIPTION: adds a run to a target that is kept, or a clean slate with no run yet whose wait has not run out; a run that continues a session is refused while another run works in that session or is still being ended there, checked under the target's lock so two runs never take one session.
+  beginRun(
+    invocationId: string,
+    run: InvocationRun,
+  ): Promise<"begun" | "unavailable" | "session-busy">;
+  setRunSession(runId: string, sessionId: string): Promise<void>;
+  listExpiredIdle(now: Date, limit: number): Promise<InvocationRow[]>;
+  listCancelPending(limit: number): Promise<InvocationRow[]>;
+  clearCancel(runId: string): Promise<void>;
+  markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
+  listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
+  listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
+  listTargetsByOwner(
+    owner: string,
+  ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
+  delete(id: string): Promise<void>;
+  deleteReapedByRoot(rootDriverId: string): Promise<number>;
+}
+
+type TargetRecord = typeof invocationsTable.$inferSelect;
+type RunRecord = typeof runsTable.$inferSelect;
+
+export function toRow(
+  target: TargetRecord,
+  run: RunRecord | null,
+): InvocationRow {
   return {
-    id: r.id,
-    driverAgentId: r.driverAgentId,
-    rootDriverId: r.rootDriverId,
-    owner: r.owner,
-    label: r.label,
-    prompt: r.prompt,
-    script: r.script,
-    templateId: r.templateId,
-    image: r.image,
-    connections: r.connections,
-    ttlMs: r.ttlMs,
-    resultSchema: r.resultSchema,
-    result: r.result,
-    status: r.status as InvocationStatus,
-    errorReason: r.errorReason,
-    exitCode: r.exitCode,
-    output: r.output as InvocationOutput | null,
-    outputExpiresAt: r.outputExpiresAt,
-    createdAt: r.createdAt,
-    startedAt: r.startedAt,
-    expiresAt: r.expiresAt,
-    completedAt: r.completedAt,
-    reapedAt: r.reapedAt,
-    transcriptCaptured: r.transcriptCaptured,
-    transcriptTruncated: r.transcriptTruncated,
-    harnessConfig: r.harnessConfig as InvocationHarnessConfig | null,
-    driverSessionId: r.driverSessionId,
+    id: target.id,
+    driverAgentId: target.driverAgentId,
+    rootDriverId: target.rootDriverId,
+    owner: target.owner,
+    label: target.label,
+    prompt: run?.prompt ?? "",
+    script: run?.script ?? null,
+    templateId: target.templateId,
+    image: target.image,
+    connections: target.connections,
+    ttlMs: run?.ttlMs ?? target.ttlMs,
+    resultSchema: run?.resultSchema ?? null,
+    result: run?.result ?? null,
+    status: (run?.status as RunStatus | undefined) ?? "idle",
+    errorReason: run?.errorReason ?? null,
+    exitCode: run?.exitCode ?? null,
+    output: (run?.output as InvocationOutput | null | undefined) ?? null,
+    outputExpiresAt: run?.outputExpiresAt ?? null,
+    createdAt: target.createdAt,
+    runCreatedAt: run?.createdAt ?? null,
+    startedAt: run?.startedAt ?? null,
+    expiresAt: run?.expiresAt ?? target.expiresAt,
+    keepUntil: target.keepUntil,
+    runId: run?.id ?? null,
+    sessionId: run?.sessionId ?? null,
+    cancelPending: run?.cancelPending ?? false,
+    completedAt: run?.completedAt ?? null,
+    reapedAt: target.reapedAt,
+    transcriptCaptured: target.transcriptCaptured,
+    transcriptTruncated: target.transcriptTruncated,
+    harnessConfig: target.harnessConfig as InvocationHarnessConfig | null,
+    driverSessionId: run?.driverSessionId ?? target.driverSessionId,
   };
 }
 
+const keepActive = sql<boolean>`(${invocationsTable.keepUntil} is not null and ${invocationsTable.keepUntil} > now())`;
+
+const keptTarget = (invocationId: typeof runsTable.invocationId) =>
+  sql<boolean>`exists (select 1 from ${invocationsTable} where ${invocationsTable.id} = ${invocationId} and ${keepActive})`;
+
+const runningRun = sql<boolean>`exists (select 1 from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id} and ${runsTable.status} = 'running')`;
+
+const noRun = sql<boolean>`not exists (select 1 from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id})`;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the run an event of a target names: its own run,
+ * or, for a target whose only run is from before runs had their own rows
+ * (that run carries the target's id), that run, which no event names.
+ */
+const namedRun = (invocationId: string, eventId: string) =>
+  and(
+    eq(runsTable.invocationId, invocationId),
+    or(eq(runsTable.id, eventId), eq(runsTable.id, invocationId)),
+  );
+
 export function createInvocationsRepository(db: Db): InvocationsRepository {
-  return {
-    async insert(input) {
-      await db.insert(invocationsTable).values({
-        id: input.id,
-        driverAgentId: input.driverAgentId,
-        rootDriverId: input.rootDriverId,
-        owner: input.owner,
-        label: input.label,
-        prompt: input.prompt,
-        script: input.script,
-        templateId: input.templateId,
-        image: input.image,
-        connections: input.connections,
-        ttlMs: input.ttlMs,
-        resultSchema: input.resultSchema,
-        status: "running",
-        expiresAt: input.expiresAt,
-        harnessConfig: input.harnessConfig,
-        ...(input.origin ? { origin: input.origin } : {}),
-        driverSessionId: input.driverSessionId ?? null,
+  async function latestRuns(
+    invocationIds: readonly string[],
+  ): Promise<Map<string, RunRecord>> {
+    if (invocationIds.length === 0) return new Map();
+    const rows = await db
+      .selectDistinctOn([runsTable.invocationId])
+      .from(runsTable)
+      .where(inArray(runsTable.invocationId, [...invocationIds]))
+      .orderBy(
+        runsTable.invocationId,
+        desc(runsTable.createdAt),
+        desc(runsTable.id),
+      );
+    return new Map(rows.map((r) => [r.invocationId, r]));
+  }
+
+  async function withLatestRun(
+    targets: TargetRecord[],
+  ): Promise<InvocationRow[]> {
+    const runs = await latestRuns(targets.map((t) => t.id));
+    return targets.map((t) => toRow(t, runs.get(t.id) ?? null));
+  }
+
+  async function withTargets(runs: RunRecord[]): Promise<InvocationRow[]> {
+    if (runs.length === 0) return [];
+    const ids = [...new Set(runs.map((r) => r.invocationId))];
+    const targets = await db
+      .select()
+      .from(invocationsTable)
+      .where(inArray(invocationsTable.id, ids));
+    const byId = new Map(targets.map((t) => [t.id, t]));
+    return runs.flatMap((r) => {
+      const target = byId.get(r.invocationId);
+      return target ? [toRow(target, r)] : [];
+    });
+  }
+
+  async function runRows(
+    where: ReturnType<typeof and>,
+    limit?: number,
+  ): Promise<InvocationRow[]> {
+    const query = db.select().from(runsTable).where(where);
+    return withTargets(
+      await (limit === undefined ? query : query.limit(limit)),
+    );
+  }
+
+  async function failWith(
+    where: ReturnType<typeof and>,
+    reason: string,
+    sessionId?: string | null,
+  ): Promise<{ cancelPending: boolean } | null> {
+    const rows = await db
+      .update(runsTable)
+      .set({
+        status: "failed",
+        errorReason: reason,
+        completedAt: new Date(),
+        cancelPending: keptTarget(runsTable.invocationId),
+        ...(sessionId
+          ? { sessionId: sql`coalesce(${runsTable.sessionId}, ${sessionId})` }
+          : {}),
+      })
+      .where(and(where, eq(runsTable.status, "running")))
+      .returning({ cancelPending: runsTable.cancelPending });
+    return rows[0] ?? null;
+  }
+
+  const repo: InvocationsRepository = {
+    async insert(input, run) {
+      await db.transaction(async (tx) => {
+        await tx.insert(invocationsTable).values({
+          id: input.id,
+          driverAgentId: input.driverAgentId,
+          rootDriverId: input.rootDriverId,
+          owner: input.owner,
+          label: input.label,
+          templateId: input.templateId,
+          image: input.image,
+          connections: input.connections,
+          ttlMs: input.ttlMs,
+          expiresAt: input.expiresAt,
+          keepUntil: input.keepUntil ?? null,
+          harnessConfig: input.harnessConfig,
+          driverSessionId: input.driverSessionId ?? null,
+        });
+        if (run)
+          await tx.insert(runsTable).values({
+            id: run.runId,
+            invocationId: input.id,
+            prompt: run.prompt,
+            script: run.script,
+            resultSchema: run.resultSchema,
+            ttlMs: run.ttlMs,
+            expiresAt: run.expiresAt,
+            origin: run.origin,
+            driverSessionId: run.driverSessionId,
+            sessionId: run.sessionId,
+          });
       });
     },
 
@@ -177,26 +346,52 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .from(invocationsTable)
         .where(eq(invocationsTable.id, id))
         .limit(1);
-      return rows[0] ? toRow(rows[0]) : null;
+      if (!rows[0]) return null;
+      return (await withLatestRun(rows))[0]!;
     },
 
-    async markStarted(id, at) {
+    async getRun(runId) {
+      const rows = await runRows(and(eq(runsTable.id, runId)), 1);
+      return rows[0] ?? null;
+    },
+
+    async find(id) {
+      return (await repo.getRun(id)) ?? (await repo.get(id));
+    },
+
+    listRunningRuns(invocationId) {
+      return runRows(
+        and(
+          eq(runsTable.invocationId, invocationId),
+          eq(runsTable.status, "running"),
+        ),
+      );
+    },
+
+    async listRuns(invocationId, limit) {
+      const runs = await db
+        .select()
+        .from(runsTable)
+        .where(eq(runsTable.invocationId, invocationId))
+        .orderBy(desc(runsTable.createdAt), desc(runsTable.id))
+        .limit(limit);
+      return withTargets(runs);
+    },
+
+    async markStarted(invocationId, eventId, at) {
       const startedAt = sql`${at.toISOString()}::timestamptz`;
       const rows = await db
-        .update(invocationsTable)
+        .update(runsTable)
         .set({
-          startedAt: sql`coalesce(${invocationsTable.startedAt}, ${startedAt})`,
-          expiresAt: sql`case when ${invocationsTable.startedAt} is null and ${invocationsTable.ttlMs} is not null then ${startedAt} + ${invocationsTable.ttlMs} * interval '1 millisecond' else ${invocationsTable.expiresAt} end`,
+          startedAt: sql`coalesce(${runsTable.startedAt}, ${startedAt})`,
+          expiresAt: sql`case when ${runsTable.startedAt} is null and ${runsTable.ttlMs} is not null then ${startedAt} + ${runsTable.ttlMs} * interval '1 millisecond' else ${runsTable.expiresAt} end`,
         })
         .where(
-          and(
-            eq(invocationsTable.id, id),
-            eq(invocationsTable.status, "running"),
-          ),
+          and(namedRun(invocationId, eventId), eq(runsTable.status, "running")),
         )
         .returning({
-          startedAt: invocationsTable.startedAt,
-          expiresAt: invocationsTable.expiresAt,
+          startedAt: runsTable.startedAt,
+          expiresAt: runsTable.expiresAt,
         });
       const row = rows[0];
       return row?.startedAt
@@ -204,50 +399,36 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         : null;
     },
 
-    async complete(id, result) {
+    async complete(runId, result, sessionId) {
       const updated = await db
-        .update(invocationsTable)
-        .set({ result, status: "done", completedAt: new Date() })
-        .where(
-          and(
-            eq(invocationsTable.id, id),
-            eq(invocationsTable.status, "running"),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
+        .update(runsTable)
+        .set({
+          result,
+          status: "done",
+          completedAt: new Date(),
+          ...(sessionId
+            ? { sessionId: sql`coalesce(${runsTable.sessionId}, ${sessionId})` }
+            : {}),
+        })
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")))
+        .returning({ id: runsTable.id });
       return updated.length > 0;
     },
 
-    async fail(id, reason) {
-      await db
-        .update(invocationsTable)
-        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
-        .where(
-          and(
-            eq(invocationsTable.id, id),
-            eq(invocationsTable.status, "running"),
-          ),
-        );
+    fail(runId, reason, sessionId) {
+      return failWith(and(eq(runsTable.id, runId)), reason, sessionId);
     },
 
-    async failExpired(id, reason, now) {
-      const updated = await db
-        .update(invocationsTable)
-        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
-        .where(
-          and(
-            eq(invocationsTable.id, id),
-            eq(invocationsTable.status, "running"),
-            lt(invocationsTable.expiresAt, now),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
-      return updated.length > 0;
+    failExpired(runId, reason, now) {
+      return failWith(
+        and(eq(runsTable.id, runId), lt(runsTable.expiresAt, now)),
+        reason,
+      );
     },
 
-    async finishScript(id, finish) {
+    async finishScript(runId, finish) {
       const updated = await db
-        .update(invocationsTable)
+        .update(runsTable)
         .set({
           status: finish.status,
           exitCode: finish.exitCode,
@@ -256,90 +437,86 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           errorReason: finish.status === "failed" ? finish.errorReason : null,
           completedAt: new Date(),
         })
-        .where(
-          and(
-            eq(invocationsTable.id, id),
-            eq(invocationsTable.status, "running"),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
+        .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")))
+        .returning({ id: runsTable.id });
       return updated.length > 0;
     },
 
-    async dropOutputStream(id, stream) {
-      const rest = sql`(${invocationsTable.output} - ${stream}::text)`;
+    async dropOutputStream(runId, stream) {
+      const rest = sql`(${runsTable.output} - ${stream}::text)`;
       await db
-        .update(invocationsTable)
+        .update(runsTable)
         .set({
           output: sql`nullif(${rest}, '{}'::jsonb)`,
-          outputExpiresAt: sql`case when ${rest} = '{}'::jsonb then null else ${invocationsTable.outputExpiresAt} end`,
+          outputExpiresAt: sql`case when ${rest} = '{}'::jsonb then null else ${runsTable.outputExpiresAt} end`,
         })
-        .where(eq(invocationsTable.id, id));
+        .where(eq(runsTable.id, runId));
     },
 
-    async clearOutput(id) {
+    async clearOutput(runId) {
       await db
-        .update(invocationsTable)
+        .update(runsTable)
         .set({ output: null, outputExpiresAt: null })
-        .where(eq(invocationsTable.id, id));
+        .where(eq(runsTable.id, runId));
     },
 
-    async listExpiredOutputs(now, limit) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(lte(invocationsTable.outputExpiresAt, now))
-        .limit(limit);
-      return rows.map(toRow);
+    listExpiredOutputs(now, limit) {
+      return runRows(and(lte(runsTable.outputExpiresAt, now)), limit);
     },
 
-    async listScriptsByRoot(rootDriverId) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.rootDriverId, rootDriverId),
-            isNotNull(invocationsTable.script),
+    listScriptsByRoot(rootDriverId) {
+      return runRows(
+        and(
+          isNotNull(runsTable.script),
+          inArray(
+            runsTable.invocationId,
+            db
+              .select({ id: invocationsTable.id })
+              .from(invocationsTable)
+              .where(eq(invocationsTable.rootDriverId, rootDriverId)),
           ),
-        );
-      return rows.map(toRow);
+        ),
+      );
     },
 
-    async listExpiredRunning(now, limit) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.status, "running"),
-            lt(invocationsTable.expiresAt, now),
+    listExpiredRunning(now, limit) {
+      return runRows(
+        and(eq(runsTable.status, "running"), lt(runsTable.expiresAt, now)),
+        limit,
+      );
+    },
+
+    listRunning(limit) {
+      return runRows(and(eq(runsTable.status, "running")), limit);
+    },
+
+    listRunningByDriver(driverAgentId) {
+      return runRows(
+        and(
+          eq(runsTable.status, "running"),
+          inArray(
+            runsTable.invocationId,
+            db
+              .select({ id: invocationsTable.id })
+              .from(invocationsTable)
+              .where(eq(invocationsTable.driverAgentId, driverAgentId)),
           ),
-        )
-        .limit(limit);
-      return rows.map(toRow);
+        ),
+      );
     },
 
-    async listRunning(limit) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(eq(invocationsTable.status, "running"))
-        .limit(limit);
-      return rows.map(toRow);
-    },
-
-    async listRunningByDriver(driverAgentId) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.status, "running"),
-            eq(invocationsTable.driverAgentId, driverAgentId),
+    async listUnreapedByDriver(driverAgentId) {
+      return withLatestRun(
+        await db
+          .select()
+          .from(invocationsTable)
+          .where(
+            and(
+              eq(invocationsTable.driverAgentId, driverAgentId),
+              isNull(invocationsTable.reapedAt),
+            ),
           ),
-        );
-      return rows.map(toRow);
+      );
     },
 
     async listRunningAgentIds(olderThan) {
@@ -349,12 +526,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           driverAgentId: invocationsTable.driverAgentId,
         })
         .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.status, "running"),
-            lt(invocationsTable.createdAt, olderThan),
-          ),
-        );
+        .where(and(lt(invocationsTable.createdAt, olderThan), runningRun));
       const ids = new Set<string>();
       for (const r of rows) {
         ids.add(r.id);
@@ -364,18 +536,151 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     },
 
     async listTerminalUnreaped(before, limit) {
+      const lastEnd = sql`(select max(${runsTable.completedAt}) from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id})`;
+      return withLatestRun(
+        await db
+          .select()
+          .from(invocationsTable)
+          .where(
+            and(
+              isNull(invocationsTable.reapedAt),
+              sql`not ${runningRun}`,
+              sql`${lastEnd} < ${before.toISOString()}::timestamptz`,
+              or(
+                isNull(invocationsTable.keepUntil),
+                lt(invocationsTable.keepUntil, new Date()),
+              ),
+            ),
+          )
+          .limit(limit),
+      );
+    },
+
+    async hasRunning(invocationId) {
       const rows = await db
-        .select()
-        .from(invocationsTable)
+        .select({ id: runsTable.id })
+        .from(runsTable)
         .where(
           and(
-            inArray(invocationsTable.status, ["done", "failed"]),
-            isNull(invocationsTable.reapedAt),
-            lt(invocationsTable.completedAt, before),
+            eq(runsTable.invocationId, invocationId),
+            eq(runsTable.status, "running"),
           ),
         )
-        .limit(limit);
-      return rows.map(toRow);
+        .limit(1);
+      return rows.length > 0;
+    },
+
+    async beginRun(invocationId, run) {
+      return db.transaction(async (tx) => {
+        const locked = await tx
+          .select({ id: invocationsTable.id })
+          .from(invocationsTable)
+          .where(
+            and(
+              eq(invocationsTable.id, invocationId),
+              isNull(invocationsTable.reapedAt),
+              or(
+                sql`${keepActive}`,
+                and(
+                  isNull(invocationsTable.keepUntil),
+                  sql`${invocationsTable.expiresAt} > now()`,
+                  noRun,
+                ),
+              ),
+            ),
+          )
+          .for("update");
+        if (locked.length === 0) return "unavailable";
+        if (run.sessionId) {
+          const busy = await tx
+            .select({ id: runsTable.id })
+            .from(runsTable)
+            .where(
+              and(
+                eq(runsTable.invocationId, invocationId),
+                eq(runsTable.sessionId, run.sessionId),
+                or(
+                  eq(runsTable.status, "running"),
+                  eq(runsTable.cancelPending, true),
+                ),
+              ),
+            )
+            .limit(1);
+          if (busy.length > 0) return "session-busy";
+        }
+        await tx.insert(runsTable).values({
+          id: run.runId,
+          invocationId,
+          prompt: run.prompt,
+          script: run.script,
+          resultSchema: run.resultSchema,
+          ttlMs: run.ttlMs,
+          expiresAt: run.expiresAt,
+          origin: run.origin,
+          driverSessionId: run.driverSessionId,
+          sessionId: run.sessionId,
+        });
+        return "begun";
+      });
+    },
+
+    async setRunSession(runId, sessionId) {
+      await db
+        .update(runsTable)
+        .set({ sessionId })
+        .where(and(eq(runsTable.id, runId), isNull(runsTable.sessionId)));
+    },
+
+    async listExpiredIdle(now, limit) {
+      return withLatestRun(
+        await db
+          .select()
+          .from(invocationsTable)
+          .where(
+            and(
+              isNull(invocationsTable.reapedAt),
+              noRun,
+              or(
+                and(
+                  isNull(invocationsTable.keepUntil),
+                  lt(invocationsTable.expiresAt, now),
+                ),
+                lt(invocationsTable.keepUntil, now),
+              ),
+            ),
+          )
+          .limit(limit),
+      );
+    },
+
+    listCancelPending(limit) {
+      return runRows(
+        and(
+          eq(runsTable.cancelPending, true),
+          inArray(
+            runsTable.invocationId,
+            db
+              .select({ id: invocationsTable.id })
+              .from(invocationsTable)
+              .where(isNull(invocationsTable.reapedAt)),
+          ),
+        ),
+        limit,
+      );
+    },
+
+    async clearCancel(runId) {
+      await db
+        .update(runsTable)
+        .set({ cancelPending: false })
+        .where(eq(runsTable.id, runId));
+    },
+
+    async setKeepUntil(id, keepUntil) {
+      await db
+        .update(invocationsTable)
+        .set({ keepUntil })
+        .where(eq(invocationsTable.id, id));
     },
 
     async markReaped(id) {
@@ -400,30 +705,31 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     },
 
     async listByRoot(rootDriverId, limit) {
-      const rows = await db
+      const targets = await db
         .select()
         .from(invocationsTable)
         .where(eq(invocationsTable.rootDriverId, rootDriverId))
         .orderBy(desc(invocationsTable.createdAt))
         .limit(limit);
-      return rows.reverse().map(toRow);
+      return withLatestRun(targets.reverse());
     },
 
     async listUnreapedByRoot(rootDriverId) {
-      const rows = await db
-        .select()
-        .from(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.rootDriverId, rootDriverId),
-            isNull(invocationsTable.reapedAt),
+      return withLatestRun(
+        await db
+          .select()
+          .from(invocationsTable)
+          .where(
+            and(
+              eq(invocationsTable.rootDriverId, rootDriverId),
+              isNull(invocationsTable.reapedAt),
+            ),
           ),
-        );
-      return rows.map(toRow);
+      );
     },
 
     async listTargetsByOwner(owner) {
-      const rows = await db
+      return db
         .select({
           driverAgentId: invocationsTable.driverAgentId,
           targetAgentId: invocationsTable.id,
@@ -435,24 +741,39 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
             isNull(invocationsTable.reapedAt),
           ),
         );
-      return rows;
     },
 
     async delete(id) {
-      await db.delete(invocationsTable).where(eq(invocationsTable.id, id));
+      await db.transaction(async (tx) => {
+        await tx.delete(runsTable).where(eq(runsTable.invocationId, id));
+        await tx.delete(invocationsTable).where(eq(invocationsTable.id, id));
+      });
     },
 
     async deleteReapedByRoot(rootDriverId) {
-      const deleted = await db
-        .delete(invocationsTable)
-        .where(
-          and(
-            eq(invocationsTable.rootDriverId, rootDriverId),
-            isNotNull(invocationsTable.reapedAt),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
-      return deleted.length;
+      return db.transaction(async (tx) => {
+        const reaped = and(
+          eq(invocationsTable.rootDriverId, rootDriverId),
+          isNotNull(invocationsTable.reapedAt),
+        );
+        await tx
+          .delete(runsTable)
+          .where(
+            inArray(
+              runsTable.invocationId,
+              tx
+                .select({ id: invocationsTable.id })
+                .from(invocationsTable)
+                .where(reaped),
+            ),
+          );
+        const deleted = await tx
+          .delete(invocationsTable)
+          .where(reaped)
+          .returning({ id: invocationsTable.id });
+        return deleted.length;
+      });
     },
   };
+  return repo;
 }

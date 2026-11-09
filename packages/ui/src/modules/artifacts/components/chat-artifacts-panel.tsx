@@ -20,9 +20,14 @@ import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useListedEnvironments } from "../../environments/api/queries.js";
+import {
+  useEnvironmentsEnabled,
+  useListedEnvironments,
+} from "../../environments/api/queries.js";
 import { EnvironmentsGroup } from "../../environments/components/environments-group.js";
 import { visibleEnvironments } from "../../environments/lib/environment-list.js";
+import { useKeptSubAgents } from "../../invocations/api/queries.js";
+import { KeptSubAgentsGroup } from "../../invocations/components/kept-sub-agents-group.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
@@ -47,6 +52,7 @@ import { UploadArtifactDialog } from "./upload-artifact-dialog.js";
 
 const ALL_SCOPE = "__all__";
 const ENVIRONMENTS_KEY = "__environments__";
+const KEPT_SUB_AGENTS_KEY = "__kept_sub_agents__";
 const UPLOAD_HIGHLIGHT_MS = 3000;
 
 type ArtifactScope = "agent" | "all";
@@ -112,6 +118,10 @@ export function ChatArtifactsPanel({
 
   const openRow = (id: string) =>
     openArtifact(id === openArtifactId ? null : id);
+  const keptShown = useEnvironmentsEnabled();
+  const keptSubAgents =
+    useKeptSubAgents(open && keptShown ? scopeAgentId : null).data?.subAgents ??
+    [];
   const collapseScope = scopeAgentId ?? ALL_SCOPE;
   const folderCollapse = useStore(
     (s) => s.artifactFolderCollapse[collapseScope],
@@ -265,7 +275,10 @@ export function ChatArtifactsPanel({
             listedEnvironments.refetch();
           }}
         />
-      ) : loading || (groups.length === 0 && environments.length === 0) ? (
+      ) : loading ||
+        (groups.length === 0 &&
+          environments.length === 0 &&
+          keptSubAgents.length === 0) ? (
         <EmptyState bordered={false}>
           {loading
             ? "Loading…"
@@ -293,6 +306,20 @@ export function ChatArtifactsPanel({
                   collapseScope,
                   ENVIRONMENTS_KEY,
                   !(folderCollapse?.[ENVIRONMENTS_KEY] ?? false),
+                )
+              }
+            />
+          )}
+          {keptSubAgents.length > 0 && (
+            <KeptSubAgentsGroup
+              subAgents={keptSubAgents}
+              environments={listedEnvironments.data}
+              collapsed={folderCollapse?.[KEPT_SUB_AGENTS_KEY] ?? false}
+              onToggle={() =>
+                setFolderCollapsed(
+                  collapseScope,
+                  KEPT_SUB_AGENTS_KEY,
+                  !(folderCollapse?.[KEPT_SUB_AGENTS_KEY] ?? false),
                 )
               }
             />

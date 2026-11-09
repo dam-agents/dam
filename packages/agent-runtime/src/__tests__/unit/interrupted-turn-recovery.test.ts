@@ -38,6 +38,7 @@ function recoveryWorld(onResume: (sessionId: string) => void = () => {}) {
   const bound: { scheduleId: string; sessionId: string }[] = [];
   let minted = 0;
   const triggerDriver: TriggerSessionDriver = {
+    cancel: async () => true,
     start({ task, resumeSessionId, platformMeta, unattended }) {
       if (resumeSessionId) {
         resumed.push(resumeSessionId);
@@ -223,6 +224,7 @@ describe("interrupted-turn recovery", () => {
     let booted = createActiveTurnStore(backend);
     const reran: string[] = [];
     const triggerDriver: TriggerSessionDriver = {
+      cancel: async () => true,
       start({ platformMeta, resumeSessionId }) {
         if (resumeSessionId)
           return Promise.resolve({

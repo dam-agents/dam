@@ -216,6 +216,37 @@ function setup(
 }
 
 describe("creating an Environment", () => {
+  // TEST_SCENARIO: an Environment created with named connections holds those of its owning agent's and nothing else, copied once; a name the owning agent does not hold is refused, and so is any connection on an Environment whose egress is open, which holds none.
+  it("takes a subset of the owning agent's connections, and none with open egress", async () => {
+    const owning = {
+      ...vmOwning,
+      spec: {
+        backend: { type: "vm" },
+        grantedConnectionIds: ["conn-a", "conn-b"],
+      },
+    } as unknown as Partial<Agent>;
+    const { service, agents } = setup({ agents: [owning] });
+    const envs = service.forOwningAgent(vmOwning.id!);
+    const endpoints = [{ name: "app", port: 4444 }];
+
+    await envs.create({ name: "subset", endpoints, connections: ["conn-b"] });
+    expect(agents.created[0]).toMatchObject({
+      connectionIds: ["conn-b"],
+      inheritance: { connectionsFrom: "subset" },
+    });
+    await expect(
+      envs.create({ name: "foreign", endpoints, connections: ["conn-x"] }),
+    ).rejects.toThrow(/not granted to the owning agent: conn-x/);
+    await expect(
+      envs.create({
+        name: "open",
+        endpoints,
+        connections: "parent",
+        egress: "open",
+      }),
+    ).rejects.toThrow(/egress "open" holds no connections/);
+  });
+
   // TEST_SCENARIO: the Environment is a vm Agent record naming its owning Agent, with nothing that lets it act as that Agent: no default model provider and no egress preset. Its endpoints get addresses under the install's URL, its start command becomes a Startup Item, and it expires a week from now by default.
   it("creates a vm Agent naming its owner, with addresses, a start command and a default expiry", async () => {
     const { service, agents, starts, repo } = setup();

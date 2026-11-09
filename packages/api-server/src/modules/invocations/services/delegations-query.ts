@@ -38,6 +38,47 @@ export function createDelegationsQuery(deps: {
   return {
     listTargets: () => deps.repo.listTargetsByOwner(deps.owner),
 
+    async kept({ driverAgentId }) {
+      const rows = await ownedRowsOfRoot(driverAgentId);
+      const driverOf = new Map(rows.map((r) => [r.id, r.driverAgentId]));
+      const kept = rows.filter(
+        (r) => r.keepUntil !== null && r.reapedAt === null,
+      );
+      const listed = new Set(kept.map((r) => r.id));
+      // UNIT_BOUNDARY_DESCRIPTION: the kept sub-agent a row sits under, walking up its drivers: the agent asked about gives null, a listed one gives itself, and a chain that never reaches the agent asked about is not under it.
+      const parentOf = (row: {
+        driverAgentId: string;
+      }): string | null | undefined => {
+        const seen = new Set<string>();
+        let at: string | undefined = row.driverAgentId;
+        while (at !== undefined && !seen.has(at)) {
+          if (at === driverAgentId) return null;
+          if (listed.has(at)) return at;
+          seen.add(at);
+          at = driverOf.get(at);
+        }
+        return undefined;
+      };
+      return {
+        subAgents: kept
+          .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
+          .flatMap((r) => {
+            const parentId = parentOf(r);
+            return parentId === undefined
+              ? []
+              : [
+                  {
+                    id: r.id,
+                    label: r.label,
+                    status: r.status,
+                    keepUntil: r.keepUntil!.toISOString(),
+                    parentId,
+                  },
+                ];
+          }),
+      };
+    },
+
     async tree({ driverAgentId, ids }) {
       const owned = await ownedRowsOfRoot(driverAgentId);
       return { nodes: buildDelegationTree(owned, ids) };

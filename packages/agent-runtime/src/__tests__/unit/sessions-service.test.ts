@@ -61,6 +61,7 @@ function pagedHarness() {
       ) as T;
     },
     notify: () => {},
+    signal: () => {},
     close: () => {},
   };
   return { caller, listCalls };
@@ -143,6 +144,7 @@ describe("createSessionsService", () => {
         });
       },
       notify: () => {},
+      signal: () => {},
       close: () => {},
     };
     const changes = createSessionChanges(0);
@@ -211,6 +213,7 @@ describe("createSessionsService", () => {
         } as T;
       },
       notify: () => {},
+      signal: () => {},
       close: () => {},
     };
     const store = fakeStore();
@@ -336,6 +339,7 @@ describe("adoptHarnessTitle", () => {
         } as T;
       },
       notify: () => {},
+      signal: () => {},
       close: () => {},
     };
     const service = createSessionsService({
@@ -451,6 +455,7 @@ describe("adoptHarnessTitles", () => {
         } as T;
       },
       notify: () => {},
+      signal: () => {},
       close: () => {},
     };
     const service = createSessionsService({

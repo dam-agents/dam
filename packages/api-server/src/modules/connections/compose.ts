@@ -261,6 +261,7 @@ export function composeConnectionsForOwner(opts: {
     connectionId: string;
     harness: string;
   } | null>;
+  mirroredChildren?: (agentId: string) => Promise<string[]>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -295,6 +296,9 @@ export function composeConnectionsForOwner(opts: {
 
   return createConnectionsService({
     ownerId: opts.ownerId,
+    ...(opts.mirroredChildren
+      ? { mirroredChildren: opts.mirroredChildren }
+      : {}),
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,

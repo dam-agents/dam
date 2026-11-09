@@ -329,10 +329,13 @@ Both signals are read across api-server replicas (the replica relaying a turn is
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
 **Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+**Detached egress.** A driver may instead launch a child (a sub-agent or an Environment) with egress of its own; the gate then decides under the nearest such child up the chain, the caller first.
+An *open* child follows only the rules its driver sets and is denied anything else without a prompt, except that access to any host or a whole top-level domain waits for the owner's approval.
+A *scoped* child starts with a copy of its parent's rules for the hosts named; anything else waits for the user's approval, shown on the parent, which widens the child alone.
 The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
-The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.
+The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own connection grants, so the target gains the driver's network *reach*, and only the credentials its own grants hold ([invocations](invocations.md#spawning)).
 Deleting a driver cascades: its running Invocations are failed and their targets eagerly reaped (transitively for chains), and a target that slips past the cascade fails closed at the gate because its driver no longer resolves.
 
 ## Channel turns

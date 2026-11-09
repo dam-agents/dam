@@ -14,12 +14,22 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       title: `${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
       subtitle: payload.viaEnvironment
         ? `${payload.path} · from Environment ${payload.viaEnvironment}`
-        : payload.viaAgentId
-          ? `${payload.path} · via ${payload.viaAgentId}`
-          : payload.path,
+        : payload.forAgentId
+          ? `${payload.path} · from a sub-agent of ${payload.forAgentId}`
+          : payload.viaAgentId
+            ? `${payload.path} · via ${payload.viaAgentId}`
+            : payload.path,
     };
   }
   if (payload.kind === "egress_proposal") {
+    if (payload.forAgentId)
+      return {
+        title:
+          payload.host === "*"
+            ? "Access to any host"
+            : `Access to any ${payload.host.slice(1)} host`,
+        subtitle: payload.reason,
+      };
     return {
       title: `Proposed rule: ${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
       subtitle: `${payload.path} · ${payload.reason}`,

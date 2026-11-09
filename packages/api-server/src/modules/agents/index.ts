@@ -5,6 +5,11 @@ export {
   composePublicAgentPage,
   attachProviderToBareAgents,
   connectionGrantProvisioner,
+  childrenMirroringConnections,
+  inheritanceCleanup,
+  nearestOwnEgress,
+  inheritanceOf,
+  ownEgressAgentIds,
 } from "./compose.js";
 export type {
   AgentCleanupHook,
@@ -53,6 +58,10 @@ export {
 } from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
 export { createInputFromSetup } from "./domain/agent-setup.js";
+export {
+  environmentCreateInput,
+  subAgentCreateInput,
+} from "./domain/child-launch.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
 export { createPublicAgentRoutes } from "./infrastructure/public-agent-routes.js";

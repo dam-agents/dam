@@ -18,8 +18,14 @@ export interface TriggerSessionDriver {
     model?: string;
     keepSessionModel?: boolean;
     follows?: SessionDefaultKind | null;
+    invocationRun?: string;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
+  // UNIT_BOUNDARY_DESCRIPTION: cancels the turn the session is running, as the Stop button in a chat does, and answers whether the turn ended within the wait; a session with no turn running has ended already.
+  cancel(sessionId: string): Promise<boolean>;
 }
+
+const CANCEL_WAIT_MS = 60_000;
+const CANCEL_POLL_MS = 500;
 
 interface OpenedSession {
   configOptions?: { id?: string; currentValue?: unknown }[];
@@ -65,6 +71,29 @@ export function createTriggerSessionDriver(deps: {
   modelMissing: (sessionId: string) => boolean;
 }): TriggerSessionDriver {
   return {
+    async cancel(sessionId) {
+      if (!deps.acpRuntime.isSessionRunning(sessionId)) return true;
+      const caller = createInProcessCaller((channel) =>
+        deps.acpRuntime.attach(channel, { viewer: false }),
+      );
+      try {
+        await caller.request("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: "platform-trigger", version: "1.0.0" },
+        });
+        caller.signal("session/cancel", { sessionId });
+      } finally {
+        caller.close();
+      }
+      const until = Date.now() + CANCEL_WAIT_MS;
+      while (deps.acpRuntime.isSessionRunning(sessionId)) {
+        if (Date.now() >= until) return false;
+        await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+      }
+      return true;
+    },
+
     async start({
       task,
       mcpServers,
@@ -75,6 +104,7 @@ export function createTriggerSessionDriver(deps: {
       model,
       keepSessionModel,
       follows,
+      invocationRun,
     }) {
       const pins =
         !!resumeSessionId &&
@@ -152,7 +182,14 @@ export function createTriggerSessionDriver(deps: {
         caller.notify("session/prompt", {
           sessionId,
           prompt: [{ type: "text", text: task }],
-          ...(surface && { _meta: { platform: { surface } } }),
+          ...((surface || invocationRun) && {
+            _meta: {
+              platform: {
+                ...(surface && { surface }),
+                ...(invocationRun && { invocationRun }),
+              },
+            },
+          }),
         });
 
         return { sessionId, openedOn };

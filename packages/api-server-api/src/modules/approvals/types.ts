@@ -21,6 +21,8 @@ interface ExtAuthzPayload {
   path: string;
   viaAgentId?: string;
   viaEnvironment?: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the parent whose page shows this prompt, when it came from a child whose scoped egress only the user may widen; approving widens the child's rules, never the parent's.
+  forAgentId?: string;
 }
 
 export type AcpPermissionOptionKind =
@@ -58,6 +60,8 @@ export interface EgressProposalPayload {
   method: string;
   path: string;
   reason: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the agent that asked for this rule on its child (the child is the row's agent), whose page shows the request; approving writes the rule onto the child alone.
+  forAgentId?: string;
 }
 
 export type ApprovalPayload =

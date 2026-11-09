@@ -45,8 +45,36 @@ export type Setup = Pick<
   "harness" | "image" | "seed" | "install" | "env" | "resources" | "skills"
 >;
 
-export interface SpawnOptions extends Setup {
-  connections?: string[];
+// UNIT_BOUNDARY_DESCRIPTION: what a sub-agent takes from this driver and how long it stays: its connections ("parent", the default, all of the driver's kept in step; "none"; or ids copied once), its egress ("parent", the default; "open" or {open: rules}; {scoped: hosts}), and with keep, that it outlives its result until keepForMs, sleeping after idleTimeoutMin minutes idle (the install's default otherwise). onSpawned gets its id at once, so a kept one can be entered or run in later.
+export interface Inheritance {
+  connections?: SpawnInvocationRequest["connections"];
+  egress?: SpawnInvocationRequest["egress"];
+  keep?: boolean;
+  keepForMs?: number;
+  idleTimeoutMin?: number;
+  onSpawned?: (id: string) => void;
+}
+
+export function inheritanceBody(
+  opts: Inheritance,
+): Pick<
+  SpawnInvocationRequest,
+  "connections" | "egress" | "keep" | "keepForMs" | "idleTimeoutMin"
+> {
+  return {
+    ...(opts.connections !== undefined
+      ? { connections: opts.connections }
+      : {}),
+    ...(opts.egress !== undefined ? { egress: opts.egress } : {}),
+    ...(opts.keep ? { keep: true } : {}),
+    ...(opts.keepForMs !== undefined ? { keepForMs: opts.keepForMs } : {}),
+    ...(opts.idleTimeoutMin !== undefined
+      ? { idleTimeoutMin: opts.idleTimeoutMin }
+      : {}),
+  };
+}
+
+export interface SpawnOptions extends Setup, Inheritance {
   prompt: string;
   schema: SchemaSpec;
   label?: string;
@@ -62,7 +90,6 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   const {
     harness,
     image,
-    connections = [],
     prompt,
     schema,
     label,
@@ -93,8 +120,8 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
 
   const body: SpawnInvocationRequest = {
     prompt,
-    connections,
     schema: s(schema),
+    ...inheritanceBody(opts),
   };
   if (harness) body.harness = harness;
   if (image) body.image = image;
@@ -124,6 +151,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   );
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
+  opts.onSpawned?.(id);
 
   const view = await awaitInvocation(id, tag, { pollMs, timeoutMs });
   if (view.status === "failed") {
@@ -161,7 +189,8 @@ export async function awaitInvocation(
       await sleep(opts.pollMs);
       continue;
     }
-    if (view.status !== "running") return { ...view, status: view.status };
+    if (view.status === "done" || view.status === "failed")
+      return { ...view, status: view.status };
     if (view.waiting !== waiting) {
       waiting = view.waiting;
       if (waiting) log(`${tag} (${id}) waits for room to start: ${waiting}`);

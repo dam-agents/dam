@@ -76,8 +76,10 @@ The refusal names the providers that would do, by their Settings names, and the 
 `list_harnesses` tells the same ahead of a spawn, by the same rule: each harness with the provider a spawn naming no model runs on there, or the refusal a spawn there would get.
 An image target declares nothing, so nothing is narrowed.
 
-**Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
-Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules, though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
+**The driver can enter its target.** A target accepts the [Environment Link](environments.md#the-environment-link) from its driver alone (`linkFrom`, set at spawn), so the driver reaches the target's machine over SSH, while the target still dials Environments of its own; nothing in a target reaches its driver, and no other agent, the driver's own driver included, reaches the target.
+
+**Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once in the target's inheritance (`agent_inheritance`): `parent`, the default, gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none` leaves it only its provider, and is the default, and the only choice, for a target whose egress is open.
+Network reach needs no grant of its own: by default a target has no egress identity and runs under its Driver's rules, unless the spawn gives it egress of its own, open or scoped ([detached egress](security-and-credentials.md)), though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
 **Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
 The wait does not count against its deadline (see [Deadline](#outcomes)), and while it lasts the Driver reads why it waits: the Invocation's view, await_subagents and the SDKs carry the controller's sentence, and the Driver's chat shows the target as waiting for room with the same sentence.
@@ -94,6 +96,30 @@ A call that never ends does not keep the target: it is reaped 90 seconds after t
 When the meter cannot be read, the target is reaped 30 seconds after the report.
 The liveness sweep reaps a reported target that no wait holds any more, as after an api-server restart: from 30 seconds after the report when one read finds no open call, else at the 90-second limit.
 The schema lives on the Invocation record and never on a Kubernetes resource.
+
+Clean slates, kept targets and a child's own egress come with the Environments [feature](features.md): an owner without it gets no such options or tools, and no Kept sub-agents group in the UI; a spawn that passes them anyway runs without them and says which it ignored.
+`ssh sub-<id>` to a sub-agent that was removed after its result, or is not the agent's, says so rather than the runner's bare refusal.
+
+**A clean slate runs nothing until told.** A spawn with neither prompt nor script boots its target with its setup and runs no turn: its Invocation is `idle`, its Driver enters it over the link (`ssh sub-<id>`, `scp`), and `run_subagent` starts a run in it, a prompt with its schema or a script, on the same machine with its files.
+A clean slate is created not sweepable, so the Agent Sweep never takes it asleep with the files its Driver put in; one with no run is reaped once its spawn's time limit passes, or a kept one at its keep expiry, so a forgotten clean slate does not stay.
+
+**Every task is a run.** An Invocation is its target, and each task or script in it is a run of its own record: the spawn's, and each `run_subagent` started in a clean slate or a kept target.
+A run is known by the id of its task's event, which its start, a failed-run outcome, a script's upload or report and `report_result` (through the reporting session) name, so nothing of one run lands on another; a run from before runs had records carries its target's id.
+Each run has its own time limit, timed from its first delivery, its own result, which goes to whoever started it (the Session that called `run_subagent`, or the script), and, for a script, its own output in the object store.
+A task run is refused for what refuses a spawn: a model not named as `<provider>/<model id>`, one no provider the target holds can run, and a root over its spend limit.
+The Driver reads a run by its run id, or the target's latest run by the target's id; the view, `await_subagents` and the SDKs name the run and its session.
+
+**A kept target stays, and runs in parallel.** A spawn with `keep` leaves its target asleep with its disk after the result, until its keep expiry (`keep_until`, wall-clock, a day by default and at most as long as an Environment may live), so the Driver can enter it again over the link or run more work in it; `update_subagent` moves the expiry, for the Driver alone.
+A kept target takes several runs at once, as an agent runs several sessions, and is reaped only once none runs.
+A prompt run continues the target's conversation: by default the session of its latest prompt run, else a session an earlier result named, or a new one with `session: "new"`; one session takes one run at a time, so a run into a session another run works in is refused, checked under the target's lock.
+A continued session keeps its model unless the run names one, and its task says it follows the earlier work, whose result was already reported; a session the target no longer holds fails the run at once.
+A run's prompt carries its run id, and the session takes that run as its own, for the result it reports and for the watch on it, only when that prompt's turn starts: a prompt that waits behind a turn still finishing in the session queues as any prompt does, and that turn's late result never lands on it.
+A kept target is created not sweepable, so the Agent Sweep never takes it, and every reap after a result or a script leaves it alone until its expiry; the liveness sweep then reaps it.
+It sleeps after the install's idle timeout, or the `idleTimeout` its spawn or `update_subagent` sets, at most an Environment's longest; it always sleeps, since awake it holds its share of the owner's memory.
+A run that ends while its turn or script may still run (stopped, past its time limit, a failed setup, a restart) is ended on its own: the target's runtime cancels that session's turn or kills that script, and confirms it once the work has ended; a run whose prompt still waits is cancelled as its turn starts.
+The run's session takes no run until then (waited up to a minute, then refused with the reason).
+A stopped machine runs nothing, which settles it too; a run the runtime does not confirm, as on an image that predates the cancel, stops the machine after two minutes, but only once no other run of the target runs.
+Deleting its Driver still deletes it, and its own Environments go with it.
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it.
 The reasons:
@@ -115,7 +141,7 @@ The reasons:
   A target that has not started may wait as long as its deadline; past that the Invocation fails with a reason of its own that names the wait.
   A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
-- **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
+- **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps every target it still has, kept and clean slate ones too, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
 
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
@@ -218,7 +244,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 ## Driver SDK
 
-The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
+The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, spawn a clean slate and give it runs (`spawnSlate` / `spawn_slate`, a `SubAgent` handle that also keeps, wakes and sets an open sub-agent's egress), choose a spawn's connections, egress and keep, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 A wait for a sub-agent logs why it has not started each time that reason changes, and its default client timeout is twice the deadline plus five minutes, since a sub-agent may wait its deadline for room and then run its whole deadline.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.

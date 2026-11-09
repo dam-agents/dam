@@ -544,6 +544,75 @@ pub fn serve(env: Vec<(String, String)>) {
     ring_doorbell();
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the accepting end of the link on a machine that accepts it, which the controller marks with guest::LINK_FROM_ENV, or guest::ENVIRONMENT_OF_ENV alone on an Environment of an older controller. The runner hands each connection the named agent opens to the guest's listener on guest::LINK_ACCEPT_VSOCK_PORT, and each is served by a process of its own, this init's binary started as platform-link (link::session), so no SSH runs inside PID 1 and a failed connection takes nothing else with it. It runs in the part of the launch record's env that link::SESSION_ENV names, with link::LINK_MARK on top. It starts once the image's root and the home are in place, since a command over the link runs in them. A machine that accepts from no one does not listen at all, and one that cannot listen boots without the link and says so.
+pub fn serve_link(launch_env: &[(String, String)]) {
+    if !launch_env.iter().any(|(key, value)| {
+        (key == guest::LINK_FROM_ENV || key == guest::ENVIRONMENT_OF_ENV) && !value.is_empty()
+    }) {
+        return;
+    }
+    let listener = match vsock_listener(guest::LINK_ACCEPT_VSOCK_PORT) {
+        Ok(listener) => listener,
+        Err(e) => {
+            announce(&format!(
+                "WARNING: the link cannot listen, so no agent can reach this machine: {e}"
+            ));
+            return;
+        }
+    };
+    let mut env: Vec<(String, String)> = launch_env
+        .iter()
+        .filter(|(key, _)| crate::link::SESSION_ENV.contains(&key.as_str()))
+        .cloned()
+        .collect();
+    if !env.iter().any(|(key, _)| key == "PATH") {
+        env.push(("PATH".into(), DEFAULT_PATH.into()));
+    }
+    env.push((crate::link::LINK_MARK.into(), "1".into()));
+    std::thread::spawn(move || loop {
+        // SAFETY: accept4 writes no address, since none is asked for, and returns a new descriptor or -1.
+        let fd = unsafe {
+            libc::accept4(
+                listener.as_raw_fd(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                libc::SOCK_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            continue;
+        }
+        // SAFETY: accept4 returned a descriptor nothing else owns.
+        let conn = unsafe { OwnedFd::from_raw_fd(fd) };
+        if let Err(e) = start_link_session(conn, &env) {
+            logf!("link: starting a session: {e}");
+        }
+    });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a link session says why it failed, in the image's root, as the image's own SSH service once wrote there. A root with no /var/log gives the session no log rather than no session.
+const LINK_LOG: &str = "/var/log/platform-link.log";
+
+fn start_link_session(conn: OwnedFd, env: &[(String, String)]) -> io::Result<()> {
+    use std::process::Stdio;
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(LINK_LOG)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
+    let mut session = std::process::Command::new(guest::INIT_PATH);
+    session
+        .arg0(crate::link::PROCESS_NAME)
+        .env_clear()
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .current_dir("/")
+        .stdin(Stdio::from(conn.try_clone()?))
+        .stdout(Stdio::from(conn))
+        .stderr(log);
+    super::unblocked(&mut session).spawn().map(drop)
+}
+
 fn vsock_listener(port: u32) -> io::Result<File> {
     // SAFETY: socket(2) takes plain integers and returns a new descriptor or -1.
     let fd = unsafe { libc::socket(libc::AF_VSOCK, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };

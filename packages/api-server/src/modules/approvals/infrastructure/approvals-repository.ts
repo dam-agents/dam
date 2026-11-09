@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
+import { and, asc, desc, eq, isNull, lt, ne, or, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
@@ -264,12 +264,13 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async listPendingForInstance(agentId, opts) {
       const limit = clampLimit(opts?.limit);
+      const forInstance = or(
+        eq(pendingApprovals.agentId, agentId),
+        sql`${pendingApprovals.payload}->>'forAgentId' = ${agentId}`,
+      );
       const where = opts?.status
-        ? and(
-            eq(pendingApprovals.agentId, agentId),
-            eq(pendingApprovals.status, opts.status),
-          )
-        : eq(pendingApprovals.agentId, agentId);
+        ? and(forInstance, eq(pendingApprovals.status, opts.status))
+        : forInstance;
       const rows = await db
         .select()
         .from(pendingApprovals)

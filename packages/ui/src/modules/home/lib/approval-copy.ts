@@ -23,6 +23,9 @@ export function countsAllAgents(approval: ApprovalView): boolean {
   );
 }
 
+const anyHostOf = (host: string): string =>
+  host === "*" ? "Any host" : `Any ${host.slice(1)} host`;
+
 export function approvalHeadline(approval: ApprovalView): string {
   return match(approval.payload)
     .with({ kind: "ext_authz" }, () => "Wants to access network")
@@ -32,7 +35,11 @@ export function approvalHeadline(approval: ApprovalView): string {
         ? "Reached your spend limit"
         : "Reached its spend limit",
     )
-    .with({ kind: "egress_proposal" }, () => "Proposes a network rule")
+    .with({ kind: "egress_proposal" }, (payload) =>
+      payload.forAgentId
+        ? "Asks to open a sub-agent's network"
+        : "Proposes a network rule",
+    )
     .exhaustive();
 }
 
@@ -87,9 +94,14 @@ export function approvalDetail(
       : `${payload.host}${payload.path}`;
   const request =
     payload.method === "*" ? target : `${payload.method} ${target}`;
-  if (payload.kind === "egress_proposal") return request;
-  return payload.viaEnvironment
-    ? `${request}, from its Environment ${payload.viaEnvironment}`
+  if (payload.kind === "egress_proposal")
+    return payload.forAgentId
+      ? `${anyHostOf(payload.host)}, for its sub-agent ${approval.agentId}`
+      : request;
+  if (payload.viaEnvironment)
+    return `${request}, from its Environment ${payload.viaEnvironment}`;
+  return payload.forAgentId
+    ? `${request}, from its sub-agent ${approval.agentId}`
     : request;
 }
 

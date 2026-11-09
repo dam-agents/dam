@@ -58,6 +58,7 @@ function service(
       unlockedCharacters: vi.fn(),
       customAvatarsEnabled: vi.fn(),
       runtimeFleet: vi.fn(),
+      kept: vi.fn(),
     }),
     createSessionsPort: () => ({ list: vi.fn(), resolveTerminal }),
     confirmModeSwitch: async () => false,

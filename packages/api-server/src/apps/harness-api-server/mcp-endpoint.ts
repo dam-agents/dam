@@ -203,6 +203,7 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   environments: OwningAgentEnvironments | null;
+  keptSubAgents?: boolean;
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
@@ -1629,6 +1630,25 @@ export function createMcpSession(
       },
     });
 
+  // UNIT_BOUNDARY_DESCRIPTION: the run the reporting session is working on, so the result lands on that run of a sub-agent that may run several, and the session, which a later run may continue; null when the session or its runtime cannot say, and the result is then taken for the sub-agent's latest run.
+  const reportingRun = async (): Promise<{
+    run: string;
+    sessionId: string | null;
+  } | null> => {
+    const ref = deps.sessionRef;
+    if (!ref) return null;
+    try {
+      const { run, sessionId } =
+        await runtimeClient.sessions.invocationRun.query(
+          { ref },
+          { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+        );
+      return run ? { run, sessionId: sessionId ?? null } : null;
+    } catch {
+      return null;
+    }
+  };
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Once a call is accepted, your task is over: end your turn at once, with no more text and no more tool calls. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -1640,7 +1660,11 @@ export function createMcpSession(
         ),
     },
     async ({ result }) => {
-      const outcome = await deps.invocations.recordResult(agentId, result);
+      const outcome = await deps.invocations.recordResult(
+        agentId,
+        result,
+        await reportingRun(),
+      );
       if (!outcome.ok) {
         return errorResult(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
@@ -1660,6 +1684,7 @@ export function createMcpSession(
     registerSpendLimitsTool(server, { status: deps.spendStatus });
 
   registerSubAgentTools(server, {
+    kept: deps.keptSubAgents ?? false,
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
     spawningSession: async () => {
@@ -1786,6 +1811,8 @@ export interface MountMcpDeps {
     owner: string,
     agentId: string,
   ) => Promise<OwningAgentEnvironments | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: whether the owner's agents see the kept sub-agent tools and options, which come with the Environments feature.
+  keptSubAgents: (owner: string) => Promise<boolean>;
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
@@ -1825,6 +1852,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       chatForms,
       grantedSatellites,
       environments,
+      keptSubAgents,
     ] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
       deps.readsChannelHistory(agentId).catch((err: unknown) => {
@@ -1858,6 +1886,13 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           err,
         );
         return null;
+      }),
+      deps.keptSubAgents(verified.owner).catch((err: unknown) => {
+        console.error(
+          `[invocations] could not read whether ${verified.owner} has kept sub-agents; serving the session without them`,
+          err,
+        );
+        return false;
       }),
     ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
@@ -1903,6 +1938,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       environments,
+      keptSubAgents,
       agentTelemetry: deps.agentTelemetry,
       ...(spendStatusFor
         ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }

@@ -6,6 +6,7 @@ import type {
 } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import type { DelegationFramesPort } from "../../modules/invocations/services/delegation-frames.js";
 import { createDelegationsQuery } from "../../modules/invocations/services/delegations-query.js";
+import { invocationRow } from "../helpers/invocations-repo.js";
 
 // TEST_OVERVIEW: the running read a Driver's chat polls shows the running sub-agents that chat's Session spawned, plus every one with no recorded Session, and never one another Session of the same Driver spawned.
 
@@ -13,36 +14,7 @@ function row(
   id: string,
   overrides: Partial<InvocationRow> = {},
 ): InvocationRow {
-  return {
-    id,
-    driverAgentId: "driver-1",
-    rootDriverId: "driver-1",
-    owner: "owner-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
-    resultSchema: {},
-    result: null,
-    status: "running",
-    errorReason: null,
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60_000),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
-    ...overrides,
-  };
+  return invocationRow({ id, resultSchema: {}, ...overrides });
 }
 
 function query(rows: InvocationRow[]) {

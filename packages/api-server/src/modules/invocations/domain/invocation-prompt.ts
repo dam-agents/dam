@@ -10,12 +10,19 @@ function autonomousTargetDirective(schemaJson: string): string {
   );
 }
 
+const CONTINUATION_NOTICE =
+  "Your driver gives you a new task in this same conversation: what you did and learned above is still yours to use. Your earlier result was already reported; this task needs its own.";
+
+// UNIT_BOUNDARY_DESCRIPTION: a run that continues one of the target's sessions says so first, since the model would otherwise read the new task as a retry of the one above it, whose result it already reported.
 export function buildInvocationPrompt(input: {
   prompt: string;
   resultSchema: unknown;
+  continues?: boolean;
 }): string {
   const schemaJson = JSON.stringify(input.resultSchema, null, 2);
-  return [input.prompt.trim(), autonomousTargetDirective(schemaJson)].join(
-    "\n\n",
-  );
+  return [
+    ...(input.continues ? [CONTINUATION_NOTICE] : []),
+    input.prompt.trim(),
+    autonomousTargetDirective(schemaJson),
+  ].join("\n\n");
 }

@@ -27,6 +27,8 @@ function describeError(
 export interface InProcessCaller {
   request<T>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
+  // UNIT_BOUNDARY_DESCRIPTION: a JSON-RPC notification, with no id, for a method the protocol defines as one (session/cancel); notify carries an id, which the runtime schedules as a request.
+  signal(method: string, params: unknown): void;
   close(): void;
 }
 
@@ -97,6 +99,9 @@ export function createInProcessCaller(
       channel.sendToServer(
         JSON.stringify({ jsonrpc: "2.0", id, method, params }),
       );
+    },
+    signal(method: string, params: unknown) {
+      channel.sendToServer(JSON.stringify({ jsonrpc: "2.0", method, params }));
     },
     close() {
       channel.close();

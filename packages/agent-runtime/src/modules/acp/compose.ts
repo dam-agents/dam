@@ -105,6 +105,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   gitTraceEnv?: Record<string, string>;
   onTurnOutcome?: (
     sessionId: string,
@@ -518,6 +519,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        ...(opts.onInvocationTurn && {
+          onInvocationTurn: opts.onInvocationTurn,
+        }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         ...(opts.beforeFirstPrompt && {

@@ -163,6 +163,7 @@ pub fn run() -> ! {
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
         std::thread::spawn(move || guard_pool(dir));
     }
+    vm::serve_link(env);
     step(&mut since, "the background threads");
     let openrc = Path::new(OPENRC).exists();
     if openrc {

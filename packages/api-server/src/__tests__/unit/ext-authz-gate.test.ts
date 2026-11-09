@@ -204,6 +204,97 @@ describe("ext-authz gate", () => {
     expect(bus.publishes).toHaveLength(0);
   });
 
+  // TEST_SCENARIO: a child launched with open egress is decided by its own rules alone: a host they allow passes, and a host they do not list is denied with no prompt, since the user chose not to see that child's traffic.
+  it("denies an open child's unlisted host without holding", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver: {
+        resolve: async () => ({
+          ownerSub: "user-1",
+          agentId: "agent-child",
+          own: { mode: "open" as const, parentAgentId: "agent-driver" },
+        }),
+      },
+      ruleMatcher: {
+        match: async (_agentId: string, host: string) =>
+          host === "allowed.example.com"
+            ? {
+                verdict: "allow" as const,
+                rule: { host, method: "*", pathPattern: "*" },
+              }
+            : null,
+      },
+      providerScopes: noProviderScopes,
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+    const request = (host: string) =>
+      gate.gateRequest({
+        agentId: "agent-child",
+        host,
+        port: 443,
+        tls: true,
+        method: "GET",
+        path: "/",
+      });
+    expect(await request("allowed.example.com")).toBe("allow");
+    expect(await request("other.example.com")).toBe("deny");
+    expect(repo.rows).toHaveLength(0);
+    expect(bus.publishes).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a child launched with scoped egress holds a host its copied rules do not list as its own approval, so approving widens the child's rules alone, and the approval names the parent whose page shows it; whether anyone attends is the parent's, since the child has no session.
+  it("holds a scoped child's unlisted host as its own, shown on the parent", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const attendanceAsked: string[] = [];
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: {
+        hasOpenChannelTurn: async (agentId: string) => {
+          attendanceAsked.push(agentId);
+          return false;
+        },
+        hasInteractiveSession: async () => false,
+      },
+      identityResolver: {
+        resolve: async () => ({
+          ownerSub: "user-1",
+          agentId: "agent-child",
+          own: { mode: "scoped" as const, parentAgentId: "agent-driver" },
+        }),
+      },
+      ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+    void gate.gateRequest({
+      agentId: "agent-child",
+      host: "new.example.com",
+      port: 443,
+      tls: true,
+      method: "GET",
+      path: "/",
+    });
+    await flushMicrotasks();
+    expect(repo.rows).toHaveLength(1);
+    expect(repo.rows[0]).toMatchObject({
+      agentId: "agent-child",
+      payload: { host: "new.example.com", forAgentId: "agent-driver" },
+    });
+    expect(attendanceAsked).toEqual(["agent-driver"]);
+  });
+
   // TEST_SCENARIO: an Environment's request falls under its Owning Agent: the Owning Agent's rule decides it, and a host with no rule files one approval as the Owning Agent's, naming the Environment it came from, so the verdict becomes the Owning Agent's rule.
   it("decides an Environment's request by its Owning Agent's rules and files its approval as theirs", async () => {
     const repo = makeFakeRepo();

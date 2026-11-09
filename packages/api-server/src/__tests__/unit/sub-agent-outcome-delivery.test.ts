@@ -6,6 +6,7 @@ import {
   type SubAgentOutcomeDeliveryDeps,
 } from "../../modules/invocations/services/outcome-delivery.js";
 import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
+import { invocationRow } from "../helpers/invocations-repo.js";
 
 /**
  * TEST_OVERVIEW: An outcome nobody awaited is delivered as one turn per Driver,
@@ -20,36 +21,20 @@ import type { InvocationRow } from "../../modules/invocations/infrastructure/inv
 const NOW = new Date("2026-10-05T12:00:00Z");
 
 function row(patch: Partial<InvocationRow> = {}): InvocationRow {
-  return {
+  return invocationRow({
     id: "agent-child1",
     driverAgentId: "agent-driver",
     rootDriverId: "agent-driver",
     owner: "alice",
-    label: null,
     prompt: "do it",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
     resultSchema: { type: "integer" },
     result: 42,
     status: "done",
-    errorReason: null,
     createdAt: NOW,
     expiresAt: NOW,
     completedAt: NOW,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
     ...patch,
-  };
+  });
 }
 
 function harness(opts: {

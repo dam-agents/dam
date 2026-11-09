@@ -68,6 +68,7 @@ function setup(connections: ConnectionView[] = [provider]) {
       unlockedCharacters: vi.fn(),
       customAvatarsEnabled: vi.fn(),
       runtimeFleet: vi.fn(),
+      kept: vi.fn(),
     }),
     createTemplateService: () => ({
       list: async () => ({
