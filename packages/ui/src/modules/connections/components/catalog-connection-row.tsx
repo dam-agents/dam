@@ -61,27 +61,29 @@ export function CatalogConnectionRow({
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
-      className="px-4 py-2.5"
+      className="@container px-4 py-2.5"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <div className="flex min-w-0 flex-[1_1_240px] items-center gap-2">
-          {iconSlug && (
-            <ConnectionIcon
-              iconSlug={iconSlug}
-              alt=""
-              size={16}
-              className="shrink-0 text-foreground/80"
-            />
-          )}
-          <p
-            className="min-w-[4rem] truncate text-md font-medium text-foreground"
-            title={connection.name}
-          >
-            {connection.name}
-          </p>
+        <div className="flex min-w-0 flex-[1_1_180px] flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="flex min-w-0 max-w-full items-center gap-2">
+            {iconSlug && (
+              <ConnectionIcon
+                iconSlug={iconSlug}
+                alt=""
+                size={16}
+                className="shrink-0 text-foreground/80"
+              />
+            )}
+            <span
+              className="min-w-0 truncate text-md font-medium text-foreground"
+              title={connection.name}
+            >
+              {connection.name}
+            </span>
+          </span>
           <Badge
             variant="muted"
-            className="min-w-0 shrink-[100] font-normal"
+            className="min-w-0 max-w-full font-normal"
             title={tag}
           >
             <span className="truncate">{tag}</span>
@@ -107,7 +109,7 @@ export function CatalogConnectionRow({
               </Badge>
             )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex min-w-0 max-w-full items-center gap-2">
           <ConnectionRowActions
             connection={connection}
             grant={grant}

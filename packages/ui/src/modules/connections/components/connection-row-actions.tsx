@@ -53,13 +53,13 @@ export function ConnectionRowActions({
           : undefined;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 empty:hidden">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5 empty:hidden">
         <GithubAppInstallButton connection={connection} />
         {narrow && (
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className="shrink-0 @max-md:hidden"
             onClick={narrow}
             data-testid={`catalog-narrow-${connection.id}`}
           >
@@ -82,7 +82,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className="shrink-0 @max-md:hidden"
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}
