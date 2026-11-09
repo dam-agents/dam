@@ -94,8 +94,9 @@ export function createEgressProposals(deps: {
         limit: 500,
       });
       if (
-        open.filter((r) => r.type === "egress_proposal").length >=
-        EGRESS_PROPOSALS_PENDING_MAX
+        open.filter(
+          (r) => r.type === "egress_proposal" && r.agentId === deps.agentId,
+        ).length >= EGRESS_PROPOSALS_PENDING_MAX
       ) {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",

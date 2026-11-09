@@ -39,7 +39,10 @@ export function createWildcardEgressRequests(deps: {
     async request({ childId, driverId, rule }) {
       const host = rule.host.trim().toLowerCase();
       const open = (await pendingOf(childId)).find(
-        (r) => r.payload.kind === "egress_proposal" && r.payload.host === host,
+        (r) =>
+          r.payload.kind === "egress_proposal" &&
+          r.payload.host === host &&
+          r.payload.port === rule.port,
       );
       if (open) return { id: open.id };
       const ownerSub = await deps.ownerOf(childId);
