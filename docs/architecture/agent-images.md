@@ -64,8 +64,8 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   The images share the base's layers, so a node stores them once.
 - **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then the harness tools, then Claude Code's adapter bundle, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
   Selkies' Python bytecode is checked by source hash, since a packed layer's mtimes are zero.
-- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it.
-  k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.
+- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their environment files pin exactly, and k-search's closure, which [its own compiled lock](../../packages/agents/k-search/requirements.txt) names and its install takes as constraints (uv's tool install does not verify the hashes it was compiled with; the pins are what hold); CI caches the tool installs under it, so they change only with it.
+  k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh; the lock keeps that install to the versions it names, so the venv's layer changes only when a pin moves.
   There are no build-arg overrides.
 
 ## Ownership
