@@ -261,10 +261,11 @@ vi.mock("@/components/ui/tooltip", () => ({
     children,
     content,
   }: PropsWithChildren<{ content: ReactNode }>) =>
-    isValidElement(children) && typeof content === "string"
-      ? cloneElement(children as ReactElement<{ "data-tooltip": string }>, {
-          "data-tooltip": content,
-        })
+    isValidElement(children)
+      ? cloneElement(
+          children as ReactElement<{ "data-tooltip"?: string }>,
+          typeof content === "string" ? { "data-tooltip": content } : {},
+        )
       : createElement(Fragment, null, children),
 }));
 
@@ -608,6 +609,28 @@ describe("the new session panel", () => {
     );
     expect(curve.textContent).not.toMatch(/\d+ models?/);
     expect(menuItem(node, "Manage providers")).toBeDefined();
+  });
+
+  /** TEST_SCENARIO: a provider row keeps its element and the keyboard focus when a new pick gives it a reason, so the open menu does not lose its place. */
+  it("keeps a focused provider row when its reason appears", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    const curve = menuItem(node, "Curve");
+    expect(curve.getAttribute("data-tooltip")).toBeNull();
+    act(() => curve.focus());
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    act(() => root!.render(picker()));
+    expect(menuItem(node, "Curve")).toBe(curve);
+    expect(curve.getAttribute("data-tooltip")).toContain("Doesn't offer");
+    expect(document.activeElement).toBe(curve);
   });
 
   /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */

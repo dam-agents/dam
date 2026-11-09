@@ -1208,29 +1208,28 @@ function ProviderMenu({
           {providers.map((p) => {
             const usable = enabled(p.id);
             const why = reason(p.id);
-            const item = (
-              <DropdownMenuRadioItem
+            return (
+              <Tooltip
                 key={p.id}
-                value={p.id}
-                indicator="check"
-                aria-disabled={!usable || undefined}
-                onSelect={(event) => {
-                  if (!usable) event.preventDefault();
-                }}
-                className={
-                  usable
-                    ? undefined
-                    : "cursor-default opacity-50 data-[highlighted]:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                }
+                content={why}
+                open={why === null ? false : undefined}
+                side="right"
               >
-                <span className="truncate">{p.name}</span>
-              </DropdownMenuRadioItem>
-            );
-            return why === null ? (
-              item
-            ) : (
-              <Tooltip key={p.id} content={why} side="right">
-                {item}
+                <DropdownMenuRadioItem
+                  value={p.id}
+                  indicator="check"
+                  aria-disabled={!usable || undefined}
+                  onSelect={(event) => {
+                    if (!usable) event.preventDefault();
+                  }}
+                  className={
+                    usable
+                      ? undefined
+                      : "cursor-default opacity-50 data-[highlighted]:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  }
+                >
+                  <span className="truncate">{p.name}</span>
+                </DropdownMenuRadioItem>
               </Tooltip>
             );
           })}

@@ -45,6 +45,8 @@ interface TooltipProps extends Omit<
 > {
   children: ReactNode;
   content: ReactNode;
+  /** UNIT_BOUNDARY_DESCRIPTION: false keeps the tooltip shut and leaves the trigger's focus alone, so a trigger whose tooltip only sometimes has content keeps one element, its focus and its highlight. */
+  open?: boolean;
   side?: React.ComponentPropsWithoutRef<
     typeof TooltipPrimitive.Content
   >["side"];
@@ -53,12 +55,12 @@ interface TooltipProps extends Omit<
 
 const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
   function Tooltip(
-    { children, content, side = "bottom", className, ...rest },
+    { children, content, open, side = "bottom", className, ...rest },
     ref,
   ) {
     const { onFocus, ...triggerProps } = rest;
     return (
-      <TooltipPrimitive.Root>
+      <TooltipPrimitive.Root open={open}>
         {}
         <TooltipPrimitive.Trigger
           asChild
@@ -66,7 +68,10 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
           {...triggerProps}
           onFocus={(event) => {
             onFocus?.(event);
-            if (!event.currentTarget.matches(":focus-visible"))
+            if (
+              open !== false &&
+              !event.currentTarget.matches(":focus-visible")
+            )
               event.preventDefault();
           }}
         >
