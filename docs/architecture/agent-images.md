@@ -51,6 +51,7 @@ The native CLI the adapter runs stays in the tools; the bundle cannot find it be
 
 One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), builds any agent image as a tar in the agent's `dist/oci/`, named `platform-<agent>:latest`, or reuses it from the registry while its source is unchanged (the same source hash [`image:resolve`](../../.mise/tasks/image/resolve) keys CI on).
 CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes each architecture's OCI layout by digest with crane.
+A push compresses the layout's plain layers with parallel gzip, each layer once per job, and a layer not at all when the repository holds its compressed blob already, as a rebuild of a commit an earlier run published does.
 
 - **Linux of the image's architecture only.** The build installs the tools for the host's architecture, whose paths the image's `PATH` names, and runs `apt-get` into a side rootfs, under root.
   On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back.
