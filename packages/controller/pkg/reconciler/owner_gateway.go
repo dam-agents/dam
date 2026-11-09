@@ -216,7 +216,7 @@ func secretSize(secret *corev1.Secret) int {
 	return n
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, and the controller on the proxy ports for its readiness probe. The controller is in the ambient mesh, so its probe also arrives on HBONE.
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, the controller on the proxy ports for its readiness probe, and the mesh's kubelet-probe source (istio-cni rewrites a host probe to one fixed link-local address, so ztunnel can tell it from a workload's traffic) on the health port alone. The controller is in the ambient mesh, so its probe also arrives on HBONE.
 func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs []metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	first, last := ownerGatewayPortRange()
@@ -232,6 +232,11 @@ func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs 
 		}},
 	}
 	name := ownerGatewayName(cfg.ReleaseName, owner)
+	health := intstr.FromInt(cfg.EnvoyPort)
+	probe := make([]networkingv1.NetworkPolicyPeer, 0, len(cfg.IstioHostProbeSNAT))
+	for _, cidr := range cfg.IstioHostProbeSNAT {
+		probe = append(probe, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
+	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: name + "-ingress", Namespace: cfg.Namespace, Labels: ownerGatewayLabels(cfg.ReleaseName, owner), OwnerReferences: ownerRefs},
 		Spec: networkingv1.NetworkPolicySpec{
@@ -246,6 +251,7 @@ func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs 
 					{Protocol: &tcp, Port: &from, EndPort: &end},
 					{Protocol: &tcp, Port: &hbone},
 				}},
+				{From: probe, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}}},
 			},
 		},
 	}

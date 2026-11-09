@@ -333,6 +333,24 @@ for unenforced in '--set istio.enforce=false' '--set-string istio.enforce=false'
     *) echo "a render with $unenforced failed for another reason: $out" >&2; exit 1 ;;
   esac
 done
+# The source a kubelet probe of a meshed pod arrives from reaches the controller
+# as the ranges the owner gateway's ingress policy admits; a range it cannot
+# read, or none at all, fails the render rather than leaving that policy
+# rejected or admitting no probe.
+probe_snat() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/controller/deployment.yaml |
+    yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "PLATFORM_ISTIO_HOST_PROBE_SNAT") | .value'
+}
+[ "$(probe_snat)" = '["169.254.7.127/32","fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"]' ] \
+  || { echo "the controller does not get the mesh's own probe source: $(probe_snat)" >&2; exit 1; }
+[ "$(probe_snat --set-json 'istio.hostProbeSNAT=["169.254.1.1/32"]')" = '["169.254.1.1/32"]' ] \
+  || { echo "istio.hostProbeSNAT did not reach the controller: $(probe_snat --set-json 'istio.hostProbeSNAT=["169.254.1.1/32"]')" >&2; exit 1; }
+for refused in '["169.254.7.127"]' '["169.254.7.127/33"]' '[]'; do
+  if helm template platform . "${COMMON[@]}" --set-json "istio.hostProbeSNAT=$refused" >/dev/null 2>&1; then
+    echo "a render setting istio.hostProbeSNAT=$refused succeeded, but no ingress rule could admit the probe source it names" >&2
+    exit 1
+  fi
+done
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \

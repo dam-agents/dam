@@ -159,6 +159,10 @@ spec:
               value: {{ .Values.istio.trustDomain | quote }}
             - name: PLATFORM_ISTIO_WAYPOINT_NAME
               value: {{ .Values.istio.waypointName | quote }}
+            # The sources a kubelet probe of a meshed pod arrives from; see
+            # istio.hostProbeSNAT.
+            - name: PLATFORM_ISTIO_HOST_PROBE_SNAT
+              value: {{ .Values.istio.hostProbeSNAT | toJson | quote }}
             {{- with include "platform.objectstorage.agentAuthorityHttp" . }}
             # Plain-HTTP object-store authority — gateways render dedicated
             # routes for it (harness-route shape) for presigned uploads.

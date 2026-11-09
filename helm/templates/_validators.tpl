@@ -25,6 +25,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
+{{- include "platform.validate.istioHostProbeSNAT" . -}}
 {{- include "platform.validate.controllerGatewayEgress" . -}}
 {{- include "platform.validate.featureModes" . -}}
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
@@ -193,6 +194,25 @@ here, and so does an install on any cluster nobody provisioned that way.
 {{- if not (lookup "v1" "ConfigMap" "kube-system" "platform-local-no-mesh") -}}
 {{- fail "istio.enforce=false is local-only: it leaves every AuthorizationPolicy unenforced, so any pod can call the harness as any agent. The chart accepts it only on a cluster provisioned by `mise run cluster:install -- --no-mesh`, which marks the cluster with the kube-system ConfigMap platform-local-no-mesh. It is refused in an offline render (helm template, GitOps) and on every other cluster." -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+An owner gateway is in the ambient mesh, so the kubelet's readiness probe of it
+arrives from the link-local source istio-cni rewrites a host probe to. The
+gateway's ingress policy admits exactly the ranges istio.hostProbeSNAT names, on
+its health port alone: a range Kubernetes cannot parse is rejected with the
+whole policy, which leaves the pod ungated until the next apply, and a list
+that names none leaves no rule admitting the probe, so the pod never turns
+ready.
+*/}}
+{{- define "platform.validate.istioHostProbeSNAT" -}}
+{{- $cidrs := .Values.istio.hostProbeSNAT | default list -}}
+{{- if not $cidrs -}}
+{{- fail "istio.hostProbeSNAT names no source, so no rule admits the kubelet's readiness probe of a meshed owner gateway and it never turns ready. Set the ranges istio-cni's HOST_PROBE_SNAT_IP and HOST_PROBE_SNAT_IPV6 name, which default to 169.254.7.127/32 and fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128." -}}
+{{- end -}}
+{{- range $cidrs -}}
+{{- include "platform.validate.cidr" (dict "name" "istio.hostProbeSNAT" "value" .) -}}
 {{- end -}}
 {{- end -}}
 
