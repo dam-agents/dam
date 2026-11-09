@@ -81,10 +81,10 @@ describe("a schedule's days in one word", () => {
 });
 
 describe("a schedule's settings as rows", () => {
-  // TEST_SCENARIO: the days are one dropdown showing their summary, not seven pills, and the session type is a select, not a pair of toggle buttons.
+  // TEST_SCENARIO: the days are one dropdown showing their summary, not seven pills, named with that summary so a screen reader and voice control get the value too; the session type is a select, not a pair of toggle buttons.
   it("offers the days and the session type as dropdowns", () => {
     const html = render({ days: [1, 2, 3, 4, 5] });
-    expect(html).toMatch(/aria-label="Days"[^>]*>Weekdays</);
+    expect(html).toMatch(/aria-label="Days: Weekdays"[^>]*>Weekdays</);
     expect(html).not.toContain(">Mon<");
     expect(html).toMatch(
       /<select[^>]*aria-label="Session type"[^>]*>.*<option value="fresh"[^>]*>Fresh<\/option><option value="continuous">Continuous<\/option>/,
@@ -139,7 +139,7 @@ describe("a schedule's settings as rows", () => {
   it("shows no picked day as an error on the Days dropdown", () => {
     const html = render({ days: [] });
     expect(html).toMatch(
-      /aria-label="Days" aria-invalid="true"[^>]*>Pick days</,
+      /aria-label="Days: Pick days" aria-invalid="true"[^>]*>Pick days</,
     );
   });
 });

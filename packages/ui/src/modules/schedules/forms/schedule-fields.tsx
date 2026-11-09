@@ -1,5 +1,6 @@
 import { Add, ChevronDown, Information } from "@carbon/icons-react";
 import { useId, useState } from "react";
+import { flushSync } from "react-dom";
 import type {
   Control,
   FieldErrors,
@@ -175,19 +176,20 @@ function DaysPicker({
   onChange: (days: number[]) => void;
   invalid: boolean;
 }) {
+  const summary = daysSummary(value);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Days"
+          aria-label={`Days: ${summary ?? "Pick days"}`}
           aria-invalid={invalid || undefined}
           className={cn(
             "flex h-7 items-center rounded-md border border-transparent pr-3 pl-2 text-sm text-foreground hover:bg-background",
             invalid && "border-danger text-danger",
           )}
         >
-          {daysSummary(value) ?? "Pick days"}
+          {summary ?? "Pick days"}
           <ChevronDown size={16} className="text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -404,7 +406,10 @@ export function SchedulePrecheckField({
           {!open && (
             <RowAddButton
               label="Add a precheck"
-              onClick={() => setOpen(true)}
+              onClick={() => {
+                flushSync(() => setOpen(true));
+                document.getElementById(fieldId)?.focus();
+              }}
             />
           )}
         </div>
