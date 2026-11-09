@@ -103,7 +103,9 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
     return {
       kind: "plain",
       reason:
-        err.failure === "rejected" ? "model-call-rejected" : "model-call-failed",
+        err.failure === "rejected"
+          ? "model-call-rejected"
+          : "model-call-failed",
       copy: ({ uiBaseUrl, agentId }) =>
         modelCallFailedUserCopy(err, {
           providersUrl: agentPageUrl(uiBaseUrl, agentId, "providers"),

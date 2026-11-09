@@ -116,7 +116,9 @@ describe("a prompt whose model call failed", () => {
     );
     await expect(send(acp)).rejects.toMatchObject({
       failure: "rejected",
-      providerText: expect.stringMatching(/^Failed to authenticate\. API Error: 401/),
+      providerText: expect.stringMatching(
+        /^Failed to authenticate\. API Error: 401/,
+      ),
     });
   });
 

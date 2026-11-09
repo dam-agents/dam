@@ -77,8 +77,8 @@ const MODEL_REQUEST_FAILED = "Model request failed:";
 
 const CLAUDE_API_ERROR_TEXT = /^(?:Failed to authenticate\. )?API Error\b/;
 
-const PROVIDER_ERROR_KINDS: ReadonlyMap<string, ModelCallFailureKind> =
-  new Map([
+const PROVIDER_ERROR_KINDS: ReadonlyMap<string, ModelCallFailureKind> = new Map(
+  [
     ["authentication_failed", "rejected"],
     ["oauth_org_not_allowed", "rejected"],
     ["verification_required", "rejected"],
@@ -92,7 +92,8 @@ const PROVIDER_ERROR_KINDS: ReadonlyMap<string, ModelCallFailureKind> =
     ["max_output_tokens", "failed"],
     ["server_error", "failed"],
     ["unknown", "failed"],
-  ]);
+  ],
+);
 
 export type ModelCallFailureKind = "rejected" | "failed";
 
