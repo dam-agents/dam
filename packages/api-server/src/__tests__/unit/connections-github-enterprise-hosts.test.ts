@@ -352,6 +352,23 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
     expect(views.map((v) => v.status)).toEqual(["expired", "expired"]);
   });
 
+  // TEST_SCENARIO: a move a failed write left halfway, the sign-in already on the new host and a connection made from it still on the old one, must finish when the user retries it; else that connection stays stranded on the retired host.
+  it("finishes a move left halfway when retried", async () => {
+    const { svc, rows, secrets } = harness([signInOn(OLD), childOn(OLD)]);
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+    rows.set("conn-child", childOn(OLD));
+    secrets.get("secret-child")!.fields.access_token = "ghu_old";
+
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+
+    expect(rows.get("conn-child")!.auth).toMatchObject({
+      host: NEW,
+      clientId: "Iv1.research",
+    });
+    expect(secrets.get("secret-child")!.fields.access_token).toBe("");
+    expect(rows.get("conn-signin")!.auth).toMatchObject({ host: NEW });
+  });
+
   // TEST_SCENARIO: a sign-in may only move to a host the install offers, and a connection made from a sign-in moves with it, never alone.
   it("refuses a host the install does not offer, and a connection made from a sign-in", async () => {
     const { svc } = harness([signInOn(OLD), childOn(OLD)]);

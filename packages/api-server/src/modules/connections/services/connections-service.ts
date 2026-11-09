@@ -2709,7 +2709,6 @@ export function createConnectionsService(deps: {
           message: `${to} is not a GitHub Enterprise host this platform offers.`,
         });
       }
-      if (conn.auth.host === to) return;
       const app = operatorAppFor(template, to);
       if (!app.clientId) {
         throw new TRPCError({
@@ -2719,18 +2718,29 @@ export function createConnectionsService(deps: {
       }
       const clientId = app.clientId;
       const from = conn.auth.host;
-      const children = conn.isParent
-        ? await deps.repo.listChildren(conn.id)
-        : [];
-      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
-        const fresh = await deps.repo.get(conn.id, deps.ownerId);
-        if (fresh?.auth.kind !== "oauth") return;
-        await rehost(fresh, fresh.auth, to, { ...app, clientId }, template);
-        for (const child of children) {
-          if (child.auth.kind !== "oauth") continue;
-          await rehost(child, child.auth, to, { ...app, clientId }, template);
-        }
-      });
+      // Children are read under the lock a new child is made under, and each
+      // connection still off the target is rehosted, so a retry finishes a
+      // move a failed write left halfway.
+      const { children, rehosted } = await deps.connectionLock(
+        connectionRefreshLockKey(conn.id),
+        async () => {
+          const fresh = await deps.repo.get(conn.id, deps.ownerId);
+          if (fresh?.auth.kind !== "oauth") {
+            return { children: [], rehosted: 0 };
+          }
+          const kids = fresh.isParent
+            ? await deps.repo.listChildren(fresh.id)
+            : [];
+          let count = 0;
+          for (const c of [fresh, ...kids]) {
+            if (c.auth.kind !== "oauth" || c.auth.host === to) continue;
+            await rehost(c, c.auth, to, { ...app, clientId }, template);
+            count++;
+          }
+          return { children: kids, rehosted: count };
+        },
+      );
+      if (rehosted === 0) return;
 
       const moved = [conn, ...children];
       const agents = [
