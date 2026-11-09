@@ -17,7 +17,12 @@ const BASE_TABS: readonly { value: SettingsTab; label: string }[] = [
   { value: "schedules", label: "Schedules" },
 ];
 
-type GatedTab = "features" | "slack-workspaces" | "analytics" | "operator";
+type GatedTab =
+  | "features"
+  | "slack-workspaces"
+  | "analytics"
+  | "operator"
+  | "access-list";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the settings tabs the signed-in person sees, in
@@ -37,12 +42,14 @@ export function useSettingsTabs() {
     "slack-workspaces": slackInstall.data === true,
     analytics: usageInspect.data === true,
     operator: operatorAccess.data?.isOperator === true,
+    "access-list": operatorAccess.data?.isOperator === true,
   };
   const answered: Record<GatedTab, boolean> = {
     features: flagsLoaded,
     "slack-workspaces": slackInstall.isSuccess,
     analytics: usageInspect.isSuccess,
     operator: operatorAccess.isSuccess,
+    "access-list": operatorAccess.isSuccess,
   };
   const tabs = [
     ...BASE_TABS,
@@ -54,6 +61,9 @@ export function useSettingsTabs() {
       : []),
     ...(shown.operator
       ? [{ value: "operator" as const, label: "Operator" }]
+      : []),
+    ...(shown["access-list"]
+      ? [{ value: "access-list" as const, label: "Access list" }]
       : []),
     ...(shown.features
       ? [{ value: "features" as const, label: "Experimental features" }]

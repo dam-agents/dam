@@ -81,6 +81,7 @@ import type {
   LoginTestimonialsForOperator,
   PublicTestimonials,
 } from "../../modules/login-testimonials/index.js";
+import type { AccessListModule } from "../../modules/access-list/index.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
@@ -116,6 +117,7 @@ export interface ApiServerDeps {
     forOperator: LoginTestimonialsForOperator;
     readPublic: PublicTestimonials;
   };
+  accessList: Pick<AccessListModule, "forOperator" | "allows">;
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;
   approvalsRelay: ApprovalsRelayService;

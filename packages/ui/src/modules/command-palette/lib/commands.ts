@@ -43,6 +43,7 @@ const MINOR_SETTINGS: ReadonlySet<SettingsTab> = new Set([
   "slack-workspaces",
   "analytics",
   "operator",
+  "access-list",
   "features",
   "about",
 ]);

@@ -1499,6 +1499,14 @@ export const loginTestimonials = pgTable(
   (t) => [uniqueIndex("login_testimonials_position_idx").on(t.position)],
 );
 
+export const accessList = pgTable("access_list", {
+  email: text("email").primaryKey(),
+  addedBy: text("added_by"),
+  addedAt: timestamp("added_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const spendDaily = pgTable(
   "spend_daily",
   {

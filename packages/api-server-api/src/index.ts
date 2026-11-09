@@ -240,6 +240,18 @@ export type {
   LoginTestimonialsSaveInput,
   LoginTestimonialsService,
 } from "./modules/login-testimonials/types.js";
+export {
+  ACCESS_LIST_ADD_MAX,
+  accessListAddInputSchema,
+  accessListRemoveInputSchema,
+} from "./modules/access-list/schemas.js";
+export type {
+  AccessList,
+  AccessListAddInput,
+  AccessListEntry,
+  AccessListRemoveInput,
+  AccessListService,
+} from "./modules/access-list/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,

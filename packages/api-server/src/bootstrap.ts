@@ -1,6 +1,10 @@
 import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
+import {
+  composeAccessListModule,
+  parseAccessListSeed,
+} from "./modules/access-list/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
@@ -786,6 +790,12 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  const accessList = composeAccessListModule({
+    db,
+    enabled: config.accessList.enabled,
+    seed: parseAccessListSeed(config.accessList.seed),
+  });
+  await accessList.applySeed();
   const loginTestimonials = composeLoginTestimonialsModule({
     db,
     photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
@@ -2612,6 +2622,7 @@ export async function bootstrap() {
     spendCeilingsForOperator: spend.ceilingsForOperator,
     spendHold,
     loginTestimonials,
+    accessList,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

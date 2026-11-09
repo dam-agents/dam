@@ -15,6 +15,7 @@ import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
+import { AccessListView } from "../../access-list/views/access-list-view.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
@@ -206,6 +207,7 @@ export function SettingsView() {
 
         {activeTab === "analytics" && <UsageAnalyticsView />}
         {activeTab === "operator" && <OperatorView />}
+        {activeTab === "access-list" && <AccessListView />}
 
         {activeTab === "features" && <FeaturesTab />}
 

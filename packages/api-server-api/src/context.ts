@@ -5,6 +5,7 @@ import type {
 } from "./modules/agents/permissions.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { LoginTestimonialsService } from "./modules/login-testimonials/types.js";
+import type { AccessListService } from "./modules/access-list/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
 import type {
   BudgetsService,
@@ -118,6 +119,7 @@ export interface ApiContext {
   budgets: BudgetsService;
   userBudgets: UserBudgetsService;
   loginTestimonials: LoginTestimonialsService;
+  accessList: AccessListService;
   spend: SpendService;
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;

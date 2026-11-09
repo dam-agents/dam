@@ -65,6 +65,7 @@ export {
   outageAlerts,
   avatarImages,
   loginTestimonials,
+  accessList,
   spendCalls,
   spendAgentNames,
   spendDaily,

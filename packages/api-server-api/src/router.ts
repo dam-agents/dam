@@ -4,6 +4,7 @@ import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
 import { loginTestimonialsRouter } from "./modules/login-testimonials/router.js";
+import { accessListRouter } from "./modules/access-list/router.js";
 import { attentionRouter } from "./modules/attention/router.js";
 import { costReviewsRouter } from "./modules/cost-reviews/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
@@ -74,6 +75,7 @@ export const appRouter = t.router({
   budgets: budgetsRouter,
   operator: operatorRouter,
   loginTestimonials: loginTestimonialsRouter,
+  accessList: accessListRouter,
   spend: spendRouter,
   providerStatus: providerStatusRouter,
   events: eventsRouter,

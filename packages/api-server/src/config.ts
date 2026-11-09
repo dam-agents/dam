@@ -349,6 +349,11 @@ const configSchema = z.object({
     text: z.string().min(1, "terms.text must be set"),
   }),
   signUps: signUpsSchema.default("open"),
+  accessList: z.object({
+    enabled: z.boolean(),
+    checkSecret: z.string(),
+    seed: z.string().default(""),
+  }),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -374,6 +379,11 @@ const validatedConfigSchema = configSchema
       path: ["objectStorageAccessKeyId"],
     },
   )
+  .refine((c) => !c.accessList.enabled || c.accessList.checkSecret !== "", {
+    message:
+      "ACCESS_LIST_CHECK_SECRET must be set when ACCESS_LIST_ENABLED is true: Keycloak authenticates its access checks with it",
+    path: ["accessList", "checkSecret"],
+  })
   .refine(
     (c) =>
       new URL(c.contentBaseUrl).hostname.toLowerCase() !==
@@ -595,5 +605,10 @@ export function loadConfig(): Config {
       text: process.env.TERMS_TEXT,
     },
     signUps: process.env.SIGN_UPS || undefined,
+    accessList: {
+      enabled: process.env.ACCESS_LIST_ENABLED === "true",
+      checkSecret: process.env.ACCESS_LIST_CHECK_SECRET ?? "",
+      seed: process.env.ACCESS_LIST_SEED,
+    },
   });
 }

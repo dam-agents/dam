@@ -12,6 +12,7 @@ const SETTINGS_TAB_TITLE: Record<SettingsTab, string> = {
   "slack-workspaces": "Slack workspaces",
   analytics: "Analytics",
   operator: "Operator",
+  "access-list": "Access list",
   features: "Experimental features",
   about: "About",
 };

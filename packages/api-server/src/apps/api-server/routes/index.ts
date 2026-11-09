@@ -16,6 +16,7 @@ import {
 } from "./agent-discovery.js";
 import { createBrandRoutes } from "./brand.js";
 import { createLoginTestimonialsRoutes } from "./login-testimonials.js";
+import { createAccessCheckRoutes } from "./access-check.js";
 import { mountBrowserStreamPage } from "./browser-stream.js";
 import {
   createAvatarImageRoutes,
@@ -80,6 +81,14 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
       addresses: boot.addresses,
     }),
   );
+  if (config.accessList.enabled)
+    app.route(
+      "/internal/access-check",
+      createAccessCheckRoutes({
+        secret: config.accessList.checkSecret,
+        allows: boot.accessList.allows,
+      }),
+    );
   app.route("/api/avatars", avatarImages.upload);
   app.route(
     "/api/public",
