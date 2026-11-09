@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type AgentSkill,
   type AgentSkillFile,
@@ -137,14 +137,19 @@ describe("agent discovery routes", () => {
   /**
    * TEST_SCENARIO: Each api-server replica builds the archive at boot, and the
    * index from one replica can be followed by the archive from another, so
-   * the same files must give the same bytes every time.
+   * the same files must give the same bytes whatever the clock says.
    */
   it("builds the same archive bytes from the same files", () => {
-    const again = skillOf([
-      fileOf("SKILL.md", SKILL_MD),
-      fileOf("references/security-advisory.md", ADVISORY_MD),
-    ]);
-    expect(again.archive).toEqual(SKILL.archive);
+    vi.useFakeTimers({ now: new Date("2031-05-06T07:08:09Z") });
+    try {
+      const again = skillOf([
+        fileOf("SKILL.md", SKILL_MD),
+        fileOf("references/security-advisory.md", ADVISORY_MD),
+      ]);
+      expect(again.archive).toEqual(SKILL.archive);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

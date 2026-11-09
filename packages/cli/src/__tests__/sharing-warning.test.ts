@@ -82,7 +82,7 @@ function sharing(
   over: { telegramGroups?: string[]; held?: SharedGrants } = {},
 ): () => SharingService {
   return () => ({
-    telegramGroups: async () => over.telegramGroups ?? [],
+    telegramGroups: async () => ok(over.telegramGroups ?? []),
     heldGrants: async () =>
       ok(over.held ?? { connections: [], satellites: [] }),
   });
@@ -180,6 +180,37 @@ describe("commands that share an Agent's grants", () => {
     });
     expect(output.stderr).toContain(
       "warning: its editor ana@example.com, everyone in Slack channel #eng and everyone in Telegram group Ops can steer scout, and through it use its connection github-acme\n",
+    );
+  });
+
+  /** TEST_SCENARIO: a read behind the warning can fail after the grant succeeded; the grant still reports success, and a note says the check did not run instead of staying silent as if nothing were shared. */
+  it("says when it could not check who else steers the Agent", async () => {
+    const agent = agentView({ channels: [slack("C0456")] });
+    const stdout = await run(
+      buildGrantCommand({
+        ...deps(
+          {
+            list: async () => ok([GITHUB]),
+            grant: async () => ok(["conn-gh"]),
+          },
+          agentLookup(agent),
+        ),
+        createSharingService: () => ({
+          telegramGroups: async () => ({
+            ok: false as const,
+            error: { kind: "transport" as const, reason: "connection reset" },
+          }),
+          heldGrants: async () => ok({ connections: [], satellites: [] }),
+        }),
+      }),
+      ["scout", "--connection", "github-acme"],
+    );
+    expect(stdout).toContain("✓ Granted to scout.");
+    expect(output.stderr).toContain(
+      "note: could not check who besides you can use what scout holds (connection reset)\n",
+    );
+    expect(output.stderr).toContain(
+      "warning: everyone in Slack channel C0456 can steer scout, and through it use its connection github-acme\n",
     );
   });
 

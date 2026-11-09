@@ -6,6 +6,7 @@ export {
   type SharedGrants,
   sharedConnectionNames,
   sharedSlackChannels,
+  sharingUnchecked,
   sharingWarning,
 } from "./domain/shared-access.js";
 export {

@@ -12,6 +12,7 @@ import { errorMessage } from "../../shared/error-message.js";
 import {
   audienceOf,
   type SharingService,
+  sharingUnchecked,
   sharingWarning,
 } from "../../sharing/index.js";
 
@@ -145,12 +146,14 @@ export function buildGrantCommand(
         : `${ref} can now reach ${name}. Its harness picks the tools up when it next starts.\n`,
     );
     if (!revoke) {
-      const telegramGroups = await deps
+      const groups = await deps
         .createSharingService(at)
         .telegramGroups(agentId);
+      if (!groups.ok)
+        process.stderr.write(sharingUnchecked(agent.name, groups.error.reason));
       const warning = sharingWarning(
         agent.name,
-        audienceOf(agent, telegramGroups),
+        audienceOf(agent, groups.ok ? groups.value : []),
         { connections: [], satellites: [name] },
       );
       if (warning) process.stderr.write(warning);

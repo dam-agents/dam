@@ -34,6 +34,7 @@ import { waitForRunningOrExit } from "./wait-or-exit.js";
 import {
   sharedConnectionNames,
   sharedSlackChannels,
+  sharingUnchecked,
   sharingWarning,
 } from "../../sharing/index.js";
 
@@ -191,17 +192,16 @@ export async function runCreateFromKit(
     templates,
   );
   const kitRef = kitRefOf(kit, catalogKits);
+  const slackChannels = sharedSlackChannels(finalAgent.channels);
+  if (granted === null && slackChannels.length > 0)
+    process.stderr.write(
+      sharingUnchecked(finalAgent.name, "your connections could not be read"),
+    );
   const warning = sharingWarning(
     finalAgent.name,
+    { editors: [], slackChannels, telegramGroups: [] },
     {
-      editors: [],
-      slackChannels: sharedSlackChannels(finalAgent.channels),
-      telegramGroups: [],
-    },
-    {
-      connections: granted
-        ? sharedConnectionNames(granted)
-        : input.connectionIds,
+      connections: granted ? sharedConnectionNames(granted) : [],
       satellites: [],
     },
   );

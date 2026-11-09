@@ -6,6 +6,7 @@ import {
   audienceOf,
   type SharingService,
   sharedConnectionNames,
+  sharingUnchecked,
   sharingWarning,
 } from "../../sharing/index.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
@@ -111,12 +112,16 @@ export function buildGrantCommand(
           connections.filter((c) => connectionIds.includes(c.id)),
         );
         if (shared.length > 0) {
-          const telegramGroups = await deps
+          const groups = await deps
             .createSharingService(host)
             .telegramGroups(agent.id);
+          if (!groups.ok)
+            process.stderr.write(
+              sharingUnchecked(agent.name, groups.error.reason),
+            );
           const warning = sharingWarning(
             agent.name,
-            audienceOf(agent, telegramGroups),
+            audienceOf(agent, groups.ok ? groups.value : []),
             { connections: shared, satellites: [] },
           );
           if (warning) process.stderr.write(warning);

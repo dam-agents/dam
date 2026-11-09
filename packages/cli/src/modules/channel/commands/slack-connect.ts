@@ -16,6 +16,7 @@ import {
   NO_GRANTS,
   type SharingService,
   sharedSlackChannels,
+  sharingUnchecked,
   sharingWarning,
 } from "../../sharing/index.js";
 
@@ -121,6 +122,10 @@ export function buildSlackConnectCommand(deps: {
           const held = await deps
             .createSharingService(host)
             .heldGrants(agent.id);
+          if (!held.ok)
+            process.stderr.write(
+              sharingUnchecked(agent.name, held.error.reason),
+            );
           const warning = sharingWarning(
             agent.name,
             { editors: [], slackChannels, telegramGroups: [] },

@@ -122,6 +122,9 @@ const what = (grants: SharedGrants) =>
     counted(grants.satellites, SATELLITES),
   ]);
 
+export const sharingUnchecked = (agentName: string, reason: string): string =>
+  `note: could not check who besides you can use what ${agentName} holds (${reason})\n`;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The web app warns, and never blocks, when a
  * connection or satellite is shared with anyone besides an Agent's owner: its
