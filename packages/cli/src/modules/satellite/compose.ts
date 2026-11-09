@@ -3,6 +3,7 @@ import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import type { TokenProvider } from "../auth/index.js";
+import type { SharingService } from "../sharing/index.js";
 import {
   buildCancelCommand,
   buildGrantCommand,
@@ -20,6 +21,7 @@ export interface SatelliteModuleOptions {
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
   tokenProvider: TokenProvider;
+  createSharingService: (host: string) => SharingService;
 }
 
 export function composeSatelliteModule(opts: SatelliteModuleOptions): {
@@ -31,6 +33,7 @@ export function composeSatelliteModule(opts: SatelliteModuleOptions): {
     createAgentService: opts.createAgentService,
     createTrpc: opts.buildTrpc,
     tokenProvider: opts.tokenProvider,
+    createSharingService: opts.createSharingService,
   };
 
   const parent = new Command("satellite")

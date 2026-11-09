@@ -31,6 +31,12 @@ export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
 } from "./modules/channels/types.js";
+export {
+  isSlackDirectMessageId,
+  type SharedChannel,
+  sharedChannels,
+  type TelegramChatAudience,
+} from "./modules/channels/shared-conversations.js";
 
 export {
   spawnInvocationRequestSchema,

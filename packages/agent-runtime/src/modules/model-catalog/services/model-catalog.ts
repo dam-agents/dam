@@ -4,9 +4,11 @@ import {
   forHarness,
   layerMetadata,
   listingForTemplate,
+  modelDialect,
   nativeListingForTemplate,
   nativePinOf,
   parseQualifiedModel,
+  PROVIDER_ALIASES,
   PROVIDER_DIALECTS,
   providerTypeForTemplateId,
   renderName,
@@ -19,23 +21,92 @@ import {
   type PriceTable,
   type ProviderListingStatus,
 } from "api-server-api";
+import { z } from "zod";
+import { join } from "node:path";
 import type {
   CatalogModelView,
   CatalogProviderView,
   HarnessCatalogView,
 } from "agent-runtime-api";
+import { openJsonFile } from "../../../core/document-store.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-state-store.js";
 
 const REFRESH_MS = 30 * 60_000;
 const RETRY_INITIAL_MS = 2_000;
 const RETRY_MAX_MS = 5 * 60_000;
+const CACHE_MAX_BYTES = 8 * 1024 * 1024;
 
 interface NativeListing {
   status: ProviderListingStatus;
   listedAt: string | null;
   ids: string[];
   failed: boolean;
+}
+
+const listingStatus = z.enum(["listed", "unavailable", "unsupported"]);
+const metadataSource = z.enum(["provider", "table", "known", "preset", "none"]);
+
+const cachedCatalog = z.object({
+  version: z.literal(1),
+  providers: z.array(
+    z.object({
+      connectionId: z.string(),
+      alias: z.enum(PROVIDER_ALIASES),
+      template: z.string(),
+      displayName: z.string(),
+      dialects: z.array(modelDialect),
+      harnesses: z.array(z.string()).optional(),
+      status: listingStatus,
+      listedAt: z.string().nullable(),
+      entries: z.array(
+        z.object({
+          name: z.string(),
+          alias: z.enum(PROVIDER_ALIASES),
+          connectionId: z.string(),
+          template: z.string(),
+          upstreamId: z.string(),
+          dialects: z.array(modelDialect),
+          harnesses: z.array(z.string()).optional(),
+          metadata: z.object({
+            contextWindow: z.number().nullable(),
+            maxOutputTokens: z.number().nullable(),
+            reasoning: z.boolean().nullable(),
+            vision: z.boolean().nullable(),
+            cacheControl: z.literal("anthropic").nullable(),
+            thinkingFormat: z.literal("zai").nullable(),
+            prices: z
+              .object({
+                inputPerToken: z.number(),
+                outputPerToken: z.number(),
+                cacheReadPerToken: z.number().nullable(),
+                cacheWritePerToken: z.number().nullable(),
+              })
+              .nullable(),
+            source: z.object({
+              limits: metadataSource,
+              prices: metadataSource,
+            }),
+          }),
+        }),
+      ),
+    }),
+  ),
+  native: z.record(
+    z.string(),
+    z.object({
+      status: listingStatus,
+      listedAt: z.string().nullable(),
+      ids: z.array(z.string()),
+      failed: z.boolean(),
+    }),
+  ),
+});
+
+interface CatalogCache {
+  version: 1;
+  providers: CatalogProvider[];
+  native: Record<string, NativeListing>;
 }
 
 export interface ModelCatalog {
@@ -45,7 +116,9 @@ export interface ModelCatalog {
   resolve(name: string, harness?: string): CatalogEntry | null;
   view(harness: string): HarnessCatalogView;
   listed(): Promise<void>;
+  settled(): Promise<void>;
   refresh(): Promise<void>;
+  refreshForEnvChange(): Promise<void>;
   onChange(listener: () => void): () => void;
   start(): void;
   stop(): void;
@@ -58,9 +131,14 @@ export interface ModelCatalogDeps {
   harnesses: Readonly<Record<string, ModelRouterBinding | undefined>>;
   table: PriceTable;
   log: (msg: string) => void;
+  cachePath?: string;
   refreshMs?: number;
   retryMs?: { initial: number; max: number };
   now?: () => Date;
+}
+
+export function modelCatalogCachePath(agentHome: string): string {
+  return join(agentHome, ".platform", "model-catalog.json");
 }
 
 /**
@@ -68,7 +146,18 @@ export interface ModelCatalogDeps {
  * per granted provider Connection, which the Model Router routes by, the
  * harness catalogs and the picker are rendered from, and spend is priced by.
  * A listing that fails keeps the Connection's last good list, so a provider
- * outage hides nothing that was known.
+ * outage hides nothing that was known. The list the agent last routed on is
+ * kept on its home volume as a versioned document whose schema restates these
+ * types, so a cache another shape wrote is dropped rather than trusted, and a
+ * boot whose env rail is already there restores it for the Connections the env
+ * still grants: the default harness reads its models and their windows at
+ * listen instead of after discovery through a gateway pod that is still coming
+ * up. The rebuild that follows replaces it, and the listeners hear only about
+ * what a reader or a harness reads at spawn — a model's name and window, a
+ * provider's status — never a listing time, so a rebuild that finds the
+ * restored catalog unchanged notifies nobody. A rebuild an env change starts
+ * holds the harness that change recycles until it lands, so one boot settles
+ * into one harness.
  */
 export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   const now = deps.now ?? (() => new Date());
@@ -84,6 +173,15 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   let timer: ReturnType<typeof setInterval> | null = null;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let retryDelay = retryMs.initial;
+  const cache =
+    deps.cachePath === undefined
+      ? null
+      : openJsonFile<CatalogCache | null>(deps.cachePath, {
+          schema: cachedCatalog.nullable(),
+          initial: () => null,
+          maxBytes: CACHE_MAX_BYTES,
+        });
+  let cachedPrint: string | null = null;
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: what is known of a provider Connection from
@@ -232,6 +330,42 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   const firstListing = new Promise<void>((resolve) => {
     markListed = resolve;
   });
+  let spawnGate: Promise<void> | null = null;
+
+  const cacheDocument = (): CatalogCache => ({
+    version: 1,
+    providers,
+    native: Object.fromEntries(native),
+  });
+
+  const restore = (): void => {
+    const cached = cache?.read();
+    if (!cached || !deps.envReady()) return;
+    const granted = new Set(deps.envState().providers.map((l) => l.id));
+    providers = cached.providers.filter((p) => granted.has(p.connectionId));
+    native = new Map(
+      Object.entries(cached.native).filter(([id]) => granted.has(id)),
+    );
+    cachedPrint = JSON.stringify(cacheDocument());
+    markListed();
+  };
+
+  const writeCache = (): void => {
+    if (!cache) return;
+    const document = cacheDocument();
+    const print = JSON.stringify(document);
+    if (print === cachedPrint || print.length > CACHE_MAX_BYTES) return;
+    cachedPrint = print;
+    try {
+      cache.write(document);
+    } catch (err) {
+      deps.log(
+        `[model-catalog] catalog not kept on disk: ${(err as Error).message}`,
+      );
+    }
+  };
+
+  restore();
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: what a reader of the catalog sees, pending
@@ -241,12 +375,15 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
    */
   const fingerprint = (): string =>
     JSON.stringify(
-      withPending().map((p) => [
-        p.connectionId,
-        p.status,
-        p.entries.map((e) => e.name),
-        native.get(p.connectionId) ?? null,
-      ]),
+      withPending().map((p) => {
+        const listing = native.get(p.connectionId);
+        return [
+          p.connectionId,
+          p.status,
+          p.entries.map((e) => [e.name, e.metadata.contextWindow]),
+          listing ? [listing.status, listing.ids] : null,
+        ];
+      }),
     );
 
   const rebuild = async (): Promise<void> => {
@@ -274,6 +411,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     markListed();
     if (before !== fingerprint()) for (const listener of listeners) listener();
     scheduleRetry();
+    writeCache();
   };
 
   const scheduleRetry = (): void => {
@@ -304,6 +442,16 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   const refresh = (): Promise<void> => {
     retryDelay = retryMs.initial;
     return run();
+  };
+
+  const refreshForEnvChange = (): Promise<void> => {
+    retryDelay = retryMs.initial;
+    const started = run();
+    const gate = started.finally(() => {
+      if (spawnGate === gate) spawnGate = null;
+    });
+    spawnGate = gate;
+    return started;
   };
 
   const run = (): Promise<void> => {
@@ -373,6 +521,10 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   return {
     providers: withPending,
     listed: () => firstListing,
+    settled: async () => {
+      await firstListing;
+      while (spawnGate) await spawnGate;
+    },
     entries,
     forHarness: (harness) =>
       forHarness(entries(), harness, deps.harnesses[harness]),
@@ -447,6 +599,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
       };
     },
     refresh,
+    refreshForEnvChange,
     onChange: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

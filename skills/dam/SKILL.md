@@ -4,6 +4,7 @@ description: >
   Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
   Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
+  Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -33,6 +34,9 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 6. **Only the CLI talks to DAM.**
    Never call DAM's API directly — with curl, a script or anything else — and never reuse the CLI's sign-in to do so.
    See [When the CLI can't do it](#when-the-cli-cant-do-it).
+7. **Say who can act as the user.**
+   Anyone who can steer a DAM agent uses every connection and satellite it holds.
+   Before you bind a channel, grant a connection or satellite, or widen what an agent reaches, check the agent as the [security advisory](references/security-advisory.md) says: choose the safer set-up it names, and tell the user what each change shares.
 
 ## Set up
 
@@ -429,6 +433,7 @@ dam channel slack connect my-agent --channel-id C0123ABCD
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
+Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
 
 ### Skills on DAM agents
 

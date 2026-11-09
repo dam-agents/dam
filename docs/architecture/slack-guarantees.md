@@ -301,7 +301,7 @@ Ambient turns get none.
 ## 5. Reach the owner may not expect
 
 First, an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account.
-The UI warns the owner when the two meet (see [Shared access](channels.md#shared-access--the-one-model)) but does not block it.
+The UI and the CLI warn the owner when the two meet (see [Shared access](channels.md#shared-access--the-one-model)) but do not block it.
 Open on Codex.
 On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
 
