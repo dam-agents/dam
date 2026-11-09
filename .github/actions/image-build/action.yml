@@ -67,9 +67,9 @@ runs:
         [ "$CACHEONLY" != true ] || components=("${components[@]/%/:cacheonly}")
         .mise/tasks/image/ci-build --serial "$ARCH" "${components[@]}"
     # The images' apt base is made by the build above, not by agent-tools, so
-    # main writes it here: the day it is dated by keeps a rebuild daily, and
+    # main writes it here: the week it is dated by keeps a rebuild weekly, and
     # every job that builds an agent image restores it from this entry. An
-    # older day's entry is left to the repo's 10 GB budget, which retires it.
+    # older week's entry is left to the repo's 10 GB budget, which retires it.
     - if: inputs.apt-base-cache == 'true' && github.ref == 'refs/heads/main' && steps.agent-tools.outputs.apt-base-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
