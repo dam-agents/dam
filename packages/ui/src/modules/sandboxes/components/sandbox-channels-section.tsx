@@ -4,6 +4,10 @@ import { getBrand } from "../../../brand.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import {
+  canAddChannel,
+  showsAssistantChannelsNotice,
+} from "../lib/channels-binding.js";
 import { AgentModelPicker } from "./agent-model-picker.js";
 import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
@@ -20,8 +24,8 @@ export function SandboxChannelsSection({
   const agent = findAgent(data, agentId) ?? undefined;
   const available = data?.availableChannels ?? {};
   const readOnly = agent ? !holds(agent.access, "channels") : false;
-  const canBind = agent ? holds(agent.access, "channelBinding") : true;
-  const bindingBlocked = !canBind;
+  const canAdd = agent ? canAddChannel(agent.access, agent.kind) : true;
+  const bindingBlocked = showsAssistantChannelsNotice(agent?.kind);
   const assistantName = getBrand().assistantName;
 
   const missing = [
@@ -87,14 +91,14 @@ export function SandboxChannelsSection({
           agent={agent}
           withWhisper={compact}
           readOnly={readOnly}
-          canAdd={canBind}
+          canAdd={canAdd}
         />
       )}
       {available.telegram && (
         <TelegramChannelCard
           agentId={agentId}
           readOnly={readOnly}
-          canAdd={canBind}
+          canAdd={canAdd}
           compact={compact}
         />
       )}

@@ -9,7 +9,9 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
 import { emitToast } from "../../../lib/toast.js";
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import { useAssistantOn } from "../../assistants/api/assistant-state.js";
 import { AssistantOnboardingReset } from "../../assistants/components/assistant-onboarding-reset.js";
 import { runTurnOffAssistant } from "../../assistants/lib/turn-off-assistant.js";
@@ -143,7 +145,13 @@ export function FeaturesTab() {
     await runTurnOffAssistant({
       assistantName: brand.assistantName,
       confirm: showConfirm,
-      turnOff: () => setFeature.mutateAsync({ feature: row.id, enabled }),
+      turnOff: async () => {
+        await setFeature.mutateAsync({ feature: row.id, enabled });
+        // UNIT_BOUNDARY_DESCRIPTION: the record outlives the turn-off as cache — its query is disabled, not emptied — so it is dropped here rather than left to say the assistant still has news.
+        queryClient.removeQueries({
+          queryKey: trpc.assistants.state.queryKey(),
+        });
+      },
       reportFailure: (message) => emitToast({ kind: "error", message }),
     });
   };
