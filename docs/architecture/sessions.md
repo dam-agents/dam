@@ -15,7 +15,8 @@ A session from before this marker follows its default once, when the runtime fir
 A `session/new` or a prompt with no model is held, rather than refused as having none, until the agent's first state settles: its env, and a chat default the api-server has converted (a delivery that still carries no chat default is the one a `hello` publishes before that conversion, so the runtime waits for the next one).
 The wait is bounded by the harness's own warm-start limit, 15 s, and after it the frame is decided on what is known, which for an agent whose default model arrived too late is still the refusal.
 A session released on a converted default opens on its kind's default model, settings and follow marker, as the api-server fills them into a run that names no model; a harness that does not reach its models through the Model Router needs no model, so it bypasses the gate, and a sub-agent session has no kind default to take.
-The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
+The default harness's lease starts once the server listens, so a waking chat finds it loaded; where the machine kept the [model catalog](harness-config.md#the-model-catalog) it last routed on, the lease starts on that instead of waiting for the provider listing.
+Any other lease starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
 ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
@@ -29,6 +30,8 @@ The list is read from the platform's own session records, not from the harness, 
 A channel turn's first prompt opens with the platform's instructions to the agent, so a Slack or Telegram Session's automatic title is instead the person's first message, which the channel names on `session/new` in `_meta.platform.title` (Slack sends its first line without leading mentions, Telegram the whole text); the runtime cuts it to one line of the same length as a title from a prompt.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
+A change to the [model catalog](harness-config.md#the-model-catalog) recycles a lease only where the models its harness may run on, or their windows, changed; a Connection that merely reports itself unavailable is the picker's to show and leaves the process alone.
+The harness that replaces a recycled one after an env change waits for the listing that change started, so one boot settles into one harness.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
 
 Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).

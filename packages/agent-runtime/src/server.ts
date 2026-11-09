@@ -45,8 +45,10 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  modelCatalogCachePath,
   servesHarness,
   VENDORED_PRICE_TABLE,
+  watchHarnessCatalog,
 } from "./modules/model-catalog/index.js";
 import {
   composeModelRouter,
@@ -292,6 +294,7 @@ const modelCatalog = createModelCatalog({
     Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
   ),
   table: VENDORED_PRICE_TABLE,
+  cachePath: modelCatalogCachePath(homeDir),
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 
@@ -635,7 +638,7 @@ const {
   },
   beforeSpawn: async () => {
     await Promise.race([
-      modelCatalog.listed(),
+      modelCatalog.settled(),
       new Promise<void>((resolve) => {
         setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
       }),
@@ -765,7 +768,7 @@ const runtimeChannel = await composeRuntimeChannel({
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
         applyStartupItemEnv();
-        void modelCatalog.refresh();
+        void modelCatalog.refreshForEnvChange();
         scheduleRecovery();
       },
     }),
@@ -1427,17 +1430,20 @@ server.listen(config.PORT, () => {
     applyStartupItemEnv();
   }
 
-  modelCatalog.onChange(() =>
-    acpRuntime.applyEnvChange({
-      namesChanged: false,
-      base: null,
-      providers: [],
-      harnesses: Object.keys(harnessManifests).map((id) => ({
-        id,
+  watchHarnessCatalog({
+    catalog: modelCatalog,
+    harnesses: Object.keys(harnessManifests),
+    changed: () =>
+      acpRuntime.applyEnvChange({
         namesChanged: false,
-      })),
-    }),
-  );
+        base: null,
+        providers: [],
+        harnesses: Object.keys(harnessManifests).map((id) => ({
+          id,
+          namesChanged: false,
+        })),
+      }),
+  });
   if (environmentOf === "") {
     acpRuntime.prestart();
     void sessionsService.adoptHarnessTitles();
