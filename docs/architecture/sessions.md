@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Session inside the machine
 
@@ -12,6 +12,7 @@ Before each turn of a session on the default, the runtime applies the newest def
 A default on another harness is not applied, since a session keeps its harness; the session runs on what it last took and follows again when the default is back on its harness.
 A pick by hand in the session, or a configure call, makes it its own choice.
 A session from before this marker follows its default once, when the runtime first holds the defaults, only if its harness, model and settings all equal that default; every other one keeps its own choice.
+A `session/new` or a prompt with no model that reaches the runtime before the agent's first state — the env, then the defaults — is held until both are here, or for the harness's own warm-start bound, and the session opens on its kind's default model instead of being refused as having none.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
