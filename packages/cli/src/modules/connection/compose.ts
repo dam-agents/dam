@@ -5,6 +5,7 @@ import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import type { SharingService } from "../sharing/index.js";
 import { buildConnectCommand } from "./commands/connect.js";
+import { buildDefaultCommand } from "./commands/default.js";
 import { buildDisconnectCommand } from "./commands/disconnect.js";
 import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
@@ -103,6 +104,7 @@ export function composeConnectionModule(
     }),
   );
   parent.addCommand(buildRevokeCommand(agentScoped));
+  parent.addCommand(buildDefaultCommand(agentScoped));
 
   return { commands: [parent], exports: { createService } };
 }
