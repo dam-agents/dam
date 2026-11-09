@@ -18,11 +18,7 @@ const BASE_TABS: readonly { value: SettingsTab; label: string }[] = [
 ];
 
 type GatedTab =
-  | "features"
-  | "slack-workspaces"
-  | "analytics"
-  | "operator"
-  | "access-list";
+  "features" | "slack-workspaces" | "analytics" | "operator" | "access-list";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the settings tabs the signed-in person sees, in

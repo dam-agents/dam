@@ -7,7 +7,9 @@ describe("parseEmails", () => {
   // TEST_SCENARIO: a pasted list in mixed separators and case gives each address once, lowercased, in the order typed.
   it("reads a pasted list", () => {
     expect(
-      parseEmails("Ada@Example.com, bob@example.com;\ncy@x.io  ada@example.com"),
+      parseEmails(
+        "Ada@Example.com, bob@example.com;\ncy@x.io  ada@example.com",
+      ),
     ).toEqual({
       emails: ["ada@example.com", "bob@example.com", "cy@x.io"],
       invalid: [],

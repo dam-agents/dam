@@ -7,7 +7,10 @@ export const accessListAddInputSchema = z.object({
   emails: z
     .array(viewerEmailSchema)
     .min(1, "name at least one email address")
-    .max(ACCESS_LIST_ADD_MAX, `at most ${ACCESS_LIST_ADD_MAX} addresses at once`)
+    .max(
+      ACCESS_LIST_ADD_MAX,
+      `at most ${ACCESS_LIST_ADD_MAX} addresses at once`,
+    )
     .transform((emails) => [...new Set(emails)]),
 });
 

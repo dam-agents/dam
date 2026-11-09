@@ -1502,9 +1502,7 @@ export const loginTestimonials = pgTable(
 export const accessList = pgTable("access_list", {
   email: text("email").primaryKey(),
   addedBy: text("added_by"),
-  addedAt: timestamp("added_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  addedAt: timestamp("added_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const spendDaily = pgTable(
