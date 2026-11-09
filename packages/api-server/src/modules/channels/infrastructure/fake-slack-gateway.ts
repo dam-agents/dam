@@ -163,19 +163,22 @@ function hiddenInThread(m: SlackMessage): boolean {
 
 function channelWindowOf(
   history: SlackMessage[],
-  oldest: string | undefined,
+  range: { oldest?: string | undefined; latest?: string | undefined },
   modelsThreads: boolean,
 ): SlackMessage[] {
   const topLevel = modelsThreads
     ? history.filter((m) => !hiddenInThread(m))
     : [...history];
-  if (oldest === undefined) return [...topLevel];
+  const floor = range.oldest === undefined ? null : Number(range.oldest);
+  const ceiling = range.latest === undefined ? null : Number(range.latest);
   return topLevel.filter((m) => {
     if (m.ts === undefined) return true;
     const at = Number(m.ts);
-    const floor = Number(oldest);
-    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
-    return at >= floor;
+    if (!Number.isFinite(at)) return true;
+    if (floor !== null && Number.isFinite(floor) && at < floor) return false;
+    if (ceiling !== null && Number.isFinite(ceiling) && at >= ceiling)
+      return false;
+    return true;
   });
 }
 
@@ -308,7 +311,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async getChannelHistory(args) {
       const newestFirst = channelWindowOf(
         history,
-        args.oldest,
+        { oldest: args.oldest, latest: args.latest },
         modelsThreads,
       ).reverse();
       return {

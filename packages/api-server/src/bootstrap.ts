@@ -1703,6 +1703,7 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
+        history: row.history,
         isDefault: row.isDefault,
       }));
     },

@@ -24,6 +24,7 @@ import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
 import {
   attachmentResultSchema,
+  channelHistoryResultSchema,
   channelUserSchema,
   messageLinkResultSchema,
   messageReactionsResultSchema,
@@ -35,6 +36,8 @@ import {
   type AttachmentQuery,
   type AttachmentResult,
   type ChannelAttachment,
+  type ChannelHistoryQuery,
+  type ChannelHistoryResult,
   type ChannelReaction,
   type ChannelReply,
   type ChannelSendResult,
@@ -59,6 +62,8 @@ export type {
   AttachmentQuery,
   AttachmentResult,
   ChannelAttachment,
+  ChannelHistoryQuery,
+  ChannelHistoryResult,
   ChannelMessageReaction,
   ChannelReaction,
   ChannelReply,
@@ -150,6 +155,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  readChannelHistory(
+    instanceName: string,
+    channelType: ChannelType,
+    query: ChannelHistoryQuery,
+  ): Promise<ChannelHistoryResult | { error: string }>;
   fetchAttachment(
     instanceName: string,
     channelType: ChannelType,
@@ -184,6 +194,7 @@ const ADDRESSED_METHODS = [
   "describeMessageReactions",
   "getMessageLink",
   "readThread",
+  "readChannelHistory",
   "fetchAttachment",
   "startThread",
   "listThreads",
@@ -239,6 +250,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackChannelChoices: z.tuple([z.string()]),
   slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
+  readChannelHistory: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
   startThread: forInstance.rest(z.unknown()),
   listThreads: forInstance.rest(z.unknown()),
@@ -309,6 +321,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ kind: z.literal("unlinked") }),
   ]),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
+  readChannelHistory: z.union([
+    channelHistoryResultSchema,
+    z.object({ error: z.string() }),
+  ]),
   fetchAttachment: z.union([
     attachmentResultSchema,
     z.object({ error: z.string() }),
@@ -344,6 +360,9 @@ const unsupported: Record<
   }),
   readThread: (channelType) => ({
     error: `thread reads are not supported on ${channelType}`,
+  }),
+  readChannelHistory: (channelType) => ({
+    error: `channel history reads are not supported on ${channelType}`,
   }),
   fetchAttachment: (channelType) => ({
     error: `attachment fetches are not supported on ${channelType}`,

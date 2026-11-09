@@ -123,6 +123,21 @@ export const threadResultSchema = z.object({
 });
 export type ThreadResult = z.infer<typeof threadResultSchema>;
 
+export interface ChannelHistoryQuery {
+  conversationId?: string;
+  cursor?: string;
+  since?: string;
+  until?: string;
+}
+
+export const channelHistoryResultSchema = z.object({
+  messages: z.array(z.string()),
+  conversationId: z.string(),
+  hasMore: z.boolean(),
+  cursor: z.string().optional(),
+});
+export type ChannelHistoryResult = z.infer<typeof channelHistoryResultSchema>;
+
 export interface ThreadStart {
   sessionId: string;
   conversationId: string;
@@ -234,6 +249,10 @@ export interface AddressedWorker {
     instanceName: string,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  readChannelHistory(
+    instanceName: string,
+    query: ChannelHistoryQuery,
+  ): Promise<ChannelHistoryResult | { error: string }>;
   fetchAttachment(
     instanceName: string,
     query: AttachmentQuery,

@@ -208,6 +208,7 @@ export interface McpSessionDeps {
   sessionRef?: string;
   sessionMessages?: SessionMessages;
   chatForms?: ChatFormPreferences | null;
+  readsChannelHistory?: boolean;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -225,6 +226,31 @@ const SESSION_SETTINGS_INSTRUCTIONS =
 
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
+
+function slackTsOf(label: string, raw: string): string | { error: string } {
+  const at = Date.parse(raw);
+  if (!Number.isFinite(at))
+    return {
+      error: `${label} is not an ISO 8601 date or date-time: ${raw}`,
+    };
+  return (at / 1000).toFixed(6);
+}
+
+function slackTsRange(range: {
+  since: string | undefined;
+  until: string | undefined;
+}): { since?: string; until?: string } | { error: string } {
+  const since =
+    range.since === undefined ? undefined : slackTsOf("since", range.since);
+  if (typeof since === "object") return since;
+  const until =
+    range.until === undefined ? undefined : slackTsOf("until", range.until);
+  if (typeof until === "object") return until;
+  return {
+    ...(since !== undefined ? { since } : {}),
+    ...(until !== undefined ? { until } : {}),
+  };
+}
 
 export function createMcpSession(
   agentId: string,
@@ -657,6 +683,79 @@ export function createMcpSession(
       return textResult(JSON.stringify(result));
     },
   );
+
+  if (deps.readsChannelHistory) {
+    server.tool(
+      "read_channel_history",
+      "Read further back in a Slack conversation's history than the history you were handed. Only where channel history is on for you: a person turned it on when they connected you to that conversation, or later. The history you are handed covers the newest messages posted outside a thread; this reads the older ones, one page at a time, the newest page first. Returns { messages, conversationId, hasMore, cursor }, messages oldest first in the same labelled form as your conversation history, each line with its ts after the time, as [<time>, ts <ts>]. A line ending in a [thread: ...] tag opened a thread whose replies are not shown here: read them with read_thread, passing that ts. With hasMore true, call again with the cursor to read the page just before this one, as far back as you need; pass back only a cursor this same conversation gave you. Pass since and until to read one stretch of time, for example the last week. A conversation where channel history is not on for you is refused, and the refusal names the ones where it is on. Slack only.",
+      {
+        chatId: z
+          .string()
+          .optional()
+          .describe(
+            "Conversation to read: the chatId of a conversation where channel history is on for you (see describe_channel). Omit it when history is on for you in only one conversation, or when you pass a cursor.",
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            "Read further back: the cursor a previous read of this same conversation returned, copied exactly. Omit it to start from the newest messages.",
+          ),
+        since: z
+          .string()
+          .optional()
+          .describe(
+            "Oldest time to read, as an ISO 8601 date or date-time, for example 2026-11-02 or 2026-11-02T09:00:00Z. Omit it to read back to the start of the conversation.",
+          ),
+        until: z
+          .string()
+          .optional()
+          .describe(
+            "Newest time to read, as an ISO 8601 date or date-time; messages at or after it are left out. Omit it to start from the newest message.",
+          ),
+      },
+      async ({ chatId, cursor, since, until }) => {
+        const bounds = slackTsRange({ since, until });
+        if ("error" in bounds) return errorResult(bounds.error);
+        const result = await deps.channelManager.readChannelHistory(
+          agentId,
+          ChannelType.Slack,
+          {
+            ...(chatId !== undefined ? { conversationId: chatId } : {}),
+            ...(cursor !== undefined ? { cursor } : {}),
+            ...bounds,
+          },
+        );
+        const audit = channelAudit(ChannelType.Slack);
+        const asked = {
+          ...(chatId !== undefined ? { conversationId: chatId } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(since !== undefined ? { since } : {}),
+          ...(until !== undefined ? { until } : {}),
+        };
+        if ("error" in result) {
+          securityLog("warn", "channel.history_read", {
+            ...audit,
+            result: "failure",
+            reason: result.error,
+            detail: asked,
+          });
+          return errorResult(result.error);
+        }
+        securityLog("info", "channel.history_read", {
+          ...audit,
+          result: "success",
+          detail: {
+            ...asked,
+            conversationId: result.conversationId,
+            messages: result.messages.length,
+            hasMore: result.hasMore,
+          },
+        });
+        return textResult(JSON.stringify(result));
+      },
+    );
+  }
 
   server.tool(
     "fetch_message_attachment",
@@ -1652,6 +1751,7 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
+  readsChannelHistory: (agentId: string) => Promise<boolean>;
   chatFormPreferences: (
     owner: string,
     agentId: string,
@@ -1694,35 +1794,47 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner, agentId);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const [ownerIsInspector, chatForms, grantedSatellites, environments] =
-      await Promise.all([
-        deps.carriesInspectorRole(verified.owner),
-        deps
-          .chatFormPreferences(verified.owner, agentId)
-          .catch((err: unknown) => {
-            console.error(
-              `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
-              err,
-            );
-            return null;
-          }),
-        Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
-          (err: unknown) => {
-            console.error(
-              `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
-              err,
-            );
-            return [];
-          },
-        ),
-        deps.environments(verified.owner, agentId).catch((err: unknown) => {
+    const [
+      ownerIsInspector,
+      readsChannelHistory,
+      chatForms,
+      grantedSatellites,
+      environments,
+    ] = await Promise.all([
+      deps.carriesInspectorRole(verified.owner),
+      deps.readsChannelHistory(agentId).catch((err: unknown) => {
+        console.error(
+          `[channels] could not tell whether ${agentId} reads a channel's history; serving the session without read_channel_history`,
+          err,
+        );
+        return false;
+      }),
+      deps
+        .chatFormPreferences(verified.owner, agentId)
+        .catch((err: unknown) => {
           console.error(
-            `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
+            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
             err,
           );
           return null;
         }),
-      ]);
+      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+        (err: unknown) => {
+          console.error(
+            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            err,
+          );
+          return [];
+        },
+      ),
+      deps.environments(verified.owner, agentId).catch((err: unknown) => {
+        console.error(
+          `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
+          err,
+        );
+        return null;
+      }),
+    ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
     const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
@@ -1730,6 +1842,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ...(sessionRef ? { sessionRef } : {}),
       ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
       chatForms,
+      readsChannelHistory,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

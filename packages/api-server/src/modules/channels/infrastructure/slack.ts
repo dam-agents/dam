@@ -61,6 +61,7 @@ import type {
   AddressedWorker,
   AttachmentQuery,
   ChannelAttachment,
+  ChannelHistoryQuery,
   ChannelReaction,
   ChannelReply,
   ChannelSendResult,
@@ -192,12 +193,14 @@ import {
 } from "./slack-post-delete.js";
 import {
   aboveBoundary,
+  formatChannelHistoryCursor,
   formatThreadCursor,
   isAfterTs,
   lastOwnPostTs,
   laterTs,
   newestTs,
   nextBoundary,
+  parseChannelHistoryCursor,
   parseThreadCursor,
   selectUnseen,
   type CatchUpSelection,
@@ -678,7 +681,28 @@ const STALE_THREAD_CURSOR =
   "reach, is refused rather than answered with some other window. Drop it " +
   "and read the thread again from its end.";
 
-const CHANNEL_LOOKBACK = 50;
+const CHANNEL_LOOKBACK = 100;
+
+const STALE_CHANNEL_CURSOR =
+  "that cursor is not one a read of this conversation's history handed " +
+  "you — a cursor comes back from read_channel_history and reaches only " +
+  "backwards inside the conversation it came from. Drop it and read again " +
+  "without a cursor.";
+
+function channelHistoryNotOn(
+  asked: string,
+  readable: readonly { id: string }[],
+): string {
+  const where =
+    readable.length === 0
+      ? "and it is on nowhere for you"
+      : `and it is on for you in ${readable.map((c) => c.id).join(", ")}`;
+  return (
+    `channel history is not on for you in ${asked}. You can read the ` +
+    "history only of a conversation where it was turned on for you, " +
+    `${where}. A person who may change it there turns it on.`
+  );
+}
 
 const CHANNEL_CATCH_UP_CAP = 500;
 
@@ -1023,6 +1047,7 @@ export interface SlackBoundConversation {
   id: string;
   teamId: SlackWorkspace;
   customEmoji?: string[] | null;
+  history?: true;
 }
 
 export interface SlackBindingInfo {
@@ -1030,6 +1055,7 @@ export interface SlackBindingInfo {
   owner: string;
   teamId: SlackWorkspace;
   ambient: boolean;
+  history: boolean;
   isDefault: boolean;
 }
 
@@ -2318,6 +2344,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       noteOfferedThreads(ctx.instanceName, ctx.channel, [ctx.threadTs]);
   }
 
+  async function readsChannelHistoryIn(
+    instanceName: string,
+    channel: string,
+  ): Promise<boolean> {
+    try {
+      const bound =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      return bound.some((c) => c.id === channel && c.history === true);
+    } catch {
+      return false;
+    }
+  }
+
   function readOfferedThread(
     instanceName: string,
     ts: string,
@@ -3281,12 +3320,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           });
 
     const isDirectMessage = isDirectMessageId(ctx.channel);
-    const [turnContext, agentName, owner] = await Promise.all([
+    const [turnContext, agentName, owner, readsHistory] = await Promise.all([
       turnContractContext(gw, ctx.channel, eventTs, ctx.teamId, {
         batched: batched || privateReply,
       }),
       resolveAgentDisplayName(instanceName),
       resolveChannelOwner(instanceName, ctx.teamId),
+      readsChannelHistoryIn(instanceName, ctx.channel),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -3298,7 +3338,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         separateTargets: separateReplyTargets(turnRefs),
       },
       identity: { brand, botUserId, agentName },
-      reach: { isDirectMessage, ambient: ctx.ambient },
+      reach: {
+        isDirectMessage,
+        ambient: ctx.ambient,
+        channelHistory: readsHistory ? { chatId: ctx.channel } : null,
+      },
       roster: rosterCopy(ctx.roster, instanceName),
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
       owner,
@@ -6392,12 +6436,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
     let failureTemplateId: string | undefined;
-    const [agentName, owner, turnContext] = await Promise.all([
+    const [agentName, owner, turnContext, readsHistory] = await Promise.all([
       resolveAgentDisplayName(args.instanceName),
       resolveChannelOwner(args.instanceName, args.teamId),
       turnContractContext(gw, args.channel, args.eventTs, args.teamId, {
         batched: args.messages.length > 1,
       }),
+      readsChannelHistoryIn(args.instanceName, args.channel),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -6412,6 +6457,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       reach: {
         isDirectMessage: isDirectMessageId(args.channel),
         ambient: true,
+        channelHistory: readsHistory ? { chatId: args.channel } : null,
       },
       roster: rosterCopy(args.roster, args.instanceName),
       owner,
@@ -7882,6 +7928,95 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           threadTs: query.threadTs,
           hasMore: end.hasEarlier,
           ...(end.cursor !== null ? { cursor: end.cursor } : {}),
+        };
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+    },
+
+    async readChannelHistory(instanceName: string, query: ChannelHistoryQuery) {
+      const bound =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (bound.length === 0) return { error: "no channel connected" };
+      const readable = bound.filter((c) => c.history === true);
+
+      const asked =
+        query.cursor !== undefined
+          ? parseChannelHistoryCursor(query.cursor)
+          : null;
+      if (query.cursor !== undefined && asked === null)
+        return { error: STALE_CHANNEL_CURSOR };
+      if (
+        asked !== null &&
+        query.conversationId !== undefined &&
+        asked.conversationId !== query.conversationId
+      )
+        return { error: STALE_CHANNEL_CURSOR };
+
+      const wanted =
+        query.conversationId ??
+        asked?.conversationId ??
+        (readable.length === 1 ? readable[0]!.id : undefined);
+      if (wanted === undefined) {
+        return {
+          error:
+            readable.length === 0
+              ? channelHistoryNotOn("any conversation", readable)
+              : "pass chatId: channel history is on for you in " +
+                readable.map((c) => c.id).join(", "),
+        };
+      }
+      const target = readable.find((c) => c.id === wanted);
+      if (!target) return { error: channelHistoryNotOn(wanted, readable) };
+
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const latest = asked?.before ?? query.until;
+      try {
+        const read = await gw.getChannelHistory({
+          channel: target.id,
+          teamId: target.teamId,
+          limit: CHANNEL_LOOKBACK,
+          ...(query.since !== undefined ? { oldest: query.since } : {}),
+          ...(latest !== undefined ? { latest } : {}),
+        });
+        const oldestFirst = read.messages.slice().reverse();
+        const bot = {
+          userId: await gw.getBotUserId(target.teamId).catch(() => null),
+          label: botHistoryLabel(brand),
+        };
+        const entries = oldestFirst.map((message) => ({
+          message,
+          footer: parseAgentFooter(message),
+        }));
+        const names = await resolveAuthorNames(entries, resolveAgentName);
+        const lines = labelMessages(entries, names, instanceName, bot, {
+          showThreadMarkers: true,
+          showTs: true,
+        });
+        noteOfferedThreads(
+          instanceName,
+          target.id,
+          oldestFirst.flatMap((message) =>
+            marksThread(message) && message.ts !== undefined
+              ? [message.ts]
+              : [],
+          ),
+        );
+        const earliest = oldestFirst[0]?.ts;
+        return {
+          messages: lines,
+          conversationId: target.id,
+          hasMore: read.hasMore,
+          ...(read.hasMore && earliest !== undefined
+            ? {
+                cursor: formatChannelHistoryCursor({
+                  conversationId: target.id,
+                  before: earliest,
+                }),
+              }
+            : {}),
         };
       } catch (err) {
         return { error: formatError(err) };

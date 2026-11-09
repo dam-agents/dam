@@ -80,7 +80,7 @@ export async function upsertChannelTx(
     .update(channels)
     .set({
       owner,
-      config: sql`(${channels.config} - 'ambient') || ${JSON.stringify(config)}::jsonb`,
+      config: sql`(${channels.config} - 'ambient' - 'history') || ${JSON.stringify(config)}::jsonb`,
     })
     .where(
       and(
@@ -161,6 +161,7 @@ export interface SlackBindingRow {
   owner: string;
   teamId: string;
   ambient: boolean;
+  history: boolean;
   isDefault: boolean;
 }
 
@@ -178,6 +179,7 @@ export function findSlackBindingsByChannelId(db: Db) {
         owner: channels.owner,
         teamId: sql<string | null>`${channels.config}->>'teamId'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
+        history: sql<string | null>`${channels.config}->>'history'`,
         isDefault: sql<string | null>`${channels.config}->>'default'`,
         createdAt: channels.createdAt,
       })
@@ -189,6 +191,7 @@ export function findSlackBindingsByChannelId(db: Db) {
       owner: row.owner,
       teamId: row.teamId ?? "",
       ambient: row.ambient === "true",
+      history: row.history === "true",
       isDefault: row.isDefault === "true",
     }));
   };
@@ -248,6 +251,25 @@ export function setSlackChannelAmbient(db: Db) {
         config: ambient
           ? sql`${channels.config} || '{"ambient": true}'::jsonb`
           : sql`${channels.config} - 'ambient'`,
+      })
+      .where(
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
+      );
+  };
+}
+
+export function setSlackChannelHistory(db: Db) {
+  return async (
+    agentId: string,
+    slackChannelId: string,
+    history: boolean,
+  ): Promise<void> => {
+    await db
+      .update(channels)
+      .set({
+        config: history
+          ? sql`${channels.config} || '{"history": true}'::jsonb`
+          : sql`${channels.config} - 'history'`,
       })
       .where(
         and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
@@ -345,12 +367,14 @@ export interface SlackBoundConversation {
   id: string;
   teamId: string;
   customEmoji?: string[] | null;
+  history?: true;
 }
 
 type SlackBoundConversationConfig = {
   slackChannelId: string;
   teamId?: string;
   customEmoji?: string[] | null;
+  history?: boolean;
 };
 
 export function findSlackChannelsByAgent(db: Db) {
@@ -372,6 +396,7 @@ export function findSlackChannelsByAgent(db: Db) {
         id: c.slackChannelId,
         teamId: c.teamId ?? "",
         ...(c.customEmoji ? { customEmoji: c.customEmoji } : {}),
+        ...(c.history === true ? { history: true as const } : {}),
       }));
   };
 }

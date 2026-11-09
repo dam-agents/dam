@@ -58,6 +58,7 @@ function harness(opts?: {
           owner: OWNER,
           teamId: "",
           ambient: false,
+          history: false,
           isDefault: true,
         },
       ],
