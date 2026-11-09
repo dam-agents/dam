@@ -16,6 +16,16 @@ export function useExtendEnvironment() {
   });
 }
 
+export function useSetEnvironmentAwake() {
+  return useMutation({
+    ...trpc.environments.setAwake.mutationOptions(),
+    meta: {
+      ...invalidatesEnvironments,
+      errorToast: "Couldn't change whether it sleeps",
+    },
+  });
+}
+
 export function useDeleteEnvironment() {
   return useMutation({
     ...trpc.environments.delete.mutationOptions(),

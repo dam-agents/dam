@@ -22,7 +22,10 @@ const shippedManifest = z.looseObject({
       native: z
         .object({
           templates: z.array(z.string().min(1)).nonempty(),
-          models: z.array(z.string().min(1)).nonempty(),
+          models: z.union([
+            z.array(z.string().min(1)).nonempty(),
+            z.literal("listed"),
+          ]),
         })
         .optional(),
     })
@@ -35,7 +38,7 @@ export interface ShippedHarnessFacts {
   modelRouter: boolean;
   native?: {
     templates: readonly string[];
-    models: readonly string[];
+    models: readonly string[] | "listed";
   };
   harnessConfig: boolean;
   sessionModel: boolean;

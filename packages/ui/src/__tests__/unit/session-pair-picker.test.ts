@@ -279,7 +279,12 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
-  useProviderUsage: () => () => ({ kinds: [], schedules: [], profiles: [] }),
+  useProviderUsage: () => () => ({
+    kinds: [],
+    schedules: [],
+    pages: [],
+    profiles: [],
+  }),
 }));
 
 let profilesState: ProfileWithUsage[] = [];

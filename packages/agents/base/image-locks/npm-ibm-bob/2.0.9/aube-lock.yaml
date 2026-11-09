@@ -9,13 +9,13 @@ importers:
   .:
     dependencies:
       '@ibm/bob':
-        specifier: 2.0.8
-        version: 2.0.8
+        specifier: 2.0.9
+        version: 2.0.9
 
 packages:
 
-  '@ibm/bob@2.0.8':
-    resolution: {integrity: sha512-1RoaXPy9jBjAvi6m1pN5zHvECZs6HoxPTKUtmkPad7KVT+pN/ujjogto3tH8zG4/ytedZf22tptkPCNxBA34Bg==}
+  '@ibm/bob@2.0.9':
+    resolution: {integrity: sha512-o/au6XXaXynhl9ictqIkxwlBVOHg7v6Anvv67SufUvQGDb26qfUcktH/PiMhvQ0zn41bxspiw83QAGU6ERSdiw==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -124,7 +124,7 @@ packages:
 
 snapshots:
 
-  '@ibm/bob@2.0.8':
+  '@ibm/bob@2.0.9':
     optionalDependencies:
       '@lydell/node-pty': 1.1.0
       '@officecli/officecli': 1.0.152

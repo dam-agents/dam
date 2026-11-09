@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
@@ -784,6 +785,10 @@ export async function bootstrap() {
     },
     config.backchannel,
   );
+  const loginTestimonials = composeLoginTestimonialsModule({
+    db,
+    photoUrl: (id) => `${addresses.public.uiBaseUrl}/api/public/avatars/${id}`,
+  });
   const auth = createAuth(
     {
       issuers: addresses.all.map((set) =>
@@ -901,6 +906,7 @@ export async function bootstrap() {
     const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
       ...agents.map((a) => a.spec.avatar),
       ...kits.map((k) => k.kit.avatar),
+      ...(await loginTestimonials.photoIds()).map((id) => `image:${id}`),
     ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
@@ -1752,6 +1758,9 @@ export async function bootstrap() {
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+    db,
+    resolveProfile,
+    boundary: runBoundary,
   });
   const shareBridge = composeShareBridge({
     featureOn: interactiveArtifactsOn,
@@ -1832,6 +1841,8 @@ export async function bootstrap() {
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
+        templateDescription: async (id) =>
+          (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
@@ -2153,6 +2164,7 @@ export async function bootstrap() {
       agentApi: agentApiClient,
       featureOn: interactiveArtifactsOn,
       prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,
@@ -2589,6 +2601,7 @@ export async function bootstrap() {
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
     spendHold,
+    loginTestimonials,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
       agentStore: { authority: config.agentStore, db },

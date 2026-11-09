@@ -92,6 +92,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     spendCeilingsForOperator,
     spendHold,
     userBudgetsForOperator,
+    loginTestimonials,
     providerStatus,
     outageAlerts,
     wrapperFrameSender,
@@ -317,9 +318,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
-      agentExists,
-    });
     const { features } = composeFeaturesForOwner({
       db,
       owner: user.sub,
@@ -483,6 +481,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       hiddenHarnesses: async () =>
         new Set((await features.flags()).hermes ? [] : ["hermes"]),
     });
+    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
+      agentExists,
+      validateChoice: (agentId, pair, references) =>
+        harnessConfig.validateChoice(agentId, pair, references),
+    });
     const listOwnedAgents = async (): Promise<
       { id: string; name: string | null }[]
     > => {
@@ -605,6 +608,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       }),
       spendCeilings: spendCeilingsForOperator(user.sub),
       userBudgets: userBudgetsForOperator(user.sub),
+      loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,

@@ -75,6 +75,9 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
@@ -224,6 +227,19 @@ export {
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
+export {
+  LOGIN_TESTIMONIAL_LIMITS,
+  LOGIN_TESTIMONIALS_MAX,
+  loginTestimonialInputSchema,
+  loginTestimonialPhotoIdSchema,
+  loginTestimonialsSaveInputSchema,
+} from "./modules/login-testimonials/schemas.js";
+export type {
+  LoginTestimonial,
+  LoginTestimonialInput,
+  LoginTestimonialsSaveInput,
+  LoginTestimonialsService,
+} from "./modules/login-testimonials/types.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -434,6 +450,8 @@ export type {
   ArtifactCallAgentApiResult,
   ArtifactSendPromptInput,
   ArtifactSendPromptResult,
+  ArtifactPromptChoiceInput,
+  ArtifactPromptChoiceRow,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,
