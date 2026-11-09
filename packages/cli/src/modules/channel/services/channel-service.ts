@@ -1,4 +1,8 @@
-import type { ChannelConfig, ChannelType } from "api-server-api";
+import type {
+  ChannelConfig,
+  ChannelType,
+  SlackBindingModes,
+} from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 import {
   classifyTrpcError,
@@ -23,7 +27,7 @@ export interface ChannelService {
   connectSlack(
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes?: SlackBindingModes,
   ): Promise<
     Result<
       ChannelList,
@@ -47,12 +51,13 @@ export function createChannelService(deps: {
     async available() {
       return trpcCall(() => deps.trpc.channels.available.query());
     },
-    async connectSlack(id, slackChannelId, ambient) {
+    async connectSlack(id, slackChannelId, modes) {
       try {
         const agent = await deps.trpc.agents.connectSlack.mutate({
           id,
           slackChannelId,
-          ...(ambient ? { ambient: true } : {}),
+          ...(modes?.ambient ? { ambient: true } : {}),
+          ...(modes?.history ? { history: true } : {}),
         });
         return ok(agent.channels);
       } catch (e) {
