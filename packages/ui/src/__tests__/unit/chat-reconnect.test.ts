@@ -361,6 +361,7 @@ mockModule("../../modules/sessions/api/session-pair.js", {
     failed: false,
   }),
   useHarnessCatalogModels: () => ({ data: [] }),
+  useRememberedPair: () => ({ data: null, isPending: false }),
   rememberSessionPair: vi.fn(),
   attachProviderQuietly: vi.fn(),
 });

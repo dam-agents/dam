@@ -318,7 +318,6 @@ describe("loadConfig — outbound links", () => {
   const LINKS_ENV = {
     docs: "LINKS_DOCS",
     computeRequest: "LINKS_COMPUTE_REQUEST",
-    curveBenderCommunity: "LINKS_CURVE_BENDER_COMMUNITY",
     slackInstallRequest: "LINKS_SLACK_INSTALL_REQUEST",
   } as const;
   const managed = [...Object.keys(REQUIRED_ENV), ...Object.values(LINKS_ENV)];
@@ -355,8 +354,6 @@ describe("loadConfig — outbound links", () => {
       docs: "https://pages.github.ibm.com/dam-agents/docs/",
       computeRequest:
         "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759",
-      curveBenderCommunity:
-        "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1",
       slackInstallRequest: null,
     });
   });
@@ -366,7 +363,6 @@ describe("loadConfig — outbound links", () => {
     expect(loadConfig().links).toEqual({
       docs: null,
       computeRequest: null,
-      curveBenderCommunity: null,
       slackInstallRequest: null,
     });
   });

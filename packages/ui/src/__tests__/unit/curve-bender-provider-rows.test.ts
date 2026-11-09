@@ -146,14 +146,13 @@ describe("CurveBender provider rows", () => {
     expect(render()).toContain(`aria-label="Edit ${CUSTOM}"`);
   });
 
-  // TEST_SCENARIO: the explainer is read-only: it says what CurveBender is and that inference is free within fair use, and its only control is Close, with the docs link opening in a new tab.
+  // TEST_SCENARIO: the explainer is read-only: it says every user of this deployment is set up with CurveBender and links its docs in a new tab, and its only control is Close.
   it("explains the deployment integration without a form", () => {
     const html = renderToStaticMarkup(
       createElement(CurveBenderInfoDialog, { onClose: () => {} }),
     );
-    expect(html).toContain("CurveBender</a> is an IBM Research platform");
     expect(html).toContain(
-      "All Acme users are provided with free inference on CurveBender, subject to fair-use policy.",
+      "All Acme users are set up with CurveBender, IBM-hosted open-source models.",
     );
     expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
     expect(html).toContain('target="_blank"');
