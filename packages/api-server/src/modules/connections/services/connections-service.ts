@@ -2718,9 +2718,6 @@ export function createConnectionsService(deps: {
       }
       const clientId = app.clientId;
       const from = conn.auth.host;
-      // Children are read under the lock a new child is made under, and each
-      // connection still off the target is rehosted, so a retry finishes a
-      // move a failed write left halfway.
       const { children, rehosted } = await deps.connectionLock(
         connectionRefreshLockKey(conn.id),
         async () => {
