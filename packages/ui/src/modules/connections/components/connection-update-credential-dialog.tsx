@@ -20,8 +20,8 @@ import {
 import { LabeledInput } from "../forms/labeled-input.js";
 import { mutationMessage } from "../lib/mutation-message.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
-import { ConnectionMoveHostDialog } from "./connection-move-host-dialog.js";
 import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
+import { ConnectionMoveHostDialog } from "./connection-move-host-dialog.js";
 
 export function ConnectionMaintenanceDialog({
   maintenance,
