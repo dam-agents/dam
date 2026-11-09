@@ -62,7 +62,7 @@ export class SessionModelError extends Error {
 export class NoSessionModelError extends Error {
   constructor() {
     super(
-      "not run: the session has no model, and none of the agent's model providers lists one. Connect a model provider on its Providers page, or pick a model for this schedule",
+      "not run: the session has no model. Pick a model for this schedule, or connect a model provider on the agent's Providers page",
     );
     this.name = "NoSessionModelError";
   }

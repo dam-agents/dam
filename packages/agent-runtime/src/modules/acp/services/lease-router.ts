@@ -490,7 +490,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return {
       code: -32001,
       message:
-        "This session has no model, and none of this agent's model providers lists one for its harness. Connect a model provider on its Providers page, or pick a model for this session.",
+        "This session has no model. Pick a model for this session, or connect a model provider on the agent's Providers page.",
       data: { platform: { reason: NO_MODEL_REASON } },
     };
   }
