@@ -37,6 +37,7 @@ const (
 	ownerGatewayPortBase     = 20000
 	ownerGatewaySlots        = 512
 	annOwnerGatewaySlot      = "agent-platform.ai/owner-gateway-slot"
+	annOwnerGatewayOwner     = "agent-platform.ai/owner-gateway-owner"
 	annOwnerRegenerated      = "agent-platform.ai/owner-gateway-regenerated"
 	ownerGatewayFilesVolume  = "gateway-files"
 	ownerGatewayDNSVolume    = "gateway-dns"
@@ -76,12 +77,22 @@ func admitOwnerGatewayEgress(np *networkingv1.NetworkPolicy, agentNS, owner stri
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: each vm Agent of an owner holds one slot on its owner gateway: the proxy port and the resolver port its own Service maps to. The slot is recorded on that Service, which outlives every reconcile, so a controller restart reallocates nothing, and the lowest slot no Service of the owner holds is the next one taken. The caller holds the owner's lock, so two agents never take one slot.
-func allocateOwnerGatewaySlot(name string, services []corev1.Service) (int, bool) {
+// UNIT_BOUNDARY_DESCRIPTION: each vm Agent of an owner holds one slot on its owner gateway: the proxy port and the resolver port its own Service maps to. The slot is recorded on that Service, which outlives every reconcile, so a controller restart reallocates nothing, and the lowest slot no Service of the owner holds is the next one taken. A Service still selecting the owner gateway holds the slot its ports map even with no recorded one, which an older controller could leave behind. The caller holds the owner's lock, so two agents never take one slot.
+func allocateOwnerGatewaySlot(name, owner string, services []corev1.Service) (int, bool) {
 	held := map[int]bool{}
 	for _, svc := range services {
-		slot, err := strconv.Atoi(svc.Annotations[annOwnerGatewaySlot])
-		if err != nil {
+		slot, found := 0, false
+		if recorded, err := strconv.Atoi(svc.Annotations[annOwnerGatewaySlot]); err == nil {
+			slot, found = recorded, true
+		} else if svc.Spec.Selector[envoyOwnerLabel] == owner {
+			for _, p := range svc.Spec.Ports {
+				if target := p.TargetPort.IntValue(); target >= ownerGatewayPortBase && target <= ownerGatewayResolverPort(ownerGatewaySlots-1) {
+					slot, found = (target-ownerGatewayPortBase)/2, true
+					break
+				}
+			}
+		}
+		if !found {
 			continue
 		}
 		if svc.Name == GatewayName(name) {
@@ -259,7 +270,7 @@ func buildOwnerGatewayEgressPolicy(owner string, cfg *config.Config, ownerRefs [
 	return np
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a gateway Service that still selects the owner gateway holds its slot until it is gone, even when its agent already is: its machine can still be running and dialling it.
+// UNIT_BOUNDARY_DESCRIPTION: a gateway Service holds its slot for as long as it exists, whether its agent is live, has moved back to its own gateway, or is already gone while its machine still runs and dials it.
 func (r *AgentReconciler) ownerGatewayServices(ctx context.Context, owner string, agents []string) ([]corev1.Service, error) {
 	list, err := r.client.CoreV1().Services(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelRole + "=" + RoleGateway})
 	if err != nil {
@@ -267,7 +278,7 @@ func (r *AgentReconciler) ownerGatewayServices(ctx context.Context, owner string
 	}
 	var out []corev1.Service
 	for _, svc := range list.Items {
-		if slices.Contains(agents, svc.Labels[LabelAgent]) || svc.Spec.Selector[envoyOwnerLabel] == owner {
+		if slices.Contains(agents, svc.Labels[LabelAgent]) || svc.Spec.Selector[envoyOwnerLabel] == owner || svc.Annotations[annOwnerGatewayOwner] == owner {
 			out = append(out, svc)
 		}
 	}
@@ -322,15 +333,15 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		if !served && !r.config.VM.Gateway.PerOwner {
 			continue
 		}
-		slot, ok := allocateOwnerGatewaySlot(agent.Name, services)
+		slot, ok := allocateOwnerGatewaySlot(agent.Name, owner, services)
 		if !ok {
 			return nil, fmt.Errorf("the owner gateway has no free slot for agent %s (%d slots)", agent.Name, ownerGatewaySlots)
 		}
-		if svc.Annotations[annOwnerGatewaySlot] != strconv.Itoa(slot) {
-			if err := r.recordOwnerGatewaySlot(ctx, svc.Name, slot); err != nil {
+		if svc.Annotations[annOwnerGatewaySlot] != strconv.Itoa(slot) || svc.Annotations[annOwnerGatewayOwner] != owner {
+			if err := r.recordOwnerGatewaySlot(ctx, svc.Name, slot, owner); err != nil {
 				return nil, err
 			}
-			svc.Annotations = map[string]string{annOwnerGatewaySlot: strconv.Itoa(slot)}
+			svc.Annotations = map[string]string{annOwnerGatewaySlot: strconv.Itoa(slot), annOwnerGatewayOwner: owner}
 			services = append(services, svc)
 		}
 		secrets := filterByGrants(agent.Name, ownerSecrets, agent.Spec.GrantedSecretIDs, agent.Spec.GrantedConnectionIDs)
@@ -483,13 +494,14 @@ func (r *AgentReconciler) refreshOwnerGatewayCredentials(ctx context.Context, ow
 	}
 }
 
-func (r *AgentReconciler) recordOwnerGatewaySlot(ctx context.Context, svcName string, slot int) error {
+func (r *AgentReconciler) recordOwnerGatewaySlot(ctx context.Context, svcName string, slot int, owner string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, svcName, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		metav1.SetMetaDataAnnotation(&svc.ObjectMeta, annOwnerGatewaySlot, strconv.Itoa(slot))
+		metav1.SetMetaDataAnnotation(&svc.ObjectMeta, annOwnerGatewayOwner, owner)
 		_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
 		return err
 	})
@@ -781,7 +793,7 @@ func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *c
 	return retargetedGatewayService(desired, owner, slot), nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the slot goes in the same write that stops the Service selecting the owner gateway, so no reconcile of the owner can give a slot away while a Service still maps it.
+// UNIT_BOUNDARY_DESCRIPTION: the slot stays: it belongs to the Service for the Service's lifetime and is freed when the Service is deleted, so no reconcile of the owner can give it away while that Service can still forward to it. The selector and the ports change in the same write, so a reader never sees the Service on the owner gateway without its slot.
 func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, desired *corev1.Service) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
@@ -789,7 +801,6 @@ func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, desired *co
 			return err
 		}
 		delete(svc.Annotations, annOwnerGatewayServed)
-		delete(svc.Annotations, annOwnerGatewaySlot)
 		delete(svc.Annotations, annDesiredUp)
 		svc.Spec.Selector = desired.Spec.Selector
 		svc.Spec.Ports = desired.Spec.Ports
