@@ -1779,6 +1779,17 @@ apiServer:
       clientId: ""
       clientSecret: ""
       appSlug: ""
+      # More GitHub Enterprise hosts a user may connect to, each with the app
+      # registered on it: `[{host, clientId, clientSecret, appSlug}]`. With
+      # `host` above set too, that host is the first choice. With two or more
+      # hosts the connect form asks the user to pick one, and each host signs
+      # in through its own app. The whole list, client secrets included, is
+      # kept in the api-server's Secret.
+      hosts: []
+      # Hosts no user may connect to any more, such as one a Business Unit
+      # moved away from. A connection on a retired host stays, reads
+      # disconnected, and can be moved to another host and authorized there.
+      retiredHosts: []
     # The Slack app must be registered out of band (Slack offers no dynamic
     # client registration) with the platform OAuth callback as a redirect URL
     # and the Slack MCP user-token scopes enabled.

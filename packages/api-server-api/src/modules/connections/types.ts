@@ -401,6 +401,9 @@ export interface ConnectionsService {
     fullAccess?: boolean;
   }): Promise<void>;
 
+  /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
+  moveToHost(input: { id: string; host: string }): Promise<void>;
+
   startOAuth(
     connectionId: string,
     opts?: { returnTo?: string; popup?: boolean },

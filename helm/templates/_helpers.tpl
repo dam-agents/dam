@@ -381,6 +381,16 @@ API Server secrets name — chart-managed Secret holding operator-supplied crede
 {{- end }}
 
 {{/*
+The extra GitHub Enterprise hosts a user may connect to, as JSON, or empty when
+the install names none. It carries each host's client secret, so it is stored in
+the api-server's Secret and never in the pod spec.
+*/}}
+{{- define "platform.apiserver.gheHosts" -}}
+{{- $hosts := dig "oauthAppDefaults" "githubEnterprise" "hosts" list .Values.apiServer -}}
+{{- if $hosts }}{{ $hosts | toJson }}{{ end -}}
+{{- end }}
+
+{{/*
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
 {{/*

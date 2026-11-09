@@ -122,6 +122,12 @@ export function serviceHarness(opts: {
       listByOwnerOldestFirst: async () => [...rows.values()],
       updateContributions: async (id, contributions) =>
         void rows.set(id, { ...rows.get(id)!, contributions }),
+      updateAuth: async (id, auth) =>
+        void rows.set(id, { ...rows.get(id)!, auth }),
+      mergeInputs: async (id, patch) => {
+        const c = rows.get(id)!;
+        rows.set(id, { ...c, inputs: { ...c.inputs, ...patch } });
+      },
       updateName: async (id, name) =>
         void rows.set(id, { ...rows.get(id)!, name }),
       delete: async (id) => {

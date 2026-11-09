@@ -25,6 +25,7 @@ import type {
   HeaderConnectionTemplate,
   NoneConnectionTemplate,
   OAuthConnectionTemplate,
+  OperatorHostApp,
   Sigv4ConnectionTemplate,
 } from "./connection-template.js";
 import {
@@ -57,6 +58,56 @@ export interface GitHubEnterpriseCredentials {
   clientId?: string;
   clientSecret?: string;
   appSlug?: string;
+  hosts?: readonly OperatorHostApp[];
+  retiredHosts?: readonly string[];
+}
+
+interface GitHubEnterpriseHosts {
+  defaults: Omit<OperatorHostApp, "host"> & { host?: string };
+  hostFields: Pick<
+    OAuthConnectionTemplate,
+    "hostApps" | "hostChoices" | "retiredHosts"
+  >;
+}
+
+function githubEnterpriseHosts(
+  creds?: GitHubEnterpriseCredentials,
+): GitHubEnterpriseHosts {
+  const retired = [
+    ...new Set((creds?.retiredHosts ?? []).map((h) => h.toLowerCase())),
+  ];
+  const apps: OperatorHostApp[] = [];
+  for (const app of [
+    ...(creds?.host ? [{ ...creds, host: creds.host }] : []),
+    ...(creds?.hosts ?? []),
+  ]) {
+    const host = app.host.toLowerCase();
+    if (apps.some((a) => a.host === host)) continue;
+    apps.push({
+      host,
+      ...(app.clientId ? { clientId: app.clientId } : {}),
+      ...(app.clientSecret ? { clientSecret: app.clientSecret } : {}),
+      ...(app.appSlug ? { appSlug: app.appSlug } : {}),
+    });
+  }
+  const choices = apps.filter((a) => !retired.includes(a.host));
+  return {
+    defaults: apps.length > 0 ? (choices[0] ?? {}) : (creds ?? {}),
+    hostFields: {
+      ...(apps.length > 0 ? { hostApps: apps } : {}),
+      ...(choices.length > 0
+        ? { hostChoices: choices.map((a) => a.host) }
+        : {}),
+      ...(retired.length > 0 ? { retiredHosts: retired } : {}),
+    },
+  };
+}
+
+function hostListOf(
+  fields: GitHubEnterpriseHosts["hostFields"],
+): Pick<OAuthConnectionTemplate, "hostChoices" | "retiredHosts"> {
+  const { hostApps: _apps, ...hostList } = fields;
+  return hostList;
 }
 
 export interface OperatorCredentials {
@@ -468,6 +519,7 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
 function githubEnterprise(
   creds?: GitHubEnterpriseCredentials,
 ): OAuthConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -478,10 +530,11 @@ function githubEnterprise(
       "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
     iconSlug: "github-enterprise",
     authKind: "oauth",
-    ...(creds?.host ? { host: creds.host } : {}),
-    ...(creds?.clientId ? { clientId: creds.clientId } : {}),
-    ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
-    ...(creds?.appSlug ? { extras: { appSlug: creds.appSlug } } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...(defaults.clientId ? { clientId: defaults.clientId } : {}),
+    ...(defaults.clientSecret ? { clientSecret: defaults.clientSecret } : {}),
+    ...(defaults.appSlug ? { extras: { appSlug: defaults.appSlug } } : {}),
+    ...hostFields,
     authorizationUrl: "https://{host}/login/oauth/authorize",
     tokenUrl: "https://{host}/login/oauth/access_token",
     scopes: ["repo", "read:user", "user:email"],
@@ -835,6 +888,7 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
 function githubEnterprisePat(
   creds?: GitHubEnterpriseCredentials,
 ): HeaderConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise-pat",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -845,7 +899,8 @@ function githubEnterprisePat(
       "Read + write repos, issues, PRs on a GitHub Enterprise host with a personal access token.",
     iconSlug: "github-enterprise",
     authKind: "header",
-    ...(creds?.host ? { host: creds.host } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...hostListOf(hostFields),
     headerName: "Authorization",
     valueFormat: "Bearer {value}",
     credentialCheck: "github-user",
@@ -856,6 +911,7 @@ function githubEnterprisePat(
 function githubEnterpriseApp(
   creds?: GitHubEnterpriseCredentials,
 ): GitHubAppConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise-app",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -866,7 +922,8 @@ function githubEnterpriseApp(
       "Act as a GitHub App installation on a GitHub Enterprise host. The platform mints short-lived installation tokens (ghs_…) from the app's private key — usable by bots and scheduled agents, not just interactive sign-in.",
     iconSlug: "github-enterprise",
     authKind: "github-app",
-    ...(creds?.host ? { host: creds.host } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...hostListOf(hostFields),
     apiBaseUrl: "https://api.{host}",
     contributions: [GH_TOKEN_ENV],
   };

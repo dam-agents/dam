@@ -8,7 +8,10 @@ import type {
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
-import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
+import {
+  operatorAppFor,
+  type ConnectionTemplateRegistry,
+} from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -29,7 +32,7 @@ export async function resolveOAuthClientSecret(opts: {
   const template = opts.templates.get(opts.conn.templateId);
   let clientSecret =
     template && template.authKind === "oauth"
-      ? template.clientSecret
+      ? operatorAppFor(template, opts.auth.host).clientSecret
       : undefined;
   if (opts.auth.clientSecretRef) {
     const stored = await opts.secretStore.getField(opts.auth.clientSecretRef);

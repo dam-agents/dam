@@ -247,6 +247,11 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
   fullAccess: z.boolean().optional(),
 });
 
+export const connectionMoveToHostInputSchema = z.object({
+  id: z.string().min(1),
+  host: connectionHostSchema,
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
