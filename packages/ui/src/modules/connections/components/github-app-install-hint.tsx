@@ -35,10 +35,10 @@ export function GithubAppInstallLink({
       href={url}
       {...externalLinkProps}
       data-testid={testId}
-      className="inline-flex items-center gap-1 font-medium text-accent underline-offset-2 hover:underline"
+      className="font-medium text-accent underline-offset-2 hover:underline"
     >
       {children ?? `Install the ${getBrand().name} app`}
-      <Launch size={12} aria-hidden />
+      <Launch size={12} aria-hidden className="ml-1 inline align-[-1px]" />
     </a>
   );
 }
