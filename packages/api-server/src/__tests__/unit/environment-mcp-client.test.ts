@@ -246,6 +246,8 @@ async function world() {
       handoffs: createMemoryTtlStore(60_000),
       sessions: createMemoryTtlStore(60_000),
       chains: createMemoryTtlStore(60_000),
+      signedIn: createMemoryTtlStore(60_000),
+      completions: createMemoryTtlStore(60_000),
       share: { alive: async () => true, end: async () => {} },
       addressUrl: (a) => `http://${a}.${DOMAIN}:${gatePort}`,
       now: () => Date.now(),
