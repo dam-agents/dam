@@ -106,11 +106,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import {
-  leaseSpawnEnv,
-  type LeaseEnvReader,
-  mergedSpawnEnv,
-} from "./core/runtime-env.js";
+import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   canonicalModel,
@@ -199,7 +195,16 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir, defaultHarness);
+const envStore = createEnvStateStore(
+  homeDir,
+  defaultHarness,
+  (harness, layers) =>
+    homeConnectionEnv({
+      harness,
+      binding: harnessManifests[harness]?.modelRouter,
+      layers,
+    }),
+);
 const browser = composeBrowser({ homeDir, envReader: envStore });
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
@@ -353,6 +358,7 @@ const terminalSessionOf = createTerminalSessionLookup(
   TERMINAL_PIN_REFRESH_MS,
 );
 const modelRouter = composeModelRouter({
+  leaseEnv: (harness) => envStore.forLease({ harness, provider: null }),
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;
@@ -490,15 +496,6 @@ const nativeEnv = (connectionId: string): Record<string, string> => {
   const layer = envStore.state().providers.find((l) => l.id === connectionId);
   return layer ? layerEnvOf(layer) : {};
 };
-const spawnEnvReader: LeaseEnvReader = {
-  ...envStore,
-  connectionEnvFor: (harness) =>
-    homeConnectionEnv({
-      harness,
-      binding: harnessManifests[harness]?.modelRouter,
-      layers: envStore.state().providers,
-    }),
-};
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a terminal's harness starts with the same model
  * env as its chat process: a native Connection's env and the harness's own
@@ -570,7 +567,7 @@ const {
   workingDir: workDir,
   agentHome: homeDir,
   stateBackend,
-  envReader: spawnEnvReader,
+  envReader: envStore,
   defaultHarness,
   harnesses: Object.fromEntries(
     Object.entries(harnessManifests).map(([name, manifest]) => {
@@ -1092,7 +1089,7 @@ function attachPty(
         env: {
           ...(Object.fromEntries(
             Object.entries(
-              leaseSpawnEnv(spawnEnvReader, {
+              leaseSpawnEnv(envStore, {
                 harness: lease.harness,
                 provider: null,
                 model: null,

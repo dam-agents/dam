@@ -1,8 +1,5 @@
 import { Readable } from "node:stream";
-import {
-  leaseEnvOf,
-  type RuntimeEnvState,
-} from "../../runtime-channel/infrastructure/env-state-store.js";
+import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-state-store.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 import { rewriteBobProfile } from "../domain/bob-profile.js";
 import {
@@ -19,6 +16,7 @@ const LOGGED_BODY_MAX = 400;
 
 export interface BobGatewayDeps {
   envState: () => RuntimeEnvState;
+  leaseEnv: (harness: string) => Record<string, string>;
   harnesses: Readonly<Record<string, ModelRouterBinding | undefined>>;
   fetchImpl?: typeof globalThis.fetch;
   log: (msg: string) => void;
@@ -56,7 +54,7 @@ export function createBobGatewayPassthrough(
       );
       if (!layer) return false;
       /* UNIT_BOUNDARY_DESCRIPTION: a pin is read on the ladder a harness process reads its env on, the harness layer over the agent's own env over the Connection's setting, so chat sessions and a terminal's flags resolve one team and instance and an override in Configure Agent → Env wins for both. */
-      const lease = leaseEnvOf(state, { harness, provider: null });
+      const lease = deps.leaseEnv(harness);
       const pin = (name: string): string | null =>
         lease[name] ?? layer.env[name] ?? null;
       const method = req.method ?? "GET";

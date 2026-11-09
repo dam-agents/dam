@@ -142,6 +142,11 @@ export function BobForm({
 
       {advancedOpen && (
         <div className="grid grid-cols-1 gap-3">
+          <p className="text-xs text-muted-foreground">
+            An agent's Configure Agent → Env entry of the same name outranks any
+            of these for that agent; for Model and Mode the agent's Config panel
+            outranks both.
+          </p>
           <PinField
             label="Model"
             hint="BOB_SHELL_MODEL. Fallback model of a terminal session that names none, after the agent's Config panel and the agent's default provider; a chat session always picks its model. Empty → Bob's built-in default."

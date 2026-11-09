@@ -13,7 +13,7 @@ export interface LeaseEnvReader extends RuntimeEnvReader {
     harness: string;
     provider: string | null;
   }): Record<string, string>;
-  connectionEnvFor?(harness: string): Record<string, string>;
+  connectionEnvFor(harness: string): Record<string, string>;
 }
 
 export const mergedSpawnEnv = (
@@ -34,7 +34,7 @@ export const leaseSpawnEnv = (
   envReader: LeaseEnvReader,
   lease: { harness: string; provider: string | null; model: string | null },
 ): NodeJS.ProcessEnv => ({
-  ...envReader.connectionEnvFor?.(lease.harness),
+  ...envReader.connectionEnvFor(lease.harness),
   ...envReader.forLease(lease),
   ...process.env,
   ...envReader.layerEnvFor?.(lease),
