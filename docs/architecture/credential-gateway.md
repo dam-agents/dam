@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -187,6 +187,7 @@ The resolver is one CoreDNS with one block per agent's resolver port, each answe
 It reads one file of that Secret and is handed a volume of its own that projects that key alone, so a process in the resolver container can no more read a signing key than one outside the pod can.
 
 **Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
+The pod's own readiness is the kubelet's probe of that path, which the mesh delivers from the fixed link-local source istio-cni rewrites a host probe to, so the owner gateway's ingress policy admits that source on the health port alone.
 An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
 Once moved, the agent's own gateway pod and the objects around it are removed.
 Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.

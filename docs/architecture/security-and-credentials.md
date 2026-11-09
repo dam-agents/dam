@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-06
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -386,6 +386,8 @@ What changes in the boundaries:
   A ClusterIP carries nothing on an undeclared port, measured on OVN-Kubernetes and k3s, so a guest that has not escaped reaches no sibling's listener.
   SNI, Host, headers and source address are never identity: every machine's traffic arrives from the runner.
 - **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; the runner's egress names the owner gateway on that range.
+  It also admits the mesh's kubelet-probe source on the health port alone, because the pod is in the mesh: istio-cni rewrites a host probe's source to one fixed link-local address so ztunnel can tell a probe from a workload's traffic, and a policy that omits it drops the probe and leaves the pod never ready.
+  The ranges are `istio.hostProbeSNAT` at install, which must match the `HOST_PROBE_SNAT_IP` and `HOST_PROBE_SNAT_IPV6` the cluster's istio-cni is installed with.
 - **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.

@@ -18,10 +18,12 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
@@ -56,6 +58,47 @@ func TestOwnerGateway_FlagOffRendersNothing(t *testing.T) {
 	deps, err := r.client.AppsV1().Deployments("test-agents").List(context.Background(), metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	require.NoError(t, err)
 	assert.Empty(t, deps.Items)
+}
+
+// TEST_SCENARIO: the kubelet's readiness probe of an owner gateway in the ambient mesh arrives from the fixed link-local source istio-cni rewrites a host probe to, so the ingress policy admits each configured source on the health port alone — the agent listeners stay on the runner's range, and no other range reaches the pod.
+func TestOwnerGatewayIngressAdmitsTheMeshProbeOnTheHealthPortAlone(t *testing.T) {
+	cfg := *testConfig
+	cfg.IstioHostProbeSNAT = []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}
+	np := buildOwnerGatewayIngressPolicy(testOwner, &cfg, nil)
+
+	tcp := corev1.ProtocolTCP
+	health := intstr.FromInt(cfg.EnvoyPort)
+	require.Len(t, np.Spec.Ingress, 3)
+	assert.Contains(t, np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+		From: []networkingv1.NetworkPolicyPeer{
+			{IPBlock: &networkingv1.IPBlock{CIDR: "169.254.7.127/32"}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}},
+		},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}},
+	})
+
+	var blocks []string
+	for _, rule := range np.Spec.Ingress {
+		for _, peer := range rule.From {
+			if peer.IPBlock == nil {
+				continue
+			}
+			blocks = append(blocks, peer.IPBlock.CIDR)
+			assert.Equal(t, []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}}, rule.Ports, "a probe source reaches the health port and no agent listener")
+		}
+	}
+	assert.ElementsMatch(t, []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}, blocks, "no other range is admitted")
+}
+
+// TEST_SCENARIO: a policy rule with no peers admits every source, so an install that names no probe source gets no probe rule rather than a health port open to anyone.
+func TestOwnerGatewayIngressWithoutProbeSourcesAdmitsNoOneElse(t *testing.T) {
+	cfg := *testConfig
+	cfg.IstioHostProbeSNAT = nil
+	np := buildOwnerGatewayIngressPolicy(testOwner, &cfg, nil)
+	require.Len(t, np.Spec.Ingress, 2)
+	for _, rule := range np.Spec.Ingress {
+		assert.NotEmpty(t, rule.From, "every rule names who it admits")
+	}
 }
 
 // TEST_SCENARIO: with the flag on, an owner gets exactly one owner gateway with one Secret holding its files and its credentials, ServiceAccount and policies, and the agent's gateway Service records its slot, while the agent still routes to its own gateway pod. The agent's harness policy admits the owner gateway's principal, only with the guard's header.

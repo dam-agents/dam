@@ -216,7 +216,7 @@ func secretSize(secret *corev1.Secret) int {
 	return n
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, and the controller on the proxy ports for its readiness probe. The controller is in the ambient mesh, so its probe also arrives on HBONE.
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, the controller on the proxy ports for its readiness probe, and the mesh's kubelet-probe source (istio-cni rewrites a host probe to one fixed link-local address, so ztunnel can tell it from a workload's traffic) on the health port alone. The controller is in the ambient mesh, so its probe also arrives on HBONE.
 func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs []metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	first, last := ownerGatewayPortRange()
@@ -232,21 +232,31 @@ func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs 
 		}},
 	}
 	name := ownerGatewayName(cfg.ReleaseName, owner)
+	health := intstr.FromInt(cfg.EnvoyPort)
+	probe := make([]networkingv1.NetworkPolicyPeer, 0, len(cfg.IstioHostProbeSNAT))
+	for _, cidr := range cfg.IstioHostProbeSNAT {
+		probe = append(probe, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
+	}
+	ingress := []networkingv1.NetworkPolicyIngressRule{
+		{From: []networkingv1.NetworkPolicyPeer{runner}, Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &from, EndPort: &end},
+			{Protocol: &udp, Port: &from, EndPort: &end},
+		}},
+		{From: []networkingv1.NetworkPolicyPeer{controller}, Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &from, EndPort: &end},
+			{Protocol: &tcp, Port: &hbone},
+		}},
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a rule with no peers admits every source, so no probe source means no rule.
+	if len(probe) > 0 {
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{From: probe, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}}})
+	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: name + "-ingress", Namespace: cfg.Namespace, Labels: ownerGatewayLabels(cfg.ReleaseName, owner), OwnerReferences: ownerRefs},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: owner}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				{From: []networkingv1.NetworkPolicyPeer{runner}, Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &tcp, Port: &from, EndPort: &end},
-					{Protocol: &udp, Port: &from, EndPort: &end},
-				}},
-				{From: []networkingv1.NetworkPolicyPeer{controller}, Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &tcp, Port: &from, EndPort: &end},
-					{Protocol: &tcp, Port: &hbone},
-				}},
-			},
+			Ingress:     ingress,
 		},
 	}
 }
