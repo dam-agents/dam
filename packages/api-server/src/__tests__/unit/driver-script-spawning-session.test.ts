@@ -37,7 +37,7 @@ function makeApp(resolve: (named: SessionNamed) => Promise<string | null>) {
           }
         : null,
     invocationsServiceFor: () =>
-      ({ spawn: record, spawnScript: record }) as never,
+      ({ spawn: record, spawnScript: record, spawnIdle: record }) as never,
     connectionsServiceFor: () =>
       ({
         listConnections: async () => [],
@@ -67,11 +67,13 @@ const post = (body: object, headers: Record<string, string> = {}) => ({
 
 const PROMPT = { prompt: "go", schema: { type: "object" } };
 const SCRIPT = { script: "make test" };
+const CLEAN_SLATE = {};
 
 describe("a driver script's spawn", () => {
   test.each([
     ["prompt", PROMPT],
     ["script", SCRIPT],
+    ["clean-slate", CLEAN_SLATE],
   ])("a %s spawn records the Session its ref names", async (_kind, body) => {
     const { app, spawned, asked } = makeApp(async (named) =>
       named.ref === "ref-a" ? "session-a" : null,
