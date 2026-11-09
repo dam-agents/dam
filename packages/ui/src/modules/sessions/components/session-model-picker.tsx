@@ -1217,7 +1217,11 @@ function ProviderMenu({
                 onSelect={(event) => {
                   if (!usable) event.preventDefault();
                 }}
-                className={usable ? undefined : "cursor-default opacity-50"}
+                className={
+                  usable
+                    ? undefined
+                    : "cursor-default opacity-50 data-[highlighted]:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                }
               >
                 <span className="truncate">{p.name}</span>
               </DropdownMenuRadioItem>

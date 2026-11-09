@@ -610,7 +610,7 @@ describe("the new session panel", () => {
     expect(menuItem(node, "Manage providers")).toBeDefined();
   });
 
-  /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
+  /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
   it("picks a provider once, and never a greyed one", () => {
     state.chosen = {
       harness: "pi",
@@ -621,6 +621,12 @@ describe("the new session panel", () => {
     state.remember.mockReset();
     const node = mount(picker());
     act(() => menuItem(node, "Curve").click());
+    for (const key of ["Enter", " "])
+      act(() => {
+        menuItem(node, "Curve").dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
     expect(state.chosenModel).not.toHaveBeenCalled();
     expect(state.remember).not.toHaveBeenCalled();
 
@@ -655,10 +661,14 @@ describe("the new session panel", () => {
     expect(curve.getAttribute("aria-disabled")).toBe("true");
     expect(curve.getAttribute("data-tooltip")).toContain("Doesn't offer");
     expect(curve.classList).toContain("opacity-50");
+    expect(curve.classList).toContain("cursor-default");
+    expect(curve.classList).toContain("data-[highlighted]:bg-transparent");
+    expect(curve.classList).not.toContain("data-[highlighted]:bg-muted");
     expect(curve.textContent).not.toContain("Doesn't offer");
     const ibm = menuItem(node, "IBM");
     expect(ibm.getAttribute("data-tooltip")).toBeNull();
     expect(ibm.classList).not.toContain("opacity-50");
+    expect(ibm.classList).toContain("data-[highlighted]:bg-muted");
   });
 
   /** TEST_SCENARIO: picking a model from another provider takes that provider too, and a model every provider offers stays on the one already picked. */
