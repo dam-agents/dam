@@ -34,13 +34,14 @@ import (
 )
 
 const (
-	ownerGatewayPortBase     = 20000
-	ownerGatewaySlots        = 512
-	annOwnerGatewaySlot      = "agent-platform.ai/owner-gateway-slot"
-	annOwnerRegenerated      = "agent-platform.ai/owner-gateway-regenerated"
-	ownerGatewayFilesVolume  = "gateway-files"
-	ownerGatewayDNSVolume    = "gateway-dns"
-	ownerGatewayConfigBudget = 1 << 20
+	ownerGatewayPortBase       = 20000
+	ownerGatewaySlots          = 512
+	annOwnerGatewaySlot        = "agent-platform.ai/owner-gateway-slot"
+	annOwnerRegenerated        = "agent-platform.ai/owner-gateway-regenerated"
+	ownerGatewayFilesVolume    = "gateway-files"
+	ownerGatewayDNSVolume      = "gateway-dns"
+	ownerGatewayConfigBudget   = 1 << 20
+	ownerGatewayRefusalMessage = "owner gateway: refused, past the 1 MiB one Secret holds; its agents move back to their own gateways"
 	// UNIT_BOUNDARY_DESCRIPTION: an owner gateway that stops cuts every agent's model streams at once. Envoy exits at once on SIGTERM, so the old pod first sleeps in preStop, out of its Services' endpoints and still serving what it holds, while the surged new pod takes every new connection; a stream that ends within the sleep is not cut. The cost is only how long a roll takes, and a stream longer than that is still reset.
 	ownerGatewayTerminationGrace int64 = 30
 )
@@ -291,6 +292,20 @@ type ownerRender struct {
 	revisions  map[string]string
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what decides whether an owner's wide render fits one Secret, in a fixed encoding so the same facts always hash alike: the members and each one's slot, its granted credentials by name and version, its promoted hosts, its address requirement and its attribution, with the template revision and the budget. Content changes reach it through a credential's version; anything else that changes the render's size without changing these is a change of the templates themselves, which moves the revision.
+func ownerGatewayFingerprint(members map[string]ownerGatewayMember, names []string, budget int) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\n%d\n", ownerGatewayTemplateRev, budget)
+	for _, name := range names {
+		m := members[name]
+		fmt.Fprintf(h, "%q %d %d %q %t %q\n", name, m.slot, len(m.secrets), m.agent.Spec.L7Hosts, m.agent.Spec.RequireConnectionAddress, m.agent.Spec.TelemetryAttributionID)
+		for _, secret := range m.secrets {
+			fmt.Fprintf(h, "%q %q\n", secret.Name, secret.ResourceVersion)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: renders and applies the owner gateway for every vm Agent of the owner, from an agent's reconcile while it holds the owner's lock. Every agent gets its slot first, recorded on its own gateway Service, so the listeners render on their final ports. The Secret holding the files and the credentials must fit in 1 MiB, the limit of one object, and it is one object so that a file and the credential it names reach the pod together; a larger owner is refused, until an xDS server in the controller replaces the files. A refused owner, or one whose flag is off, renders only the agents still on it, so their grants stay current while each moves back to its own gateway, and the owner gateway goes once none is left on it.
 func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) (map[string]ownerGatewayMember, error) {
 	refs := r.runnerOwnerRef(ctx)
@@ -398,22 +413,34 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		}
 		return plan
 	}
-	plan := planFor(names)
-	current, err := render(names, ownerGatewayCredentialRoot, plan)
-	if err != nil {
-		return nil, err
-	}
 	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
-	if r.config.VM.Gateway.PerOwner {
-		if size := secretSize(current.files); size > budget {
-			r.ownerGatewayRefused.Store(owner, true)
-			slog.Warn("owner gateway: refused, past the 1 MiB one Secret holds; its agents move back to their own gateways", "owner", owner, "agents", len(names), "KiB", size>>10)
-			plan = planFor(onIt)
-			if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
-				return nil, err
+	// UNIT_BOUNDARY_DESCRIPTION: a refusal is remembered against what decides the wide render's size, so an owner that stays too large renders the membership it serves and nothing else: the wide render costs its whole configuration and its plan requeues repairs the discarded render never publishes. A fingerprint that moved (an agent added or removed, a grant, a rotation, a promoted host) renders wide again. In memory only, so a restart decides once more.
+	fingerprint := ownerGatewayFingerprint(members, names, budget)
+	refused, _ := r.ownerGatewayRefused.Load(owner)
+	stillRefused := r.config.VM.Gateway.PerOwner && refused == fingerprint
+	var plan *ownerGatewayRepairPlan
+	var current ownerRender
+	if stillRefused {
+		plan = planFor(onIt)
+		if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
+			return nil, err
+		}
+	} else {
+		plan = planFor(names)
+		if current, err = render(names, ownerGatewayCredentialRoot, plan); err != nil {
+			return nil, err
+		}
+		if r.config.VM.Gateway.PerOwner {
+			if size := secretSize(current.files); size > budget {
+				r.ownerGatewayRefused.Store(owner, fingerprint)
+				slog.Warn(ownerGatewayRefusalMessage, "owner", owner, "agents", len(names), "KiB", size>>10)
+				plan = planFor(onIt)
+				if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
+					return nil, err
+				}
+			} else {
+				r.ownerGatewayRefused.Delete(owner)
 			}
-		} else {
-			r.ownerGatewayRefused.Delete(owner)
 		}
 	}
 	if len(onIt) == 0 && !r.ownerGatewayOn(owner) {

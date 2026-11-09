@@ -799,6 +799,48 @@ func TestOwnerGateway_RefusedOwnerMovesItsAgentsBack(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err))
 }
 
+// TEST_SCENARIO: a refusal is decided once for a set of agents and grants. A reconcile of the same owner with nothing changed does not render the whole configuration again, so it does not log the refusal a second time; a second render there would be the wasted work and the log noise that a refused owner produced on every reconcile of every one of its agents.
+func TestOwnerGateway_ARefusedOwnerIsNotRenderedAgainUntilItsAgentsChange(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	captured := captureLog(t)
+	r.ownerGatewayBudget = 1
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.False(t, r.ownerGatewayOn(testOwner))
+	require.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "the refusal is decided once")
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "a reconcile with nothing changed renders no wide configuration, so the refusal is not decided again")
+}
+
+// TEST_SCENARIO: the refusal is held against what the owner's agents render, not against the owner for good: an agent that pushed the configuration past one Secret leaves, the wide render fits again, and the owner gateway serves it once more.
+func TestOwnerGateway_AnOwnerThatFitsAgainIsNoLongerRefused(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", false)
+	ownerTwoSigningSecrets(t, r)
+
+	// TEST_SCENARIO: both fit, which measures the wide render the budget is set below.
+	r.ownerGatewayBudget = 0
+	_, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Contains(t, files.Data, "platform-conn-two.aws-credentials", "both agents render to begin with")
+
+	r.ownerGatewayBudget = secretSize(files) - 512
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "both agents together are past one Secret")
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "agent-b", metav1.DeleteOptions{}))
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.True(t, r.ownerGatewayOn(testOwner), "the agents that are left fit, so the owner is rendered wide and no longer refused")
+}
+
 func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 	t.Helper()
 	ctx, ns := context.Background(), "test-agents"
