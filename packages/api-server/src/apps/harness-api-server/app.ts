@@ -20,6 +20,7 @@ import {
   type RuntimeProgressPort,
   hasSlackChannelHistory,
   startWaitOf,
+  inheritanceOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -114,6 +115,7 @@ export interface HarnessApiServerAppDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputs: ScriptOutputs;
+  childEgressSeeder?: NonNullable<DriverOpsDeps["childEgress"]>;
   sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
@@ -207,6 +209,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
+      keepMaxMs: config.environmentExpiryMaxDays * 86_400_000,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     });
 
   const mcpArtifactLibraryFor = (owner: string) =>
@@ -270,6 +274,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         isSlackUnlinked: async () => false,
       }).budgets,
     scriptOutputs: deps.scriptOutputs,
+    ...(deps.childEgressSeeder
+      ? {
+          childEgress: deps.childEgressSeeder,
+          inheritanceOf: inheritanceOf(db),
+        }
+      : {}),
   };
 
   const readChatFormPreferences = createChatFormPreferencesReader(db);
@@ -316,6 +326,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!agent || agent.spec.environmentOf) return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId, { manage });
     },
+    keptSubAgents: async (owner) =>
+      Boolean((await featureFlagsFor(owner)).environments),
     agentTelemetry,
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,

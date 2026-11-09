@@ -508,6 +508,7 @@ export function rowsFromResource(
         ownerSub,
         templateId: metadata.labels?.[LABEL_TEMPLATE_REF] ?? null,
         environmentOf: nullable(spec.environmentOf),
+        linkFrom: nullable(spec.linkFrom),
         name: text(spec.name) ?? "",
         description: nullable(spec.description),
         avatar: nullable(spec.avatar),
@@ -688,6 +689,7 @@ export function resourceFromRows(
     spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);
   putSpec("environmentOf", agent.environmentOf);
+  putSpec("linkFrom", agent.linkFrom);
   putSpec("storageSize", agent.diskSize);
   if (hosts.length > 0 || complete) spec.l7Hosts = hosts;
   if (grants.length > 0 || complete) spec.grantedConnectionIds = grants;

@@ -1,6 +1,7 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf } from "api-server-api";
 import {
+  childrenMirroringConnections,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
@@ -97,6 +98,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     outageAlerts,
     wrapperFrameSender,
     presetSeeder,
+    childEgressSeeder,
     platformAccess,
     trustedHosts,
     agentCleanupHooks,
@@ -161,6 +163,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
+      mirroredChildren: childrenMirroringConnections(db),
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
       db,
       templates: connectionsBoot.templates,
@@ -274,6 +277,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         createSlackLoopGuardDropsRepository(db).readMany(slackChannelIds),
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
+      childEgress: childEgressSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
       contributionsProgress,
@@ -299,6 +303,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       agents,
       frames: delegationFrames,
+      runtimeMutator,
     });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,

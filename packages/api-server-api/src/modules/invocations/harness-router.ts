@@ -7,7 +7,9 @@ import {
 const v1Router = harnessT.router({
   scriptUploads: harnessT.procedure
     .input(scriptUploadsInputSchema)
-    .mutation(({ ctx }) => ctx.invocationScripts.uploads(ctx.agentId)),
+    .mutation(({ ctx, input }) =>
+      ctx.invocationScripts.uploads(ctx.agentId, input.run),
+    ),
   reportScript: harnessT.procedure
     .input(scriptReportInputSchema)
     .mutation(({ ctx, input }) =>

@@ -35,6 +35,7 @@ export const controlAgents = control.table(
     ownerSub: text("owner_sub").notNull(),
     templateId: text("template_id"),
     environmentOf: text("environment_of"),
+    linkFrom: text("link_from"),
     name: text("name").notNull().default(""),
     description: text("description"),
     avatar: text("avatar"),

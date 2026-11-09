@@ -255,6 +255,8 @@ export type ApprovalRequested = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the parent a scoped child's prompt surfaces on, when the request came from such a child.
+  forAgentId?: string;
 };
 
 export type ApprovalResolved = {
@@ -263,6 +265,7 @@ export type ApprovalResolved = {
   agentId: string;
   ownerSub: string;
   resolution: ApprovalResolution;
+  forAgentId?: string;
 };
 
 export type SpendLimitsChanged = {

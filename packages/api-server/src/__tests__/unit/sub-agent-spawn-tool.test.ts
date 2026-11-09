@@ -34,6 +34,9 @@ function setup(
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
       tools.set(name, handler);
     },
+    registerTool: (name: string, _config: unknown, handler: Handler) => {
+      tools.set(name, handler);
+    },
   } as unknown as McpServer;
   const spawned: SpawnRequest[] = [];
   const from: unknown[] = [];

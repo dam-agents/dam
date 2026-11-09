@@ -323,6 +323,8 @@ let sessionState: {
   localWork: (sessionId: string) => boolean;
   spawnedBy: (sessionId: string) => string[];
 } = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+// UNIT_BOUNDARY_DESCRIPTION: runs the platform ended while their prompt still waited behind another turn of its session; such a turn is cancelled as it starts.
+const cancelledRuns = new Set<string>();
 const invocationWatch = createInvocationWatch({
   reporter: {
     report: (input) =>
@@ -630,6 +632,16 @@ const {
   agentRequests: toolApprovalReporter,
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  onInvocationTurn: (sessionId, run) => {
+    if (cancelledRuns.delete(run)) {
+      void triggerDriver.cancel(sessionId);
+      return;
+    }
+    const entry = sessionMetadata.get(sessionId);
+    if (entry)
+      sessionMetadata.set(sessionId, { ...entry.meta, invocationRun: run });
+    invocationWatch.watch(sessionId, run);
+  },
   gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) => {
     invocationWatch.turnOutcome(sessionId, end);
@@ -761,7 +773,26 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
-  invocationWatch,
+  invocationCancel: {
+    cancelRun: async (run) => {
+      if (invocationScripts.stop(run)) return { ended: true };
+      const sessionId = Object.entries(sessionMetadata.all()).find(
+        ([id, entry]) =>
+          entry.meta.invocationRun === run && !sessionMetadata.isTombstoned(id),
+      )?.[0];
+      if (!sessionId) {
+        cancelledRuns.add(run);
+        return { ended: true };
+      }
+      invocationWatch.ended(sessionId);
+      return { ended: await triggerDriver.cancel(sessionId), sessionId };
+    },
+  },
+  invocationSessions: {
+    holds: (sessionId) =>
+      sessionMetadata.get(sessionId) !== undefined &&
+      !sessionMetadata.isTombstoned(sessionId),
+  },
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   recordContinuation: (sessionId, scheduleId) =>
     sessionMetadata.recordContinuation(sessionId, scheduleId),

@@ -215,7 +215,26 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
   environmentOf?: string;
+  linkFrom?: string;
+  inheritance?: ChildInheritance;
 };
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a child Agent takes from the Agent that launched it, recorded once at create: its connections mirrored from the parent, copied as a subset, or none, and its egress decided by the parent's root, live. */
+export interface ChildInheritance {
+  parentAgentId: string;
+  connectionsFrom: "parent" | "subset" | "none";
+  egressFrom: "parent" | "open" | "scoped";
+  // UNIT_BOUNDARY_DESCRIPTION: what a child with egress of its own starts with: for `open`, the rules its launching agent set; for `scoped`, the hosts whose rules it copies from its parent, or all of them.
+  egressSeed?: { rules: ChildEgressRuleSeed[] } | { hosts: string[] | "all" };
+}
+
+export interface ChildEgressRuleSeed {
+  host: string;
+  port?: number;
+  method?: string;
+  pathPattern?: string;
+  verdict: "allow" | "deny";
+}
 export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 
 export interface BackgroundWorkItemView {

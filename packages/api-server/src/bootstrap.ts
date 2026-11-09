@@ -4,6 +4,7 @@ import { composeLoginTestimonialsModule } from "./modules/login-testimonials/ind
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
+  type InvocationCancelEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./modules/agent-store/feed.js";
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
+import { createL7HostsPortFor } from "./modules/agent-store/l7-hosts.js";
 import {
   readAgentRows,
   readOneAgent,
@@ -65,6 +67,10 @@ import {
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
+  childrenMirroringConnections,
+  inheritanceCleanup,
+  nearestOwnEgress,
+  ownEgressAgentIds,
   composeAgentEditors,
   composeAgentsModule,
   composePublicAgentPage,
@@ -311,6 +317,7 @@ import {
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
+  createInvocationCancelOutcome,
   composeScriptOutputs,
   runtimeRunsScripts,
   HARNESS_CONFIG_STEP,
@@ -329,6 +336,7 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
+  composeWildcardEgressRequests,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -354,6 +362,7 @@ import {
   createK8sAgentL7Source,
   createL7PromotionReconcile,
   createPresetSeederAdapter,
+  createChildEgressSeederAdapter,
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
@@ -943,14 +952,16 @@ export async function bootstrap() {
     readsRows(config.agentStore)
       ? {
           l7Hosts: createControlAgentL7HostsPort(db),
-          listAgentL7State: async () =>
-            (await readAgentRows(db)).map((row) => ({
+          listAgentL7State: async () => {
+            const own = await ownEgressAgentIds(db)();
+            return (await readAgentRows(db)).map((row) => ({
               agentId: row.agent.id,
               current: row.hosts,
-              ...(row.agent.environmentOf
+              ...(row.agent.environmentOf && !own.has(row.agent.id)
                 ? { environmentOf: row.agent.environmentOf }
                 : {}),
-            })),
+            }));
+          },
         }
       : createK8sAgentL7Source(k8sClient),
     (m) => getLogger().info(`[l7-reconcile] ${m}`),
@@ -1206,6 +1217,7 @@ export async function bootstrap() {
     composeConnectionsForOwner({
       ownerId,
       db,
+      mirroredChildren: childrenMirroringConnections(db),
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
@@ -2003,6 +2015,26 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  let egressIdentity: ReturnType<typeof createEgressIdentityResolver> | null =
+    null;
+  const subAgentTitles = createInvocationTasksAdapter(db);
+  const childEgressSeeder = createChildEgressSeederAdapter(
+    db,
+    createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
+    async (agentId) =>
+      (await egressIdentity?.resolve(agentId))?.agentId ?? null,
+    composeWildcardEgressRequests({
+      db,
+      ownerOf: resolveAgentOwner,
+      nameOf: async (agentId) => {
+        const owner = await resolveAgentOwner(agentId);
+        const task = owner
+          ? (await subAgentTitles.tasksOf(owner, [agentId])).get(agentId)
+          : undefined;
+        return task?.name || (await resolveAgentName(agentId));
+      },
+    }),
+  );
   await markTrustedRowsTakenOverAdapter(db, trustedHosts)
     .then((marked) => {
       if (marked > 0)
@@ -2033,11 +2065,12 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: createEgressIdentityResolver({
+    identityResolver: (egressIdentity = createEgressIdentityResolver({
       resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
       identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
       environmentName: environmentNameLookup(db),
-    }),
+      nearestOwnEgress: nearestOwnEgress(db),
+    })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
@@ -2234,6 +2267,7 @@ export async function bootstrap() {
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
     frames: delegationFrames,
     store: artifacts,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
 
   const agentCleanupSources: AgentCleanupSource[] = [
@@ -2279,6 +2313,10 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
+      name: "agent-inheritance",
+      ...inheritanceCleanup(db),
+    },
+    {
       name: "cost-reviews",
       ...createCostReviewsCleanup(db),
     },
@@ -2316,6 +2354,7 @@ export async function bootstrap() {
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         frames: delegationFrames,
         outputs: scriptOutputs,
+        runtimeMutator: runtimeDelivery.runtimeMutator,
       }),
     },
     {
@@ -2457,6 +2496,7 @@ export async function bootstrap() {
       db,
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
+      childEgress: childEgressSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
@@ -2476,6 +2516,7 @@ export async function bootstrap() {
 
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
     agentsFor: harnessAgentsServiceFor,
     readHarnessConfigSupport,
     runsScripts: async (agentId) => {
@@ -2515,7 +2556,9 @@ export async function bootstrap() {
     db,
     agentsFor: harnessAgentsServiceFor,
     frames: delegationFrames,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
+  const invocationCancelOutcome = createInvocationCancelOutcome(db);
   for (const kind of workspaceMutationEventKinds)
     runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
       if (input.outcome === "ok") return;
@@ -2545,6 +2588,20 @@ export async function bootstrap() {
         event.agentId,
         "run",
         input.detail ?? input.outcome,
+        event.id,
+        input.sessionId,
+      );
+    },
+  );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "invocation-cancel",
+    async (event, input) => {
+      const { run } = event.payload as Partial<InvocationCancelEventPayload>;
+      if (!run) return;
+      await invocationCancelOutcome(
+        run,
+        input.outcome === "ok",
+        input.sessionId,
       );
     },
   );
@@ -2646,6 +2703,7 @@ export async function bootstrap() {
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
+    childEgressSeeder,
     platformAccess: agentKeys.access,
     trustedHosts,
     agentCleanupHooks,
@@ -2778,6 +2836,7 @@ export async function bootstrap() {
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     scriptOutputs,
+    childEgressSeeder,
     sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({

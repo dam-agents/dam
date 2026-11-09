@@ -41,7 +41,12 @@ vi.mock("../../modules/artifacts/api/queries.js", () => ({
     refetch: async () => {},
   }),
 }));
+vi.mock("../../modules/invocations/api/queries.js", () => ({
+  useKeptSubAgents: () => ({ data: { subAgents: [] } }),
+}));
+
 vi.mock("../../modules/environments/api/queries.js", () => ({
+  useEnvironmentsEnabled: () => true,
   useListedEnvironments: () => ({
     data: [],
     loading: false,

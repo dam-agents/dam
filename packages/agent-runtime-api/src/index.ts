@@ -259,6 +259,7 @@ export {
   satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   invocationScriptEventPayload,
+  invocationCancelEventPayload,
   sessionMessageEventPayload,
   startupItemsEventPayload,
   workspaceCommandEventPayload,
@@ -268,6 +269,7 @@ export {
 } from "./modules/runtime/types.js";
 export type {
   InvocationScriptEventPayload,
+  InvocationCancelEventPayload,
   HarnessConfigCurrent,
   HarnessCapability,
   Contribution,

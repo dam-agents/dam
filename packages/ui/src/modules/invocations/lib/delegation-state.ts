@@ -26,6 +26,7 @@ export function delegationState(
 ): DelegationDisplayState {
   if (node.status === "done") return "done";
   if (node.status === "failed") return "failed";
+  if (node.status === "idle") return "waiting";
   return delegationWaitReason(node, target) !== null ? "waiting" : "working";
 }
 
@@ -74,10 +75,11 @@ export function awaitsCapture(
 export function countByStatus(
   nodes: readonly DelegationNode[],
 ): Record<DelegationNode["status"], number> {
-  const counts = { running: 0, done: 0, failed: 0 };
+  const counts = { idle: 0, running: 0, done: 0, failed: 0 };
   for (const node of nodes) {
     counts[node.status] += 1;
     const nested = countByStatus(node.children);
+    counts.idle += nested.idle;
     counts.running += nested.running;
     counts.done += nested.done;
     counts.failed += nested.failed;

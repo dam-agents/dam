@@ -265,6 +265,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "invocation-script" },
     defaultOn: true,
   },
+  "invocation-cancel": {
+    binding: { impl: "invocation-cancel" },
+    defaultOn: true,
+  },
   "session-message": {
     binding: { impl: "session-message" },
     defaultOn: true,

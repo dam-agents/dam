@@ -271,7 +271,7 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 Each credentialed request goes through an ext_authz Check call against the api-server.
 Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service ALLOWs only the matching SA principal, so by the time a Check arrives the calling Agent is already proven cryptographically.
 The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
-An invocation sub-agent's request is decided by its driver's rules, and an [Environment](environments.md#network-access)'s by its Owning Agent's; its approval is filed as the Owning Agent's and names the Environment.
+Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
 A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
 Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.
@@ -328,12 +328,13 @@ No in-session prompt is published on this path — the only consumers are the re
 Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
-**Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+**Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+**Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens it (an open child's wildcard allow rule, a scoped child's new host).
 The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
-Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
-The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.
-Deleting a driver cascades: its running Invocations are failed and their targets eagerly reaped (transitively for chains), and a target that slips past the cascade fails closed at the gate because its driver no longer resolves.
+Approval prompts raised by an aliased target's traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
+The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own connection grants, so the target gains the driver's network *reach*, and only its own grants' credentials.
+A target that outlives its driver's [cascade](invocations.md#outcomes) fails closed at the gate, as its driver no longer resolves.
 
 ## Channel turns
 

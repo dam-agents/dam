@@ -20,9 +20,15 @@ import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useListedEnvironments } from "../../environments/api/queries.js";
+import {
+  useEnvironmentsEnabled,
+  useListedEnvironments,
+} from "../../environments/api/queries.js";
 import { EnvironmentsGroup } from "../../environments/components/environments-group.js";
 import { visibleEnvironments } from "../../environments/lib/environment-list.js";
+import { useKeptSubAgents } from "../../invocations/api/queries.js";
+import { KeptSubAgentsGroup } from "../../invocations/components/kept-sub-agents-group.js";
+import { visibleKeptTree } from "../../invocations/lib/kept-tree.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
@@ -47,6 +53,7 @@ import { UploadArtifactDialog } from "./upload-artifact-dialog.js";
 
 const ALL_SCOPE = "__all__";
 const ENVIRONMENTS_KEY = "__environments__";
+const KEPT_SUB_AGENTS_KEY = "__kept_sub_agents__";
 const UPLOAD_HIGHLIGHT_MS = 3000;
 
 type ArtifactScope = "agent" | "all";
@@ -112,6 +119,18 @@ export function ChatArtifactsPanel({
 
   const openRow = (id: string) =>
     openArtifact(id === openArtifactId ? null : id);
+  const keptShown = useEnvironmentsEnabled();
+  const keptQuery = useKeptSubAgents(open && keptShown ? scopeAgentId : null);
+  const kept = useMemo(
+    () =>
+      visibleKeptTree(
+        keptQuery.data?.subAgents ?? [],
+        listedEnvironments.data,
+        term,
+      ),
+    [keptQuery.data, listedEnvironments.data, term],
+  );
+  const keptAsked = open && keptShown && scopeAgentId !== null;
   const collapseScope = scopeAgentId ?? ALL_SCOPE;
   const folderCollapse = useStore(
     (s) => s.artifactFolderCollapse[collapseScope],
@@ -151,14 +170,17 @@ export function ChatArtifactsPanel({
     return term ? all.filter((g) => g.artifacts.length > 0) : all;
   }, [shown, folders, term, scopeAgentId, dragInProgress, keptFolders.ids]);
   const libraryFailed = artifactsQuery.isError || foldersQuery.isError;
+  const keptFailed = keptAsked && keptQuery.isError && !keptQuery.data;
   const failed =
-    libraryFailed || (listedEnvironments.failed && groups.length === 0);
+    libraryFailed ||
+    ((listedEnvironments.failed || keptFailed) && groups.length === 0);
   const loading =
     open &&
     !failed &&
     (artifactsQuery.isPending ||
       foldersQuery.isPending ||
-      listedEnvironments.loading);
+      listedEnvironments.loading ||
+      (keptAsked && keptQuery.isPending));
   const rootDrop = useFolderDropTarget(null, dropCallbacks);
   const folderNames = useMemo(() => folderDisplayNames(folders), [folders]);
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
@@ -263,9 +285,13 @@ export function ChatArtifactsPanel({
             void artifactsQuery.refetch();
             void foldersQuery.refetch();
             listedEnvironments.refetch();
+            if (keptAsked) void keptQuery.refetch();
           }}
         />
-      ) : loading || (groups.length === 0 && environments.length === 0) ? (
+      ) : loading ||
+        (groups.length === 0 &&
+          environments.length === 0 &&
+          kept.subAgents.length === 0) ? (
         <EmptyState bordered={false}>
           {loading
             ? "Loading…"
@@ -293,6 +319,20 @@ export function ChatArtifactsPanel({
                   collapseScope,
                   ENVIRONMENTS_KEY,
                   !(folderCollapse?.[ENVIRONMENTS_KEY] ?? false),
+                )
+              }
+            />
+          )}
+          {kept.subAgents.length > 0 && (
+            <KeptSubAgentsGroup
+              subAgents={kept.subAgents}
+              environments={kept.environments}
+              collapsed={folderCollapse?.[KEPT_SUB_AGENTS_KEY] ?? false}
+              onToggle={() =>
+                setFolderCollapsed(
+                  collapseScope,
+                  KEPT_SUB_AGENTS_KEY,
+                  !(folderCollapse?.[KEPT_SUB_AGENTS_KEY] ?? false),
                 )
               }
             />

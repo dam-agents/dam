@@ -61,6 +61,7 @@ function makeService(rows: PendingApprovalRow[]) {
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
     listDistinctAgentIds: async () => [],
+    listPendingChildEgressRequests: async () => [],
   };
   const service = createApprovalsService({
     repo,

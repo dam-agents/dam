@@ -40,6 +40,7 @@ function replica() {
     caseStudyInspection: {},
     agentImage: async () => null,
     environments: async () => null,
+    keptSubAgents: async () => false,
     agentTelemetry: {},
   } as unknown as MountMcpDeps);
   return app;

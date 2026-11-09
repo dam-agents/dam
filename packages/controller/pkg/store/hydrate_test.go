@@ -33,6 +33,7 @@ func testRow(t *testing.T) agentRow {
 		OwnerSub:              "sub-1",
 		TemplateID:            ptr("tpl"),
 		EnvironmentOf:         ptr("parent"),
+		LinkFrom:              ptr("parent"),
 		Name:                  "My Agent",
 		Image:                 "agent:1",
 		Harness:               ptr("claude-code"),

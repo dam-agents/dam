@@ -14,6 +14,10 @@ import {
   createConnectionRulesSync,
   type ConnectionRulesSync,
 } from "./services/connection-rules-sync.js";
+import {
+  createChildEgressSeeder,
+  type WildcardEgressPort,
+} from "./services/child-egress-seeder.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
 import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
@@ -69,6 +73,23 @@ export function createEgressRuleWriterAdapter(
   return createEgressRuleWriter({
     repo: createEgressRulesRepository(db),
     l7Hosts,
+  });
+}
+
+export function createChildEgressSeederAdapter(
+  db: Db,
+  l7Hosts: AgentL7HostsPort,
+  rulesOwnerOf: (agentId: string) => Promise<string | null>,
+  wildcardEgress: WildcardEgressPort,
+) {
+  return createChildEgressSeeder({
+    wildcardEgress,
+    repo: createEgressRulesRepository(db),
+    writer: createEgressRuleWriter({
+      repo: createEgressRulesRepository(db),
+      l7Hosts,
+    }),
+    rulesOwnerOf,
   });
 }
 

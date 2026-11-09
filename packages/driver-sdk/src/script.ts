@@ -15,13 +15,14 @@ import { log, req } from "./http.js";
 import {
   awaitInvocation,
   defaultTimeoutMs,
+  inheritanceBody,
   InvocationFailed,
+  type Inheritance,
   type Setup,
 } from "./spawn.js";
 
-export interface SpawnScriptOptions extends Setup {
+export interface SpawnScriptOptions extends Setup, Inheritance {
   script: string;
-  connections?: string[];
   label?: string;
   ttlMs?: number;
   pollMs?: number;
@@ -152,7 +153,6 @@ export async function spawnScript(
     script,
     harness,
     image,
-    connections = [],
     label,
     ttlMs,
     pollMs = 5000,
@@ -171,7 +171,10 @@ export async function spawnScript(
     );
   }
 
-  const body: SpawnScriptInvocationRequest = { script, connections };
+  const body: SpawnScriptInvocationRequest = {
+    script,
+    ...inheritanceBody(opts),
+  };
   if (harness) body.harness = harness;
   if (image) body.image = image;
   if (label !== undefined) body.label = label;
@@ -189,6 +192,7 @@ export async function spawnScript(
   );
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
+  opts.onSpawned?.(id);
 
   const view = await awaitInvocation(id, tag, { pollMs, timeoutMs });
   const output = new ScriptOutput(id, view.exitCode ?? null, view.output ?? {});

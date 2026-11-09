@@ -129,6 +129,14 @@ export interface AgentSpecCR {
    */
   l7Hosts?: string[];
   /**
+   * LinkFrom names the one Agent that may open the agent-to-agent link into
+   * this one's machine: an Environment's owning Agent, or a sub-agent's
+   * driver. Set at create, never changed; the guest reads it as
+   * PLATFORM_LINK_FROM. An Environment created before the field accepts from
+   * its EnvironmentOf.
+   */
+  linkFrom?: string;
+  /**
    * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
    *
    * Items: Mount declares a volume mounted into the agent container.

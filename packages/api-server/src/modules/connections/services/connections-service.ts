@@ -273,6 +273,8 @@ export function createConnectionsService(deps: {
     connectionId: string;
     harness: string;
   } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the children whose connections follow an Agent's (launched with connections from their parent), which take the Agent's whole set each time it changes. */
+  mirroredChildren?: (agentId: string) => Promise<string[]>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -1359,11 +1361,13 @@ export function createConnectionsService(deps: {
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const ownedById = new Map(owned.map((c) => [c.id, c]));
 
+    let applied: string[] = [];
     await deps.connectionLock(`agent:connections:${agentId}`, async () => {
       const current = await deps.repo.listAgentGrants(agentId);
       const deduped = Array.from(
         new Set(desiredFrom(current.map((c) => c.connectionId))),
       );
+      applied = deduped;
       for (const id of deduped) {
         if (!ownedById.has(id)) {
           securityLog("warn", "authz.owner_mismatch", {
@@ -1419,6 +1423,25 @@ export function createConnectionsService(deps: {
         allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     });
+    await mirrorToChildren(agentId, applied);
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
+  async function mirrorToChildren(
+    agentId: string,
+    set: readonly string[],
+  ): Promise<void> {
+    if (!deps.mirroredChildren) return;
+    for (const child of await deps.mirroredChildren(agentId)) {
+      try {
+        await applyGrants(child, () => [...set]);
+      } catch (err) {
+        getLogger().warn(
+          { err, agentId: child, parentAgentId: agentId },
+          "connections: a mirroring child did not take its parent's grants",
+        );
+      }
+    }
   }
 
   async function requireParent(id: string): Promise<Connection> {

@@ -132,7 +132,8 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
-- **delegation records** — one row per Invocation, kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **delegation records** — one row per Invocation and one per run of it (`invocation_runs`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **child inheritance** — one row per sub-agent or Environment an agent launched (`agent_inheritance`): which of its parent's connections it holds and whose egress rules decide its requests, chosen at launch and kept for the child's life ([invocations](invocations.md#spawning)).
 - **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; the owner's daily limits; and each user's Spend Ceiling that a platform operator set, with who set it and when.
   Redis caches the day totals.
   Owned by [spend-limits](spend-limits.md#ledger).

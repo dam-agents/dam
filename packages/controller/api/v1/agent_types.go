@@ -16,6 +16,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
 // +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
 // +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
+// +kubebuilder:validation:XValidation:rule="has(self.linkFrom) == has(oldSelf.linkFrom)",message="linkFrom is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -102,6 +103,15 @@ type AgentSpec struct {
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="environmentOf cannot change"
 	EnvironmentOf string `json:"environmentOf,omitempty"`
+
+	// LinkFrom names the one Agent that may open the agent-to-agent link into
+	// this one's machine: an Environment's owning Agent, or a sub-agent's
+	// driver. Set at create, never changed; the guest reads it as
+	// PLATFORM_LINK_FROM. An Environment created before the field accepts from
+	// its EnvironmentOf.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="linkFrom cannot change"
+	LinkFrom string `json:"linkFrom,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -454,7 +464,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=21
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

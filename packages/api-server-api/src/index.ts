@@ -39,6 +39,12 @@ export {
 } from "./modules/channels/shared-conversations.js";
 
 export {
+  childConnectionsSchema,
+  type ChildConnections,
+  childEgressSchema,
+  childEgressRuleSchema,
+  type ChildEgress,
+  type ChildEgressRule,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
   invocationOutputStreamSchema,
@@ -70,6 +76,7 @@ export type {
   InvocationsControlService,
   InvocationHarnessConfig,
   InvocationsQueryService,
+  KeptSubAgent,
   DelegationNode,
 } from "./modules/invocations/types.js";
 
@@ -188,6 +195,8 @@ export type {
   AgentListScope,
   SetAgentEditorsResult,
   LeaveAgentResult,
+  ChildInheritance,
+  ChildEgressRuleSeed,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -904,7 +913,12 @@ export type {
   EgressRulesService,
   PlatformRuleState,
 } from "./modules/egress-rules/types.js";
-export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
+export {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  CHILD_DRIVER_SOURCE,
+  isWildcardEgressRule,
+  CHILD_INHERITED_SOURCE,
+} from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,

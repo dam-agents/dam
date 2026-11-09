@@ -10,6 +10,7 @@ import {
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
+  type ChildInheritance,
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
@@ -626,6 +627,14 @@ export function createAgentsService(deps: {
     connectionId: string;
     bind: (agentId: string) => Promise<string | null>;
   } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: where a child Agent's inheritance from the Agent that launched it is recorded at create, before its grants are applied, so a change of the parent's grants made meanwhile already reaches it. */
+  inheritance?: {
+    record(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written once it exists. */
+  childEgress?: {
+    seed(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -1405,6 +1414,7 @@ export function createAgentsService(deps: {
         spec.environmentOf = input.environmentOf;
         delete spec.harness;
       }
+      if (input.linkFrom !== undefined) spec.linkFrom = input.linkFrom;
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
@@ -1534,6 +1544,8 @@ export function createAgentsService(deps: {
           owner,
         );
       }
+      if (input.inheritance && input.inheritance.egressFrom !== "parent")
+        await deps.childEgress?.seed(infra.id, input.inheritance);
 
       const createdAt = new Date();
       await deps.runtimeMutator.bump(infra.id, [
@@ -1558,6 +1570,8 @@ export function createAgentsService(deps: {
           : []),
       ]);
 
+      if (input.inheritance)
+        await deps.inheritance?.record(infra.id, input.inheritance);
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
