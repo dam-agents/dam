@@ -25,14 +25,12 @@ export type EgressRuleSource =
 export const CHILD_DRIVER_SOURCE = "driver";
 export const CHILD_INHERITED_SOURCE = "inherited";
 
-// UNIT_BOUNDARY_DESCRIPTION: an allow rule that opens a child to any host, or to a whole top-level domain ("*.com"): its owner, a person, grants it on an approval; the agent that sets the child's rules never writes it.
-export function isFullEgressRule(rule: {
+// UNIT_BOUNDARY_DESCRIPTION: an allow rule with a wildcard host, from any host ("*") to every subdomain of one domain ("*.github.com"): its owner, a person, grants it on an approval; the agent that sets the child's rules never writes it.
+export function isWildcardEgressRule(rule: {
   host: string;
   verdict: string;
 }): boolean {
-  if (rule.verdict !== "allow") return false;
-  const host = rule.host.trim().toLowerCase();
-  return host === "*" || /^\*\.[^.*]+$/.test(host);
+  return rule.verdict === "allow" && rule.host.trim().startsWith("*");
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the source of the one rule the platform itself adds to every Agent on an install that serves Environments: the environments domain, allowed, with the Agent's key sent to the Environment gate. Shown to its owner as a rule of its own, which they can remove and restore, never edit.

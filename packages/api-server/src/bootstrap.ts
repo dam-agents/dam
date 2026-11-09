@@ -336,7 +336,7 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
-  composeFullEgressRequests,
+  composeWildcardEgressRequests,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -2023,7 +2023,7 @@ export async function bootstrap() {
     createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
     async (agentId) =>
       (await egressIdentity?.resolve(agentId))?.agentId ?? null,
-    composeFullEgressRequests({
+    composeWildcardEgressRequests({
       db,
       ownerOf: resolveAgentOwner,
       nameOf: async (agentId) => {

@@ -4,7 +4,7 @@ import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 import { EGRESS_PROPOSAL_TTL_MS, proposalId } from "./egress-proposals.js";
 
-export interface FullEgressRequests {
+export interface WildcardEgressRequests {
   request(input: {
     childId: string;
     driverId: string;
@@ -18,18 +18,18 @@ const anyHostOf = (host: string): string =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a driver asking that its child with open egress
- * reach any host, or a whole top-level domain: the rule is never written by
- * the driver; it waits as an egress proposal on the child, shown on the
+ * reach a wildcard host (any host, or every subdomain of one domain): the
+ * rule is never written by the driver; it waits as an egress proposal on the child, shown on the
  * driver's page, and only the owner's verdict writes it onto the child. One
  * open request per child and host; a request the driver drops from the
  * child's rules is withdrawn, and asking again after a verdict asks anew.
  */
-export function createFullEgressRequests(deps: {
+export function createWildcardEgressRequests(deps: {
   repo: ApprovalsRepository;
   ownerOf: (agentId: string) => Promise<string | null>;
   nameOf: (agentId: string) => Promise<string | null>;
   now?: () => number;
-}): FullEgressRequests {
+}): WildcardEgressRequests {
   const now = deps.now ?? (() => Date.now());
 
   async function pendingOf(childId: string) {

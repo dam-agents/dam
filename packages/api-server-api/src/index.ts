@@ -916,7 +916,7 @@ export type {
 export {
   PLATFORM_ENVIRONMENTS_SOURCE,
   CHILD_DRIVER_SOURCE,
-  isFullEgressRule,
+  isWildcardEgressRule,
   CHILD_INHERITED_SOURCE,
 } from "./modules/egress-rules/types.js";
 export {

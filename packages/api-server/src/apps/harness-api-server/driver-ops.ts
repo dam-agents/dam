@@ -223,10 +223,7 @@ function driverOps(
     if (!resolved.ok) return resolved;
     const { target } = resolved;
 
-    const openEgress =
-      body.egress === "open" ||
-      (typeof body.egress === "object" && "open" in body.egress);
-    const connections = body.connections ?? (openEgress ? "none" : "parent");
+    const connections = body.connections ?? "none";
     const [granted, owned] = await Promise.all([
       conns.getAgentConnections(driverId),
       conns.listConnections(),

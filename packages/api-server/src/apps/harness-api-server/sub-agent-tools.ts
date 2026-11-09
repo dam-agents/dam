@@ -6,7 +6,7 @@ import {
   type SessionSubAgentContext,
 } from "agent-runtime-api";
 import {
-  isFullEgressRule,
+  isWildcardEgressRule,
   childEgressRuleSchema,
   formatQualifiedModel,
   INVOCATION_OUTPUT_STREAMS,
@@ -153,7 +153,7 @@ const spawnInput = {
     "Kill deadline in ms, about 1 minute to 6 hours, default about 60 minutes. Time queued for compute counts. Short for a quick task, long for clone + build.",
   ),
   connections: spawnShape.connections.describe(
-    'Your connections it holds: "parent" (the default), all of yours, granted and revoked with your own for as long as it lives; "none", only its model; or a list of connection ids of your own (see list_connections), copied once.',
+    'Your connections it holds: "none" (the default), only its model; "parent", all of yours, granted and revoked with your own for as long as it lives; or a list of connection ids of your own (see list_connections), copied once.',
   ),
   seed: spawnShape.seed.describe(
     'Repository cloned into the workspace before the prompt: url, optional ref or commit, into "work" (default) or "home".',
@@ -200,7 +200,7 @@ const idleTimeoutShape = z
 // UNIT_BOUNDARY_DESCRIPTION: the spawn options that keep a sub-agent or give it egress of its own, offered only to an owner with the Environments feature, which kept sub-agents are part of.
 const keptSpawnInput = {
   egress: spawnShape.egress.describe(
-    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that access to any host (*) or a whole top-level domain (*.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
   ),
   keep: spawnShape.keep.describe(
     "Keep it after its result: it sleeps with its disk instead of being removed, so you can enter it again over ssh sub-<id> or run more work in it, until keepForMs (a day by default, at most as long as an Environment lives). Without keep it is removed once it reports.",
@@ -227,16 +227,16 @@ function subAgentIdleTimeout(
   return { minutes: parsed };
 }
 
-const FULL_EGRESS_NOTE =
-  "a rule to any host, or to a whole top-level domain, is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
+const WILDCARD_EGRESS_NOTE =
+  "a rule to a wildcard host (* or *.example.com) is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
 
-const fullEgressAsked = (egress: unknown): boolean =>
+const wildcardEgressAsked = (egress: unknown): boolean =>
   typeof egress === "object" &&
   egress !== null &&
   "open" in egress &&
   Array.isArray(egress.open) &&
   egress.open.some((rule) =>
-    isFullEgressRule(rule as { host: string; verdict: string }),
+    isWildcardEgressRule(rule as { host: string; verdict: string }),
   );
 
 const KEPT_SPAWN_KEYS = Object.keys(
@@ -826,8 +826,8 @@ export function registerSubAgentTools(
                   `set by this session's platform sub-agent settings: ${boundNote.join(", ")} (arguments for these are ignored)`,
                 ]
               : []),
-            ...(fullEgressAsked(args.egress)
-              ? [`egress: ${FULL_EGRESS_NOTE}`]
+            ...(wildcardEgressAsked(args.egress)
+              ? [`egress: ${WILDCARD_EGRESS_NOTE}`]
               : []),
             ...(ignored.length > 0
               ? [
@@ -1125,7 +1125,7 @@ function registerKeptTools(
 
   server.tool(
     "update_subagent_egress",
-    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing any host (*) or a whole top-level domain (*.com) is not yours to set: it waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
+    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set: it waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
     {
       id: z
         .string()
@@ -1147,7 +1147,7 @@ function registerKeptTools(
               rules: rules.length,
               ...(outcome.waiting.length > 0 && {
                 waitingForOwner: outcome.waiting,
-                note: FULL_EGRESS_NOTE,
+                note: WILDCARD_EGRESS_NOTE,
               }),
             })
           : errorResult(`update_subagent_egress refused: ${outcome.message}`);

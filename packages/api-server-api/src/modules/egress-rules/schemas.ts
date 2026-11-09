@@ -4,7 +4,7 @@ export const ruleVerdictSchema = z.enum(["allow", "deny"]);
 
 export const EGRESS_HOST =
   /^(?:\*|(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*)$/;
-const egressHostSchema = z
+export const egressHostSchema = z
   .string()
   .min(1)
   .max(253)

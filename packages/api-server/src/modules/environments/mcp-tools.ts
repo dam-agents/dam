@@ -134,7 +134,7 @@ export function registerEnvironmentTools(
       egress: childEgressSchema
         .optional()
         .describe(
-          'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that access to any host (*) or a whole top-level domain (*.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+          'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
         ),
       expires: expiresInput,
       idle_timeout: idleTimeout,

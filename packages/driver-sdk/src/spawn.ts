@@ -45,7 +45,7 @@ export type Setup = Pick<
   "harness" | "image" | "seed" | "install" | "env" | "resources" | "skills"
 >;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a sub-agent takes from this driver and how long it stays: its connections ("parent", the default, all of the driver's kept in step; "none"; or ids copied once), its egress ("parent", the default; "open" or {open: rules}; {scoped: hosts}), and with keep, that it outlives its result until keepForMs, sleeping after idleTimeoutMin minutes idle (the install's default otherwise). onSpawned gets its id at once, so a kept one can be entered or run in later.
+// UNIT_BOUNDARY_DESCRIPTION: what a sub-agent takes from this driver and how long it stays: its connections ("none", the default, only its model; "parent", all of the driver's kept in step; or ids copied once), its egress ("parent", the default; "open" or {open: rules}; {scoped: hosts}), and with keep, that it outlives its result until keepForMs, sleeping after idleTimeoutMin minutes idle (the install's default otherwise). onSpawned gets its id at once, so a kept one can be entered or run in later.
 export interface Inheritance {
   connections?: SpawnInvocationRequest["connections"];
   egress?: SpawnInvocationRequest["egress"];

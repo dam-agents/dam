@@ -1,7 +1,7 @@
 import {
-  createFullEgressRequests,
-  type FullEgressRequests,
-} from "./services/full-egress-requests.js";
+  createWildcardEgressRequests,
+  type WildcardEgressRequests,
+} from "./services/wildcard-egress-requests.js";
 import type { Db } from "db";
 import type {
   ApprovalsService,
@@ -177,12 +177,12 @@ export function composeEgressProposals(deps: {
   });
 }
 
-export function composeFullEgressRequests(deps: {
+export function composeWildcardEgressRequests(deps: {
   db: Db;
   ownerOf: (agentId: string) => Promise<string | null>;
   nameOf: (agentId: string) => Promise<string | null>;
-}): FullEgressRequests {
-  return createFullEgressRequests({
+}): WildcardEgressRequests {
+  return createWildcardEgressRequests({
     repo: createApprovalsRepository(deps.db),
     ownerOf: deps.ownerOf,
     nameOf: deps.nameOf,
@@ -194,7 +194,7 @@ export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
 }
 
 export type {
-  FullEgressRequests,
+  WildcardEgressRequests,
   EgressProposals,
   ApprovalsRelayService,
   ExtAuthzDecision,

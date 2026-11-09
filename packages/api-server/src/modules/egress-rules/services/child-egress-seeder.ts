@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   CHILD_DRIVER_SOURCE,
   CHILD_INHERITED_SOURCE,
-  isFullEgressRule,
+  isWildcardEgressRule,
   type ChildEgressRuleSeed,
   type ChildInheritance,
 } from "api-server-api";
@@ -18,8 +18,8 @@ export interface ChildEgressSeeder {
   ): Promise<{ waiting: { host: string; id: string }[] }>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule to any host, or to a whole top-level domain, goes instead of being written: a request its owner decides.
-export interface FullEgressPort {
+// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule to a wildcard host goes instead of being written: a request its owner decides.
+export interface WildcardEgressPort {
   request(input: {
     childId: string;
     driverId: string;
@@ -31,12 +31,12 @@ export interface FullEgressPort {
 const hostOf = (rule: { host: string }): string =>
   rule.host.trim().toLowerCase();
 
-// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule to any host or a whole top-level domain, which waits for the owner's approval and goes when the launching agent drops it; a scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
+// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule to a wildcard host, which waits for the owner's approval and goes when the launching agent drops it; a scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
 export function createChildEgressSeeder(deps: {
   repo: EgressRulesRepository;
   writer: EgressRuleWriter;
   rulesOwnerOf: (agentId: string) => Promise<string | null>;
-  fullEgress: FullEgressPort;
+  wildcardEgress: WildcardEgressPort;
 }): ChildEgressSeeder {
   async function write(
     agentId: string,
@@ -62,8 +62,8 @@ export function createChildEgressSeeder(deps: {
       const seed = inheritance.egressSeed;
       if (inheritance.egressFrom === "open" && seed && "rules" in seed) {
         for (const rule of seed.rules)
-          if (isFullEgressRule(rule))
-            await deps.fullEgress.request({
+          if (isWildcardEgressRule(rule))
+            await deps.wildcardEgress.request({
               childId: agentId,
               driverId: inheritance.parentAgentId,
               rule,
@@ -103,26 +103,28 @@ export function createChildEgressSeeder(deps: {
     },
 
     async setOpenRules(agentId, decidedBy, rules) {
-      const fullHosts = new Set(rules.filter(isFullEgressRule).map(hostOf));
+      const wildcardHosts = new Set(
+        rules.filter(isWildcardEgressRule).map(hostOf),
+      );
       const granted = new Set<string>();
       for (const row of await deps.repo.listForAgent(agentId)) {
         if (row.source === CHILD_DRIVER_SOURCE) {
           await deps.repo.revoke(row.id);
           continue;
         }
-        if (!isFullEgressRule(row)) continue;
-        if (fullHosts.has(hostOf(row))) granted.add(hostOf(row));
+        if (!isWildcardEgressRule(row)) continue;
+        if (wildcardHosts.has(hostOf(row))) granted.add(hostOf(row));
         else await deps.repo.revoke(row.id);
       }
-      await deps.fullEgress.withdraw(agentId, fullHosts);
+      await deps.wildcardEgress.withdraw(agentId, wildcardHosts);
       const waiting: { host: string; id: string }[] = [];
       for (const rule of rules) {
-        if (!isFullEgressRule(rule)) {
+        if (!isWildcardEgressRule(rule)) {
           await write(agentId, decidedBy, CHILD_DRIVER_SOURCE, rule);
           continue;
         }
         if (granted.has(hostOf(rule))) continue;
-        const { id } = await deps.fullEgress.request({
+        const { id } = await deps.wildcardEgress.request({
           childId: agentId,
           driverId: decidedBy,
           rule,

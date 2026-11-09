@@ -321,14 +321,15 @@ def spawn(
     fails the spawn at once with its reason.
 
     The sub-agent runs on this driver's model provider. ``connections`` says
-    which of this driver's connections it holds: ``"parent"`` (the default),
-    all of them, granted and revoked with the driver's own; ``"none"``; or a
-    list of ids from ``list_connections()``, copied once. ``egress`` says whose
-    rules decide its requests: ``"parent"`` (the default), the rules of this
-    driver's root agent, live, except the hosts of its own model provider,
-    which pass over them; ``"open"`` or ``{"open": [rules]}``, rules this
-    driver sets (``SubAgent.set_egress``) with no prompt and anything else
-    denied; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
+    which of this driver's connections it holds: ``"none"`` (the default),
+    only its model; ``"parent"``, all of them, granted and revoked with the
+    driver's own; or a list of ids from ``list_connections()``, copied once.
+    ``egress`` says whose rules decide its requests: ``"parent"`` (the
+    default), the rules of this driver's root agent, live, except the hosts of
+    its own model provider, which pass over them; ``"open"`` or
+    ``{"open": [rules]}``, rules this driver sets (``SubAgent.set_egress``)
+    with no prompt and anything else denied, except an allow rule to a
+    wildcard host, which waits for the owner's approval; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
     hosts that only the user widens. With ``keep=True`` it outlives its result
     asleep until ``keep_for_ms`` (a day by default), sleeping after
     ``idle_timeout_min`` minutes idle (the install's default otherwise), so it

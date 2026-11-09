@@ -2,6 +2,7 @@ import { z } from "zod";
 import { agentSetupSeedSchema, agentSetupShape } from "../agents/setup.js";
 import { templateHarnessSchema } from "../templates/schemas.js";
 import { agentConfigOptionsSchema } from "../harness-config/schemas.js";
+import { egressHostSchema } from "../egress-rules/schemas.js";
 
 export const DEFAULT_INVOCATION_TTL_MS = 60 * 60 * 1000;
 export const MIN_INVOCATION_TTL_MS = 60 * 1000;
@@ -34,7 +35,7 @@ export const childConnectionsSchema = z.union([
 export type ChildConnections = z.infer<typeof childConnectionsSchema>;
 
 export const childEgressRuleSchema = z.object({
-  host: z.string().min(1).max(253),
+  host: egressHostSchema,
   port: z.number().int().min(1).max(65535).optional(),
   method: z.string().min(1).optional(),
   pathPattern: z.string().min(1).optional(),

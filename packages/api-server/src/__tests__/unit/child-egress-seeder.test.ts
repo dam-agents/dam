@@ -49,7 +49,7 @@ function setup(initial: EgressRuleRow[]) {
       l7Hosts: { get: async () => [], set: async () => {} },
     } as unknown as Parameters<typeof createEgressRuleWriter>[0]),
     rulesOwnerOf: async () => "agent-root",
-    fullEgress: {
+    wildcardEgress: {
       request: async ({ rule }) => {
         requested.push(rule.host);
         return { id: `request:${rule.host}` };
@@ -85,8 +85,8 @@ describe("a detached child's first rules", () => {
     expect(hostsOf("agent-child")).toEqual(["github.com:inherited"]);
   });
 
-  // TEST_SCENARIO: a rule to any host, or to a whole top-level domain, is never written for the launching agent: it waits as a request its owner decides, while a narrower wildcard is the launching agent's to set. An approved one stays while the launching agent keeps asking for it, and goes when it drops it, with any request still waiting.
-  it("holds an open child's rule to any host for its owner", async () => {
+  // TEST_SCENARIO: an allow rule to a wildcard host, from * to *.github.com, is never written for the launching agent: it waits as a request its owner decides, while a wildcard deny and a plain host are the launching agent's to set. An approved one stays while the launching agent keeps asking for it, and goes when it drops it, with any request still waiting.
+  it("holds an open child's wildcard allow rule for its owner", async () => {
     const { seeder, hostsOf, requested, withdrawn, approve } = setup([]);
     await seeder.seed("agent-child", {
       parentAgentId: "agent-driver",
@@ -97,12 +97,13 @@ describe("a detached child's first rules", () => {
           { host: "*", verdict: "allow" },
           { host: "*.com", verdict: "allow" },
           { host: "*.github.com", verdict: "allow" },
+          { host: "github.com", verdict: "allow" },
           { host: "*", verdict: "deny" },
         ],
       },
     });
-    expect(hostsOf("agent-child")).toEqual(["*.github.com:driver", "*:driver"]);
-    expect(requested).toEqual(["*", "*.com"]);
+    expect(hostsOf("agent-child")).toEqual(["*:driver", "github.com:driver"]);
+    expect(requested).toEqual(["*", "*.com", "*.github.com"]);
 
     approve("agent-child", "*");
     const kept = await seeder.setOpenRules("agent-child", "agent-driver", [
