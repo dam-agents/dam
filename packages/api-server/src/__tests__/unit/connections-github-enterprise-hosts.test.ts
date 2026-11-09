@@ -377,7 +377,11 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
     let failOnce = true;
     rows.set = (id, row) => {
       const before = rows.get(id);
-      if (failOnce && id === "conn-child" && before?.contributions !== row.contributions) {
+      if (
+        failOnce &&
+        id === "conn-child" &&
+        before?.contributions !== row.contributions
+      ) {
         failOnce = false;
         throw new Error("write failed");
       }
