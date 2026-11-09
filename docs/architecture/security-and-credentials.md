@@ -328,9 +328,9 @@ No in-session prompt is published on this path — the only consumers are the re
 Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
-**Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+**Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
 **Detached egress.** A driver may instead launch a child (a sub-agent or an Environment) with egress of its own; the gate then decides under the nearest such child up the chain, the caller first.
-An *open* child follows only the rules its driver sets and is denied anything else without a prompt, except that a wildcard allow rule (`*`, `*.example.com`) waits for the owner's approval.
+An *open* child follows only the rules its driver sets and is denied anything else without a prompt, except that a wildcard allow rule (`*`, `*.npm.io`) waits for the owner's approval.
 A *scoped* child starts with a copy of its parent's rules for the hosts named; anything else waits for the user's approval, shown on the parent, which widens the child alone.
 The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.

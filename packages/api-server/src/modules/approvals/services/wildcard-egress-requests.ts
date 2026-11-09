@@ -2,18 +2,14 @@ import type { ChildEgressRuleSeed } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
-import {
-  EGRESS_PROPOSAL_TTL_MS,
-  EGRESS_PROPOSALS_PENDING_MAX,
-  proposalId,
-} from "./egress-proposals.js";
+import { EGRESS_PROPOSAL_TTL_MS, proposalId } from "./egress-proposals.js";
 
 export interface WildcardEgressRequests {
   request(input: {
     childId: string;
     driverId: string;
     rule: ChildEgressRuleSeed;
-  }): Promise<{ id: string } | null>;
+  }): Promise<{ id: string }>;
   withdraw(childId: string, keepHosts: ReadonlySet<string>): Promise<void>;
 }
 
@@ -27,9 +23,6 @@ const anyHostOf = (host: string): string =>
  * driver's page, and only the owner's verdict writes it onto the child. One
  * open request per child and host; a request the driver drops from the
  * child's rules is withdrawn, and asking again after a verdict asks anew.
- * A child holds at most as many waiting requests as an agent may propose
- * rules; one past that is not filed, so a driver cannot flood its owner's
- * Home.
  */
 export function createWildcardEgressRequests(deps: {
   repo: ApprovalsRepository;
@@ -55,12 +48,10 @@ export function createWildcardEgressRequests(deps: {
   return {
     async request({ childId, driverId, rule }) {
       const host = rule.host.trim().toLowerCase();
-      const pending = await pendingOf(childId);
-      const open = pending.find(
+      const open = (await pendingOf(childId)).find(
         (r) => r.payload.kind === "egress_proposal" && r.payload.host === host,
       );
       if (open) return { id: open.id };
-      if (pending.length >= EGRESS_PROPOSALS_PENDING_MAX) return null;
       const ownerSub = await deps.ownerOf(childId);
       if (!ownerSub) throw new Error(`no owner found for ${childId}`);
       const [driverName, childName] = await Promise.all([

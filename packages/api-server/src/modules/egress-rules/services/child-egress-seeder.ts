@@ -6,6 +6,7 @@ import {
   type ChildEgressRuleSeed,
   type ChildInheritance,
 } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleWriter } from "./egress-rule-writer.js";
 
@@ -15,13 +16,7 @@ export interface ChildEgressSeeder {
     agentId: string,
     decidedBy: string,
     rules: readonly ChildEgressRuleSeed[],
-  ): Promise<OpenRulesOutcome>;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: what became of an open child's wildcard rules: those waiting for the owner, and those not filed because the child already has as many requests waiting as it may.
-export interface OpenRulesOutcome {
-  waiting: { host: string; id: string }[];
-  notFiled: string[];
+  ): Promise<{ waiting: { host: string; id: string }[] }>;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where an open child's rule to a wildcard host goes instead of being written: a request its owner decides.
@@ -30,7 +25,7 @@ export interface WildcardEgressPort {
     childId: string;
     driverId: string;
     rule: ChildEgressRuleSeed;
-  }): Promise<{ id: string } | null>;
+  }): Promise<{ id: string }>;
   withdraw(childId: string, keepHosts: ReadonlySet<string>): Promise<void>;
 }
 
@@ -86,7 +81,13 @@ export function createChildEgressSeeder(deps: {
       if (inheritance.egressFrom !== "scoped" || !seed || !("hosts" in seed))
         return;
       const owner = await deps.rulesOwnerOf(inheritance.parentAgentId);
-      if (!owner) return;
+      if (!owner) {
+        getLogger().warn(
+          { agentId, parentAgentId: inheritance.parentAgentId },
+          "egress: a scoped child got no copy of its parent's rules, whose owner was not found",
+        );
+        return;
+      }
       const named =
         seed.hosts === "all"
           ? null
@@ -124,22 +125,20 @@ export function createChildEgressSeeder(deps: {
       }
       await deps.wildcardEgress.withdraw(agentId, wildcardHosts);
       const waiting: { host: string; id: string }[] = [];
-      const notFiled: string[] = [];
       for (const rule of rules) {
         if (!isWildcardEgressRule(rule)) {
           await write(agentId, decidedBy, CHILD_DRIVER_SOURCE, rule);
           continue;
         }
         if (granted.has(hostOf(rule))) continue;
-        const filed = await deps.wildcardEgress.request({
+        const { id } = await deps.wildcardEgress.request({
           childId: agentId,
           driverId: decidedBy,
           rule,
         });
-        if (filed) waiting.push({ host: hostOf(rule), id: filed.id });
-        else notFiled.push(hostOf(rule));
+        waiting.push({ host: hostOf(rule), id });
       }
-      return { waiting, notFiled };
+      return { waiting };
     },
   };
 }

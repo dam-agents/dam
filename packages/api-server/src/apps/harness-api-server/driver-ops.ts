@@ -77,10 +77,7 @@ export interface DriverOpsDeps {
       agentId: string,
       decidedBy: string,
       rules: readonly ChildEgressRule[],
-    ): Promise<{
-      waiting: { host: string; id: string }[];
-      notFiled: string[];
-    }>;
+    ): Promise<{ waiting: { host: string; id: string }[] }>;
   };
   inheritanceOf?: (agentId: string) => Promise<{
     parentAgentId: string;
@@ -568,11 +565,7 @@ function driverOps(
       childId: string,
       rules: readonly ChildEgressRule[],
     ): Promise<
-      | {
-          ok: true;
-          waiting: { host: string; id: string }[];
-          notFiled: string[];
-        }
+      | { ok: true; waiting: { host: string; id: string }[] }
       | { ok: false; message: string }
     > {
       const inherited = await deps.inheritanceOf?.(childId);
@@ -586,12 +579,12 @@ function driverOps(
               ? `${childId} has scoped egress, which only the user widens`
               : `${childId} follows your egress; launch it with egress "open" to set its own`,
         };
-      const { waiting, notFiled } = await deps.childEgress!.setOpenRules(
+      const { waiting } = await deps.childEgress!.setOpenRules(
         childId,
         driverId,
         rules,
       );
-      return { ok: true, waiting, notFiled };
+      return { ok: true, waiting };
     },
 
     async connections() {

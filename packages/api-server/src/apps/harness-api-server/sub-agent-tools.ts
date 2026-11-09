@@ -1149,11 +1149,6 @@ function registerKeptTools(
                 waitingForOwner: outcome.waiting,
                 note: WILDCARD_EGRESS_NOTE,
               }),
-              ...(outcome.notFiled.length > 0 && {
-                notFiled: outcome.notFiled,
-                notFiledReason:
-                  "the child already has as many wildcard rules waiting for your owner as it may; wait for a verdict, or drop some, before you ask for more",
-              }),
             })
           : errorResult(`update_subagent_egress refused: ${outcome.message}`);
       }),
