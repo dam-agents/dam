@@ -76,7 +76,7 @@ interface FieldsProps {
 }
 
 /**
- * One setting on one row: its label on the left, its value on the right, as
+ * UNIT_BOUNDARY_DESCRIPTION: one setting on one row: its label on the left, its value on the right, as
  * every schedule form lays its settings out.
  */
 export function ScheduleRow({
@@ -108,7 +108,7 @@ export function ScheduleRow({
   );
 }
 
-/** A labelled, bordered group of schedule rows inside a dialog. */
+/** UNIT_BOUNDARY_DESCRIPTION: a labelled, bordered group of schedule rows inside a dialog. */
 export function ScheduleRowGroup({
   label,
   children,
@@ -145,7 +145,7 @@ export function RowHint({
   );
 }
 
-/** A dropdown that sits on a row as its value: as wide as what it shows, its arrow right beside it. */
+/** UNIT_BOUNDARY_DESCRIPTION: a dropdown that sits on a row as its value: as wide as what it shows, its arrow right beside it. */
 export function RowSelect({
   className,
   ...props
@@ -351,7 +351,7 @@ interface PrecheckFieldProps {
   layout: "stacked" | "rows";
   registration: UseFormRegisterReturn;
   error?: string | undefined;
-  /** On a row, whether the box shows from the start: a precheck already set does, an empty one waits for Add. */
+  /** UNIT_BOUNDARY_DESCRIPTION: on a row, whether the box shows from the start: a precheck already set does, an empty one waits for Add. */
   defaultOpen?: boolean;
 }
 
@@ -400,7 +400,7 @@ export function SchedulePrecheckField({
   );
 }
 
-/** The inline "+ Add" a row shows on its right while it has nothing yet. */
+/** UNIT_BOUNDARY_DESCRIPTION: the inline "+ Add" a row shows on its right while it has nothing yet. */
 export function RowAddButton({
   label,
   onClick,

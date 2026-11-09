@@ -15,7 +15,7 @@ interface Props {
   placeholder?: string;
   invalid?: boolean;
   className?: string;
-  /** Where the open list sits and how wide it is, for a trigger narrower than its options. */
+  /** UNIT_BOUNDARY_DESCRIPTION: where the open list sits and how wide it is, for a trigger narrower than its options. */
   listClassName?: string;
 }
 
