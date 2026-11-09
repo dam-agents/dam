@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { ChannelType } from "api-server-api";
+import { ChannelType, sharedChannels } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -12,12 +12,20 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ChannelService } from "../services/channel-service.js";
+import {
+  audienceOf,
+  NO_GRANTS,
+  type SharingService,
+  sharingUnchecked,
+  sharingWarning,
+} from "../../sharing/index.js";
 
 export function buildSlackConnectCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createChannelService: (host: string) => ChannelService;
+  createSharingService: (host: string) => SharingService;
 }): Command {
   return new Command("connect")
     .description("Bind a Slack channel to an Agent")
@@ -103,6 +111,28 @@ export function buildSlackConnectCommand(deps: {
           process.stderr.write(
             "note: everyone in the channel drives this agent under its credentials; your Terms-of-Use acceptance covers every turn\n",
           );
+        }
+        const bound = res.value.filter(
+          (c) => c.type === ChannelType.Slack && c.slackChannelId === channelId,
+        );
+        if (sharedChannels(bound, []).length > 0) {
+          const sharing = deps.createSharingService(host);
+          const [chats, held] = await Promise.all([
+            sharing.telegramChats(agent.id),
+            sharing.heldGrants(agent.id),
+          ]);
+          const failed = !chats.ok ? chats.error : !held.ok ? held.error : null;
+          if (failed)
+            process.stderr.write(sharingUnchecked(agent.name, failed.reason));
+          const warning = sharingWarning(
+            agent.name,
+            audienceOf(
+              { access: agent.access, channels: res.value },
+              chats.ok ? chats.value : [],
+            ),
+            held.ok ? held.value : NO_GRANTS,
+          );
+          if (warning) process.stderr.write(warning);
         }
         process.exit(EXIT_SUCCESS);
       },

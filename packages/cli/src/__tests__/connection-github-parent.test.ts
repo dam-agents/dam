@@ -355,7 +355,13 @@ describe("dam connection connect github-app", () => {
 describe("commands on a sign-in and its connections", () => {
   const agents = {
     list: async () =>
-      ok([{ id: "agent-00000000000000aa", name: "scout" } as AgentView]),
+      ok([
+        {
+          id: "agent-00000000000000aa",
+          name: "scout",
+          channels: [],
+        } as unknown as AgentView,
+      ]),
   };
 
   /** TEST_SCENARIO: a sign-in is never granted; the command refuses it and names the connections made from it, while the shared name grants the connection. */

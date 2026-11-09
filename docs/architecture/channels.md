@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -57,7 +57,7 @@ Every turn relays single-track to the main agent; the **binding owner's** Terms-
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
-Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+Members use every granted Connection and Satellite; the UI and the CLI warn, never block, when a group binding and grants meet.
 
 #### Ambient mode
 
