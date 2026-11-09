@@ -150,12 +150,23 @@ describe("switching the assistant off for one person", () => {
     expect(w.deleted).not.toContain("agent-old");
   });
 
-  // TEST_SCENARIO: a person with no assistant is a no-op that still lets the switch go off.
-  it("is a no-op for a person with no assistant", async () => {
+  // TEST_SCENARIO: a person with no assistant record — provisioning never ran for them — is still switched off: nothing is deleted, and the switch is stored inside the owner's lock.
+  it("stores the switch for a person with no assistant", async () => {
     const w = world();
     expect(await w.removal("carol")).toEqual({ ran: true, value: true });
     expect(w.deleted).toEqual([]);
     expect(w.rows.has("carol")).toBe(false);
+    expect(w.stored).toEqual([{ owner: "carol", at: "removed" }]);
+  });
+
+  // TEST_SCENARIO: an assistant whose Agent is already gone — an operator deleted it — still turns off: the row is forgotten and the switch stored, since there is nothing left to delete.
+  it("stores the switch when the Agent is already gone", async () => {
+    const w = world();
+    w.agents.delete(ASSISTANT);
+    expect(await w.removal(ALICE)).toEqual({ ran: true, value: true });
+    expect(w.deleted).toEqual([]);
+    expect(w.stored).toEqual([{ owner: ALICE, at: "removed" }]);
+    expect(w.rows.get(ALICE)?.agentId).toBe(FRESH);
   });
 
   // TEST_SCENARIO: the lock held for the first attempts frees a moment later, so the delete is waited for rather than reported as done.
@@ -271,6 +282,7 @@ describe("switching the assistant off for one person", () => {
     });
     expect(w.deleted).toEqual([]);
     expect(w.agents.has(FRESH)).toBe(true);
+    expect(w.stored).toEqual([]);
   });
 
   // TEST_SCENARIO: the install moved to mode `on`, where nobody can be opted out, so a turn-off that was already in flight must not delete anything.
@@ -282,5 +294,6 @@ describe("switching the assistant off for one person", () => {
     });
     expect(w.deleted).toEqual([]);
     expect(w.rows.get(ALICE)?.used).toBe(true);
+    expect(w.stored).toEqual([]);
   });
 });

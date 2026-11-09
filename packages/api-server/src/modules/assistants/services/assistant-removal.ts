@@ -47,7 +47,11 @@ export async function removeAssistant(deps: {
     deps.withLock(deps.owner, async (): Promise<boolean> => {
       if (!(await deps.optOutAllowed())) return false;
       const row = await deps.repo.find(deps.owner);
-      if (row === null) return true;
+      // UNIT_BOUNDARY_DESCRIPTION: nothing to delete is still a turn-off — a person whose provisioning never ran has no record, and one whose Agent is already gone keeps a row with nothing behind it — so the switch is stored here too. Only a refused turn-off (the install no longer allows one, or the record is not the one this request read) stores nothing.
+      if (row === null) {
+        await deps.onRemoved();
+        return true;
+      }
       if (row.agentId !== deps.expectedAgentId) return false;
       try {
         await deps.agents.delete(row.agentId);
