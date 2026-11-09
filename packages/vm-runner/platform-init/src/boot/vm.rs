@@ -389,12 +389,9 @@ fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = grow_btrfs(target) {
         logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
     }
-    if let Some(stat) = statvfs(target) {
-        #[allow(clippy::unnecessary_cast)]
-        DISK_BYTES.store(
-            (stat.f_blocks as u64).saturating_mul(stat.f_frsize as u64),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+    match File::open(STORAGE_DEVICE).and_then(|mut disk| disk.seek(SeekFrom::End(0))) {
+        Ok(bytes) => DISK_BYTES.store(bytes, std::sync::atomic::Ordering::Relaxed),
+        Err(e) => logf!("WARNING: reading the storage disk's size ({e}); its filesystem keeps the size it has, and the guard files alone hold the agent to its room"),
     }
     if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
         fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
@@ -436,7 +433,7 @@ fn grow_btrfs(mount: &Path) -> io::Result<()> {
     btrfs_ioctl(mount, 3, "max")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the storage disk's whole size, as btrfs read it once it grew to the disk at mount: the most a resize may ask for (resize_btrfs). Nothing until the disk is mounted.
+// UNIT_BOUNDARY_DESCRIPTION: the storage disk's whole size, read from the block device at mount and not from btrfs, so a growth refused at mount does not become the most a resize may ask for (resize_btrfs). Nothing until the disk is mounted, or when the device could not be read.
 pub static DISK_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 // UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE of device 1 to `bytes`, through any descriptor on the filesystem, so it works through the guard's descriptor after the disk's mount is detached. A growth only moves the end; a shrink past the end of the last chunk (allocated_end) moves it as well, while a smaller one would relocate those chunks first, which callers never ask for.
@@ -465,9 +462,9 @@ struct SearchArgs {
 const DEV_TREE: u64 = 4;
 const DEV_EXTENT_KEY: u32 = 204;
 
-// UNIT_BOUNDARY_DESCRIPTION: where the last chunk btrfs placed on device 1 ends: the largest end of its dev extents (BTRFS_IOC_TREE_SEARCH of the device tree, key type DEV_EXTENT, whose item holds the extent's length 24 bytes in). A filesystem resized to here or past it moves no data, and one resized below it relocates every chunk past the new end first. The device's own used bytes would not do, since a chunk btrfs removed leaves a hole below the end that they do not count.
-pub fn allocated_end(dir: &File) -> io::Result<u64> {
-    let (mut end, mut from) = (0u64, 0u64);
+// UNIT_BOUNDARY_DESCRIPTION: where the last chunk btrfs placed on device 1 ends, and the largest chunk it placed: the largest end and length of its dev extents (BTRFS_IOC_TREE_SEARCH of the device tree, key type DEV_EXTENT, whose item holds the extent's length 24 bytes in). A filesystem resized to the end or past it moves no data, and one resized below it relocates every chunk past the new end first. The device's own used bytes would not do, since a chunk btrfs removed leaves a hole below the end that they do not count. The read is no barrier: the guest may place another chunk before a resize that follows it, which is what the margin in pool_guard::disk_size is for.
+pub fn allocated_end(dir: &File) -> io::Result<(u64, u64)> {
+    let (mut end, mut largest, mut from) = (0u64, 0u64, 0u64);
     loop {
         let mut args = SearchArgs {
             tree_id: DEV_TREE,
@@ -495,14 +492,16 @@ pub fn allocated_end(dir: &File) -> io::Result<u64> {
             } == 0,
         )?;
         if args.nr_items == 0 {
-            return Ok(end);
+            return Ok((end, largest));
         }
         let mut at = 0;
         for _ in 0..args.nr_items {
             let bytes = |at: usize| -> [u8; 8] { args.buf[at..at + 8].try_into().unwrap() };
             let offset = u64::from_ne_bytes(bytes(at + 16));
             let len = u32::from_ne_bytes(args.buf[at + 28..at + 32].try_into().unwrap()) as usize;
-            end = end.max(offset.saturating_add(u64::from_le_bytes(bytes(at + 32 + 24))));
+            let length = u64::from_le_bytes(bytes(at + 32 + 24));
+            end = end.max(offset.saturating_add(length));
+            largest = largest.max(length);
             from = offset.saturating_add(1);
             at += 32 + len;
         }
