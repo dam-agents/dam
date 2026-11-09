@@ -121,16 +121,23 @@ pub fn run() -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
+    let mut since = std::time::Instant::now();
     let trust = offer_trust_cache();
+    step(&mut since, "the trust cache");
     show_boot_log(&root);
+    step(&mut since, "the boot log's view");
     let dir = guard_dir(&root);
     let guard = dir
         .as_ref()
         .and_then(pool_guard)
         .and_then(|file| Guard::new(file).ok());
+    step(&mut since, "the storage guard");
     leave_disk(&root);
+    step(&mut since, "detaching the disk");
     share_mounts();
+    step(&mut since, "the shared mount tree");
     enter_workdir(Path::new(machine.launch.workdir.as_deref().unwrap_or("/")));
+    step(&mut since, "the working directory");
 
     let command: Vec<OsString> = machine.launch.command.iter().map(OsString::from).collect();
     let env = &machine.launch.env;
@@ -145,7 +152,9 @@ pub fn run() -> ! {
             command[0]
         ),
     };
+    step(&mut since, "finding the image's entrypoint");
     let swapping = compressed_swap();
+    step(&mut since, "the compressed swap");
     std::thread::spawn(move || reclaim_cold_cache(swapping));
     let scratch = scratch_folders(Path::new(guest::AGENT_HOME));
     std::thread::spawn(move || evict_scratch(&scratch));
@@ -154,6 +163,7 @@ pub fn run() -> ! {
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
         std::thread::spawn(move || guard_pool(dir));
     }
+    step(&mut since, "the background threads");
     let openrc = Path::new(OPENRC).exists();
     if openrc {
         let mut stopping = false;
@@ -170,12 +180,23 @@ pub fn run() -> ! {
     supervise(&binary, &command, env, trust.as_deref(), openrc)
 }
 
+fn step(since: &mut std::time::Instant, what: &str) {
+    let took = since.elapsed();
+    announce(&format!("{what} took {} ms", took.as_millis()));
+    *since = std::time::Instant::now();
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: an image that ships openrc opts in to its services: platform-init stays PID 1 and runs openrc's runlevels before the entrypoint, as an init that boots openrc would, and openrc's shutdown when the machine stops. An image without it boots its entrypoint alone.
 const OPENRC: &str = "/sbin/openrc";
 
 // UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`. openrc runs in the entrypoint's environment, of which its rc_env_allow passes on only what the image names, such as the gateway a service pulls through.
 fn run_openrc(runlevel: &str, env: &[(String, String)], stopping: &mut bool) {
+    let since = std::time::Instant::now();
     finish_openrc(runlevel, spawn_openrc(runlevel, env), stopping);
+    announce(&format!(
+        "openrc {runlevel} took {} ms",
+        since.elapsed().as_millis()
+    ));
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: starts `openrc <runlevel>` as a child of the init, unblocked for it, or reports why not and gives none.
