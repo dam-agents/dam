@@ -1,11 +1,12 @@
 import { TRPCError } from "@trpc/server";
 
-import { isUnreachable } from "../../../core/retry-unreachable.js";
 import type { ArtifactStore } from "../domain/artifact-store.js";
+import { isStoreUnavailable } from "./store-unavailable.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Turns a failure to reach the object store into a
- * SERVICE_UNAVAILABLE error that says so, for every store call. The api-server
+ * UNIT_BOUNDARY_DESCRIPTION: Turns a failure of the object store to serve
+ * (`isStoreUnavailable`) into a SERVICE_UNAVAILABLE error that says so, for
+ * every store call. The api-server
  * serves while the store is down, so only the features that store files fail,
  * with an error the caller can read, and they work again once the store is
  * back. Any other error passes through as it came.
@@ -19,7 +20,7 @@ export function withUnreachableAsUnavailable(
       try {
         return await call(...args);
       } catch (err) {
-        if (!isUnreachable(err)) throw err;
+        if (!isStoreUnavailable(err)) throw err;
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",
           message:

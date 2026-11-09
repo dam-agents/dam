@@ -5,6 +5,7 @@ const FIRST_DELAY_MS = 2_000;
 const MAX_DELAY_MS = 30_000;
 
 export interface ProvisionBucketOptions {
+  retryable: (err: unknown) => boolean;
   log: {
     info: (msg: string) => void;
     warn: (msg: string) => void;
@@ -19,8 +20,8 @@ export interface ProvisionBucketOptions {
  * the boot. The object store can be down for minutes while a node drains, and
  * most of the api-server (Agents, Sessions, schedules) never touches it, so a
  * replica that starts in that window serves at once and keeps trying here,
- * with no budget, until the store answers. A failure that is not about
- * reaching the store, such as refused credentials, is logged once and not
+ * with no budget, while `retryable` says the store is not serving yet. Any
+ * other failure, such as refused credentials, is logged once and not
  * retried. The promise never rejects.
  */
 export async function provisionBucketInBackground(
@@ -32,6 +33,7 @@ export async function provisionBucketInBackground(
       budgetMs: Number.POSITIVE_INFINITY,
       delayMs: FIRST_DELAY_MS,
       maxDelayMs: MAX_DELAY_MS,
+      retryable: opts.retryable,
       log: opts.log.warn,
       ...(opts.now ? { now: opts.now } : {}),
       ...(opts.sleep ? { sleep: opts.sleep } : {}),

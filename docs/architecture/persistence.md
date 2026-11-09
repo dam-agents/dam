@@ -188,7 +188,7 @@ An agent's traffic still exits only through its paired gateway; what changes wit
 Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
 
 The store is any S3-compatible endpoint, chosen at deploy time via Helm: the chart bundles a single-node SeaweedFS by default (dev and local clusters work with no external account; Apache-2.0, so bundling carries no copyleft obligations), or the operator points the platform at an external store — a cloud bucket or an on-prem installation.
-The api-server provisions its bucket when missing, in the background: a replica that starts while the store is unreachable serves at once and keeps trying until the store answers.
+The api-server provisions its bucket when missing, in the background: a replica that starts while the store is down serves at once and keeps trying while the store refuses the connection or answers a 5xx.
 Until then only the features that store files fail, each with an error that says the object store cannot be reached, and they work again once it is back with no restart.
 The one boot step that waits for the store is the switch release's absorb, which writes its second copy there before it commits.
 An install with no object store fails closed: bulk-blob features are unavailable until one is configured.

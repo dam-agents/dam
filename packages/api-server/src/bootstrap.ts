@@ -111,6 +111,7 @@ import {
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { retryWhileUnreachable } from "./core/retry-unreachable.js";
 import { provisionBucketInBackground } from "./modules/artifacts/services/provision-bucket.js";
+import { isStoreUnavailable } from "./modules/artifacts/infrastructure/store-unavailable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -486,13 +487,15 @@ export async function bootstrap() {
         }
       : null,
   });
-  void provisionBucketInBackground(() => artifactsModule.ensureReady(), {
-    log: {
-      info: (msg) => getLogger().info(msg),
-      warn: (msg) => getLogger().warn(msg),
-      error: (msg) => getLogger().error(msg),
-    },
-  });
+  if (config.objectStorageEndpoint)
+    void provisionBucketInBackground(() => artifactsModule.ensureReady(), {
+      retryable: isStoreUnavailable,
+      log: {
+        info: (msg) => getLogger().info(msg),
+        warn: (msg) => getLogger().warn(msg),
+        error: (msg) => getLogger().error(msg),
+      },
+    });
   const artifacts = artifactsModule.service;
   const snapshotStore = artifactsModule.store
     ? {
@@ -534,7 +537,7 @@ export async function bootstrap() {
       await retryWhileUnreachable(
         "object storage",
         () => artifactsModule.ensureReady(),
-        bootRetry,
+        { ...bootRetry, retryable: isStoreUnavailable },
       );
       await absorbAgentStore({
         db,

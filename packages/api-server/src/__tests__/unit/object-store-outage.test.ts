@@ -1,19 +1,27 @@
 /**
  * TEST_OVERVIEW: The api-server serves while the object store is down. The
  * bucket is provisioned in the background, with no budget, so a replica that
- * starts during an outage does not exit; and a store call that cannot reach
- * the store fails with a SERVICE_UNAVAILABLE error that says why, while every
- * other store error passes through unchanged.
+ * starts during an outage does not exit; and a store call that fails because
+ * the store is not serving (no connection, a 5xx, an S3 "try again" error)
+ * fails with a SERVICE_UNAVAILABLE error that says why, while every other
+ * store error passes through unchanged.
  */
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ArtifactStore } from "../../modules/artifacts/domain/artifact-store.js";
+import { isStoreUnavailable } from "../../modules/artifacts/infrastructure/store-unavailable.js";
 import { withUnreachableAsUnavailable } from "../../modules/artifacts/infrastructure/unreachable-artifact-store.js";
 import { provisionBucketInBackground } from "../../modules/artifacts/services/provision-bucket.js";
 
 const connError = (code: string) =>
   Object.assign(new Error(`read ${code}`), { code });
+
+const storeAnswer = (name: string, httpStatusCode: number) =>
+  Object.assign(new Error(name), {
+    name,
+    $metadata: { httpStatusCode },
+  });
 
 function fakeClock() {
   let t = 0;
@@ -70,7 +78,11 @@ describe("provisionBucketInBackground", () => {
     };
 
     await expect(
-      provisionBucketInBackground(ensureReady, { log, ...clock }),
+      provisionBucketInBackground(ensureReady, {
+        retryable: isStoreUnavailable,
+        log,
+        ...clock,
+      }),
     ).resolves.toBeUndefined();
 
     expect(clock.elapsed()).toBeGreaterThanOrEqual(10 * 60_000);
@@ -81,6 +93,34 @@ describe("provisionBucketInBackground", () => {
       level: "info",
       msg: "object storage: the bucket is ready",
     });
+  });
+
+  /**
+   * TEST_SCENARIO: The store's proxy answers 503 while the store starts, then
+   * the store throttles once. Both are answers that mean "try again", so
+   * provisioning goes on until the bucket is ready.
+   */
+  it("keeps trying while the store answers a 5xx or asks to slow down", async () => {
+    const { lines, log } = recordingLog();
+    const answers = [
+      storeAnswer("ServiceUnavailable", 503),
+      storeAnswer("Unknown", 502),
+      storeAnswer("SlowDown", 503),
+    ];
+    let calls = 0;
+    const ensureReady = async () => {
+      const answer = answers[calls++];
+      if (answer) throw answer;
+    };
+
+    await provisionBucketInBackground(ensureReady, {
+      retryable: isStoreUnavailable,
+      log,
+      ...fakeClock(),
+    });
+
+    expect(calls).toBe(4);
+    expect(lines.at(-1)!.msg).toBe("object storage: the bucket is ready");
   });
 
   /**
@@ -98,7 +138,11 @@ describe("provisionBucketInBackground", () => {
     };
 
     await expect(
-      provisionBucketInBackground(ensureReady, { log, ...fakeClock() }),
+      provisionBucketInBackground(ensureReady, {
+        retryable: isStoreUnavailable,
+        log,
+        ...fakeClock(),
+      }),
     ).resolves.toBeUndefined();
 
     expect(calls).toBe(1);
@@ -154,6 +198,24 @@ describe("withUnreachableAsUnavailable", () => {
   });
 
   /**
+   * TEST_SCENARIO: The store's proxy answers 503 while the store is down. The
+   * call fails with SERVICE_UNAVAILABLE as a refused connection does.
+   */
+  it("turns a store 5xx into SERVICE_UNAVAILABLE", async () => {
+    const store = withUnreachableAsUnavailable(
+      stubStore({
+        exists: vi
+          .fn()
+          .mockRejectedValue(storeAnswer("ServiceUnavailable", 503)),
+      }),
+    );
+
+    await expect(store.exists("k")).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
+  });
+
+  /**
    * TEST_SCENARIO: An error that is not about reaching the store, such as a
    * refused signature, is passed through as it came.
    */
@@ -164,5 +226,37 @@ describe("withUnreachableAsUnavailable", () => {
     );
 
     await expect(store.head("k")).rejects.toBe(denied);
+  });
+});
+
+describe("isStoreUnavailable", () => {
+  /**
+   * TEST_SCENARIO: Each kind of failure a store call can end in. Only a
+   * failed connection, a 5xx and the S3 "try again" errors mean the store is
+   * not serving now; a 4xx answer, a refusal and anything that is not an
+   * error object do not.
+   */
+  it("matches only failures that mean the store is not serving now", () => {
+    const cases: [unknown, boolean][] = [
+      [connError("ECONNRESET"), true],
+      [new Error("wrapped", { cause: connError("ECONNREFUSED") }), true],
+      [connError("ETIMEDOUT"), true],
+      [storeAnswer("ServiceUnavailable", 503), true],
+      [storeAnswer("SlowDown", 503), true],
+      [storeAnswer("RequestTimeout", 400), true],
+      [storeAnswer("InternalError", 500), true],
+      [storeAnswer("Unknown", 502), true],
+      [storeAnswer("Unknown", 504), true],
+      [storeAnswer("AccessDenied", 403), false],
+      [storeAnswer("InvalidAccessKeyId", 403), false],
+      [storeAnswer("NoSuchBucket", 404), false],
+      [storeAnswer("BadRequest", 400), false],
+      [new Error("boom"), false],
+      ["ECONNRESET", false],
+      [null, false],
+      [undefined, false],
+    ];
+    for (const [err, expected] of cases)
+      expect([err, isStoreUnavailable(err)]).toEqual([err, expected]);
   });
 });
