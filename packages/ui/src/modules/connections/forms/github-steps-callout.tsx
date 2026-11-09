@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
 import { INSTALL_REACH } from "../components/github-app-install-hint.js";
+import { isGithubSignInTemplate } from "../lib/github-installations.js";
 
 export function GithubStepsCallout({
   templateId,
@@ -12,8 +13,7 @@ export function GithubStepsCallout({
   templateId: string;
   className?: string;
 }) {
-  if (templateId !== "github" && templateId !== "github-enterprise")
-    return null;
+  if (!isGithubSignInTemplate(templateId)) return null;
   return (
     <p
       className={cn(

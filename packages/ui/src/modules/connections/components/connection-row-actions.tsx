@@ -24,7 +24,6 @@ interface Props {
   onNewChild?: () => void;
 }
 
-// A row narrower than a button lets its label wrap rather than spill out of the row.
 const ROW_BUTTON =
   "max-w-full shrink-0 @max-xs:h-auto @max-xs:min-h-8 @max-xs:whitespace-normal @max-xs:py-1 @max-xs:text-left";
 

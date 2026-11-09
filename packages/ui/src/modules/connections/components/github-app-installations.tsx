@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useGitHubAppInstallations } from "../api/queries.js";
 import {
   installationsCountLabel,
+  isGithubSignInTemplate,
   sizedAvatarUrl,
 } from "../lib/github-installations.js";
 import {
@@ -21,11 +22,6 @@ import {
 } from "./github-app-install-hint.js";
 
 const AVATARS_SHOWN = 5;
-
-const SIGN_IN_TEMPLATE_IDS: ReadonlySet<string> = new Set([
-  "github",
-  "github-enterprise",
-]);
 
 type InstallationsConnection = Pick<
   ConnectionView,
@@ -41,7 +37,7 @@ export function GithubAppInstallations({
 }: {
   connection: InstallationsConnection;
 }) {
-  const installUrl = SIGN_IN_TEMPLATE_IDS.has(connection.templateId)
+  const installUrl = isGithubSignInTemplate(connection.templateId)
     ? activeInstallUrl(connection)
     : null;
   const installations = useGitHubAppInstallations(

@@ -1,5 +1,14 @@
 import type { GitHubAppInstallations } from "api-server-api";
 
+const SIGN_IN_TEMPLATE_IDS: ReadonlySet<string> = new Set([
+  "github",
+  "github-enterprise",
+]);
+
+export function isGithubSignInTemplate(templateId: string): boolean {
+  return SIGN_IN_TEMPLATE_IDS.has(templateId);
+}
+
 export function installationsCountLabel({
   accounts,
   truncated,
