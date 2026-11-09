@@ -90,6 +90,17 @@ func TestOwnerGatewayIngressAdmitsTheMeshProbeOnTheHealthPortAlone(t *testing.T)
 	assert.ElementsMatch(t, []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}, blocks, "no other range is admitted")
 }
 
+// TEST_SCENARIO: a policy rule with no peers admits every source, so an install that names no probe source gets no probe rule rather than a health port open to anyone.
+func TestOwnerGatewayIngressWithoutProbeSourcesAdmitsNoOneElse(t *testing.T) {
+	cfg := *testConfig
+	cfg.IstioHostProbeSNAT = nil
+	np := buildOwnerGatewayIngressPolicy(testOwner, &cfg, nil)
+	require.Len(t, np.Spec.Ingress, 2)
+	for _, rule := range np.Spec.Ingress {
+		assert.NotEmpty(t, rule.From, "every rule names who it admits")
+	}
+}
+
 // TEST_SCENARIO: with the flag on, an owner gets exactly one owner gateway with one Secret holding its files and its credentials, ServiceAccount and policies, and the agent's gateway Service records its slot, while the agent still routes to its own gateway pod. The agent's harness policy admits the owner gateway's principal, only with the guard's header.
 func TestOwnerGateway_FlagOnRendersOneOwnerGateway(t *testing.T) {
 	agent := vmAgentCR()
