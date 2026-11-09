@@ -24,6 +24,8 @@ const canonicalPaths = [
   "/starter-kits/platform/code-reviewer",
   "/starter-kits/link/acme/shared-kit",
   "/analytics",
+  "/artifacts",
+  "/artifacts/art-1",
   "/nonexistent",
 ];
 
@@ -131,6 +133,18 @@ describe("route round-trip", () => {
     "/sandboxes/sb-1/bogus",
   ])("does not know %s", (path) => {
     expect(parseRoute(path)).toEqual({ view: "not-found", path });
+  });
+});
+
+describe("artifact page route", () => {
+  it("carries the artifact a new tab opens", () => {
+    expect(parseRoute("/artifacts/art%2F1")).toEqual({
+      view: "artifact",
+      artifactId: "art/1",
+    });
+    expect(routeToPath({ view: "artifact", artifactId: "art/1" })).toBe(
+      "/artifacts/art%2F1",
+    );
   });
 });
 

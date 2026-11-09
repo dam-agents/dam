@@ -12,6 +12,8 @@ import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useLandInAssistantChat } from "./modules/agents/hooks/use-land-in-assistant-chat.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
+import { useArtifact } from "./modules/artifacts/api/queries.js";
+import { ArtifactPageView } from "./modules/artifacts/views/artifact-page-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { CommandPalette } from "./modules/command-palette/components/command-palette.js";
 import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
@@ -60,9 +62,11 @@ function useDocumentTitle() {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
+  const pageArtifactId = useStore((s) => s.pageArtifactId);
   const agent = useAgent(agentId);
   const session = useAgentSession(agentId, sessionId).data;
   const kit = useStarterKit(kitCatalog, kitId).data;
+  const artifact = useArtifact(pageArtifactId).data;
   const title = documentTitle(
     {
       view,
@@ -70,7 +74,12 @@ function useDocumentTitle() {
       sandboxSectionTitle: SECTIONS.find((e) => e.section === sandboxSection)
         ?.title,
     },
-    { agent: agent?.name, session: session?.title, kit: kit?.name },
+    {
+      agent: agent?.name,
+      session: session?.title,
+      kit: kit?.name,
+      artifact: artifact?.title,
+    },
     getBrand().name,
   );
   useEffect(() => {
@@ -123,10 +132,24 @@ export default function App() {
     );
   if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
+  if (view === "artifact") return <ArtifactPageRoute />;
   return (
     <>
       <MainApp />
       <CommandPalette />
+    </>
+  );
+}
+
+function ArtifactPageRoute() {
+  const artifactId = useStore((s) => s.pageArtifactId);
+  useLiveEvents();
+  useDocumentTitle();
+  if (!artifactId) return null;
+  return (
+    <>
+      <ArtifactPageView artifactId={artifactId} />
+      <DialogOverlay />
     </>
   );
 }
