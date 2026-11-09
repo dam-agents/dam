@@ -13,7 +13,6 @@ import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
-import { GithubAppInstallButton } from "./github-app-install-hint.js";
 
 interface Props {
   connection: ConnectionView;
@@ -53,13 +52,12 @@ export function ConnectionRowActions({
           : undefined;
   return (
     <>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5 empty:hidden">
-        <GithubAppInstallButton connection={connection} />
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 @max-md:justify-start gap-y-1.5 empty:hidden">
         {narrow && (
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0 @max-md:hidden"
+            className="shrink-0"
             onClick={narrow}
             data-testid={`catalog-narrow-${connection.id}`}
           >
@@ -82,7 +80,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0 @max-md:hidden"
+            className="shrink-0"
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}

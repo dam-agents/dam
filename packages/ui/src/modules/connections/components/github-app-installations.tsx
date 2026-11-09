@@ -1,4 +1,4 @@
-import { Enterprise, User, WarningAlt } from "@carbon/icons-react";
+import { Enterprise, Information, User, WarningAlt } from "@carbon/icons-react";
 import type {
   ConnectionView,
   GitHubAppInstallationAccount,
@@ -14,7 +14,11 @@ import {
   installationsCountLabel,
   sizedAvatarUrl,
 } from "../lib/github-installations.js";
-import { activeInstallUrl } from "./github-app-install-hint.js";
+import {
+  activeInstallUrl,
+  GithubAppInstallLink,
+  INSTALL_REACH,
+} from "./github-app-install-hint.js";
 
 const AVATARS_SHOWN = 5;
 
@@ -28,72 +32,90 @@ type InstallationsConnection = Pick<
   "id" | "templateId" | "host" | "appSlug" | "status" | "parentId"
 >;
 
-// UNIT_BOUNDARY_DESCRIPTION: the organizations and accounts a GitHub sign-in's app is installed on, under the sign-in's row: their avatars and a count that opens the list, each with its status, or one plain line while the app is installed nowhere, so the user sees whether the account they need is covered before an agent fails on it.
+const LINE =
+  "mt-1 flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground";
+
+// UNIT_BOUNDARY_DESCRIPTION: the accounts a GitHub sign-in's app is installed on, under the sign-in's row: their avatars and a count that opens the list, each flagged only when suspended, or one plain line with the install link while the app is installed nowhere, so the user sees whether the account they need is covered before an agent fails on it.
 export function GithubAppInstallations({
   connection,
-  indented,
 }: {
   connection: InstallationsConnection;
-  indented: boolean;
 }) {
-  const listed =
-    SIGN_IN_TEMPLATE_IDS.has(connection.templateId) &&
-    activeInstallUrl(connection) !== null;
-  const installations = useGitHubAppInstallations(connection.id, listed);
-  const [open, setOpen] = useState(false);
-  if (!listed) return null;
-  const testId = `github-installations-${connection.id}`;
-  const line = cn(
-    "mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
-    indented && "pl-6",
+  const installUrl = SIGN_IN_TEMPLATE_IDS.has(connection.templateId)
+    ? activeInstallUrl(connection)
+    : null;
+  const installations = useGitHubAppInstallations(
+    connection.id,
+    installUrl !== null,
   );
+  const [open, setOpen] = useState(false);
+  if (installUrl === null) return null;
+  const testId = `github-installations-${connection.id}`;
   if (installations.isPending)
     return (
-      <p className={line} data-testid={testId}>
+      <p className={LINE} data-testid={testId}>
         Checking where the app is installed…
       </p>
     );
   if (installations.isError)
     return (
-      <p className={line} data-testid={testId}>
-        <WarningAlt size={12} aria-hidden className="shrink-0 text-warning" />
-        <span className="min-w-0 truncate">
-          Couldn&apos;t check where the app is installed.
+      <p className={LINE} data-testid={testId}>
+        <WarningAlt
+          size={12}
+          aria-hidden
+          className="mt-0.5 shrink-0 text-warning"
+        />
+        <span className="min-w-0">
+          Couldn&apos;t check where the app is installed.{" "}
+          <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
+            Install the app
+          </GithubAppInstallLink>
         </span>
       </p>
     );
   const { accounts } = installations.data;
   if (accounts.length === 0)
     return (
-      <p className={line} data-testid={testId}>
-        <WarningAlt size={12} aria-hidden className="shrink-0 text-warning" />
-        <span className="min-w-0 truncate">
-          Not installed on any organization yet. Install the app to reach its
-          repositories.
+      <p className={LINE} data-testid={testId}>
+        <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
+        <span className="min-w-0">
+          Installed on no account yet.{" "}
+          <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
+            Install the app
+          </GithubAppInstallLink>{" "}
+          {INSTALL_REACH}.
         </span>
       </p>
     );
+  const hidden = accounts.length - AVATARS_SHOWN;
   return (
-    <div
-      className={cn("mt-1 text-xs", indented && "pl-6")}
-      data-testid={testId}
-    >
-      <DisclosureToggle
-        open={open}
-        onToggle={() => setOpen(!open)}
-        chevronSize={12}
-        testId={`${testId}-toggle`}
-        className="max-w-full text-muted-foreground hover:text-foreground"
-      >
-        <span className="flex shrink-0 -space-x-1">
-          {accounts.slice(0, AVATARS_SHOWN).map((account) => (
-            <AccountAvatar key={account.targetId} account={account} />
-          ))}
-        </span>
-        <span className="min-w-0 truncate">
-          Installed on {installationsCountLabel(installations.data)}
-        </span>
-      </DisclosureToggle>
+    <div className="mt-1 text-xs" data-testid={testId}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <DisclosureToggle
+          open={open}
+          onToggle={() => setOpen(!open)}
+          chevronSize={12}
+          testId={`${testId}-toggle`}
+          className="min-w-0 max-w-full gap-1.5 text-muted-foreground hover:text-foreground"
+        >
+          <span className="flex shrink-0 items-center gap-0.5">
+            {accounts.slice(0, AVATARS_SHOWN).map((account) => (
+              <AccountAvatar key={account.targetId} account={account} />
+            ))}
+            {hidden > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[4px] bg-muted px-1 text-[10px] font-medium text-muted-foreground">
+                +{hidden}
+              </span>
+            )}
+          </span>
+          <span className="min-w-0 truncate">
+            Installed on {installationsCountLabel(installations.data)}
+          </span>
+        </DisclosureToggle>
+        <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
+          Install on another account
+        </GithubAppInstallLink>
+      </div>
       {open && (
         <ul className="mt-1.5 flex flex-col gap-1.5 pl-5">
           {accounts.map((account) => (
@@ -103,22 +125,22 @@ export function GithubAppInstallations({
               data-testid={`${testId}-account-${account.login}`}
             >
               <AccountAvatar account={account} />
-              <span className="min-w-0 truncate font-medium text-foreground">
-                {account.login}
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium text-foreground">
+                  {account.login}
+                </span>
+                <span className="truncate text-muted-foreground">
+                  {account.kind === "user" ? "Personal account · " : ""}
+                  {account.repositorySelection === "all"
+                    ? "All repositories"
+                    : "Selected repositories"}
+                </span>
               </span>
-              <span className="shrink-0 text-muted-foreground">
-                {account.kind === "user" ? "Personal account · " : ""}
-                {account.repositorySelection === "all"
-                  ? "All repositories"
-                  : "Selected repositories"}
-              </span>
-              <Badge
-                size="sm"
-                variant={account.suspended ? "warning" : "success"}
-                className="shrink-0"
-              >
-                {account.suspended ? "Suspended" : "Installed"}
-              </Badge>
+              {account.suspended && (
+                <Badge size="sm" variant="warning" className="shrink-0">
+                  Suspended
+                </Badge>
+              )}
             </li>
           ))}
           {installations.data.truncated && (
@@ -132,12 +154,12 @@ export function GithubAppInstallations({
   );
 }
 
-const AVATAR_PX = 16;
+const AVATAR_PX = 20;
 
 function AccountAvatar({ account }: { account: GitHubAppInstallationAccount }) {
   const [failed, setFailed] = useState(false);
   const shape = cn(
-    "shrink-0 bg-muted ring-2 ring-card",
+    "size-5 shrink-0 bg-muted",
     account.kind === "organization" ? "rounded-[4px]" : "rounded-full",
   );
   if (account.avatarUrl && !failed)
@@ -158,9 +180,12 @@ function AccountAvatar({ account }: { account: GitHubAppInstallationAccount }) {
   return (
     <span
       title={account.login}
-      className={cn(shape, "inline-flex size-4 items-center justify-center")}
+      className={cn(
+        shape,
+        "inline-flex items-center justify-center text-muted-foreground",
+      )}
     >
-      <Icon size={11} aria-hidden />
+      <Icon size={14} aria-hidden />
     </span>
   );
 }

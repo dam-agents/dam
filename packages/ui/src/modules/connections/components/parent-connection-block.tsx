@@ -1,4 +1,4 @@
-import { WarningAlt } from "@carbon/icons-react";
+import { Information } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ export function ParentConnectionBlock({
       />
       {childConnections.length > 0 ? (
         <div
-          className="mb-2 ml-6 divide-y divide-border border-l-2 border-border"
+          className="mb-1 ml-6"
           data-testid={`connection-children-${parent.id}`}
         >
           {childConnections.map((child) => (
@@ -76,11 +76,7 @@ function NoChildrenCallout({
       data-testid={`connection-parent-empty-${parent.id}`}
     >
       <p className="flex min-w-0 flex-[1_1_240px] items-start gap-1.5 text-xs text-muted-foreground">
-        <WarningAlt
-          size={12}
-          aria-hidden
-          className="mt-0.5 shrink-0 text-warning"
-        />
+        <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
         <span>
           No agent can use this {parentNoun(parent)} yet. Make a connection from
           it and choose what that connection reaches.

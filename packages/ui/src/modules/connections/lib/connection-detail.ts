@@ -1,10 +1,10 @@
 import type { ConnectionView } from "api-server-api";
 
-import { connectionScopeSummary, fullAccessLine } from "./github-access.js";
+import { connectionScopeSummary, fullAccessReach } from "./github-access.js";
 
 export interface ConnectionDetail {
   account?: string;
-  reach?: { text: string; fullAccess: boolean; title?: string };
+  reach?: { text: string; title?: string };
 }
 
 type DetailedConnection = Pick<
@@ -30,10 +30,7 @@ export function connectionDetail(
 ): ConnectionDetail {
   const account = accountLine(connection);
   if (connection.fullAccess)
-    return {
-      account,
-      reach: { text: fullAccessLine(connection), fullAccess: true },
-    };
+    return { account, reach: { text: fullAccessReach(connection) } };
   const scope = connectionScopeSummary(connection);
   if (!scope) return { account };
   const listed = connectionScopeSummary(connection, "list");
@@ -41,7 +38,6 @@ export function connectionDetail(
     account,
     reach: {
       text: scope,
-      fullAccess: false,
       ...(listed && listed !== scope ? { title: listed } : {}),
     },
   };
