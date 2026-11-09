@@ -216,6 +216,7 @@ import {
 import { createSessionWatchClient } from "./modules/attention/infrastructure/session-watch-client.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { createAssistantsRepository } from "./modules/assistants/index.js";
+import { createAssistantUsageMarker } from "./modules/assistants/services/usage-marker.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
@@ -1633,7 +1634,7 @@ export async function bootstrap() {
       db,
       config.featureModes.dambledore === "off"
         ? undefined
-        : (agentId) => assistantsRepo.markUsed(agentId),
+        : createAssistantUsageMarker({ repo: assistantsRepo }),
     );
   const spend = composeSpendSystem({
     db,

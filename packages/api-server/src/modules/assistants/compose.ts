@@ -21,6 +21,7 @@ export function composeAssistantsForOwner(deps: {
   assistantName: string;
   brandName: string;
   enabled: () => Promise<boolean>;
+  admitted: () => Promise<boolean>;
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create">;
   gettingStarted: GettingStartedModule;
@@ -31,6 +32,7 @@ export function composeAssistantsForOwner(deps: {
     assistantName: deps.assistantName,
     brandName: deps.brandName,
     enabled: deps.enabled,
+    admitted: deps.admitted,
     agentOf: deps.agentOf,
     agents: deps.agents,
     enrolled: () => deps.gettingStarted.ensureEnrolled(deps.owner),

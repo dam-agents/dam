@@ -7,7 +7,6 @@ import {
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
-import { getLogger } from "../../../core/logger.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -345,6 +344,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       assistantName: config.brand.assistantName,
       brandName: config.brand.name,
       enabled: assistantOn,
+      admitted: () => isTermsAccepted(user.sub),
       agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
       agents,
       gettingStarted,
@@ -555,7 +555,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is given to a person who has accepted the Terms of Use, once: a person whose record exists costs one read, an install whose mode is off asks nothing at all, and nothing a request does may fail because of it. A request from an API key or from an Agent's own credentials is not a person arriving, so it provisions nothing. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is given to a person who has accepted the Terms of Use, once: a person whose Agent is there costs one read, an install whose mode is off asks nothing at all, and nothing a request does may fail because of it. A request from an API key or from an Agent's own credentials is not a person arriving, so it provisions nothing. */
     const provisionAssistant = async () => {
       if (config.featureModes.dambledore === "off") return;
       if (
@@ -564,17 +564,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         user.actingEditor !== undefined
       )
         return;
-      try {
-        if ((await assistants.state()) !== null) return;
-        if (!(await assistantOn())) return;
-        if (!(await isTermsAccepted(user.sub))) return;
-        await ensureAssistant();
-      } catch (err) {
-        getLogger().warn(
-          { err, owner: user.sub },
-          "assistant.provision_failed",
-        );
-      }
+      await ensureAssistant();
     };
 
     const ctx: ApiContext = {

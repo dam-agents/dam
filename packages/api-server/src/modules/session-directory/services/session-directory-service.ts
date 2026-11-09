@@ -1,3 +1,4 @@
+import type { SessionDirectoryEntry } from "agent-runtime-api";
 import {
   sessionCategoryOf,
   type SessionCategory,
@@ -25,14 +26,17 @@ const KNOWN_MAX = 10_000;
  */
 export function createSessionDirectoryService(deps: {
   repo: SessionDirectoryRepository;
-  /* UNIT_BOUNDARY_DESCRIPTION: told which Agent reported a Session, so a record outside the directory — the assistant's, whose first landing and greeting rest on it — learns the same fact here, where every report passes and retention cannot take it back. */
-  onRecorded?: (agentId: string) => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: told which Agent reported Sessions, and which ones, so a record outside the directory — the assistant's used mark, whose first landing and greeting rest on it — learns the same fact here, where every report passes and retention cannot take it back. */
+  onRecorded?: (
+    agentId: string,
+    sessions: readonly SessionDirectoryEntry[],
+  ) => Promise<void>;
 }): SessionDirectory {
   const known = new Map<string, number>();
   return {
     async record(agentId, sessions) {
       await deps.repo.record(agentId, sessions);
-      if (sessions.length > 0) await deps.onRecorded?.(agentId);
+      if (sessions.length > 0) await deps.onRecorded?.(agentId, sessions);
     },
 
     async has(agentId, sessionId) {

@@ -48,6 +48,7 @@ It controls where a feature *appears*:
 
 What none of these do is **gate an endpoint**: the feature's tRPC procedures remain callable by the authenticated owner regardless of the flag, and a flagged-off client that calls one gets a valid, owner-scoped answer rather than a refusal.
 Every endpoint is owner-scoped and safe on its own terms — a flag decides what is shown and what is computed, it is not a security boundary.
+The one exception is the [assistant](assistant.md#starting-it-over)'s reset, which is refused with the feature off for the caller: it recreates an Agent a person deleted, and an install that does not offer assistants must not be talked into creating one.
 Anything that must actually be denied is enforced by auth and owner scoping, never by a flag check.
 
 ## Semantics

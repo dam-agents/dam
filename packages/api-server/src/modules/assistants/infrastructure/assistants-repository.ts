@@ -1,9 +1,20 @@
 import { and, dambledoreProvisioned, eq, isNull, sql, type Db } from "db";
 
+/** UNIT_BOUNDARY_DESCRIPTION: how far the assistant has got: its Agent is being made, or it is there. A `creating` row is a create in flight, not a deleted assistant, so nothing that finds one may make a second. */
+export type AssistantState = "creating" | "ready";
+
 export interface AssistantRow {
   owner: string;
   agentId: string;
+  state: AssistantState;
   used: boolean;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a Session report needs to know about the record it may mark as used. */
+export interface AssistantUsage {
+  owner: string;
+  used: boolean;
+  resetAt: Date | null;
 }
 
 export interface AssistantsRepository {
@@ -12,28 +23,33 @@ export interface AssistantsRepository {
   claim(owner: string, agentId: string): Promise<boolean>;
   /** UNIT_BOUNDARY_DESCRIPTION: gives up a claim whose Agent was never made, so a later request may try again; a claim whose Agent exists stays. */
   release(owner: string, agentId: string): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: points the row at a replacement Agent, and forgets that the old one was used — a compare-and-set on the old id, so two resets that recreate it make one Agent between them. */
+  /** UNIT_BOUNDARY_DESCRIPTION: records that the Agent the row names is there, so a create in flight is no longer mistaken for one. */
+  markReady(owner: string, agentId: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: points the row at a replacement Agent and starts the person's onboarding over on it — a compare-and-set on the old id, so two resets that replace the same Agent make one replacement between them. */
   replaceAgent(
     owner: string,
     fromAgentId: string,
     toAgentId: string,
   ): Promise<boolean>;
+  usageOf(agentId: string): Promise<AssistantUsage | null>;
   markUsed(agentId: string): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: forgets that the assistant was ever used, and nothing else — never the Agent itself. */
+  /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
   resetUsed(owner: string): Promise<void>;
 }
 
 const COLUMNS = {
   owner: dambledoreProvisioned.owner,
   agentId: dambledoreProvisioned.agentId,
+  state: dambledoreProvisioned.state,
   usedAt: dambledoreProvisioned.usedAt,
+  resetAt: dambledoreProvisioned.resetAt,
 };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The row per owner that makes the assistant's create
- * happen once, and the mark that says whether it was ever used. Every call is one
- * statement, so nothing holds a pool connection across the Agent's creation, and
- * none of them waits for another.
+ * happen once, and the marks that say whether it is there and whether it was ever
+ * used. Every call is one statement, so nothing holds a pool connection across
+ * the Agent's creation, and none of them waits for another.
  */
 export function createAssistantsRepository(db: Db): AssistantsRepository {
   return {
@@ -42,15 +58,19 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         .select(COLUMNS)
         .from(dambledoreProvisioned)
         .where(eq(dambledoreProvisioned.owner, owner));
-      return row
-        ? { owner: row.owner, agentId: row.agentId, used: row.usedAt !== null }
-        : null;
+      if (!row) return null;
+      return {
+        owner: row.owner,
+        agentId: row.agentId,
+        state: row.state === "ready" ? "ready" : "creating",
+        used: row.usedAt !== null,
+      };
     },
 
     async claim(owner, agentId) {
       const inserted = await db
         .insert(dambledoreProvisioned)
-        .values({ owner, agentId })
+        .values({ owner, agentId, state: "creating" })
         .onConflictDoNothing()
         .returning({ owner: dambledoreProvisioned.owner });
       return inserted.length > 0;
@@ -67,10 +87,27 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         );
     },
 
+    async markReady(owner, agentId) {
+      await db
+        .update(dambledoreProvisioned)
+        .set({ state: "ready" })
+        .where(
+          and(
+            eq(dambledoreProvisioned.owner, owner),
+            eq(dambledoreProvisioned.agentId, agentId),
+          ),
+        );
+    },
+
     async replaceAgent(owner, fromAgentId, toAgentId) {
       const moved = await db
         .update(dambledoreProvisioned)
-        .set({ agentId: toAgentId, usedAt: null })
+        .set({
+          agentId: toAgentId,
+          state: "creating",
+          usedAt: null,
+          resetAt: sql`now()`,
+        })
         .where(
           and(
             eq(dambledoreProvisioned.owner, owner),
@@ -81,8 +118,20 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       return moved.length > 0;
     },
 
+    async usageOf(agentId) {
+      const [row] = await db
+        .select(COLUMNS)
+        .from(dambledoreProvisioned)
+        .where(eq(dambledoreProvisioned.agentId, agentId));
+      if (!row) return null;
+      return {
+        owner: row.owner,
+        used: row.usedAt !== null,
+        resetAt: row.resetAt,
+      };
+    },
+
     async markUsed(agentId) {
-      // UNIT_BOUNDARY_DESCRIPTION: every Session report asks this, and only the assistant's own Agent matches; the table holds one row per owner, so the miss is a scan of that and writes nothing.
       await db
         .update(dambledoreProvisioned)
         .set({ usedAt: sql`now()` })
@@ -97,7 +146,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
     async resetUsed(owner) {
       await db
         .update(dambledoreProvisioned)
-        .set({ usedAt: null })
+        .set({ usedAt: null, resetAt: sql`now()` })
         .where(eq(dambledoreProvisioned.owner, owner));
     },
   };

@@ -148,10 +148,8 @@ export function FeaturesTab() {
             }
           />
         ))}
-        {/* UNIT_BOUNDARY_DESCRIPTION: the reset sits directly under the assistant's own row, and only while the person has the assistant on. */}
-        {assistantOn && offeredRows.some((row) => row.id === "dambledore") && (
-          <AssistantOnboardingReset />
-        )}
+        {/* UNIT_BOUNDARY_DESCRIPTION: the reset sits under the assistant's own row whenever the person has the assistant on — including an install that pins the feature on, where the switch itself is not offered, so only the switch is hidden by the mode. */}
+        {assistantOn && <AssistantOnboardingReset />}
       </div>
 
       <SectionLabel spaced className="mt-8">

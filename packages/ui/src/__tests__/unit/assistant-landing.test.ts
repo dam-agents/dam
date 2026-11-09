@@ -14,6 +14,7 @@ const ASSISTANT = "agent-00000000000000a1";
 const LOADED = {
   view: "home",
   gateKnown: true,
+  assistantOn: true,
   listLoaded: true,
   stateLoaded: true,
 };
@@ -54,12 +55,13 @@ describe("landing in the assistant's chat", () => {
     });
   });
 
-  // TEST_SCENARIO: a used assistant, a record whose Agent is not in the list — the person deleted it — nobody's assistant and any other route all leave the route alone.
+  // TEST_SCENARIO: a used assistant, a record whose Agent is not in the list — the person deleted it — nobody's assistant, the feature off for them and any other route all leave the route alone.
   it("stays where the route asked when there is nothing to land in", () => {
     for (const input of [
       { assistantId: ASSISTANT, used: true },
       { assistantId: null, used: false },
       { assistantId: ASSISTANT, used: undefined },
+      { assistantOn: false, assistantId: ASSISTANT, used: false },
     ])
       expect(landingAssistantId({ ...LOADED, ...input })).toEqual({
         decide: true,

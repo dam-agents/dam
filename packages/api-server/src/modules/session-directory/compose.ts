@@ -1,3 +1,4 @@
+import type { SessionDirectoryEntry } from "agent-runtime-api";
 import type { Db } from "db";
 
 import { createSessionDirectoryRepository } from "./infrastructure/session-directory-repository.js";
@@ -10,7 +11,10 @@ const SESSION_DIRECTORY_RETENTION_DAYS = 180;
 
 export function composeSessionDirectory(
   db: Db,
-  onRecorded?: (agentId: string) => Promise<void>,
+  onRecorded?: (
+    agentId: string,
+    sessions: readonly SessionDirectoryEntry[],
+  ) => Promise<void>,
 ): {
   sessionDirectory: SessionDirectory;
   retentionTick: () => Promise<void>;

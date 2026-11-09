@@ -15,10 +15,11 @@ import { landingAssistantId } from "../lib/assistant-landing.js";
  * unused assistant lands there once per page load, and every later visit to Home
  * stays where they put it. The decision waits for the feature's own answer, the
  * agent list and the assistant's record, so the last of them decides and a guess
- * never spends the one-shot; the assistant must be in the list, so a record whose
- * Agent the person deleted lands nowhere. The one-shot lives in the store, so
- * resetting a person's onboarding releases it and the next evaluation routes them
- * exactly as a first-timer is routed.
+ * never spends the one-shot; the assistant must be in the list and the feature on
+ * for the person, so a record whose Agent they deleted — or one the cache kept
+ * from before they turned the feature off — lands nowhere. The one-shot lives in
+ * the store, so resetting a person's onboarding releases it and the next
+ * evaluation routes them exactly as a first-timer is routed.
  */
 export function useLandInAssistantChat(): void {
   const view = useStore((s) => s.view);
@@ -36,6 +37,7 @@ export function useLandInAssistantChat(): void {
     const decision = landingAssistantId({
       view,
       gateKnown: gate.known,
+      assistantOn: gate.on,
       listLoaded: agents.isSuccess,
       stateLoaded: stateKnown,
       assistantId: listed ? (state?.agentId ?? null) : null,
@@ -45,5 +47,14 @@ export function useLandInAssistantChat(): void {
     useStore.getState().spendAssistantLanding();
     if (decision.landIn !== null)
       useStore.getState().selectAgent(decision.landIn);
-  }, [agents.isSuccess, gate.known, listed, spent, state, stateKnown, view]);
+  }, [
+    agents.isSuccess,
+    gate.known,
+    gate.on,
+    listed,
+    spent,
+    state,
+    stateKnown,
+    view,
+  ]);
 }
