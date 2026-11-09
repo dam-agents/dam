@@ -133,12 +133,12 @@ own_paths() {
     ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
     api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
     # keycloak = upstream Keycloak, pinned in the root config, + the
-    # Keycloakify theme, packed onto it by image:pack. The theme build also
+    # Keycloakify theme and the Environments extension, packed onto it by image:pack. The theme build also
     # depends on dev-config and (any) lockfile change — lockfile and root
     # config bumps re-tag it even when unrelated, which errs toward rebuilds. Its source-sha tag is what the published chart
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    keycloak) echo "packages/keycloak-theme packages/keycloak-environments packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
     default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac

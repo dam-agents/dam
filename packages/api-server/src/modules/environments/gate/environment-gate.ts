@@ -36,6 +36,16 @@ import { AGENT_KEY_HEADER, isAgentKey } from "../../agent-keys/index.js";
 import type { EnvironmentRecord } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
 import type { EnvironmentSignIn } from "../services/environment-signin.js";
+import type { JWTVerifyGetKey } from "jose";
+import {
+  checkBearer,
+  isResourceMetadataPath,
+  resourceMetadata,
+  resourceOf,
+  WAKE_WAIT_MS,
+  wwwAuthenticate,
+  type BearerVisitor,
+} from "./bearer.js";
 import { createEndpointReadiness } from "./endpoint-readiness.js";
 import { renderGatePage } from "./pages.js";
 
@@ -71,6 +81,10 @@ const GATE_HEADERS: Record<string, string> = {
 export interface EnvironmentGateDeps {
   domain: string;
   scheme: "http" | "https";
+  // UNIT_BOUNDARY_DESCRIPTION: the port the install's Environment URLs name, or null for the scheme's own; part of each address as a token's audience names it.
+  port?: number | null;
+  // UNIT_BOUNDARY_DESCRIPTION: what lets a person's own OAuth client in with a bearer token: the identity provider's issuer a client is pointed at, and its signing keys. Without it, an address takes browser sessions and Agent Keys only.
+  oauth?: { issuer: string; keys: JWTVerifyGetKey };
   // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address, the binding of the browser's sign-in secret, and the sign-in chain it is a step of, if any; and the share host's sign-out, which ends the identity provider's session too and offers to sign in again.
   frontDoorUrl: (
     address: string,
@@ -99,6 +113,7 @@ export interface EnvironmentGateDeps {
   upstream: (agentId: string) => { host: string; port: number };
   brandName: string;
   readinessRetryMs?: number;
+  wakeWaitMs?: number;
 }
 
 export interface EnvironmentGate {
@@ -147,7 +162,8 @@ export const noEnvironmentGate: EnvironmentGate = {
  * to the Environment runtime's forward, which reaches only the declared port
  * on the Environment's loopback. While the machine wakes, a page load gets a
  * loading page that opens the app by itself, and any other request a 503 to
- * try again. Once it runs, every request but a page load goes to the app
+ * try again. An OAuth client's resource metadata is the gate's own answer,
+ * the one path outside `/.platform/` that an app never serves. Once it runs, every request but a page load goes to the app
  * as it is; a page load waits on the loading page only while nothing behind
  * the endpoint answers it, or while a declared readiness path does not. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
@@ -660,6 +676,16 @@ export function createEnvironmentGate(
       );
     if (c.req.path.startsWith(RESERVED_PREFIX) && !startPath)
       return reserved(c, address, record);
+    if (deps.oauth && isResourceMetadataPath(c.req.path)) {
+      gateHeaders(c);
+      return c.json(
+        resourceMetadata(
+          resourceFor(address),
+          deps.oauth.issuer,
+          deps.brandName,
+        ),
+      );
+    }
     const preflight = siblingPreflight(
       {
         method: c.req.method,
@@ -694,6 +720,20 @@ export function createEnvironmentGate(
       return admitted(c, resolved);
     }
 
+    if (deps.oauth && agentKey === undefined) {
+      const bearer = await checkBearer(c.req.header("authorization"), {
+        resource: resourceFor(address),
+        issuers: deps.platform.issuers,
+        keys: deps.oauth.keys,
+      });
+      if (bearer.kind === "invalid") {
+        deny(record, null, address, "invalid-token");
+        return tokenRefused(c, address, "invalid_token");
+      }
+      if (bearer.kind === "valid")
+        return bearerAccess(c, resolved, bearer.visitor);
+    }
+
     const visitor = await session(getCookie(c, cookieName));
     const access = decideAccess(
       record,
@@ -721,6 +761,8 @@ export function createEnvironmentGate(
             302,
           );
         }
+        if (deps.oauth)
+          c.header("WWW-Authenticate", wwwAuthenticate(resourceFor(address)));
         return page(c, 401, "Sign in", "Sign in to open this Environment.");
       }
       return page(
@@ -735,6 +777,94 @@ export function createEnvironmentGate(
 
     return admitted(c, resolved);
   };
+
+  function resourceFor(address: string) {
+    return resourceOf(address, {
+      scheme: deps.scheme,
+      domain: deps.domain,
+      port: deps.port ?? null,
+    });
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the answer to a person's OAuth client whose token is not for this address: a 401 that names the resource metadata, so the client signs in again, never a page it would show; a token the gate cannot check fails the same way.
+  function tokenRefused(c: Context, address: string, error?: "invalid_token") {
+    gateHeaders(c);
+    c.header("WWW-Authenticate", wwwAuthenticate(resourceFor(address), error));
+    return c.json(
+      {
+        error: error ?? "unauthorized",
+        error_description: "Sign in again to use this Environment.",
+      },
+      401,
+    );
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A person's OAuth client with a valid token for
+   * this address: the same rule as a browser session, read from the lists at
+   * this request, so removing a person stops their client at once. A person
+   * not on the lists gets a 403. A sleeping Environment is woken and the
+   * request waits for it, up to a minute, so a client's call answers once the
+   * machine runs instead of failing; past that it gets the usual 503.
+   */
+  async function bearerAccess(
+    c: Context,
+    resolved: Resolved,
+    visitor: BearerVisitor,
+  ): Promise<Response> {
+    const { record, address } = resolved;
+    const access = decideAccess(
+      record,
+      effectiveAccess(
+        await deps.agentMembers(record.owningAgentId),
+        await deps.environmentMembers(record.agentId),
+        await deps.editorsOf(record.owningAgentId),
+      ),
+      {
+        sub: visitor.sub,
+        email: visitor.email,
+        address,
+        shareSession: "",
+        createdAt: 0,
+      },
+      address,
+    );
+    if (!access.allow) {
+      securityLog("warn", "environment.access_deny", {
+        category: "authz",
+        actor: visitor.sub,
+        actorKind: "user",
+        agentId: record.agentId,
+        decision: "deny",
+        reason: "not-allowed",
+        detail: { address, via: "oauth" },
+      });
+      gateHeaders(c);
+      return c.json(
+        {
+          error: "insufficient_scope",
+          error_description: visitor.email
+            ? `${visitor.email} is not on this Environment's list. Ask its owner to add you in its Share dialog.`
+            : "Your account has no verified email address, so it cannot be on this Environment's list.",
+        },
+        403,
+      );
+    }
+    if (c.req.path === START_PATH || c.req.path === STATUS_PATH)
+      return admitted(c, resolved);
+    const machineState = await machine(record.agentId);
+    if (machineState === "waking") await awake(record.agentId);
+    return admitted(c, resolved);
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: waits until a waking Environment's machine runs, or until the wait is up; the request then goes on as any other, which answers 503 if it still does not run.
+  async function awake(agentId: string) {
+    const until = Date.now() + (deps.wakeWaitMs ?? WAKE_WAIT_MS);
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (!waking.has(agentId)) return;
+    }
+  }
 
   // UNIT_BOUNDARY_DESCRIPTION: what a visitor the gate let in gets, a person or an Agent alike: the start and status paths of the loading page, the loading page itself while the app is not ready, and the app once it is.
   async function admitted(c: Context, resolved: Resolved): Promise<Response> {
@@ -850,8 +980,27 @@ export function createEnvironmentGate(
         }
         agentVisited(resolved.record, agent.visitor!, resolved.address);
       } else {
+        const bearer = deps.oauth
+          ? await checkBearer(req.headers.authorization, {
+              resource: resourceFor(resolved.address),
+              issuers: deps.platform.issuers,
+              keys: deps.oauth.keys,
+            })
+          : ({ kind: "none" } as const);
+        if (bearer.kind === "invalid") {
+          deny(resolved.record, null, resolved.address, "invalid-token");
+          return refuseUpgrade(socket, "401 Unauthorized");
+        }
         const cookie = cookieValue(req.headers.cookie, cookieName);
-        const visitor = await session(cookie);
+        const visitor =
+          bearer.kind === "valid"
+            ? {
+                ...bearer.visitor,
+                address: resolved.address,
+                shareSession: "",
+                createdAt: 0,
+              }
+            : await session(cookie);
         const access = decideAccess(
           resolved.record,
           effectiveAccess(
