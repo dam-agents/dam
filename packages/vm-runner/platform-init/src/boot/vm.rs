@@ -560,15 +560,7 @@ pub fn serve_link(launch_env: &[(String, String)]) {
             return;
         }
     };
-    let mut env: Vec<(String, String)> = launch_env
-        .iter()
-        .filter(|(key, _)| crate::link::SESSION_ENV.contains(&key.as_str()))
-        .cloned()
-        .collect();
-    if !env.iter().any(|(key, _)| key == "PATH") {
-        env.push(("PATH".into(), DEFAULT_PATH.into()));
-    }
-    env.push((crate::link::LINK_MARK.into(), "1".into()));
+    let env = crate::link::session_env(launch_env, DEFAULT_PATH);
     std::thread::spawn(move || loop {
         // SAFETY: accept4 writes no address, since none is asked for, and returns a new descriptor or -1.
         let fd = unsafe {

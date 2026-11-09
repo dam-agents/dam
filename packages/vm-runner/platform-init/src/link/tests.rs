@@ -108,6 +108,33 @@ async fn run(handle: &client::Handle<AnyHost>, line: &str, terminal: bool) -> Ra
     ran
 }
 
+// TEST_SCENARIO: a shell over the link finds the image's tools, pulls through the gateway trusting its CA, and finds openrc's user services and mise's tools; nothing else of the launch record's env, a credential least of all, reaches it. An image that sets no PATH still gets the default one.
+#[test]
+fn a_session_gets_the_image_tools_gateway_and_ca_and_nothing_else() {
+    let pair = |key: &str, value: &str| (key.to_string(), value.to_string());
+    let kept = [
+        pair(
+            "PATH",
+            "/usr/share/mise/installs/k3s/1.37.1/bin:/usr/bin:/bin",
+        ),
+        pair("HTTPS_PROXY", "http://gateway.test:10000"),
+        pair("NO_PROXY", "localhost,127.0.0.1"),
+        pair("SSL_CERT_FILE", "/run/platform/ca-certificates.crt"),
+        pair("XDG_RUNTIME_DIR", "/tmp/platform-display"),
+        pair("MISE_SYSTEM_DATA_DIR", "/usr/share/mise"),
+    ];
+    let mut launch_env = kept.to_vec();
+    launch_env.push(pair("PLATFORM_ENVIRONMENT_OF", "agent-owner"));
+    launch_env.push(pair("ANTHROPIC_API_KEY", "placeholder-credential"));
+    launch_env.push(pair("GITHUB_TOKEN", "placeholder-credential"));
+    let mut expected = kept.to_vec();
+    expected.push(pair(LINK_MARK, "1"));
+    assert_eq!(session_env(&launch_env, "/default/bin"), expected);
+
+    let without_path = session_env(&launch_env[1..], "/default/bin");
+    assert!(without_path.contains(&pair("PATH", "/default/bin")));
+}
+
 // TEST_SCENARIO: the dialer's command runs in the agent's home with the session's environment, and what it writes comes back split as it wrote it, with its exit status after all of its output, which is how `ssh env-x cmd` and a script reading its output tell success from failure.
 #[tokio::test]
 async fn a_command_runs_in_the_home_and_reports_its_output_and_status() {

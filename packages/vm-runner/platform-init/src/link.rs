@@ -36,6 +36,20 @@ pub const SESSION_ENV: [&str; 12] = [
     "XDG_RUNTIME_DIR",
     "MISE_SYSTEM_DATA_DIR",
 ];
+// UNIT_BOUNDARY_DESCRIPTION: the env a link session runs in: the part of the launch record's env that SESSION_ENV names, the default PATH when the image sets none, and LINK_MARK.
+pub fn session_env(launch_env: &[(String, String)], default_path: &str) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = launch_env
+        .iter()
+        .filter(|(key, _)| SESSION_ENV.contains(&key.as_str()))
+        .cloned()
+        .collect();
+    if !env.iter().any(|(key, _)| key == "PATH") {
+        env.push(("PATH".into(), default_path.into()));
+    }
+    env.push((LINK_MARK.into(), "1".into()));
+    env
+}
+
 const ACCEPTED_CLIENT_ENV: [&str; 2] = ["LANG", "TERM"];
 
 // UNIT_BOUNDARY_DESCRIPTION: what a command over the link runs in: the shell the image gives root, or /bin/sh when it names none or one it lacks, and the home the platform mounts on every machine.
