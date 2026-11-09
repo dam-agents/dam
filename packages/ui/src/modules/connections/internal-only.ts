@@ -1,4 +1,4 @@
-import type { ConnectionTemplateView } from "api-server-api";
+import { type ConnectionTemplateView, DAM_TEMPLATE_ID } from "api-server-api";
 
 const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
   "spotify",
@@ -7,6 +7,10 @@ const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
 ]);
 
 const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = ["google-"];
+
+const NEVER_OFFERED_TEMPLATE_IDS: ReadonlySet<string> = new Set([
+  DAM_TEMPLATE_ID,
+]);
 
 export function isInternalOnlyTemplate(id: string): boolean {
   return (
@@ -18,6 +22,9 @@ export function isInternalOnlyTemplate(id: string): boolean {
 export function filterOfferedTemplates<
   T extends Pick<ConnectionTemplateView, "id">,
 >(templates: readonly T[], showInternal: boolean): T[] {
-  if (showInternal) return [...templates];
-  return templates.filter((t) => !isInternalOnlyTemplate(t.id));
+  const neverOffered = templates.filter(
+    (t) => !NEVER_OFFERED_TEMPLATE_IDS.has(t.id),
+  );
+  if (showInternal) return neverOffered;
+  return neverOffered.filter((t) => !isInternalOnlyTemplate(t.id));
 }

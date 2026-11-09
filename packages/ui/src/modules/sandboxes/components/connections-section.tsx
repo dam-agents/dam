@@ -2,6 +2,7 @@ import { type ReactNode, useMemo, useState } from "react";
 
 import { SectionHeading } from "@/components/ui/section-heading";
 
+import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgent, useAgentConnections } from "../../agents/api/queries.js";
@@ -14,6 +15,10 @@ import { ConnectionAudienceSentence } from "../../connections/components/connect
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
+import {
+  damAudienceSentence,
+  isDamConnection,
+} from "../../connections/lib/dam-connection.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
 import { useSharedChannels } from "../hooks/use-shared-channels.js";
@@ -109,6 +114,14 @@ export function ConnectionsSection({
           This agent acts as {ownerName(access)} through them. Ask them to add
           one, remove one, or re-authenticate an expired one.
         </OwnerOnlyNotice>
+      )}
+      {listed.some(isDamConnection) && (
+        <ConnectionAudienceNotice
+          className="mb-6"
+          testId="connections-dam-notice"
+        >
+          {damAudienceSentence(getBrand().name, "anyone who can drive it")}
+        </ConnectionAudienceNotice>
       )}
       {editors.length > 0 && (
         <ConnectionAudienceNotice
