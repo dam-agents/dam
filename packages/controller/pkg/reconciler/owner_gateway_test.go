@@ -799,7 +799,7 @@ func TestOwnerGateway_RefusedOwnerMovesItsAgentsBack(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err))
 }
 
-// TEST_SCENARIO: a refusal is decided once for a set of agents and grants. A reconcile of the same owner with nothing changed does not render the whole configuration again, so it does not log the refusal a second time; a second render there would be the wasted work and the log noise that a refused owner produced on every reconcile of every one of its agents.
+// TEST_SCENARIO: a refusal is decided once for a set of agents and grants. A reconcile of the same owner with nothing changed does not render the whole configuration again, so it neither logs the refusal a second time nor spends the wide render; a second render there would be the wasted work and the log noise that a refused owner produced on every reconcile of every one of its agents.
 func TestOwnerGateway_ARefusedOwnerIsNotRenderedAgainUntilItsAgentsChange(t *testing.T) {
 	ctx := context.Background()
 	r, _, agent := servedVMReconciler(t)
@@ -808,10 +808,85 @@ func TestOwnerGateway_ARefusedOwnerIsNotRenderedAgainUntilItsAgentsChange(t *tes
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.False(t, r.ownerGatewayOn(testOwner))
 	require.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "the refusal is decided once")
+	wide := r.ownerGatewayWideRenders.Load()
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "a reconcile with nothing changed renders no wide configuration, so the refusal is not decided again")
+	assert.Equal(t, wide, r.ownerGatewayWideRenders.Load(), "a reconcile with nothing changed renders no wide configuration")
+	assert.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "and so does not decide the refusal again")
+}
+
+// TEST_SCENARIO: the address a member answers on is rendered into the resolver's Corefile, so a gateway Service recreated at the same slot with a shorter address can bring an owner that was one byte past the budget back under it. The refusal sees the address, so it is re-decided instead of holding until something else moves.
+func TestOwnerGateway_ARefusedOwnerIsReevaluatedWhenItsServiceAddressChanges(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.255.255.254", false)
+	ownerTwoSigningSecrets(t, r)
+
+	r.ownerGatewayBudget = 0
+	for range 2 {
+		_, err := r.ensureOwnerGateway(ctx, testOwner)
+		require.NoError(t, err)
+	}
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// TEST_SCENARIO: three bytes short of the wide render, which the six bytes agent-b's shorter address frees.
+	r.ownerGatewayBudget = secretSize(files) + ownerGatewayHeadroom - 3
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "both agents together are past the budget")
+
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-b"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.client.CoreV1().Services(ns).Delete(ctx, svc.Name, metav1.DeleteOptions{}))
+	svc.ResourceVersion, svc.Spec.ClusterIP = "", "10.9.4.3"
+	_, err = r.client.CoreV1().Services(ns).Create(ctx, svc, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.True(t, r.ownerGatewayOn(testOwner), "the shorter address makes the same agents fit, so the owner is admitted at once")
+}
+
+// TEST_SCENARIO: the fingerprint cannot see everything a wide render is made of, such as repair state a migration pruned or reset, so it is not trusted forever: after the re-check interval the wide render is tried again even though nothing it sees changed, and a still-too-large owner is refused again rather than un-refused.
+func TestOwnerGateway_ARefusedOwnerIsReevaluatedAfterTheInterval(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.255.255.254", false)
+	ownerTwoSigningSecrets(t, r)
+	now := time.Date(2026, 11, 9, 13, 0, 0, 0, time.UTC)
+	r.clock = func() time.Time { return now }
+
+	r.ownerGatewayBudget = 0
+	for range 2 {
+		_, err := r.ensureOwnerGateway(ctx, testOwner)
+		require.NoError(t, err)
+	}
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	r.ownerGatewayBudget = secretSize(files) + ownerGatewayHeadroom - 1
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "the wide render is past the budget")
+	wide := r.ownerGatewayWideRenders.Load()
+
+	now = now.Add(ownerGatewayRefusalRecheck - time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.Equal(t, wide, r.ownerGatewayWideRenders.Load(), "inside the interval a refused owner costs no wide render")
+
+	now = now.Add(time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, wide+1, r.ownerGatewayWideRenders.Load(), "the interval passing re-decides the refusal")
+	assert.False(t, r.ownerGatewayOn(testOwner), "still past the budget, so the refusal holds and is decided for another interval")
+
+	now = now.Add(ownerGatewayRefusalRecheck - time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, wide+1, r.ownerGatewayWideRenders.Load(), "the decision is good for a further interval")
 }
 
 // TEST_SCENARIO: the refusal is held against what the owner's agents render, not against the owner for good: an agent that pushed the configuration past one Secret leaves, the wide render fits again, and the owner gateway serves it once more.

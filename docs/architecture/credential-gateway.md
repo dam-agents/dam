@@ -174,6 +174,7 @@ Each listener carries exactly that agent's chains, credentials, egress checks, s
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
 The whole set, its credentials and its leaf file source live in one Secret of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
 The refusal holds until what the owner's agents render changes (agents, grants, credentials, promoted hosts), so a refused owner is not re-rendered on every reconcile.
+It is also re-checked every ten minutes, so an owner that would now fit is admitted without waiting for its agents to change.
 
 **Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
 Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
