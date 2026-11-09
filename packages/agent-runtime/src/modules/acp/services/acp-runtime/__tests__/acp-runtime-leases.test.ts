@@ -28,6 +28,13 @@ import { createContinuedFromStore } from "../../../infrastructure/continued-from
 import type { SessionDefaultsStore } from "../../../infrastructure/session-defaults-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
+  catalogOn,
+  curveBender,
+  keptCatalogPath,
+  removeKeptCatalogs,
+  stateOf,
+} from "../../../../../__tests__/unit/model-catalog-fixture.js";
+import {
   createLeaseRouter,
   PROVIDER_REMOVED_REASON,
   type LeasePair,
@@ -73,6 +80,7 @@ function createLeaseWorld(opts: {
   modelRequired?: boolean | (() => boolean);
   envReady?: () => boolean;
   sessionDefaults?: SessionDefaultsStore;
+  beforeSpawn?: () => Promise<void>;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -170,6 +178,7 @@ function createLeaseWorld(opts: {
               : []),
           ];
         },
+        ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         spawnAgent: () => {
           scoped.harnessSpawned();
           const { harness, process } = createHarness();
@@ -693,6 +702,68 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(other.reply(2)?.error).toMatchObject({
       data: { platform: { reason: NO_MODEL_REASON } },
     });
+  });
+
+  /** TEST_SCENARIO: A wake whose machine kept its model catalog. The runtime
+   * prestarts the default lease at listen, from that catalog, before the
+   * agent's first state arrives, and the person opens a session in that
+   * second. A prestart gives the lease a process, not a state: the model-less
+   * session/new is still held, and opens on the chat default once the env and
+   * the converted default land, on the process the prestart started. */
+  it("holds a session opened after a prestart from the kept catalog", async () => {
+    vi.useFakeTimers();
+    const cachePath = keptCatalogPath();
+    const models = (): string[] => ["rits/zai-org/glm-5-3"];
+    const state = stateOf(() => [curveBender("256000")]);
+    try {
+      await catalogOn({ cachePath, models, state }).catalog.refresh();
+      const kept = catalogOn({ cachePath, models, state, held: true });
+      expect(kept.catalog.entries().map((e) => e.name)).toEqual([
+        "cb/rits/zai-org/glm-5-3",
+      ]);
+
+      const chat = {
+        harness: "claude-code",
+        provider: "conn-a",
+        model: "ibm/aws/claude-sonnet-4-6",
+      };
+      let envArrived = false;
+      let defaults: SessionDefaultsEventPayload | null = null;
+      const world = createLeaseWorld({
+        providers: ["conn-a"],
+        modelRequired: true,
+        envReady: () => envArrived,
+        sessionDefaults: {
+          get: () => defaults,
+          revision: () => (defaults === null ? 0 : 1),
+          set: (next) => {
+            defaults = next;
+          },
+        },
+        beforeSpawn: () => kept.catalog.settled(),
+      });
+
+      world.router.prestart();
+      for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+      expect(world.harnessCount("claude-code")).toBe(1);
+      const client = world.connect();
+      client.send(newSessionOn(1, {}));
+      expect(client.reply(1)).toBeUndefined();
+
+      envArrived = true;
+      world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+      world.harness("claude-code").replyTo("session/new", {
+        sessionId: "s-kept",
+      });
+      expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-kept" });
+      expect(world.metadata.store.get("s-kept")?.meta).toMatchObject({
+        model: chat.model,
+        follows: "chat",
+      });
+      expect(world.harnessCount("claude-code")).toBe(1);
+    } finally {
+      removeKeptCatalogs();
+    }
   });
 
   /** TEST_SCENARIO: A session opened before a new agent's runtime has its
