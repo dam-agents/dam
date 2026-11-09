@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-27
+Last verified: 2026-11-06
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for their agents, which have no size of their own.
@@ -46,6 +46,7 @@ Free-page reporting returns the added RAM's freed pages as it does the boot RAM'
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
 On a Linux runner libkrun therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, so a host whose transparent huge pages are `always` backs them with huge pages.
 The platform does not advise that RAM with `MADV_HUGEPAGE`, as upstream libkrun does not.
+So an Environment's install sets its node's transparent huge pages to `always` ([environments](environments.md)): under `madvise` a nested machine's boot there took 11 to 28 s, and 3.5 to 6.3 s with `always`.
 On the nested dev hosts (huge pages `always`, defrag `madvise`) the advice made no difference under real conditions; it helped only when page cache had nearly exhausted host memory, a state the nodes did not reach.
 On bare metal an advised fault compacts host memory synchronously and was slower, which is why upstream leaves it out.
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
