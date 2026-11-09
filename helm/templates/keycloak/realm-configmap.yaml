@@ -4,6 +4,7 @@
 {{- $shareUrl := include "platform.url.share" . }}
 {{- $backUiUrl := include "platform.backchannel.url" (dict "root" .) }}
 {{- $backShareUrl := include "platform.backchannel.url" (dict "root" . "sub" "share") }}
+{{- $envUrl := include "platform.url.environments" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -139,6 +140,88 @@ data:
           }
         }
       ],
+      {{- if $envUrl }}
+      {{- /* A person's own OAuth clients sign in to one Environment
+             (packages/keycloak-environments): they register themselves,
+             anonymously, with an allowed callback; a sign-in for the
+             `environments` scope names one Environment address as its
+             resource, asks for an offline session, needs PKCE and the
+             person's consent, and its token's audience is that address
+             alone. Keycloak's Trusted Hosts policy is the
+             extension's under the same id: it checks each callback against
+             `environments.oauth.redirects`, since Keycloak's own compares the
+             registering machine's address and cannot allow an app scheme.
+             Keycloak's other default policies stay as Keycloak creates them;
+             the ones listed here are set to what this needs. */}}
+      "clientScopes": [
+        {
+          "name": "environments",
+          "description": "Use the Environments you may open",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "true",
+            "consent.screen.text": "Use the Environments you may open, as you"
+          },
+          "protocolMappers": [
+            {
+              "name": "environment audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "dam-environment-audience",
+              "config": {}
+            },
+            {
+              "name": "email",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "config": { "user.attribute": "email", "claim.name": "email", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+            },
+            {
+              "name": "email verified",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "config": { "user.attribute": "emailVerified", "claim.name": "email_verified", "jsonType.label": "boolean", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+            }
+          ]
+        }
+      ],
+      "clientProfiles": {
+        "profiles": [
+          {
+            "name": "dam-environments",
+            "description": "One Environment per sign-in, with PKCE",
+            "executors": [
+              { "executor": "dam-environments", "configuration": {} },
+              { "executor": "pkce-enforcer", "configuration": { "auto-configure": "true" } }
+            ]
+          }
+        ]
+      },
+      "clientPolicies": {
+        "policies": [
+          {
+            "name": "dam-environments",
+            "description": "Sign-ins for the environments scope",
+            "enabled": true,
+            "conditions": [
+              { "condition": "client-scopes", "configuration": { "type": "Optional", "scopes": ["environments"] } }
+            ],
+            "profiles": ["dam-environments"]
+          }
+        ]
+      },
+      "components": {
+        "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+          { "name": "Trusted Hosts", "providerId": "trusted-hosts", "subType": "anonymous", "subComponents": {},
+            "config": { "host-sending-registration-request-must-match": ["true"], "client-uris-must-match": ["true"] } },
+          { "name": "Consent Required", "providerId": "consent-required", "subType": "anonymous", "subComponents": {}, "config": {} },
+          { "name": "Allowed Client Scopes", "providerId": "allowed-client-templates", "subType": "anonymous", "subComponents": {},
+            "config": { "allow-default-scopes": ["true"], "allowed-client-scopes": ["environments", "offline_access"] } },
+          { "name": "Max Clients Limit", "providerId": "max-clients", "subType": "anonymous", "subComponents": {},
+            "config": { "max-clients": [{{ .Values.environments.oauth.maxClients | quote }}] } }
+        ]
+      },
+      {{- end }}
       {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole .Values.keycloak.operatorRole }}
       "roles": {
         "realm": [

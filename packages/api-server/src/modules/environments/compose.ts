@@ -1,8 +1,10 @@
 import type { Redis } from "ioredis";
 import type { Hono } from "hono";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
+import type { JWTVerifyGetKey } from "jose";
 import {
   domainOf,
+  portOf,
   SESSION_TTL_MS,
   type PlatformCredentials,
 } from "./domain/gate.js";
@@ -225,6 +227,8 @@ export interface ComposeEnvironmentGateDeps {
   shareBaseUrl: string;
   share: ShareSignIn;
   platform: PlatformCredentials;
+  // UNIT_BOUNDARY_DESCRIPTION: the identity provider's public issuer and signing keys a person's OAuth client gets its token from; see EnvironmentGateDeps.oauth.
+  oauth?: { issuer: string; keys: JWTVerifyGetKey };
   ensureReady: (
     agentId: string,
     opts: { onWaking: () => void },
@@ -293,6 +297,8 @@ export function composeEnvironmentGate(
   const gate = createEnvironmentGate({
     domain,
     scheme: template.startsWith("https:") ? "https" : "http",
+    port: portOf(template),
+    ...(deps.oauth ? { oauth: deps.oauth } : {}),
     frontDoorUrl: (address, next, binding, chain) => {
       const url = new URL(`${shareBase}${FRONT_DOOR_PREFIX}${address}`);
       url.searchParams.set("next", next);

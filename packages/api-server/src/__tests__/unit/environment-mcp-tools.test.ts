@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The owning agent's Environment tools take each endpoint's readiness path, at create and at update, and never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, one that means "never sleep" is refused before the service is called, and its description names the install's own default and maximum.
+// TEST_OVERVIEW: The owning agent's Environment tools take each endpoint's readiness path, at create and at update, and never decide who may open an Environment: `access`, which an agent passed before only people decided, is refused at create and at update with a message that says a person shares it in the app, and nothing is created or changed; without it the tools work as before, and the list says how many people may open each, never who. An `idle_timeout` reaches create and update as whole minutes, or "never", and its description names the install's own default and maximum; `expires` takes "never" too.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -149,8 +149,8 @@ describe("Environments shared with an agent", () => {
 });
 
 describe("an Environment's idle timeout, from the agent's tools", () => {
-  // TEST_SCENARIO: an agent gives `idle_timeout` as it gives `expires`; create and update pass it on in minutes, and "never" is refused with a message that says why, with nothing created or changed.
-  it("passes an idle timeout on in minutes and refuses never", async () => {
+  // TEST_SCENARIO: an agent gives `idle_timeout` as it gives `expires`; create and update pass it on in minutes, "never" or 0 passes on as never sleeping, and a word the tool does not know is refused with a message, with nothing changed.
+  it("passes an idle timeout on in minutes, or never", async () => {
     const { call, environments } = await tools();
 
     await call("create_environment", {
@@ -159,9 +159,11 @@ describe("an Environment's idle timeout, from the agent's tools", () => {
       idle_timeout: "90m",
     });
     await call("update_environment", { name: "pr-1", idle_timeout: "4h" });
-    const never = await call("update_environment", {
+    await call("update_environment", { name: "pr-1", idle_timeout: "never" });
+    await call("update_environment", { name: "pr-1", idle_timeout: "0" });
+    const off = await call("update_environment", {
       name: "pr-1",
-      idle_timeout: "never",
+      idle_timeout: "off",
     });
 
     expect(environments.create).toHaveBeenCalledWith({
@@ -169,12 +171,34 @@ describe("an Environment's idle timeout, from the agent's tools", () => {
       endpoints,
       idleTimeoutMin: 90,
     });
-    expect(environments.update).toHaveBeenCalledTimes(1);
-    expect(environments.update).toHaveBeenCalledWith("pr-1", {
-      idleTimeoutMin: 240,
+    expect(environments.update.mock.calls).toEqual([
+      ["pr-1", { idleTimeoutMin: 240 }],
+      ["pr-1", { idleTimeoutMin: "never" }],
+      ["pr-1", { idleTimeoutMin: "never" }],
+    ]);
+    expect(off.isError).toBe(true);
+    expect(off.text).toMatch(/"never"/);
+  });
+
+  // TEST_SCENARIO: AC-2 — an agent asked for an Environment that never expires passes `expires: "never"`, and the tool hands the service "never", not a date; update takes it too.
+  it("passes an expiry of never on at create and update", async () => {
+    const { call, environments } = await tools();
+
+    await call("create_environment", {
+      name: "pr-1",
+      endpoints,
+      expires: "never",
     });
-    expect(never.isError).toBe(true);
-    expect(never.text).toMatch(/always sleeps/);
+    await call("update_environment", { name: "pr-1", expires: "never" });
+
+    expect(environments.create).toHaveBeenCalledWith({
+      name: "pr-1",
+      endpoints,
+      expiresAt: "never",
+    });
+    expect(environments.update).toHaveBeenCalledWith("pr-1", {
+      expiresAt: "never",
+    });
   });
 
   // TEST_SCENARIO: an install may set its own default and maximum for Environments, so the tools describe `idle_timeout` with the values the service applies, never a constant that a configured install does not use.

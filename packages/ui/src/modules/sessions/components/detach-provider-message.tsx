@@ -41,6 +41,16 @@ export function DetachProviderMessage({
           </ul>
         </div>
       )}
+      {usage.pages.length > 0 && (
+        <div>
+          <p>Prompts from these pages won&rsquo;t run:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {usage.pages.map((page) => (
+              <li key={page}>{page}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

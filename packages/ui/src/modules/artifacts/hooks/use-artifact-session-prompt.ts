@@ -22,6 +22,11 @@ function refusal(reason: Refusal): string {
       "agent-unreachable",
       () => "The agent could not be reached. Try again in a moment.",
     )
+    .with(
+      "profile-unavailable",
+      () =>
+        "The model this page is set to use cannot run now, so the agent did not get this. Pick another in the page's Set model.",
+    )
     .with("not-allowed", () => "This page can no longer ask the agent.")
     .exhaustive();
 }

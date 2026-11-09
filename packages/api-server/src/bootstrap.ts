@@ -1,3 +1,4 @@
+import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
@@ -851,6 +852,11 @@ export async function bootstrap() {
     identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
     log: (m) => getLogger().warn(`[agent-keys] ${m}`),
   });
+  const environmentTokenKeys = createRemoteJWKSet(
+    new URL(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    ),
+  );
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -885,6 +891,10 @@ export async function bootstrap() {
           `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
         ],
         isApiKey: isApiKeyToken,
+      },
+      oauth: {
+        issuer: keycloakRealmUrl(addresses.public, config.keycloakRealm),
+        keys: environmentTokenKeys,
       },
       ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
@@ -1758,6 +1768,9 @@ export async function bootstrap() {
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     spendHold: channelSpendHold,
     attendance: turnAttendance,
+    db,
+    resolveProfile,
+    boundary: runBoundary,
   });
   const shareBridge = composeShareBridge({
     featureOn: interactiveArtifactsOn,
@@ -1838,6 +1851,8 @@ export async function bootstrap() {
         pendingOAuthFlows: pendingSlackOAuthFlows,
         getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
+        templateDescription: async (id) =>
+          (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
@@ -2159,6 +2174,7 @@ export async function bootstrap() {
       agentApi: agentApiClient,
       featureOn: interactiveArtifactsOn,
       prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
     }).artifactLibrary;
   const environments = composeEnvironments({
     db,

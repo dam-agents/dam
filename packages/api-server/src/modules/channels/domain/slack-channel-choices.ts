@@ -8,7 +8,10 @@ export interface SlackChannelChoice {
 export type SlackChannelChoices =
   { linked: false } | { linked: true; channels: SlackChannelChoice[] };
 
-export type SlackChannelMembership = "member" | "not-member" | "unlinked";
+export type SlackChannelMembership =
+  | { kind: "member"; slackUserId: string }
+  | { kind: "not-member" }
+  | { kind: "unlinked" };
 
 export interface SlackWorkspaceReach {
   teamId: string;

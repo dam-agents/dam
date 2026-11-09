@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-04
+Last verified: 2026-11-06
 
 ## Overview
 
@@ -106,6 +106,12 @@ An install with a [backchannel](environments.md#an-install-inside-an-environment
 Keycloak then takes its address from the forwarded host, which only the ingress in front of it sets.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 The share host is also the front door of [Environments](environments.md#addresses): it signs their visitors in with the same client and session, and hands each address a one-time code, bound to the visitor's browser, for a session of its own that lasts while the share session does.
+
+A person's own OAuth clients reach [Environments](environments.md#addresses) without a browser session: on an install that serves Environments, the realm lets a client register itself anonymously (RFC 7591), and its sign-in for the `environments` scope gets a token whose only audience is the one Environment address it named as its `resource` (RFC 8707), never `platform-api`.
+The `keycloak-environments` extension, baked into the platform's Keycloak image beside the theme, enforces it: its mapper sets that audience and keeps it on refresh; a client policy refuses such a sign-in without one valid address (`invalid_target`) or without `offline_access` (`invalid_scope`), and a code exchange or refresh naming another address, and requires PKCE.
+It takes the place of Keycloak's Trusted Hosts registration policy under the same id: a registering client's callbacks must each match `environments.oauth.redirects` — loopback on any port and path (RFC 8252), the listed web sites, the listed app schemes — and Consent Required, the `environments` and `offline_access` scopes only and a cap of `environments.oauth.maxClients` clients still apply.
+A daily task deletes such clients older than 30 days that hold no session and no offline session.
+The api-server gains no Keycloak admin rights for any of it.
 
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
 Both park that destination and resume it once cleared, so a deep link survives them — an in-chat bind link ([channels](channels.md)) is single-use, so losing its target would cost the user a fresh bind command rather than a retry.

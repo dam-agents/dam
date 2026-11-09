@@ -152,3 +152,17 @@ export function useSendArtifactPrompt() {
     meta: { suppressErrorToast: true },
   });
 }
+
+export function useSetArtifactPromptChoice() {
+  return useMutation({
+    ...trpc.artifactLibrary.setPromptChoice.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.artifactLibrary.promptChoice.queryKey(),
+        trpc.artifactLibrary.agentPromptChoices.queryKey(),
+        trpc.profiles.list.queryKey(),
+      ],
+      errorToast: "Couldn't save the page's model",
+    },
+  });
+}

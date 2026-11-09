@@ -75,6 +75,9 @@ export {
   harnessCatalogOf,
   layerMetadata,
   listingForTemplate,
+  nativeListingForTemplate,
+  nativePinOf,
+  withNativePin,
   lookupPrice,
   MIN_CONTEXT_WINDOW,
   modelDialect,
@@ -447,6 +450,8 @@ export type {
   ArtifactCallAgentApiResult,
   ArtifactSendPromptInput,
   ArtifactSendPromptResult,
+  ArtifactPromptChoiceInput,
+  ArtifactPromptChoiceRow,
 } from "./modules/artifact-library/types.js";
 export {
   ARTIFACT_PROMPT_TYPE,

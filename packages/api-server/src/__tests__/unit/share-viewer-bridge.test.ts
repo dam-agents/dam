@@ -21,6 +21,7 @@ import {
 } from "../../modules/artifact-library/domain/viewer-bridge.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createViewerPromptDelivery } from "../../modules/artifact-library/infrastructure/viewer-prompt-delivery.js";
+import type { ArtifactPromptPair } from "../../modules/artifact-library/infrastructure/artifact-prompt-profile.js";
 import { createRelayTokenService } from "../../modules/artifact-library/services/relay-token-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import {
@@ -730,7 +731,11 @@ describe("delivering a viewer's prompt", () => {
 
   function delivery(
     acp: AcpClient,
-    opts: { hold?: "limit" | null; wakeFails?: boolean } = {},
+    opts: {
+      hold?: "limit" | null;
+      wakeFails?: boolean;
+      choice?: Awaited<ReturnType<ArtifactPromptPair>>;
+    } = {},
   ) {
     const open: string[] = [];
     let woke = 0;
@@ -749,12 +754,14 @@ describe("delivering a viewer's prompt", () => {
           return () => open.splice(open.indexOf(agentId), 1);
         },
       },
+      promptPair: () => Promise.resolve(opts.choice ?? { pair: null }),
     });
     return { d, open, woke: () => woke };
   }
 
   const turn = {
     agentId: "agent-1",
+    artifactId: "a1",
     sessionKey: "artifact:a1:alice-sub",
     sessionTitle: "alice@example.com · Team dashboard",
     prompt: "framed prompt",
@@ -847,6 +854,41 @@ describe("delivering a viewer's prompt", () => {
     await expect(d.deliver(turn)).resolves.toEqual({
       ok: false,
       reason: "spend-limit",
+    });
+    expect(woke()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The owner picked a model for the page. A Session that the page's prompt opens runs on that pick as its own, so it does not follow the agent's channel pair. */
+  it("opens the session on the page's own pick", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d } = delivery(acp, {
+      choice: {
+        pair: { harness: "claude-code", provider: "p-1", model: "p/opus" },
+      },
+    });
+    await d.deliver(turn);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.opts).toMatchObject({
+      platformMeta: {
+        type: "artifact",
+        harness: "claude-code",
+        provider: "p-1",
+        model: "p/opus",
+      },
+    });
+    finishTurns();
+  });
+
+  /** TEST_SCENARIO: The page's profile cannot run on the agent. The prompt is refused with its reason before the Agent wakes, rather than running on a model the owner did not pick. */
+  it("refuses a page whose profile cannot run, without waking the agent", async () => {
+    const { acp, sent } = fakeAcp([]);
+    const { d, woke } = delivery(acp, {
+      choice: { refused: { profile: "Fast", detail: "no such provider" } },
+    });
+    await expect(d.deliver(turn)).resolves.toEqual({
+      ok: false,
+      reason: "profile-unavailable",
     });
     expect(woke()).toBe(0);
     expect(sent).toEqual([]);

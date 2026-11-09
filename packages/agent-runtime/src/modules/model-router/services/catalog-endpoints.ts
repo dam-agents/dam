@@ -145,11 +145,6 @@ export function createCatalogEndpoints(
         );
       if (path === "/v1/model/info")
         return json(res, 200, liteLlmModelInfo(entries));
-      if (path.startsWith("/admin/"))
-        return json(res, 404, {
-          error:
-            "not served by the model router: Bob's admin API belongs to its own gateway",
-        });
       return false;
     },
   };

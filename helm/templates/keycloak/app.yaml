@@ -132,6 +132,17 @@ spec:
               value: "xforwarded"
             - name: KC_HTTP_ENABLED
               value: "true"
+            {{- with include "platform.url.environments" . }}
+            # Read by the Environments extension
+            # (packages/keycloak-environments): the addresses a token may
+            # name as its audience, the callbacks a client may register.
+            - name: DAM_ENVIRONMENTS_URL_TEMPLATE
+              value: {{ . | quote }}
+            - name: DAM_ENVIRONMENTS_REDIRECTS
+              value: {{ join " " $.Values.environments.oauth.redirects | quote }}
+            - name: DAM_ENVIRONMENTS_REALM
+              value: {{ $.Values.keycloak.realm | quote }}
+            {{- end }}
             # Login-theme knobs — resolved by theme.properties `${env.…}`
             # placeholders in the Keycloakify-built theme.
             - name: PLATFORM_ALLOW_PASSWORD

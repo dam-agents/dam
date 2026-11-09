@@ -151,13 +151,13 @@ export function BobForm({
           />
           <PinField
             label="Instance ID"
-            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping; applies to terminal (TUI) sessions, chat sessions ignore it."
+            hint="BOB_INSTANCE_ID. IBM tenant scoping: the Bob instance the agent's chat sessions run on."
             error={errors.agentId?.message}
             register={register("agentId")}
           />
           <PinField
             label="Team ID"
-            hint="BOB_TEAM_ID → --team-id. For general-type API keys; applies to terminal (TUI) sessions, chat sessions ignore it."
+            hint="BOB_TEAM_ID. For general-type API keys: the team the agent's Bob chat sessions run on."
             error={errors.teamId?.message}
             register={register("teamId")}
           />

@@ -120,7 +120,9 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   const onBedrock = env("AWS_BEARER_TOKEN_BEDROCK") !== undefined;
   const clearedBedrock = onBedrock ? false : clearBedrockDefaults(state);
 
-  const router = env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "");
+  const router = env("PLATFORM_MODEL_ROUTER_SERVES")
+    ? env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "")
+    : undefined;
   if (router) {
     bookCallCosts(pi, router);
     stampSession(pi);
@@ -142,6 +144,7 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   }
 
   if (onBedrock) {
+    if (env("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")) stampSession(pi, true);
     await activateBedrock(pi, state);
     writeJson(state.paths.models, state.models);
     writeJson(state.paths.auth, state.auth);
@@ -312,14 +315,15 @@ async function fetchCallCosts(
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Model Router reads a Pi call's Session from x-platform-session. In a chat, Pi's own session id is the ACP session id; a terminal's PTY sets HARNESS_SESSION_ID to the platform's Session id, while Pi runs there under an id of its own that changes on /new. The event names no provider, so a call to the router is told apart by the router provider's own X-Platform-Harness header.
-function stampSession(pi: ExtensionAPI): void {
+// UNIT_BOUNDARY_DESCRIPTION: the Model Router reads a Pi call's Session from x-platform-session. In a chat, Pi's own session id is the ACP session id; a terminal's PTY sets HARNESS_SESSION_ID to the platform's Session id, while Pi runs there under an id of its own that changes on /new. The event names no provider, so a call to the router is told apart by the router provider's own X-Platform-Harness header. On Bedrock every call goes to the router, which passes it on to Bedrock, so each one is stamped with both.
+function stampSession(pi: ExtensionAPI, everyCall = false): void {
   const terminalSession = env("HARNESS_SESSION_ID");
   pi.on("before_provider_headers", (event, ctx) => {
     const toRouter = Object.keys(event.headers).some(
       (name) => name.toLowerCase() === HARNESS_HEADER,
     );
-    if (!toRouter) return;
+    if (!toRouter && !everyCall) return;
+    if (!toRouter) event.headers[HARNESS_HEADER] = "pi";
     event.headers[SESSION_HEADER] =
       terminalSession ?? ctx.sessionManager.getSessionId();
   });
@@ -712,16 +716,30 @@ async function activateBedrock(
     delete state.settings.defaultModel;
   }
 
-  if (builtin && profiles && profiles.length > 0)
-    narrowBedrockModels(pi, builtin, profiles, model);
+  const listed = profiles && profiles.length > 0 ? profiles : undefined;
+  if (builtin && listed) {
+    keepBedrockModels(state, [...listed, ...(model ? [model] : [])]);
+    for (const id of listed)
+      if (!hasModel(builtin, id)) addBedrockModel(state, id);
+  }
+  if (builtin && (listed || bedrockEndpoint()))
+    narrowBedrockModels(pi, builtin, listed, model);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the Model Router's Bedrock path, when the runtime runs Pi's Bedrock calls through it. It is every Bedrock model's base URL, not only the client's endpoint: Pi picks the machine's egress proxy by the model's base URL, and a call to the router through that proxy never arrives, while the loopback is in NO_PROXY.
+function bedrockEndpoint(): string | undefined {
+  return env("AWS_ENDPOINT_URL_BEDROCK_RUNTIME")?.replace(/\/+$/, "");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the region's inference profiles, listed with the Connection's key placeholder, which the gateway swaps for the key; the gateway adds no key to a call that carries none, and Bedrock refuses it.
 async function discoverBedrockProfiles(): Promise<string[] | undefined> {
   const base = env("AWS_ENDPOINT_URL_BEDROCK")?.replace(/\/+$/, "");
   if (!base) return undefined;
   const url = `${base}/inference-profiles?maxResults=1000`;
+  const key = env("AWS_BEARER_TOKEN_BEDROCK");
   try {
     const res = await fetch(url, {
+      ...(key && { headers: { authorization: `Bearer ${key}` } }),
       signal: AbortSignal.timeout(
         intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000),
       ),
@@ -765,15 +783,20 @@ async function discoverBedrockProfiles(): Promise<string[] | undefined> {
 function narrowBedrockModels(
   pi: ExtensionAPI,
   builtin: Provider,
-  profiles: readonly string[],
+  profiles: readonly string[] | undefined,
   keep: string | undefined,
 ): void {
-  const wanted = new Set(profiles.map((id) => id.toLowerCase()));
+  const wanted = new Set((profiles ?? []).map((id) => id.toLowerCase()));
   if (keep) wanted.add(keep.toLowerCase());
-  const offered = (m: { id: string }) => wanted.has(m.id.toLowerCase());
-  const models = builtin.getModels().filter(offered);
+  const endpoint = bedrockEndpoint();
+  const pick = <M extends { id: string; baseUrl: string }>(all: M[]): M[] =>
+    all
+      .filter((m) => !profiles || wanted.has(m.id.toLowerCase()))
+      .map((m) => (endpoint ? { ...m, baseUrl: endpoint } : m));
+  const models = pick(builtin.getModels());
   if (models.length === 0) return;
-  const allModels = builtin.getAllModels?.().filter(offered);
+  const all = builtin.getAllModels?.();
+  const allModels = all ? pick(all) : undefined;
   pi.registerProvider({
     ...builtin,
     getModels: () => models,
@@ -818,13 +841,26 @@ function hasModel(provider: Provider | undefined, id: string): boolean {
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a profile the region no longer lists cannot run there, so its added entry goes once the region is listed again.
+function keepBedrockModels(state: ConfigState, ids: readonly string[]): void {
+  const provider = state.models.providers[BEDROCK_PROVIDER] as
+    | { models?: BedrockModelEntry[] }
+    | undefined;
+  if (!provider?.models) return;
+  const wanted = new Set(ids.map((id) => id.toLowerCase()));
+  provider.models = provider.models.filter((m) =>
+    wanted.has(m.id.toLowerCase()),
+  );
+}
+
 function addBedrockModel(state: ConfigState, id: string): void {
   const region = env("AWS_REGION") ?? "us-east-1";
   const entry: BedrockModelEntry = {
     id,
     name: id,
     api: BEDROCK_API,
-    baseUrl: `https://bedrock-runtime.${region}.amazonaws.com`,
+    baseUrl:
+      bedrockEndpoint() ?? `https://bedrock-runtime.${region}.amazonaws.com`,
   };
   const provider = (state.models.providers[BEDROCK_PROVIDER] ?? {}) as {
     models?: BedrockModelEntry[];

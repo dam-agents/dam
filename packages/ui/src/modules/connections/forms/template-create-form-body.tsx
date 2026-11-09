@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { emitToast } from "@/lib/toast";
 
 import { useAppConnections } from "../api/queries.js";
+import { OAuthPopupWait } from "../components/oauth-popup-wait.js";
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
 import { templateSubmitLabel } from "../lib/catalog-providers.js";
@@ -91,6 +92,8 @@ export function TemplateCreateFormBody({
     needsOAuth,
     awaitingPopup,
     refocusPopup,
+    cancelAuthorization,
+    popupDeadlineAt,
   } = useTemplateCreateSubmit({
     template,
     popupOAuth,
@@ -244,25 +247,27 @@ export function TemplateCreateFormBody({
     </div>
   );
 
-  const footerRegion = (
+  const footerRegion = awaitingPopup ? (
+    <OAuthPopupWait
+      deadlineAt={popupDeadlineAt}
+      onReopen={refocusPopup}
+      onDiscard={() => {
+        cancelAuthorization();
+        onCancel();
+      }}
+    />
+  ) : (
     <>
       <Button variant="outline" onClick={onCancel} disabled={pending}>
         Cancel
       </Button>
       <Button
-        onClick={awaitingPopup ? refocusPopup : onSubmit}
-        disabled={(pending && !awaitingPopup) || reachUnchosen}
-        tooltip={
-          awaitingPopup
-            ? "Bring the authorization window back to the front"
-            : undefined
-        }
+        onClick={onSubmit}
+        disabled={pending || reachUnchosen}
         data-testid="connection-create-submit"
       >
         {verifying ? (
           "Verifying…"
-        ) : awaitingPopup ? (
-          "Waiting for authorization — reopen"
         ) : authorizing ? (
           "Redirecting…"
         ) : pending ? (

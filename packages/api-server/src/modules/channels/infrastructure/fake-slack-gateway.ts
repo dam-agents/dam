@@ -470,9 +470,21 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         triggerId: input.triggerId ?? "fake-trigger",
       };
       let ackText = "";
-      await requireHandlers().onCommand(command, async (response) => {
-        ackText = response?.text ?? "";
-      });
+      await requireHandlers().onCommand(
+        command,
+        async (response) => {
+          ackText = response?.text ?? "";
+        },
+        async (text) => {
+          outbound.push({
+            kind: "ephemeral",
+            teamId: command.teamId,
+            channel: command.channelId,
+            user: command.userId,
+            text,
+          });
+        },
+      );
       return ackText;
     },
 

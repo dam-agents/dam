@@ -454,6 +454,31 @@ for refused in '[{"username":"qa-member"}]' '[{"username":"qa-member","password"
     exit 1
   fi
 done
+# A person's own OAuth clients sign in to an Environment only on an install
+# that serves Environments: with a domain the realm has the environments
+# scope, its client policy and the anonymous registration policies, and
+# Keycloak gets the addresses and callbacks its extension reads; without one,
+# none of it renders.
+oauth_realm() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/realm-configmap.yaml | yq -r '.data["platform-realm.json"]'
+}
+jq -e '([.clientScopes[].name] == ["environments"])
+  and (.clientScopes[0].protocolMappers[0].protocolMapper == "dam-environment-audience")
+  and (.clientPolicies.policies[0].profiles == ["dam-environments"])
+  and ([.components["org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy"][] | select(.providerId == "trusted-hosts")] | length == 1)
+  and ([.components["org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy"][] | select(.providerId == "max-clients")][0].config["max-clients"] == ["5000"])' \
+  <<<"$(oauth_realm --set environments.domain=env.example.com)" >/dev/null ||
+  { echo "a realm with environments.domain lacks the environments scope, policy or registration policies" >&2; exit 1; }
+jq -e '(has("clientScopes") or has("clientPolicies") or has("components")) | not' <<<"$(oauth_realm --set environments.domain=)" >/dev/null ||
+  { echo "a realm without environments.domain renders the Environments OAuth parts" >&2; exit 1; }
+kc_env() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/app.yaml |
+    yq -r '.spec.template.spec.containers[0].env[] | select(.name | test("^DAM_ENVIRONMENTS_")) | .name + "=" + .value'
+}
+[ "$(kc_env --set environments.domain=env.example.com --set scheme=https --set port= | head -1)" = "DAM_ENVIRONMENTS_URL_TEMPLATE=https://{host}.env.example.com" ] ||
+  { echo "Keycloak does not get the Environments URL template: $(kc_env --set environments.domain=env.example.com)" >&2; exit 1; }
+[ -z "$(kc_env --set environments.domain=)" ] ||
+  { echo "Keycloak gets Environments settings without environments.domain" >&2; exit 1; }
 # A TLS-intercepting egress path's CA reaches the api-server too, not only the
 # gateways and agents: its own Slack, GitHub and OAuth calls take that path.
 extra_ca_env() {

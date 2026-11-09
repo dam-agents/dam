@@ -260,15 +260,40 @@ environments:
   domain: ""
   # -- Most Environments one agent may hold at once.
   maxPerAgent: 5
-  # -- Furthest ahead an Environment's expiry may be set, in days.
+  # -- Furthest ahead an Environment's expiry may be set, in days. Its owner or
+  # agent may still keep one with no expiry.
   expiryMaxDays: 30
   # -- How long an Environment may sit idle before it sleeps, when its agent
   # gives no idle timeout of its own. Longer than the agents' `vmIdleTimeout`,
   # since what an Environment runs takes minutes to come back.
   idleTimeout: "60m"
   # -- Longest idle timeout an agent may give an Environment; a longer one is
-  # cut to it. An Environment always sleeps in the end.
+  # cut to it. Its agent may still keep one awake with "never".
   idleTimeoutMax: "24h"
+  # -- A person's own OAuth clients — an MCP client in an IDE, a desktop app,
+  # a CLI — sign in to an Environment with their platform account, in
+  # Keycloak, and get a token for that one address. Rendered only with a
+  # domain.
+  oauth:
+    # -- Callbacks a client may register itself with. A loopback entry allows
+    # any port and path on it (RFC 8252); an https entry, any path under that
+    # site; `<scheme>:` an app's own scheme. Anything else is refused.
+    redirects:
+      - http://localhost
+      - http://127.0.0.1
+      - http://[::1]
+      - https://claude.ai
+      - https://claude.com
+      - https://chatgpt.com
+      - https://vscode.dev
+      - https://insiders.vscode.dev
+      - "cursor:"
+      - "vscode:"
+      - "vscode-insiders:"
+      - "windsurf:"
+    # -- Most clients that may register themselves at once; a daily task
+    # deletes those unused for 30 days.
+    maxClients: 5000
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
