@@ -142,7 +142,8 @@ A peer Connection mounted on that name is dropped from the chain rather than mer
 The chain also removes `X-Forwarded-For` and `X-Real-IP`: the api-server reads the first as the caller's address in its audit log, and an address the Agent chose is not one to write there.
 That is what makes the route work on every install: a plain-HTTP one, like the local cluster's, has no public name to reach, and this chain never needs one.
 
-**How the hop is protected.** The chain terminates the Agent's TLS at the gateway and forwards inside the cluster, so the Agent's key is encrypted on the machine-to-gateway leg and then travels cluster-internal.
+**How the hop is protected.** The api-server's ingress needs no rule of its own for this: its public port is already admitted from anywhere in the cluster and HBONE from the agent namespace, and the key the chain injects is what authenticates the hop — a gateway whose Agents hold no such Connection has none to send, and the few routes on that port that carry no bearer serve no owner's data.
+The chain terminates the Agent's TLS at the gateway and forwards inside the cluster, so the Agent's key is encrypted on the machine-to-gateway leg and then travels cluster-internal.
 Its encryption there is the ambient mesh's: the gateway pod and the api-server are enrolled, and ztunnel carries the hop as mTLS under their workloads' identities.
 An install that turns mesh enforcement off — `istio.enforce: false`, which only a local cluster may, and `--no-mesh` with it — enrolls nothing, and there the hop is plaintext inside the cluster, as every other in-cluster hop is.
 Nothing about the chain validates the upstream's certificate: the upstream is a Service this install owns, and the pinning that matters is the name and port it was rendered for.

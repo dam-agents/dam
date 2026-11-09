@@ -128,7 +128,7 @@ A key carries the owner's `sub`, a subset of permission scopes, and an optional 
 The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 
-A key outlives its sign-in: the api-server asks the identity provider whether its owner may still act, keeps an `active` answer a minute, and refuses an unanswered directory (503, retryable) rather than admit it.
+A key outlives its sign-in: the api-server asks the identity provider whether its owner still may act, keeps a yes for a minute, and refuses a directory that does not answer as unavailable (503, retryable).
 
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
 That re-check is a poll, because a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
@@ -210,8 +210,6 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   S3 authenticates by signing each request with the secret key, so there is no value to inject: the agent holds a placeholder key ID that names the Connection, and the gateway re-signs its requests with the real pair ([credential-gateway](credential-gateway.md#request-signing)).
   The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the machine: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
 
-A key the platform mints for its own Connection — the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) — is stored and revoked with it.
-
 **Multi-host connections.** A single OAuth connection can inject the same token on more than one host with **different auth schemes per host**, all from one K8s Secret.
 The Secret carries an annotated list of per-host injection descriptors; the controller fans it into one Envoy filter chain per host, stacking entries that share a host, and mounts the Secret once.
 The same list drives the egress allowlist, one rule per host and connection, so there is no second source of truth.
@@ -267,8 +265,7 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 ## Envoy credential injection
 
 Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
-A credentialed host is pinned to its upstream — for that Connection, the api-server's own Service, by name and port — so a request cannot carry a credential to a destination of the agent's choosing; route-confusion exfiltration is structurally closed.
-Its ingress policy needs no change: the public port is admitted from anywhere in the cluster, and HBONE from the agent namespace, so the key the chain injects is what authenticates that hop — a gateway whose Agents hold no such Connection has none to send, and the routes that carry no bearer serve no owner's data.
+A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
 The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades instead of wedging the gateway — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz

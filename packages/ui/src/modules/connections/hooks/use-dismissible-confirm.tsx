@@ -50,6 +50,7 @@ export function useDismissibleConfirms(): DismissibleConfirms {
       const ok = await showConfirm(
         <DismissibleBody
           body={body}
+          dismissible={storageKeys.length > 0}
           onDontShowAgainChange={(value) => {
             choice.dontShowAgain = value;
           }}
@@ -78,27 +79,32 @@ export function useDismissibleConfirm(storageKey: string): DismissibleConfirm {
   return { dismissed: confirms.dismissed(storageKey), confirm };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the body a confirmable question is shown with. A question that cannot be dismissed — one no storage key guards, such as the warning before granting the Connection that acts as the owner — offers no "don't show again", because nothing would be recorded and the box would promise what the dialog cannot do. */
 function DismissibleBody({
   body,
+  dismissible,
   onDontShowAgainChange,
 }: {
   body: ReactNode;
+  dismissible: boolean;
   onDontShowAgainChange: (value: boolean) => void;
 }) {
   const [checked, setChecked] = useState(false);
   return (
     <div className="flex flex-col gap-4">
       <p>{body}</p>
-      <CheckboxItem
-        label="Don't show this again"
-        checked={checked}
-        onCheckedChange={(value) => {
-          const next = value === true;
-          setChecked(next);
-          onDontShowAgainChange(next);
-        }}
-        testId="dismissible-confirm-dont-show-again"
-      />
+      {dismissible && (
+        <CheckboxItem
+          label="Don't show this again"
+          checked={checked}
+          onCheckedChange={(value) => {
+            const next = value === true;
+            setChecked(next);
+            onDontShowAgainChange(next);
+          }}
+          testId="dismissible-confirm-dont-show-again"
+        />
+      )}
     </div>
   );
 }

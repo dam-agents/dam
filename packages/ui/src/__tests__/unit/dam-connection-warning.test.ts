@@ -31,6 +31,8 @@ const { useBindSharingConfirm } =
 const { useConfirmSharedConnection } =
   await import("../../modules/connections/hooks/use-confirm-shared-connection.js");
 const { useStore } = await import("../../store.js");
+const { useDismissibleConfirm } =
+  await import("../../modules/connections/hooks/use-dismissible-confirm.js");
 const { getBrand } = await import("../../brand.js");
 
 const DAM: ConnectionView = {
@@ -94,6 +96,18 @@ function GrantProbe({ connection }: { connection: ConnectionView }) {
   return null;
 }
 
+function DismissibleProbe() {
+  const { confirm } = useDismissibleConfirm("dam-warning-test-key");
+  useEffect(() => {
+    void confirm({
+      title: "Forget it?",
+      body: "This one can be dismissed.",
+      confirmLabel: "Forget",
+    });
+  }, [confirm]);
+  return null;
+}
+
 const dialogText = () => {
   const dialog = useStore.getState().dialog;
   if (dialog === null) return null;
@@ -140,6 +154,23 @@ describe("the warning in the channel-bind flow", () => {
 });
 
 describe("the confirmation before the grant", () => {
+  // TEST_SCENARIO: the warning carries no "don't show this again", because nothing would record that choice and the box would promise what the dialog cannot do. A question a storage key does guard keeps the box.
+  it("offers no dismiss box, and a dismissible question still does", () => {
+    render(createElement(GrantProbe, { connection: DAM }));
+    const undismissable = dialogText();
+    expect(undismissable).not.toBeNull();
+    expect(undismissable!.body).not.toContain(
+      "dismissible-confirm-dont-show-again",
+    );
+    act(() => useStore.getState().closeDialog(false));
+
+    render(createElement(DismissibleProbe));
+    const dismissible = dialogText();
+    expect(dismissible).not.toBeNull();
+    expect(dismissible!.body).toContain("dismissible-confirm-dont-show-again");
+    act(() => useStore.getState().closeDialog(false));
+  });
+
   // TEST_SCENARIO: the Agent has no editors and no shared chat, so there is no audience to warn about — and the grant still asks, because the Connection itself is the thing being given away: the agent it is granted to acts as its owner.
   it("asks before granting the Connection to an agent with no audience", () => {
     render(createElement(GrantProbe, { connection: DAM }));
