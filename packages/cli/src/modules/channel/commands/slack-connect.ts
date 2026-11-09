@@ -12,12 +12,19 @@ import {
 } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ChannelService } from "../services/channel-service.js";
+import {
+  NO_GRANTS,
+  type SharingService,
+  sharedSlackChannels,
+  sharingWarning,
+} from "../../sharing/index.js";
 
 export function buildSlackConnectCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createChannelService: (host: string) => ChannelService;
+  createSharingService: (host: string) => SharingService;
 }): Command {
   return new Command("connect")
     .description("Bind a Slack channel to an Agent")
@@ -103,6 +110,23 @@ export function buildSlackConnectCommand(deps: {
           process.stderr.write(
             "note: everyone in the channel drives this agent under its credentials; your Terms-of-Use acceptance covers every turn\n",
           );
+        }
+        const slackChannels = sharedSlackChannels(
+          res.value.filter(
+            (c) =>
+              c.type === ChannelType.Slack && c.slackChannelId === channelId,
+          ),
+        );
+        if (slackChannels.length > 0) {
+          const held = await deps
+            .createSharingService(host)
+            .heldGrants(agent.id);
+          const warning = sharingWarning(
+            agent.name,
+            { editors: [], slackChannels, telegramGroups: [] },
+            held.ok ? held.value : NO_GRANTS,
+          );
+          if (warning) process.stderr.write(warning);
         }
         process.exit(EXIT_SUCCESS);
       },

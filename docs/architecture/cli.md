@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -180,13 +180,15 @@ The user installs it from the repository with an open skills installer, pinned t
 The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
 
 A deployment also serves the skill itself, so an agent given only its URL finds the CLI and the skill that matches that server.
-The api-server image carries the `dam` skill of the commit it was built from, and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` (and the legacy `/.well-known/skills/`), with the digest of the file it serves, which an open skills installer pointed at the deployment's URL installs.
+The api-server image carries the `dam` skill of the commit it was built from — its main page and the pages beside it, such as its security advisory — and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` as one archive of those files, with the archive's digest, which an open skills installer pointed at the deployment's URL installs.
+Every replica builds the same archive bytes from the same files, because an installer may read the index from one replica and the archive from another.
+The legacy index under `/.well-known/skills/` names each file instead, for older installers.
 It answers `/llms.txt` too: what the deployment is, the CLI version it recommends, how to install the skill and sign in, and the rules on secrets and the API.
 The web app's shell, which an agent's fetch reads without running its JavaScript, names the deployment in its title and points to `/llms.txt`, and the UI's web server answers 404 for any other `/.well-known/` path or root text file instead of the shell, so a file the deployment lacks does not look present.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
 The CLI's test suite checks the `dam` skill against the CLI.
-It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
+It resolves every command any of the skill's pages names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
 A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
 
 The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
@@ -199,6 +201,10 @@ A GitHub sign-in or App installation is a parent no agent holds ([github-connect
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.
+The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
+The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, model providers left out as in the UI.
+It warns and never asks, since an agent usually drives it.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
 A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.

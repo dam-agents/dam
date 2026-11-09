@@ -31,6 +31,11 @@ import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
 import { avatarFromFlagsOrExit, type AvatarOpts } from "./avatar-flags.js";
 import { waitForRunningOrExit } from "./wait-or-exit.js";
+import {
+  sharedConnectionNames,
+  sharedSlackChannels,
+  sharingWarning,
+} from "../../sharing/index.js";
 
 export interface KitCreateOpts extends AvatarOpts {
   kit: string;
@@ -186,6 +191,21 @@ export async function runCreateFromKit(
     templates,
   );
   const kitRef = kitRefOf(kit, catalogKits);
+  const warning = sharingWarning(
+    finalAgent.name,
+    {
+      editors: [],
+      slackChannels: sharedSlackChannels(finalAgent.channels),
+      telegramGroups: [],
+    },
+    {
+      connections: granted
+        ? sharedConnectionNames(granted)
+        : input.connectionIds,
+      satellites: [],
+    },
+  );
+  if (warning) process.stderr.write(warning);
 
   if (opts.json) {
     process.stdout.write(
