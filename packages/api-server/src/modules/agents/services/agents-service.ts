@@ -968,8 +968,8 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved")
       return err(unresolvedWorkspace(workspace));
 
-    const requestedAmbient = modes.ambient === true;
-    const requestedHistory = modes.history === true;
+    const requestedAmbient = modes.ambient ?? existing?.ambient ?? false;
+    const requestedHistory = modes.history ?? existing?.history ?? false;
 
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
@@ -1866,8 +1866,32 @@ export function createAgentsService(deps: {
       if (!(await deps.repo.get(id, deps.owner)))
         return err({ type: "AgentNotFound" });
       const bindings = await deps.findSlackBindings(slackChannelId);
-      const alreadyHere = bindings.some((b) => b.agentId === id);
-      if (alreadyHere)
+      const existing = bindings.find((b) => b.agentId === id);
+      if (existing) {
+        if (modes?.history === true && !existing.history) {
+          const workspace = existing.teamId
+            ? ({ kind: "resolved", teamId: existing.teamId } as const)
+            : await deps.resolveSlackWorkspace(slackChannelId);
+          if (workspace.kind !== "resolved")
+            return err(unresolvedWorkspace(workspace));
+          const reader = await connectorInConversation(
+            slackChannelId,
+            workspace.teamId,
+          );
+          if (!reader.ok) {
+            securityLog("warn", "channel.connect_refused", {
+              category: "channel",
+              actor: deps.actor ?? null,
+              actorKind: "user",
+              surface: "slack",
+              agentId: id,
+              result: "failure",
+              reason: reader.error.type,
+              detail: { slackChannelId, turningOn: "history" },
+            });
+            return err(reader.error);
+          }
+        }
         return connectSlackImpl(
           id,
           slackChannelId,
@@ -1875,6 +1899,7 @@ export function createAgentsService(deps: {
           undefined,
           customEmoji,
         );
+      }
       const workspace = await deps.resolveSlackWorkspace(slackChannelId);
       if (workspace.kind !== "resolved")
         return err(unresolvedWorkspace(workspace));

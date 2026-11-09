@@ -56,8 +56,8 @@ export function createChannelService(deps: {
         const agent = await deps.trpc.agents.connectSlack.mutate({
           id,
           slackChannelId,
-          ...(modes?.ambient ? { ambient: true } : {}),
-          ...(modes?.history ? { history: true } : {}),
+          ...(modes?.ambient !== undefined ? { ambient: modes.ambient } : {}),
+          ...(modes?.history !== undefined ? { history: modes.history } : {}),
         });
         return ok(agent.channels);
       } catch (e) {

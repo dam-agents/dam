@@ -9,7 +9,8 @@ Bindings and their other modes live on [channels](channels.md), what a turn is h
 
 **Channel history** is a mode of one Slack binding, beside ambient mode: it lets that Agent read the conversation's older top-level messages, and the threads they open, past the window a new conversation is handed.
 It is **off by default** on every connect path — the in-chat bind, the UI form and the CLI — and the person connecting turns it on, or later a re-connect or the in-chat history command does, under the binder-or-owner authorization the ambient command uses.
-A re-connect sets ambient mode and channel history together, so a surface that changes one sends the other as it stands.
+A re-connect changes only the modes it names and keeps the others, so a surface that flips one never touches the other.
+Turning it on for an existing binding from the UI or CLI needs the person and the bot in the conversation, as a new connect does, so nobody opens the past of a conversation they have left; the in-chat command runs inside it, and turning it off asks nothing.
 Every change is security-logged, none is announced in the channel, and the agent list says which Agents have it.
 Telegram has no such switch: its bot cannot read history.
 

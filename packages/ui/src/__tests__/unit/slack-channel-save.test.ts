@@ -63,7 +63,7 @@ describe("planSlackChannelSave — editing an existing binding", () => {
     });
     expect(
       plan(bound("C-1", true), { channelId: "C-1", ambient: false }),
-    ).toEqual({ id: AGENT, slackChannelId: "C-1" });
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", ambient: false });
   });
 
   it("never connects a conversation other than the one being edited", () => {
@@ -87,16 +87,11 @@ describe("planSlackChannelSave — channel history", () => {
     ).toEqual({ id: AGENT, slackChannelId: "C-NEW", history: true });
   });
 
-  it("keeps history on when only ambient changes, since a re-connect writes both", () => {
+  it("sends only the mode that changed, so the server keeps the other as it stands", () => {
     const withHistory = { slackChannelId: "C-1", history: true };
     expect(
       plan(withHistory, { channelId: "C-1", ambient: true, history: true }),
-    ).toEqual({
-      id: AGENT,
-      slackChannelId: "C-1",
-      ambient: true,
-      history: true,
-    });
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", ambient: true });
   });
 
   it("writes nothing when history is unchanged, and turns it off with a re-connect", () => {
@@ -106,7 +101,7 @@ describe("planSlackChannelSave — channel history", () => {
     ).toBeNull();
     expect(
       plan(withHistory, { channelId: "C-1", ambient: false, history: false }),
-    ).toEqual({ id: AGENT, slackChannelId: "C-1" });
+    ).toEqual({ id: AGENT, slackChannelId: "C-1", history: false });
   });
 });
 

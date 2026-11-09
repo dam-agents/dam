@@ -37,15 +37,9 @@ export function SlackBindSuccess({
 
   const changeMode = (mode: keyof SlackModes) => (next: boolean) => {
     const previous = modes;
-    const updated = { ...modes, [mode]: next };
-    setModes(updated);
+    setModes({ ...modes, [mode]: next });
     saveModes.mutate(
-      {
-        id: agentId,
-        slackChannelId,
-        ...(updated.ambient ? { ambient: true } : {}),
-        ...(updated.history ? { history: true } : {}),
-      },
+      { id: agentId, slackChannelId, [mode]: next },
       { onError: () => setModes(previous) },
     );
   };
