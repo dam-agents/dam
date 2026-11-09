@@ -2097,45 +2097,43 @@ fn guard_pool_at(dir: File, home: &Path, room_at: &Path, note_at: &Path) {
             Ok((size.abs_diff(now) > POOL_GUARD_STEP).then_some(size))
         };
         // UNIT_BOUNDARY_DESCRIPTION: what the agent may still write, marked every look and not only when the guard moves: a guest at its grant is held where it stands, so a look that changes nothing is exactly when it ran out. A boot's first look says nothing unless it is full, so a guest with room is not news.
-        let Some((mut want, mut mine, mut room, mut now)) = look(&mut state) else {
+        let Some((mut want, mine, mut room, now)) = look(&mut state) else {
             continue;
         };
-        // UNIT_BOUNDARY_DESCRIPTION: a growth is applied before the look is published, and needs no sync: a guest given room, or no longer held at all, must not be read for even one look as a short disk, which would start an eviction pass on a filesystem that is only small because it was sized. A shrink waits for the sync below, which it is measured after.
+        // UNIT_BOUNDARY_DESCRIPTION: a growth is applied before the look is published, and needs no sync: a guest given room, or no longer held at all, must not be read for even one look as a short disk, which would start an eviction pass on a filesystem that is only small because it was sized. A growth that fails is published only while a grant still holds the guest: the end of a grant is not published over a filesystem still at the size the grant set, and the next look tries again. A shrink waits for the sync below, which it is measured after. A chunk end that cannot be read leaves the size where it is: growing to the whole disk instead would leave the guest that disk under a grant the guard files take a backoff to catch up with, so the guest is held to its last size, which can only be less than its room, until the read works again.
         let mut resize = match sized(&state, mine, now) {
             Ok(Some(size)) if size > now => {
-                if !apply_size(&dir, size, now, &mut size_failing) {
-                    return;
-                }
-                state.resized();
-                let Some(after) = look(&mut state) else {
-                    continue;
-                };
-                (want, mine, room, now) = after;
-                sized(&state, mine, now).unwrap_or(None)
-            }
-            Ok(resize) => {
-                size_failing = false;
-                resize
-            }
-            Err(e) => {
-                if !std::mem::replace(&mut size_failing, true) {
-                    logf!("WARNING: reading where the disk's chunks end ({e}); the guard files alone hold the agent to its room");
-                }
-                let disk = vm::DISK_BYTES.load(std::sync::atomic::Ordering::Relaxed);
-                if now < disk {
-                    let mut failing = true;
-                    if !apply_size(&dir, disk, now, &mut failing) {
+                let grown = {
+                    let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+                    if slot.is_none() {
                         return;
                     }
+                    resize_to(&dir, size, now, &mut size_failing)
+                };
+                if grown {
                     state.resized();
-                    if let Some((after_want, _, after_room, _)) = look(&mut state) {
-                        (want, room) = (after_want, after_room);
-                    }
+                    let Some((after_want, _, after_room, _)) = look(&mut state) else {
+                        continue;
+                    };
+                    (want, room) = (after_want, after_room);
+                } else if grant.is_none() {
+                    continue;
+                }
+                None
+            }
+            Ok(None) => {
+                size_failing = false;
+                None
+            }
+            Ok(shrink) => shrink,
+            Err(e) => {
+                if !std::mem::replace(&mut size_failing, true) {
+                    logf!("WARNING: reading where the disk's chunks end ({e}); the filesystem keeps its size and the guard files hold the agent to its room");
                 }
                 None
             }
         };
-        let sizing = resize.is_some() || !size_failing;
+        let sizing = !size_failing;
         // UNIT_BOUNDARY_DESCRIPTION: the room and the grant are published as one value with the guard's blocks, in a single store a reader cannot see half of: without a grant the room is nothing, since the disk's own room is not what the guard file holds back, and a room left from an earlier grant would read as an agent out of room.
         if !publish_while_running(
             grant.is_some(),
@@ -2180,24 +2178,28 @@ fn guard_pool_at(dir: File, home: &Path, room_at: &Path, note_at: &Path) {
                 }
             }
         }
-        // UNIT_BOUNDARY_DESCRIPTION: a shrink is sized from what the guest holds once synced, and the guard files then hold only what lies between the room and the end of the chunks the size could not go below (pool_guard::disk_size). It runs under POOL_GUARD, as a guard move does, so a stop that took the guard is never followed by one.
+        // UNIT_BOUNDARY_DESCRIPTION: a shrink is sized from what the guest holds once synced, and the guard files then hold only what lies between the room and the size (pool_guard::disk_size). The chunks' end is read and the resize made back to back under POOL_GUARD, as a guard move is, so a stop that took the guard is never followed by one and nothing of the guard's own sits between the two. No ioctl both reads where the chunks end and refuses to relocate past it, so the read is no barrier: the chunk the size keeps past the end covers one the guest places in that instant, and a guest that places more than that moves only what it wrote in that instant.
         if resize.take().is_some() {
+            let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+            if slot.is_none() {
+                return;
+            }
             if let Some((_, mine, _, now)) = look(&mut state) {
                 match sized(&state, mine, now) {
                     Ok(Some(size)) => {
-                        if !apply_size(&dir, size, now, &mut size_failing) {
-                            return;
+                        if resize_to(&dir, size, now, &mut size_failing) {
+                            state.resized();
                         }
-                        state.resized();
                     }
-                    Ok(None) => {}
+                    Ok(None) => size_failing = false,
                     Err(e) => {
                         if !std::mem::replace(&mut size_failing, true) {
-                            logf!("WARNING: reading where the disk's chunks end ({e}); the guard files alone hold the agent to its room");
+                            logf!("WARNING: reading where the disk's chunks end ({e}); the filesystem keeps its size and the guard files hold the agent to its room");
                         }
                     }
                 }
             }
+            drop(slot);
         }
         let Some((Some(want), mine, _, _)) = look(&mut state) else {
             continue;
@@ -2237,27 +2239,30 @@ fn guard_pool_at(dir: File, home: &Path, room_at: &Path, note_at: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: sets the filesystem to `size` from `now` under POOL_GUARD, and reports whether the guard is still in its slot: a stop that took it ends the loop, and no resize follows it. A refused resize is warned of once per failing run. A refused shrink means btrfs had to relocate after all — a chunk the guest placed between the read of the chunks' end and the resize, past the margin disk_size leaves — and a refused relocation leaves btrfs refusing writes into about a chunk of the room it still reports until it grows again (seen on kernels 6.12 and 6.18), so the filesystem is grown to the whole disk, where the guard files hold the guest until the next look sizes it again.
-fn apply_size(dir: &File, size: u64, now: u64, failing: &mut bool) -> bool {
-    let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-    if slot.is_none() {
-        return false;
-    }
+// UNIT_BOUNDARY_DESCRIPTION: how far a refused shrink grows the filesystem past the size it kept: a refused relocation leaves btrfs refusing writes into about a chunk of the room it still reports until the filesystem grows again (seen on kernels 6.12 and 6.18), and a growth of 64 MiB was enough to clear it. It is the most the guest gains past its size until the next look, well under the floor every guest may write past its grant.
+const SHRINK_RECOVERY: u64 = 64 << 20;
+
+// UNIT_BOUNDARY_DESCRIPTION: sets the filesystem from `now` to `size`, with POOL_GUARD held by the caller, and reports whether it took that size. A refusal is warned of once per failing run; a refused shrink, whether btrfs ran out of room to relocate a chunk the guest placed past the size's bound or refused for another reason, also grows the filesystem by SHRINK_RECOVERY so the room it reports is room the guest can write.
+fn resize_to(dir: &File, size: u64, now: u64, failing: &mut bool) -> bool {
     match vm::resize_btrfs(dir, size) {
-        Ok(()) => *failing = false,
+        Ok(()) => {
+            *failing = false;
+            true
+        }
         Err(e) => {
             if !std::mem::replace(failing, true) {
-                logf!("WARNING: sizing the disk's filesystem from {now} to {size} bytes ({e}); the guard files alone hold the agent to its room");
+                logf!("WARNING: sizing the disk's filesystem from {now} to {size} bytes ({e}); the guard files hold the agent to its room");
             }
             if size < now {
                 let disk = vm::DISK_BYTES.load(std::sync::atomic::Ordering::Relaxed);
-                if let Err(e) = vm::resize_btrfs(dir, disk) {
-                    logf!("WARNING: growing the disk's filesystem back to {disk} bytes after a refused shrink ({e})");
+                let grown = now.saturating_add(SHRINK_RECOVERY).min(disk);
+                if let Err(e) = vm::resize_btrfs(dir, grown) {
+                    logf!("WARNING: growing the disk's filesystem to {grown} bytes after a refused shrink ({e}); writes may fail before `df` reaches zero");
                 }
             }
+            false
         }
     }
-    true
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a look puts its mark on the console: when the mark changed, and once per GUEST_ROOM_REPEAT while it stands. The first look of a boot says nothing unless it is full, so a guest with room is not news. The repeat is what keeps the runner's reading of the guest right where the log is cut under it: a cut rewrites the file around the line a guest writes into it, and a line the cut loses would otherwise leave the runner reporting the mark it last read for as long as the machine runs.
@@ -4010,8 +4015,12 @@ mod tests {
 
         // UNIT_BOUNDARY_DESCRIPTION: writes random bytes, which compression cannot shrink, to `name` a MiB at a time until the disk refuses them or `limit` is written, and reports the bytes that landed. A file the full disk will not even create counts as nothing written.
         fn fill(&self, name: &str, limit: u64) -> u64 {
-            let Ok(mut file) = File::create(self.top.join(name)) else {
-                return 0;
+            let mut file = match File::create(self.top.join(name)) {
+                Ok(file) => file,
+                Err(e) => {
+                    assert_eq!(e.raw_os_error(), Some(libc::ENOSPC), "creating {name}: {e}");
+                    return 0;
+                }
             };
             let mut block = vec![0u8; 1 << 20];
             io::Read::read_exact(&mut File::open("/dev/urandom").unwrap(), &mut block).unwrap();
@@ -4101,12 +4110,13 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the guard's own loop, on a real btrfs, sizes the filesystem as grants come and go: a grant sizes the filesystem to the guest's data and its room, and the guest writes its room plus, once, the floor and no more; a smaller grant after the guest has filled and freed chunks leaves the size at the chunks' end and the guard files hold the rest, so the guest writes that grant and no more; a grant of nothing leaves the floor; and a grant that goes away gives the guest the whole disk back within a look, before the loop publishes it as no longer held. Takes about two minutes, since the guard files move once per POOL_GUARD_BACKOFF. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored the_guard_loop_sizes_the_filesystem_to_each_grant`.
+    // TEST_SCENARIO: the guard's own loop, on a real btrfs, sizes the filesystem as grants come and go: a grant sizes the filesystem to the guest's data and its room, and the guest writes its room plus, once, the floor and no more; a smaller grant after the guest has filled and freed chunks leaves the size at the chunks' bound and the guard files hold the rest, so the guest writes that grant and no less and no more; a grant of nothing leaves the floor, and a renewed grant of nothing after the guest spent it leaves nothing, since the floor is one allowance per shortage; and a grant that goes away gives the guest the whole disk back within a look, before the loop publishes it as no longer held. Takes about two minutes, since the guard files move once per POOL_GUARD_BACKOFF. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored the_guard_loop_sizes_the_filesystem_to_each_grant`.
     #[test]
     #[ignore = "needs root and mkfs.btrfs"]
     fn the_guard_loop_sizes_the_filesystem_to_each_grant() {
         const MIB: u64 = 1 << 20;
         const SLACK: u64 = 160 * MIB;
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let disk = LoopBtrfs::new(20 << 30);
         let (whole, _, _) = disk.stat();
         vm::DISK_BYTES.store(whole, Ordering::Relaxed);
@@ -4130,7 +4140,20 @@ mod tests {
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) =
             Some(Guard::new(pool_guard(&dir).unwrap()).unwrap());
         let (home, room_path, note_path) = (disk.top.clone(), room_at.clone(), note_at.clone());
-        let looping = std::thread::spawn(move || guard_pool_at(dir, &home, &room_path, &note_path));
+        // UNIT_BOUNDARY_DESCRIPTION: stops the loop and clears the globals the test set however the test ends, before the disk under them is unmounted, so a failed assertion leaves no guard thread holding a slot another test takes.
+        struct Looping(Option<std::thread::JoinHandle<()>>);
+        impl Drop for Looping {
+            fn drop(&mut self) {
+                drop(take_pool_guard(|| {}));
+                if let Some(thread) = self.0.take() {
+                    let _ = thread.join();
+                }
+                vm::DISK_BYTES.store(0, Ordering::Relaxed);
+            }
+        }
+        let looping = Looping(Some(std::thread::spawn(move || {
+            guard_pool_at(dir, &home, &room_path, &note_path)
+        })));
 
         let (state, size, _) = settle(20, &|state, size, _| state.granted && size < whole / 2);
         assert!(
@@ -4154,7 +4177,8 @@ mod tests {
         );
         let written = disk.fill("over", u64::MAX);
         assert!(
-            written <= 512 * MIB + crate::pool_guard::POOL_GUARD_FLOOR + SLACK,
+            written + SLACK >= 512 * MIB
+                && written <= 512 * MIB + crate::pool_guard::POOL_GUARD_FLOOR + SLACK,
             "a 512 MiB grant let the guest write {written}"
         );
         fs::remove_file(disk.top.join("over")).unwrap();
@@ -4165,10 +4189,19 @@ mod tests {
         });
         let written = disk.fill("over", u64::MAX);
         assert!(
-            written <= crate::pool_guard::POOL_GUARD_FLOOR + SLACK,
+            written + SLACK >= crate::pool_guard::POOL_GUARD_FLOOR
+                && written <= crate::pool_guard::POOL_GUARD_FLOOR + SLACK,
             "a grant of nothing let the guest write {written}"
         );
+        grant(4, 0);
+        settle(45, &|_, _, free| free <= SLACK);
+        let written = disk.fill("again", u64::MAX);
+        assert!(
+            written <= SLACK,
+            "a renewed grant of nothing gave the floor back, and the guest wrote {written} more"
+        );
         fs::remove_file(disk.top.join("over")).unwrap();
+        let _ = fs::remove_file(disk.top.join("again"));
 
         fs::remove_file(&room_at).unwrap();
         let (state, size, _) = settle(10, &|state, size, _| !state.granted && size == whole);
@@ -4180,8 +4213,7 @@ mod tests {
             fs::read_to_string(&note_at).is_ok_and(|note| note.contains("holds back")),
             "the loop wrote no note where it was told to"
         );
-        drop(take_pool_guard(|| {}));
-        looping.join().unwrap();
+        drop(looping);
     }
 
     // TEST_SCENARIO: on a real btrfs disk the guard's moves have to return room the guest can write into, not just a smaller number in the guard's own stat: btrfs keeps the whole physical allocation of a preallocated extent whose tail alone was released, so a guard shortened in place left a steadily writing guest refused while the room it was promised stayed taken. The guest here fills a loop-mounted btrfs until the disk refuses it, so a fixed request is refused; the guard then shrinks and the same request lands, which is room the release returned and not room the disk had spare. A growth the full disk refuses keeps the hold it had, and a writer takes the room that growth leaves. Every file the test makes is unlinked before it exits, so the disk ends where it started. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored a_btrfs_guard_move_returns_the_room`.
