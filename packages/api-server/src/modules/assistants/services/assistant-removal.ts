@@ -24,8 +24,11 @@ const LOCK_WAIT_MS = 150;
  * trusted from the request that asked: the record is still the one that request
  * read (another incarnation means somebody opted in again, and their assistant is
  * not this delete's), and the install still lets a person opt out at all (mode
- * `on` leaves nobody opted out, so a stale turn-off must not fire). `false` says
- * the delete did not happen: the caller keeps the switch on and says so.
+ * `on` leaves nobody opted out, so a stale turn-off must not fire). The person's
+ * switch is stored as off in that same critical section, once the delete landed:
+ * the flag and the assistant therefore change together, and a request that read
+ * the old answer cannot provision a replacement in between. `false` says the
+ * delete did not happen: the caller keeps the switch on and says so.
  */
 export async function removeAssistant(deps: {
   repo: AssistantsRepository;
@@ -36,6 +39,8 @@ export async function removeAssistant(deps: {
   expectedAgentId: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: whether the install still lets a person opt out — false in mode `on`, where everyone has the assistant. */
   optOutAllowed: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: stores the person's own switch as off. It runs inside the same critical section as the delete, after it: a flag write outside the lock would let a request that read the old answer provision a replacement in the gap, and a failed delete would leave them opted out anyway. */
+  onRemoved: () => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<LockOutcome<boolean>> {
   const remove = () =>
@@ -58,6 +63,7 @@ export async function removeAssistant(deps: {
         row.agentId,
         assistantAgentId(deps.owner, row.incarnation + 1),
       );
+      await deps.onRemoved();
       return true;
     });
 

@@ -94,11 +94,13 @@ function world() {
     agents.delete(id);
     deleted.push(id);
   };
+  const stored: { owner: string; at: string }[] = [];
   const removal = (
     owner: string,
     opts: {
       expectedAgentId?: string | null;
       optOutAllowed?: boolean;
+      onRemoved?: () => Promise<void>;
     } = {},
   ) =>
     removeAssistant({
@@ -111,9 +113,14 @@ function world() {
           ? (rows.get(owner)?.agentId ?? null)
           : opts.expectedAgentId,
       optOutAllowed: async () => opts.optOutAllowed ?? true,
+      onRemoved:
+        opts.onRemoved ??
+        (async () => {
+          stored.push({ owner, at: "removed" });
+        }),
       sleep: async () => undefined,
-    } as Parameters<typeof removeAssistant>[0]);
-  return { rows, agents, deleted, removal, lock };
+    } as unknown as Parameters<typeof removeAssistant>[0]);
+  return { rows, agents, deleted, removal, lock, stored };
 }
 
 describe("switching the assistant off for one person", () => {
@@ -131,6 +138,7 @@ describe("switching the assistant off for one person", () => {
       used: false,
       renamed: null,
     });
+    expect(w.stored).toEqual([{ owner: ALICE, at: "removed" }]);
   });
 
   // TEST_SCENARIO: nobody else's assistant is touched, and the Agent the record renamed to free the reserved name stays exactly as it was — a person's own Agent is never renamed back.
@@ -182,24 +190,67 @@ describe("switching the assistant off for one person", () => {
       owner: ALICE,
       expectedAgentId: ASSISTANT,
       optOutAllowed: async () => true,
+      onRemoved: async () => undefined,
       sleep: async () => {
         waits += 1;
         if (waits >= 2) w.lock.held.delete(ALICE);
       },
-    } as Parameters<typeof removeAssistant>[0]);
+    } as unknown as Parameters<typeof removeAssistant>[0]);
 
     expect(await removal).toEqual({ ran: true, value: true });
     expect(waits).toBe(2);
     expect(w.deleted).toEqual([ASSISTANT]);
   });
 
-  // TEST_SCENARIO: a lock that never frees is reported as not done, so the caller keeps the switch on instead of reporting a completed opt-out while the assistant is still there.
+  // TEST_SCENARIO: a lock that never frees is reported as not done, so the caller keeps the switch on instead of reporting a completed opt-out while the assistant is still there — and the switch is never stored.
   it("reports failure on a lock that never frees", async () => {
     const w = world();
     w.lock.held.add(ALICE);
     expect(await w.removal(ALICE)).toEqual({ ran: false });
     expect(w.deleted).toEqual([]);
     expect(w.rows.get(ALICE)?.used).toBe(true);
+    expect(w.stored).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a delete that fails stores nothing, so the person is not left opted out with their assistant still there.
+  it("stores no switch when the delete fails", async () => {
+    const w = world();
+    const removal = removeAssistant({
+      repo: unused<AssistantsRepository>({
+        find: async (owner: string) => w.rows.get(owner) ?? null,
+      }),
+      agents: {
+        delete: async () => {
+          throw new Error("the store refused");
+        },
+      } as never,
+      withLock: async <T>(_owner: string, work: () => Promise<T>) => ({
+        ran: true as const,
+        value: await work(),
+      }),
+      owner: ALICE,
+      expectedAgentId: ASSISTANT,
+      optOutAllowed: async () => true,
+      onRemoved: async () => {
+        throw new Error("the switch must not be stored");
+      },
+      sleep: async () => undefined,
+    } as unknown as Parameters<typeof removeAssistant>[0]);
+
+    await expect(removal).rejects.toThrow("the store refused");
+    expect(w.deleted).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the delete and the switch are one critical section: the switch is stored while the owner's lock is still held, so no request can take it in between and provision a replacement.
+  it("stores the switch inside the owner's lock", async () => {
+    const w = world();
+    let heldWhenStored: boolean | null = null;
+    await w.removal(ALICE, {
+      onRemoved: async () => {
+        heldWhenStored = w.lock.held.has(ALICE);
+      },
+    });
+    expect(heldWhenStored).toBe(true);
   });
 
   // TEST_SCENARIO: the reviewer's stale request — this one read the assistant it was going to delete, and another request has since opted the person back in and provisioned a new incarnation. Under the lock the record is no longer the one it read, so it deletes nothing and reports that it did not.

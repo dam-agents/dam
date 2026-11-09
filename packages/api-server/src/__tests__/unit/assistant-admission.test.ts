@@ -22,7 +22,7 @@ const VERSION = "2026-01-01";
 
 function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   const provisionAssistant = vi.fn(async () => undefined);
-  const removeAssistant = vi.fn(async () => true);
+  const turnOffAssistant = vi.fn(async () => true);
   const setFlag = vi.fn(async (_feature: string, enabled: boolean) => ({
     dambledore: enabled,
   }));
@@ -34,7 +34,7 @@ function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   const ctx = {
     user: person(),
     provisionAssistant,
-    removeAssistant,
+    turnOffAssistant,
     terms: {
       current: () => ({ version: VERSION, text: "terms", hash: "hash" }),
       latestAcceptance: async () =>
@@ -47,7 +47,7 @@ function world(opts: { accepted?: boolean; signUpsOpen?: boolean } = {}) {
   return {
     caller: appRouter.createCaller(ctx),
     provisionAssistant,
-    removeAssistant,
+    turnOffAssistant,
     setFlag,
     accept,
   };
@@ -70,26 +70,29 @@ describe("handing a person their assistant without a new context", () => {
   // TEST_SCENARIO: the delete goes first and the flag is switched only once it returned; a delete that did not happen — the lock was held, the record had changed, the server failed — leaves the switch on and tells the person to try again.
   it("leaves the flag on when the delete did not happen", async () => {
     const busy = world();
-    busy.removeAssistant.mockResolvedValueOnce(false);
+    busy.turnOffAssistant.mockResolvedValueOnce(false);
     await expect(
       busy.caller.features.setFlag({ feature: "dambledore", enabled: false }),
     ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
     expect(busy.setFlag).not.toHaveBeenCalled();
 
     const failed = world();
-    failed.removeAssistant.mockRejectedValueOnce(new Error("the store failed"));
+    failed.turnOffAssistant.mockRejectedValueOnce(
+      new Error("the store failed"),
+    );
     await expect(
       failed.caller.features.setFlag({ feature: "dambledore", enabled: false }),
     ).rejects.toThrow(/the store failed/);
     expect(failed.setFlag).not.toHaveBeenCalled();
 
     const done = world();
-    done.removeAssistant.mockResolvedValueOnce(true);
+    done.turnOffAssistant.mockResolvedValueOnce(true);
     await done.caller.features.setFlag({
       feature: "dambledore",
       enabled: false,
     });
-    expect(done.setFlag).toHaveBeenCalledTimes(1);
+    // TEST_SCENARIO: the switch is stored by the turn-off itself, in the same critical section.
+    expect(done.setFlag).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: switching the assistant off deletes it, so the flag change is what runs the removal; switching it on provisions, and any other feature's switch does neither. An install's mode changing is not a flag change, so it deletes nothing.
@@ -99,17 +102,17 @@ describe("handing a person their assistant without a new context", () => {
       feature: "dambledore",
       enabled: false,
     });
-    expect(off.removeAssistant).toHaveBeenCalledTimes(1);
+    expect(off.turnOffAssistant).toHaveBeenCalledTimes(1);
     expect(off.provisionAssistant).not.toHaveBeenCalled();
 
     const on = world();
     await on.caller.features.setFlag({ feature: "dambledore", enabled: true });
     expect(on.provisionAssistant).toHaveBeenCalledTimes(1);
-    expect(on.removeAssistant).not.toHaveBeenCalled();
+    expect(on.turnOffAssistant).not.toHaveBeenCalled();
 
     const other = world();
     await other.caller.features.setFlag({ feature: "hermes", enabled: false });
-    expect(other.removeAssistant).not.toHaveBeenCalled();
+    expect(other.turnOffAssistant).not.toHaveBeenCalled();
     expect(other.provisionAssistant).not.toHaveBeenCalled();
   });
 

@@ -207,7 +207,11 @@ export function createAssistantProvisioner(deps: {
       if (!(await deps.admitted())) return;
       if (!(await deps.enabled())) return;
       try {
-        await deps.withLock(deps.ownName, once);
+        // UNIT_BOUNDARY_DESCRIPTION: the answer that decides a create is read again inside the owner's lock, because a turn-off stores the switch there too: an answer read before the lock can be as old as the request that carried it, and provisioning a replacement for someone who has just switched the assistant off would leave one no request ever removes.
+        await deps.withLock(deps.ownName, async () => {
+          if (!(await deps.enabled())) return;
+          await once();
+        });
       } catch (err) {
         getLogger().warn(
           { err, owner: deps.ownName },

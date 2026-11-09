@@ -127,8 +127,8 @@ export interface ApiContext {
   assistants: AssistantsService;
   /* UNIT_BOUNDARY_DESCRIPTION: gives this person their assistant if the install offers one and they have accepted the Terms of Use. Called when a transport attaches, and again after a first acceptance or after the experimental switch is turned on, because neither of those re-creates the context. */
   provisionAssistant: () => Promise<void>;
-  /* UNIT_BOUNDARY_DESCRIPTION: deletes this person's assistant and its data, the way any Agent delete does, when they switch the feature off for themselves; the record is forgotten so opting back in starts fresh. A person with none is a no-op. `false` means it did not happen — the lock was held, or the record is not the one this request read — and the caller keeps the switch on. */
-  removeAssistant: () => Promise<boolean>;
+  /* UNIT_BOUNDARY_DESCRIPTION: switches the assistant off for this person — its Agent and data deleted the way any Agent delete does, the record forgotten so opting back in starts fresh, and their own switch stored as off — all inside one owner-locked critical section, so no request can provision a replacement in between. A person with none is still switched off. `false` means nothing was stored: the lock was held or the delete was refused, so the switch stays on. */
+  turnOffAssistant: () => Promise<boolean>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

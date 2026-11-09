@@ -584,7 +584,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         provision: () => assistantProvisioner.ensure(),
       });
 
-    const removeAssistant = async (): Promise<boolean> => {
+    const turnOffAssistant = async (): Promise<boolean> => {
       if (user.keyId !== undefined || user.agentIds !== "*") return false;
       if (user.actingEditor !== undefined) return false;
       try {
@@ -597,6 +597,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           owner: user.sub,
           expectedAgentId: current?.agentId ?? null,
           optOutAllowed: async () => config.featureModes.dambledore !== "on",
+          onRemoved: async () => {
+            await features.setFlag("dambledore", false);
+          },
         });
         return outcome.ran && outcome.value;
       } catch (err) {
@@ -690,7 +693,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       assistants,
       provisionAssistant,
-      removeAssistant,
+      turnOffAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,

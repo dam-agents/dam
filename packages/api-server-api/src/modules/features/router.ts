@@ -17,15 +17,15 @@ export const featuresRouter = t.router({
   setFlag: browserOnlyProcedure
     .input(featureSetFlagInputSchema)
     .mutation(async ({ ctx, input }) => {
-      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant off deletes it, so the delete goes first and the flag is switched only once it succeeded: a person can never be left opted out with an assistant they may neither use nor delete. Switching it on is the other way round — the flag, then the create — because nothing is at risk there. Only this switch deletes anything; an install's mode changing never does.
+      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant off deletes it and stores the switch in one owner-locked critical section, so a person can never be left opted out with an assistant they may neither use nor delete, and no request can provision a replacement in between. Switching it on is the other way round — the flag, then the create — because nothing is at risk there. Only this switch deletes anything; an install's mode changing never does.
       if (input.feature === "dambledore" && !input.enabled) {
-        if (!(await ctx.removeAssistant()))
+        if (!(await ctx.turnOffAssistant()))
           throw new TRPCError({
             code: "SERVICE_UNAVAILABLE",
             message:
               "Your assistant could not be deleted, so the switch stays on. Try again.",
           });
-        return ctx.features.setFlag(input.feature, false);
+        return ctx.features.flags();
       }
       const flags = await ctx.features.setFlag(input.feature, input.enabled);
       if (input.feature === "dambledore") await ctx.provisionAssistant();
