@@ -73,7 +73,9 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
           {...triggerProps}
           onFocus={(event) => {
             onFocus?.(event);
-            mouseFocus.current = !event.currentTarget.matches(":focus-visible");
+            mouseFocus.current =
+              !event.currentTarget.matches(":focus-visible") &&
+              !event.currentTarget.matches(":hover");
             queueMicrotask(() => {
               mouseFocus.current = false;
             });

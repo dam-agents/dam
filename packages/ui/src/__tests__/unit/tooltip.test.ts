@@ -29,19 +29,22 @@ function render(element: ReactNode) {
   act(() => root!.render(createElement(TooltipProvider, null, element)));
 }
 
-function mouseFocus(element: HTMLElement) {
+function pointerState(element: HTMLElement, hover: boolean) {
   Object.defineProperty(element, "matches", {
     value: (selector: string) =>
-      selector !== ":focus-visible" &&
-      Element.prototype.matches.call(element, selector),
+      selector === ":hover"
+        ? hover
+        : selector !== ":focus-visible" &&
+          Element.prototype.matches.call(element, selector),
   });
+}
+
+function mouseFocus(element: HTMLElement) {
+  pointerState(element, false);
   act(() => element.focus());
 }
 
-const tooltip = () => document.querySelector('[role="tooltip"]');
-
-/** TEST_SCENARIO: the pointer focuses a menu row as it moves over it (happy-dom calls every focus :focus-visible, so the test stubs it off); the row with a tooltip still highlights like any other row, and the tooltip waits for the hover instead of opening on that focus. */
-it("lets a mouse-focused menu row highlight without opening its tooltip", () => {
+function menuRow() {
   render(
     createElement(
       DropdownMenu,
@@ -64,7 +67,14 @@ it("lets a mouse-focused menu row highlight without opening its tooltip", () => 
       ),
     ),
   );
-  const row = document.querySelector<HTMLElement>('[role="menuitemradio"]')!;
+  return document.querySelector<HTMLElement>('[role="menuitemradio"]')!;
+}
+
+const tooltip = () => document.querySelector('[role="tooltip"]');
+
+/** TEST_SCENARIO: a menu row gets a focus that is neither from the keyboard nor under the pointer, as when a closing menu returns focus (happy-dom calls every focus :focus-visible, so the test stubs it off); the row still highlights like any other row, and its tooltip stays shut. */
+it("lets a mouse-focused menu row highlight without opening its tooltip", () => {
+  const row = menuRow();
   mouseFocus(row);
   expect(row.hasAttribute("data-highlighted")).toBe(true);
   expect(tooltip()).toBeNull();
@@ -81,5 +91,18 @@ it("shows a focused trigger's content as soon as it has some", () => {
   act(() => container!.querySelector("button")!.focus());
   expect(tooltip()).toBeNull();
   render(button("Reason"));
+  expect(tooltip()?.textContent).toBe("Reason");
+});
+
+/** TEST_SCENARIO: the pointer moves onto a menu row, and the row focuses itself on that move; its tooltip opens, because this focus comes from the hover. */
+it("opens a hovered menu row's tooltip", () => {
+  const row = menuRow();
+  pointerState(row, true);
+  act(() => {
+    row.dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, pointerType: "mouse" }),
+    );
+  });
+  expect(document.activeElement).toBe(row);
   expect(tooltip()?.textContent).toBe("Reason");
 });
