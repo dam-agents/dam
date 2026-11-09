@@ -277,6 +277,23 @@ export function setSlackChannelHistory(db: Db) {
   };
 }
 
+export function hasSlackChannelHistory(db: Db) {
+  return async (agentId: string): Promise<boolean> => {
+    const rows = await db
+      .select({ agentId: channels.agentId })
+      .from(channels)
+      .where(
+        and(
+          eq(channels.agentId, agentId),
+          eq(channels.type, ChannelType.Slack),
+          sql`${channels.config}->>'history' = 'true'`,
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  };
+}
+
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
   return isUniqueViolation(e, "channels_slack_agent_channel_idx");
 }

@@ -502,6 +502,8 @@ describe("read_channel_history MCP tool", () => {
       { since: "1" },
       { since: "March 5" },
       { since: "1969-12-31" },
+      { since: "2026-02-31" },
+      { since: "2026-11-02T09:00:00" },
       { since: "2026-11-09", until: "2026-11-01" },
     ]) {
       const result = await h.client.callTool({

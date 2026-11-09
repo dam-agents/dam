@@ -2327,7 +2327,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
-  const offeredThreads = createTtlMap<string, string>({
+  const offeredThreads = createTtlMap<
+    string,
+    { channel: string; byHistory: boolean }
+  >({
     ttlMs: OFFERED_THREAD_TTL_MS,
   });
 
@@ -2335,9 +2338,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string,
     channel: string,
     threadTss: string[],
+    by: "window" | "history" = "window",
   ): void {
-    for (const ts of threadTss)
-      offeredThreads.set(`${instanceName} ${ts}`, channel);
+    for (const ts of threadTss) {
+      const key = `${instanceName} ${ts}`;
+      if (by === "history" && offeredThreads.get(key)?.byHistory === false)
+        continue;
+      offeredThreads.set(key, { channel, byHistory: by === "history" });
+    }
   }
 
   function noteTurnThread(ctx: {
@@ -2369,34 +2377,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   function readOfferedThread(
     instanceName: string,
     ts: string,
-  ): { channel: string } | null {
-    const channel = offeredThreads.get(`${instanceName} ${ts}`);
-    return channel === undefined ? null : { channel };
-  }
-
-  const historyThreads = createTtlMap<string, string>({
-    ttlMs: OFFERED_THREAD_TTL_MS,
-  });
-
-  function noteHistoryThreads(
-    instanceName: string,
-    channel: string,
-    threadTss: string[],
-  ): void {
-    for (const ts of threadTss)
-      historyThreads.set(`${instanceName} ${ts}`, channel);
-  }
-
-  function readHistoryThread(
-    instanceName: string,
-    ts: string,
     bound: readonly SlackBoundConversation[],
   ): { channel: string } | null {
-    const channel = historyThreads.get(`${instanceName} ${ts}`);
-    if (channel === undefined) return null;
-    return bound.some((c) => c.id === channel && c.history === true)
-      ? { channel }
-      : null;
+    const offer = offeredThreads.get(`${instanceName} ${ts}`);
+    if (offer === undefined) return null;
+    const stillReadable =
+      !offer.byHistory ||
+      bound.some((c) => c.id === offer.channel && c.history === true);
+    return stillReadable ? { channel: offer.channel } : null;
   }
 
   const AGENT_THREAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -7949,8 +7937,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         .catch(() => null);
       const offered = owned
         ? { channel: owned.channelId }
-        : (readOfferedThread(instanceName, query.threadTs) ??
-          readHistoryThread(instanceName, query.threadTs, bound));
+        : readOfferedThread(instanceName, query.threadTs, bound);
       if (!offered) {
         return {
           error:
@@ -8091,7 +8078,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           showThreadMarkers: true,
           showTs: true,
         });
-        noteHistoryThreads(
+        noteOfferedThreads(
           instanceName,
           target.id,
           oldestFirst.flatMap((message) =>
@@ -8099,6 +8086,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               ? [message.ts]
               : [],
           ),
+          "history",
         );
         const earliest = oldestFirst[0]?.ts;
         return {

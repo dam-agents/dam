@@ -70,8 +70,11 @@ export async function parseMentionCommand(
     case "default":
       return namesAgent(rest) ? run : null;
     case "ambient":
-    case "history":
       return namesAgent(parseSwitchArgs(rest).nameArg) ? run : null;
+    case "history": {
+      const { action, nameArg } = parseSwitchArgs(rest);
+      return action && namesAgent(nameArg) ? run : null;
+    }
     case "ignore":
       return !rest || isLink(rest) ? run : null;
     case "unignore": {

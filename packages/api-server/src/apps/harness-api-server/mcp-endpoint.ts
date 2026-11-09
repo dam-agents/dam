@@ -228,13 +228,27 @@ const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
 
 const ISO_DATE_OR_TIME =
-  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+  /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
 
 function slackTsOf(label: string, raw: string): string | { error: string } {
-  const at = ISO_DATE_OR_TIME.test(raw) ? Date.parse(raw) : Number.NaN;
+  const parts = ISO_DATE_OR_TIME.exec(raw);
+  const at =
+    parts &&
+    isCalendarDate(Number(parts[1]), Number(parts[2]), Number(parts[3]))
+      ? Date.parse(raw)
+      : Number.NaN;
   if (!Number.isFinite(at) || at < 0)
     return {
-      error: `${label} is not an ISO 8601 date or date-time after 1970: ${raw}`,
+      error: `${label} is not an ISO 8601 date, or a date-time with its offset, after 1970: ${raw}`,
     };
   return (at / 1000).toFixed(6);
 }
@@ -702,7 +716,7 @@ export function createMcpSession(
           .string()
           .optional()
           .describe(
-            "Conversation to read: the chatId of a conversation where channel history is on for you (see describe_channel). Omit it when history is on for you in only one conversation, or when you pass a cursor.",
+            "Conversation to read: the chatId of a conversation where channel history is on for you — a turn there names it, and a refusal lists every one. Omit it when history is on for you in only one conversation, or when you pass a cursor.",
           ),
         cursor: z
           .string()
@@ -714,13 +728,13 @@ export function createMcpSession(
           .string()
           .optional()
           .describe(
-            "Oldest time to read, as an ISO 8601 date or date-time, for example 2026-11-02 or 2026-11-02T09:00:00Z. Omit it to read back to the start of the conversation.",
+            "Oldest time to read, as an ISO 8601 date (midnight UTC) or a date-time with its offset, for example 2026-11-02 or 2026-11-02T09:00:00+01:00. Omit it to read back to the start of the conversation.",
           ),
         until: z
           .string()
           .optional()
           .describe(
-            "Newest time to read, as an ISO 8601 date or date-time; messages at or after it are left out. Omit it to start from the newest message.",
+            "Newest time to read, as an ISO 8601 date (midnight UTC) or a date-time with its offset; messages at or after it are left out. Omit it to start from the newest message.",
           ),
       },
       async ({ chatId, cursor, since, until }) => {
