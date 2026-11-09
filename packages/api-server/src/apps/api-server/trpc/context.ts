@@ -1,11 +1,13 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf } from "api-server-api";
+import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import {
   childrenMirroringConnections,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
+import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
+import { getLogger } from "../../../core/logger.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -118,6 +120,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telemetryReader,
     sessionDirectory,
     terms,
+    isTermsAccepted,
     e2e,
     artifacts,
     delegationFrames,
@@ -329,6 +332,23 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       modes: config.featureModes,
     });
+    /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
+    const assistantOn = async (): Promise<boolean> => {
+      const mode = config.featureModes.dambledore;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).dambledore);
+    };
+    const { assistants, ensure: ensureAssistant } = composeAssistantsForOwner({
+      db,
+      owner: user.sub,
+      assistantName: config.brand.assistantName,
+      brandName: config.brand.name,
+      enabled: assistantOn,
+      agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
+      agents,
+      gettingStarted,
+    });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
       agentStore: { authority: config.agentStore },
@@ -535,6 +555,28 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is given to a person who has accepted the Terms of Use, once: a person whose record exists costs one read, an install whose mode is off asks nothing at all, and nothing a request does may fail because of it. A request from an API key or from an Agent's own credentials is not a person arriving, so it provisions nothing. */
+    const provisionAssistant = async () => {
+      if (config.featureModes.dambledore === "off") return;
+      if (
+        user.keyId !== undefined ||
+        user.agentIds !== "*" ||
+        user.actingEditor !== undefined
+      )
+        return;
+      try {
+        if ((await assistants.state()) !== null) return;
+        if (!(await assistantOn())) return;
+        if (!(await isTermsAccepted(user.sub))) return;
+        await ensureAssistant();
+      } catch (err) {
+        getLogger().warn(
+          { err, owner: user.sub },
+          "assistant.provision_failed",
+        );
+      }
+    };
+
     const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
@@ -614,6 +656,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
+      assistants,
+      provisionAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,

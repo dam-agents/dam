@@ -28,6 +28,7 @@ describe("feature modes", () => {
         environments: "experimental",
         hermes: "experimental",
         "github-enterprise-hosts": "experimental",
+        dambledore: "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

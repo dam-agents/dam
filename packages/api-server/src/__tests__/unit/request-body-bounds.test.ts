@@ -43,7 +43,7 @@ async function userTrpc() {
   app.route(
     "/api/trpc",
     createTrpcHttpRoutes({
-      composeApiContext: () => {
+      composeApiContext: async () => {
         composed.count++;
         return {} as ApiContext;
       },
@@ -188,7 +188,7 @@ describe("request body bounds", () => {
         return { ok: false, kind: "unauthorized" };
       },
       surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
-      composeApiContext: () => ({}) as ApiContext,
+      composeApiContext: async () => ({}) as ApiContext,
     });
     const server = createServer();
     server.on("upgrade", (req, socket, head) =>

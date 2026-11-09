@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -18,6 +18,9 @@ Each replica remembers the tasks it already recorded, so the message sent on eve
 The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with while that character is still locked, so the avatar the user sees on it is the one they just unlocked.
 When another task already unlocked that character, the first Agent unlocks a random locked one, and the UI does not claim it is on the Agent.
 A user with nothing unlocked yet gets a first Agent with the character its name gives it, which the create stores on the Agent.
+The [assistant](assistant.md) is an Agent like any other here: provisioning enrols a person first, so the assistant counts as their first Agent and finishes `Create`.
+Because nobody made that Agent by hand, its unlock is recorded already seen, so the checklist counts it at once instead of holding a celebration for it; the announcement that follows finds the task recorded and adds nothing.
+That is the same record a reset makes, so a person who has reset their onboarding meets a first-timer's checklist: one task of eight, already seen.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 
 ## Who sees the checklist
@@ -41,6 +44,7 @@ The item stays in the footer until the checklist is done; closing the popover on
 A checklist dismissed through the API stays hidden until the next unlock, which brings the item back, or until the user asks for the checklist from the avatar picker, which opens the popover.
 Once every character is unlocked and seen, the item is gone until the user resets their onboarding progress from the Experimental features tab.
 That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
+The [assistant](assistant.md#starting-it-over)'s own row in the same tab carries **Reset user onboarding**, which resets this checklist the same way and also forgets that the assistant was ever used.
 The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.
 The avatar picker offers only unlocked characters, plus the one the Agent already shows; the rest appear as eggs.
 A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first opens the picker; the dots stay while that picker is open, so the user sees which characters are new.

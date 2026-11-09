@@ -34,5 +34,6 @@ export const termsRouter = t.router({
             "Sign-ups are closed for now, so new users cannot start yet. Please try again later.",
         });
       }
+      await ctx.provisionAssistant();
     }),
 });

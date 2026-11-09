@@ -1129,6 +1129,15 @@ export const avatarUnlocks = pgTable(
   ],
 );
 
+export const dambledoreProvisioned = pgTable("dambledore_provisioned", {
+  owner: text("owner").primaryKey(),
+  agentId: text("agent_id").notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const sidebarAgentOrder = pgTable(
   "sidebar_agent_order",
   {

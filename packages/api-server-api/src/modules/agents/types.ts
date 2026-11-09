@@ -217,6 +217,8 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   environmentOf?: string;
   linkFrom?: string;
   inheritance?: ChildInheritance;
+  /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which tells it what the platform greeted its owner with. Only the provisioning that names it writes it, and only once. */
+  instructions?: string;
 };
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a child Agent takes from the Agent that launched it, recorded once at create: its connections mirrored from the parent, copied as a subset, or none, and its egress decided by the parent's root, live. */

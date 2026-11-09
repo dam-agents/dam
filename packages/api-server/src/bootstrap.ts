@@ -215,6 +215,7 @@ import {
 } from "./modules/attention/index.js";
 import { createSessionWatchClient } from "./modules/attention/infrastructure/session-watch-client.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
+import { createAssistantsRepository } from "./modules/assistants/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
@@ -1625,8 +1626,15 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const assistantsRepo = createAssistantsRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant's "used" mark follows the install's mode, so an install that offers no assistants writes nothing for any session report. */
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
+    composeSessionDirectory(
+      db,
+      config.featureModes.dambledore === "off"
+        ? undefined
+        : (agentId) => assistantsRepo.markUsed(agentId),
+    );
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,

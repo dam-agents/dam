@@ -515,6 +515,18 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export { featureOnForUser } from "./modules/features/modes.js";
+export type {
+  AssistantState,
+  AssistantsService,
+} from "./modules/assistants/types.js";
+export {
+  ASSISTANT_FIRST_TASKS,
+  ASSISTANT_ROLE_ASK,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,

@@ -612,6 +612,7 @@ export function loadConfig(): Config {
       short: process.env.BRAND_SHORT ?? "platform",
       title: process.env.BRAND_TITLE ?? "",
       vendor: process.env.BRAND_VENDOR ?? "",
+      assistantName: process.env.BRAND_ASSISTANT_NAME ?? "Assistant",
       theme: {
         light: {
           accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#0F62FE",

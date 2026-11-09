@@ -15,7 +15,11 @@ export const featuresRouter = t.router({
 
   setFlag: browserOnlyProcedure
     .input(featureSetFlagInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.features.setFlag(input.feature, input.enabled),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const flags = await ctx.features.setFlag(input.feature, input.enabled);
+      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant on gives this person one here, since a flag change makes no new request context; switching it off deletes nothing and hides only the greeting and the experiment's own UI.
+      if (input.enabled && input.feature === "dambledore")
+        await ctx.provisionAssistant();
+      return flags;
+    }),
 });

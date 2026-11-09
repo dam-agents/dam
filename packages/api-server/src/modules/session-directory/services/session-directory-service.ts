@@ -25,10 +25,15 @@ const KNOWN_MAX = 10_000;
  */
 export function createSessionDirectoryService(deps: {
   repo: SessionDirectoryRepository;
+  /* UNIT_BOUNDARY_DESCRIPTION: told which Agent reported a Session, so a record outside the directory — the assistant's, whose first landing and greeting rest on it — learns the same fact here, where every report passes and retention cannot take it back. */
+  onRecorded?: (agentId: string) => Promise<void>;
 }): SessionDirectory {
   const known = new Map<string, number>();
   return {
-    record: (agentId, sessions) => deps.repo.record(agentId, sessions),
+    async record(agentId, sessions) {
+      await deps.repo.record(agentId, sessions);
+      if (sessions.length > 0) await deps.onRecorded?.(agentId);
+    },
 
     async has(agentId, sessionId) {
       const key = `${agentId}\u0000${sessionId}`;
