@@ -6,6 +6,7 @@ import type { ConnectionsRepository } from "../../modules/connections/infrastruc
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { XactLock } from "../../core/xact-lock.js";
 import type { ProviderModelCatalog } from "../../modules/connections/services/provider-model-catalog.js";
+import type { DamKeyPort } from "../../modules/connections/domain/dam-connection.js";
 
 /**
  * TEST_OVERVIEW: the in-memory Connections store and service wiring the
@@ -92,6 +93,7 @@ export function serviceHarness(opts: {
   lock?: XactLock;
   brandName: string;
   curveBenderDeploymentKey?: string | null;
+  damKey?: DamKeyPort;
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
@@ -166,6 +168,7 @@ export function serviceHarness(opts: {
     connectionLock: opts.lock ?? keyedMutex(),
     resolveKbShare: unused(),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
+    ...(opts.damKey ? { damKey: opts.damKey } : {}),
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

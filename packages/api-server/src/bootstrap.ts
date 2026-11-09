@@ -381,6 +381,7 @@ import {
   listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
 import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-url.js";
+import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
@@ -1158,6 +1159,8 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    damBaseUrl: config.uiBaseUrl,
+    brandName: config.brand.name,
     curveBenderDeployment: config.curveBenderDeployment !== null,
     e2eEnabled: config.e2eEnabled,
     secretStore,
@@ -1216,6 +1219,11 @@ export async function bootstrap() {
         : {}),
     },
   });
+  const damKeyFor = (ownerId: string) =>
+    damKeyPortFor(
+      apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
+      config.brand.name,
+    );
   const connectionsServiceFor = (ownerId: string) =>
     composeConnectionsForOwner({
       ownerId,
@@ -1235,6 +1243,7 @@ export async function bootstrap() {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      damKey: damKeyFor(ownerId),
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>

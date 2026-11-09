@@ -62,6 +62,7 @@ import {
   composeSecretRequestsForOwner,
 } from "../../../modules/connections/compose.js";
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
+import { damKeyPortFor } from "../../../modules/connections/domain/dam-connection.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
@@ -182,6 +183,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      damKey: damKeyPortFor(
+        apiKeysModule.createService({
+          ownerSub: user.sub,
+          surface: "platform",
+        }),
+        config.brand.name,
+      ),
       newAgentProvider: async () => {
         const chosen = await defaultProfile();
         return chosen

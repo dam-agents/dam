@@ -328,6 +328,8 @@ export const SHARED_KB_TEMPLATE_ID = "shared-knowledge-base";
 
 export const S3_COMPATIBLE_TEMPLATE_ID = "s3-compatible";
 
+export const DAM_TEMPLATE_ID = "dam";
+
 export function providerTypeForTemplateId(
   templateId: string,
 ): ProviderPresetType | null {

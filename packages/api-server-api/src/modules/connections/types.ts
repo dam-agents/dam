@@ -347,7 +347,11 @@ export interface ConnectionsService {
   createFromTemplate(
     input: ConnectionCreateInput & { id?: string },
     opts?: CredentialCheckPolicy,
+    platform?: { rememberedInputs: Record<string, string> },
   ): Promise<string>;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection that lets an Agent drive this install as its owner, one per owner: minted with its key on first use, else the one the owner already holds; null where the install's own URL is not one a gateway can reach and inject on. */
+  ensureDamConnection(): Promise<string | null>;
 
   discoverMcp(input: { url: string }): Promise<{
     auth: "oauth" | "none";

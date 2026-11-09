@@ -9,6 +9,7 @@ import {
   providerTypeForTemplateId,
   type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
   IBM_LITELLM_HOST,
   type AgentConnections,
   type Connection,
@@ -67,6 +68,11 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
+import {
+  DAM_KEY_INPUT,
+  isDamConnection,
+  type DamKeyPort,
+} from "../domain/dam-connection.js";
 import {
   childAuthOf,
   childScopeOf,
@@ -275,6 +281,8 @@ export function createConnectionsService(deps: {
   } | null>;
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install is minted with one; absent means this api-server cannot mint it, so no such Connection is provisioned. */
+  damKey?: DamKeyPort;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -1991,6 +1999,12 @@ export function createConnectionsService(deps: {
     ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (isDamConnection(conn.templateId)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `The platform mints this Connection's credential, so it can be neither connected nor changed by hand.`,
+        });
+      }
 
       const configInputs =
         "configInputs" in credential ? credential.configInputs : null;
@@ -2084,6 +2098,22 @@ export function createConnectionsService(deps: {
     async deleteConnection(id: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
+
+      if (isDamConnection(conn.templateId) && deps.damKey) {
+        const keyId = rememberedInput(conn, DAM_KEY_INPUT);
+        if (keyId !== null) {
+          await deps.damKey.revoke(keyId).catch((err: unknown) => {
+            securityLog("warn", "connection.dam_key_revoke_failed", {
+              category: "credential",
+              actor: deps.ownerId,
+              actorKind: "user",
+              target: conn.id,
+              result: "failure",
+              reason: err instanceof Error ? err.message : "unknown",
+            });
+          });
+        }
+      }
 
       const children = conn.isParent
         ? await deps.repo.listChildren(conn.id)
@@ -2247,12 +2277,18 @@ export function createConnectionsService(deps: {
       });
     },
 
-    async createFromTemplate(input, policy): Promise<string> {
+    async createFromTemplate(input, policy, platform): Promise<string> {
       const template = deps.templates.get(input.templateId);
       if (!template) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `unknown template ${input.templateId}`,
+        });
+      }
+      if (isDamConnection(template.id) && platform === undefined) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `The platform mints this Connection's credential, so it can be neither connected nor changed by hand.`,
         });
       }
       let sharedKbInputs: Record<string, string> = {};
@@ -2526,6 +2562,7 @@ export function createConnectionsService(deps: {
             ? withoutScopeInputs(stripSecretsFromInputs(input))
             : stripSecretsFromInputs(input)),
           ...sharedKbInputs,
+          ...platform?.rememberedInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
           ...(credentialCheck
             ? { [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck }
@@ -2583,6 +2620,52 @@ export function createConnectionsService(deps: {
         }
       }
       return id;
+    },
+
+    async ensureDamConnection(): Promise<string | null> {
+      const template = deps.templates.get(DAM_TEMPLATE_ID);
+      if (!template || !deps.damKey) return null;
+      const damKey = deps.damKey;
+      return deps.connectionLock(
+        `${DAM_TEMPLATE_ID}:${deps.ownerId}`,
+        async () => {
+          const owned = await deps.repo.listByOwner(deps.ownerId);
+          const held = owned.find((c) => isDamConnection(c.templateId));
+          if (held) return held.id;
+          const name = firstFreeName(
+            template.name,
+            new Set(owned.map((c) => c.name)),
+          );
+          let minted: { id: string; plaintext: string };
+          try {
+            minted = await damKey.mint();
+          } catch (err) {
+            securityLog("warn", "connection.dam_key_mint_failed", {
+              category: "credential",
+              actor: deps.ownerId,
+              actorKind: "user",
+              result: "failure",
+              reason: err instanceof Error ? err.message : "unknown",
+            });
+            return null;
+          }
+          try {
+            return await service.createFromTemplate(
+              {
+                templateId: DAM_TEMPLATE_ID,
+                name,
+                authKind: "header",
+                value: minted.plaintext,
+              },
+              undefined,
+              { rememberedInputs: { [DAM_KEY_INPUT]: minted.id } },
+            );
+          } catch (err) {
+            await damKey.revoke(minted.id).catch(() => {});
+            throw err;
+          }
+        },
+      );
     },
 
     async createFromParent(input): Promise<string> {
@@ -3074,6 +3157,11 @@ export function createConnectionsService(deps: {
     },
     reconcileManagedConnections,
   };
+}
+
+function firstFreeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
 }
 
 /**
