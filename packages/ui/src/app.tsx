@@ -145,6 +145,7 @@ export default function App() {
 
 function ArtifactPageRoute() {
   const artifactId = useStore((s) => s.pageArtifactId);
+  useAppViewport();
   useLiveEvents();
   useDocumentTitle();
   if (!artifactId) return null;

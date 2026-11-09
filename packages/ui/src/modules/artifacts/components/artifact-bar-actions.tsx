@@ -1,6 +1,7 @@
 import {
   AddComment,
   Calendar,
+  ChevronDown,
   Code,
   Download,
   Edit,
@@ -45,6 +46,7 @@ export function ArtifactShareButton({
     >
       <Icon size={14} />
       {label}
+      <ChevronDown size={12} className="-mr-0.5 text-muted-foreground" />
     </Button>
   );
 }
@@ -125,7 +127,7 @@ export function ArtifactPanelMenu({
       {onStartSession && (
         <DropdownMenuItem onSelect={onStartSession}>
           <AddComment size={14} />
-          Discuss with agent
+          Start a new session
         </DropdownMenuItem>
       )}
       {onToggleFullPage && (

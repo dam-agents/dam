@@ -6,9 +6,9 @@ import { useDeleteArtifact } from "../api/mutations.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The one way to delete an artifact from a menu. It
- * asks first, because every version goes and the share link stops working,
- * and it closes the docked preview of that artifact, so the dock never shows
- * an artifact that is gone.
+ * asks first, because every version goes and the share link stops working.
+ * It closes the docked preview of that artifact, and leaves the artifact's own
+ * page for the Artifacts list, so no surface shows an artifact that is gone.
  */
 export function useConfirmDeleteArtifact() {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -16,6 +16,10 @@ export function useConfirmDeleteArtifact() {
     s.dock?.kind === "artifact" ? s.dock.id : null,
   );
   const setDock = useStore((s) => s.setDock);
+  const pageArtifactId = useStore((s) =>
+    s.view === "artifact" ? s.pageArtifactId : null,
+  );
+  const setView = useStore((s) => s.setView);
   const { mutate: deleteArtifact } = useDeleteArtifact();
 
   return useCallback(
@@ -28,8 +32,22 @@ export function useConfirmDeleteArtifact() {
       if (!confirmed) return;
 
       if (openArtifactId === artifact.id) setDock(null);
-      deleteArtifact({ id: artifact.id });
+      deleteArtifact(
+        { id: artifact.id },
+        {
+          onSuccess: () => {
+            if (pageArtifactId === artifact.id) setView("artifacts");
+          },
+        },
+      );
     },
-    [showConfirm, openArtifactId, setDock, deleteArtifact],
+    [
+      showConfirm,
+      openArtifactId,
+      setDock,
+      pageArtifactId,
+      setView,
+      deleteArtifact,
+    ],
   );
 }

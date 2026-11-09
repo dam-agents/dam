@@ -269,8 +269,8 @@ flowchart LR
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar shows only the actions users take most: the title, the version switcher, **Share** with the current visibility ("Private", "Restricted", "Public"), which opens the sharing dialog, Download, **Open in new tab**, a ⋮ menu and the side panel's close X, which the docked preview in a chat with both experiments off does not show.
-  The ⋮ menu holds the rest, in groups: Edit, Discuss with agent and Full page, where the artifact offers them; then Rename and Move; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
+  The docked preview's top bar shows only the actions users take most: the title, the version switcher, **Share** with the current visibility ("Private", "Restricted", "Public") and a chevron, which opens the sharing dialog, Download, **Open in new tab**, a ⋮ menu and the side panel's close X, which the docked preview in a chat with both experiments off does not show.
+  The ⋮ menu holds the rest, in groups: Edit, Start a new session and Full page, where the artifact offers them; then Rename and Move; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
   So opening an artifact is a place to start sharing or continuing it rather than a dead end, and the bar stays short enough to scan.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does.
   **Open in new tab** opens the artifact's own page in the app, `/artifacts/<id>`, in a new browser tab, so the chat stays in the first one.
@@ -279,7 +279,7 @@ flowchart LR
   The preview's frame stays where it is in the page, so the content does not reload and an interactive page keeps its bridge; while it is on, the page columns around the preview move up to the overlay layer with it.
   The keyboard stays inside the preview, and a change of side panel tab or of the docked item ends full page.
   The same menu item or Escape takes it back; Escape while a dialog, menu or tooltip is open closes only that, and the Escape that leaves full page closes nothing else.
-  Deleting the artifact a preview is showing closes that preview.
+  Deleting the artifact a preview is showing closes that preview, and deleting it from its own page opens the Artifacts list.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.

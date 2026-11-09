@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The artifact panel's top bar shows only the actions users take most: the title, the version switcher, Share with the current visibility, Download, Open in new tab, a ⋮ menu and close. Open in new tab opens the app's own page for the artifact, so a private artifact, which has no share link, opens in its own tab too. The ⋮ menu holds the rest: Edit, Discuss with agent and Full page, then Rename and Move, then View source, then Set expiration and Delete. The artifact page in its own tab shows the same bar without the actions it has no use for.
+// TEST_OVERVIEW: The artifact panel's top bar shows only the actions users take most: the title, the version switcher, Share with the current visibility, Download, Open in new tab, a ⋮ menu and close. Open in new tab opens the app's own page for the artifact, so a private artifact, which has no share link, opens in its own tab too. The ⋮ menu holds the rest: Edit, Start a new session and Full page, then Rename and Move, then View source, then Set expiration and Delete. The artifact page in its own tab shows the same bar without the actions it has no use for.
 import type { ArtifactVersionInfo, LibraryArtifact } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -34,7 +34,10 @@ vi.mock("../../modules/artifacts/api/queries.js", () => ({
   useArtifactPreview: () => ({ data: "<p>hi</p>", isLoading: false }),
 }));
 vi.mock("../../modules/artifacts/api/mutations.js", () => ({
-  useDeleteArtifact: () => ({ mutate: vi.fn() }),
+  useDeleteArtifact: () => ({
+    mutate: (_: unknown, opts?: { onSuccess?: () => void }) =>
+      opts?.onSuccess?.(),
+  }),
   useSaveArtifactContent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSendArtifactPrompt: () => ({ mutateAsync: vi.fn() }),
   useCallAgentApi: () => ({ mutateAsync: vi.fn() }),
@@ -48,6 +51,7 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
   cachedAgent: () => undefined,
 }));
 
+const { useStore } = await import("../../store.js");
 const { ArtifactPanel } =
   await import("../../modules/artifacts/components/artifact-panel.js");
 
@@ -184,12 +188,12 @@ describe("artifact panel top bar", () => {
     expect(barLabels()).toContain("Share: Public");
   });
 
-  // TEST_SCENARIO: AC-3 — the ⋮ menu lists Rename and Move, then View source, then Set expiration and Delete, after the actions the bar no longer shows: Edit, Discuss with agent and Full page.
+  // TEST_SCENARIO: AC-3 — the ⋮ menu lists Rename and Move, then View source, then Set expiration and Delete, after the actions the bar no longer shows: Edit, Start a new session and Full page. Deleting the artifact from its own page opens the Artifacts list.
   it("puts every other action in the menu", () => {
     render();
     expect(openMenu()).toEqual([
       "Edit",
-      "Discuss with agent",
+      "Start a new session",
       "Full page",
       "—",
       "Rename",
@@ -202,13 +206,13 @@ describe("artifact panel top bar", () => {
     ]);
   });
 
-  // TEST_SCENARIO: an upload has no publishing Agent and a code artifact has no rendered preview, so the menu leaves out Discuss with agent and View source rather than offer what does nothing.
+  // TEST_SCENARIO: an upload has no publishing Agent and a code artifact has no rendered preview, so the menu leaves out Start a new session and View source rather than offer what does nothing.
   it("leaves out actions the artifact cannot take", () => {
     fake.artifact = artifact({ kind: "code", agentId: null });
     fake.agentListed = false;
     render();
     const items = openMenu();
-    expect(items).not.toContain("Discuss with agent");
+    expect(items).not.toContain("Start a new session");
     expect(items).not.toContain("View source");
     expect(items).toContain("Rename");
   });
@@ -241,5 +245,23 @@ describe("artifact page in its own tab", () => {
       "More actions",
     ]);
     expect(openMenu()).not.toContain("Full page");
+  });
+
+  // TEST_SCENARIO: the user deletes the artifact from its own page and confirms; the page leaves the deleted artifact for the Artifacts list instead of a dead route.
+  it("opens the Artifacts list after a delete", async () => {
+    useStore.setState({
+      view: "artifact",
+      pageArtifactId: "art-1",
+      showConfirm: async () => true,
+    });
+    render({ standalone: true });
+    openMenu();
+    await act(async () => {
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((el) => el.textContent?.trim() === "Delete artifact")!
+        .click();
+    });
+    expect(useStore.getState().view).toBe("artifacts");
+    expect(window.location.pathname).toBe("/artifacts");
   });
 });

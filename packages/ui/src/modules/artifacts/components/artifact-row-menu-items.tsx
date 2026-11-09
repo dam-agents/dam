@@ -81,7 +81,7 @@ export function ArtifactRowMenuItems({
       {startSession.available && (
         <Item onSelect={startSession.start}>
           <AddComment size={14} />
-          Discuss with agent
+          Start a new session
         </Item>
       )}
       {startSession.available && picksPromptModel(artifact) && (
