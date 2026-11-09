@@ -45,6 +45,8 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   tokenEndpointAcceptJson?: boolean;
   extraAuthParams?: Record<string, string>;
   dynamicRegistration?: boolean;
+  mcpUrl?: string;
+  registrationClientName?: string;
   setupUrl?: string;
   localhostCallbackAlias?: string;
   credentialFamily?: string;
@@ -201,6 +203,7 @@ function inputsFor(
 
   switch (t.authKind) {
     case "oauth": {
+      if (t.dynamicRegistration && t.mcpUrl) return [];
       if (t.dynamicRegistration)
         return [
           required("url"),

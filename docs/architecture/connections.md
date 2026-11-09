@@ -40,7 +40,7 @@ The rest of this page is what a Connection is and what a grant produces.
 ### Connection Template
 
 A code-level catalog entry.
-Premade templates (GitHub, Anthropic, Spotify, Linear MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions.
+Premade templates (GitHub, Anthropic, Spotify, Figma MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions.
 Custom templates (Custom MCP, Custom OAuth, Custom Header) ship the *shape* but leave the integration's identity for the user to fill in.
 
 Three display-axis attributes drive UI grouping.
@@ -50,7 +50,7 @@ Families are declared on the templates themselves and carried on the template vi
 | `category` | `isCustom` | Where the user encounters it                                                            |
 | ---------- | ---------- | --------------------------------------------------------------------------------------- |
 | `app`      | `false`    | Apps section: GitHub, Spotify, Anthropic, OpenAI, Google services, GitHub Enterprise, … |
-| `mcp`      | `false`    | MCP servers section: Linear MCP, Atlassian MCP, … (as added)                            |
+| `mcp`      | `false`    | MCP servers section: Figma MCP, … (as added)                                            |
 | `mcp`      | `true`     | Custom Connection → "Add MCP server"                                                    |
 | `other`    | `true`     | Custom Connection → "Add OAuth credential" / "Add Header credential"                    |
 
@@ -247,6 +247,14 @@ The OAuth client is found at create time, in the order the MCP authorization spe
 The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
 An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
 One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
+
+### Figma MCP
+
+A premade template for Figma's own MCP server, shown in the MCP servers section.
+It takes the Custom MCP server (OAuth) path with the server URL fixed in the template, so the user gives only a name before the sign-in.
+Figma's registration endpoint admits only the clients in its MCP client catalog, by the `client_name` they register with, and refuses the platform's own name.
+So the template registers under the name of a client Figma admits, `Claude Code`.
+Figma counts tool calls per user seat on its own side, and the template's description gives those limits; the platform keeps no counter of its own, and the agent sees Figma's `429` as Figma sends it.
 
 ### Shared knowledge base
 
