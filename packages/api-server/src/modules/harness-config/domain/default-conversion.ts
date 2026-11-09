@@ -118,8 +118,8 @@ export function convertedDefaultModel(input: {
  * UNIT_BOUNDARY_DESCRIPTION: the conversion's last resort, so an Agent whose
  * providers list a model is never left "not set": the platform's preferred
  * work model across its providers, else the first model the first of them
- * lists, since a provider lists its models newest first. Null when no
- * provider lists anything, which leaves the Agent "not set" until one does.
+ * lists. Null when no provider lists anything, which leaves the Agent
+ * "not set" until one does.
  */
 export function automaticModel(
   providers: readonly ProviderListing[],

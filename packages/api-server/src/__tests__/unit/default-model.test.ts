@@ -86,6 +86,22 @@ describe("a fire on an Agent with no default model", () => {
     ).rejects.toBeInstanceOf(NoDefaultModelError);
   });
 
+  // TEST_SCENARIO: the saved default names a model on a provider the agent no longer holds, so the fire fails naming that model, which a channel tells apart from an agent with no provider.
+  it("names the saved model whose provider is gone", async () => {
+    await expect(
+      resolveFirePair(
+        deps({
+          harness: "claude-code",
+          provider: "gone",
+          model: "openai/gpt-5",
+        }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).rejects.toMatchObject({ model: "openai/gpt-5" });
+  });
+
   // TEST_SCENARIO: the person's view of the default shows it as not set rather than failing, so the UI can ask for one.
   it("reads as not set for the person", async () => {
     expect(await resolveRememberedPair(deps(null), "a", "chat")).toEqual({
@@ -556,7 +572,7 @@ describe("the one-time default conversion", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the setting names a model the provider does not list and the preference list names none it lists, so the default takes the automatic model, the first one listed, noted so the owner is told it runs another model than the setting named.
+  // TEST_SCENARIO: the setting names a model the provider does not list and the preference list names none it lists, so the default takes the automatic model, the first one listed.
   it("takes the first listed model when nothing else resolves", async () => {
     const { c, writes, notes } = converter({
       setting: "claude-opus-3",
@@ -570,7 +586,7 @@ describe("the one-time default conversion", () => {
         model: "anthropic/claude-opus-4-8",
       },
     ]);
-    expect(notes).toEqual([{ changedFrom: "claude-opus-3" }]);
+    expect(notes).toEqual([]);
   });
 
   // TEST_SCENARIO: with one provider that lists no model for the harness, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
@@ -716,6 +732,21 @@ describe("the one-time default conversion", () => {
     expect(still.writes).toEqual([]);
   });
 
+  // TEST_SCENARIO: a "not set" names a provider the agent no longer holds, so the pin no longer applies and the default converts on a provider the agent holds instead of staying not set for good.
+  it("converts a not set whose provider is gone", async () => {
+    const { c, writes } = converter({
+      saved: { harness: "claude-code", provider: "gone", model: null },
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
+    ]);
+  });
+
   // TEST_SCENARIO: a Pi agent on a Bedrock Connection alone was saved "not set" while Pi could not list Bedrock; once its runtime lists the region's inference profiles for Pi, the next conversion keeps the profile its Pi setting names, or else takes the preferred model among the profiles.
   it("converts a not-set Pi agent on Bedrock to a listed profile", async () => {
     const notSet = { harness: "pi", provider: "bed", model: null };
@@ -798,7 +829,7 @@ describe("the one-time default conversion", () => {
     expect(await none.c.pendingAfterMove("a")).toBe(false);
   });
 
-  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
+  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM, which the agent still holds, is not filled from Anthropic.
   it("keeps the harness and provider of a not set", async () => {
     const codex = converter({
       saved: { harness: "codex", provider: null, model: null },
@@ -806,8 +837,22 @@ describe("the one-time default conversion", () => {
     expect(await codex.c.convert("a")).toBe("not-set");
     expect(codex.writes).toEqual([]);
 
+    const listed = view("listed", ["claude-opus-5-5"]);
     const ibm = converter({
       saved: { harness: "claude-code", provider: "lite", model: null },
+      granted: [IBM, ANTHROPIC],
+      catalog: {
+        ...listed,
+        providers: [
+          {
+            ...listed.providers[0]!,
+            connectionId: "lite",
+            alias: "ibm",
+            models: [],
+          },
+          listed.providers[0]!,
+        ],
+      },
     });
     expect(await ibm.c.convert("a")).toBe("not-set");
     expect(ibm.writes).toEqual([]);

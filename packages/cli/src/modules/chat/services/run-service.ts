@@ -34,7 +34,7 @@ export function noModelHint(error: { data?: unknown }): string {
   const reason = (error.data as { platform?: { reason?: unknown } } | undefined)
     ?.platform?.reason;
   return reason === NO_MODEL_REASON
-    ? "\nhint: list your model providers with `dam connection list`, then grant one with `dam agent update <agent> --provider <connection>`"
+    ? "\nhint: list the models with `dam agent models <agent>` and pass one with `--model`; when it lists none, grant a provider from `dam connection list` with `dam agent update <agent> --provider <connection>`"
     : "";
 }
 

@@ -105,6 +105,6 @@ function noDefaultModelUserCopy(
   if (err.pending)
     return "This agent is still setting up its default model after an update. Try again in a minute.";
   return err.model === undefined
-    ? `This agent has no model provider, so it can't answer here yet. Its owner can connect one at ${providers}`
+    ? `This agent has no model it can run on, so it can't answer here yet. Its owner can connect a model provider or pick a model at ${providers}`
     : `This agent's model ${err.model} is on a provider it no longer holds, so it can't answer here yet. Its owner can pick another at ${providers}`;
 }
