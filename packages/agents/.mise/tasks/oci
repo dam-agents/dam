@@ -493,9 +493,12 @@ sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 # base/apt.txt's packages on the root config's Debian base, as a one-layer
 # image layout every agent image is packed onto: rebuilt when either or this
-# function changes, and once a day for updates. The base's root is exported, and its own apt-get
-# runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
-# RUN would; the root is then one layer, with the owners its packages gave it.
+# function changes, and once a week for updates. A day is too fine: the build
+# is deterministic, so a day without a Debian package update only writes the
+# same layer again, and dating the key by it rebuilds what nothing changed.
+# The base's root is exported, and its own apt-get runs in it under chroot, in
+# a mount namespace of its own, as a Dockerfile's RUN would; the root is then
+# one layer, with the owners its packages gave it.
 # The layer follows the packages alone, so a rebuild with no package update
 # keeps its digest and a deploy pulls none of it: what the install stamps with
 # its own time is set to the base's creation time (shadow's password dates
@@ -507,7 +510,7 @@ build_apt_base() {
   local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.txt" "$agents"/base/apt/*; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt" "$agents"/base/apt/*; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%G-W%V)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"

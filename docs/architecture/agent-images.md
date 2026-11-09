@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-30
+Last verified: 2026-11-09
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -57,7 +57,8 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with a `docker save`-style `manifest.json` beside it, by which crane reads the tar.
   A run that imports an image it built keeps the layout and writes no tar: [`cluster:import`](../../.mise/tasks/cluster/import) tars it into the import as containerd reads it, so a multi-gigabyte image is not written to disk as an archive and read back.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
-- **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a day.
+- **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a week.
+  A day would be too fine: the build is deterministic, so a day without a Debian package update only writes the same layer again.
   That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.
   Every image is then packed by [`image:pack`](../../.mise/tasks/image/pack), the platform images' own packer: the default image onto that base, each workload and the mock onto the default image, a sorted tree per layer so a digest follows content alone.
   The images share the base's layers, so a node stores them once.
