@@ -83,6 +83,7 @@ import {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelHistory,
   setSlackChannelDefault,
   createAgentSweep,
   createImageUpdate,
@@ -1703,6 +1704,7 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
+        history: row.history,
         isDefault: row.isDefault,
       }));
     },
@@ -1856,6 +1858,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackChannelHistory: setSlackChannelHistory(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         ownedThreads: slackOwnedThreads,

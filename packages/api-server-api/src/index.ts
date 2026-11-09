@@ -175,6 +175,7 @@ export type {
   BindTelegramChatResult,
   ListTelegramChatsResult,
   UnbindTelegramChatResult,
+  SlackBindingModes,
   SlackChannel,
   SlackConversationLabel,
   SlackLoopGuardDrop,

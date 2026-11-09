@@ -670,6 +670,7 @@ export function createBoltSlackGateway(
           channel: args.channel,
           limit: pageSize,
           ...(args.oldest ? { oldest: args.oldest } : {}),
+          ...(args.latest ? { latest: args.latest } : {}),
           ...(cursor ? { cursor } : {}),
         });
         newestFirst.push(...(history.messages ?? []).map(toSlackMessage));

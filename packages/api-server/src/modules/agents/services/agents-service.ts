@@ -25,6 +25,7 @@ import {
   type BindSlackChannelResult,
   type ConnectSlackError,
   type ConnectSlackResult,
+  type SlackBindingModes,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
@@ -690,6 +691,7 @@ export function createAgentsService(deps: {
       owner: string;
       teamId: string;
       ambient: boolean;
+      history: boolean;
       isDefault: boolean;
     }[]
   >;
@@ -947,7 +949,7 @@ export function createAgentsService(deps: {
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes: SlackBindingModes,
     knownWorkspace?: string,
     customEmoji?: string[] | null,
   ): Promise<SlackConnectResult> => {
@@ -966,7 +968,8 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved")
       return err(unresolvedWorkspace(workspace));
 
-    const requestedAmbient = ambient === true;
+    const requestedAmbient = modes.ambient ?? existing?.ambient ?? false;
+    const requestedHistory = modes.history ?? existing?.history ?? false;
 
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
@@ -975,6 +978,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(requestedHistory ? { history: true } : {}),
           ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
@@ -1025,6 +1029,19 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
+      });
+    }
+
+    const hadHistory = existing?.history === true;
+    if (hadHistory !== requestedHistory) {
+      securityLog("info", "channel.history_toggled", {
+        category: "authz-list",
+        actor: deps.actor ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, history: requestedHistory },
       });
     }
 
@@ -1845,19 +1862,44 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient, customEmoji, options) {
+    async connectSlack(id, slackChannelId, modes, customEmoji, options) {
       if (!(await deps.repo.get(id, deps.owner)))
         return err({ type: "AgentNotFound" });
       const bindings = await deps.findSlackBindings(slackChannelId);
-      const alreadyHere = bindings.some((b) => b.agentId === id);
-      if (alreadyHere)
+      const existing = bindings.find((b) => b.agentId === id);
+      if (existing) {
+        if (modes?.history === true && !existing.history) {
+          const workspace = existing.teamId
+            ? ({ kind: "resolved", teamId: existing.teamId } as const)
+            : await deps.resolveSlackWorkspace(slackChannelId);
+          if (workspace.kind !== "resolved")
+            return err(unresolvedWorkspace(workspace));
+          const reader = await connectorInConversation(
+            slackChannelId,
+            workspace.teamId,
+          );
+          if (!reader.ok) {
+            securityLog("warn", "channel.connect_refused", {
+              category: "channel",
+              actor: deps.actor ?? null,
+              actorKind: "user",
+              surface: "slack",
+              agentId: id,
+              result: "failure",
+              reason: reader.error.type,
+              detail: { slackChannelId, turningOn: "history" },
+            });
+            return err(reader.error);
+          }
+        }
         return connectSlackImpl(
           id,
           slackChannelId,
-          ambient,
+          modes ?? {},
           undefined,
           customEmoji,
         );
+      }
       const workspace = await deps.resolveSlackWorkspace(slackChannelId);
       if (workspace.kind !== "resolved")
         return err(unresolvedWorkspace(workspace));
@@ -1881,7 +1923,7 @@ export function createAgentsService(deps: {
       const connected = await connectSlackImpl(
         id,
         slackChannelId,
-        ambient,
+        modes ?? {},
         workspace.teamId,
         customEmoji,
       );
@@ -2050,7 +2092,7 @@ export function createAgentsService(deps: {
         getAgent: namedAgent,
         findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId, teamId) =>
-          connectSlackImpl(id, slackChannelId, undefined, teamId),
+          connectSlackImpl(id, slackChannelId, {}, teamId),
         binding,
       })(agentId, flowId);
     },

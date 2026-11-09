@@ -92,7 +92,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Every binding names its workspace by Slack's team id.
   Bindings made before the platform could connect a second workspace named none; they are rewritten to name their workspace when the install's Helm bot token is imported ([channels](channels.md)).
   A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles.
-  Each binding carries its own ambient and default flags (absent = off).
+  Each binding carries its own ambient, channel history and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
   `slack_loop_guard_drops` holds, per conversation, the bot and app posts the loop guard dropped: a count, the last drop's time and the newest five.
   `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by a hash of the image.

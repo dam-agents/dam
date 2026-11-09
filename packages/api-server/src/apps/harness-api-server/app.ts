@@ -18,6 +18,7 @@ import type { OnboardingChecklistOps } from "../../modules/starter-kits/services
 import {
   type AgentsRepository,
   type RuntimeProgressPort,
+  hasSlackChannelHistory,
   startWaitOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
@@ -272,6 +273,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   };
 
   const readChatFormPreferences = createChatFormPreferencesReader(db);
+  const readsChannelHistory = hasSlackChannelHistory(db);
   const app = new Hono();
   app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
@@ -300,6 +302,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
+    readsChannelHistory,
     chatFormPreferences: (owner, agentId) =>
       readChatFormPreferences(
         agentId,

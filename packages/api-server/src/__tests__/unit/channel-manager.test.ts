@@ -38,6 +38,11 @@ function fakeSlackWorker(): SlackWorker {
       threadTs: "1.1",
       hasMore: false,
     })),
+    readChannelHistory: vi.fn(async () => ({
+      messages: [],
+      conversationId: "C1",
+      hasMore: false,
+    })),
     startThread: vi.fn(async () => ({
       ok: true as const,
       conversationId: "C1",
