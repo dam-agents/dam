@@ -249,9 +249,10 @@ export function useApplyHarnessConfig() {
  * does not carry Pi is refused before anything changes. An agent holds one
  * `cb` provider, so the shared Connection replaces any own-key CurveBender
  * grant, and every other grant stays. Then the new-chat pair moves to Pi on it
- * with the CurveBender work model. When a step fails and the pair was not
- * saved, the grants go back as they were, so the old default keeps its
- * provider; a saved pair keeps the grants it runs on.
+ * with the CurveBender work model. When a step fails and a read shows the
+ * pair was not saved, the grants go back as they were, so the old default
+ * keeps its provider; a saved pair, or one whose state is unknown, keeps the
+ * grants it may run on.
  */
 export function useTryCurveBender() {
   return useMutation<void, Error, { agentId: string; sharedId: string }>({
@@ -300,13 +301,19 @@ export function useTryCurveBender() {
         const saved = await api.harnessConfig.sessionPair
           .query({ agentId })
           .then((pair) => pair?.provider === sharedId)
-          .catch(() => false);
+          .catch(() => true);
         if (change && !saved)
           await api.connections.updateAgentConnections.mutate({
             agentId,
             grant: change.revoke,
             revoke: change.grant,
           });
+        void queryClient.invalidateQueries({
+          queryKey: trpc.harnessConfig.sessionPair.pathKey(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: trpc.connections.getAgentConnections.queryKey(),
+        });
         throw error;
       }
     },

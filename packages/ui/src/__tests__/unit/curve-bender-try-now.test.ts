@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
   status: { harnesses: [{ name: "pi" }] as { name: string }[] | null },
   grants: ["conn-own", "conn-ibm"],
   pair: null as { provider: string | null } | null,
+  pairFails: false,
+  invalidated: [] as unknown[],
   update: vi.fn<(input: unknown) => Promise<void>>(),
   remember: vi.fn<(input: unknown) => Promise<void>>(),
 }));
@@ -14,6 +16,8 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 vi.mock("../../query-client.js", () => ({
   queryClient: {
+    invalidateQueries: (filter: { queryKey: unknown }) =>
+      h.invalidated.push(filter.queryKey),
     getQueryData: () => [
       { id: "conn-own", templateId: "curve-bender" },
       { id: "conn-ibm", templateId: "ibm-litellm" },
@@ -25,7 +29,12 @@ vi.mock("../../api.js", () => ({
   api: {
     harnessConfig: {
       status: { query: async () => h.status },
-      sessionPair: { query: async () => h.pair },
+      sessionPair: {
+        query: async () => {
+          if (h.pairFails) throw new Error("read failed");
+          return h.pair;
+        },
+      },
       rememberSessionPair: { mutate: h.remember },
     },
     connections: {
@@ -69,6 +78,8 @@ const back = { agentId: "a-1", grant: ["conn-own"], revoke: ["conn-shared"] };
 beforeEach(() => {
   h.status = { harnesses: [{ name: "pi" }] };
   h.pair = null;
+  h.pairFails = false;
+  h.invalidated = [];
   h.update.mockReset().mockResolvedValue(undefined);
   h.remember.mockReset().mockResolvedValue(undefined);
 });
@@ -113,5 +124,14 @@ describe("Try now on the CurveBender offer", () => {
     });
     await expect(useTryIt()).rejects.toThrow("publish failed");
     expect(h.update.mock.calls).toEqual([[swap]]);
+  });
+
+  // TEST_SCENARIO: when the read after a failure fails too, the default may be saved, so the grants it may run on stay, and the pair and grant lists are read again.
+  it("keeps the grants when the save state is unknown", async () => {
+    h.remember.mockRejectedValueOnce(new Error("timeout"));
+    h.pairFails = true;
+    await expect(useTryIt()).rejects.toThrow("timeout");
+    expect(h.update.mock.calls).toEqual([[swap]]);
+    expect(h.invalidated).toEqual(["pair", "grants"]);
   });
 });
