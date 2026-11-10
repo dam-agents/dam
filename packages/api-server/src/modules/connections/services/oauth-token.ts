@@ -30,15 +30,23 @@ export async function resolveOAuthClientSecret(opts: {
   secretStore: SecretStore;
 }): Promise<string | undefined> {
   const template = opts.templates.get(opts.conn.templateId);
-  let clientSecret =
-    template && template.authKind === "oauth"
-      ? operatorAppFor(template, opts.auth.host).clientSecret
-      : undefined;
   if (opts.auth.clientSecretRef) {
     const stored = await opts.secretStore.getField(opts.auth.clientSecretRef);
-    if (stored) clientSecret = stored;
+    if (stored) return stored;
   }
-  return clientSecret;
+  if (template?.authKind !== "oauth") return undefined;
+  const app = operatorAppFor(template, opts.auth.host);
+  if (
+    template.hostApps &&
+    opts.auth.host &&
+    !opts.auth.clientSecretRef &&
+    !app.clientId
+  ) {
+    throw new Error(
+      `No GitHub app is registered for ${opts.auth.host} any more. Move this sign-in to another host, or connect it again with your own app.`,
+    );
+  }
+  return app.clientSecret;
 }
 
 export async function oauthProviderFor(opts: {

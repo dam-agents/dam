@@ -37,7 +37,7 @@ function providerCell({ provider, id }: ConnectionTemplateView): string {
 function descriptionCell(t: ConnectionTemplateView): string {
   const hosts = offeredHostsOf(t);
   const description = t.description ?? "";
-  if (hosts.length === 0) return description;
+  if (hosts.length < 2) return description;
   const offered = `hosts: ${hosts.join(", ")}`;
   return description ? `${description} (${offered})` : offered;
 }

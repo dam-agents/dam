@@ -624,7 +624,7 @@ async function resolveSlugTemplate(args: {
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
-  const host = await chooseOfferedHost(template, opts.host, json);
+  const host = await chooseOfferedHost(template, opts, json);
   const collected = await collectInputs(
     template,
     host ? { ...opts, host } : opts,
@@ -635,20 +635,22 @@ async function resolveSlugTemplate(args: {
 
 async function chooseOfferedHost(
   template: ConnectionTemplateView,
-  given: string | undefined,
+  opts: Pick<ConnectOpts, "host" | "clientId">,
   json: boolean,
 ): Promise<string | undefined> {
   const offered = offeredHostsOf(template);
   if (offered.length === 0) return undefined;
+  const given = opts.host;
   if (given !== undefined && given.trim().length > 0) {
     const host = hostnameOf(given);
-    if (offered.includes(host)) return host;
+    if (offered.includes(host) || opts.clientId?.trim()) return host;
     process.stderr.write(
       `error: ${host} is not a GitHub Enterprise host this server offers, or it is retired\n` +
-        `hint: ${offeredHostsLine(offered)}; pass one with --host\n`,
+        `hint: ${offeredHostsLine(offered)}; pass one with --host, or --client-id for your own app on another host\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }
+  if (offered.length === 1) return offered[0];
   if (!process.stdin.isTTY) {
     process.stderr.write(
       "error: this server offers several GitHub Enterprise hosts; pass one with --host\n" +

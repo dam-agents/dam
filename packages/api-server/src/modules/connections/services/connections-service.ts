@@ -2718,13 +2718,12 @@ export function createConnectionsService(deps: {
         });
       }
       const clientId = app.clientId;
-      const from = conn.auth.host;
-      const { children, rehosted } = await deps.connectionLock(
+      const { children, rehosted, from } = await deps.connectionLock(
         connectionRefreshLockKey(conn.id),
         async () => {
           const fresh = await deps.repo.get(conn.id, deps.ownerId);
           if (fresh?.auth.kind !== "oauth") {
-            return { children: [], rehosted: 0 };
+            return { children: [], rehosted: 0, from: undefined };
           }
           const kids = fresh.isParent
             ? await deps.repo.listChildren(fresh.id)
@@ -2740,7 +2739,7 @@ export function createConnectionsService(deps: {
             await rehost(c, c.auth, to, { ...app, clientId }, template);
             count++;
           }
-          return { children: kids, rehosted: count };
+          return { children: kids, rehosted: count, from: fresh.auth.host };
         },
       );
       if (rehosted === 0) return;
@@ -2774,7 +2773,7 @@ export function createConnectionsService(deps: {
           templateId: conn.templateId,
           from: from ?? null,
           to,
-          connectionsMoved: children.length,
+          connectionsMoved: rehosted,
         },
       });
     },

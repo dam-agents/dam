@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Connection, SecretRef } from "api-server-api";
+
+const securityLog = vi.hoisted(() => vi.fn());
+vi.mock("../../core/security-log.js", () => ({ securityLog }));
 
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import {
@@ -271,6 +274,53 @@ describe("the GitHub Enterprise hosts an install offers", () => {
   });
 });
 
+describe("hosts written with a scheme or a port", () => {
+  // TEST_SCENARIO: an operator may write a host as a URL or with a port in the chart; it must still match its app and its retirement, or the picker offers a host whose every sign-in fails and a retired host is never refused.
+  it("match their app and their retirement by hostname", async () => {
+    const creds: OperatorCredentials = {
+      githubEnterprise: {
+        hosts: [
+          { host: `https://${NEW.toUpperCase()}`, clientId: "Iv1.research" },
+          { host: `${OTHER}:8443`, clientId: "Iv1.consulting" },
+        ],
+        retiredHosts: [`https://${OLD}/`],
+      },
+    };
+    expect(gheTemplate(creds).hostChoices).toEqual([NEW, OTHER]);
+    const conn = await build(OTHER, creds);
+    expect(conn.auth).toMatchObject({ clientId: "Iv1.consulting" });
+    await expect(build(OLD, creds)).rejects.toThrow(/retired/);
+  });
+});
+
+describe("a host whose app the operator dropped", () => {
+  // TEST_SCENARIO: a renewal must never run with no client secret; once the operator removes a host's app, a sign-in still on that host fails with what to do instead of a token error from GitHub.
+  it("refuses to renew a sign-in there and says what to do", async () => {
+    const templates = createConnectionTemplateRegistry(
+      buildCatalog({
+        githubEnterprise: {
+          hosts: [
+            { host: NEW, clientId: "Iv1.research", clientSecret: "s" },
+            { host: OTHER, clientId: "Iv1.consulting" },
+          ],
+        },
+      }),
+    );
+    const conn = signInOn(OLD);
+    if (conn.auth.kind !== "oauth") throw new Error("not oauth");
+    await expect(
+      resolveOAuthClientSecret({
+        conn,
+        auth: conn.auth,
+        templates,
+        secretStore: unused(),
+      }),
+    ).rejects.toThrow(
+      /No GitHub app is registered for github\.ibm\.com any more/,
+    );
+  });
+});
+
 describe("a connection on a retired host", () => {
   // TEST_SCENARIO: the connection must not be deleted or shown as working when its host goes away; it reads disconnected, naming the retired host, so its owner knows why and to move it.
   it("reads disconnected, the sign-in and what was made from it", async () => {
@@ -400,6 +450,28 @@ describe("moving a GitHub Enterprise sign-in to another host", () => {
         c.kind === "egress-inject" ? [c.host] : [],
       ),
     ).toEqual([`api.${NEW}`, NEW]);
+  });
+
+  // TEST_SCENARIO: the audit record of a retried move names the host the sign-in was on when the move ran and counts only the connections it moved this time, not every connection made from it.
+  it("records the host it moved from and what it moved", async () => {
+    const second = { ...childOn(OLD), id: "conn-child-2", name: "ghe-api" };
+    const { svc, rows } = harness([signInOn(OLD), childOn(OLD), second]);
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+    rows.set("conn-child", childOn(OLD));
+    securityLog.mockClear();
+
+    await svc.moveToHost({ id: "conn-signin", host: NEW });
+    expect(securityLog).toHaveBeenCalledWith(
+      "info",
+      "connection.move_host",
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          from: NEW,
+          to: NEW,
+          connectionsMoved: 1,
+        }),
+      }),
+    );
   });
 
   // TEST_SCENARIO: a sign-in stored with its host in other letter case is already on that host; moving it there must not rewrite its credential or drop its token.

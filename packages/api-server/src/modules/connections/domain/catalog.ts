@@ -18,15 +18,16 @@ import {
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
 } from "api-server-api";
-import type {
-  ClientCredentialsConnectionTemplate,
-  ConnectionTemplate,
-  GitHubAppConnectionTemplate,
-  HeaderConnectionTemplate,
-  NoneConnectionTemplate,
-  OAuthConnectionTemplate,
-  OperatorHostApp,
-  Sigv4ConnectionTemplate,
+import {
+  hostnameOf,
+  type ClientCredentialsConnectionTemplate,
+  type ConnectionTemplate,
+  type GitHubAppConnectionTemplate,
+  type HeaderConnectionTemplate,
+  type NoneConnectionTemplate,
+  type OAuthConnectionTemplate,
+  type OperatorHostApp,
+  type Sigv4ConnectionTemplate,
 } from "./connection-template.js";
 import {
   CUSTOM_HEADER_FAMILY,
@@ -73,15 +74,13 @@ interface GitHubEnterpriseHosts {
 function githubEnterpriseHosts(
   creds?: GitHubEnterpriseCredentials,
 ): GitHubEnterpriseHosts {
-  const retired = [
-    ...new Set((creds?.retiredHosts ?? []).map((h) => h.toLowerCase())),
-  ];
+  const retired = [...new Set((creds?.retiredHosts ?? []).map(hostnameOf))];
   const apps: OperatorHostApp[] = [];
   for (const app of [
     ...(creds?.host ? [{ ...creds, host: creds.host }] : []),
     ...(creds?.hosts ?? []),
   ]) {
-    const host = app.host.toLowerCase();
+    const host = hostnameOf(app.host);
     if (apps.some((a) => a.host === host)) continue;
     apps.push({
       host,

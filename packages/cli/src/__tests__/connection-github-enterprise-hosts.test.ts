@@ -34,7 +34,10 @@ const GHE: ConnectionTemplateView = {
   category: "app",
   isCustom: false,
   authKind: "oauth",
-  inputs: [{ name: "host", state: "required", presetValue: HOSTS[0] }],
+  inputs: [
+    { name: "host", state: "required", presetValue: HOSTS[0] },
+    { name: "clientId", state: "overridable" },
+  ],
   extras: { hostChoices: HOSTS },
 };
 
@@ -95,6 +98,28 @@ describe("dam connection connect github-enterprise", () => {
     expect(startOAuth).not.toHaveBeenCalled();
   });
 
+  // TEST_SCENARIO: a user with their own GitHub app may sign in on a host the server does not offer; the CLI leaves that to the server, which still refuses a retired host.
+  it("lets --client-id sign in on another host", async () => {
+    const { command, create } = connect();
+    await run(command, [
+      "github-enterprise",
+      "--host",
+      "ghe.own.example.com",
+      "--client-id",
+      "Iv1.mine",
+      "--no-browser",
+      "--timeout",
+      "1",
+      "--json",
+    ]).catch(() => {});
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "ghe.own.example.com",
+        clientId: "Iv1.mine",
+      }),
+    );
+  });
+
   // TEST_SCENARIO: a script with no terminal must not get the first host silently; it fails and is told which hosts it may pass.
   it("asks for --host without a terminal", async () => {
     process.stdin.isTTY = false;
@@ -129,8 +154,8 @@ describe("dam connection connect github-enterprise", () => {
     );
   });
 
-  // TEST_SCENARIO: a server with one host or none offers no choice, so --host and its absence behave as they always did.
-  it("leaves a single-host server as it was", async () => {
+  // TEST_SCENARIO: a server that offers one host has nothing to ask, but still refuses another; the CLI signs in on that host without --host and refuses any other before anything is made, as the server would.
+  it("takes the one offered host and refuses any other", async () => {
     process.stdin.isTTY = false;
     const create = vi.fn(async () => ok({ id: "conn-signin" }));
     const command = buildConnectCommand(
@@ -138,6 +163,39 @@ describe("dam connection connect github-enterprise", () => {
         list: async () => ok([]),
         listTemplates: async () =>
           ok([{ ...GHE, extras: { hostChoices: [HOSTS[0]] } }]),
+        createConnection: create,
+        startOAuth: async () => ok({ authUrl: "https://ghe/login" }),
+        getConnection: async () => ok({ ...signIn, connectedAt: "now" }),
+      }),
+    );
+    await run(
+      command,
+      ["github-enterprise", "--host", "ghe.other.example.com"],
+      EXIT_INVALID_INPUT,
+    );
+    expect(output.stderr).toContain(`offered hosts: ${HOSTS[0]}`);
+    expect(create).not.toHaveBeenCalled();
+
+    await run(command, [
+      "github-enterprise",
+      "--no-browser",
+      "--timeout",
+      "1",
+      "--json",
+    ]).catch(() => {});
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ host: HOSTS[0] }),
+    );
+  });
+
+  // TEST_SCENARIO: a server that sends no host list keeps the free host input it always had.
+  it("leaves a server without a host list as it was", async () => {
+    process.stdin.isTTY = false;
+    const create = vi.fn(async () => ok({ id: "conn-signin" }));
+    const command = buildConnectCommand(
+      deps({
+        list: async () => ok([]),
+        listTemplates: async () => ok([{ ...GHE, extras: {} }]),
         createConnection: create,
         startOAuth: async () => ok({ authUrl: "https://ghe/login" }),
         getConnection: async () => ok({ ...signIn, connectedAt: "now" }),
