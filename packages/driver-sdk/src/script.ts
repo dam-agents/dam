@@ -17,6 +17,7 @@ import {
   defaultTimeoutMs,
   inheritanceBody,
   InvocationFailed,
+  Stopped,
   type Inheritance,
   type Setup,
   type Stoppable,
@@ -187,7 +188,8 @@ export async function spawnScript(
   if (resources) body.resources = resources;
   if (skills) body.skills = skills;
 
-  signal?.throwIfAborted();
+  if (signal?.aborted)
+    throw new Stopped(undefined, label ?? "spawnScript", signal.reason);
   const { id } = await req<SpawnInvocationResponse>(
     "POST",
     "/invocations",
@@ -198,7 +200,12 @@ export async function spawnScript(
   log(`spawned ${tag} -> ${id}`);
   opts.onSpawned?.(id);
 
-  const view = await awaitInvocation(id, tag, { pollMs, timeoutMs, signal });
+  const view = await awaitInvocation(id, tag, {
+    pollMs,
+    timeoutMs,
+    signal,
+    keep: opts.keep,
+  });
   const output = new ScriptOutput(id, view.exitCode ?? null, view.output ?? {});
   if (view.status === "failed") {
     log(

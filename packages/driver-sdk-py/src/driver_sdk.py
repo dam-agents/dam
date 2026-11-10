@@ -54,6 +54,7 @@ __all__ = [
 ]
 
 _DEFAULT_POLL_SECONDS = 5.0
+_SCRIPT_STOP_REASON = "its script aborted the spawn"
 # A sub-agent may wait up to its ttl for room to start, then has its whole
 # ttl for the work: twice the ttl (the server's default is 1h) plus the
 # liveness sweep's period and a few polls of slack.
@@ -343,7 +344,8 @@ def _await(
 
 
 def _stop(invocation_id: str, reason: str | None = None) -> bool:
-    body = {"reason": reason} if reason is not None else {}
+    reason = reason.strip() if reason else None
+    body = {"reason": reason} if reason else {}
     return _request("POST", f"/invocations/{_segment(invocation_id)}/stop", body)[
         "stopped"
     ]
@@ -427,8 +429,9 @@ def spawn(
     Set ``cancel`` (a ``threading.Event``) from another thread to stop the
     sub-agent, and every sub-agent it started in turn, before it ends: the
     call raises ``Stopped``, and an event set before the call spawns nothing.
-    ``cancel_reason`` is the stop's reason, which the user reads and a spawn
-    with ``keep`` needs."""
+    ``cancel_reason`` is the stop's reason, which the user reads; a spawn with
+    ``keep``, which is stopped only with a reason, says its script aborted it
+    when none is given."""
     body = _target_body(
         harness=harness,
         image=image,
@@ -474,7 +477,7 @@ def spawn(
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
         cancel=cancel,
-        cancel_reason=cancel_reason,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     if view["status"] == "failed":
         raise InvocationFailed(invocation_id, name, view.get("errorReason"))
@@ -808,7 +811,7 @@ def spawn_script(
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
         cancel=cancel,
-        cancel_reason=cancel_reason,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     output = ScriptOutput(invocation_id, view.get("exitCode"), view.get("output") or {})
     if view["status"] == "failed":

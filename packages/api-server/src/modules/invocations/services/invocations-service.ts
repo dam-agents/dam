@@ -911,12 +911,16 @@ export function createInvocationsService(deps: {
     async stopTarget(invocationId, driverAgentId, reason) {
       const row = await deps.repo.get(invocationId);
       if (!row || row.driverAgentId !== driverAgentId)
-        throw new RunError(`${invocationId} is not a sub-agent of yours`);
+        throw new RunError(
+          `${invocationId} is not a sub-agent you started. Pass the id that spawn_subagent returned; a run id from run_subagent is not one.`,
+        );
       const kept = row.keepUntil && row.keepUntil.getTime() > now().getTime();
-      if (kept && !reason)
+      if (kept && !reason) {
+        if (!(await deps.stopper.running(row))) return { stopped: false };
         throw new RunError(
           `${invocationId} is kept, so stopping it takes a reason: its user reads it beside the stopped run`,
         );
+      }
       return deps.stopper.stop(row, {
         reason: reason
           ? `stopped by its driver: ${reason}`

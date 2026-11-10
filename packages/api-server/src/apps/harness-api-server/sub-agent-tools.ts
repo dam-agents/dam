@@ -244,7 +244,7 @@ const KEPT_STOP_SENTENCE =
   " A sub-agent you spawned with keep keeps its conversation and only stops running; stopping it takes a reason.";
 
 const stopDescription = (kept: boolean): string =>
-  `Stop a sub-agent you started that you no longer need, and every sub-agent it started in turn: its turn or script ends and it stops spending. A sub-agent without keep is removed.${kept ? KEPT_STOP_SENTENCE : ""} Nothing of it comes back to you as a new turn; await_subagents lists it as failed with the reason. Your user sees the reason in the delegation view. Returns stopped false, changing nothing, for a sub-agent with nothing running.`;
+  `Stop a sub-agent you started that you no longer need, and every sub-agent it started in turn: its turn or script ends and it stops spending. A sub-agent without keep is removed, with every sub-agent below it.${kept ? KEPT_STOP_SENTENCE : ""} Nothing of it comes back to you as a new turn; await_subagents lists it as failed with the reason. Your user sees the reason in the delegation view. Returns stopped false, changing nothing, for a sub-agent with nothing running.`;
 
 const KEPT_SPAWN_KEYS = Object.keys(
   keptSpawnInput,

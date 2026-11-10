@@ -10,6 +10,7 @@ export {
   listImages,
   listConnections,
   InvocationFailed,
+  Stopped,
   type SpawnOptions,
   type ImageInfo,
   type ConnectionInfo,

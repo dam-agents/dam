@@ -40,12 +40,33 @@ export class InvocationFailed extends Error {
   }
 }
 
+export class Stopped extends Error {
+  readonly invocationId: string | undefined;
+  constructor(id: string | undefined, label: string, cause: unknown) {
+    super(`invocation ${id ? `${label} (${id})` : label} stopped`, { cause });
+    this.name = "Stopped";
+    this.invocationId = id;
+  }
+}
+
+const SCRIPT_STOP_REASON = "its script aborted the spawn";
+
+// UNIT_BOUNDARY_DESCRIPTION: the reason an aborted spawn is stopped with: the signal's string reason, or, for a kept one, which is stopped only with a reason, one that says the script aborted it.
+function abortReason(
+  signal: AbortSignal,
+  keep: boolean | undefined,
+): string | undefined {
+  const why: unknown = signal.reason;
+  const given = typeof why === "string" ? why.trim() : "";
+  return given || (keep ? SCRIPT_STOP_REASON : undefined);
+}
+
 export type Setup = Pick<
   SpawnInvocationRequest,
   "harness" | "image" | "seed" | "install" | "env" | "resources" | "skills"
 >;
 
-// UNIT_BOUNDARY_DESCRIPTION: a signal that stops a one-off sub-agent when it aborts, and every sub-agent it started in turn; the call then throws the signal's reason, and an abort before the spawn spawns nothing. A string reason (abort("why")) is the stop's reason, which a spawn with keep needs.
+// UNIT_BOUNDARY_DESCRIPTION: a signal that stops a one-off sub-agent when it aborts, and every sub-agent it started in turn; the call then throws Stopped, with the signal's reason as its cause, and an abort before the spawn spawns nothing. A string reason (abort("why")) is the stop's reason, which the user reads.
 export interface Stoppable {
   signal?: AbortSignal;
 }
@@ -150,7 +171,8 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     };
   }
 
-  signal?.throwIfAborted();
+  if (signal?.aborted)
+    throw new Stopped(undefined, label ?? "spawn", signal.reason);
   const { id } = await req<SpawnInvocationResponse>(
     "POST",
     "/invocations",
@@ -161,7 +183,12 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   log(`spawned ${tag} -> ${id}`);
   opts.onSpawned?.(id);
 
-  const view = await awaitInvocation(id, tag, { pollMs, timeoutMs, signal });
+  const view = await awaitInvocation(id, tag, {
+    pollMs,
+    timeoutMs,
+    signal,
+    keep: opts.keep,
+  });
   if (view.status === "failed") {
     log(
       `failed ${tag} (${id})${view.errorReason ? `: ${view.errorReason}` : ""}`,
@@ -179,17 +206,21 @@ export function defaultTimeoutMs(ttlMs: number | undefined): number {
 export async function awaitInvocation(
   id: string,
   tag: string,
-  opts: { pollMs: number; timeoutMs: number; signal?: AbortSignal },
+  opts: {
+    pollMs: number;
+    timeoutMs: number;
+    signal?: AbortSignal;
+    keep?: boolean;
+  },
 ): Promise<InvocationView & { status: "done" | "failed" }> {
   const deadline = Date.now() + opts.timeoutMs;
   let consecutiveErrors = 0;
   let waiting: string | undefined;
   for (;;) {
     if (opts.signal?.aborted) {
-      const why: unknown = opts.signal.reason;
-      await stopInvocation(id, typeof why === "string" ? why : undefined);
+      await stopInvocation(id, abortReason(opts.signal, opts.keep));
       log(`stopped ${tag} (${id})`);
-      opts.signal.throwIfAborted();
+      throw new Stopped(id, tag, opts.signal.reason);
     }
     let view: InvocationView;
     try {
@@ -225,7 +256,7 @@ export async function stopInvocation(
   const { stopped } = await req<{ stopped: boolean }>(
     "POST",
     `/invocations/${encodeURIComponent(id)}/stop`,
-    reason !== undefined ? { reason } : {},
+    reason?.trim() ? { reason: reason.trim() } : {},
   );
   return stopped;
 }

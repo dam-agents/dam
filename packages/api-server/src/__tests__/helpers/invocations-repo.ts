@@ -54,6 +54,7 @@ export function fakeInvocationsRepo(
     find: async () => null,
     listRuns: async () => [],
     listRunningRuns: async () => [],
+    listRunningRunsOf: async () => [],
     markStarted: async () => null,
     complete: async () => false,
     fail: async () => null,

@@ -33,9 +33,12 @@ function fakeRepo(rows: InvocationRow[]) {
     deleteReapedByRoot: vi.fn(async (_root: string) => 0),
     fail: vi.fn(async (_runId: string, _reason: string) => null),
     failStopped: vi.fn(
-      async (_runId: string, _reason: string, _collected: boolean) => ({
-        cancelPending: false,
-      }),
+      async (runId: string, _reason: string, _collected: boolean) => {
+        const run = rows.find((r) => r.runId === runId);
+        if (!run || run.status !== "running") return null;
+        run.status = "failed";
+        return { cancelPending: false };
+      },
     ),
   };
   const repo = fakeInvocationsRepo({
@@ -44,6 +47,8 @@ function fakeRepo(rows: InvocationRow[]) {
     failStopped: calls.failStopped,
     listRunningRuns: async (id) =>
       rows.filter((r) => r.id === id && r.status === "running"),
+    listRunningRunsOf: async (ids) =>
+      rows.filter((r) => ids.includes(r.id) && r.status === "running"),
     listRunningByDriver: async (driver) =>
       rows.filter((r) => r.driverAgentId === driver && r.status === "running"),
     markReaped: calls.markReaped,

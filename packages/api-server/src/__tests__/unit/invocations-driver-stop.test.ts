@@ -10,13 +10,14 @@ import {
 function makeService(rows: InvocationRow[]) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const stop = vi.fn(async () => ({ stopped: true }));
+  const running = vi.fn(async () => true);
   const service = createInvocationsService({
     owner: "owner-1",
     repo: fakeInvocationsRepo({ get: async (id) => byId.get(id) ?? null }),
     agents: {} as never,
     driverResolution: { resolveRoot: async (id: string) => id },
     reaper: { reap: async () => {} },
-    stopper: { stop },
+    stopper: { stop, running },
     reportedReap: { afterReport: () => {} },
     cancel: { settled: async () => true },
     runtimeMutator: {} as never,
@@ -34,7 +35,7 @@ describe("a driver stopping its sub-agent", () => {
       invocationRow({ id: "other", driverAgentId: "driver-2" }),
     ]);
     await expect(service.stopTarget("other", "driver-1")).rejects.toThrow(
-      "not a sub-agent of yours",
+      "not a sub-agent you started",
     );
     await service.stopTarget("own", "driver-1");
     expect(stop).toHaveBeenCalledTimes(1);

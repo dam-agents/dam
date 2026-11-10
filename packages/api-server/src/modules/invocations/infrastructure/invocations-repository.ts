@@ -117,6 +117,7 @@ export interface InvocationsRepository {
   find(id: string): Promise<InvocationRow | null>;
   listRuns(invocationId: string, limit: number): Promise<InvocationRow[]>;
   listRunningRuns(invocationId: string): Promise<InvocationRow[]>;
+  listRunningRunsOf(invocationIds: readonly string[]): Promise<InvocationRow[]>;
   markStarted(
     invocationId: string,
     eventId: string,
@@ -372,6 +373,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return runRows(
         and(
           eq(runsTable.invocationId, invocationId),
+          eq(runsTable.status, "running"),
+        ),
+      );
+    },
+
+    async listRunningRunsOf(invocationIds) {
+      if (invocationIds.length === 0) return [];
+      return runRows(
+        and(
+          inArray(runsTable.invocationId, [...invocationIds]),
           eq(runsTable.status, "running"),
         ),
       );

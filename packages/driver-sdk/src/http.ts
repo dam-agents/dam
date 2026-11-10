@@ -81,6 +81,7 @@ export function log(msg: string): void {
 
 export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
     const done = () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", done);
