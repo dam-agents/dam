@@ -10,7 +10,10 @@ Any harness, any model, on Kubernetes.
 </h3>
 
 <p align="center">
-  Run agents at scale, each in its own microVM, packed densely on Kubernetes, with credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
+  Run many agents densely on Kubernetes, each in its own microVM.
+  Idle agents sleep and give back their memory, then wake on demand.
+  Inside its VM, an agent can run Docker and k3s and bring up your whole stack.
+  Credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility are built in.
 </p>
 
 <p align="center">
@@ -64,12 +67,14 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Why DAM?
 
-- **A microVM for every agent:** Each agent gets its own VM with its own kernel, so isolation is VM-grade, not container-grade.
-- **Dense by design:** Many agents share one runner pod per user.
-  Memory is counted by what agents use, not by their size, and nobody sizes an agent by hand.
-  Idle agents sleep and wake on demand.
-- **Agents can test what they build:** Each agent can run Docker or a small Kubernetes cluster (k3s) inside its own VM.
-  It can start the app it works on, with its database and services, and test it during development or review, before it hands work back.
+- **Dense by design:** Many agents share one runner pod per owner.
+  Memory is counted by what agents use, not by their size, so nobody sizes an agent by hand.
+- **Sleep when idle, wake on demand:** An idle agent hibernates: its VM stops and gives back its CPU and memory, and its disk stays.
+  A message, a schedule or an open chat boots it again, with its files and workspace in place.
+- **Your whole stack, inside the agent's VM:** An agent gets more than a shell and a browser.
+  It can run Docker or a small Kubernetes cluster (k3s) in its own VM, start the app it works on with its database and services, and test and debug it before it hands work back.
+- **A microVM for every agent:** Each agent gets its own VM with its own kernel.
+  Its VMM is confined with Landlock and seccomp, and each owner's agents run in their own unprivileged pod.
 - **Isolated by design:** Credential isolation, network controls, and optional human approval.
 - **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
 - **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
