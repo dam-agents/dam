@@ -24,6 +24,12 @@ import type {
   ThreadResult,
 } from "../../modules/channels/services/channel-manager.js";
 
+vi.mock("../../core/agent-service-client.js", () => ({
+  agentServiceClient: () => ({
+    sessions: { byRef: { query: async () => ({ sessionId: "s-web" }) } },
+  }),
+}));
+
 const { auditLines } = vi.hoisted(() => ({
   auditLines: [] as { event: string; detail: Record<string, unknown> }[],
 }));
@@ -45,6 +51,7 @@ async function mcpHarness(opts?: {
   attachment?: AttachmentResult | { error: string };
   artifacts?: Record<string, { title: string; shareUrl: string | null }>;
   readsChannelHistory?: boolean;
+  sessionRef?: string;
 }) {
   const replies: ChannelReply[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
@@ -129,6 +136,8 @@ async function mcpHarness(opts?: {
 
   const session = createMcpSession("agent-1", {
     owner: "owner-1",
+    uiBaseUrl: "http://ui",
+    ...(opts?.sessionRef ? { sessionRef: opts.sessionRef } : {}),
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
@@ -726,34 +735,6 @@ describe("outbound MCP tools — channel cards", () => {
     expect(res.content[0]!.text).toContain("describe_card_components");
     expect(replies).toEqual([]);
   });
-
-  it("posts a public artifact's share URL in place of its in-app link inside a card", async () => {
-    const id = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
-    const { client, replies } = await mcpHarness({
-      artifacts: {
-        [id]: {
-          title: "Weekly report",
-          shareUrl: "https://share.example/a/weekly-report",
-        },
-      },
-    });
-
-    await client.callTool({
-      name: "reply",
-      arguments: {
-        text: "Report",
-        card: actions({
-          type: "LinkButton",
-          props: { label: "Open", url: `platform://artifacts/${id}` },
-        }),
-      },
-    });
-
-    expect(replies[0]?.card?.card.children[0]).toMatchObject({
-      type: "actions",
-      children: [{ url: "https://share.example/a/weekly-report" }],
-    });
-  });
 });
 
 describe("outbound MCP tools — post and its old name", () => {
@@ -898,21 +879,16 @@ describe("outbound MCP tools — the posted message", () => {
 describe("outbound MCP tools — artifact links (#5965)", () => {
   const PUBLIC_ID = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
   const PRIVATE_ID = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
-  const artifacts = {
-    [PUBLIC_ID]: {
-      title: "Weekly report",
-      shareUrl: "https://share.example/a/weekly-report",
-    },
-    [PRIVATE_ID]: { title: "Draft plan", shareUrl: null },
-  };
 
   /**
-   * TEST_SCENARIO: The reported bug. An agent posts the in-app artifact link
-   * to Slack, where it is dead text. A public artifact's link is posted as
-   * its share URL, in a reply and in a new message alike.
+   * TEST_SCENARIO: The reported bug was an in-app artifact link reaching Slack
+   * as dead text. The channel worker that sends the message owns that decision,
+   * against the one destination it resolved, so the tools hand it the text and
+   * the card exactly as the agent wrote them, app links included, and the card
+   * is checked in the form it was written.
    */
-  it("posts a public artifact's share URL in place of its in-app link", async () => {
-    const { client, replies, posts } = await mcpHarness({ artifacts });
+  it("hands the text and the card to the channel, app links untouched", async () => {
+    const { client, replies, posts } = await mcpHarness();
 
     await client.callTool({
       name: "reply",
@@ -927,62 +903,42 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
         text: `Report: platform://artifacts/${PUBLIC_ID}`,
       },
     });
-
-    expect(replies[0]?.text).toBe(
-      "See [Weekly report](https://share.example/a/weekly-report)",
-    );
-    expect(posts[0]?.text).toBe(
-      "Report: https://share.example/a/weekly-report",
-    );
-  });
-
-  /**
-   * TEST_SCENARIO: A private artifact has no link that opens outside the
-   * app. The message is not posted, and the agent is told to say that the
-   * artifact must be shared first and to send the message without the link.
-   */
-  it("refuses a message that links a private artifact", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "reply",
-      arguments: { text: `Draft: platform://artifacts/${PRIVATE_ID}` },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toContain(
-      "must be shared from the app",
-    );
-    expect(replies).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: A link names an id the owner has no artifact for, a
-   * deleted one or a typo. The message is not posted with a dead link.
-   */
-  it("refuses a message that links an unknown artifact", async () => {
-    const { client, posts } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "send_channel_message",
+    await client.callTool({
+      name: "post",
       arguments: {
         channel: ChannelType.Slack,
-        text: "platform://artifacts/does-not-exist",
+        text: "Draft",
+        card: {
+          type: "Card",
+          props: { title: "Draft" },
+          children: [
+            {
+              type: "Actions",
+              props: {},
+              children: [
+                {
+                  type: "LinkButton",
+                  props: {
+                    label: "Open",
+                    url: `platform://artifacts/${PRIVATE_ID}`,
+                  },
+                },
+              ],
+            },
+          ],
+        },
       },
     });
 
-    expect(res.isError).toBe(true);
-    expect(posts).toEqual([]);
-  });
-
-  it("posts a message without artifact links unchanged", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    await client.callTool({
-      name: "reply",
-      arguments: { text: "see https://example.com/report" },
-    });
-
-    expect(replies[0]?.text).toBe("see https://example.com/report");
+    expect(replies[0]?.text).toBe(
+      `See [Weekly report](platform://artifacts/${PUBLIC_ID})`,
+    );
+    expect(posts.map((p) => p.text)).toEqual([
+      `Report: platform://artifacts/${PUBLIC_ID}`,
+      "Draft",
+    ]);
+    expect(JSON.stringify(posts[1]?.options.card)).toContain(
+      `platform://artifacts/${PRIVATE_ID}`,
+    );
   });
 });

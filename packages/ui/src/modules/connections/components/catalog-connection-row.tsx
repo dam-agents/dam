@@ -26,6 +26,7 @@ export interface RowMaintenanceActions {
   onUpdateCredential?: () => void;
   onEditScope?: () => void;
   onMoveHost?: () => void;
+  onRotateKey?: () => void;
   busy?: boolean;
 }
 

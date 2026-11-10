@@ -2011,7 +2011,7 @@ controller:
     harnessTemplateDefaults:
       # (agentHome is gone: the agent home is fixed at /home/agent. The
       # controller decodes this block strictly, so a key it does not declare —
-      # agentHome included — stops it at startup instead of being ignored.)
+      # agentHome included — fails the render.)
 
       storageSize: "10Gi"
       # The resource limits every Agent's spec is stamped with at create, and

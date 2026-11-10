@@ -58,6 +58,10 @@ import {
   type AttachmentClaim,
 } from "../attachment-budget.js";
 import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
+import {
+  linkOutboundArtifacts,
+  type LinkOutboundArtifacts,
+} from "./outbound-artifact-links.js";
 import type {
   AddressedWorker,
   AttachmentQuery,
@@ -1547,6 +1551,7 @@ export type SlackWorkerDeps = {
   isTermsAccepted: (sub: string) => Promise<boolean>;
   spendHold?: ChannelSpendHold;
   providerOutage?: ChannelProviderOutage;
+  linkArtifacts: LinkOutboundArtifacts;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   workspaceFiles: AgentWorkspaceFilesFactory;
@@ -1605,6 +1610,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     isTermsAccepted,
     spendHold,
     providerOutage = async () => null,
+    linkArtifacts,
     uiBaseUrl,
     attendance,
     workspaceFiles,
@@ -1753,6 +1759,75 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       };
     }
     return null;
+  }
+
+  async function isOwnerDirectMessage(
+    gw: SlackGateway,
+    owner: string,
+    target: { id: string; teamId: SlackWorkspace },
+  ): Promise<boolean> {
+    let counterpart: string | null;
+    if (/^[UW][A-Z0-9]+$/.test(target.id)) counterpart = target.id;
+    else {
+      const info = await gw.getConversationInfo(target.id, target.teamId);
+      counterpart =
+        info.kind === "found" &&
+        info.isDirectMessage &&
+        !info.isGroupDirectMessage
+          ? info.directMessageUser
+          : null;
+    }
+    if (counterpart === null) return false;
+    return (await ownerSlackUserIds(owner, target.teamId)).has(counterpart);
+  }
+
+  async function ownerSlackUserIds(
+    owner: string,
+    teamId: SlackWorkspace,
+  ): Promise<Set<string>> {
+    const links = await identityLinks.externalLinksOf("slack", owner);
+    return new Set(
+      links.filter((l) => l.teamId === teamId).map((l) => l.externalUserId),
+    );
+  }
+
+  async function linkForTarget(
+    gw: SlackGateway,
+    instanceName: string,
+    target: { id: string; teamId: SlackWorkspace },
+    payload: { text: string; card?: ChannelCard | undefined },
+  ): Promise<{ text: string; card?: ChannelCard } | { error: string }> {
+    let scope: Promise<{
+      owner: string | null;
+      ownerDirectMessage: boolean;
+    }> | null = null;
+    const boundScope = () =>
+      (scope ??= (async () => {
+        const owner = await getInstanceOwner(instanceName).catch(() => null);
+        if (owner === null) return { owner, ownerDirectMessage: false };
+        try {
+          return {
+            owner,
+            ownerDirectMessage: await isOwnerDirectMessage(gw, owner, target),
+          };
+        } catch (err) {
+          getLogger().warn(
+            { agentId: instanceName, error: formatError(err) },
+            "slack.owner_dm_lookup.failed",
+          );
+          return { owner, ownerDirectMessage: false };
+        }
+      })());
+    return linkOutboundArtifacts(payload, async (text) => {
+      const { owner, ownerDirectMessage } = await boundScope();
+      return linkArtifacts({
+        agentId: instanceName,
+        owner,
+        surface: "Slack",
+        ownerDirectMessage,
+        text,
+      });
+    });
   }
 
   type TurnRef = {
@@ -3113,6 +3188,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
+    const linked = await linkForTarget(
+      gw,
+      instanceName,
+      { id: turn.channel, teamId: turn.teamId },
+      { text: args.text, ...(args.card ? { card: args.card } : {}) },
+    );
+    if ("error" in linked) return linked;
     const [base, { persona, sign, emoji }] = await Promise.all([
       agentFooter(instanceName, turn.sessionId),
       agentPersona(gw, instanceName, {
@@ -3125,7 +3207,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       instanceName,
       (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
     );
-    const post = agentPost(args.text, args.card, footer, sign);
+    const post = agentPost(linked.text, linked.card, footer, sign);
     const refused = postRefusal(post);
     if (refused) return refused;
     try {
@@ -7912,6 +7994,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) {
         return target;
       }
+      const linked = await linkForTarget(gw, instanceName, target, {
+        text,
+        ...(card ? { card } : {}),
+      });
+      if ("error" in linked) return linked;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName),
@@ -7924,14 +8011,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         (ref) => ref.channel === target.id,
       );
 
-      const post = agentPost(text, card, footer, sign);
+      const post = agentPost(linked.text, linked.card, footer, sign);
       const refused = postRefusal(post);
       if (refused) return refused;
 
       try {
         let attachmentError: string | null = null;
         let ts: string | undefined;
-        if (text || card) {
+        if (linked.text || linked.card) {
           ({ uploadError: attachmentError, ts } = await postWithAttachment(
             gw,
             target,
@@ -7954,7 +8041,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             unfurlLinks === false || unfurlMedia === false
               ? null
               : fileShareBlocks(
-                  sign(text, "**"),
+                  sign(linked.text, "**"),
                   contextBlock,
                   post.cardBlocks,
                 ),
@@ -8264,6 +8351,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         target.id,
       );
       if (bridged) return bridged;
+      const linked = await linkForTarget(gw, instanceName, target, {
+        text: args.text,
+        ...(args.card ? { card: args.card } : {}),
+      });
+      if ("error" in linked) return linked;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName, turn?.sessionId, turn?.ambient),
@@ -8291,7 +8383,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         noteEngaged(engaged, { messaged: true });
         return { ok: true as const, conversationId: target.id };
       }
-      const post = agentPost(args.text, args.card, footer, sign);
+      const post = agentPost(linked.text, linked.card, footer, sign);
       const refused = postRefusal(post);
       if (refused) return refused;
       try {
@@ -8325,7 +8417,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             args.unfurlMedia === false
             ? null
             : fileShareBlocks(
-                sign(args.text, "**"),
+                sign(linked.text, "**"),
                 agentContextBlock(footer),
                 post.cardBlocks,
               ),

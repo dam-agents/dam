@@ -92,5 +92,6 @@ The greeting rests on that mark alone, not on how many sessions the assistant ho
 
 ## Boundaries
 
-Its owner's other Agents are not visible to it, it holds no platform tools, and it is never proactive: it knows what any Agent knows, with the access any Agent has.
+Its owner's other Agents are not visible to it, it is never proactive, and it holds no special standing: it knows what any Agent knows, with the access any Agent has.
+The one grant provisioning gives it is the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), so it can drive the platform as its owner — a grant the platform makes whatever the flag that offers that Connection to people says.
 Anything it should know later — a team knowledge base, the state of the owner's other Agents, cost and failure explanations, a way to drive the platform itself — arrives as a grant or a capability, without changing provisioning or this page's guarantees.

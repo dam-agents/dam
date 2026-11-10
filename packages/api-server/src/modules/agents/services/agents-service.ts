@@ -639,6 +639,7 @@ export function createAgentsService(deps: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
       providerConnectionId?: string;
+      platform?: boolean;
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],
@@ -653,7 +654,7 @@ export function createAgentsService(deps: {
     }>;
     applyAfterCreate(
       agentId: string,
-      sel: { connectionIds: string[] },
+      sel: { connectionIds: string[]; platform?: boolean },
     ): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
@@ -1453,6 +1454,8 @@ export function createAgentsService(deps: {
           ]),
         ),
         providerConnectionId,
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform makes for the person, not one they asked for, so a grant it carries is not held to the flag that offers that Connection to people. */
+        ...(input.platformGrants ? { platform: true as const } : {}),
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({

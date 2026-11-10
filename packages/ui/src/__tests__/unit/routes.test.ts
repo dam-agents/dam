@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
+import {
+  parseRoute,
+  routeToNavigationState,
+  routeToPath,
+} from "../../modules/platform/lib/routes.js";
 
 const canonicalPaths = [
   "/",
   "/chat/agent-1",
   "/chat/agent-1/sess-1",
+  "/artifacts",
+  "/artifacts/2f8c1a9e-4b3d-4c5e-8f70-9a1b2c3d4e5f",
   "/settings",
   "/settings/connections",
   "/settings/schedules",
@@ -45,6 +51,31 @@ describe("route round-trip", () => {
     expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
     expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
     expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
+  });
+
+  // TEST_SCENARIO: an artifact's own page is a link to the library with that artifact open, so a private artifact's link in the owner's Slack DM lands on the artifact rather than on a list they then have to search; an id that needs escaping round-trips.
+  it("opens the Artifacts page with one artifact", () => {
+    expect(parseRoute("/artifacts")).toEqual({ view: "artifacts" });
+    expect(parseRoute("/artifacts/2f8c1a9e/")).toEqual({
+      view: "artifacts",
+      artifactId: "2f8c1a9e",
+    });
+    expect(parseRoute("/artifacts/a%2Fb")).toEqual({
+      view: "artifacts",
+      artifactId: "a/b",
+    });
+    expect(routeToPath({ view: "artifacts", artifactId: "2f8c1a9e" })).toBe(
+      "/artifacts/2f8c1a9e",
+    );
+    expect(routeToPath({ view: "artifacts", artifactId: "a/b" })).toBe(
+      "/artifacts/a%2Fb",
+    );
+    expect(
+      routeToNavigationState(parseRoute("/artifacts/2f8c1a9e")),
+    ).toMatchObject({ view: "artifacts", artifactId: "2f8c1a9e" });
+    expect(routeToNavigationState(parseRoute("/artifacts"))).toMatchObject({
+      artifactId: null,
+    });
   });
 
   // TEST_SCENARIO: a kit from a link is addressed by its repository, so a teammate can share the platform page itself: /starter-kits/link/<owner>/<repo> opens the kit modal for that repository, keeping the slash between owner and repository.

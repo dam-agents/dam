@@ -49,17 +49,19 @@ export function ConnectionRowActions({
       ? { label: "Move to another host", run: maintenance.onMoveHost }
       : connection.status !== "expired"
         ? undefined
-        : maintenance?.onReauthenticate
-          ? {
-              label: reauthLabelOf(connection),
-              run: maintenance.onReauthenticate,
-            }
-          : maintenance?.onUpdateCredential
+        : maintenance?.onRotateKey
+          ? { label: "Rotate key", run: maintenance.onRotateKey }
+          : maintenance?.onReauthenticate
             ? {
-                label: updateLabelOf(connection),
-                run: maintenance.onUpdateCredential,
+                label: reauthLabelOf(connection),
+                run: maintenance.onReauthenticate,
               }
-            : undefined;
+            : maintenance?.onUpdateCredential
+              ? {
+                  label: updateLabelOf(connection),
+                  run: maintenance.onUpdateCredential,
+                }
+              : undefined;
   return (
     <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1.5 @max-md:ml-0 @max-md:justify-start empty:hidden">
       {narrow && (
@@ -134,6 +136,15 @@ export function ConnectionRowMenu({
           data-testid={`catalog-move-host-${connection.id}`}
         >
           Move to another host
+        </DropdownMenuItem>
+      )}
+      {maintenance?.onRotateKey && (
+        <DropdownMenuItem
+          disabled={maintenance.busy}
+          onSelect={maintenance.onRotateKey}
+          data-testid={`catalog-rotate-${connection.id}`}
+        >
+          Rotate key
         </DropdownMenuItem>
       )}
       {maintenance?.onEditScope && (

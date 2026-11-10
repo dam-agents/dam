@@ -621,6 +621,7 @@ export {
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,
@@ -774,6 +775,7 @@ export {
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,
+  isGatewayHostname,
   secretlessConnectionCreateInputSchema,
 } from "./modules/connections/schemas.js";
 export type {

@@ -56,7 +56,7 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 # directory: the task, image:pack and image:name-layout that put them
 # together, and the base. The root config names their Debian base; a bump of
 # another tool there re-tags them too, which errs toward rebuilds.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/cli packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # agent images; CI's `agents` build/merge matrix. The default image carries
 # every harness, whose directories are its sources and no image of their own.

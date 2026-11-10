@@ -5,8 +5,13 @@ import { SlackAccountExplainer } from "@/components/channel-connection-explainer
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 
+import { useFeatures } from "../../features/api/queries.js";
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { isGrantable } from "../lib/connection-hierarchy.js";
+import {
+  canGrantConnection,
+  damConnectionOffered,
+} from "../lib/dam-connection.js";
 import type { RowMaintenanceActions } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRows } from "./connection-rows.js";
@@ -45,6 +50,7 @@ export function CatalogProviderCard({
   onNewChild,
 }: Props) {
   const { provider, templates, connections } = group;
+  const damOffered = damConnectionOffered(useFeatures().data);
 
   const newButton = templates.length > 0 && (
     <Button
@@ -94,7 +100,7 @@ export function CatalogProviderCard({
             grant={
               sandbox &&
               ((c) =>
-                isGrantable(c)
+                isGrantable(c) && canGrantConnection(damOffered, c)
                   ? {
                       granted: sandbox.grantedIds.has(c.id),
                       onToggle: (on) => sandbox.onToggleGrant(c.id, on),

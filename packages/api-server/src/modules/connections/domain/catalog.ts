@@ -17,6 +17,7 @@ import {
   BOB_HOST,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
 } from "api-server-api";
 import {
   hostnameOf,
@@ -38,6 +39,7 @@ import {
   MODAL_FAMILY,
 } from "./families.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
+import { damContributions, damTargetOf } from "./dam-connection.js";
 import { DEFAULT_S3_SIGNING_REGION } from "./s3-contributions.js";
 
 function envContributions(mappings: EnvMapping[]): Contribution[] {
@@ -1015,6 +1017,27 @@ function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
   };
 }
 
+function dam(
+  baseUrl: string,
+  brandName: string,
+): HeaderConnectionTemplate | null {
+  const target = damTargetOf(baseUrl);
+  if (!target) return null;
+  return {
+    id: DAM_TEMPLATE_ID,
+    name: brandName,
+    category: "app",
+    isCustom: false,
+    description: `Drive this install as you, from an Agent: the \`dam\` CLI, already signed in.`,
+    iconSlug: "key",
+    authKind: "header",
+    host: target.host,
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+    contributions: damContributions(target, brandName),
+  };
+}
+
 function assertContributionsParse(
   templates: ConnectionTemplate[],
 ): ConnectionTemplate[] {
@@ -1036,9 +1059,16 @@ export function buildCatalog(
   opts: {
     shareBaseUrl?: string;
     curveBenderDeployment?: boolean;
+    damBaseUrl?: string;
+    brandName?: string;
   } = {},
 ): ConnectionTemplate[] {
+  const damTemplate =
+    opts.damBaseUrl && opts.brandName
+      ? dam(opts.damBaseUrl, opts.brandName)
+      : null;
   return assertContributionsParse([
+    ...(damTemplate ? [damTemplate] : []),
     ...(opts.curveBenderDeployment ? [CURVE_BENDER_DEPLOYMENT] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,

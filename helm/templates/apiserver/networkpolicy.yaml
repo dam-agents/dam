@@ -11,8 +11,13 @@
   mesh control plane fails and keeps non-mesh traffic out.
 
   Shape:
-    - http (4000) from anywhere — UI, ingress controller, in-cluster.
-      Application-layer auth (Keycloak JWT) is the gate.
+    - http (4000) from anywhere — UI, ingress controller, in-cluster — and,
+      on the same port, from the agent namespace over HBONE, which the
+      ext-authz rule below already admits. An Agent's gateway ends the chain
+      of the Connection that drives this install here, and the API key that
+      chain injects is what authenticates it: a gateway whose Agents hold no
+      such Connection has no key to send. The bearer is the gate, and a few
+      routes carry none (see app.ts) — they serve no owner's data.
     - harness (4001) from the release namespace only — the waypoint Pod
       synthesised by Istio lives here. The cryptographic per-agent
       check is the per-agent AuthorizationPolicy on the harness path,

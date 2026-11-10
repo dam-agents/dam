@@ -25,6 +25,10 @@ import {
   type SessionChoiceSlots,
 } from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
+import {
+  linkOutboundArtifacts,
+  type LinkOutboundArtifacts,
+} from "./outbound-artifact-links.js";
 import type {
   ChannelWorker,
   PostMessageOptions,
@@ -693,6 +697,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
+  linkArtifacts: LinkOutboundArtifacts;
   ownerOf: (agentId: string) => Promise<string | null>;
   ownerDisplayName: (sub: string) => Promise<string | null>;
   settleMs?: number;
@@ -1161,10 +1166,27 @@ export function createTelegramWorker(deps: {
     ) {
       if (!bot) return { error: "telegram bot is not running" };
 
-      const { conversationId } = options ?? {};
-      const tooLong = telegramCardTooLong(text, options);
+      const { conversationId, card } = options ?? {};
+      const linked = await linkOutboundArtifacts(
+        { text, ...(card ? { card } : {}) },
+        async (value) =>
+          deps.linkArtifacts({
+            agentId,
+            owner: await deps.ownerOf(agentId),
+            surface: "Telegram",
+            ownerDirectMessage: false,
+            text: value,
+          }),
+      );
+      if ("error" in linked) return linked;
+      const { card: _unlinkedCard, ...rest } = options ?? {};
+      const linkedOptions = {
+        ...rest,
+        ...(linked.card ? { card: linked.card } : {}),
+      };
+      const tooLong = telegramCardTooLong(linked.text, linkedOptions);
       if (tooLong) return tooLong;
-      const payload = telegramPayload(text, options);
+      const payload = telegramPayload(linked.text, linkedOptions);
 
       if (conversationId) {
         const binding = await deps.conversations.findAgentByConversation(

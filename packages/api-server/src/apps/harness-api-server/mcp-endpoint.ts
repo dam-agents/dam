@@ -20,7 +20,6 @@ import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
-  ARTIFACT_INTERNAL_LINK_PREFIX,
   ChannelType,
   onceState,
   precheckSchema,
@@ -65,7 +64,6 @@ import {
   type TextContent,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
-import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
 import {
   buildChannelCard,
   CARD_LIMITS,
@@ -344,61 +342,17 @@ export function createMcpSession(
     })
     .optional();
 
-  const channelLinks = (text: string, surface: string) =>
-    withChannelArtifactLinks(text, surface, (id) =>
-      deps.artifactLibrary.get(id),
-    );
-
   const cardInput = cardTreeSchema
     .optional()
     .describe(
       'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
     );
 
-  async function linkedValues(
-    value: unknown,
-    surface: string,
-    lookup: (id: string) => ReturnType<typeof deps.artifactLibrary.get>,
-  ): Promise<{ value: unknown } | { error: string }> {
-    if (typeof value === "string") {
-      if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
-      const linked = await withChannelArtifactLinks(value, surface, lookup);
-      return "error" in linked ? linked : { value: linked.text };
-    }
-    if (value === null || typeof value !== "object") return { value };
-    const entries = Array.isArray(value)
-      ? value.map((item, index) => [String(index), item] as const)
-      : Object.entries(value);
-    const linked: [string, unknown][] = [];
-    for (const [key, item] of entries) {
-      const result = await linkedValues(item, surface, lookup);
-      if ("error" in result) return result;
-      linked.push([key, result.value]);
-    }
-    return {
-      value: Array.isArray(value)
-        ? linked.map(([, item]) => item)
-        : Object.fromEntries(linked),
-    };
-  }
-
   const cardOf = async (
     tree: Record<string, unknown> | undefined,
-    surface: string,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
-    const artifacts = new Map<
-      string,
-      ReturnType<typeof deps.artifactLibrary.get>
-    >();
-    const lookup = (id: string) => {
-      const known = artifacts.get(id) ?? deps.artifactLibrary.get(id);
-      artifacts.set(id, known);
-      return known;
-    };
-    const linked = await linkedValues(tree, surface, lookup);
-    if ("error" in linked) return linked;
-    const built = buildChannelCard(linked.value as Record<string, unknown>);
+    const built = buildChannelCard(tree);
     if ("issues" in built)
       return {
         error: `The card was not sent: ${built.issues.join("; ")}. Fix the card — describe_card_components lists the components, their props and the limits — or send the message as text.`,
@@ -532,18 +486,14 @@ export function createMcpSession(
 
   const postMessage = async ({
     channel,
-    text: written,
+    text,
     chatId,
     attachment,
     card: tree,
     unfurlLinks,
     unfurlMedia,
   }: z.infer<z.ZodObject<typeof postInput>>) => {
-    const surface = channel === ChannelType.Slack ? "Slack" : "Telegram";
-    const linked = await channelLinks(written, surface);
-    if ("error" in linked) return errorResult(linked.error);
-    const { text } = linked;
-    const built = await cardOf(tree, surface);
+    const built = await cardOf(tree);
     if ("error" in built) return errorResult(built.error);
     const { card } = built;
     const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -973,7 +923,7 @@ export function createMcpSession(
         ),
     },
     async ({
-      text: written,
+      text,
       attachment,
       card: tree,
       threadTs,
@@ -982,10 +932,7 @@ export function createMcpSession(
       unfurlLinks,
       unfurlMedia,
     }) => {
-      const linked = await channelLinks(written, "Slack");
-      if ("error" in linked) return errorResult(linked.error);
-      const { text } = linked;
-      const built = await cardOf(tree, "Slack");
+      const built = await cardOf(tree);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -1701,8 +1648,7 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
-    cardOf: (tree, channel) =>
-      cardOf(tree, channel === ChannelType.Slack ? "Slack" : "Telegram"),
+    cardOf,
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>

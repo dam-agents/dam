@@ -253,6 +253,8 @@ const configSchema = z.object({
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   harnessServerUrl: z.string().url(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the api-server's own public Service, as a gateway pod reaches it inside the cluster. The Connection that lets an Agent drive this install names that address over HTTPS, and its gateway chain takes the request there; absent means the install offers no such Connection. */
+  apiserverUrl: z.url().optional(),
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   databaseCaCertPath: z.string().optional(),
@@ -484,6 +486,7 @@ export function loadConfig(): Config {
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
+    apiserverUrl: process.env.PLATFORM_APISERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,

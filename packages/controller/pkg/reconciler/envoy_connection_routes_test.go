@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"fmt"
 	"net/url"
 	"regexp"
 	"slices"
@@ -995,4 +996,158 @@ func TestContestedAt_HeaderNamesIgnoreCase(t *testing.T) {
 	assert.True(t, chains.ContestedAt("/"), "two spellings of one header name land in one header")
 	assert.True(t, chains.RefusesUnaddressedAt("/"))
 	assert.False(t, requiringAddress(chains)[0].RefusesUnaddressedAt("/"))
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a peer Connection on the install's own host whose Secret names another upstream port and another upstream CA must not move the chain that carries the install's key: the DAM credential's own address decides, so the key only ever goes where the install published it. */
+func TestChainsFromSecrets_DamChainKeepsItsOwnAddress(t *testing.T) {
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	dam.Annotations[envoyInjectionHostsAnn] = `[{"host":"dam.example.com","pathPattern":"/api/","headerName":"Authorization"}]`
+	dam = withHostSDS(dam, "dam.example.com")
+	dam.Data["upstream-ca.crt"] = []byte("not a real CA")
+
+	peer := ownerSecret("platform-conn-peer", "connection", "conn-peer")
+	peer.Annotations[envoySecretPurposeAnn] = "connection:custom-header"
+	peer.Annotations[envoyInjectionHostsAnn] = `[{"host":"dam.example.com","port":8443,"headerName":"X-Other","caKey":"upstream-ca.crt"}]`
+	peer = withHostSDS(peer, "dam.example.com")
+	peer.Data["upstream-ca.crt"] = []byte("not a real CA")
+
+	chains := chainsFromSecrets([]corev1.Secret{peer, dam}, nil)
+	require.Len(t, chains, 1, "both Secrets claim one host, so they render one chain")
+	chain := chains[0]
+	assert.Equal(t, "dam.example.com", chain.Host)
+	assert.Equal(t, 0, chain.UpstreamPort, "the install published 443, not the peer's 8443")
+	assert.Equal(t, 443, chain.UpstreamPortValue())
+	assert.Empty(t, chain.UpstreamCAFile, "the install's host is validated against the system trust, not a peer's CA")
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the chain of the Connection that drives this install terminates TLS for the api-server Service's own name, injects the key under /api/ and takes the request to that Service by name and port inside the cluster — never to whatever the name resolves to — and the leaf covers the name the Agent dials. */
+func TestRenderEnvoyBootstrap_DamChainPinsTheApiServerService(t *testing.T) {
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	host := bootstrapTestCfg.APIServerHost()
+	dam.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"pathPattern":"/api/","headerName":"Authorization"}]`, host)
+	dam = withHostSDS(dam, host)
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chainsFromSecrets([]corev1.Secret{dam}, nil), false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	clusters := staticClusters(t, doc)
+	require.Len(t, clusters, 1)
+	cluster := clusters[0]
+	assert.Equal(t, "STRICT_DNS", cluster["type"])
+	assert.Nil(t, cluster["transport_socket"], "the api-server Service is reached inside the mesh, not over its own TLS")
+	assert.Equal(t, host, pinnedClusterHost(t, cluster))
+	assert.Equal(t, bootstrapTestCfg.APIServerPort, pinnedClusterPort(t, cluster))
+
+	assert.Len(t, injectorFilters(httpFiltersForHost(t, doc, host)), 1, "the key is injected on this chain, and only here")
+	routes := chainRoutesForHost(t, doc, host)
+	require.NotEmpty(t, routes)
+	for _, route := range routes {
+		match, _ := route["match"].(map[string]any)
+		prefix, _ := match["prefix"].(string)
+		assert.True(t,
+			strings.HasPrefix(prefix, "/api/") || strings.HasPrefix(prefix, "/"+connectionEgressPathSegment+"/conn-dam/api/"),
+			"only the API paths the CLI uses are routed, got %q", prefix)
+	}
+	assert.NotContains(t, fmt.Sprint(routes), `/api/messagesX`, "and nothing beyond them")
+
+	leaf := BuildEnvoyLeafCertificate("agent-a", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), []corev1.Secret{dam}, nil)
+	assert.Equal(t, []string{host}, leaf.Spec.DNSNames, "the leaf covers the name the Agent dials")
+
+	// TEST_SCENARIO: the api-server reads the first X-Forwarded-For as the caller's address in its audit log, so the chain hands it none: the Agent's own claims about where it is never reach the install's log.
+	removed := vhostHeadersRemoved(t, doc, host)
+	assert.Contains(t, removed, "x-forwarded-for")
+	assert.Contains(t, removed, "x-real-ip")
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a peer Connection mounted on the install's own Service — written before the api-server refused one, or by an operator — is dropped whole: the chain keeps the install's key alone, loses the peer's host-wide scope and path rewrite, and still routes only the API paths. */
+func TestChainsFromSecrets_APeerOnTheInstallsServiceIsDropped(t *testing.T) {
+	host := bootstrapTestCfg.APIServerHost()
+
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	dam.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"pathPattern":"/api/","headerName":"Authorization"}]`, host)
+	dam = withHostSDS(dam, host)
+
+	peer := ownerSecret("platform-conn-legacy", "connection", "conn-legacy")
+	peer.Annotations[envoySecretPurposeAnn] = "connection:custom-header"
+	peer.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"headerName":"X-Legacy","pathRewrites":[{"prefix":"/api/","replacement":"/v1/"}]}]`, host)
+	peer = withHostSDS(peer, host)
+
+	chains := chainsFromSecrets([]corev1.Secret{peer, dam}, nil)
+	require.Len(t, chains, 1)
+	chain := chains[0]
+	require.True(t, chain.InCluster)
+	require.Len(t, chain.Credentials, 1, "only the install's own credential rides this chain")
+	assert.Equal(t, "conn-dam", chain.Credentials[0].ConnectionID)
+	assert.Empty(t, chain.Signers)
+	assert.Empty(t, chain.PathRewrites, "the peer's rewrite is dropped with it")
+	assert.Equal(t, []string{"/api/"}, chain.PathScopes(), "the peer's host-wide scope goes too")
+}
+
+func staticClusters(t *testing.T, doc map[string]any) []map[string]any {
+	t.Helper()
+	sr, _ := doc["static_resources"].(map[string]any)
+	raw, _ := sr["clusters"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, c := range raw {
+		m, _ := c.(map[string]any)
+		if name, _ := m["name"].(string); strings.HasPrefix(name, "upstream_") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func pinnedClusterHost(t *testing.T, cluster map[string]any) string {
+	t.Helper()
+	endpoints := cluster["load_assignment"].(map[string]any)["endpoints"].([]any)
+	return endpoints[0].(map[string]any)["lb_endpoints"].([]any)[0].(map[string]any)["endpoint"].(map[string]any)["address"].(map[string]any)["socket_address"].(map[string]any)["address"].(string)
+}
+
+func pinnedClusterPort(t *testing.T, cluster map[string]any) int {
+	t.Helper()
+	endpoints := cluster["load_assignment"].(map[string]any)["endpoints"].([]any)
+	port := endpoints[0].(map[string]any)["lb_endpoints"].([]any)[0].(map[string]any)["endpoint"].(map[string]any)["address"].(map[string]any)["socket_address"].(map[string]any)["port_value"]
+	return int(port.(float64))
+}
+
+func vhostHeadersRemoved(t *testing.T, doc map[string]any, host string) []any {
+	t.Helper()
+	for _, fc := range internalFilterChains(t, doc) {
+		match, _ := fc["filter_chain_match"].(map[string]any)
+		serverNames, _ := match["server_names"].([]any)
+		if len(serverNames) != 1 || serverNames[0] != host {
+			continue
+		}
+		hcm := fc["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		vhost := hcm["route_config"].(map[string]any)["virtual_hosts"].([]any)[0].(map[string]any)
+		raw, _ := vhost["request_headers_to_remove"].([]any)
+		return raw
+	}
+	require.FailNow(t, "no terminating chain for "+host)
+	return nil
+}
+
+func chainRoutesForHost(t *testing.T, doc map[string]any, host string) []map[string]any {
+	t.Helper()
+	for _, fc := range internalFilterChains(t, doc) {
+		match, _ := fc["filter_chain_match"].(map[string]any)
+		serverNames, _ := match["server_names"].([]any)
+		if len(serverNames) != 1 || serverNames[0] != host {
+			continue
+		}
+		hcm := fc["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		hosts := hcm["route_config"].(map[string]any)["virtual_hosts"].([]any)
+		raw := hosts[0].(map[string]any)["routes"].([]any)
+		out := make([]map[string]any, 0, len(raw))
+		for _, r := range raw {
+			out = append(out, r.(map[string]any))
+		}
+		return out
+	}
+	require.FailNow(t, "no terminating chain for "+host)
+	return nil
 }
