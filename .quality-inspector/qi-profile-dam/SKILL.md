@@ -42,7 +42,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   The record, not the name, is what makes it the assistant: renaming it keeps it one, and an agent the account makes under the same name is never it — that agent only stops a new one being created, and never opens on the greeting.
   It is the experimental feature `dambledore`, which follows the install's `featureDefault` like the others: on the QA install that is `experimental`, so no account has one until it turns it on under Settings → Experimental features (its row is labelled with the install's assistant name and described as *Smart assistant that can control DAM for you*).
   Turning that switch on makes Dambledore, unless the account already has an agent under that exact name, matched case-sensitively: the name belongs to whoever holds it, so nothing is made beside it.
-  Deleting the Dambledore the platform made and switching the feature off and on again makes a new one, unused; renaming it does not, since the record still names it.
+  Deleting the Dambledore the platform made and switching the feature off and on again makes a new one, unused; renaming it does not, since the record still names it, and the renamed assistant keeps its greeting while it has never been used.
   There is never a numbered second name like "Dambledore 2", and no agent is ever renamed to free the name.
   With `on` the install pins it (no switch): a fresh account gets one at its next request, once, so deleting it there is not undone by a reload — the reset is the way to ask again.
   With `off`, nobody does.
@@ -50,7 +50,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its name and the install's brand, e.g. *Hi Jenna!
   I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
   A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
-  A person whose assistant has never been used lands in its chat instead of Home; the greeting is gone once the assistant has had a conversation, so a New chat opens on the ordinary new-chat page.
+  A person whose assistant has never been used lands in its chat instead of Home, whatever it is called; the greeting is gone once it has had a conversation, so a New chat opens on the ordinary new-chat page.
   With it on, Experimental features offers **Reset user onboarding** directly under the assistant's row: it asks first, deletes nothing, starts the Get started checklist over (counting its own create task as done), takes the account back to a first-open arrival, and gives the account a new Dambledore when the one the platform made is gone and the name is free — the Dambledore they still have, even renamed, is reused and greets them again.
 
 ## What the nested install cannot do

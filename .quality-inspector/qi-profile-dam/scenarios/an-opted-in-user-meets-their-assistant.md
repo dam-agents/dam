@@ -92,7 +92,8 @@ Then Dambledore appears in their agent list
 When they switch it off, delete Dambledore, and switch it on again
 Then a new Dambledore appears, unused
 When instead they rename Dambledore to *Research helper* and switch the row off and on again
-Then no new agent appears: *Research helper* is still the assistant, and its chat does not greet them again
+Then no new agent appears: *Research helper* is still the assistant
+And its chat greets them for as long as it has never been used
 And no agent is ever named *Dambledore 2*
 
 ## AC-12 — an agent the owner made under the name is never the assistant

@@ -66,7 +66,6 @@ A click puts the task's text in the composer and sends nothing: no turn, no mode
 
 Everything here is behind the `dambledore` feature and the record's own mark: the greeting is shown while the record says the assistant is unused, and it is that mark alone — not the count of Sessions the Agent holds — that decides, so an empty chat shows it again after a reset even though older Sessions exist.
 The session report lags the Session that just started, so the chat needs the Agent's own answer too, and a Session appearing there sets the cached mark at once, which is why a New chat after the first message does not bring the greeting back.
-A Session appearing sets the cached mark at once, so a New chat after the first message does not bring the greeting back.
 Until both answers are in, the chat shows neither the greeting nor the ordinary new-chat page — a blank rather than a page that would be taken back a moment later.
 A person the feature is off for, and any other Agent, open on the ordinary new-chat page with the ordinary placeholder.
 
