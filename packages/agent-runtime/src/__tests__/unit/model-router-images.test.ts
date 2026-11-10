@@ -289,9 +289,7 @@ describe("a model that does not accept images", () => {
     );
     expect(responses.status).toBe(200);
     expect(seen).toHaveLength(2);
-    expect(
-      (seen[1]!.input as { content: unknown[] }[])[0]!.content,
-    ).toEqual([
+    expect((seen[1]!.input as { content: unknown[] }[])[0]!.content).toEqual([
       {
         type: "input_text",
         text: imageNote("rits/zai-org/glm-5-3-responses"),
@@ -311,7 +309,10 @@ describe("a model that does not accept images", () => {
     expect(seen).toHaveLength(1);
     expect(hasImage(seen[0])).toBe(true);
     seen.length = 0;
-    const broken = await post("/v1/messages", slackTurn("cb/broken-model", "x"));
+    const broken = await post(
+      "/v1/messages",
+      slackTurn("cb/broken-model", "x"),
+    );
     expect(broken.status).toBe(400);
     expect(broken.text).toContain("prompt too long");
     expect(seen).toHaveLength(1);
@@ -390,11 +391,9 @@ describe("image blocks", () => {
    * model are recognised, and other errors are not. */
   it("reads the providers' image refusals", () => {
     expect(refusesImages(VLLM_REFUSAL)).toBe(true);
-    expect(
-      refusesImages(
-        "No endpoints found that support image input",
-      ),
-    ).toBe(true);
+    expect(refusesImages("No endpoints found that support image input")).toBe(
+      true,
+    );
     expect(
       refusesImages(
         "Invalid content type. image_url is only supported by certain models.",
