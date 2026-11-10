@@ -1,5 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 
+import {
+  driverStopReason,
+  stoppedOf,
+  userStopReason,
+} from "../../modules/invocations/domain/stop-reason.js";
 import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createInvocationsService } from "../../modules/invocations/services/invocations-service.js";
 import {
@@ -67,5 +72,20 @@ describe("a driver stopping its sub-agent", () => {
         reason: "stopped by its driver: another one found it",
       }),
     );
+  });
+});
+
+describe("a stop's reason", () => {
+  test("reads back as who stopped it, and a failure's as no stop", () => {
+    expect(stoppedOf(driverStopReason("found it: elsewhere"))).toEqual({
+      by: "driver",
+      reason: "found it: elsewhere",
+    });
+    expect(stoppedOf(driverStopReason())).toEqual({
+      by: "driver",
+      reason: null,
+    });
+    expect(stoppedOf(userStopReason())).toEqual({ by: "user", reason: null });
+    expect(stoppedOf("install failed: exit 1")).toBeNull();
   });
 });

@@ -51,6 +51,7 @@ import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetReaper } from "./target-reaper.js";
 import type { DelegationStop } from "./delegation-stop.js";
+import { driverStopReason } from "../domain/stop-reason.js";
 import type { RunCancel } from "./run-cancel.js";
 import type { ReportedTargetReap } from "./reported-target-reap.js";
 import type {
@@ -922,9 +923,7 @@ export function createInvocationsService(deps: {
         );
       }
       return deps.stopper.stop(row, {
-        reason: reason
-          ? `stopped by its driver: ${reason}`
-          : "stopped by its driver",
+        reason: driverStopReason(reason),
         actor: driverAgentId,
         actorKind: "agent",
         collectTarget: true,

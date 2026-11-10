@@ -78,6 +78,7 @@ export type {
   InvocationsQueryService,
   KeptSubAgent,
   DelegationNode,
+  DelegationStopped,
 } from "./modules/invocations/types.js";
 
 export {

@@ -1,10 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import type { InvocationsControlService } from "api-server-api";
 
+import { userStopReason } from "../domain/stop-reason.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import type { DelegationStop } from "./delegation-stop.js";
-
-const USER_STOP_REASON = "stopped by the user";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the owner's hand on a running delegation: a stop
@@ -32,7 +31,7 @@ export function createDelegationControl(deps: {
         });
       }
       await deps.stopper.stop(row, {
-        reason: USER_STOP_REASON,
+        reason: userStopReason(),
         actor: deps.owner,
         actorKind: "user",
         collectTarget: false,

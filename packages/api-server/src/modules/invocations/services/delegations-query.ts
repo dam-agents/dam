@@ -45,6 +45,9 @@ export function createDelegationsQuery(deps: {
         (r) => r.keepUntil !== null && r.reapedAt === null,
       );
       const listed = new Set(kept.map((r) => r.id));
+      const running = new Set(
+        (await deps.repo.listRunningRunsOf([...listed])).map((r) => r.id),
+      );
       // UNIT_BOUNDARY_DESCRIPTION: the kept sub-agent a row sits under, walking up its drivers: the agent asked about gives null, a listed one gives itself, and a chain that never reaches the agent asked about is not under it.
       const parentOf = (row: {
         driverAgentId: string;
@@ -70,7 +73,7 @@ export function createDelegationsQuery(deps: {
                   {
                     id: r.id,
                     label: r.label,
-                    status: r.status,
+                    status: running.has(r.id) ? "running" : r.status,
                     keepUntil: r.keepUntil!.toISOString(),
                     parentId,
                   },

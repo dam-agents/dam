@@ -55,12 +55,19 @@ export interface InvocationTarget {
   targetAgentId: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a failed run that was stopped rather than failing: by the user, or by its driver, with the driver's reason when it gave one.
+export interface DelegationStopped {
+  by: "user" | "driver";
+  reason: string | null;
+}
+
 export interface DelegationNode {
   id: string;
   label: string | null;
   driverAgentId: string;
   status: InvocationStatus;
   errorReason: string | null;
+  stopped: DelegationStopped | null;
   result?: unknown;
   prompt: string;
   script: string | null;
@@ -76,7 +83,7 @@ export interface DelegationNode {
   children: DelegationNode[];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a sub-agent spawned with keep, at any depth below the agent asked about, that still exists: what to call it, where its last run stands, until when it is kept, and the kept sub-agent it sits under (null for the agent asked about itself), the nearest one still listed when the sub-agent between them was removed.
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent spawned with keep, at any depth below the agent asked about, that still exists: what to call it, where its runs stand (running while any of them runs, else as its last run ended), until when it is kept, and the kept sub-agent it sits under (null for the agent asked about itself), the nearest one still listed when the sub-agent between them was removed.
 export interface KeptSubAgent {
   id: string;
   label: string | null;
