@@ -297,15 +297,14 @@ case "$out" in
   *'controller.agent.templateDefaults is no longer read'*) ;;
   *) echo "a render setting controller.agent.templateDefaults failed for another reason: $out" >&2; exit 1 ;;
 esac
-# The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS and
-# GATEWAY_EGRESS strictly, and AGENT_VM from the four blocks of it the chart
-# copies wholesale, and exits on a key its structs do not declare: an install
-# that kept one renders fine and then crash-loops — prod still set the agent pod
-# fields #5802 removed. The render fails instead, naming the key: the pod fields
-# with the container backend they went with, so an operator deletes them rather
-# than looks for a new name, and every other unknown key, typo and nested block
-# included — inside the Kubernetes shapes too, which the decoder reads rather
-# than the API server.
+# The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS,
+# GATEWAY_EGRESS and the AGENT_VM dict the chart assembles, and exits on a key
+# its structs do not declare: an install that kept one renders fine and then
+# crash-loops — prod still set the agent pod fields #5802 removed. The render
+# fails instead, naming the key: the pod fields with the container backend they
+# went with, so an operator deletes them rather than looks for a new name, and
+# every other unknown key, typo and nested block included — inside the
+# Kubernetes shapes too, which the decoder reads rather than the API server.
 refused_key() {
   if out=$(helm template platform . "${COMMON[@]}" --set "$2" 2>&1 >/dev/null); then
     echo "a render setting $2 succeeded, but the controller refuses $1 at startup" >&2
@@ -338,8 +337,11 @@ refused_key 'virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulin
 refused_key 'imagePullSecrets[0].nmae' 'imagePullSecrets[0].nmae=regcred'
 # A value of the wrong kind is the other half of the same decoder: it refuses a
 # map where the field is a list, a list where it is a string, a map where a pull
-# secret's entry is, and a list where a resource quantity is. A values file says
-# so, since `--set` merges a map into a list rather than replacing it.
+# secret's entry is, a list where a resource quantity is, and a string where the
+# runner's own node selector, its devices, its boot size or the shared-gateway
+# switch is — the whole AGENT_VM dict the chart renders is checked, not a list
+# of the values hoped to reach it. A values file says so, since `--set` merges a
+# map into a list rather than replacing it.
 kinds=$(mktemp)
 refused_kind() {
   printf '%s\n' "$2" >"$kinds"
@@ -362,6 +364,14 @@ refused_kind imagePullSecrets \
   '{"imagePullSecrets":["regcred"]}'
 refused_kind virtualization.runner.resources.limits.cpu \
   '{"virtualization":{"runner":{"resources":{"limits":{"cpu":[1]}}}}}'
+refused_kind virtualization.runner.nodeSelector \
+  '{"virtualization":{"runner":{"nodeSelector":"feature.node.kubernetes.io/sandbox-enabled=true"}}}'
+refused_kind virtualization.runner.devices \
+  '{"virtualization":{"runner":{"devices":"kvm"}}}'
+refused_kind virtualization.runner.bootMiB \
+  '{"virtualization":{"runner":{"bootMiB":"1024"}}}'
+refused_kind virtualization.gateway.perOwner \
+  '{"virtualization":{"gateway":{"perOwner":"yes"}}}'
 rm -f "$kinds"
 # The keys the controller declares keep rendering, the Kubernetes shapes among
 # them field by field: an install's own pull secrets, mount, env, a meshed peer,

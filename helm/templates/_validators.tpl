@@ -708,20 +708,21 @@ which the config package's own test generates from the structs, Kubernetes types
 included: an `object` is a struct, an `array` and a `map` say what their items
 and their free-form values are, and a `string|number` kind is a type that reads
 its own JSON and takes either.
-AGENT_VM is the chart's own dict, so what a value can put in it is what the
-chart copies wholesale: the pull Secrets, the runner's tolerations, affinity and
-resources.
+AGENT_VM is the chart's own dict, so this checks the dict itself — the one the
+Deployment renders, via `platform.controller.agentVM` — rather than the values
+that are meant to reach it: everything an install sets a field from is checked
+with it. Its paths are named as the values would be, apart from the pull
+Secrets, which are checked first under their own name.
 */}}
 {{- define "platform.validate.controllerConfigKeys" -}}
 {{- $keys := .Files.Get "controller-config-keys.json" | fromJson -}}
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.base "keys" $keys.AGENT_BASE "path" "controller.agent.base" "env" "AGENT_BASE") -}}
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.harnessTemplateDefaults "keys" $keys.AGENT_HARNESS_TEMPLATE_DEFAULTS "path" "controller.agent.harnessTemplateDefaults" "env" "AGENT_HARNESS_TEMPLATE_DEFAULTS") -}}
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.gatewayEgress "keys" $keys.GATEWAY_EGRESS "path" "controller.gatewayEgress" "env" "GATEWAY_EGRESS") -}}
-{{- $runner := .Values.virtualization.runner -}}
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.imagePullSecrets "keys" $keys.AGENT_VM.fields.runner.fields.imagePullSecrets "path" "imagePullSecrets" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.tolerations "keys" $keys.AGENT_VM.fields.runner.fields.tolerations "path" "virtualization.runner.tolerations" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.affinity "keys" $keys.AGENT_VM.fields.runner.fields.affinity "path" "virtualization.runner.affinity" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.resources "keys" $keys.AGENT_VM.fields.runner.fields.resources "path" "virtualization.runner.resources" "env" "AGENT_VM") -}}
+{{- $vm := include "platform.controller.agentVM" . | fromJson -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $vm.runner "keys" $keys.AGENT_VM.fields.runner "path" "virtualization.runner" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $vm.gateway "keys" $keys.AGENT_VM.fields.gateway "path" "virtualization.gateway" "env" "AGENT_VM") -}}
 {{- end -}}
 
 {{/*
