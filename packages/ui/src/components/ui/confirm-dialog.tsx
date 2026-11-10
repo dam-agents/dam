@@ -4,7 +4,12 @@ import {
   Warning,
   WarningAlt,
 } from "@carbon/icons-react";
-import { type AnimationEvent, type ReactNode, useState } from "react";
+import {
+  type AnimationEvent,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
 
 import {
   AlertDialog,
@@ -59,6 +64,8 @@ export function ConfirmDialog({
   const destructive = kind === "destructive";
   const Icon = icon ?? KIND_ICON[kind];
   const resolvedConfirmLabel = confirmLabel ?? (showCancel ? "Confirm" : "OK");
+  const [body, setBody] = useState<HTMLElement | null>(null);
+  const moreBelow = useMoreBelow(body);
   const [wasOpen, setWasOpen] = useState(open);
   const [opener, setOpener] = useState<HTMLElement | null>(null);
   if (wasOpen !== open) {
@@ -111,7 +118,15 @@ export function ConfirmDialog({
           </div>
           {description && (
             <AlertDialogDescription asChild>
-              <div className="min-h-0 overflow-y-auto pt-1 text-sm text-muted-foreground">
+              <div
+                ref={setBody}
+                data-more-below={moreBelow || undefined}
+                className={cn(
+                  "min-h-0 overflow-y-auto pt-1 text-sm text-muted-foreground",
+                  moreBelow &&
+                    "[mask-image:linear-gradient(to_bottom,black_calc(100%-32px),transparent)]",
+                )}
+              >
                 {description}
               </div>
             </AlertDialogDescription>
@@ -139,4 +154,23 @@ export function ConfirmDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+function useMoreBelow(el: HTMLElement | null): boolean {
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    if (!el) return;
+    const check = () =>
+      setMore(el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const resize = new ResizeObserver(check);
+    resize.observe(el);
+    for (const child of el.children) resize.observe(child);
+    return () => {
+      el.removeEventListener("scroll", check);
+      resize.disconnect();
+    };
+  }, [el]);
+  return more;
 }

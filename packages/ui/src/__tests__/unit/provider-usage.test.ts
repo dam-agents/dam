@@ -134,3 +134,12 @@ it("names each schedule that still runs, once", () => {
   ) as { schedules: string[] };
   expect(usage.schedules).toEqual(["Nightly", "review-pr"]);
 });
+
+/** TEST_SCENARIO: a turned-off schedule on the provider is not named, but counted, because turning it back on after the provider is gone runs it on nothing; a one-off that already ran is not counted. */
+it("counts the turned-off schedules on the provider", () => {
+  const html = renderToStaticMarkup(createElement(Usage));
+  const usage = JSON.parse(
+    html.replace(/^<output>|<\/output>$/g, "").replace(/&quot;/g, '"'),
+  ) as { turnedOffSchedules: number };
+  expect(usage.turnedOffSchedules).toBe(1);
+});
