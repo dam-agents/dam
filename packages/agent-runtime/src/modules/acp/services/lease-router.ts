@@ -498,15 +498,16 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
    * through the Model Router runs on the session's model. The api-server
    * fills a session with no model from the agent's providers, and a session a
    * client opened before the agent's first state settles takes its kind's
-   * default, so a session still without one belongs to an agent that has no
-   * model provider to run on; the router or the harness would pick a model
-   * nobody set up, so the turn is refused and says to connect a provider.
+   * default, so a session still without one mostly belongs to an agent none of
+   * whose providers lists one for its harness; the router or the harness would
+   * pick a model nobody set up, so the turn is refused and says to connect a
+   * provider or pick a model.
    */
   function noModel(): object {
     return {
       code: -32001,
       message:
-        "This agent has no model provider to run this session on. Connect a model provider on its Providers page, then pick a model for this session.",
+        "This session has no model. Pick a model for this session, or connect a model provider on the agent's Providers page.",
       data: { platform: { reason: NO_MODEL_REASON } },
     };
   }
