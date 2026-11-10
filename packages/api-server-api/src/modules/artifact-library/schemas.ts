@@ -103,17 +103,29 @@ export const artifactUpdateInputSchema = z
     path: ["content"],
   });
 
+const viewerEmailListSchema = z
+  .array(viewerEmailSchema)
+  .max(VIEWER_ALLOWLIST_MAX)
+  .transform((emails) => [...new Set(emails)]);
+
 export const artifactSharingInputSchema = z.object({
   id: z.string().min(1),
   visibility: artifactVisibilitySchema.optional(),
   expiresInHours: expiresInHoursSchema.nullish(),
-  viewers: z
-    .array(viewerEmailSchema)
-    .max(VIEWER_ALLOWLIST_MAX)
-    .transform((emails) => [...new Set(emails)])
+  viewers: viewerEmailListSchema
     .optional()
     .describe(
       "The whole Viewer Allowlist. Replaces the stored list; omit to leave it as is.",
+    ),
+  addViewers: viewerEmailListSchema
+    .optional()
+    .describe(
+      "Emails to add to the Viewer Allowlist, keeping the others. Not with viewers.",
+    ),
+  removeViewers: viewerEmailListSchema
+    .optional()
+    .describe(
+      "Emails to take off the Viewer Allowlist, keeping the others. Not with viewers.",
     ),
 });
 

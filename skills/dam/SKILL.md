@@ -1,7 +1,7 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
+  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, share artifacts with named people, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
   Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
   Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
@@ -329,6 +329,21 @@ dam import my-agent ./project --yes
 
 Paths are relative to the agent's workspace.
 `dam import` merges local files and folders into the agent's `work/` folder.
+
+### Artifacts
+
+```sh
+dam artifact share <artifact-id>
+dam artifact share <artifact-id> --add ada@example.com --add bob@example.com
+dam artifact share <artifact-id> --remove bob@example.com
+dam artifact share <artifact-id> --private
+```
+
+Without flags, `dam artifact share` only shows who can open the artifact: its level, its link and its viewers.
+`--add` gives people access by email and makes the artifact restricted, so only the user and its viewers can open the link once they sign in with that address.
+`--remove` takes people off the list and keeps the level, and `--private` closes the link.
+Sharing sends the user's work to new people, so add only the people the user names, and say who you added.
+An interactive page's viewers can send its agent prompts, so the user adds them in the web app's Share dialog; the command can only remove them or make the page private.
 
 ### Lifecycle
 

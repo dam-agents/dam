@@ -17,6 +17,7 @@ export function toAgentArtifact(artifact: LibraryArtifact) {
     expiresAt: artifact.expiresAt,
     viewCount: artifact.viewCount,
     shareUrl: artifact.shareUrl,
+    viewers: artifact.viewers,
     createdAt: artifact.createdAt,
     updatedAt: artifact.updatedAt,
     internal_link: artifactInternalLink(artifact.id),

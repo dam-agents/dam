@@ -29,7 +29,7 @@ export async function withChannelArtifactLinks(
       };
     if (artifact.shareUrl === null)
       return {
-        error: `The message links the artifact "${artifact.title}" (${ARTIFACT_INTERNAL_LINK_PREFIX}${id}). That link opens only in the app's chat, and the artifact is private, so it has no link that opens in ${surface}. Nothing was posted. Say that the artifact must be shared from the app before people here can open it, and send the message without the link.`,
+        error: `The message links the artifact "${artifact.title}" (${ARTIFACT_INTERNAL_LINK_PREFIX}${id}). That link opens only in the app's chat, and the artifact is private, so it has no link that opens in ${surface}. Nothing was posted. Say that the artifact must be shared before people here can open it, and send the message without the link; share it with set_artifact_sharing only when the user asks.`,
       };
     shareUrls.set(id, artifact.shareUrl);
   }

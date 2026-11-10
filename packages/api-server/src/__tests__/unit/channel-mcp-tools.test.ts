@@ -951,7 +951,7 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
 
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toContain(
-      "must be shared from the app",
+      "must be shared before people here can open it",
     );
     expect(replies).toEqual([]);
   });

@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-06
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -76,8 +76,9 @@ The Session is titled with the artifact's title alone, and the owner gets a noti
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
 Historical versions cannot send prompts or requests.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
-The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
+The owner can share it with named viewers like any other artifact, and only from the Share dialog.
 The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
+The agent tools and the CLI never widen that audience: they refuse to make the page restricted or to add a viewer to it, and only narrow it, by removing viewers or making it private.
 
 ### A page's model
 
@@ -128,9 +129,13 @@ Out of scope: limits per viewer on what the Agent may do.
   A visitor signs in with that provider; the artifact renders when the verified email from that sign-in matches a listed one (normalised once, at the boundary: trimmed and lowercased), or when the visitor is the owner.
   Anyone else lands on a plain no-access page naming the email they signed in with and offering to switch account; it shows neither the title nor the owner.
   Here the slug only *locates* the artifact — the share session authorizes.
-  Only a person sets restricted, in the Share dialog: agent tools offer private and public, and refuse any sharing change on an artifact that is already restricted, so an agent can neither widen a restricted link nor edit who is on it.
-  Agent responses omit the viewer allowlist.
-  An artifact an agent creates is private unless the agent passes public, and the agent tools tell it to do that only when the user asks for a public link.
+  The Share dialog, the agent tools and the CLI all set it through the same sharing write, with the same normalisation and cap.
+  A change either replaces the whole list or adds and removes single emails and keeps the rest, resolved against the locked row, so an agent or the CLI can change one viewer without knowing the others.
+  An agent sees the list on every artifact its tools hand back, so it can say who has access.
+  Only the owner, in the Share dialog, widens the audience of an [interactive page](#interactive-pages).
+  A caller that is not the app, an agent or the CLI keeps to private and public and cannot change a restricted artifact.
+  An artifact an agent creates is private unless the agent passes public.
+  The agent tools tell it to change sharing only when the user asks — a public link when the user asks for one, viewers only for the people the user names — and to recommend the narrowest level that fits.
 - **Public** opens the link to anyone.
   For a public artifact the slug is the *entire* access control: there is no account, token, or password on the public side — whoever holds the link may view, and guarding the link is the sharer's responsibility (deliberately: a second factor sent alongside a leaked link leaks with it).
 - An optional **retention** date bounds the *artifact's* lifetime — it schedules permanent deletion, not link expiry, and applies regardless of visibility (a private artifact is deleted the same way; storage lifecycle is a separate concern from sharing).
