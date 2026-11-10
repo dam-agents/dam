@@ -3,27 +3,30 @@
   <img src="docs/assets/dam-light.svg#gh-dark-mode-only" alt="DAM" />
 </p>
 
-<h3 align="center">
-An open platform for long-lived AI agents.
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="A dense cluster of agents: some work heads down at a laptop with headphones, some chat, some sleep until someone needs them." width="480" />
+</p>
 
-Any harness, any model, on Kubernetes.
+<h3 align="center">
+Engineering agents that run your entire stack.<br />
+AI teammates that work with you in Slack.
 </h3>
 
-<p align="center">
-  Run agents at scale with isolated sandboxes, credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility.
-</p>
+<p align="center">Packed densely on your Kubernetes.</p>
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
   ·
   <a href="#capabilities"><strong>Capabilities</strong></a>
   ·
+  <a href="docs/architecture/security-and-credentials.md"><strong>Security</strong></a>
+  ·
   <a href="https://github.com/dam-agents/dam/issues"><strong>Contribute</strong></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
-  <img alt="Kubernetes" src="https://img.shields.io/badge/runs%20on-Kubernetes-326ce5" />
+  <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam?color=blue" /></a>
 </p>
 
 ---
@@ -64,7 +67,15 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Why DAM?
 
-- **Isolated by design:** Sandboxed agents, credential isolation, network controls, and optional human approval.
+- **Dense by design:** Many agents share one runner pod per owner.
+  Memory is counted by what agents use, not by their size, so nobody sizes an agent by hand.
+- **Sleep when idle, wake on demand:** An idle agent hibernates: its VM stops and gives back its CPU and memory, and its disk stays.
+  A message, a schedule or an open chat boots it again, with its files and workspace in place.
+- **Your whole stack, inside the agent's VM:** An agent gets more than a shell and a browser.
+  It can run Docker or a small Kubernetes cluster (k3s) in its own VM, start the app it works on with its database and services, and test and debug it before it hands work back.
+- **A microVM for every agent:** Each agent gets its own VM with its own kernel.
+  Its VMM is confined with Landlock and seccomp, and each owner's agents run in their own unprivileged pod.
+- **Isolated by design:** Credential isolation, network controls, and optional human approval.
 - **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
 - **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
 - **Built for teams:** Shared agents accessible through Slack, Telegram, web UI, and CLI.
@@ -80,15 +91,15 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Capabilities
 
-| Building block        | What it provides                                                      |
-| --------------------- | --------------------------------------------------------------------- |
-| Harnesses and models  | Pluggable agent runtimes and inference endpoints                      |
-| Security              | Isolation, credential injection, network controls, optional approvals |
-| Workspaces and memory | Persistent files and context                                          |
-| Orchestration         | Schedules, subagents, and multi-agent workflows                       |
-| Channels              | Slack, Telegram, web UI, and CLI                                      |
-| Skills and artifacts  | Reusable workflows and shareable results                              |
-| Cost visibility       | Usage, budgets, and activity history                                  |
+| Building block        | What it provides                                                              |
+| --------------------- | ----------------------------------------------------------------------------- |
+| Harnesses and models  | Pluggable agent runtimes and inference endpoints                              |
+| Security              | MicroVM isolation, credential injection, network controls, optional approvals |
+| Workspaces and memory | Persistent files and context                                                  |
+| Orchestration         | Schedules, subagents, and multi-agent workflows                               |
+| Channels              | Slack, Telegram, web UI, and CLI                                              |
+| Skills and artifacts  | Reusable workflows and shareable results                                      |
+| Cost visibility       | Usage, budgets, and activity history                                          |
 
 ---
 
@@ -101,10 +112,11 @@ helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
 The chart includes Keycloak, Postgres, Valkey (a Redis-compatible cache), and optional telemetry.
-DAM requires an Istio ambient mesh.
+DAM requires an Istio ambient mesh and nodes with `/dev/kvm`, exposed through a device plugin, because every agent runs as a microVM.
 
 - [Deployment configuration](helm/values.yaml)
 - [Architecture](docs/architecture.md)
+- [VM runner](docs/architecture/vm-runner.md)
 - [Security and credentials](docs/architecture/security-and-credentials.md)
 
 ## Contribute
