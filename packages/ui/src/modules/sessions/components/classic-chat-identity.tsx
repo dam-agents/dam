@@ -1,4 +1,4 @@
-import { Branch, Document, Globe, Tools } from "@carbon/icons-react";
+import { Branch, Document, Folder, Globe, Tools } from "@carbon/icons-react";
 
 import { stateDotClass } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,14 @@ import { EditableAgentIdentity } from "../../agents/components/editable-agent-id
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
  * state dot, its avatar and name, editable in place, the Shared badge of a
  * Shared Agent, and the buttons that toggle the browser and the changes beside
- * the conversation, open the sections on a phone, and open the Agent's
- * configuration.
+ * the conversation, toggle the Files and Artifacts sections on a desktop, open
+ * the sections on a phone, and open the Agent's configuration.
  */
 export function ClassicChatIdentity({
   agent,
@@ -45,6 +46,10 @@ export function ClassicChatIdentity({
   onConfigure: () => void;
 }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const filesOpen = useStore((s) => s.filesSectionOpen);
+  const setFilesOpen = useStore((s) => s.setFilesSectionOpen);
+  const artifactsOpen = useStore((s) => s.artifactsSectionOpen);
+  const setArtifactsOpen = useStore((s) => s.setArtifactsSectionOpen);
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <span
@@ -95,6 +100,30 @@ export function ClassicChatIdentity({
             <Branch size={16} />
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Show files"
+          tooltip="Show files"
+          aria-pressed={filesOpen}
+          data-testid="toggle-files-section"
+          className="max-md:hidden"
+          onClick={() => setFilesOpen(!filesOpen)}
+        >
+          <Folder size={16} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Show artifacts"
+          tooltip="Show artifacts"
+          aria-pressed={artifactsOpen}
+          data-testid="toggle-artifacts-section"
+          className="max-md:hidden"
+          onClick={() => setArtifactsOpen(!artifactsOpen)}
+        >
+          <ArtifactIcon size={16} />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

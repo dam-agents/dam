@@ -11,6 +11,7 @@ interface Props {
   alwaysOn: boolean;
   open: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -21,6 +22,7 @@ export function ProcessesPanel({
   alwaysOn,
   open,
   onToggle,
+  onClose,
   className,
   style,
   ref,
@@ -36,6 +38,7 @@ export function ProcessesPanel({
       title="Processes"
       open={open}
       onToggle={onToggle}
+      onClose={onClose}
       className={className}
       headerClassName="border-t border-border"
       style={style}

@@ -227,6 +227,9 @@ Each turn's end names it.
 Output joins its turn's open reply only while nothing but waiting prompts came after it; otherwise it starts a new reply at the end.
 So a reply never lands above a newer message, unprompted work shows as the latest message, and Stop leaves the reply open until its turn ends, so the last words the harness flushes join it rather than starting another.
 
+An Agent's chat gives the conversation the room by default.
+Its Files and Artifacts sections start closed; their icons in the chat's top bar open them in a column beside the conversation, stacked when both are open, and the browser keeps each choice as a preference of the person, not of the Agent.
+
 ## Protocols
 
 | Edge                                                                                        | Protocol                           | Purpose                                                                                                                                                                                                                                                                                                                                                                                                         |

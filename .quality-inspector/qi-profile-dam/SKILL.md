@@ -30,6 +30,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 ## Vocabulary a user sees
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
+  In the chat's top bar, *Show files* and *Show artifacts* open its Files and Artifacts sections beside the conversation, stacked when both are open; both start closed for an account that never opened them, and each stays as the account last left it.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
