@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { parentNoun } from "../lib/connection-hierarchy.js";
@@ -65,7 +66,7 @@ export function ConnectionRowActions({
         <Button
           variant="outline"
           size="sm"
-          className={ROW_BUTTON}
+          className={cn(ROW_BUTTON, "@max-md:hidden")}
           onClick={narrow}
           data-testid={`catalog-narrow-${connection.id}`}
         >

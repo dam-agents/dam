@@ -93,10 +93,24 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-const byTestId = (id: string) =>
-  host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+const byTestId = (id: string, within: ParentNode = host) =>
+  within.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
-function render(connections: ConnectionView[]) {
+function openMenu(id: string) {
+  act(() => {
+    byTestId(`catalog-menu-${id}`)!.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true }),
+    );
+  });
+}
+
+function render(
+  connections: ConnectionView[],
+  maintenance: () => {
+    onReauthenticate: () => void;
+    onEditScope: () => void;
+  } = () => ({ onReauthenticate: () => {}, onEditScope: () => {} }),
+) {
   act(() =>
     root.render(
       createElement(CatalogProviderCard, {
@@ -114,10 +128,7 @@ function render(connections: ConnectionView[]) {
         onNew: () => {},
         onDelete: () => {},
         deletingId: null,
-        maintenance: () => ({
-          onReauthenticate: () => {},
-          onEditScope: () => {},
-        }),
+        maintenance,
         onNewChild: () => {},
       }),
     ),
@@ -165,14 +176,25 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
     ).toBe(true);
   });
 
-  // TEST_SCENARIO: Narrow access and the expired connection's fix stay on the row at every width; a narrow row wraps them, it does not move them into the menu.
-  it("hides no button when the row is narrow", () => {
-    render([SIGN_IN, CHILD]);
+  // TEST_SCENARIO: the expired connection's fix stays on the row at every width. Narrow access leaves a narrow row, so the row keeps two controls rather than stacking three; the menu's Edit repositories & permissions opens the same dialog there.
+  it("keeps the fix on a narrow row, and leaves Narrow access to the menu there", () => {
+    let narrowed = 0;
+    render([SIGN_IN, CHILD], () => ({
+      onReauthenticate: () => {},
+      onEditScope: () => narrowed++,
+    }));
+    const classes = (id: string) => byTestId(id)!.className.split(" ");
 
-    for (const id of [`catalog-narrow-${CHILD.id}`, `catalog-fix-${CHILD.id}`])
-      expect(byTestId(id)!.className.split(" ")).not.toContainEqual(
-        expect.stringMatching(/(^|:)hidden$/),
-      );
+    expect(classes(`catalog-fix-${CHILD.id}`)).not.toContainEqual(
+      expect.stringMatching(/(^|:)hidden$/),
+    );
+    expect(classes(`catalog-narrow-${CHILD.id}`)).toContain("@max-md:hidden");
+    expect(classes(`catalog-narrow-${CHILD.id}`)).not.toContain("hidden");
+
+    openMenu(CHILD.id);
+    act(() => byTestId(`catalog-edit-scope-${CHILD.id}`, document)!.click());
+
+    expect(narrowed).toBe(1);
   });
 
   // TEST_SCENARIO: the Full access badge names the access; the detail line under it says only what that reaches.
@@ -183,15 +205,20 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
     expect(row.textContent!.match(/Full access/g)).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: an expired connection with full access shows one red badge that says both, not two red badges side by side.
-  it("merges Full access and Expired into one badge", () => {
-    render([SIGN_IN, CHILD]);
-    const row = byTestId(`catalog-connection-${CHILD.id}`)!;
+  // TEST_SCENARIO: a connection with full access and any status shows one badge that says both — expired, authorizing or disconnected alike — so the same state looks the same on every row.
+  it.each([
+    ["expired", "Expired"],
+    ["pending", "Authorizing…"],
+    ["disconnected", "Disconnected"],
+  ] as const)("merges Full access and %s into one badge", (status, label) => {
+    render([SIGN_IN, { ...CHILD, status }]);
+    const [, column] = byTestId(`catalog-connection-${CHILD.id}`)!.children;
+    const nameBlock = column!.firstElementChild!.firstElementChild!;
 
     expect(byTestId(`connection-full-access-${CHILD.id}`)!.textContent).toBe(
-      "Full access · Expired",
+      `Full access · ${label}`,
     );
-    expect(row.querySelectorAll(".bg-danger-light")).toHaveLength(1);
+    expect(nameBlock.querySelectorAll(".rounded-full")).toHaveLength(2);
   });
 
   // TEST_SCENARIO: the ⋮ menu sits in the same place on every row, the sign-in's and its connections': last in the row, in a column of its own at the top right, on the name's line.

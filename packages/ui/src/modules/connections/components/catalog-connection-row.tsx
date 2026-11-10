@@ -136,7 +136,7 @@ function StatusBadges({ connection }: { connection: ConnectionView }) {
     connection.status === "active"
       ? undefined
       : STATUS_PRESENTATION[connection.status];
-  if (connection.fullAccess && status?.variant === "danger")
+  if (connection.fullAccess && status)
     return <FullAccessMark connection={connection} status={status.label} />;
   return (
     <>
