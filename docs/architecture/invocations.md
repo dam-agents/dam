@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -144,7 +144,8 @@ The reasons:
   A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps every target it still has, kept and clean slate ones too, transitively for chains.
-- **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
+- **Stopped.** The owner stops a running target from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
+  Every running run of the target and of each target below it fails with that reason and goes through the one reap, so a one-off target is removed and a kept one keeps its conversation.
 
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
@@ -233,6 +234,7 @@ A lease the server died holding expires and the next tick claims the outcome aga
 The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
 A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
+A stop its Driver asked for owes no turn, and neither does a run the stop took down below its target, so no stopped child wakes its own Driver; a target the owner stopped still reaches its Driver as a turn.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.
 The check and the wake are one write conditional on the Agent the sweep read, never through the watch cache, so a stop landing in between fails the wake instead of being erased.
 Script spawns are never pushed — the SDK polls, and an extra turn per child would interrupt the script's agent.
@@ -248,7 +250,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 ## Driver SDK
 
-The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, spawn a clean slate and give it runs (`spawnSlate` / `spawn_slate`, a `SubAgent` handle that also keeps, wakes and sets an open sub-agent's egress), choose a spawn's connections, egress and keep, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
+The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, spawn a clean slate and give it runs (`spawnSlate` / `spawn_slate`, a `SubAgent` handle that also keeps, wakes, stops and sets an open sub-agent's egress), stop a spawn it no longer needs (an `AbortSignal` / a `threading.Event`), choose a spawn's connections, egress and keep, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 A wait for a sub-agent logs why it has not started each time that reason changes, and its default client timeout is twice the deadline plus five minutes, since a sub-agent may wait its deadline for room and then run its whole deadline.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
