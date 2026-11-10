@@ -4,16 +4,15 @@
 </p>
 
 <h3 align="center">
-An open platform for long-lived AI agents.
+Dense, long-lived AI agents that run your whole stack.
 
-Any harness, any model, on Kubernetes.
+Any harness, any model, on your Kubernetes.
 </h3>
 
 <p align="center">
-  Run many agents densely on Kubernetes, each in its own microVM.
-  Idle agents sleep and give back their memory, then wake on demand.
-  Inside its VM, an agent can run Docker and k3s and bring up your whole stack.
-  Credential injection, persistent workspaces, orchestration, scheduled triggers, Slack integration, and cost visibility are built in.
+  Each agent runs in its own microVM, with Docker and k3s inside.
+  Agents pack densely, and idle ones sleep and give back their memory.
+  Credential injection, persistent workspaces, orchestration, schedules, Slack, and cost visibility are built in.
 </p>
 
 <p align="center">
