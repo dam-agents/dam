@@ -45,6 +45,7 @@ export function telegramWorkerHarness(
     groupPrivacy?: { on: boolean };
     channelPair?: ChannelPair;
     artifacts?: StubArtifact[];
+    ownerOf?: (agentId: string) => Promise<string | null>;
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];
@@ -139,7 +140,7 @@ export function telegramWorkerHarness(
     },
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => true,
-    ownerOf: async () => "kc|owner-1",
+    ownerOf: opts.ownerOf ?? (async () => "kc|owner-1"),
     ownerDisplayName: async () => null,
     uiBaseUrl: "https://app.example",
     linkArtifacts: artifactLinks(opts.artifacts ?? []),

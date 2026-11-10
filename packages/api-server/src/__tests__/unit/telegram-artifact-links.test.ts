@@ -35,11 +35,15 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function posted(text: string) {
+async function posted(
+  text: string,
+  harnessOpts: Parameters<typeof telegramWorkerHarness>[0] = {},
+) {
   const results: ChannelSendResult[] = [];
   const worker: { post?: (text: string) => Promise<ChannelSendResult> } = {};
   const h = telegramWorkerHarness({
     artifacts,
+    ...harnessOpts,
     turn: async () => {
       results.push(await worker.post!(text));
     },
@@ -52,6 +56,24 @@ async function posted(text: string) {
   await vi.waitFor(() => expect(results).toHaveLength(1));
   return { posted: results[0]!, posts: h.posts };
 }
+
+describe("a Telegram message with no artifact link", () => {
+  /**
+   * TEST_SCENARIO: The owner is read only to look up the artifacts a message
+   * links, so a plain message is sent without it: a lookup that fails for
+   * another reason cannot take an ordinary post down.
+   */
+  it("posts without asking who the owner is", async () => {
+    const h = await posted("just a note", {
+      ownerOf: async () => {
+        throw new Error("owner lookup unavailable");
+      },
+    });
+
+    expect(h.posted).toMatchObject({ ok: true });
+    expect(h.posts).toEqual(["just a note"]);
+  });
+});
 
 describe("a private artifact's link in a Telegram message", () => {
   // TEST_SCENARIO: a private artifact has no link that opens outside the app, and Telegram has no owner's-DM exception, so the message is refused and nothing reaches the chat.

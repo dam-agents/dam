@@ -1,6 +1,7 @@
-import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
+import { hasArtifactReference } from "../../artifact-library/channel-links.js";
 
 import type { ChannelCard } from "../services/worker-contract.js";
+import { cardIssues } from "./channel-card.js";
 
 export interface LinkOutboundInput {
   agentId: string;
@@ -19,17 +20,24 @@ export type LinkArtifactText = (
 ) => Promise<{ text: string } | { error: string }>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Every channel worker applies the artifact-link rule to what it is about to send, against the one destination it resolved, so the link and the send cannot disagree. A send carries text and, beside it, a card whose strings hold links too, so both go through the same rule and either refuses the whole send.
+ * UNIT_BOUNDARY_DESCRIPTION: Every channel worker applies the artifact-link rule to what it is about to send, against the one destination it resolved, so the link and the send cannot disagree. A send carries text and, beside it, a card whose strings hold links too, so both go through the same rule and either refuses the whole send. Only a string that names an artifact reference reaches the rule at all, so an ordinary message asks nothing of its destination. A rewritten card is checked against the card limits again, because a rewritten link can be longer than the one the agent wrote and Slack would cut or flatten the card without saying so.
  */
 export async function linkOutboundArtifacts(
   payload: { text: string; card?: ChannelCard | undefined },
   link: LinkArtifactText,
 ): Promise<{ text: string; card?: ChannelCard } | { error: string }> {
-  const text = await link(payload.text);
+  const text = hasArtifactReference(payload.text)
+    ? await link(payload.text)
+    : { text: payload.text };
   if ("error" in text) return text;
   if (!payload.card) return { text: text.text };
   const card = await mapStringsDeep(payload.card, link);
   if ("error" in card) return card;
+  const issues = cardIssues(card.value.card);
+  if (issues.length > 0)
+    return {
+      error: `The card was not sent: ${issues.join("; ")}. Nothing was posted — its artifact links grew when rewritten. Shorten the card, or send the message without them.`,
+    };
   return { text: text.text, card: card.value };
 }
 
@@ -38,7 +46,7 @@ async function mapStringsDeep<T>(
   link: LinkArtifactText,
 ): Promise<{ value: T } | { error: string }> {
   if (typeof value === "string") {
-    if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
+    if (!hasArtifactReference(value)) return { value };
     const linked = await link(value);
     return "error" in linked ? linked : { value: linked.text as T };
   }

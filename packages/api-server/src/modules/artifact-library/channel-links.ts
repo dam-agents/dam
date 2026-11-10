@@ -5,6 +5,10 @@ const INTERNAL_LINK = new RegExp(
   "g",
 );
 
+export function hasArtifactReference(text: string): boolean {
+  return text.includes(ARTIFACT_INTERNAL_LINK_PREFIX);
+}
+
 interface LinkedArtifact {
   title: string;
   shareUrl: string | null;
@@ -24,6 +28,7 @@ export async function withChannelArtifactLinks(
   text: string,
   links: ChannelArtifactLinks,
 ): Promise<{ text: string } | { error: string }> {
+  if (!hasArtifactReference(text)) return { text };
   const ids = [...new Set([...text.matchAll(INTERNAL_LINK)].map((m) => m[1]!))];
   if (ids.length === 0) return { text };
   const urls = new Map<string, string>();

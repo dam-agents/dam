@@ -980,6 +980,38 @@ describe("slack outbound — a private artifact's link", () => {
   });
 
   /**
+   * TEST_SCENARIO: A card is checked against its limits once more after its
+   * links are rewritten, because a rewritten link can be longer than the one
+   * the agent wrote: a title that fitted before can overflow Slack's, and a
+   * card Slack would cut is refused instead, with nothing posted.
+   */
+  it("refuses a card its rewritten links push past the card limits", async () => {
+    const id = PRIVATE;
+    const link = `platform://artifacts/${id}`;
+    const title = `${"x".repeat(145 - link.length)}${link}`;
+    const card = {
+      card: {
+        type: "card" as const,
+        title,
+        children: [{ type: "text" as const, content: "Draft" }],
+      },
+      text: "Draft",
+    };
+    expect(title).toHaveLength(145);
+
+    const h = harness({
+      boundChannelId: OWNER_DM,
+      channels: [],
+      artifacts,
+      linkArtifacts: artifactLinks(artifacts, "https://dam.example.com"),
+    });
+    expect(await h.post("Draft", { card })).toMatchObject({
+      error: expect.stringContaining("the card title holds"),
+    });
+    expect(h.messages()).toEqual([]);
+  });
+
+  /**
    * TEST_SCENARIO: The binding can change between the moment a send resolves its
    * conversation and the moment the message goes out. The send keeps the
    * conversation it resolved, so a rewritten private link can never follow a
@@ -1072,23 +1104,30 @@ describe("slack outbound — a private artifact's link", () => {
   });
 
   /**
-   * TEST_SCENARIO: An ordinary message costs no extra Slack call: the
-   * destination question is asked only for a message that carries an artifact
-   * link, because only that answer changes what is sent.
+   * TEST_SCENARIO: An ordinary message costs nothing extra: with no artifact
+   * reference in it the rule never runs, so the destination is never asked
+   * about and the owner's identity is never read. A message that does carry a
+   * reference asks both once.
    */
-  it("asks the destination only when a message carries an artifact link", async () => {
+  it("asks the destination only when a message names an artifact", async () => {
+    const linker = vi.fn(artifactLinks(artifacts));
     const h = harness({
       boundChannelId: BOUND,
       channels: workspace,
       artifacts,
+      linkArtifacts: linker,
     });
     const lookups = vi.spyOn(h.gw, "getConversationInfo");
+
     await h.post("no artifact here");
-    const before = lookups.mock.calls.length;
+
+    expect(linker).not.toHaveBeenCalled();
+    expect(lookups).not.toHaveBeenCalled();
 
     await h.post(`Draft: platform://artifacts/${PRIVATE}`);
 
-    expect(lookups.mock.calls.length).toBeGreaterThan(before);
+    expect(linker).toHaveBeenCalledTimes(1);
+    expect(lookups).toHaveBeenCalled();
   });
 
   /**
