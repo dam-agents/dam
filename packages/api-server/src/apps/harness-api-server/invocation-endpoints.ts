@@ -13,6 +13,7 @@ import {
   createDriverOps,
   type DriverOps,
   type DriverOpsDeps,
+  stopReasonSchema,
   type SpawnOutcome,
 } from "./driver-ops.js";
 import { resolveAgent } from "./agent-auth.js";
@@ -194,6 +195,22 @@ export function mountInvocationRoutes(
       : c.json(refused(outcome.message), 409);
   });
 
+  app.post("/api/agents/:id/invocations/:invocationId/stop", async (c) => {
+    const ops = await driverOps(c.req.param("id")!);
+    if (!ops) return c.json({ error: "not found" }, 404);
+    const parsed = stopRequestSchema.safeParse(
+      await c.req.json().catch(() => ({})),
+    );
+    if (!parsed.success) return c.json(refused(parsed.error.message), 400);
+    const outcome = await ops.stopSubagent(
+      c.req.param("invocationId")!,
+      parsed.data.reason,
+    );
+    return outcome.ok
+      ? c.json({ stopped: outcome.stopped })
+      : c.json(refused(outcome.message), 409);
+  });
+
   app.post("/api/agents/:id/invocations/:invocationId/egress", async (c) => {
     const ops = await driverOps(c.req.param("id")!);
     if (!ops) return c.json({ error: "not found" }, 404);
@@ -250,6 +267,10 @@ const keepRequestSchema = z
   .refine((r) => r.keepForMs !== undefined || r.idleTimeoutMin !== undefined, {
     message: "pass keepForMs, idleTimeoutMin or both",
   });
+
+const stopRequestSchema = z.object({
+  reason: stopReasonSchema.optional(),
+});
 
 const egressRequestSchema = z.object({
   rules: z.array(childEgressRuleSchema).max(200),

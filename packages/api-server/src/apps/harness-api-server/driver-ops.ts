@@ -1,5 +1,5 @@
 import { match } from "ts-pattern";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   isQualifiedModel,
   PROVIDERS,
@@ -84,6 +84,8 @@ export interface DriverOpsDeps {
     egressFrom: "parent" | "open" | "scoped";
   } | null>;
 }
+
+export const stopReasonSchema = z.string().trim().min(1).max(500);
 
 const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
   "nothing names the sub-agent's model: pass a provider-qualified model, as the agent's Config panel lists it, or spawn on the harness of this agent's default model to run on that model; an agent with no default gets one on its Providers page";
@@ -413,6 +415,22 @@ function driverOps(
       try {
         await invocations.wakeTarget(id, driverId);
         return { ok: true };
+      } catch (err) {
+        if (err instanceof RunError) return { ok: false, message: err.message };
+        throw err;
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: stops a sub-agent of this driver's and every sub-agent below it; a refusal says why, and one with nothing running says it was not stopped.
+    async stopSubagent(
+      id: string,
+      reason?: string,
+    ): Promise<
+      { ok: true; stopped: boolean } | { ok: false; message: string }
+    > {
+      try {
+        const { stopped } = await invocations.stopTarget(id, driverId, reason);
+        return { ok: true, stopped };
       } catch (err) {
         if (err instanceof RunError) return { ok: false, message: err.message };
         throw err;

@@ -59,6 +59,7 @@ function makeService(opts: { failPin?: boolean } = {}) {
     } as never,
     wakeAgent: async () => {},
     reaper: { reap: async () => {} },
+    stopper: { stop: async () => ({ stopped: false }) },
     reportedReap: { afterReport: () => {} },
     cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,
@@ -206,6 +207,7 @@ function makeFailingSkillsService(
         deleted.push(row.id);
       },
     },
+    stopper: { stop: async () => ({ stopped: false }) },
     reportedReap: { afterReport: () => {} },
     cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,

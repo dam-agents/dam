@@ -58,6 +58,7 @@ export function fakeInvocationsRepo(
     complete: async () => false,
     fail: async () => null,
     failExpired: async () => null,
+    failStopped: async () => null,
     finishScript: async () => false,
     dropOutputStream: async () => {},
     clearOutput: async () => {},

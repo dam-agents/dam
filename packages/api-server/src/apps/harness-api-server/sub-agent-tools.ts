@@ -27,10 +27,11 @@ import {
   NO_SPAWN_MODEL_MESSAGE,
   type SubAgentAwaitMarks,
 } from "../../modules/invocations/index.js";
-import type {
-  DriverOps,
-  ScriptSpawnRequest,
-  SpawnOutcome,
+import {
+  stopReasonSchema,
+  type DriverOps,
+  type ScriptSpawnRequest,
+  type SpawnOutcome,
 } from "./driver-ops.js";
 
 /**
@@ -238,6 +239,12 @@ const wildcardEgressAsked = (egress: unknown): boolean =>
   egress.open.some((rule) =>
     isWildcardEgressRule(rule as { host: string; verdict: string }),
   );
+
+const KEPT_STOP_SENTENCE =
+  " A sub-agent you spawned with keep keeps its conversation and only stops running; stopping it takes a reason.";
+
+const stopDescription = (kept: boolean): string =>
+  `Stop a sub-agent you started that you no longer need, and every sub-agent it started in turn: its turn or script ends and it stops spending. A sub-agent without keep is removed.${kept ? KEPT_STOP_SENTENCE : ""} Nothing of it comes back to you as a new turn; await_subagents lists it as failed with the reason. Your user sees the reason in the delegation view. Returns stopped false, changing nothing, for a sub-agent with nothing running.`;
 
 const KEPT_SPAWN_KEYS = Object.keys(
   keptSpawnInput,
@@ -957,6 +964,24 @@ export function registerSubAgentTools(
             downloadCommand({ id, stream, path, ...link }),
           ].join("\n"),
         );
+      }),
+  );
+
+  server.tool(
+    "stop_subagent",
+    stopDescription(kept),
+    {
+      id: z.string().min(1).describe("The sub-agent's id."),
+      reason: stopReasonSchema
+        .optional()
+        .describe("Why you stop it, in one short sentence."),
+    },
+    ({ id, reason }) =>
+      run(async () => {
+        const outcome = await ops.stopSubagent(id, reason);
+        return outcome.ok
+          ? json({ id, stopped: outcome.stopped })
+          : errorResult(`stop_subagent refused: ${outcome.message}`);
       }),
   );
 

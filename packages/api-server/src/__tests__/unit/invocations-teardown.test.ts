@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createDelegationControl } from "../../modules/invocations/services/delegation-control.js";
+import { createDelegationStop } from "../../modules/invocations/services/delegation-stop.js";
 import type { DelegationFramesPort } from "../../modules/invocations/services/delegation-frames.js";
 import { createDriverCascade } from "../../modules/invocations/services/driver-cascade.js";
 import { createTargetCapture } from "../../modules/invocations/services/target-capture.js";
@@ -31,10 +32,16 @@ function fakeRepo(rows: InvocationRow[]) {
     markTranscriptCaptured: vi.fn(async (_id: string, _t: boolean) => {}),
     deleteReapedByRoot: vi.fn(async (_root: string) => 0),
     fail: vi.fn(async (_runId: string, _reason: string) => null),
+    failStopped: vi.fn(
+      async (_runId: string, _reason: string, _collected: boolean) => ({
+        cancelPending: false,
+      }),
+    ),
   };
   const repo = fakeInvocationsRepo({
     get: async (id) => byId.get(id) ?? null,
     fail: calls.fail,
+    failStopped: calls.failStopped,
     listRunningRuns: async (id) =>
       rows.filter((r) => r.id === id && r.status === "running"),
     listRunningByDriver: async (driver) =>
@@ -252,31 +259,61 @@ describe("the driver cascade", () => {
 });
 
 describe("stopping a delegation", () => {
-  test("fails a running child of the owner's driver and reaps it", async () => {
-    const { repo, calls } = fakeRepo([row("agent-a")]);
-    const reaper = { reap: vi.fn(async () => {}) };
-    await createDelegationControl({ repo, owner: "owner-1", reaper }).stop({
-      driverAgentId: "root-1",
-      id: "agent-a",
-    });
-    expect(calls.fail).toHaveBeenCalledWith("agent-a", "stopped by the user");
-    expect(reaper.reap).toHaveBeenCalledTimes(1);
+  const control = (rows: InvocationRow[]) => {
+    const { repo, calls } = fakeRepo(rows);
+    const reaper = { reap: vi.fn(async (_row: { id: string }) => {}) };
+    const stopper = createDelegationStop({ repo, reaper });
+    return {
+      calls,
+      reaper,
+      control: createDelegationControl({ repo, owner: "owner-1", stopper }),
+    };
+  };
+
+  test("the user's stop takes every running sub-agent below the target down, kept ones too, and only the target reaches its driver", async () => {
+    const {
+      control: c,
+      calls,
+      reaper,
+    } = control([
+      row("agent-a", { runId: "run-a" }),
+      row("agent-b", { driverAgentId: "agent-a", runId: "run-b" }),
+      row("agent-c", {
+        driverAgentId: "agent-b",
+        runId: "run-c",
+        keepUntil: new Date(Date.now() + 60_000),
+      }),
+      row("agent-d", { driverAgentId: "agent-a", status: "done" }),
+    ]);
+    await c.stop({ driverAgentId: "root-1", id: "agent-a" });
+    expect(calls.failStopped.mock.calls).toEqual([
+      ["run-a", "stopped by the user", false],
+      ["run-b", "stopped by the user", true],
+      ["run-c", "stopped by the user", true],
+    ]);
+    expect(reaper.reap.mock.calls.map(([r]) => r.id)).toEqual([
+      "agent-a",
+      "agent-b",
+      "agent-c",
+    ]);
   });
 
   test("does not find a child that is another owner's or under another root", async () => {
-    const { repo, calls } = fakeRepo([
+    const {
+      control: c,
+      calls,
+      reaper,
+    } = control([
       row("agent-a", { owner: "owner-2" }),
       row("agent-b", { rootDriverId: "root-9" }),
     ]);
-    const reaper = { reap: vi.fn(async () => {}) };
-    const control = createDelegationControl({ repo, owner: "owner-1", reaper });
     await expect(
-      control.stop({ driverAgentId: "root-1", id: "agent-a" }),
+      c.stop({ driverAgentId: "root-1", id: "agent-a" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(
-      control.stop({ driverAgentId: "root-1", id: "agent-b" }),
+      c.stop({ driverAgentId: "root-1", id: "agent-b" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(calls.fail).not.toHaveBeenCalled();
+    expect(calls.failStopped).not.toHaveBeenCalled();
     expect(reaper.reap).not.toHaveBeenCalled();
   });
 });
