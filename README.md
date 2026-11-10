@@ -25,6 +25,10 @@ AI teammates that work with you in Slack.
   <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam" /></a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="A dense cluster of agents: some work heads down at a laptop with headphones, some chat, some sleep until someone needs them." width="760" />
+</p>
+
 ---
 
 ## Get started
