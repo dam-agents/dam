@@ -262,7 +262,8 @@ export function buildConnectCommand(deps: {
         "it then, and another one next to those it has.\n" +
         "\nOn a server that offers several GitHub Enterprise hosts, github-enterprise\n" +
         "signs in on the one --host names, and asks which at a terminal without it;\n" +
-        "`dam connection templates` lists them.\n" +
+        "`dam connection templates` lists them. Another host takes your own app:\n" +
+        "pass --client-id and --client-secret with it.\n" +
         "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
         "is entered on a DAM web page: the command opens it, waits until the\n" +
         "secret is saved, and reports the result. The page shows where the secret\n" +

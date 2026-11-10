@@ -66,7 +66,8 @@ A GitHub Enterprise Server is a separate case: `gh` reads `GH_ENTERPRISE_TOKEN` 
 ## GitHub Enterprise hosts
 
 An install may offer several GitHub Enterprise hosts, each with the GitHub App registered on it, set in the chart values as maps keyed by hostname, so a values file adds, changes or drops one host without restating the others ([`helm/values.yaml`](../../helm/values.yaml)).
-The connect form asks which host, from the offered hosts or another host the user names, and a sign-in authorizes, renews and narrows with the app of its own host; another host has no app the install registered, so the user brings their own, client ID and secret, and the api-server refuses one without its secret. With the feature off, one host keeps the single-host form, where that host and its app are presets.
+The connect form asks which host, from the offered hosts or another host the user names, and a sign-in authorizes, renews and narrows with the app of its own host; another host has no app the install registered, so the user brings their own, client ID and secret, and the api-server refuses one without its secret.
+With the feature off, one host keeps the single-host form, where that host and its app are presets.
 The install can also retire a host its users have moved away from.
 No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected with the retired host named, and cannot be authorized there.
 A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host; the move is written before the authorization, so a user who stops there re-authenticates from the row.
