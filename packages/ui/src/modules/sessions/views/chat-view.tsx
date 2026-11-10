@@ -81,7 +81,10 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
 import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
-import { useAssistantGreeting } from "../../assistants/hooks/use-assistant-greeting.js";
+import {
+  useAssistantChat,
+  useAssistantGreeting,
+} from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
@@ -433,6 +436,8 @@ export function ChatView() {
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
+  const assistantChat = useAssistantChat(selectedAgent);
 
   const {
     messagesRef,
@@ -1146,7 +1151,7 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
-          {greeting.assistantChat && (
+          {assistantChat && (
             <AssistantUnlockCelebration
               covered={providerPromptOpen || dialog !== null}
             />

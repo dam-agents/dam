@@ -10,9 +10,11 @@ import { assistantUnlockToCelebrate } from "../lib/assistant-unlock.js";
  * for it — the same component, with the same words and the same "Nice" — then
  * marks it seen, so the checklist counts the task from then on. A reset deletes
  * the unlock rows, so the next create is celebrated here again.
- * While a modal or a dialog covers it, it waits: the countdown that marks the
- * unlock seen must not run where nobody can see the celebration, which is what
- * an account with no provider Connection meets first.
+ * While a modal or a dialog covers it, nothing is mounted: neither the reveal's
+ * animation nor the countdown that marks the unlock seen runs where nobody can
+ * see the celebration, which is what an account with no provider Connection meets
+ * first. It plays in full once the cover is gone, and the unlock stays unseen
+ * until then.
  */
 export function AssistantUnlockCelebration({
   covered = false,
@@ -22,14 +24,13 @@ export function AssistantUnlockCelebration({
   const progress = useGettingStarted().data;
   const markSeen = useMarkUnlockSeen();
   const celebrating = assistantUnlockToCelebrate(progress);
-  if (celebrating === null) return null;
+  if (celebrating === null || covered) return null;
   return (
     <div data-testid="assistant-unlock-celebration" className="px-4 pb-2">
       <UnlockCelebration
         key={celebrating.unlock.task}
         character={celebrating.unlock.character}
         variant={celebrating.variant}
-        covered={covered}
         onFinished={() => markSeen.mutate({ task: celebrating.unlock.task })}
       />
     </div>

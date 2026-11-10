@@ -65,7 +65,7 @@ describe("when the greeting is shown", () => {
 });
 
 describe("which chat the celebration belongs to", () => {
-  // TEST_SCENARIO: the assistant's chat stays the assistant's chat after its first message, so the unlock the platform made keeps playing there while the greeting is gone; any other Agent, and a person the feature is off for, get neither.
+  // TEST_SCENARIO: the assistant's chat stays the assistant's chat after its first message and while a turn runs, so the unlock the platform made keeps playing there while the greeting is gone; any other Agent, and a person the feature is off for, get neither.
   it("stays the assistant's chat after the greeting is gone", () => {
     expect(isAssistantChat(ON)).toBe(true);
     expect(greetingShown({ ...ON, used: true })).toBe(false);
