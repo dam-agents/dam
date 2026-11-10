@@ -44,27 +44,6 @@ export function rowStore(initial?: AssistantRow) {
       });
       return true;
     },
-    pointAt: async (owner, agentId) => {
-      const row = rows.get(owner);
-      if (row === undefined) {
-        rows.set(owner, {
-          owner,
-          agentId,
-          state: "ready",
-          used: false,
-          resetAt: null,
-        });
-        return;
-      }
-      rows.set(owner, {
-        ...row,
-        agentId,
-        state: "ready",
-        ...(row.agentId === agentId
-          ? {}
-          : { used: false, resetAt: new Date() }),
-      });
-    },
     usageOf: async (agentId) => {
       for (const row of rows.values())
         if (row.agentId === agentId)
@@ -84,9 +63,11 @@ export function rowStore(initial?: AssistantRow) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the Agents an owner has, whose create refuses a name
- * that is already taken as the store does, which is how two callers racing for
- * the same Agent end up with one: the loser reads back what is there.
+ * UNIT_BOUNDARY_DESCRIPTION: the Agents an owner has. Its create checks the name
+ * and then writes, as the real one does — a check and a write, not a constraint —
+ * so two callers can both find the name free and the store's record, not the
+ * name, is what keeps them to one Agent. `holdCreate` parks a create between the
+ * check and the write, so a test can interleave two callers there.
  */
 export function agentStore(initialNames: readonly string[] = []) {
   const live = new Map<string, InfraAgent>();
@@ -100,10 +81,13 @@ export function agentStore(initialNames: readonly string[] = []) {
     } as unknown as InfraAgent);
   for (const name of initialNames) add(`agent-seed-${next++}`, name);
 
+  const gates: (() => Promise<void>)[] = [];
   const create = vi.fn(
     async (input: { id?: string; name: string; instructions?: string }) => {
       if ([...live.values()].some((agent) => agent.name === input.name))
         throw new Error(`you already have an agent named "${input.name}"`);
+      const gate = gates.shift();
+      if (gate) await gate();
       if (live.has(input.id!)) throw new Error("that agent already exists");
       add(input.id!, input.name);
       return live.get(input.id!) as unknown as Agent;
@@ -125,6 +109,15 @@ export function agentStore(initialNames: readonly string[] = []) {
     remove(agentId: string) {
       live.delete(agentId);
     },
+    /** UNIT_BOUNDARY_DESCRIPTION: parks the next create between its name check and its write; the returned release lets it finish. */
+    holdCreate(): () => void {
+      let open = () => {};
+      const gate = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      gates.push(() => gate);
+      return () => open();
+    },
     ids: () => [...live.keys()],
     named: (name: string) =>
       [...live.values()]
@@ -140,6 +133,8 @@ export function assistantService(
     enabled?: boolean;
     admitted?: boolean;
     assistantName?: string;
+    waitMs?: number;
+    pollMs?: number;
   } = {},
 ) {
   const rows = deps.rows ?? rowStore();
@@ -159,6 +154,8 @@ export function assistantService(
     enrolled,
     provisioned,
     resetChecklist,
+    waitMs: deps.waitMs ?? 200,
+    pollMs: deps.pollMs ?? 10,
   });
   return { rows, agents, enrolled, provisioned, resetChecklist, ...service };
 }

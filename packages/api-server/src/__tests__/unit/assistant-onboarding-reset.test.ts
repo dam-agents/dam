@@ -2,10 +2,11 @@
 // TEST_OVERVIEW: nobody else's: it forgets that their assistant was ever used,
 // TEST_OVERVIEW: starts the Get started checklist over, records its first Agent
 // TEST_OVERVIEW: again so the person meets a first-timer's checklist, and gives
-// TEST_OVERVIEW: them Dambledore again when they have none — deleted or renamed
-// TEST_OVERVIEW: away — while an Agent of theirs already called that is reused, with
-// TEST_OVERVIEW: the record following it. It is refused while the feature is off for
-// TEST_OVERVIEW: them.
+// TEST_OVERVIEW: them Dambledore again when the platform's own is gone — but only
+// TEST_OVERVIEW: when no Agent of theirs carries the name, since an Agent they made
+// TEST_OVERVIEW: is not the platform's and is never adopted. A create another caller
+// TEST_OVERVIEW: holds is waited for rather than raced. It is refused while the
+// TEST_OVERVIEW: feature is off for them.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,10 +17,22 @@ import {
   rowStore,
 } from "../helpers/assistant-world.js";
 
+const readyRow = (agentId: string, used = true) => ({
+  owner: OWNER,
+  agentId,
+  state: "ready" as const,
+  used,
+  resetAt: null,
+});
+
+async function until(reached: () => boolean): Promise<void> {
+  while (!reached()) await new Promise((resolve) => setImmediate(resolve));
+}
+
 describe("resetting a person's onboarding", () => {
   // TEST_SCENARIO: the person has an assistant they have used; the reset forgets that, starts the checklist over and records its first Agent again, so they meet a first-timer's checklist — nothing is deleted and nothing is made.
   it("forgets the use and starts the checklist over", async () => {
-    const agents = agentStore([NAME]);
+    const agents = agentStore();
     const w = assistantService({ agents });
     await w.ensure();
     const id = agents.ids()[0]!;
@@ -30,7 +43,7 @@ describe("resetting a person's onboarding", () => {
     expect(state?.resetAt).toEqual(expect.any(String));
     expect(w.resetChecklist).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(2);
-    expect(agents.create).not.toHaveBeenCalled();
+    expect(agents.create).toHaveBeenCalledTimes(1);
   });
 
   // TEST_SCENARIO: the person deleted theirs, so the reset makes a new ordinary Agent, points the record at it, unused: the next landing greets them in its chat.
@@ -51,15 +64,26 @@ describe("resetting a person's onboarding", () => {
     expect(w.provisioned).toHaveBeenCalledTimes(2);
   });
 
-  // TEST_SCENARIO: the person renamed theirs and made one themselves under the name — or simply has one — so the reset reuses that Agent rather than making a second, and forgets that it was used.
-  it("reuses an Agent that already carries the name", async () => {
-    const agents = agentStore([NAME]);
+  // TEST_SCENARIO: an Agent the person made carries the name, and the platform's own is gone: nothing is made, because the name is theirs — and no record means no greeting and no landing on it.
+  it("makes nothing when the person owns an Agent under the name", async () => {
+    const rows = rowStore(readyRow("agent-gone"));
+    const w = assistantService({ rows, agents: agentStore([NAME]) });
+    await w.assistants.resetOnboarding();
+    expect(w.agents.create).not.toHaveBeenCalled();
+    expect(rows.rows.get(OWNER)).toMatchObject({ agentId: "agent-gone" });
+    expect(w.provisioned).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the person renamed the Agent the platform made, so nothing carries the name — and the record still names it, so the reset reuses that Agent rather than making a second one.
+  it("reuses the Agent the record names, renamed", async () => {
+    const agents = agentStore();
     const w = assistantService({ agents });
     await w.ensure();
     const id = agents.ids()[0]!;
+    agents.rename(id, "Research helper");
     await w.rows.repo.markUsed(id);
     await w.assistants.resetOnboarding();
-    expect(agents.create).not.toHaveBeenCalled();
+    expect(agents.create).toHaveBeenCalledTimes(1);
     expect(agents.ids()).toEqual([id]);
     expect(await w.assistants.state()).toMatchObject({
       agentId: id,
@@ -67,19 +91,44 @@ describe("resetting a person's onboarding", () => {
     });
   });
 
-  // TEST_SCENARIO: the person renamed theirs, so the name is free: the reset makes a new Dambledore and leaves the renamed Agent where it is.
-  it("makes a new assistant after the person renamed theirs", async () => {
-    const w = assistantService();
-    await w.optIn();
-    const first = w.agents.ids()[0]!;
-    w.agents.rename(first, "Research helper");
-    await w.assistants.resetOnboarding();
-    expect(w.agents.named("Research helper")).toEqual([first]);
-    expect(w.agents.named(NAME)).toHaveLength(1);
-    expect(w.agents.named(NAME)[0]).not.toBe(first);
+  // TEST_SCENARIO: a create another caller holds is waited for rather than raced: the reset stays pending while the Agent is being made, and lands on it once it is there, so one Agent is made between them.
+  it("waits for a create in flight and lands on it", async () => {
+    const agents = agentStore();
+    const w = assistantService({ agents });
+    const release = agents.holdCreate();
+    const first = w.optIn();
+    await until(() => agents.create.mock.calls.length === 1);
+    let landed = false;
+    const reset = w.assistants.resetOnboarding().then(() => (landed = true));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(landed).toBe(false);
+    release();
+    await Promise.all([first, reset]);
+    expect(landed).toBe(true);
+    expect(agents.create).toHaveBeenCalledTimes(1);
+    expect(await w.assistants.state()).toMatchObject({ used: false });
+    expect(agents.ids()).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: two resets meet the same deleted assistant at once; the record's compare-and-set gives one of them the replacement and the other adopts the Agent it names, so one Agent is made between them.
+  // TEST_SCENARIO: a claim nobody finished — a create that died — is finished by the reset rather than waited on forever.
+  it("finishes a claim nobody holds", async () => {
+    const rows = rowStore({
+      owner: OWNER,
+      agentId: "agent-dead",
+      state: "creating",
+      used: false,
+      resetAt: null,
+    });
+    const w = assistantService({ rows, waitMs: 0 });
+    await w.assistants.resetOnboarding();
+    expect(w.agents.create).toHaveBeenCalledTimes(1);
+    expect(w.agents.create.mock.calls[0]![0]).toMatchObject({
+      id: "agent-dead",
+    });
+    expect(rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
+  });
+
+  // TEST_SCENARIO: two resets meet the same deleted assistant at once; the record's compare-and-set gives one of them the replacement and the other joins it, so one Agent is made between them.
   it("makes one Agent when two resets meet", async () => {
     const w = assistantService();
     await w.optIn();
@@ -93,13 +142,7 @@ describe("resetting a person's onboarding", () => {
 
   // TEST_SCENARIO: two people reset at once; each reset touches only its caller's record, and the other person's assistant keeps the use it had.
   it("resets only the caller's assistant", async () => {
-    const rows = rowStore({
-      owner: OWNER,
-      agentId: "agent-a",
-      state: "ready",
-      used: true,
-      resetAt: null,
-    });
+    const rows = rowStore(readyRow("agent-a"));
     rows.rows.set("bob", {
       owner: "bob",
       agentId: "agent-b",
@@ -107,7 +150,15 @@ describe("resetting a person's onboarding", () => {
       used: true,
       resetAt: null,
     });
-    const w = assistantService({ rows, agents: agentStore([NAME]) });
+    const agents = agentStore();
+    // UNIT_BOUNDARY_DESCRIPTION: the caller's own assistant is the Agent their record names, renamed.
+    agents.live.set("agent-a", {
+      id: "agent-a",
+      name: "Research helper",
+      owner: OWNER,
+      spec: { avatar: undefined },
+    } as never);
+    const w = assistantService({ rows, agents });
     await w.assistants.resetOnboarding();
     expect(rows.rows.get(OWNER)).toMatchObject({ used: false });
     expect(rows.rows.get("bob")).toMatchObject({ used: true });

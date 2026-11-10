@@ -90,7 +90,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [owner model catalog](architecture/owner-model-catalog.md) — every model an owner's providers offer, listed by the api-server with no agent, for every routed picker.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.
 - [environments](architecture/environments.md) — sandboxes an agent owns to run software for others to open, at an address per endpoint.
-- [assistant](architecture/assistant.md) — the one ordinary Agent the platform gives each person, once: created at their first request when the feature is on for them, greeted in its first chat, and landed in until it is used.
+- [assistant](architecture/assistant.md) — the one ordinary Agent the platform makes for a person under its assistant name: made when they switch the feature on, or at their first request where the install pins it on, greeted in its first chat, and landed in until it is used.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
 - [home-feed](architecture/home-feed.md) — what Home shows since you last looked: a per-owner attention record kept server-side, so hibernated agents still report.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish work products into an owner-scoped library and share them by link — with anyone, or with a named list of viewers who sign in.

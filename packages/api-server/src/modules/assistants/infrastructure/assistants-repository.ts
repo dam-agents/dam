@@ -30,8 +30,6 @@ export interface AssistantsRepository {
     fromAgentId: string,
     toAgentId: string,
   ): Promise<boolean>;
-  /** UNIT_BOUNDARY_DESCRIPTION: points the row at the Agent the person owns under the assistant's name, ready — written when that Agent was already theirs, and when one under that name was made. A row that already names it keeps its use; one that names another Agent starts over. */
-  pointAt(owner: string, agentId: string): Promise<void>;
   usageOf(agentId: string): Promise<AssistantUsage | null>;
   markUsed(agentId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
@@ -107,21 +105,6 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         )
         .returning({ owner: dambledoreProvisioned.owner });
       return moved.length > 0;
-    },
-
-    async pointAt(owner, agentId) {
-      await db
-        .insert(dambledoreProvisioned)
-        .values({ owner, agentId, state: "ready" })
-        .onConflictDoUpdate({
-          target: dambledoreProvisioned.owner,
-          set: {
-            agentId: sql`excluded.agent_id`,
-            state: "ready",
-            usedAt: sql`case when ${dambledoreProvisioned.agentId} = excluded.agent_id then ${dambledoreProvisioned.usedAt} else null end`,
-            resetAt: sql`case when ${dambledoreProvisioned.agentId} = excluded.agent_id then ${dambledoreProvisioned.resetAt} else now() end`,
-          },
-        });
     },
 
     async usageOf(agentId) {

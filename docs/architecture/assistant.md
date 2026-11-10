@@ -9,8 +9,9 @@ It is not a second kind of Agent — it is an [Agent](agent-lifecycle.md), creat
 What makes it different is who creates it, and the greeting its first chat opens with.
 
 Its name is the install's, not the code's: it comes from the brand (`brand.assistantName`, `Dambledore` in the chart) and reaches the api-server and the UI the way every other brand value does ([platform-topology](platform-topology.md)).
-The **name is the rule**: the assistant is whatever Agent of the person's carries it, matched exactly and case-sensitively.
-An Agent of theirs already called that — theirs from before, or one they made — is the assistant, and nothing is created beside it; there is no numbered second name, and no request ever renames an Agent to free the name.
+The platform makes the Agent, and the record says which one it is: everything that treats it as the assistant — the greeting, the landing, the reset — speaks about the Agent the record names, not about a name in a list.
+The name still belongs to whoever holds it: an Agent of the person's already called that, matched exactly and case-sensitively, is why nothing is made, and no request ever renames an Agent to free the name or makes a numbered second one.
+An Agent they made under the name is never adopted as the assistant either — it is theirs, without the greeting or the standing instructions the platform writes.
 
 ## Provisioning
 
@@ -18,16 +19,17 @@ The install decides whether people get one at all through the `dambledore` [feat
 Until a person has it on, nothing of theirs exists: no record, no Agent, no provisioning.
 Turning the mode or the flag off later deletes nothing — the Agent stays in their list, theirs to use and to delete — and only hides the greeting, the landing and the reset ([where it appears](#where-it-appears)).
 
-Where the switch is the ask, **the switch is the trigger**: turning the feature on makes Dambledore for a person who has none under that name, which is why deleting or renaming theirs and turning it off and on again gives them a new one.
+Where the switch is the ask, **the switch is the trigger**: turning the feature on makes Dambledore for a person who has none, and a create that fails is reported to them with the switch left off, because the switch is the one place a failure has a person to tell.
+Deleting the platform's Agent and turning the feature off and on again gives them a new one; renaming it does not, since the record still names it and it is still theirs.
 An install that pins the feature `on` has no switch to offer, so it gives each person theirs at their first authenticated request the install admits — the same moment the [Getting Started](getting-started.md) checklist first meets them — and again after they accept the Terms of Use, since neither makes a new request context.
 A person who has not accepted the Terms of Use, or whose acceptance a closed sign-up refuses, gets nothing.
 No batch job provisions dormant accounts: an install of any age gives each person theirs the next time they sign in.
 A request made with an API key or with an Agent's own credentials is not a person arriving, so it creates nothing.
 
-A tiny per-owner **record** is what makes that request-time create happen once: it names the Agent the assistant currently is, and it is what says the person was already given one, so an install that pins the feature on never undoes a delete on the next page load.
-The record is written *before* the Agent exists, settled by its primary key, and its compare-and-set on the Agent it names settles a later create — so concurrent callers of any of the three doors make one Agent between them, and a create that dies half-way is finished by the next caller, which asks the store for the same Agent.
-Once the Agent is there, the record is marked ready, and every write that names a different Agent also starts the onboarding over on it.
-Adopting an Agent the person already had writes the record the same way, without making anything.
+A tiny per-owner **record** is what makes that request-time create happen once: it names the Agent the platform made, and it is what says the person was already given one, so an install that pins the feature on never undoes a delete on the next page load.
+The record is written *before* the Agent exists, settled by its primary key, and its compare-and-set on the Agent it names settles a later create — so concurrent callers of any of the three doors make one Agent between them, and a caller that loses the claim waits for the winner's Agent rather than making a second.
+Once the Agent is there, the record is marked ready, and a write that names a different Agent also starts the onboarding over on it.
+A claim nobody finished is a create that died: the next request finishes it, asking the store for the same Agent, and a reset waits a bounded while for one that is still alive before finishing it.
 
 The Agent is made through the ordinary create, on the owner's [default for new agents](profiles.md#the-default-for-new-agents), with ordinary hibernation and on the owner's budget.
 An install with no [CurveBender](platform-topology.md) still creates it: the composer's own provider notice explains what to connect, which is the same answer every other Agent gives.
@@ -77,8 +79,9 @@ Nothing runs on the person's behalf: there is no `initialization` Session and no
 Experimental features carries **Reset user onboarding** under the assistant's own row, offered whenever the feature is on for the person — an install that pins it `on` shows no switch for them to flip, so only that row goes and the reset stays.
 It is the person's own reset, scoped to the caller: it forgets that their assistant was ever used and starts the [Getting Started](getting-started.md) checklist over through the checklist's own reset.
 Nothing is deleted — not the assistant, its sessions or its files.
-The reset settles the name the same way every other door does: an Agent of the person's already carrying the assistant's name is **reused**, with its use forgotten, and the record follows it; a person with none — theirs deleted, or renamed away — gets one **made again**, as a new ordinary Agent on the same terms as the first, so there is always something to greet them with.
-Nothing is made while a create is still in flight: the callers converge on the one Agent the record names, and the store's own create settles which of them makes it.
+The Agent the record names is **reused**, its use forgotten, whether or not it was renamed since.
+When the platform's Agent is gone the reset makes one again — a new ordinary Agent on the same terms as the first — but only if no Agent of the person's carries the assistant's name: a name they hold is not the platform's to take, so such a person gets nothing made and no greeting, since an Agent they made is not the assistant.
+A create another caller holds is waited for rather than raced, so the reset lands on the one Agent being made between them.
 
 The checklist it starts over is a first-timer's from the first moment: the assistant's own `Create` task is recorded again the way provisioning records it — done, and seen, so nothing celebrates an Agent nobody made — which is one task of eight rather than an empty checklist.
 
