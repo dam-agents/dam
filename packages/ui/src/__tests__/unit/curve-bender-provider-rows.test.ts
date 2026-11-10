@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { sandboxSubtitleParts } from "../../modules/agents/utils/sandbox-subtitle.js";
 import {
   CURVE_BENDER_DOCS_URL,
   CurveBenderInfoDialog,
@@ -93,5 +94,27 @@ describe("CurveBender on Settings › Providers", () => {
     expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
     expect(html).toContain('target="_blank"');
     expect(html).toContain("Close");
+  });
+
+  // TEST_SCENARIO: an agent card names the shared Connection "CurveBender", and an own key by its preset name.
+  it("names the shared Connection on an agent card", () => {
+    const provider = (connectionId: string) =>
+      sandboxSubtitleParts(
+        {
+          templateId: null,
+          image: "img",
+          grantedConnectionIds: [connectionId],
+        } as never,
+        {
+          templateNameById: new Map(),
+          connectionTemplateIdById: new Map([
+            [shared.id, shared.templateId],
+            [ownKey.id, ownKey.templateId],
+          ]),
+          slotUnit: null,
+        },
+      ).provider;
+    expect(provider(shared.id)).toBe("CurveBender");
+    expect(provider(ownKey.id)).toBe("CurveBender custom key");
   });
 });
