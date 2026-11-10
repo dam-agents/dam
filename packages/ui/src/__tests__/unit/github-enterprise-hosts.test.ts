@@ -240,8 +240,8 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     ]);
   });
 
-  // TEST_SCENARIO: an install with one GitHub Enterprise host and the feature on still shows the host as its own field, a picker of that host and "Another host…", not a preset hidden under Customize defaults.
-  it("shows the host picker for a single offered host", async () => {
+  // TEST_SCENARIO: an install with one GitHub Enterprise host and the feature on still shows the host as its own field, read-only with "Use another host", not a preset hidden under Customize defaults and not a list of one.
+  it("shows the single offered host and a way to use another", async () => {
     act(() =>
       root.render(
         createElement(TemplateCreateFormBody, {
@@ -253,14 +253,13 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
         }),
       ),
     );
-    const select = byTestId<HTMLSelectElement>("connection-field-host");
-    expect(select?.tagName).toBe("SELECT");
-    expect([...select!.options].map((o) => o.value)).toEqual([
-      ONE_HOST,
-      "another",
-    ]);
-    expect(select!.value).toBe(ONE_HOST);
-    expect(byTestId("customize-defaults")?.contains(select!) ?? false).toBe(
+    const hostLine = byTestId("connection-field-host");
+    expect(hostLine?.tagName).not.toBe("SELECT");
+    expect(hostLine?.textContent).toContain(ONE_HOST);
+    expect(byTestId("connection-host-switch")?.textContent).toBe(
+      "Use another host",
+    );
+    expect(byTestId("customize-defaults")?.contains(hostLine!) ?? false).toBe(
       false,
     );
 
@@ -285,9 +284,16 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
         }),
       ),
     );
-    choose("connection-field-host", "another");
+    click(byTestId("connection-host-switch"));
     const other = byTestId<HTMLInputElement>("connection-field-host-other");
     expect(other?.value).toBe("");
+    expect(other?.closest("label")?.textContent).toContain("Host name");
+    expect(byTestId("github-steps-hint")?.textContent).toBe(
+      "Sign in with your own GitHub app, then install it on each account whose repositories agents need.",
+    );
+    expect(document.body.textContent).toContain(
+      "A host Platform has no app on",
+    );
     expect(byTestId("connection-field-clientId")).not.toBeNull();
     expect(byTestId("connection-field-clientSecret")).not.toBeNull();
 
@@ -322,7 +328,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
         }),
       ),
     );
-    choose("connection-field-host", "another");
+    click(byTestId("connection-host-switch"));
     click(byTestId("customize-defaults"));
     click(byTestId("override-defaults-toggle"));
     expect(
@@ -335,6 +341,44 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     await settle();
     expect(fake.submitted).toHaveLength(1);
     expect(fake.submitted[0]).not.toHaveProperty("appSlug");
+  });
+
+  // TEST_SCENARIO: a refused submit whose first error sits below the fold must bring that field into view and focus it, so the user sees what is missing.
+  it("brings the first error into view on a refused submit", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    const scrolled: Element[] = [];
+    const scroll = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(function (this: HTMLElement) {
+        scrolled.push(this);
+      });
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    click(byTestId("connection-host-switch"));
+    type("connection-field-host-other", "ghe.own.example.com");
+    click(byTestId("connection-create-submit"));
+    await settle();
+    act(() => {
+      for (const cb of frames.splice(0)) cb(0);
+    });
+    const clientId = byTestId("connection-field-clientId");
+    expect(scrolled).toHaveLength(1);
+    expect(scrolled[0]?.contains(clientId)).toBe(true);
+    expect(document.activeElement).toBe(clientId);
+    scroll.mockRestore();
   });
 
   // TEST_SCENARIO: a "Required" error from an empty other host must not stay under the field once the user goes back to an offered host.
@@ -350,11 +394,11 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
         }),
       ),
     );
-    choose("connection-field-host", "another");
+    click(byTestId("connection-host-switch"));
     click(byTestId("connection-create-submit"));
     await settle();
     expect(document.body.textContent).toContain("Required");
-    choose("connection-field-host", ONE_HOST);
+    click(byTestId("connection-host-switch"));
     await settle();
     expect(document.body.textContent).not.toContain("Required");
   });

@@ -1,7 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -131,14 +131,18 @@ export function TemplateCreateFormBody({
 
   const credentialsFromFamily = template.extras?.credentialsFromFamily === true;
 
-  const onSubmit = handleSubmit((values) => {
-    const payload = buildCreatePayload(template, values);
-    if ("error" in payload) {
-      emitToast({ kind: "error", message: payload.error });
-      return;
-    }
-    void submit(payload);
-  });
+  const fieldsRef = useRef<HTMLDivElement>(null);
+  const onSubmit = handleSubmit(
+    (values) => {
+      const payload = buildCreatePayload(template, values);
+      if ("error" in payload) {
+        emitToast({ kind: "error", message: payload.error });
+        return;
+      }
+      void submit(payload);
+    },
+    () => requestAnimationFrame(() => revealFirstError(fieldsRef.current)),
+  );
 
   const submitCopy = templateSubmitLabel(template.id);
   const reachUnchosen =
@@ -172,10 +176,11 @@ export function TemplateCreateFormBody({
   const optionalCollapsed = template.category === "mcp";
 
   const fieldsRegion = (
-    <div className="flex flex-col gap-4">
+    <div ref={fieldsRef} className="flex flex-col gap-4">
       <GithubStepsCallout
         templateId={template.id}
         host={picksHost && !anotherHost ? fields?.host : undefined}
+        ownApp={picksHost && anotherHost}
       />
 
       <Controller
@@ -198,7 +203,7 @@ export function TemplateCreateFormBody({
         )}
       />
 
-      {bringYourOwnApp && (
+      {bringYourOwnApp && !picksHost && (
         <OAuthAppHint
           callbackUrl={extraStr("callbackUrl")}
           setupUrl={extraStr("setupUrl")}
@@ -213,6 +218,13 @@ export function TemplateCreateFormBody({
           hosts={offeredHosts}
           anotherHost={anotherHost}
           onPick={pickHostChoice}
+        />
+      )}
+
+      {bringYourOwnApp && picksHost && (
+        <OAuthAppHint
+          callbackUrl={extraStr("callbackUrl")}
+          setupUrl={extraStr("setupUrl")}
         />
       )}
 
@@ -330,4 +342,14 @@ export function TemplateCreateFormBody({
   );
 
   return <>{layout(fieldsRegion, footerRegion)}</>;
+}
+
+function revealFirstError(fields: HTMLElement | null): void {
+  const alert = fields?.querySelector<HTMLElement>('[role="alert"]');
+  const field = alert?.parentElement;
+  if (!alert || !field) return;
+  field.scrollIntoView({ block: "center", behavior: "smooth" });
+  field.querySelector<HTMLElement>("input, select, textarea")?.focus({
+    preventScroll: true,
+  });
 }
