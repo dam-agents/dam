@@ -50,8 +50,8 @@ export function DetachProviderMessage({
       {turnedOff > 0 && (
         <p>
           {turnedOff === 1
-            ? "1 turned-off schedule also runs on it. Turned back on, it won\u2019t run"
-            : `${turnedOff} turned-off schedules also run on it. Turned back on, they won\u2019t run`}{" "}
+            ? "1 turned-off schedule uses it too. Turned back on, it won\u2019t run"
+            : `${turnedOff} turned-off schedules use it too. Turned back on, they won\u2019t run`}{" "}
           until {name} is attached again or{" "}
           {turnedOff === 1 ? "it gets" : "they get"} another model.
         </p>

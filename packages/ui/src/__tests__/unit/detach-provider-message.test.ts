@@ -77,7 +77,10 @@ it("opens the agent's Schedules from the count", () => {
 /** TEST_SCENARIO: turned-off schedules on the provider are not named, but one sentence warns that turning them back on runs them on nothing; with none, the sentence is absent. */
 it("warns about turned-off schedules on the provider", () => {
   expect(renderToStaticMarkup(message([], 3))).toContain(
-    "3 turned-off schedules also run on it. Turned back on, they won’t run until AWS Bedrock is attached again or they get another model.",
+    "3 turned-off schedules use it too. Turned back on, they won’t run until AWS Bedrock is attached again or they get another model.",
+  );
+  expect(renderToStaticMarkup(message([], 1))).toContain(
+    "1 turned-off schedule uses it too. Turned back on, it won’t run until AWS Bedrock is attached again or it gets another model.",
   );
   expect(renderToStaticMarkup(message(["Nightly"]))).not.toContain(
     "turned-off",
