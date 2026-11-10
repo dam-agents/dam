@@ -10,6 +10,7 @@ export {
   listImages,
   listConnections,
   InvocationFailed,
+  Stopped,
   type SpawnOptions,
   type ImageInfo,
   type ConnectionInfo,
@@ -21,7 +22,7 @@ export {
   type SpawnSlateOptions,
   type RunOptions,
 } from "./sub-agent.js";
-export { type Inheritance } from "./spawn.js";
+export { type Inheritance, type Stoppable } from "./spawn.js";
 export {
   spawnScript,
   ScriptOutput,

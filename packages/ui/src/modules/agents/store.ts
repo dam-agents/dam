@@ -22,6 +22,10 @@ export interface AgentsSlice {
   unreachableAgents: ReadonlySet<string>;
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
+  assistantLandingSpent: boolean;
+  spendAssistantLanding: () => void;
+  /* UNIT_BOUNDARY_DESCRIPTION: starts the one-time landing over, so the reset of a person's onboarding goes through the same first-open path a new person does. */
+  releaseAssistantLanding: () => void;
   departedAgents: ReadonlyMap<string, string>;
   markAgentDeparted: (id: string, notice: string) => void;
   selectAgent: (id: string) => void;
@@ -77,6 +81,9 @@ export const createAgentsSlice: StateCreator<
     }),
 
   departedAgents: new Map(),
+  assistantLandingSpent: false,
+  spendAssistantLanding: () => set({ assistantLandingSpent: true }),
+  releaseAssistantLanding: () => set({ assistantLandingSpent: false }),
   markAgentDeparted: (id, notice) =>
     set((s) => {
       if (s.departedAgents.has(id)) return {};

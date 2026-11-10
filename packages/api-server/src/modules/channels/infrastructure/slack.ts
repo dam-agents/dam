@@ -88,6 +88,7 @@ import {
 } from "./slack-owned-thread-copy.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
+  AcpModelCallFailedError,
   AcpModelRefusedError,
   AcpSessionLoadError,
   pairFields,
@@ -3317,7 +3318,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           built.commit();
           return answer;
         } catch (err) {
-          if (err instanceof AcpModelRefusedError) built.commit();
+          if (
+            err instanceof AcpModelRefusedError ||
+            err instanceof AcpModelCallFailedError
+          )
+            built.commit();
           throw err;
         }
       };

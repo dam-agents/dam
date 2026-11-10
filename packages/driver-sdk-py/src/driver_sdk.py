@@ -13,6 +13,9 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
 - ``spawn_slate`` starts a clean slate that runs nothing until
   ``SubAgent.run`` or ``run_script``; enter it meanwhile with ``ssh sub-<id>``.
   ``sub_agent(id)`` is a handle on one spawned with ``keep``.
+- ``spawn`` and ``spawn_script`` take ``cancel``, a ``threading.Event``: set
+  it to stop the sub-agent, which raises ``Stopped``. ``SubAgent.stop`` stops
+  a clean slate or a kept one.
 - ``list_images`` / ``list_connections`` read what a spawn can use.
 - ``s`` is shorthand for result schemas.
 
@@ -28,6 +31,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +42,7 @@ __all__ = [
     "InvocationFailed",
     "ScriptFailed",
     "ScriptOutput",
+    "Stopped",
     "SubAgent",
     "list_connections",
     "list_images",
@@ -49,6 +54,8 @@ __all__ = [
 ]
 
 _DEFAULT_POLL_SECONDS = 5.0
+_SCRIPT_STOP_REASON = "its script aborted the spawn"
+_MAX_STOP_REASON_CHARS = 500
 # A sub-agent may wait up to its ttl for room to start, then has its whole
 # ttl for the work: twice the ttl (the server's default is 1h) plus the
 # liveness sweep's period and a few polls of slack.
@@ -67,6 +74,16 @@ class InvocationFailed(Exception):
         super().__init__(f"invocation {label} ({invocation_id}) failed{detail}")
         self.invocation_id = invocation_id
         self.reason = reason
+
+
+class Stopped(Exception):
+    """A spawn whose ``cancel`` event was set: the sub-agent, and every
+    sub-agent it started in turn, was stopped before it ended."""
+
+    def __init__(self, invocation_id: str | None, label: str):
+        which = f"{label} ({invocation_id})" if invocation_id else label
+        super().__init__(f"invocation {which} stopped")
+        self.invocation_id = invocation_id
 
 
 def _log(msg: str) -> None:
@@ -298,6 +315,8 @@ def _await(
     ttl_ms: int | None,
     poll_seconds: float,
     timeout_seconds: float | None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + (
         timeout_seconds
@@ -306,6 +325,10 @@ def _await(
     )
     waiting = None
     while True:
+        if cancel is not None and cancel.is_set():
+            _stop(invocation_id, cancel_reason)
+            _log(f"stopped {name} ({invocation_id})")
+            raise Stopped(invocation_id, name)
         view = _request("GET", f"/invocations/{_segment(invocation_id)}")
         if view["status"] in ("done", "failed"):
             return view
@@ -315,7 +338,18 @@ def _await(
                 _log(f"{name} ({invocation_id}) waits for room to start: {waiting}")
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
-        time.sleep(poll_seconds)
+        if cancel is not None:
+            cancel.wait(poll_seconds)
+        else:
+            time.sleep(poll_seconds)
+
+
+def _stop(invocation_id: str, reason: str | None = None) -> bool:
+    reason = reason.strip()[:_MAX_STOP_REASON_CHARS].strip() if reason else None
+    body = {"reason": reason} if reason else {}
+    return _request("POST", f"/invocations/{_segment(invocation_id)}/stop", body)[
+        "stopped"
+    ]
 
 
 def spawn(
@@ -342,6 +376,8 @@ def spawn(
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> Any:
     """Spawn a sub-agent and block until its schema-validated result.
 
@@ -391,7 +427,14 @@ def spawn(
     before anything is created; a setting the harness cannot apply fails the
     spawn once the sub-agent boots. Omit ``model`` to run on this agent's
     default model, on the harness that default runs on; on any other
-    harness, or with no default, the spawn is refused."""
+    harness, or with no default, the spawn is refused.
+
+    Set ``cancel`` (a ``threading.Event``) from another thread to stop the
+    sub-agent, and every sub-agent it started in turn, before it ends: the
+    call raises ``Stopped``, and an event set before the call spawns nothing.
+    ``cancel_reason`` is the stop's reason, which the user reads; a spawn with
+    ``keep``, which is stopped only with a reason, says its script aborted it
+    when none is given."""
     body = _target_body(
         harness=harness,
         image=image,
@@ -421,6 +464,8 @@ def spawn(
     if harness_config:
         body["harnessConfig"] = harness_config
 
+    if cancel is not None and cancel.is_set():
+        raise Stopped(None, name)
     invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
         "id"
     ]
@@ -434,6 +479,8 @@ def spawn(
         ttl_ms=ttl_ms,
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
+        cancel=cancel,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     if view["status"] == "failed":
         raise InvocationFailed(invocation_id, name, view.get("errorReason"))
@@ -536,6 +583,16 @@ class SubAgent:
         return _request("POST", f"/invocations/{_segment(self.id)}/keep", body)[
             "keepUntil"
         ]
+
+    def stop(self, reason: str | None = None) -> bool:
+        """Stop its runs, and every sub-agent it started in turn. A kept one
+        keeps its conversation and is stopped only with a ``reason``, which its
+        user reads. False when nothing was running."""
+        stopped = _stop(self.id, reason)
+        _log(
+            f"{'stopped' if stopped else 'nothing running in'} {self._name} ({self.id})"
+        )
+        return stopped
 
     def wake(self) -> None:
         """Wake it when it sleeps; ``ssh sub-<id>`` does this itself."""
@@ -708,6 +765,8 @@ def spawn_script(
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> ScriptOutput:
     """Run ``script`` on a sub-agent instead of a prompt, and block until it
     ends. No model turn runs: the sub-agent is set up exactly as ``spawn``
@@ -717,7 +776,8 @@ def spawn_script(
     Returns a ``ScriptOutput`` when the script exits 0; read its streams with
     ``bytes``, ``text`` or ``download``. Any other end raises ``ScriptFailed``
     with the exit code and the tail of stderr in ``reason``. ``ttl_ms`` is the
-    script's deadline: past it the script is killed and the spawn fails."""
+    script's deadline: past it the script is killed and the spawn fails.
+    ``cancel`` stops it as it stops a ``spawn``."""
     if not script.strip():
         raise ValueError("pass a script")
     body = _target_body(
@@ -739,6 +799,8 @@ def spawn_script(
     body["script"] = script
     name = label or harness or image or "invocation"
 
+    if cancel is not None and cancel.is_set():
+        raise Stopped(None, name)
     invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
         "id"
     ]
@@ -751,6 +813,8 @@ def spawn_script(
         ttl_ms=ttl_ms,
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
+        cancel=cancel,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     output = ScriptOutput(invocation_id, view.get("exitCode"), view.get("output") or {})
     if view["status"] == "failed":

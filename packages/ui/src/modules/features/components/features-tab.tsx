@@ -1,4 +1,4 @@
-import type { FeatureId } from "api-server-api";
+import type { Brand, FeatureId } from "api-server-api";
 import { type ReactNode, useId } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -7,18 +7,25 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
   useInstallCapabilities,
   useSetFeature,
 } from "../api/queries.js";
+import { assistantFeatureRow } from "../lib/assistant-feature-row.js";
 import { isFeatureOffered } from "../lib/visible-features.js";
 
 interface FeatureRow {
   id: FeatureId;
   label: string;
   description: ReactNode;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the assistant's own row last, built from the brand. */
+function featureRows(brand: Brand): FeatureRow[] {
+  return [...FEATURE_ROWS, assistantFeatureRow(brand)];
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
@@ -115,6 +122,11 @@ export function FeaturesTab() {
   const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
+  const brand = getBrand();
+  const offeredRows = featureRows(brand).filter((row) =>
+    isFeatureOffered(row.id, install),
+  );
+
   return (
     <div>
       <PageHeader
@@ -123,18 +135,16 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.filter((row) => isFeatureOffered(row.id, install)).map(
-          (row) => (
-            <FeatureRowCard
-              key={row.id}
-              row={row}
-              enabled={flags?.[row.id] ?? false}
-              onToggle={(enabled) =>
-                setFeature.mutate({ feature: row.id, enabled })
-              }
-            />
-          ),
-        )}
+        {offeredRows.map((row) => (
+          <FeatureRowCard
+            key={row.id}
+            row={row}
+            enabled={flags?.[row.id] ?? false}
+            onToggle={(enabled) =>
+              setFeature.mutate({ feature: row.id, enabled })
+            }
+          />
+        ))}
       </div>
 
       <SectionLabel spaced className="mt-8">

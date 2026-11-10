@@ -1,5 +1,5 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf } from "api-server-api";
+import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import {
   childEgressGrants,
   childrenMirroringConnections,
@@ -8,6 +8,7 @@ import {
   connectionGrantProvisioner,
   inheritanceOf,
 } from "../../../modules/agents/index.js";
+import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -120,6 +121,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telemetryReader,
     sessionDirectory,
     terms,
+    isTermsAccepted,
     e2e,
     artifacts,
     delegationFrames,
@@ -330,6 +332,28 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       surface,
       modes: config.featureModes,
+    });
+    /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
+    const assistantOn = async (): Promise<boolean> => {
+      const mode = config.featureModes.dambledore;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).dambledore);
+    };
+    const {
+      assistants,
+      ensure: ensureAssistant,
+      optIn: assistantOptIn,
+    } = composeAssistantsForOwner({
+      db,
+      owner: user.sub,
+      assistantName: config.brand.assistantName,
+      brandName: config.brand.name,
+      enabled: assistantOn,
+      admitted: () => isTermsAccepted(user.sub),
+      agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
+      agents,
+      gettingStarted,
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
@@ -547,6 +571,29 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
+    /* UNIT_BOUNDARY_DESCRIPTION: a person is given Dambledore by their own switch, so only an install that pins the feature on gives them one at a request — once, and never again after they delete theirs. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
+    const provisionAssistant = async () => {
+      if (config.featureModes.dambledore !== "on") return;
+      if (
+        user.keyId !== undefined ||
+        user.agentIds !== "*" ||
+        user.actingEditor !== undefined
+      )
+        return;
+      await ensureAssistant();
+    };
+
+    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes Dambledore whenever the person has none under that name. */
+    const optInToAssistant = async () => {
+      if (
+        user.keyId !== undefined ||
+        user.agentIds !== "*" ||
+        user.actingEditor !== undefined
+      )
+        return;
+      await assistantOptIn();
+    };
+
     const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
@@ -626,6 +673,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
+      assistants,
+      provisionAssistant,
+      optInAssistant: optInToAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,

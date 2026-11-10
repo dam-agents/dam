@@ -24,6 +24,8 @@ function query(rows: InvocationRow[]) {
       rows.filter((r) => r.driverAgentId === driver && r.status === "running"),
     listByRoot: async (root: string) =>
       rows.filter((r) => r.rootDriverId === root),
+    listRunningRunsOf: async (ids: readonly string[]) =>
+      rows.filter((r) => ids.includes(r.id) && r.status === "running"),
   } as unknown as InvocationsRepository;
   return createDelegationsQuery({
     repo,

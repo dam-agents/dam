@@ -36,6 +36,10 @@ function makeService(opts: {
     } as never,
     driverResolution: { resolveRoot: opts.resolveRoot },
     reaper: { reap: async () => {} },
+    stopper: {
+      stop: async () => ({ stopped: false }),
+      running: async () => false,
+    },
     reportedReap: { afterReport: () => {} },
     cancel: { settled: async () => true },
     runtimeMutator: {

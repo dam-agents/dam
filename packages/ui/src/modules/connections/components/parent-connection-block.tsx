@@ -44,7 +44,7 @@ export function ParentConnectionBlock({
       />
       {childConnections.length > 0 ? (
         <div
-          className="mb-1 ml-6"
+          className="mb-1 ml-6 border-t border-border/60"
           data-testid={`connection-children-${parent.id}`}
         >
           {childConnections.map((child) => (

@@ -5,7 +5,10 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 import { ConnectionIcon } from "./connection-icon.js";
-import { ConnectionRowActions } from "./connection-row-actions.js";
+import {
+  ConnectionRowActions,
+  ConnectionRowMenu,
+} from "./connection-row-actions.js";
 import { ConnectionRowDetail } from "./connection-row-detail.js";
 import { FullAccessMark } from "./full-access-mark.js";
 import { GithubAppInstallations } from "./github-app-installations.js";
@@ -63,19 +66,19 @@ export function CatalogConnectionRow({
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
-      className="@container flex gap-2 px-4 py-2.5"
+      className="@container flex items-start gap-2 px-4 py-2.5"
     >
       {iconSlug && (
         <ConnectionIcon
           iconSlug={iconSlug}
           alt=""
           size={16}
-          className="mt-1.5 shrink-0 text-foreground/80"
+          className="mt-2 shrink-0 text-foreground/80"
         />
       )}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex min-w-0 flex-[1_1_180px] flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
+          <div className="flex min-h-8 min-w-0 flex-[1_1_180px] flex-wrap content-center items-center gap-x-2 gap-y-1">
             <span
               className="min-w-0 max-w-full truncate text-md font-medium text-foreground"
               title={connection.name}
@@ -89,55 +92,71 @@ export function CatalogConnectionRow({
             >
               <span className="truncate">{tag}</span>
             </Badge>
-            <FullAccessMark connection={connection} />
-            {connection.status !== "active" && (
-              <Badge
-                variant={STATUS_PRESENTATION[connection.status].variant}
-                className="shrink-0"
-              >
-                {STATUS_PRESENTATION[connection.status].label}
-              </Badge>
-            )}
-            {connection.status === "active" &&
-              connection.check?.status === "failed" && (
-                <Badge
-                  variant="danger"
-                  className="shrink-0"
-                  title={connection.check.reason}
-                  data-testid={`catalog-connection-check-${connection.id}`}
-                >
-                  Check failed
-                </Badge>
-              )}
+            <StatusBadges connection={connection} />
           </div>
-          <div className="ml-auto flex min-w-0 max-w-full items-center gap-2 @max-md:ml-0">
-            <ConnectionRowActions
-              connection={connection}
-              grant={grant}
-              maintenance={maintenance}
-              onManage={onManage}
-              onDelete={onDelete}
-              deleting={deleting}
-              onNewChild={onNewChild}
-            />
-            {onRemove && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove ${connection.name} from this agent`}
-                tooltip="Remove from this agent"
-                onClick={onRemove}
-                data-testid={`catalog-remove-${connection.id}`}
-              >
-                <TrashCan size={16} />
-              </Button>
-            )}
-          </div>
+          <ConnectionRowActions
+            connection={connection}
+            grant={grant}
+            maintenance={maintenance}
+            onNewChild={onNewChild}
+          />
         </div>
         <ConnectionRowDetail connection={connection} />
         <RetiredHostNote connection={connection} />
         <GithubAppInstallations connection={connection} />
       </div>
+      <div className="flex h-8 shrink-0 items-center gap-1">
+        <ConnectionRowMenu
+          connection={connection}
+          grant={grant}
+          maintenance={maintenance}
+          onManage={onManage}
+          onDelete={onDelete}
+          deleting={deleting}
+        />
+        {onRemove && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${connection.name} from this agent`}
+            tooltip="Remove from this agent"
+            onClick={onRemove}
+            data-testid={`catalog-remove-${connection.id}`}
+          >
+            <TrashCan size={16} />
+          </Button>
+        )}
+      </div>
     </div>
+  );
+}
+
+function StatusBadges({ connection }: { connection: ConnectionView }) {
+  const status =
+    connection.status === "active"
+      ? undefined
+      : STATUS_PRESENTATION[connection.status];
+  if (connection.fullAccess && status)
+    return <FullAccessMark connection={connection} status={status.label} />;
+  return (
+    <>
+      <FullAccessMark connection={connection} />
+      {status && (
+        <Badge variant={status.variant} className="shrink-0">
+          {status.label}
+        </Badge>
+      )}
+      {connection.status === "active" &&
+        connection.check?.status === "failed" && (
+          <Badge
+            variant="danger"
+            className="shrink-0"
+            title={connection.check.reason}
+            data-testid={`catalog-connection-check-${connection.id}`}
+          >
+            Check failed
+          </Badge>
+        )}
+    </>
   );
 }

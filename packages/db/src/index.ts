@@ -49,6 +49,7 @@ export {
   userFeatures,
   gettingStartedChecklists,
   avatarUnlocks,
+  dambledoreProvisioned,
   sidebarAgentOrder,
   artifactFolders,
   libraryArtifacts,

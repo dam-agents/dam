@@ -800,3 +800,29 @@ helm template platform . "${COMMON[@]}" \
   --set agentStore.cutover.acknowledged=true \
   --set agentStore.contract.emptyArchive=true >/dev/null \
   || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }
+# The api-server pod-level DENY on the ext-authz port is the migration bridge:
+# one source entry admits either the agent namespace or the waypoint principal,
+# because a Service not yet relabelled still reaches the pod directly. Two
+# separate rules would OR and deny every caller.
+pod_deny=$(helm template platform . "${COMMON[@]}" \
+  --show-only templates/apiserver/auth-policy-pod-deny.yaml | yq -o=json)
+jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" --arg agents "platform-agents" '
+  [.spec.rules[] | select(any(.to[]?; any(.operation.ports[]?; . == "4002")))] as $ext
+  | ($ext | length) == 1
+  and ($ext[0].from | length) == 1
+  and $ext[0].from[0].source.notNamespaces == [$agents]
+  and $ext[0].from[0].source.notPrincipals == [$principal]' <<<"$pod_deny" >/dev/null ||
+  { echo "the api-server pod-DENY on ext-authz is not the one-source migration bridge: $pod_deny" >&2; exit 1; }
+# The api-server ingress NetworkPolicy admits the ext-authz port and HBONE from
+# the release namespace, where the waypoint the ext-authz Services are bound to
+# runs, as well as from the agent namespace, whose gateways still reach a
+# Service not yet relabelled directly. Without the release namespace the
+# waypoint's hop would rest on the harness rule alone.
+api_netpol=$(helm template platform . "${COMMON[@]}" --set apiServer.networkPolicy.enabled=true \
+  --show-only templates/apiserver/networkpolicy.yaml | yq -o=json)
+jq -e --arg release "default" --arg agents "platform-agents" '
+  [.spec.ingress[] | select(any(.ports[]?; .port == 4002))] as $ext
+  | ($ext | length) == 1
+  and ([$ext[0].from[].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]] | sort) == ([$release, $agents] | sort)
+  and ([$ext[0].ports[].port] | sort) == [4002, 15008]' <<<"$api_netpol" >/dev/null ||
+  { echo "the api-server ingress NetworkPolicy does not admit the waypoint's namespace on ext-authz and HBONE: $api_netpol" >&2; exit 1; }

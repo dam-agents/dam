@@ -11,7 +11,7 @@ export function ConnectionRowDetail({
   if (!account && !reach) return null;
   return (
     <p
-      className="mt-0.5 truncate text-xs text-muted-foreground"
+      className="mt-0.5 break-words text-xs text-muted-foreground"
       title={[account, reach?.title ?? reach?.text].filter(Boolean).join(" · ")}
       data-testid={`catalog-connection-account-${connection.id}`}
     >

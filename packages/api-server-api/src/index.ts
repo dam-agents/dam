@@ -47,6 +47,9 @@ export {
   type ChildEgressRule,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  MAX_STOP_REASON_CHARS,
+  stopReasonSchema,
+  stopInvocationRequestSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -67,6 +70,8 @@ export type {
   SpawnInvocationRequest,
   SpawnScriptInvocationRequest,
   SpawnInvocationResponse,
+  StopInvocationRequest,
+  StopInvocationResponse,
   InvocationOutput,
   InvocationOutputBlob,
   InvocationOutputLink,
@@ -78,6 +83,7 @@ export type {
   InvocationsQueryService,
   KeptSubAgent,
   DelegationNode,
+  DelegationStopped,
 } from "./modules/invocations/types.js";
 
 export {
@@ -515,6 +521,18 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export { featureOnForUser } from "./modules/features/modes.js";
+export type {
+  AssistantState,
+  AssistantsService,
+} from "./modules/assistants/types.js";
+export {
+  ASSISTANT_FIRST_TASKS,
+  ASSISTANT_ROLE_ASK,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,

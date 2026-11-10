@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -166,7 +166,7 @@ A few observations the diagram glosses over:
   On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, a model provider that is down, a refusal by the model or a failed model call, `spend-limit` or `spend-ceiling`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A failure because the provider is down also names the Connection template that the turn ran on.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
@@ -182,10 +182,10 @@ A steer held for a running turn has no time limit either; the turn is judged onl
 
 An addressed turn that fails is answered in plain language keyed to what happened, never a raw error — and answered not at all where the thread already carries the agent's own post or a deliberate decline or hand-off.
 A turn that failed because the model provider is down or overloaded is answered with what [Provider Status](provider-status.md#screens) knows: the provider's outage and since when, a fault on the platform's side, or only that the provider did not respond.
-A turn the model refused ends with ACP's `refusal` stop reason rather than an error, and the relay counts it as failed with the `model-refused` reason.
-The reply says the model refused the message and links the agent's Providers section, where the owner can switch models.
-On Slack it also advises a new thread: the refused message stays in the thread's session, so asking there again is refused too.
-For the same reason the refused message counts as delivered, and the next turn's catch-up does not hand it to the agent again.
+A turn the model refused (ACP's `refusal` stop reason) fails as `model-refused`; one whose model call failed, as `model-call-rejected` or `model-call-failed`.
+Either reply links the agent's Providers section; a failed call's reply also quotes the provider's error, never the agent's text, and links the session.
+On Slack a refusal's reply advises a new thread, since the thread's session keeps the refused message.
+Either message counts as delivered, so the next turn's catch-up does not hand it to the agent again.
 A turn that a spend limit or the ceiling stops partway fails with the harness's report of the gate's refusal, and the relay counts it as failed with the `spend-limit` or `spend-ceiling` reason.
 Its reply is the notice that a turn the limit holds before it starts gets, with the time the agent answers again ([spend-limits](spend-limits.md#unattended-work)).
 The failure reason still rides the turn event either way.

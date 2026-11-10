@@ -117,6 +117,7 @@ export interface InvocationsRepository {
   find(id: string): Promise<InvocationRow | null>;
   listRuns(invocationId: string, limit: number): Promise<InvocationRow[]>;
   listRunningRuns(invocationId: string): Promise<InvocationRow[]>;
+  listRunningRunsOf(invocationIds: readonly string[]): Promise<InvocationRow[]>;
   markStarted(
     invocationId: string,
     eventId: string,
@@ -136,6 +137,12 @@ export interface InvocationsRepository {
     runId: string,
     reason: string,
     now: Date,
+  ): Promise<{ cancelPending: boolean } | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: fails a running run that was stopped; a collected one is never delivered to its driver as a turn and never wakes it, since nobody needs its outcome.
+  failStopped(
+    runId: string,
+    reason: string,
+    collected: boolean,
   ): Promise<{ cancelPending: boolean } | null>;
   finishScript(runId: string, finish: ScriptFinish): Promise<boolean>;
   dropOutputStream(
@@ -167,6 +174,9 @@ export interface InvocationsRepository {
   markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
   listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
   listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
+  listTreeOfRoot(
+    rootDriverId: string,
+  ): Promise<{ id: string; driverAgentId: string }[]>;
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
@@ -289,17 +299,20 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     where: ReturnType<typeof and>,
     reason: string,
     sessionId?: string | null,
+    collected = false,
   ): Promise<{ cancelPending: boolean } | null> {
+    const now = new Date();
     const rows = await db
       .update(runsTable)
       .set({
         status: "failed",
         errorReason: reason,
-        completedAt: new Date(),
+        completedAt: now,
         cancelPending: keptTarget(runsTable.invocationId),
         ...(sessionId
           ? { sessionId: sql`coalesce(${runsTable.sessionId}, ${sessionId})` }
           : {}),
+        ...(collected ? { deliveredAt: now, wokeAt: now } : {}),
       })
       .where(and(where, eq(runsTable.status, "running")))
       .returning({ cancelPending: runsTable.cancelPending });
@@ -368,6 +381,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       );
     },
 
+    async listRunningRunsOf(invocationIds) {
+      if (invocationIds.length === 0) return [];
+      return runRows(
+        and(
+          inArray(runsTable.invocationId, [...invocationIds]),
+          eq(runsTable.status, "running"),
+        ),
+      );
+    },
+
     async listRuns(invocationId, limit) {
       const runs = await db
         .select()
@@ -417,6 +440,10 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
 
     fail(runId, reason, sessionId) {
       return failWith(and(eq(runsTable.id, runId)), reason, sessionId);
+    },
+
+    failStopped(runId, reason, collected) {
+      return failWith(and(eq(runsTable.id, runId)), reason, null, collected);
     },
 
     failExpired(runId, reason, now) {
@@ -712,6 +739,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .orderBy(desc(invocationsTable.createdAt))
         .limit(limit);
       return withLatestRun(targets.reverse());
+    },
+
+    listTreeOfRoot(rootDriverId) {
+      return db
+        .select({
+          id: invocationsTable.id,
+          driverAgentId: invocationsTable.driverAgentId,
+        })
+        .from(invocationsTable)
+        .where(eq(invocationsTable.rootDriverId, rootDriverId));
     },
 
     async listUnreapedByRoot(rootDriverId) {
