@@ -101,6 +101,7 @@ const readyRow = (agentId: string, used = true) => ({
   owner: OWNER,
   agentId,
   state: "ready" as const,
+  legacy: false,
   used,
   resetAt: null,
 });
@@ -221,6 +222,7 @@ describe("resetting a person's onboarding", () => {
       owner: OWNER,
       agentId: "agent-dead",
       state: "creating",
+      legacy: false,
       used: false,
       resetAt: null,
     });
@@ -252,6 +254,7 @@ describe("resetting a person's onboarding", () => {
       owner: "bob",
       agentId: "agent-b",
       state: "ready",
+      legacy: false,
       used: true,
       resetAt: null,
     });

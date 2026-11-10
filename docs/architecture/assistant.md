@@ -59,7 +59,9 @@ That answer is the record's own mark, set by the first Session that began after 
 A Session that began before the reset does not count however late it is reported: a runtime that boots re-reports the Sessions it already had, and those are no use of a first-timer's assistant.
 Setting the mark is announced to the owner's open tabs, since a Session started in another tab, or a turn from a Slack or Telegram conversation, marks the assistant used without this tab having sent anything.
 A tab also keeps its own mark for a Session it just started, before the report lands, and that mark belongs to one onboarding: the reset's moment is part of the record, so a reset — the person's own, or another tab's — takes the mark away with it rather than leaving a tab that never greets them again.
-The UI asks the server for the record only for someone the feature is on for.
+The UI asks the server for the record whoever the person is, not only for someone the feature is on for: which Agent is the assistant is what a chat needs to know, even after the feature is turned off, and a person without one costs an answer of nothing.
+The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) never shows in the assistant's own chat, and an account that was onboarded with the assistant — one that had no Agent of its own before the platform made it this one — never sees it anywhere, since its first chat is already set up on the shared Connection.
+That cohort is **decided once and written on the record** when the platform first makes the assistant, and never recomputed: deleting the assistant, making a new one or deleting the last older Agent leaves an account in the cohort it was in, so the notice's audience cannot move under it.
 
 ## The first chat
 
