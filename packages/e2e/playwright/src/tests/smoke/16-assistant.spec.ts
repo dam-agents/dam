@@ -7,7 +7,11 @@
 // TEST_OVERVIEW: switch, since the suite's shared account declines the assistant.
 import { expect, type Page, test } from "@playwright/test";
 
-import { assistantFirstUser, assistantOwnerUser } from "../../config.js";
+import {
+  assistantFirstUser,
+  assistantName,
+  assistantOwnerUser,
+} from "../../config.js";
 import {
   deleteAgentIfPresent,
   ensureSidebarExpanded,
@@ -20,8 +24,6 @@ import { harnessName } from "../../lib/fixtures.js";
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1280, height: 1100 } });
 
-/* UNIT_BOUNDARY_DESCRIPTION: the install's assistant name, which no spec sets: the chart's brand default. */
-const ASSISTANT = "Dammy";
 const IDEAS = ["Artifact", "Schedule", "Knowledge base", "Skill", "DAM"];
 const OWN_AGENT = "e2e-assistant-owner-agent";
 
@@ -77,7 +79,11 @@ test("a first-time user lands in the assistant's chat", async ({ page }) => {
         greeting.getByRole("button", { name: new RegExp(`^${idea}:`) }),
       ).toBeVisible();
     }
-    await expect(page.getByPlaceholder(`Message ${ASSISTANT}`)).toBeVisible();
+    // TEST_SCENARIO: the account holds no provider, so the composer names what it is missing instead of hinting the greeting's message — the state a person meets here, which clears once they connect one.
+    await expect(
+      page.getByRole("textbox", { name: "Connect an LLM provider to start." }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 });
 
@@ -104,7 +110,7 @@ test("an existing owner keeps their landing", async ({ page }) => {
   await test.step("and the assistant is in the list, not in the way", async () => {
     await ensureSidebarExpanded(page);
     await expect
-      .poll(async () => sidebarAgentRow(page, ASSISTANT).count(), {
+      .poll(async () => sidebarAgentRow(page, assistantName).count(), {
         timeout: 120_000,
         intervals: [2_000],
       })
