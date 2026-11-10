@@ -10,6 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestAgentBase_JSONRoundTrip(t *testing.T) {
@@ -50,7 +53,7 @@ func TestHarnessTemplateDefaults_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "PORT", out.Env[0].Name)
 }
 
-// TEST_SCENARIO: the chart refuses a key this package's strict decoder would refuse at startup, and it refuses it from a key list of its own. A struct field added or removed — here or in a Kubernetes type the config embeds, such as `resources`, `tolerations` or `affinity` — without that list would let such a key render again and crash-loop the controller, so the two are held equal, nesting included: a struct is its own map, a list of structs hangs under `*`, a type that reads its own JSON is a name alone, and so is a map, whose keys the decoder takes as they come.
+// TEST_SCENARIO: the chart refuses a key this package's strict decoder would refuse at startup, and it refuses it from a key list of its own. A struct field added or removed — here or in a Kubernetes type the config embeds, such as `resources`, `tolerations` or `affinity` — without that list would let such a key render again and crash-loop the controller, and so would a value of the wrong kind, which the decoder refuses too. The two are held equal, nesting included: a struct is an `object` of its fields, a list an `array` of items, a map a `map` of free-form keys, a scalar its own kind, and a type that reads its own JSON the kind that decoder takes — `jsonKindOfTypes` where that is narrower than any value, `any` otherwise.
 func TestChartControllerConfigKeys(t *testing.T) {
 	chartJSON, err := os.ReadFile("../../../../helm/controller-config-keys.json")
 	require.NoError(t, err)
@@ -70,20 +73,31 @@ func TestChartControllerConfigKeys(t *testing.T) {
 	}
 }
 
+var jsonKindOfTypes = map[reflect.Type]string{
+	reflect.TypeOf(Duration(0)):          "string",
+	reflect.TypeOf(resource.Quantity{}):  "string|number",
+	reflect.TypeOf(metav1.Duration{}):    "string",
+	reflect.TypeOf(metav1.Time{}):        "string",
+	reflect.TypeOf(intstr.IntOrString{}): "string|number",
+}
+
 func configKeys(t reflect.Type) any {
-	switch t.Kind() {
-	case reflect.Pointer:
+	if t.Kind() == reflect.Pointer {
 		return configKeys(t.Elem())
+	}
+	if reflect.PointerTo(t).Implements(reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()) {
+		if kind, ok := jsonKindOfTypes[t]; ok {
+			return kind
+		}
+		return "any"
+	}
+	switch t.Kind() {
 	case reflect.Slice, reflect.Array:
-		if keys := configKeys(t.Elem()); keys != nil {
-			return map[string]any{"*": keys}
-		}
-		return nil
+		return map[string]any{"kind": "array", "items": configKeys(t.Elem())}
+	case reflect.Map:
+		return map[string]any{"kind": "map", "values": configKeys(t.Elem())}
 	case reflect.Struct:
-		if reflect.PointerTo(t).Implements(reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()) {
-			return nil
-		}
-		keys := map[string]any{}
+		fields := map[string]any{}
 		for i := range t.NumField() {
 			field := t.Field(i)
 			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
@@ -92,17 +106,25 @@ func configKeys(t reflect.Type) any {
 			}
 			if name == "" && field.Anonymous {
 				if inner, ok := configKeys(field.Type).(map[string]any); ok {
-					maps.Copy(keys, inner)
+					maps.Copy(fields, inner["fields"].(map[string]any))
 				}
 				continue
 			}
 			if name == "" {
 				name = field.Name
 			}
-			keys[name] = configKeys(field.Type)
+			fields[name] = configKeys(field.Type)
 		}
-		return keys
+		return map[string]any{"kind": "object", "fields": fields}
+	case reflect.String:
+		return "string"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "number"
 	default:
-		return nil
+		return "any"
 	}
 }

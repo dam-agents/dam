@@ -336,6 +336,33 @@ refused_key virtualization.runner.resources.limts virtualization.runner.resource
 refused_key 'virtualization.runner.tolerations[0].opertor' 'virtualization.runner.tolerations[0].opertor=Exists'
 refused_key 'virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operators' 'virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operators=In'
 refused_key 'imagePullSecrets[0].nmae' 'imagePullSecrets[0].nmae=regcred'
+# A value of the wrong kind is the other half of the same decoder: it refuses a
+# map where the field is a list, a list where it is a string, a map where a pull
+# secret's entry is, and a list where a resource quantity is. A values file says
+# so, since `--set` merges a map into a list rather than replacing it.
+kinds=$(mktemp)
+refused_kind() {
+  printf '%s\n' "$2" >"$kinds"
+  if out=$(helm template platform . "${COMMON[@]}" -f "$kinds" 2>&1 >/dev/null); then
+    echo "a values file setting $1 to the wrong kind succeeded, but the controller refuses that value at startup" >&2
+    exit 1
+  fi
+  case "$out" in
+    *"$1"*" must be "*) ;;
+    *) echo "a values file setting $1 to the wrong kind failed for another reason: $out" >&2; exit 1 ;;
+  esac
+}
+refused_kind controller.agent.harnessTemplateDefaults.mounts \
+  '{"controller":{"agent":{"harnessTemplateDefaults":{"mounts":{"path":"/tmp"}}}}}'
+refused_kind controller.agent.harnessTemplateDefaults.env \
+  '{"controller":{"agent":{"harnessTemplateDefaults":{"env":{"name":"PORT"}}}}}'
+refused_kind controller.agent.base.vmIdleTimeout \
+  '{"controller":{"agent":{"base":{"vmIdleTimeout":["5m"]}}}}'
+refused_kind imagePullSecrets \
+  '{"imagePullSecrets":["regcred"]}'
+refused_kind virtualization.runner.resources.limits.cpu \
+  '{"virtualization":{"runner":{"resources":{"limits":{"cpu":[1]}}}}}'
+rm -f "$kinds"
 # The keys the controller declares keep rendering, the Kubernetes shapes among
 # them field by field: an install's own pull secrets, mount, env, a meshed peer,
 # the runner's tolerations, its affinity and the agent defaults' resource claims.
@@ -343,7 +370,7 @@ helm template platform . "${COMMON[@]}" \
   --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
   --set controller.agent.harnessTemplateDefaults.mounts[0].size=20Gi \
   --set controller.agent.harnessTemplateDefaults.env[0].name=PORT \
-  --set controller.agent.harnessTemplateDefaults.env[0].value=8081 \
+  --set-string controller.agent.harnessTemplateDefaults.env[0].value=8081 \
   --set controller.gatewayEgress.peers[0].namespace=llm \
   --set controller.gatewayEgress.peers[0].podLabels.app=vllm \
   --set controller.gatewayEgress.peers[0].ports[0]=8443 \

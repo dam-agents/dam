@@ -701,11 +701,13 @@ instead, naming the key to rename.
 {{/*
 The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS, AGENT_VM and
 GATEWAY_EGRESS with DisallowUnknownFields and exits on a key its structs do not
-declare, so an install whose values carry one renders fine and then crash-loops.
-The declared keys are chart data, controller-config-keys.json, which the config
-package's own test generates from the structs, Kubernetes types included; a key
-under `*` accepts any key or list element beneath it, for a field the decoder
-reads as a free-form map — `limits`, `podLabels`, `nodeSelector`, `devices`.
+declare, and on a value of another kind than the field it lands in, so an
+install whose values carry one renders fine and then crash-loops.
+The declared keys and their kinds are chart data, controller-config-keys.json,
+which the config package's own test generates from the structs, Kubernetes types
+included: an `object` is a struct, an `array` and a `map` say what their items
+and their free-form values are, and a `string|number` kind is a type that reads
+its own JSON and takes either.
 AGENT_VM is the chart's own dict, so what a value can put in it is what the
 chart copies wholesale: the pull Secrets, the runner's tolerations, affinity and
 resources.
@@ -716,35 +718,81 @@ resources.
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.harnessTemplateDefaults "keys" $keys.AGENT_HARNESS_TEMPLATE_DEFAULTS "path" "controller.agent.harnessTemplateDefaults" "env" "AGENT_HARNESS_TEMPLATE_DEFAULTS") -}}
 {{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.gatewayEgress "keys" $keys.GATEWAY_EGRESS "path" "controller.gatewayEgress" "env" "GATEWAY_EGRESS") -}}
 {{- $runner := .Values.virtualization.runner -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.imagePullSecrets "keys" $keys.AGENT_VM.runner.imagePullSecrets "path" "imagePullSecrets" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.tolerations "keys" $keys.AGENT_VM.runner.tolerations "path" "virtualization.runner.tolerations" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.affinity "keys" $keys.AGENT_VM.runner.affinity "path" "virtualization.runner.affinity" "env" "AGENT_VM") -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.resources "keys" $keys.AGENT_VM.runner.resources "path" "virtualization.runner.resources" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.imagePullSecrets "keys" $keys.AGENT_VM.fields.runner.fields.imagePullSecrets "path" "imagePullSecrets" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.tolerations "keys" $keys.AGENT_VM.fields.runner.fields.tolerations "path" "virtualization.runner.tolerations" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.affinity "keys" $keys.AGENT_VM.fields.runner.fields.affinity "path" "virtualization.runner.affinity" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.resources "keys" $keys.AGENT_VM.fields.runner.fields.resources "path" "virtualization.runner.resources" "env" "AGENT_VM") -}}
 {{- end -}}
 
 {{/*
-One values block against its key list. A list is checked element by element,
-and every key the list does not name fails the render — whether it is a key the
-controller ever read or a typo.
+One value against what its key declares: its kind, then its own keys or items.
+A key no struct names fails the render — whether it is a key the controller ever
+read or a typo — and so does a value of the wrong kind, which its decoder
+refuses. A null is neither: Helm drops it and the decoder takes it.
 */}}
 {{- define "platform.validate.controllerConfigKeysIn" -}}
-{{- if kindIs "map" .keys -}}
-{{- if kindIs "slice" .value -}}
-{{- range $i, $item := .value -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys "*") "path" (printf "%s[%d]" $.path $i) "env" $.env) -}}
+{{- $path := .path -}}
+{{- $env := .env -}}
+{{- $keys := .keys -}}
+{{- $kind := include "platform.validate.jsonKind" .value -}}
+{{- if ne $kind "null" -}}
+{{- if kindIs "string" $keys -}}
+{{- if and (ne $keys "any") (not (has $kind (splitList "|" $keys))) -}}
+{{- fail (printf "%s must be %s, got %s: the controller decodes %s strictly and exits on a value that is not the kind its field declares, so this install would crash-loop." $path (include "platform.validate.kindWords" $keys) (include "platform.validate.kindWords" $kind) $env) -}}
 {{- end -}}
-{{- else if kindIs "map" .value -}}
-{{- range $key, $item := .value -}}
-{{- if hasKey $.keys $key -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys $key) "path" (printf "%s.%s" $.path $key) "env" $.env) -}}
-{{- else if hasKey $.keys "*" -}}
-{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys "*") "path" (printf "%s.%s" $.path $key) "env" $.env) -}}
-{{- else if and (eq $.env "AGENT_BASE") (has $key (list "accessMode" "affinity" "containerSecurityContext" "extraAnnotations" "extraLabels" "idleTimeout" "iptablesInit" "nodeSelector" "npGateInit" "podSecurityContext" "priorityClassName" "probes" "runtimeClassName" "storageClass" "terminationGracePeriod" "tolerations" "topologySpreadConstraints")) -}}
-{{- fail (printf "%s.%s is not a key the controller reads: it configured the agent pod, which went with the container backend, and the controller exits on a key its config does not declare — so this install would crash-loop. Delete it." $.path $key) -}}
 {{- else -}}
-{{- fail (printf "%s.%s is not a key the controller reads: it decodes %s strictly and exits on an unknown field, so this install would crash-loop. Delete it, or fix the spelling." $.path $key $.env) -}}
+{{- $wanted := ternary "array" "object" (eq $keys.kind "array") -}}
+{{- if ne $kind $wanted -}}
+{{- fail (printf "%s must be %s, got %s: the controller decodes %s strictly and exits on a value that is not the kind its field declares, so this install would crash-loop." $path (include "platform.validate.kindWords" $wanted) (include "platform.validate.kindWords" $kind) $env) -}}
+{{- end -}}
+{{- if eq $keys.kind "array" -}}
+{{- range $i, $item := .value -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" $keys.items "path" (printf "%s[%d]" $path $i) "env" $env) -}}
+{{- end -}}
+{{- else if eq $keys.kind "map" -}}
+{{- range $key, $item := .value -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" $keys.values "path" (printf "%s.%s" $path $key) "env" $env) -}}
+{{- end -}}
+{{- else -}}
+{{- $fields := $keys.fields | default dict -}}
+{{- range $key, $item := .value -}}
+{{- if hasKey $fields $key -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $fields $key) "path" (printf "%s.%s" $path $key) "env" $env) -}}
+{{- else if and (eq $env "AGENT_BASE") (has $key (list "accessMode" "affinity" "containerSecurityContext" "extraAnnotations" "extraLabels" "idleTimeout" "iptablesInit" "nodeSelector" "npGateInit" "podSecurityContext" "priorityClassName" "probes" "runtimeClassName" "storageClass" "terminationGracePeriod" "tolerations" "topologySpreadConstraints")) -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it configured the agent pod, which went with the container backend, and the controller exits on a key its config does not declare — so this install would crash-loop. Delete it." $path $key) -}}
+{{- else -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it decodes %s strictly and exits on an unknown field, so this install would crash-loop. Delete it, or fix the spelling." $path $key $env) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The kind of a value, in the vocabulary of the generated key list: a number is
+whatever Helm parsed the digits as, and a null — a YAML `~` or `null`, or a
+`--set key=null` — is its own.
+*/}}
+{{- define "platform.validate.jsonKind" -}}
+{{- $kind := kindOf . -}}
+{{- if eq $kind "string" -}}string
+{{- else if eq $kind "bool" -}}boolean
+{{- else if eq $kind "map" -}}object
+{{- else if eq $kind "slice" -}}array
+{{- else if has $kind (list "int8" "int16" "int32" "int64" "int" "uint8" "uint16" "uint32" "uint64" "uint" "float32" "float64") -}}number
+{{- else -}}null
+{{- end -}}
+{{- end -}}
+
+{{/*
+A kind, and a `string|number` pair of them, as the sentence that names it.
+*/}}
+{{- define "platform.validate.kindWords" -}}
+{{- $names := dict "string" "a string" "number" "a number" "boolean" "a boolean" "object" "a map" "array" "a list" "map" "a map" "any" "any value" -}}
+{{- $words := list -}}
+{{- range $kind := splitList "|" . -}}
+{{- $words = append $words (index $names $kind) -}}
+{{- end -}}
+{{- join " or " $words -}}
 {{- end -}}
