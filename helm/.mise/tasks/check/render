@@ -417,6 +417,13 @@ helm template platform . "${COMMON[@]}" \
   --set virtualization.runner.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels.app=platform-runner \
   --show-only templates/controller/deployment.yaml >/dev/null \
   || { echo "a render of the keys the controller declares failed, but its decoder takes every one of them" >&2; exit 1; }
+# The container backend is gone, and an upgrade refuses while an Agent in the
+# agent namespace still says anything but vm. An offline render cannot see the
+# Agents, and must not be refused for it: a pipeline and a GitOps controller's
+# plan render the upgrade with no cluster to ask, and only the upgrade itself
+# carries the refusal.
+helm template platform . "${COMMON[@]}" --is-upgrade >/dev/null ||
+  { echo "an offline upgrade render was refused, but it cannot see the Agents the refusal reads" >&2; exit 1; }
 # A Template for a private registry brings its own pull Secret, and every Agent
 # created from it names that Secret: the chart renders it, in the agent
 # namespace, under the very name the Template stamps on the Agent. A machine

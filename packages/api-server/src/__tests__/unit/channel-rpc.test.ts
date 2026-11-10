@@ -4,8 +4,10 @@ import { createBusRpc } from "../../core/bus-rpc.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 import {
   createChannelManager,
+  slackEmailUserSchema,
   type ChannelRpcRequest,
 } from "../../modules/channels/services/channel-manager.js";
+import type { SlackEmailUser } from "../../modules/channels/infrastructure/slack-gateway.js";
 import type { SlackWorker } from "../../modules/channels/infrastructure/slack.js";
 
 function fakeBus(): RedisBus {
@@ -32,6 +34,11 @@ function fakeSlackWorker(): SlackWorker {
     conversationStanding: vi.fn(async () => "unknown" as const),
     channelChoices: vi.fn(async () => ({ linked: false as const })),
     channelMembership: vi.fn(async () => ({ kind: "unlinked" as const })),
+    emailUserByEmail: vi.fn(async () => null),
+    openDirectMessageWith: vi.fn(async () => ({ kind: "not-found" as const })),
+    conversationInfoOf: vi.fn(async () => ({ kind: "not-found" as const })),
+    grantedScopesOf: vi.fn(async () => null),
+    notifyClosedBind: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -99,6 +106,62 @@ function fakeBlobs() {
     },
   };
 }
+
+describe("a send Slack refused, across replicas", () => {
+  // TEST_SCENARIO: the leader's worker reports Slack's refusal, the reply schema carries it, and a reply nobody received stays a plain error.
+  it("carries the refusal across, and keeps a lost reply plain", async () => {
+    const bus = fakeBus();
+    const leaderWorker = fakeSlackWorker();
+    vi.mocked(leaderWorker.postMessage).mockResolvedValueOnce({
+      error: "An API error occurred: missing_scope",
+      refused: "missing_scope",
+    });
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+    expect(
+      await follower.postMessage("agent-1", ChannelType.Slack, "hello"),
+    ).toEqual({
+      error: "An API error occurred: missing_scope",
+      refused: "missing_scope",
+    });
+
+    // TEST_SCENARIO: a leader that never answers — the caller's own failure is not a refusal.
+    const orphan = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus: fakeBus(),
+        service: "channels",
+        timeoutMs: 5,
+      }),
+      isLeader: () => false,
+    });
+    const lost = await orphan.postMessage(
+      "agent-1",
+      ChannelType.Slack,
+      "hello",
+    );
+    expect(lost).toHaveProperty("error");
+    expect("refused" in lost).toBe(false);
+
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+});
 
 describe("channel attachments across replicas", () => {
   it("delivers the bytes intact to the leader's worker", async () => {
@@ -515,5 +578,43 @@ describe("platform notices across replicas", () => {
       "storage is full",
     );
     expect(followerWorker.notifyPerson).not.toHaveBeenCalled();
+  });
+});
+
+// TEST_OVERVIEW: the mailbox answer crosses the RPC between replicas, so its schema has to mirror the type field for field — a dropped field or a marker the schema refuses would turn usable evidence into a refusal on every replica that is not the leader.
+describe("the mailbox answer over the RPC", () => {
+  const everyField: SlackEmailUser = {
+    id: "U0OWNER",
+    teamId: "T0TEAM",
+    enterpriseId: "E0ORG",
+    enterpriseTeams: ["T0TEAM", "T0OTHER"],
+    enterpriseIsGuest: false,
+    email: "owner@example.com",
+    deleted: false,
+    isBot: false,
+    isAppUser: false,
+    isRestricted: false,
+    isUltraRestricted: false,
+    isStranger: false,
+  };
+
+  // TEST_SCENARIO: every field survives a round trip, including the organization's membership list and its guest marker.
+  it("carries every field through a round trip", () => {
+    expect(
+      slackEmailUserSchema.parse(JSON.parse(JSON.stringify(everyField))),
+    ).toEqual(everyField);
+  });
+
+  // TEST_SCENARIO: a marker Slack did not report is null, which the schema must accept rather than refuse.
+  it("accepts an unreported stranger marker", () => {
+    const unreported: SlackEmailUser = {
+      ...everyField,
+      enterpriseTeams: null,
+      enterpriseIsGuest: null,
+      isStranger: null,
+    };
+    expect(
+      slackEmailUserSchema.parse(JSON.parse(JSON.stringify(unreported))),
+    ).toEqual(unreported);
   });
 });

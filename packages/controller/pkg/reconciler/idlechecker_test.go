@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -37,7 +38,7 @@ func idleAgentCR(name, lastActivity string, annotations map[string]string) *apiv
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents", Annotations: annotations,
 		},
-		Spec: apiv1.AgentSpec{Image: "foo"},
+		Spec: apiv1.AgentSpec{Backend: &apiv1.Backend{Type: "vm"}, Image: "foo"},
 	}
 }
 
@@ -547,5 +548,28 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 
 			assert.Equal(t, tt.hibernated, probed)
 		})
+	}
+}
+
+// TEST_SCENARIO: the sweep stops the fleet it owns, and an Agent on the removed container backend is not in it: it has no machine to put to sleep and no pair this release runs, so its replicas and its status stay as they are, and its refusal is the reconcile's to publish.
+func TestIdleChecker_LeavesAnAgentOnTheContainerBackendAlone(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("container-agent", stale, nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "container"}
+	noBackend := idleAgentCR("legacy-agent", stale, nil)
+	noBackend.Spec.Backend = nil
+	checker, client := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent, noBackend},
+		agentStatefulSet("container-agent", 1), agentStatefulSet("legacy-agent", 1))
+
+	checker.check(context.Background())
+
+	for _, name := range []string{"container-agent", "legacy-agent"} {
+		ss, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, int32(1), *ss.Spec.Replicas, "the sweep stopped %s, which this release cannot run", name)
+		u, err := checker.backend.Get(context.Background(), name)
+		require.NoError(t, err)
+		conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+		assert.Empty(t, conds, "the sweep published a hibernation on %s", name)
 	}
 }

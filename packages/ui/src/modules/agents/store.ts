@@ -23,6 +23,8 @@ export interface AgentsSlice {
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
   assistantLandingSpent: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the landing was released by the onboarding reset, which is the one ask that lands a person in the assistant's chat whatever else they own. */
+  assistantLandingAfterReset: boolean;
   spendAssistantLanding: () => void;
   /* UNIT_BOUNDARY_DESCRIPTION: starts the one-time landing over, so the reset of a person's onboarding goes through the same first-open path a new person does. */
   releaseAssistantLanding: () => void;
@@ -82,8 +84,11 @@ export const createAgentsSlice: StateCreator<
 
   departedAgents: new Map(),
   assistantLandingSpent: false,
-  spendAssistantLanding: () => set({ assistantLandingSpent: true }),
-  releaseAssistantLanding: () => set({ assistantLandingSpent: false }),
+  assistantLandingAfterReset: false,
+  spendAssistantLanding: () =>
+    set({ assistantLandingSpent: true, assistantLandingAfterReset: false }),
+  releaseAssistantLanding: () =>
+    set({ assistantLandingSpent: false, assistantLandingAfterReset: true }),
   markAgentDeparted: (id, notice) =>
     set((s) => {
       if (s.departedAgents.has(id)) return {};

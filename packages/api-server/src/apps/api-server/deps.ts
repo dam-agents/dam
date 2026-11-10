@@ -153,7 +153,10 @@ export interface ApiServerDeps {
   artifacts: ArtifactService;
   delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
-  userDirectory: Pick<KeycloakUserDirectory, "resolveBySub">;
+  userDirectory: Pick<
+    KeycloakUserDirectory,
+    "resolveBySub" | "resolveVerifiedEmailBySub"
+  >;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

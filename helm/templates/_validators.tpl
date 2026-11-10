@@ -33,6 +33,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.environmentsUrlNamesTheDomain" . -}}
 {{- include "platform.validate.backchannelHostsAreItsOwn" . -}}
 {{- include "platform.validate.agentStore" . -}}
+{{- include "platform.validate.noContainerAgents" . -}}
 {{- end -}}
 
 {{/*
@@ -666,6 +667,53 @@ never happens — or, worse, a later one without the operator's timing.
 {{- else -}}
 {{- if or $digest $emptyArchive -}}
 {{- fail "agentStore.contract values are set, but agentStore.authority is not contract: the digest and the empty-archive marker belong to the release that stops reading the custom resources." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The container backend and its runtime migration are gone: this release
+reconciles every Agent as a machine, so one still on the container backend boots
+on an empty home from its image while the data it wrote stays on a volume
+nothing mounts any more, and no later release can move it. The fleet is the
+cluster's to answer for, so the render asks the cluster before Helm applies
+anything, which puts the refusal ahead of the api-server's migrations — the
+first thing a new pod does. A pre-upgrade hook Job would run before the update
+too and was not chosen: it needs a Job, an image and RBAC of its own in the agent
+namespace, where `lookup` is one read.
+Every authority but `contract` is read this way: the `crd` release serves the
+Agents it is asked about, and a `postgres` one still serves them until the
+cutover it performs has absorbed them, so an Agent left on the container backend
+is caught on the way into either. `contract` reads only rows, and its custom
+resources are frozen copies nothing mounts or boots.
+`lookup` finds nothing in an offline render (`helm template`, a GitOps
+controller's plan), so the refusal never fires there, and an install applied
+that way (`helm template | kubectl apply`) never sees it: the api-server's
+migrations run, and only the controller's per-Agent refusal keeps such an Agent
+from booting. An upgrade through Helm refuses unless the identity running it may
+list Agents in the agent namespace.
+An Agent with no `spec.backend.type` is a container Agent: that is how a release
+before this one wrote one, and this one's api-server stamps `vm` on every Agent
+it creates.
+*/}}
+{{- define "platform.validate.noContainerAgents" -}}
+{{- $authority := "crd" -}}
+{{- with .Values.agentStore -}}{{- $authority = toString (.authority | default "crd") -}}{{- end -}}
+{{- if ne $authority "contract" -}}
+{{- $agents := index (lookup "agent-platform.ai/v1" "Agent" .Values.agentNamespace "" | default dict) "items" -}}
+{{- $left := list -}}
+{{- range $agents -}}
+{{- $type := toString (dig "spec" "backend" "type" "" . | default "none") -}}
+{{- if ne $type "vm" -}}
+{{- $left = append $left (printf "%s/%s (backend: %s)" (dig "metadata" "namespace" "" .) (dig "metadata" "name" "" .) $type) -}}
+{{- end -}}
+{{- end -}}
+{{- if $left -}}
+{{- $named := $left -}}
+{{- if gt (len $left) 10 -}}
+{{- $named = append (slice $left 0 10) (printf "and %d more" (sub (len $left) 10)) -}}
+{{- end -}}
+{{- fail (printf "%d Agent(s) still run on the container backend: %s. This release has neither that backend nor the runtime migration that moved Agents off it, so each of them would boot as a machine on a fresh home from its image, while the volume its data is on stays where nothing mounts it, and no later release can move it. Move them to the vm backend with the release this install runs now (its runtime migration carries an Agent's home across), then run this upgrade. An Agent whose spec.backend.type is absent counts as a container Agent." (len $left) (join ", " $named)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

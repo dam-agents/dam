@@ -40,22 +40,23 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the experimental feature `damConnection` is on for it.
   Turning that switch off leaves every connection and grant working and only stops new ones being offered.
 - **Home** — what changed since the user last looked; agents, usage, spend.
-- **Assistant** — an ordinary agent the platform makes for a person when the install offers it: it is created under the install's assistant name (Dambledore by default) and tracked from then on by a small record per account, so it appears in the agent list and the sidebar like any other agent and can be renamed, disabled, shared, bound to a channel and deleted as any other agent can.
+- **Assistant** — an ordinary agent the platform makes for a person when the install offers it: it is created under the install's assistant name (Dammy by default) and tracked from then on by a small record per account, so it appears in the agent list and the sidebar like any other agent and can be renamed, disabled, shared, bound to a channel and deleted as any other agent can.
   The record, not the name, is what makes it the assistant: renaming it keeps it one, and an agent the account makes under the same name is never it — that agent only stops a new one being created, and never opens on the greeting.
-  It is the experimental feature `dambledore`, which follows the install's `featureDefault` like the others: on the QA install that is `experimental`, so no account has one until it turns it on under Settings → Experimental features (its row is labelled with the install's assistant name and described as *Smart assistant that can control DAM for you*).
-  Turning that switch on makes Dambledore, unless the account already has an agent under that exact name, matched case-sensitively: the name belongs to whoever holds it, so nothing is made beside it.
-  Deleting the Dambledore the platform made and switching the feature off and on again makes a new one, unused; renaming it does not, since the record still names it, and the renamed assistant keeps its greeting while it has never been used.
-  There is never a numbered second name like "Dambledore 2", and no agent is ever renamed to free the name.
+  It is the experimental feature `dambledore`, and the one feature **on by default**: an account that stored nothing has it on, so a fresh account and an existing one both get Dammy at their next request, and the switch under Settings → Experimental features (its row is labelled with the install's assistant name and described as *Smart assistant that can control DAM for you*) is how they decline.
+  Switching it on after turning it off makes Dammy, unless the account already has an agent under that exact name, matched case-sensitively: the name belongs to whoever holds it, so nothing is made beside it.
+  Deleting the Dammy the platform made and switching the feature off and on again makes a new one, unused; renaming it does not, since the record still names it, and the renamed assistant keeps its greeting while it has never been used.
+  There is never a numbered second name like "Dammy 2", and no agent is ever renamed to free the name.
   With `on` the install pins it (no switch): a fresh account gets one at its next request, once, so deleting it there is not undone by a reload — the reset is the way to ask again.
   With `off`, nobody does.
   Turning its switch off deletes nothing — the agent stays in the list — and only hides what the next bullets describe.
   An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its name and the install's brand, e.g. *Hi Jenna!
-  I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
-  A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
+  I'm Dammy, your personal DAM agent.*, the model provider it is set up with and where to change it — and under it five labelled **ideas**: *Artifact:*, *Schedule:*, *Knowledge base:*, *Skill:* and *DAM:*.
+  A click on an idea fills the message box and sends nothing; the empty box itself hints *Message* and the assistant's name, never an idea's text.
+  The avatar the platform's own Agent unlocks plays its celebration on that first landing, beside the message box; an account whose avatars are all seen has none left to unlock, so it plays nothing.
   A person whose assistant has never been used lands in its chat instead of Home, whatever it is called; the greeting is gone once it has had a conversation, so a New chat opens on the ordinary new-chat page.
   Experimental features ends with one **Onboarding progress** card — *Restarts your onboarding.
-  Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done (its avatar stays unlocked, as a first-timer's is).
-  For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dambledore the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
+  Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done once its celebration has been dismissed — wait for it and click *Nice* before asserting the checklist, since until then the task is unlocked but unseen.
+  For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dammy the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
   For an account it is off for the card does the checklist alone and leaves the account where it is.
 
 ## What the nested install cannot do

@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -253,8 +253,8 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Re-install, not uninstall, is the lifecycle event.** A workspace re-authorizes to pick up scopes added to the manifest later; the handshake rewrites the same Secret in place, and bindings and identity links key on conversation and user id so they are untouched.
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
-- **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
-  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+- **Identity linking.** The link table is the source of truth for "who is this Slack user in Platform terms": it authorizes the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never a turn, and reaches a person directly.
+  A `/platform login` slash command proves the person, and the DM Bridge may also pair a link by verified email under rules of its own ([slack-dm-bridge](slack-dm-bridge.md)).
 - **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
   A group DM is outside what Slack lists for a person, so it is connected in-chat only.
   Without it, anyone who knows a conversation id could lend an Agent to a private channel they are not in.

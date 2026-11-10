@@ -88,7 +88,7 @@ Provisioning is idempotent and takes the first free name, which is the brand's.
 With the flag on, the person has the same create themselves, from the catalog: it answers with the one Connection they hold — the one it makes, or the one already there — and they may grant it to any of their Agents.
 An install that cannot offer it makes nothing and says so, and the pane stays where it is rather than closing on a Connection that does not exist.
 With it off, their own create and their own grants are refused, and hidden from the UI; the Connection, its grants, its key and its injection keep working, and rotating or deleting it stays available, since those reduce risk.
-The platform's own provisioning is not gated: the Agent [Dambledore](assistant.md) makes is created holding this Connection whatever the flag says.
+The platform's own provisioning is not gated: the Agent [Dammy](assistant.md) makes is created holding this Connection whatever the flag says.
 
 Its credential is an **owner API key** the platform mints at create, named so the owner sees it in Settings › API keys.
 It carries every scope a person's own key can and none of the satellite scopes, which run work queued for other Agents; an API key never carries the operator role.

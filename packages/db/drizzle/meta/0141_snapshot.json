@@ -1,5 +1,5 @@
 {
-  "id": "7d13b28a-2401-4063-93a6-7893259a76d2",
+  "id": "eb689ae1-e6f4-4aa6-b9a3-61f91e220118",
   "prevId": "3949ca47-f5f4-4fcf-91ab-c6ad0d9f07ce",
   "version": "7",
   "dialect": "postgresql",
@@ -456,38 +456,6 @@
         },
         "updated_at": {
           "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_child_egress_grants": {
-      "name": "agent_child_egress_grants",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_at": {
-          "name": "granted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -3234,6 +3202,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'oauth'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5923,6 +5898,142 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.slack_dm_bridges": {
+      "name": "slack_dm_bridges",
+      "schema": "",
+      "columns": {
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "team_id": {
+          "name": "team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dm_channel_id": {
+          "name": "dm_channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_sub": {
+          "name": "owner_sub",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slack_user_id": {
+          "name": "slack_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "slack_dm_bridge_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "hello_claimed_at": {
+          "name": "hello_claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hello_claim_token": {
+          "name": "hello_claim_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hello_posted_at": {
+          "name": "hello_posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "slack_dm_bridges_owner_idx": {
+          "name": "slack_dm_bridges_owner_idx",
+          "columns": [
+            {
+              "expression": "owner_sub",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "slack_dm_bridges_dm_idx": {
+          "name": "slack_dm_bridges_dm_idx",
+          "columns": [
+            {
+              "expression": "team_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dm_channel_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "slack_dm_bridges_agent_id_team_id_dm_channel_id_pk": {
+          "name": "slack_dm_bridges_agent_id_team_id_dm_channel_id_pk",
+          "columns": [
+            "agent_id",
+            "team_id",
+            "dm_channel_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.slack_ignored_apps": {
       "name": "slack_ignored_apps",
       "schema": "",
@@ -5987,6 +6098,12 @@
         },
         "team_name": {
           "name": "team_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enterprise_id": {
+          "name": "enterprise_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -8360,6 +8477,15 @@
       "values": [
         "active",
         "rejected"
+      ]
+    },
+    "public.slack_dm_bridge_state": {
+      "name": "slack_dm_bridge_state",
+      "schema": "public",
+      "values": [
+        "active",
+        "revoking",
+        "revoked"
       ]
     }
   },

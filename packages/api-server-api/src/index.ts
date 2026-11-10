@@ -30,6 +30,10 @@ export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
+  SlackDmBridgeState,
+  SlackDmConnectView,
+  SlackDmDisconnectView,
+  SlackDmStatusView,
 } from "./modules/channels/types.js";
 export {
   isSlackDirectMessageId,
@@ -521,16 +525,24 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
-export { featureOnForUser } from "./modules/features/modes.js";
+export {
+  FEATURES_ON_BY_DEFAULT,
+  featureOnForUser,
+} from "./modules/features/modes.js";
 export type {
   AssistantState,
   AssistantsService,
 } from "./modules/assistants/types.js";
 export {
-  ASSISTANT_FIRST_TASKS,
-  ASSISTANT_ROLE_ASK,
+  ASSISTANT_IDEAS,
+  ASSISTANT_LEARN_LINE,
+  ASSISTANT_PROVIDER_LINE,
+  ASSISTANT_SETTINGS_LINK,
+  ASSISTANT_SETTINGS_SENTENCE,
+  type AssistantIdea,
   type AssistantNames,
   assistantGreetingOpening,
+  assistantIdeas,
   assistantInstructions,
 } from "./modules/assistants/greeting.js";
 export type {

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -136,6 +136,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).
   Slack connect binds a channel and sets ambient mode and channel history on or off; a re-connect changes only the modes it names, and the channel listing shows each binding's state of both.
+  `channel slack-dm status|connect|disconnect` is the DM Bridge ([channels](channels.md)): `status` is read-only, sending nothing and binding nothing, and reports whether the owner's Slack account is linked, pairable by verified email, off, or unavailable with the reason; `connect <agent> [--purpose <text>]` binds that Agent to the owner's own 1:1 DM with the bot, as the DM's default only while it has none, and posts one hello naming what the Agent sends and how to undo it; `disconnect <agent>` releases the binding, the threads its sessions owned there, and only an `email` pairing.
   An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).

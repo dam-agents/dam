@@ -86,6 +86,11 @@ export const identityLinks = pgTable(
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
     teamId: text("team_id"),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the link was proven — `oauth` by a
+     * Keycloak sign-in, `email` by a pairing that only looked the person up in
+     * a trusted workspace. An email link inserts only and never moves a
+     * workspace; an OAuth sign-in promotes it. */
+    source: text("source").notNull().default("oauth"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -101,6 +106,12 @@ export const slackCredentialStateEnum = pgEnum("slack_credential_state", [
 export const slackInstalls = pgTable("slack_installs", {
   teamId: text("team_id").primaryKey(),
   teamName: text("team_name"),
+  /* UNIT_BOUNDARY_DESCRIPTION: the Slack organization the install handshake
+   * said the workspace belongs to, null for a standalone app, a workspace whose
+   * install predates this column, or the Helm token import. Anything that pairs
+   * a person to a workspace compares it, and an unknown one on either side
+   * refuses rather than guesses. */
+  enterpriseId: text("enterprise_id"),
   secretPath: text("secret_path").notNull(),
   secretField: text("secret_field").notNull(),
   installedBy: text("installed_by"),
@@ -114,6 +125,57 @@ export const slackInstalls = pgTable("slack_installs", {
     .defaultNow()
     .notNull(),
 });
+
+export const slackDmBridgeStateEnum = pgEnum("slack_dm_bridge_state", [
+  "active",
+  "revoking",
+  "revoked",
+]);
+
+/* UNIT_BOUNDARY_DESCRIPTION: what the DM Bridge did, so that undoing it never
+ * depends on live Slack lookups or on state another path may have deleted. The
+ * row names the exact destination it settled — agent, workspace, DM, person —
+ * and its state is what stops turns and delivery after a revoke, including a
+ * revoke that a failure left half done. */
+export const slackDmBridges = pgTable(
+  "slack_dm_bridges",
+  {
+    agentId: text("agent_id").notNull(),
+    teamId: text("team_id").notNull(),
+    dmChannelId: text("dm_channel_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    slackUserId: text("slack_user_id").notNull(),
+    state: slackDmBridgeStateEnum("state").notNull().default("active"),
+    /* UNIT_BOUNDARY_DESCRIPTION: every connect opens a new generation, so a
+     * revoke that started before it can tell it has been superseded and stop
+     * instead of deleting what the person reconnected. */
+    generation: integer("generation").notNull().default(1),
+    /* UNIT_BOUNDARY_DESCRIPTION: the greeting is claimed before it is sent and
+     * recorded when Slack took it, so a crash mid-post strands a claim that a
+     * later connect may take over once it goes stale, and a recorded post is
+     * never repeated. */
+    helloClaimedAt: timestamp("hello_claimed_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the claim's own identity. Recording or
+     * releasing the greeting applies only with the token this claim returned,
+     * so a slow or superseded sender cannot overwrite the bookkeeping of the
+     * attempt that replaced it. */
+    helloClaimToken: text("hello_claim_token"),
+    helloPostedAt: timestamp("hello_posted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.agentId, table.teamId, table.dmChannelId],
+    }),
+    index("slack_dm_bridges_owner_idx").on(table.ownerSub),
+    index("slack_dm_bridges_dm_idx").on(table.teamId, table.dmChannelId),
+  ],
+);
 
 export const slackIgnoredApps = pgTable(
   "slack_ignored_apps",

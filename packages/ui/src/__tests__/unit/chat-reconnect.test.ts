@@ -374,6 +374,7 @@ mockModule("../../modules/sessions/api/background-work.js", {
 });
 mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
   useAssistantGreeting: () => fake.greeting,
+  useAssistantChat: () => fake.greeting.kind === "greeting",
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
@@ -556,21 +557,23 @@ function openNewChat(): HTMLElement {
 
 function greetingCopy() {
   return {
-    assistantName: "Dambledore",
-    paragraphs: [
-      "Hi Jenna! I'm Dambledore, your new personal DAM agent!",
-      "The more I know about you, the more I can help.",
+    assistantName: "Dammy",
+    opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
+    provider: "You're set up with CurveBender, IBM-hosted open-source models.",
+    learn: "I learn how you work, one task at a time.",
+    settingsLink: "Agent settings",
+    ideas: [
+      {
+        label: "Artifact",
+        text: "Make my next PowerPoint deck the way I make them",
+      },
+      {
+        label: "Skill",
+        text: "Learn how my team writes tickets, then take it over",
+      },
     ],
-    suggestions: [
-      "Explain what you can do",
-      "Remember I like answers short and technical",
-    ],
-    placeholder: "Remember I like answers short and technical",
+    placeholder: "Message Dammy",
   };
-}
-
-function chip(el: HTMLElement, text: string): HTMLButtonElement | undefined {
-  return [...el.querySelectorAll("button")].find((b) => b.textContent === text);
 }
 
 // TEST_SCENARIO: an assistant whose chat has never had a session opens on its greeting — not on the empty page with a big avatar — and the composer hints one of the tasks it offers.
@@ -579,18 +582,20 @@ it("opens an unused assistant's chat on its greeting", () => {
   const el = openNewChat();
   expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
   expect(el.textContent).not.toContain("Send a message to begin.");
-  expect(placeholder(el)).toBe("Remember I like answers short and technical");
+  expect(placeholder(el)).toBe("Message Dammy");
 });
 
-// TEST_SCENARIO: a click on one of its tasks puts the text in the composer of this chat and sends nothing, so no turn runs before the person acts.
-it("fills the composer from a greeting task without sending", () => {
+// TEST_SCENARIO: a click on one of its pills puts the labelled text in the composer of this chat and sends nothing, so no turn runs before the person acts.
+it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
   const el = openNewChat();
-  const task = chip(el, "Explain what you can do");
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
   expect(task).toBeDefined();
   act(() => task!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
-    "Explain what you can do",
+    "Artifact: Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
 });
