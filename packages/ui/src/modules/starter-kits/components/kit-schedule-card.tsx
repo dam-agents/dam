@@ -194,30 +194,23 @@ export function KitScheduleCard({
               </p>
             )}
             <ScheduleRecurrenceFields
-              layout="rows"
               control={control}
               register={register}
               errors={errors}
               values={values}
-              accentClassName="bg-kit text-white"
             />
-            <ScheduleSessionTypeField
-              layout="rows"
+            <ScheduleSessionTypeField control={control} />
+            <QuietHoursEditor
               control={control}
-              accentClassName="bg-kit text-white"
+              register={register}
+              {...(quietHoursError ? { error: quietHoursError } : {})}
             />
             <SchedulePrecheckField
               layout="rows"
               registration={register("precheck")}
               error={errors.precheck?.message}
+              defaultOpen={values.precheck.trim() !== ""}
             />
-            <div className="px-4 py-3">
-              <QuietHoursEditor
-                control={control}
-                register={register}
-                {...(quietHoursError ? { error: quietHoursError } : {})}
-              />
-            </div>
           </div>
         </>
       )}
