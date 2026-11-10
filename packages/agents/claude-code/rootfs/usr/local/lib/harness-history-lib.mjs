@@ -1,8 +1,9 @@
 const adapter = "/usr/local/lib/harness/claude-code/adapter";
 const modulesPromise = Promise.all([
-  import(`${adapter}/acp-agent.js`),
+  import(`${adapter}/sdk-to-acp.js`),
+  import(`${adapter}/message-filters.js`),
   import(`${adapter}/claude-agent-sdk.js`),
-]).then(([agent, sdk]) => ({ agent, sdk }));
+]).then(([toAcp, filters, sdk]) => ({ agent: { ...toAcp, ...filters }, sdk }));
 modulesPromise.catch(() => {});
 
 function parentToolUseIdOf(message) {

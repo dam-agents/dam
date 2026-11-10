@@ -280,10 +280,10 @@ build_default() (
   # The bundle cannot find the native CLI beside the SDK; harness-chat names it.
   adapter="$(realpath "$(mise -E "$envs" where npm:@agentclientprotocol/claude-agent-acp)/node_modules/@agentclientprotocol/claude-agent-acp")"
   bundle="$stage/build-claude-adapter/usr/local/lib/harness/claude-code/adapter"
-  (cd "$adapter" && "$root/node_modules/.bin/esbuild" dist/index.js dist/acp-agent.js @anthropic-ai/claude-agent-sdk \
+  (cd "$adapter" && "$root/node_modules/.bin/esbuild" dist/index.js dist/sdk-to-acp.js dist/message-filters.js @anthropic-ai/claude-agent-sdk \
     --bundle --splitting --format=esm --platform=node --outdir="$bundle" '--entry-names=[name]' --log-level=warning)
   [ "$(mise -E "$envs" exec -- node "$bundle/index.js" --version)" = "$(jq -r .version "$adapter/package.json")" ]
-  mise -E "$envs" exec -- node -e 'Promise.all(process.argv.slice(1).map((f) => import(f)))' "$bundle/acp-agent.js" "$bundle/claude-agent-sdk.js"
+  mise -E "$envs" exec -- node -e 'Promise.all(process.argv.slice(1).map((f) => import(f)))' "$bundle/sdk-to-acp.js" "$bundle/message-filters.js" "$bundle/claude-agent-sdk.js"
   # Playwright's browsers sit with the tools, beside other Playwrights' own,
   # and the image names this one's.
   for d in "$MISE_SYSTEM_DATA_DIR"/ms-playwright/*/; do
