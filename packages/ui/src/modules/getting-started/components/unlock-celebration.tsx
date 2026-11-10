@@ -31,6 +31,13 @@ interface Props {
   character: AvatarCharacter;
   variant: UnlockVariant;
   onFinished: () => void;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether something else covers this celebration —
+   * a modal or a dialog in front of it. Its countdown waits then, so the
+   * celebration is not marked seen while the person could not see it, and it
+   * starts in full once the cover is gone.
+   */
+  covered?: boolean;
 }
 
 /**
@@ -42,11 +49,16 @@ interface Props {
  * pointer or focus is on it, so nobody loses it mid-read (WCAG 2.2.1), and
  * restarts in full after.
  */
-export function UnlockCelebration({ character, variant, onFinished }: Props) {
+export function UnlockCelebration({
+  character,
+  variant,
+  onFinished,
+  covered = false,
+}: Props) {
   const [collecting, setCollecting] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const paused = hovered || focused;
+  const paused = hovered || focused || covered;
   const finished = useRef(onFinished);
   const copy = COPY[variant];
 

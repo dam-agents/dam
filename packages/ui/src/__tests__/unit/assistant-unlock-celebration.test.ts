@@ -111,4 +111,37 @@ describe("the celebration the first chat mounts", () => {
     act(() => root!.render(createElement(AssistantUnlockCelebration)));
     expect(container!.querySelector("[data-testid]")).toBeNull();
   });
+
+  // TEST_SCENARIO: an account with no provider meets the prompt for one over the chat, so the celebration waits behind it: its countdown never marks the unlock seen while nobody can see it, and the same celebration plays in full once the prompt closes.
+  it("waits behind a cover that hides it", () => {
+    vi.useFakeTimers();
+    try {
+      fake.progress = progress([unlock("create-agent", "tower", false)]);
+      act(() =>
+        root!.render(
+          createElement(AssistantUnlockCelebration, { covered: true }),
+        ),
+      );
+      expect(container!.textContent).toContain(
+        "You unlocked your first agent avatar!",
+      );
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(fake.seen).not.toHaveBeenCalled();
+
+      act(() =>
+        root!.render(
+          createElement(AssistantUnlockCelebration, { covered: false }),
+        ),
+      );
+      expect(
+        container!.textContent?.includes(
+          "You unlocked your first agent avatar!",
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

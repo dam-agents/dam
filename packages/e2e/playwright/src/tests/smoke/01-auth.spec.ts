@@ -208,3 +208,23 @@ test("the CLI's device grant: No refuses the sign-in, Yes grants it", async ({
     expect(poll.access_token).toBeTruthy();
   });
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the state every later project's account holds: the
+ * shared account declines the assistant. The suite keeps the chart's mode, so
+ * the assistant ships on for everyone, and a lane that does not test it must not
+ * meet it — its chat would be where the first sign-in landed, with a provider
+ * prompt over the page the specs click on. It runs here, at the end of the auth
+ * project, because the flag cannot be stored before the account accepts the
+ * Terms: the tests above prove the gate that refuses it, and this file's login
+ * is what accepts them.
+ */
+test.afterAll(async () => {
+  const api = createApiClient(await getAccessToken());
+  const terms = await api.terms.current.query();
+  await api.terms.accept.mutate({ version: terms.version });
+  await api.features.setFlag.mutate({
+    feature: "dambledore",
+    enabled: false,
+  });
+});

@@ -409,6 +409,9 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const dialog = useStore((s) => s.dialog);
+  /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
+  const providerPromptOpen = providersModal ?? noProviders;
 
   const view = useStore((s) => s.view);
   const continuesInvocation = useStore((s) =>
@@ -1143,7 +1146,11 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
-          {greeting.assistantChat && <AssistantUnlockCelebration />}
+          {greeting.assistantChat && (
+            <AssistantUnlockCelebration
+              covered={providerPromptOpen || dialog !== null}
+            />
+          )}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}
@@ -1311,7 +1318,7 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
-      {(providersModal ?? noProviders) && (
+      {providerPromptOpen && (
         <ProviderSettingsModal
           agentId={newSessionAgent}
           onClose={() => setProvidersModal(false)}

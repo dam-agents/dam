@@ -8,9 +8,9 @@ e2e:
 
 # The install keeps the chart's `experimental` mode, so the assistant is on by
 # default exactly as in a release. The suite's shared users store the switch
-# off for themselves (src/global-setup.ts), which keeps every other lane
-# deterministic, and 16-assistant.spec.ts signs in as its own users, which have
-# stored nothing and so keep the default.
+# off for themselves (01-auth.spec.ts, once they accepted the Terms), which
+# keeps every other lane deterministic, and 16-assistant.spec.ts signs in as its
+# own users, which have stored nothing and so keep the default.
 #
 # Two accounts of its own, so they are fresh on the first run and on every
 # rerun against the same cluster: nothing else signs in as them.

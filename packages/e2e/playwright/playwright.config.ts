@@ -206,8 +206,6 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  */
 export default defineConfig({
   testDir: "./src/tests",
-  /* UNIT_BOUNDARY_DESCRIPTION: the suite's shared account declines the assistant before any spec signs in, so no lane depends on a feature that ships on for everyone. */
-  globalSetup: "./src/global-setup.ts",
   fullyParallel: false,
   workers,
   retries: 0,
