@@ -78,7 +78,7 @@ var jsonKindOfTypes = map[reflect.Type]string{
 	reflect.TypeOf(resource.Quantity{}):  "string|number",
 	reflect.TypeOf(metav1.Duration{}):    "string",
 	reflect.TypeOf(metav1.Time{}):        "string",
-	reflect.TypeOf(intstr.IntOrString{}): "string|number",
+	reflect.TypeOf(intstr.IntOrString{}): "string|integer",
 }
 
 func configKeys(t reflect.Type) any {
@@ -121,8 +121,9 @@ func configKeys(t reflect.Type) any {
 	case reflect.Bool:
 		return "boolean"
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
 		return "number"
 	default:
 		return "any"

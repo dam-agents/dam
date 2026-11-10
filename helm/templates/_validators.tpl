@@ -706,8 +706,9 @@ install whose values carry one renders fine and then crash-loops.
 The declared keys and their kinds are chart data, controller-config-keys.json,
 which the config package's own test generates from the structs, Kubernetes types
 included: an `object` is a struct, an `array` and a `map` say what their items
-and their free-form values are, and a `string|number` kind is a type that reads
-its own JSON and takes either.
+and their free-form values are, an `integer` is a field the decoder reads as an
+int and so refuses a fraction in, and a `string|number` kind is a type that
+reads its own JSON and takes either.
 AGENT_VM is the chart's own dict, so this checks the dict itself — the one the
 Deployment renders, via `platform.controller.agentVM` — rather than the values
 that are meant to reach it: everything an install sets a field from is checked
@@ -738,7 +739,8 @@ refuses. A null is neither: Helm drops it and the decoder takes it.
 {{- $kind := include "platform.validate.jsonKind" .value -}}
 {{- if ne $kind "null" -}}
 {{- if kindIs "string" $keys -}}
-{{- if and (ne $keys "any") (not (has $kind (splitList "|" $keys))) -}}
+{{- $allowed := splitList "|" $keys -}}
+{{- if and (ne $keys "any") (not (has $kind $allowed)) (not (and (has "number" $allowed) (has $kind (list "integer" "fractional")))) -}}
 {{- fail (printf "%s must be %s, got %s: the controller decodes %s strictly and exits on a value that is not the kind its field declares, so this install would crash-loop." $path (include "platform.validate.kindWords" $keys) (include "platform.validate.kindWords" $kind) $env) -}}
 {{- end -}}
 {{- else -}}
@@ -771,9 +773,12 @@ refuses. A null is neither: Helm drops it and the decoder takes it.
 {{- end -}}
 
 {{/*
-The kind of a value, in the vocabulary of the generated key list: a number is
-whatever Helm parsed the digits as, and a null — a YAML `~` or `null`, or a
-`--set key=null` — is its own.
+The kind of a value, in the vocabulary of the generated key list. Helm reads the
+digits of a values file as an int64 or as a float64, so a float with nothing
+behind its point is a whole number too: a values file's `2` and a JSON
+document's `2.0` are the same number to the decoder, while a fraction is one it
+refuses in an int field. A null — a YAML `~` or `null`, or a `--set key=null` —
+is its own.
 */}}
 {{- define "platform.validate.jsonKind" -}}
 {{- $kind := kindOf . -}}
@@ -781,7 +786,8 @@ whatever Helm parsed the digits as, and a null — a YAML `~` or `null`, or a
 {{- else if eq $kind "bool" -}}boolean
 {{- else if eq $kind "map" -}}object
 {{- else if eq $kind "slice" -}}array
-{{- else if has $kind (list "int8" "int16" "int32" "int64" "int" "uint8" "uint16" "uint32" "uint64" "uint" "float32" "float64") -}}number
+{{- else if has $kind (list "int8" "int16" "int32" "int64" "int" "uint8" "uint16" "uint32" "uint64" "uint") -}}integer
+{{- else if has $kind (list "float32" "float64") -}}{{ ternary "integer" "fractional" (eq (floor .) .) }}
 {{- else -}}null
 {{- end -}}
 {{- end -}}
@@ -790,7 +796,7 @@ whatever Helm parsed the digits as, and a null — a YAML `~` or `null`, or a
 A kind, and a `string|number` pair of them, as the sentence that names it.
 */}}
 {{- define "platform.validate.kindWords" -}}
-{{- $names := dict "string" "a string" "number" "a number" "boolean" "a boolean" "object" "a map" "array" "a list" "map" "a map" "any" "any value" -}}
+{{- $names := dict "string" "a string" "number" "a number" "integer" "a whole number" "fractional" "a fractional number" "boolean" "a boolean" "object" "a map" "array" "a list" "map" "a map" "any" "any value" -}}
 {{- $words := list -}}
 {{- range $kind := splitList "|" . -}}
 {{- $words = append $words (index $names $kind) -}}

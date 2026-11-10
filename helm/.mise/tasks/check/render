@@ -372,6 +372,18 @@ refused_kind virtualization.runner.bootMiB \
   '{"virtualization":{"runner":{"bootMiB":"1024"}}}'
 refused_kind virtualization.gateway.perOwner \
   '{"virtualization":{"gateway":{"perOwner":"yes"}}}'
+# A fraction is no more an int than a string is: the decoder refuses `1.5` in a
+# field it reads as one. The values file carries it, since `--set` keeps a
+# decimal a string.
+refused_kind virtualization.runner.bootMiB \
+  '{"virtualization":{"runner":{"bootMiB":1.5}}}'
+refused_kind virtualization.runner.machineCPUs \
+  '{"virtualization":{"runner":{"machineCPUs":2.5}}}'
+# A whole number a JSON values file hands Helm as a float64 is one to the
+# decoder too, and still renders.
+printf '%s\n' '{"virtualization":{"runner":{"machineCPUs":2,"bootMiB":3072.0}}}' >"$kinds"
+helm template platform . "${COMMON[@]}" -f "$kinds" >/dev/null \
+  || { echo "a values file holding whole numbers as floats failed the render, but the controller takes them" >&2; exit 1; }
 rm -f "$kinds"
 # The keys the controller declares keep rendering, the Kubernetes shapes among
 # them field by field: an install's own pull secrets, mount, env, a meshed peer,
