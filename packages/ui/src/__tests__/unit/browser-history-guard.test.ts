@@ -95,7 +95,7 @@ describe("browser history with an unsaved artifact edit", () => {
 describe("browser history with an unsaved edit outside a chat", () => {
   // TEST_SCENARIO: the user edits an artifact on its own page and presses Back to the Artifacts list; the app asks first, and "Keep editing" keeps the page.
   it("asks before leaving the artifact page", async () => {
-    env.location.pathname = "/artifacts/art-1";
+    env.location.pathname = "/artifacts/art-1/view";
     env.location.search = "";
     env.history.state = "in-app";
     const uninstall = installBrowserHistory();
@@ -109,7 +109,7 @@ describe("browser history with an unsaved edit outside a chat", () => {
     expect(env.history.pushState).toHaveBeenCalledWith(
       "in-app",
       "",
-      "/artifacts/art-1",
+      "/artifacts/art-1/view",
     );
     expect(useStore.getState().view).toBe("artifact");
     expect(useStore.getState().pageArtifactId).toBe("art-1");

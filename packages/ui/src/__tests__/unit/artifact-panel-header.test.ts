@@ -175,7 +175,7 @@ describe("artifact panel top bar", () => {
     const link = bar().querySelector<HTMLAnchorElement>(
       '[aria-label="Open in new tab"]',
     )!;
-    expect(link.getAttribute("href")).toBe("/artifacts/art-1");
+    expect(link.getAttribute("href")).toBe("/artifacts/art-1/view");
     expect(link.getAttribute("target")).toBe("_blank");
   });
 

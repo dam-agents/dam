@@ -274,7 +274,7 @@ flowchart LR
   Edit source names what it changes, the artifact's text, which may be Markdown as well as code, so it does not read as asking the Agent for a change.
   So opening an artifact is a place to start sharing or continuing it rather than a dead end, and the bar stays short enough to scan.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does; it has no full page of its own, because a wider panel or Open in new tab covers that.
-  **Open in new tab** opens the artifact's own page in the app, `/artifacts/<id>`, in a new browser tab, so the chat stays in the first one.
+  **Open in new tab** opens the artifact alone in the app, `/artifacts/<id>/view`, in a new browser tab, so the chat stays in the first one; `/artifacts/<id>` stays the library with the artifact docked.
   That page is the app signed in as the owner, not the share link, so it opens a private artifact too, which has no link; it shows the same top bar without Back, close and Open in new tab, which it has no use for, and an interactive page there asks its Agent in a Session of its own, as on the Artifacts page.
   Deleting the artifact a preview is showing closes that preview, and deleting it from its own page opens the Artifacts list.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
