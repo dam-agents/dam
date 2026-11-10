@@ -6,7 +6,6 @@ import {
 } from "api-server-api";
 import { type ReactNode, useMemo, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { DisclosureChevron } from "@/components/ui/disclosure";
@@ -28,7 +27,10 @@ import {
   runningSubAgents,
   stoppedLine,
 } from "../lib/delegation-state.js";
-import { DelegationStatePill } from "./delegation-state-pill.js";
+import {
+  DelegationStatePill,
+  SubAgentsWorkingPill,
+} from "./delegation-state-pill.js";
 
 interface Props {
   node: DelegationNode;
@@ -93,40 +95,29 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
           </span>
         </button>
         {working > 0 && (
-          <span className="inline-flex shrink-0 items-stretch overflow-hidden rounded-full border border-success text-green-700 dark:text-success">
-            <Badge
-              variant="outline"
-              size="sm"
-              className="rounded-none border-0 text-inherit"
-            >
-              {working} sub-agent{working === 1 ? "" : "s"} working
-            </Badge>
-            <StopSegment
-              node={node}
-              driverAgentId={driverAgentId}
-              working={working}
-              className="border-success"
-            />
-          </span>
+          <SubAgentsWorkingPill
+            count={working}
+            stop={
+              <StopSegment
+                node={node}
+                driverAgentId={driverAgentId}
+                working={working}
+              />
+            }
+          />
         )}
-        {ownRunning && (state === "working" || state === "waiting") ? (
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-stretch overflow-hidden rounded-full",
-              RUNNING_CAPSULE[state].surface,
-            )}
-          >
-            <DelegationStatePill state={state} className="rounded-none" />
-            <StopSegment
-              node={node}
-              driverAgentId={driverAgentId}
-              working={null}
-              className={RUNNING_CAPSULE[state].divider}
-            />
-          </span>
-        ) : (
-          <DelegationStatePill state={state} />
-        )}
+        <DelegationStatePill
+          state={state}
+          stop={
+            ownRunning ? (
+              <StopSegment
+                node={node}
+                driverAgentId={driverAgentId}
+                working={null}
+              />
+            ) : undefined
+          }
+        />
       </div>
 
       <ModelLine model={model} />
@@ -182,28 +173,15 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   );
 }
 
-const RUNNING_CAPSULE = {
-  working: {
-    surface: "bg-success-light text-green-700 dark:text-success",
-    divider: "border-success/30",
-  },
-  waiting: {
-    surface: "bg-warning/15 text-warning-fg",
-    divider: "border-warning/30",
-  },
-} as const;
-
 // UNIT_BOUNDARY_DESCRIPTION: the stop at the end of the pill it acts on: on the state pill while a run of its own goes, the agent and everything it started; on the sub-agents pill, where `working` counts the sub-agents it started that still run, only they.
 function StopSegment({
   node,
   driverAgentId,
   working,
-  className,
 }: {
   node: DelegationNode;
   driverAgentId: string;
   working: number | null;
-  className?: string;
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const stop = useStopDelegation();
@@ -216,10 +194,7 @@ function StopSegment({
       tooltip={label}
       aria-label={label}
       disabled={stop.isPending}
-      className={cn(
-        "h-auto min-h-6 rounded-none border-l text-inherit hover:bg-danger-light hover:text-danger",
-        className,
-      )}
+      className="h-auto min-h-6 rounded-none border-l border-current/20 text-inherit hover:bg-danger-light hover:text-danger"
       onClick={async () => {
         const ok =
           working === null
