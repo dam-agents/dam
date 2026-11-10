@@ -61,7 +61,7 @@ Given that account, whose Dambledore the owner has deleted
 When they click *Reset user onboarding* under the assistant's row and confirm
 Then a new agent named Dambledore is in their agent list, unused, and its chat opens on the greeting
 
-## AC-7b — Reset user onboarding reuses an agent already under the name
+## AC-8 — Reset user onboarding reuses an agent already under the name
 
 Given that account, where the owner renamed Dambledore to *Research helper* and then made an agent of their own called *Dambledore*
 When they click *Reset user onboarding* under the assistant's row and confirm
@@ -69,7 +69,22 @@ Then no second Dambledore is made
 And the account lands in the *Dambledore* they made, which opens on the greeting
 And *Research helper* is still theirs, untouched
 
-## AC-10 — the switch makes one only when the name is free
+## AC-9 — an account that never opts in sees nothing of it
+
+Given the same install, and an account that has not turned the assistant on
+When the owner signs in
+Then no greeting, no first tasks and no assistant agent appear
+And they land on Home as usual
+And the message box of any agent they open hints *Message…* as it always did
+
+## AC-10 — turning the switch off deletes nothing
+
+Given that account with the assistant switched on and used
+When they switch the assistant's row off
+Then no confirm appears, and Dambledore is still in their agent list with its conversations
+And no greeting, landing or *Reset user onboarding* is shown until they switch it back on
+
+## AC-11 — the switch makes one only when the name is free
 
 Given an account with no agent called Dambledore, and Settings → Experimental features open
 When the owner switches the assistant's row on
@@ -80,24 +95,9 @@ When instead they rename Dambledore to *Research helper* and switch the row off 
 Then a new Dambledore appears beside *Research helper*
 And no agent is ever named *Dambledore 2*
 
-## AC-11 — an agent the owner already named Dambledore stands in for it
+## AC-12 — an agent the owner already named Dambledore stands in for it
 
 Given an account that made an agent of their own called *Dambledore* before turning the feature on
 When they switch the assistant's row on
 Then no second agent appears for that name
 And their own Dambledore is the assistant: an unused one opens on the greeting, and their next sign-in lands there
-
-## AC-8 — an account that never opts in sees nothing of it
-
-Given the same install, and an account that has not turned the assistant on
-When the owner signs in
-Then no greeting, no first tasks and no assistant agent appear
-And they land on Home as usual
-And the message box of any agent they open hints *Message…* as it always did
-
-## AC-9 — turning the switch off deletes nothing
-
-Given that account with the assistant switched on and used
-When they switch the assistant's row off
-Then no confirm appears, and Dambledore is still in their agent list with its conversations
-And no greeting, landing or *Reset user onboarding* is shown until they switch it back on
