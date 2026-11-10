@@ -1055,6 +1055,36 @@ func TestRenderEnvoyBootstrap_DamChainPinsTheApiServerService(t *testing.T) {
 
 	leaf := BuildEnvoyLeafCertificate("agent-a", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), []corev1.Secret{dam}, nil)
 	assert.Equal(t, []string{host}, leaf.Spec.DNSNames, "the leaf covers the name the Agent dials")
+
+	// TEST_SCENARIO: the api-server reads the first X-Forwarded-For as the caller's address in its audit log, so the chain hands it none: the Agent's own claims about where it is never reach the install's log.
+	removed := vhostHeadersRemoved(t, doc, host)
+	assert.Contains(t, removed, "x-forwarded-for")
+	assert.Contains(t, removed, "x-real-ip")
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a peer Connection mounted on the install's own Service — written before the api-server refused one, or by an operator — is dropped whole: the chain keeps the install's key alone, loses the peer's host-wide scope and path rewrite, and still routes only the API paths. */
+func TestChainsFromSecrets_APeerOnTheInstallsServiceIsDropped(t *testing.T) {
+	host := bootstrapTestCfg.APIServerHost()
+
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	dam.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"pathPattern":"/api/","headerName":"Authorization"}]`, host)
+	dam = withHostSDS(dam, host)
+
+	peer := ownerSecret("platform-conn-legacy", "connection", "conn-legacy")
+	peer.Annotations[envoySecretPurposeAnn] = "connection:custom-header"
+	peer.Annotations[envoyInjectionHostsAnn] = fmt.Sprintf(`[{"host":%q,"headerName":"X-Legacy","pathRewrites":[{"prefix":"/api/","replacement":"/v1/"}]}]`, host)
+	peer = withHostSDS(peer, host)
+
+	chains := chainsFromSecrets([]corev1.Secret{peer, dam}, nil)
+	require.Len(t, chains, 1)
+	chain := chains[0]
+	require.True(t, chain.InCluster)
+	require.Len(t, chain.Credentials, 1, "only the install's own credential rides this chain")
+	assert.Equal(t, "conn-dam", chain.Credentials[0].ConnectionID)
+	assert.Empty(t, chain.Signers)
+	assert.Empty(t, chain.PathRewrites, "the peer's rewrite is dropped with it")
+	assert.Equal(t, []string{"/api/"}, chain.PathScopes(), "the peer's host-wide scope goes too")
 }
 
 func staticClusters(t *testing.T, doc map[string]any) []map[string]any {
@@ -1082,6 +1112,23 @@ func pinnedClusterPort(t *testing.T, cluster map[string]any) int {
 	endpoints := cluster["load_assignment"].(map[string]any)["endpoints"].([]any)
 	port := endpoints[0].(map[string]any)["lb_endpoints"].([]any)[0].(map[string]any)["endpoint"].(map[string]any)["address"].(map[string]any)["socket_address"].(map[string]any)["port_value"]
 	return int(port.(float64))
+}
+
+func vhostHeadersRemoved(t *testing.T, doc map[string]any, host string) []any {
+	t.Helper()
+	for _, fc := range internalFilterChains(t, doc) {
+		match, _ := fc["filter_chain_match"].(map[string]any)
+		serverNames, _ := match["server_names"].([]any)
+		if len(serverNames) != 1 || serverNames[0] != host {
+			continue
+		}
+		hcm := fc["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		vhost := hcm["route_config"].(map[string]any)["virtual_hosts"].([]any)[0].(map[string]any)
+		raw, _ := vhost["request_headers_to_remove"].([]any)
+		return raw
+	}
+	require.FailNow(t, "no terminating chain for "+host)
+	return nil
 }
 
 func chainRoutesForHost(t *testing.T, doc map[string]any, host string) []map[string]any {

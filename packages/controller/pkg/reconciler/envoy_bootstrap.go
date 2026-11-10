@@ -438,7 +438,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": chainHeadersToRemove(p),
+					"request_headers_to_remove": chainHeadersToRemoveFor(p, c),
 				},
 			},
 		},
@@ -504,6 +504,15 @@ func chainHeadersToRemove(p bootstrapParams) []any {
 	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader, callStampHeader}
 	if p.HarnessGuardAgent != "" {
 		headers = append(headers, harnessGuardHeader)
+	}
+	return headers
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a chain whose upstream is the api-server itself also drops the client address headers, which no upstream of an agent's choosing is told and which the api-server would otherwise believe: its audit log reads the first X-Forwarded-For as the caller's address, so a holder of this Connection could write an address of their choosing into it. The Agent Key chain drops them for the same reason, as the ingress does. */
+func chainHeadersToRemoveFor(p bootstrapParams, c envoyHostChain) []any {
+	headers := chainHeadersToRemove(p)
+	if c.InCluster {
+		headers = append(headers, "x-forwarded-for", "x-real-ip")
 	}
 	return headers
 }

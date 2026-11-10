@@ -507,6 +507,18 @@ extra_ca_env() {
   || { echo "controller.gatewayUpstreamExtraCAs does not reach the api-server as NODE_EXTRA_CA_CERTS" >&2; exit 1; }
 [ -z "$(extra_ca_env)" ] \
   || { echo "the api-server names NODE_EXTRA_CA_CERTS with no extra CA configured" >&2; exit 1; }
+# The api-server learns its own public Service, in-cluster: the Connection that
+# lets an Agent drive this install names that address, and its gateway chain
+# takes the request there. A chart that stops naming it leaves the Connection
+# without a destination.
+apiserver_url() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/apiserver/app.yaml |
+    yq -r '.spec.template.spec.containers[0].env[] | select(.name == "PLATFORM_APISERVER_URL") | .value'
+}
+[ "$(apiserver_url)" = "http://platform-apiserver.default.svc.cluster.local:4000" ] \
+  || { echo "the api-server is not told its own Service address: $(apiserver_url)" >&2; exit 1; }
+[ "$(apiserver_url --set apiServer.port=4100 --set fullnameOverride=acme)" = "http://acme-apiserver.default.svc.cluster.local:4100" ] \
+  || { echo "the api-server's own Service address follows neither its port nor the release name" >&2; exit 1; }
 # The deployment's CurveBender key reaches the api-server only when the operator
 # sets one, and then only through a secretKeyRef: unset, no env at all, so the
 # api-server offers no shared provider; an inline key lands in the credentials

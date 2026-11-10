@@ -268,7 +268,7 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
 A credentialed host is pinned to its upstream — for that Connection, the api-server's own Service, by name and port — so a request cannot carry a credential to a destination of the agent's choosing; route-confusion exfiltration is structurally closed.
-The api-server's ingress policy admits that hop on its public port as HBONE from the agent namespace alone, and the key the chain injects authenticates it: a gateway whose Agents hold no such Connection has no key to send.
+Its ingress policy needs no change: the public port is admitted from anywhere in the cluster, and HBONE from the agent namespace, so the key the chain injects is what authenticates that hop — a gateway whose Agents hold no such Connection has none to send, and the routes that carry no bearer serve no owner's data.
 The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades instead of wedging the gateway — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz

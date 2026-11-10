@@ -126,7 +126,8 @@ An Agent opens an [Environment](environments.md#agents-at-the-gate) as itself be
   An install whose addresses are plain HTTP, as the local cluster's are, reaches the same filters: the proxy listener sends an authority of one label under the domain, any port, to an internal listener that runs them.
 - **Where it goes.** The route sends every request to the api-server's public Service inside the cluster, plain HTTP, Host kept, WebSocket upgrades included, and never to an address the name resolves to: that works on a cluster whose environments domain resolves only from outside, and behind a proxy.
   A Host outside the domain is answered 421 at the gateway, before ext_authz, so the key reaches the gate and no other route of the api-server; `X-Forwarded-For` and `X-Real-IP` are removed, as the ingress would.
-- **The port.** The gateway's egress policy admits the api-server's public port on every install; every route there authenticates its caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+- **The port.** The gateway's egress policy admits the api-server's public port on every install; the routes that carry an owner's data authenticate their caller, as the ingress already sends the whole internet to it, and only the gateway reaches it, never the machine behind it.
+  A few routes on that port answer without a bearer — health, readiness, the version, the auth config, the brand, the public avatars and testimonials, the terms, and the OAuth callbacks — and none of them serves an owner's data.
   The controller reads the domain and the port from `PLATFORM_ENVIRONMENTS_DOMAIN` and `PLATFORM_APISERVER_PORT`.
 
 ## The chain to the install's own Service
@@ -137,7 +138,14 @@ The Agent dials that name over HTTPS, so the chain is an ordinary terminating on
 What differs is the upstream: the chain is **pinned** to the [api-server's public Service](security-and-credentials.md#credential-injection) by name and port, over plain TCP that the ambient mesh carries, instead of dialing whatever the name resolves to.
 So neither an Agent's `Host` header nor a name it caused to resolve can send that key anywhere but the Service the install published, and a peer Connection on the same name cannot move the port or the CA: the chain takes both from this Connection alone.
 Its routes are the API paths alone — `/api/` in all its spellings, including the addressed one — and a request to any other path on that name is answered 404 at the gateway, never forwarded.
+A peer Connection mounted on that name is dropped from the chain rather than merged, so nothing widens those routes, adds a second credential or rewrites a path on the install's own Service.
+The chain also removes `X-Forwarded-For` and `X-Real-IP`: the api-server reads the first as the caller's address in its audit log, and an address the Agent chose is not one to write there.
 That is what makes the route work on every install: a plain-HTTP one, like the local cluster's, has no public name to reach, and this chain never needs one.
+
+**How the hop is protected.** The chain terminates the Agent's TLS at the gateway and forwards inside the cluster, so the Agent's key is encrypted on the machine-to-gateway leg and then travels cluster-internal.
+Its encryption there is the ambient mesh's: the gateway pod and the api-server are enrolled, and ztunnel carries the hop as mTLS under their workloads' identities.
+An install that turns mesh enforcement off — `istio.enforce: false`, which only a local cluster may, and `--no-mesh` with it — enrolls nothing, and there the hop is plaintext inside the cluster, as every other in-cluster hop is.
+Nothing about the chain validates the upstream's certificate: the upstream is a Service this install owns, and the pinning that matters is the name and port it was rendered for.
 
 ## Request signing
 

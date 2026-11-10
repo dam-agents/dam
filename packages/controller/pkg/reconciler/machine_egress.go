@@ -21,7 +21,7 @@ const (
 	machineDNSGatewayIPEnv = "GATEWAY_IP"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: A name no public resolver could answer — a single label, or one under a special-use or cluster-internal suffix such as `svc`, `local` or `internal` — does not exist. A cluster inside the machine relies on that: its resolver asks upstream before its own search list, and a gateway address for `<service>.<namespace>.svc` would send it to the gateway instead of the Service. One name is the exception: the api-server's own Service, which the Connection that drives this install names over HTTPS, so that name answers with the gateway's address and its chain takes the request to the Service inside the cluster. Every other name's A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere.
+// UNIT_BOUNDARY_DESCRIPTION: A name no public resolver could answer — a single label, or one under a special-use or cluster-internal suffix such as `svc`, `local` or `internal` — does not exist. A cluster inside the machine relies on that: its resolver asks upstream before its own search list, and a gateway address for `<service>.<namespace>.svc` would send it to the gateway instead of the Service. One name is the exception: the api-server's own Service, which the Connection that drives this install names over HTTPS, so that name answers with the gateway's address and its chain takes the request to the Service inside the cluster. Every other name's A gets the gateway's own address, AAAA an empty answer so clients fall back to IPv4, and every other type is refused. There is no forward plugin, so nothing is ever resolved upstream, and no log plugin, because a query name can carry data the agent should not get to write anywhere. Every template that can decline a query carries `fallthrough`, because a template whose regular expression does not match answers SERVFAIL rather than handing the query to the rule below it: without it one exact name would make every other lookup in the machine fail, on every agent of the install, holding such a Connection or not.
 func machineDNSCorefile(cfg *config.Config) string {
 	return machineDNSServerBlock(gatewayMachineDNSPort, "{$"+machineDNSGatewayIPEnv+"}", "", cfg.APIServerHost())
 }
@@ -33,10 +33,12 @@ func machineDNSServerBlock(port int, answer, extra, clusterService string) strin
 		allowed = fmt.Sprintf(`    template IN A {
         match "^%s\.$"
         answer "{{ .Name }} 60 IN A %s"
+        fallthrough
     }
     template IN AAAA {
         match "^%s\.$"
         rcode NOERROR
+        fallthrough
     }
 `, quoted, answer, quoted)
 	}

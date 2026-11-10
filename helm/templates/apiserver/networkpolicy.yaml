@@ -12,11 +12,12 @@
 
   Shape:
     - http (4000) from anywhere — UI, ingress controller, in-cluster — and,
-      on the same port, from the agent namespace over HBONE, where an Agent's
-      gateway ends the chain of the Connection that drives this install.
-      Application-layer auth (the bearer, a Keycloak JWT or an API key) is the
-      gate; a gateway holds such a key only while an Agent it serves holds
-      that Connection.
+      on the same port, from the agent namespace over HBONE, which the
+      ext-authz rule below already admits. An Agent's gateway ends the chain
+      of the Connection that drives this install here, and the API key that
+      chain injects is what authenticates it: a gateway whose Agents hold no
+      such Connection has no key to send. The bearer is the gate, and a few
+      routes carry none (see app.ts) — they serve no owner's data.
     - harness (4001) from the release namespace only — the waypoint Pod
       synthesised by Istio lives here. The cryptographic per-agent
       check is the per-agent AuthorizationPolicy on the harness path,
@@ -51,21 +52,6 @@ spec:
     - ports:
         - protocol: TCP
           port: {{ .Values.apiServer.port }}
-
-    # The same port, reached by an Agent's gateway from the ambient mesh: the
-    # chain of the Connection that drives this install ends here, and the
-    # mesh's hop arrives as HBONE. Only the agent namespace is admitted, and
-    # the API key that chain injects is the authentication — a gateway without
-    # that Connection has no key to send and is refused there.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
-      ports:
-        - protocol: TCP
-          port: {{ .Values.apiServer.port }}
-        - protocol: TCP
-          port: 15008
 
     # Harness — only from release namespace (where the istio waypoint Pod
     # lives). The waypoint enforces the per-agent principal-to-`:id`
