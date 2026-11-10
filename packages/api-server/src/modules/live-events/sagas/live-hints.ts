@@ -100,6 +100,11 @@ export function hintFor(event: DomainEvent): {
     case EventType.AvatarUnlocked:
     case EventType.GettingStartedReset:
       return { ownerSub: event.ownerSub, hint: { topic: "gettingStarted" } };
+    case EventType.AssistantUsed:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "agents", agentId: event.agentId },
+      };
     case EventType.UserAuthenticated:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:

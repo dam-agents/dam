@@ -11,7 +11,10 @@ import type { ApiVariables } from "../deps.js";
 import { logInternalError } from "./log-internal-error.js";
 
 export function createTrpcHttpRoutes(deps: {
-  composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
+  composeApiContext: (
+    user: UserIdentity,
+    surface: string,
+  ) => Promise<ApiContext>;
 }) {
   return new Hono<{ Variables: ApiVariables }>()
     .use(limitRequestBody(MAX_USER_REQUEST_BODY_BYTES))
@@ -22,8 +25,11 @@ export function createTrpcHttpRoutes(deps: {
         router: appRouter,
         maxBatchSize: MAX_TRPC_BATCH_SIZE,
         onError: logInternalError,
-        createContext: () => {
-          const ctx = deps.composeApiContext(c.get("user"), c.get("surface"));
+        createContext: async () => {
+          const ctx = await deps.composeApiContext(
+            c.get("user"),
+            c.get("surface"),
+          );
           markTermsProven(ctx);
           return ctx;
         },

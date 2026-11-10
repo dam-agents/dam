@@ -10,6 +10,7 @@ import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { useLandInAssistantChat } from "./modules/agents/hooks/use-land-in-assistant-chat.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { CommandPalette } from "./modules/command-palette/components/command-palette.js";
@@ -155,6 +156,7 @@ function MainApp() {
   useSyncRestartingAgents();
   useDocumentTitle();
   useAgentCrashToasts();
+  useLandInAssistantChat();
   useApprovalToasts();
 
   useEffect(() => {

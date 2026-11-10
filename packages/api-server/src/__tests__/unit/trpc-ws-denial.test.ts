@@ -18,7 +18,7 @@ async function refusingDoor(): Promise<number> {
   const endpoint = createTrpcWsEndpoint({
     authenticate: async () => ({ ok: false, kind: "unauthorized" }),
     surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
-    composeApiContext: () => {
+    composeApiContext: async () => {
       throw new Error("a refused connection composes no context");
     },
   });

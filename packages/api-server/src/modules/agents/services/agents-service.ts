@@ -1563,7 +1563,7 @@ export function createAgentsService(deps: {
           ? [
               agentInstructionsEvent(
                 infra.id,
-                AGENT_INSTRUCTIONS_TEMPLATE,
+                input.instructions ?? AGENT_INSTRUCTIONS_TEMPLATE,
                 createdAt,
               ),
             ]

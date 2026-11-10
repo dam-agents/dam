@@ -29,6 +29,7 @@ import type {
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
+import type { AssistantsService } from "./modules/assistants/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
@@ -122,6 +123,11 @@ export interface ApiContext {
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
   user: UserIdentity;
+  assistants: AssistantsService;
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person Dambledore at their first admitted request, for an install that pins the feature on and so has no switch to offer them. Called when a transport attaches and again after a first acceptance, because that makes no new request context. */
+  provisionAssistant: () => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person Dambledore when they turn the feature on, since a flag change makes no new request context. Nothing is made for a person who already owns an Agent under the assistant's name. */
+  optInAssistant: () => Promise<void>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

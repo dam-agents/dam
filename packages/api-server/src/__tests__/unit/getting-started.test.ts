@@ -20,6 +20,7 @@ import type { Checklist } from "../../modules/getting-started/domain/unlocks.js"
 import type { GettingStartedRepository } from "../../modules/getting-started/infrastructure/getting-started-repository.js";
 import { startUnlockAvatarsSaga } from "../../modules/getting-started/sagas/unlock-avatars.js";
 import { createEnrollment } from "../../modules/getting-started/services/enrollment.js";
+import { recordProvisionedAgent } from "../../modules/getting-started/services/first-agent.js";
 import { createGettingStartedService } from "../../modules/getting-started/services/getting-started-service.js";
 import { createUnlockRecorder } from "../../modules/getting-started/services/unlock-recorder.js";
 
@@ -198,6 +199,28 @@ describe("enrollment", () => {
     expect(progress.unlocks).toEqual([
       expect.objectContaining({ task: "create-agent", character: "tower" }),
     ]);
+  });
+});
+
+describe("an Agent the platform made", () => {
+  /** TEST_SCENARIO: the assistant's create finishes the checklist's first task as done and seen, so the person meets a first-timer's checklist — one task of eight, with nothing to celebrate — rather than an empty one. */
+  it("finishes the first task as done and seen", async () => {
+    const { repo, recorder, service } = setup();
+    await recordProvisionedAgent({ recorder, repo }, "alice", {
+      agentId: "agent-a",
+      character: "tower",
+    });
+    const progress = await service("alice").progress();
+    expect(progress.unlocks).toEqual([
+      expect.objectContaining({
+        task: "create-agent",
+        character: "tower",
+        seen: true,
+        fresh: false,
+      }),
+    ]);
+    expect(progress.unlocks).toHaveLength(1);
+    expect(GETTING_STARTED_TASKS).toHaveLength(8);
   });
 });
 

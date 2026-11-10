@@ -23,6 +23,8 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
       trpc.budgets.pathKey(),
       trpc.environments.list.pathKey(),
       harnessConfigOf(agentId),
+      // UNIT_BOUNDARY_DESCRIPTION: the assistant's used mark is announced on this family, so a tab that watched a channel turn use it stops greeting on its own.
+      trpc.assistants.state.queryKey(),
     ],
     schedules: () => [trpc.schedules.pathKey(), trpc.attention.pathKey()],
     harnessConfig: (agentId) => [harnessConfigOf(agentId)],
