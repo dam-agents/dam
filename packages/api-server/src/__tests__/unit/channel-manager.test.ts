@@ -11,7 +11,6 @@ function fakeSlackWorker(): SlackWorker {
     conversationStanding: vi.fn(async () => "unknown" as const),
     channelChoices: vi.fn(async () => ({ linked: false as const })),
     channelMembership: vi.fn(async () => ({ kind: "unlinked" as const })),
-    sendReachesOwnerDm: vi.fn(async () => false),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),

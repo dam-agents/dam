@@ -8,18 +8,10 @@ import {
   registerThreadTools,
   type ThreadToolPorts,
 } from "../../apps/harness-api-server/thread-tools.js";
-import type { ChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
 import type {
   ThreadLeave,
   ThreadStart,
 } from "../../modules/channels/services/channel-manager.js";
-
-const artifactLinks = (): ChannelArtifactLinks => ({
-  surface: "Slack",
-  appArtifactUrl: (id) => `http://ui/artifacts/${id}`,
-  lookup: async () => null,
-  ownerDirectMessage: async () => false,
-});
 
 async function harness(over: Partial<ThreadToolPorts> = {}) {
   const starts: Array<{ channel: ChannelType; start: ThreadStart }> = [];
@@ -28,7 +20,6 @@ async function harness(over: Partial<ThreadToolPorts> = {}) {
   const server = new McpServer({ name: "test", version: "1.0.0" });
   registerThreadTools(server, {
     callerSessionId: async () => "s-web",
-    linksFor: artifactLinks,
     cardOf: async () => ({}),
     startThread: async (channel, start) => {
       starts.push({ channel, start });
@@ -107,10 +98,10 @@ describe("start_thread", () => {
       card: { type: "card" as const, title: "Regions", children: [] },
       text: "**Regions**",
     };
-    const checkedFor: ChannelArtifactLinks[] = [];
+    const checkedFor: (Record<string, unknown> | undefined)[] = [];
     const h = await harness({
-      cardOf: async (_tree, links) => {
-        checkedFor.push(links);
+      cardOf: async (tree) => {
+        checkedFor.push(tree);
         return { card };
       },
     });
@@ -123,7 +114,7 @@ describe("start_thread", () => {
     });
 
     expect(h.starts[0]?.start.card).toEqual(card);
-    expect(checkedFor).toHaveLength(1);
+    expect(checkedFor).toEqual([{ type: "Card", props: { title: "Regions" } }]);
   });
 
   // TEST_SCENARIO: a card the platform refuses must not leave a thread behind with only half of what the agent meant to ask.

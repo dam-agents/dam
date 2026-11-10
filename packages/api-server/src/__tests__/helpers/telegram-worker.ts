@@ -12,6 +12,9 @@ import { createTelegramWorker } from "../../modules/channels/infrastructure/tele
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import { createMemoryState } from "./chat-state.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
+import { artifactLinks, type StubArtifact } from "./artifact-links.js";
+
+export type { StubArtifact };
 
 const BOT: TelegramUser = {
   id: 4242,
@@ -41,6 +44,7 @@ export function telegramWorkerHarness(
     ambient?: boolean;
     groupPrivacy?: { on: boolean };
     channelPair?: ChannelPair;
+    artifacts?: StubArtifact[];
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];
@@ -73,7 +77,18 @@ export function telegramWorkerHarness(
       return okJson({ status: isBot ? "member" : "administrator" });
     }
     if (method === "sendMessage" && typeof init?.body === "string") {
-      posts.push((JSON.parse(init.body) as { text?: string }).text ?? "");
+      const body = JSON.parse(init.body) as {
+        text?: string;
+        chat_id?: number | string;
+      };
+      posts.push(body.text ?? "");
+      return okJson({
+        message_id: (nextId += 1),
+        date: 0,
+        text: body.text ?? "",
+        chat: { id: Number(body.chat_id), type: "private" },
+        from: BOT,
+      });
     }
     return okJson({ ...BOT, message_id: (nextId += 1), date: 0 });
   }
@@ -127,6 +142,7 @@ export function telegramWorkerHarness(
     ownerOf: async () => "kc|owner-1",
     ownerDisplayName: async () => null,
     uiBaseUrl: "https://app.example",
+    linkArtifacts: artifactLinks(opts.artifacts ?? []),
     brandName: "Platform",
     emit: () => {},
     attendance: stubTurnAttendance(),

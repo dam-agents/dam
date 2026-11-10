@@ -51,42 +51,15 @@ async function mcpHarness(opts?: {
   attachment?: AttachmentResult | { error: string };
   artifacts?: Record<string, { title: string; shareUrl: string | null }>;
   readsChannelHistory?: boolean;
-  ownerDm?: boolean;
   sessionRef?: string;
 }) {
   const replies: ChannelReply[] = [];
-  const destinations: { conversationId?: string; answeringTurn?: boolean }[] =
-    [];
-  const starts: { conversationId: string; text: string }[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
   const historyQueries: ChannelHistoryQuery[] = [];
   const attachmentQueries: AttachmentQuery[] = [];
   const channelManager = {
-    sendReachesOwnerDm: vi.fn(
-      async (
-        _agentId: string,
-        query: { conversationId?: string; answeringTurn?: boolean },
-      ) => {
-        destinations.push(query);
-        return opts?.ownerDm ?? false;
-      },
-    ),
-    startThread: vi.fn(
-      async (
-        _agentId: string,
-        _type: ChannelType,
-        start: { conversationId: string; text: string },
-      ) => {
-        starts.push({ conversationId: start.conversationId, text: start.text });
-        return {
-          ok: true as const,
-          conversationId: start.conversationId,
-          threadTs: "5.5",
-        };
-      },
-    ),
     postMessage: vi.fn(
       async (
         _agentId: string,
@@ -184,8 +157,6 @@ async function mcpHarness(opts?: {
     client,
     posts,
     replies,
-    starts,
-    destinations,
     reactionQueries,
     threadQueries,
     historyQueries,
@@ -764,34 +735,6 @@ describe("outbound MCP tools — channel cards", () => {
     expect(res.content[0]!.text).toContain("describe_card_components");
     expect(replies).toEqual([]);
   });
-
-  it("posts a public artifact's share URL in place of its in-app link inside a card", async () => {
-    const id = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
-    const { client, replies } = await mcpHarness({
-      artifacts: {
-        [id]: {
-          title: "Weekly report",
-          shareUrl: "https://share.example/a/weekly-report",
-        },
-      },
-    });
-
-    await client.callTool({
-      name: "reply",
-      arguments: {
-        text: "Report",
-        card: actions({
-          type: "LinkButton",
-          props: { label: "Open", url: `platform://artifacts/${id}` },
-        }),
-      },
-    });
-
-    expect(replies[0]?.card?.card.children[0]).toMatchObject({
-      type: "actions",
-      children: [{ url: "https://share.example/a/weekly-report" }],
-    });
-  });
 });
 
 describe("outbound MCP tools — post and its old name", () => {
@@ -936,21 +879,16 @@ describe("outbound MCP tools — the posted message", () => {
 describe("outbound MCP tools — artifact links (#5965)", () => {
   const PUBLIC_ID = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
   const PRIVATE_ID = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
-  const artifacts = {
-    [PUBLIC_ID]: {
-      title: "Weekly report",
-      shareUrl: "https://share.example/a/weekly-report",
-    },
-    [PRIVATE_ID]: { title: "Draft plan", shareUrl: null },
-  };
 
   /**
-   * TEST_SCENARIO: The reported bug. An agent posts the in-app artifact link
-   * to Slack, where it is dead text. A public artifact's link is posted as
-   * its share URL, in a reply and in a new message alike.
+   * TEST_SCENARIO: The reported bug was an in-app artifact link reaching Slack
+   * as dead text. The channel worker that sends the message owns that decision,
+   * against the one destination it resolved, so the tools hand it the text and
+   * the card exactly as the agent wrote them, app links included, and the card
+   * is checked in the form it was written.
    */
-  it("posts a public artifact's share URL in place of its in-app link", async () => {
-    const { client, replies, posts } = await mcpHarness({ artifacts });
+  it("hands the text and the card to the channel, app links untouched", async () => {
+    const { client, replies, posts } = await mcpHarness();
 
     await client.callTool({
       name: "reply",
@@ -965,221 +903,42 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
         text: `Report: platform://artifacts/${PUBLIC_ID}`,
       },
     });
+    await client.callTool({
+      name: "post",
+      arguments: {
+        channel: ChannelType.Slack,
+        text: "Draft",
+        card: {
+          type: "Card",
+          props: { title: "Draft" },
+          children: [
+            {
+              type: "Actions",
+              props: {},
+              children: [
+                {
+                  type: "LinkButton",
+                  props: {
+                    label: "Open",
+                    url: `platform://artifacts/${PRIVATE_ID}`,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
 
     expect(replies[0]?.text).toBe(
-      "See [Weekly report](https://share.example/a/weekly-report)",
+      `See [Weekly report](platform://artifacts/${PUBLIC_ID})`,
     );
-    expect(posts[0]?.text).toBe(
-      "Report: https://share.example/a/weekly-report",
-    );
-  });
-
-  /**
-   * TEST_SCENARIO: A private artifact has no link that opens outside the
-   * app. The message is not posted, and the agent is told to say that the
-   * artifact must be shared first and to send the message without the link.
-   */
-  it("refuses a message that links a private artifact", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "reply",
-      arguments: { text: `Draft: platform://artifacts/${PRIVATE_ID}` },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toContain(
-      "must be shared from the app",
-    );
-    expect(replies).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: A link names an id the owner has no artifact for, a
-   * deleted one or a typo. The message is not posted with a dead link.
-   */
-  it("refuses a message that links an unknown artifact", async () => {
-    const { client, posts } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "send_channel_message",
-      arguments: {
-        channel: ChannelType.Slack,
-        text: "platform://artifacts/does-not-exist",
-      },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(posts).toEqual([]);
-  });
-
-  it("posts a message without artifact links unchanged", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    await client.callTool({
-      name: "reply",
-      arguments: { text: "see https://example.com/report" },
-    });
-
-    expect(replies[0]?.text).toBe("see https://example.com/report");
-  });
-
-  const OWNER_DM = "U-OWNER";
-  const APP_URL = `http://ui/artifacts/${PRIVATE_ID}`;
-
-  /**
-   * TEST_SCENARIO: The owner asks for private artifacts to arrive in their own
-   * Slack DM. A private artifact's link lands there as the app's artifact page,
-   * which opens behind the owner's sign-in, and the message is posted.
-   */
-  it("posts a private artifact's link into its owner's own DM as the app's page", async () => {
-    const { client, destinations, posts } = await mcpHarness({
-      artifacts,
-      ownerDm: true,
-    });
-
-    await client.callTool({
-      name: "post",
-      arguments: {
-        channel: ChannelType.Slack,
-        text: `Draft: platform://artifacts/${PRIVATE_ID}`,
-        chatId: OWNER_DM,
-      },
-    });
-
-    expect(posts.map((p) => p.text)).toEqual([`Draft: ${APP_URL}`]);
-    expect(destinations).toEqual([{ conversationId: OWNER_DM }]);
-  });
-
-  /**
-   * TEST_SCENARIO: The exception is the owner's own DM and nothing else: a DM
-   * with another person, a group DM and a channel all keep the refusal, or a
-   * private artifact would reach people it was never shared with. The
-   * destination the rule is asked about is the one the message goes to.
-   */
-  it("refuses a private artifact's link anywhere but the owner's DM", async () => {
-    const { client, destinations, posts } = await mcpHarness({ artifacts });
-
-    for (const chatId of ["U-SOMEONE-ELSE", "G-GROUP", "C-ALERTS"]) {
-      const res = await client.callTool({
-        name: "post",
-        arguments: {
-          channel: ChannelType.Slack,
-          text: `Draft: platform://artifacts/${PRIVATE_ID}`,
-          chatId,
-        },
-      });
-      expect(res.isError).toBe(true);
-    }
-
-    expect(posts).toEqual([]);
-    expect(destinations).toEqual([
-      { conversationId: "U-SOMEONE-ELSE" },
-      { conversationId: "G-GROUP" },
-      { conversationId: "C-ALERTS" },
+    expect(posts.map((p) => p.text)).toEqual([
+      `Report: platform://artifacts/${PUBLIC_ID}`,
+      "Draft",
     ]);
-  });
-
-  /**
-   * TEST_SCENARIO: The library an agent reads is scoped to the artifacts it
-   * published, so one another agent published reads as unknown — the owner's
-   * own DM cannot make it postable.
-   */
-  it("refuses an artifact another agent published, even in the owner's DM", async () => {
-    const { client, posts } = await mcpHarness({
-      artifacts: { [PUBLIC_ID]: artifacts[PUBLIC_ID] },
-      ownerDm: true,
-    });
-
-    const res = await client.callTool({
-      name: "post",
-      arguments: {
-        channel: ChannelType.Slack,
-        text: `Draft: platform://artifacts/${PRIVATE_ID}`,
-        chatId: OWNER_DM,
-      },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(posts).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: A reply lands in the conversation the turn is answering, so
-   * a private artifact's link is posted there as the app's page when that is
-   * the owner's DM.
-   */
-  it("posts a private artifact's link in a reply in the owner's DM", async () => {
-    const { client, destinations, replies } = await mcpHarness({
-      artifacts,
-      ownerDm: true,
-    });
-
-    await client.callTool({
-      name: "reply",
-      arguments: { text: `Draft: platform://artifacts/${PRIVATE_ID}` },
-    });
-
-    expect(replies.map((r) => r.text)).toEqual([`Draft: ${APP_URL}`]);
-    expect(destinations).toEqual([{ answeringTurn: true }]);
-  });
-
-  /**
-   * TEST_SCENARIO: start_thread used to bypass the link rule, so a private
-   * artifact's link reached a channel. It is refused there now, and posted as
-   * the app's page in the owner's DM.
-   */
-  it("applies the link rule to start_thread", async () => {
-    const refused = await mcpHarness({ artifacts, sessionRef: "s-ref" });
-    const res = await refused.client.callTool({
-      name: "start_thread",
-      arguments: {
-        channel: ChannelType.Slack,
-        chatId: "C-ALERTS",
-        text: `Which part of platform://artifacts/${PRIVATE_ID} matters?`,
-      },
-    });
-    expect(res.isError).toBe(true);
-    expect(refused.starts).toEqual([]);
-
-    const allowed = await mcpHarness({
-      artifacts,
-      ownerDm: true,
-      sessionRef: "s-ref",
-    });
-    await allowed.client.callTool({
-      name: "start_thread",
-      arguments: {
-        channel: ChannelType.Slack,
-        chatId: OWNER_DM,
-        text: `Which part of platform://artifacts/${PRIVATE_ID} matters?`,
-      },
-    });
-    expect(allowed.starts.map((s) => s.text)).toEqual([
-      `Which part of ${APP_URL} matters?`,
-    ]);
-  });
-
-  /**
-   * TEST_SCENARIO: Telegram has no artifact page behind a sign-in, so a private
-   * artifact's link is refused there whatever the destination.
-   */
-  it("refuses a private artifact's link in Telegram", async () => {
-    const { client, destinations, posts } = await mcpHarness({
-      artifacts,
-      ownerDm: true,
-    });
-
-    const res = await client.callTool({
-      name: "post",
-      arguments: {
-        channel: ChannelType.Telegram,
-        text: `Draft: platform://artifacts/${PRIVATE_ID}`,
-      },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(posts).toEqual([]);
-    expect(destinations).toEqual([]);
+    expect(JSON.stringify(posts[1]?.options.card)).toContain(
+      `platform://artifacts/${PRIVATE_ID}`,
+    );
   });
 });

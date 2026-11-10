@@ -291,7 +291,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = new Hono();
   app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
-    uiBaseUrl: config.uiBaseUrl,
     channelManager,
     k8s: k8sClient,
     readAgent: (id) => deps.agentStateCache.get(id),

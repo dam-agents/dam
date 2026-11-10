@@ -281,6 +281,8 @@ import {
   shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
+import { withChannelArtifactLinks } from "./modules/artifact-library/channel-links.js";
+import type { LinkOutboundArtifacts } from "./modules/channels/infrastructure/outbound-artifact-links.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
@@ -1849,6 +1851,40 @@ export async function bootstrap() {
       : null;
   void agentIcons?.warm();
 
+  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
+    composeArtifactLibraryForOwner({
+      db,
+      artifacts,
+      owner,
+      surface,
+      shareBaseUrl: config.shareBaseUrl,
+      agentExists: opts?.agentExists,
+      scope: opts?.scope,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      agentApi: agentApiClient,
+      prompts: artifactPrompts,
+      validateChoice: opts?.validateChoice,
+    }).artifactLibrary;
+
+  const linkChannelArtifacts: LinkOutboundArtifacts = ({
+    agentId,
+    owner,
+    surface,
+    ownerDirectMessage,
+    text,
+  }) =>
+    withChannelArtifactLinks(text, {
+      surface,
+      appArtifactUrl: (id) => `${config.uiBaseUrl}/artifacts/${id}`,
+      lookup: (id) =>
+        owner === null
+          ? Promise.resolve(null)
+          : artifactLibraryFor(owner, "mcp", {
+              scope: { kind: "agent", agentId },
+            }).get(id),
+      ownerDirectMessage: async () => ownerDirectMessage,
+    });
+
   const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
 
   const slackWorker = slackGatewayFactory
@@ -1883,6 +1919,7 @@ export async function bootstrap() {
         isTermsAccepted,
         spendHold: channelSpendHold,
         providerOutage: channelProviderOutage,
+        linkArtifacts: linkChannelArtifacts,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1938,6 +1975,7 @@ export async function bootstrap() {
           ownerDisplayName: (sub) => userDirectory.resolveDisplayNameBySub(sub),
           spendHold: channelSpendHold,
           providerOutage: channelProviderOutage,
+          linkArtifacts: linkChannelArtifacts,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -2200,20 +2238,6 @@ export async function bootstrap() {
     },
   );
 
-  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
-    composeArtifactLibraryForOwner({
-      db,
-      artifacts,
-      owner,
-      surface,
-      shareBaseUrl: config.shareBaseUrl,
-      agentExists: opts?.agentExists,
-      scope: opts?.scope,
-      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: agentApiClient,
-      prompts: artifactPrompts,
-      validateChoice: opts?.validateChoice,
-    }).artifactLibrary;
   const environments = composeEnvironments({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),

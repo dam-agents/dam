@@ -11,6 +11,7 @@ import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastr
 import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
 import { stubWorkspaceFiles } from "./workspace-files.js";
+import { noArtifacts } from "./artifact-links.js";
 
 export const SLACK_HARNESS_OWNER = "kc|owner-1";
 
@@ -115,6 +116,7 @@ export function slackWorkerHarness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: opts.workspaceFiles ?? stubWorkspaceFiles(),
     listWorkspaces: async () => [],

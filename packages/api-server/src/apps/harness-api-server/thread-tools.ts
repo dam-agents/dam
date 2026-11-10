@@ -2,10 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ChannelType } from "api-server-api";
 import { z } from "zod";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
-import {
-  withChannelArtifactLinks,
-  type ChannelArtifactLinks,
-} from "../../modules/artifact-library/channel-links.js";
 import type {
   OwnedThreadsResult,
   StartedThread,
@@ -16,10 +12,8 @@ import type { ChannelCard } from "../../modules/channels/services/worker-contrac
 
 export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
-  linksFor(channel: ChannelType, chatId: string): ChannelArtifactLinks;
   cardOf(
     tree: Record<string, unknown> | undefined,
-    links: ChannelArtifactLinks,
   ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
@@ -82,13 +76,7 @@ export function registerThreadTools(
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
-        const links = ports.linksFor(channel, chatId);
-        const linked = await withChannelArtifactLinks(text, links);
-        if ("error" in linked) {
-          ports.audit("start", linked, { hasCard: tree !== undefined });
-          return errorResult(linked.error);
-        }
-        const built = await ports.cardOf(tree, links);
+        const built = await ports.cardOf(tree);
         if ("error" in built) {
           ports.audit("start", built, { hasCard: true });
           return errorResult(built.error);
@@ -96,7 +84,7 @@ export function registerThreadTools(
         const result = await ports.startThread(channel, {
           sessionId,
           conversationId: chatId,
-          text: linked.text,
+          text,
           ...(built.card ? { card: built.card } : {}),
         });
         ports.audit("start", result, { hasCard: built.card !== undefined });
