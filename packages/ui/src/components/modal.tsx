@@ -15,7 +15,6 @@ const MODAL_SIZE = {
   sm: "w-[480px]",
   md: "w-[560px]",
   lg: "w-[860px]",
-  xl: "w-[980px]",
 } as const;
 
 interface ModalProps {
