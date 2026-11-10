@@ -23,6 +23,7 @@ import {
 } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
+import { artifactMissing } from "../lib/load-failure.js";
 import { ArtifactVisibilityButton } from "./artifact-badges.js";
 import { ArtifactBarActions } from "./artifact-bar-actions.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
@@ -49,6 +50,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     data: artifact,
     isPending: artifactPending,
     isError: artifactError,
+    error: artifactFailure,
     refetch: refetchArtifact,
   } = useArtifact(openArtifactId);
 
@@ -208,7 +210,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
       </div>
 
       <div className="min-h-0 flex-1">
-        {artifactError ? (
+        {artifactError && !artifactMissing(artifactFailure) ? (
           <LoadFailed
             what="Couldn't load the artifact."
             onRetry={() => refetchArtifact()}

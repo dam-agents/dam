@@ -5,7 +5,7 @@ Last verified: 2026-11-09
 ## Overview
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
-It never runs inside the cluster.
+Users run it on their own machine; an Agent's own image carries the same client, for the install that Agent runs on ([below](#agent-skill)).
 For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
@@ -206,6 +206,14 @@ The agent never sees the web UI's warning that a connection is shared with an Ag
 The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
 The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
 It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
+
+A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
+Every agent image builds the CLI of its commit and puts `dam` on the PATH, with no configuration of its own.
+The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
+The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
+That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).
+Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — send their credential in a WebSocket's query string rather than in the header the Connection injects, so they are the person's own and fail from inside an Agent; the in-agent skill says so rather than leaving the Agent to guess.
+Version skew is accepted, as for the served skill: an image and a server come from the same build, and the CLI has to work against a newer server anyway.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
 A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.

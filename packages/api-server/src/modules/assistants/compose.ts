@@ -25,6 +25,7 @@ export function composeAssistantsForOwner(deps: {
   agentOf: (agentId: string) => Promise<InfraAgent | null>;
   agents: Pick<AgentsService, "list" | "create">;
   gettingStarted: GettingStartedModule;
+  damConnection: () => Promise<string | null>;
 }): AssistantProvisioning {
   return createAssistantsService({
     repo: createAssistantsRepository(deps.db),
@@ -46,5 +47,6 @@ export function composeAssistantsForOwner(deps: {
         ),
       }),
     resetChecklist: () => deps.gettingStarted.forOwner(deps.owner).reset(),
+    damConnection: deps.damConnection,
   });
 }

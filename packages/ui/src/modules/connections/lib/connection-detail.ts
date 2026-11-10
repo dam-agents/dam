@@ -1,5 +1,7 @@
 import type { ConnectionView } from "api-server-api";
 
+import { getBrand } from "../../../brand.js";
+import { damActsAsYou, isDamConnection } from "./dam-connection.js";
 import { connectionScopeSummary, fullAccessReach } from "./github-access.js";
 
 export interface ConnectionDetail {
@@ -9,6 +11,7 @@ export interface ConnectionDetail {
 
 type DetailedConnection = Pick<
   ConnectionView,
+  | "templateId"
   | "authKind"
   | "accountLabel"
   | "isParent"
@@ -19,6 +22,7 @@ type DetailedConnection = Pick<
 >;
 
 function accountLine(connection: DetailedConnection): string | undefined {
+  if (isDamConnection(connection)) return damActsAsYou(getBrand().name);
   if (connection.accountLabel) return `Acts as ${connection.accountLabel}`;
   const installedOn = connection.check?.installedOn;
   if (connection.isParent && installedOn) return `Installed on ${installedOn}`;

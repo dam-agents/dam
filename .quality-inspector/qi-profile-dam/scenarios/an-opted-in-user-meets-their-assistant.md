@@ -4,9 +4,23 @@
 
 Given a fresh platform and the owner signed in, with Settings → Experimental features open
 When they look at the rows
-Then the last row is labelled *Dambledore* and described as *Smart assistant that can control DAM for you*
-When they switch it on and open their agent list
+Then the second-to-last row is labelled *DAM connection* and described as *Let your agents act as you on DAM through a connection.
+Turning this off leaves the connections you already made working.*
+And the last row is labelled *Dambledore* and described as *Smart assistant that can control DAM for you*
+When they switch the assistant's row on and open their agent list
 Then Dambledore is there as an ordinary agent, with its own avatar
+And it holds the *DAM connection*, which its Connections page lists as *Acts as you on DAM*
+
+## AC-1b — the connection's own switch offers it to the account's agents
+
+Given that account with Settings → Experimental features open
+When they switch *DAM connection* on and open an agent's Connections page
+Then *Add connection* offers *DAM connection*, whose pane has no field to fill and one button, *Create connection*
+When they click it
+Then the agent's Connections page lists *DAM connection*, flagged *Acts as you on DAM*, and the API keys settings show a key named *DAM connection*
+When they switch *DAM connection* off again and reload that page
+Then the connection and its grant are still there, and *Remove from this agent* and *Rotate key* still work
+And a second grant offers the connection to no other agent: *Add connection* no longer offers *DAM connection*
 
 ## AC-2 — the assistant's first chat opens on its greeting
 

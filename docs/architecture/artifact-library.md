@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-06
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -121,6 +121,8 @@ Out of scope: limits per viewer on what the Agent may do.
 **Visibility** is one field with three values, and the share link — a URL on the share host keyed by an unguessable random **slug** — is the same for the two that have one, so switching between them never changes the link.
 
 - An artifact is **private** by default: visible in-app only, no link.
+  A channel message that carries its in-app `platform://artifacts/<id>` link is refused, so the link never reaches Slack or Telegram as dead text or as a page nobody shared: the platform replaces the link with the artifact's share URL, and a private artifact has none ([slack guarantees](slack-guarantees.md#3-who-decides-what)).
+  The one exception is the 1:1 Slack DM between an Agent and its owner: there the link becomes the artifact's own address in the app, which opens behind the owner's sign-in, and only for an artifact that Agent published.
 - **Restricted** opens the link to a named group.
   The owner keeps a **viewer allowlist** of email addresses — emails, not user ids, because a listed person may exist only in the identity provider and never have signed in to the platform.
   Viewers need an account admitted by that identity provider; an email address alone does not create one.
@@ -240,6 +242,7 @@ flowchart LR
 ## UI surfaces
 
 - The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
+  An artifact also has an address of its own, `/artifacts/<id>`, which opens that page with the artifact docked, the state a click on its row leaves; an id that is gone or not the owner's leaves the library and says in the dock that there is no such artifact.
   The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
   On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
   In an Agent's chat the list is an **Artifacts section** in the column beside the conversation, under Files.

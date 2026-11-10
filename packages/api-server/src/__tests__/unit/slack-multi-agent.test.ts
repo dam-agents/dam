@@ -11,6 +11,7 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: several agents connected to one Slack conversation — which one
@@ -121,6 +122,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub: string) => hooks.termsAccepted?.(sub) ?? true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

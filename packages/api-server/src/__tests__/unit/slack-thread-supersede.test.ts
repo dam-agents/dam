@@ -12,6 +12,7 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: A message posted outside a thread and a reply in its thread
@@ -96,6 +97,7 @@ function harness() {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

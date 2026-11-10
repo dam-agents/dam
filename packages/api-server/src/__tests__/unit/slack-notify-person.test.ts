@@ -9,6 +9,7 @@ import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fa
 import type { ExternalLink } from "../../modules/channels/services/identity-link-service.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -44,6 +45,7 @@ async function harness(links: ExternalLink[], workspaces: string[]) {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => workspaces,

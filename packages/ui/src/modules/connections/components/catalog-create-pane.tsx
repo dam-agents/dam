@@ -1,4 +1,8 @@
-import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
+import {
+  type ConnectionTemplateView,
+  type ConnectionView,
+  DAM_TEMPLATE_ID,
+} from "api-server-api";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +17,7 @@ import {
 } from "../lib/catalog-providers.js";
 import { hostChoicesOf } from "../lib/github-enterprise-hosts.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
+import { DamConnectionCreateBody } from "./dam-connection-create-body.js";
 
 interface Props {
   group: CatalogProviderGroup;
@@ -70,6 +75,21 @@ export function CatalogCreatePane({
       ? templateCreateHeading(template).title
       : undefined;
   if (!title) return null;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the install's own Connection has no form: its credential is the platform's, so the pane offers the one thing a person can do — have it made, or keep the one they hold — and the create either makes it or answers with theirs. */
+  if (template?.id === DAM_TEMPLATE_ID)
+    return (
+      <>
+        <CatalogPaneHeader title={title} onBack={onBack} />
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <DamConnectionCreateBody
+            connectionName={template.name}
+            onCreated={onCreated}
+            onCancel={onBack}
+          />
+        </div>
+      </>
+    );
 
   const body = (fields: ReactNode) =>
     multiMethod ? (
