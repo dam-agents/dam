@@ -13,7 +13,7 @@ describe("feature modes", () => {
         listEnabled: () =>
           Promise.resolve({
             processes: true,
-            "agent-telemetry": true,
+            "chat-forms": true,
           }),
         upsert: () => Promise.resolve(),
       },
@@ -21,7 +21,6 @@ describe("feature modes", () => {
       surface: "test",
       modes: {
         processes: "off",
-        "agent-telemetry": "experimental",
         "advanced-connections": "experimental",
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
@@ -33,7 +32,7 @@ describe("feature modes", () => {
     });
     expect(await service.flags()).toMatchObject({
       processes: false,
-      "agent-telemetry": true,
+      "chat-forms": true,
       "advanced-connections": false,
     });
   });

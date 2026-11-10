@@ -2,7 +2,7 @@ import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
 import { useAgents } from "../../agents/api/queries.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { useInvocationTurns } from "../api/queries.js";
 import { type DelegationTarget, flattenIds } from "../lib/delegation-state.js";
 import { DelegationCard } from "./delegation-card.js";
@@ -13,7 +13,8 @@ interface Props {
 }
 
 export function DelegationCards({ nodes, driverAgentId }: Props) {
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryEnabled =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
   const { data: agents } = useAgents();
   const allIds = useMemo(() => flattenIds(nodes), [nodes]);
   const { data: telemetry } = useInvocationTurns(

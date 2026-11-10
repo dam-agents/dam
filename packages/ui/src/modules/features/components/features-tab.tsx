@@ -36,12 +36,6 @@ const FEATURE_ROWS: FeatureRow[] = [
       "See the pre-release connection catalog: Google services, Spotify, YouTube and custom client credentials.",
   },
   {
-    id: "agent-telemetry",
-    label: "Agent telemetry",
-    description:
-      "See what each turn of a conversation did (its spans, its records and what the call cost) under the reply itself, and export telemetry from the session menu.",
-  },
-  {
     id: "chat-forms",
     label: "Chat forms",
     description:
