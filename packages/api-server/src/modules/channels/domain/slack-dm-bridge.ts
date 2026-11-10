@@ -1,4 +1,7 @@
-import type { SlackEmailUser } from "../infrastructure/slack-gateway.js";
+import type {
+  SlackEmailUser,
+  SlackWorkspaceIdentity,
+} from "../infrastructure/slack-gateway.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Why a Slack account found by mailbox cannot stand
@@ -7,33 +10,45 @@ import type { SlackEmailUser } from "../infrastructure/slack-gateway.js";
  */
 export type SlackDmRefusal =
   | "email-mismatch"
+  | "other-workspace"
+  | "other-enterprise"
   | "deleted"
   | "bot"
   | "app-user"
   | "guest"
-  | "external"
-  | "other-workspace";
+  | "external";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The mailbox has to be the account's own and the
+ * UNIT_BOUNDARY_DESCRIPTION: The mailbox has to be the account's own, and the
  * account has to be an ordinary member of the workspace the operator trusts —
- * a guest, a Slack Connect or Grid stranger, a bot, an app or a person from
- * another team all share an address with nobody we mean, and a paid plan lets
- * an admin set a member's address without verification.
+ * a guest, a Slack Connect or Grid stranger, a bot, an app, or a person from
+ * another team or organization shares an address with nobody we mean, and a
+ * paid plan lets an admin set a member's address without verification.
+ *
+ * Membership is Slack's own attribution plus, on an enterprise, the workspaces
+ * the organization says the person belongs to; neither is ever inferred from
+ * the workspace the lookup asked about. The organization the install recorded
+ * and the one Slack reports must agree — when either is missing the pairing
+ * refuses, because a mismatch it cannot see is a stranger it would accept.
  */
 export function acceptEmailMatch(
   user: SlackEmailUser,
   verifiedEmail: string,
-  workspaceTeamId: string,
+  workspace: SlackWorkspaceIdentity,
 ): SlackDmRefusal | null {
-  if (!user.email || user.email.toLowerCase() !== verifiedEmail.toLowerCase())
+  if (user.email.toLowerCase() !== verifiedEmail.toLowerCase())
     return "email-mismatch";
+  const memberOfWorkspace =
+    user.teamId === workspace.teamId ||
+    (user.enterpriseTeams?.includes(workspace.teamId) ?? false);
+  if (!memberOfWorkspace) return "other-workspace";
+  if (user.enterpriseId !== workspace.enterpriseId) return "other-enterprise";
   if (user.deleted) return "deleted";
   if (user.isBot) return "bot";
   if (user.isAppUser) return "app-user";
   if (user.isRestricted || user.isUltraRestricted) return "guest";
-  if (user.isStranger) return "external";
-  if (user.teamId !== workspaceTeamId) return "other-workspace";
+  if (user.isStranger === true || user.enterpriseIsGuest === true)
+    return "external";
   return null;
 }
 
@@ -82,20 +97,26 @@ export function missingRequiredScopes(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The DM's hello names the agent, what it sends, the
  * reach the pairing grants, and how to undo it — the one place the owner reads
- * that a message here can operate their account.
+ * that a message here can operate their account. Where another Agent is bound
+ * to the same DM the bare command would be refused as ambiguous, so the hint
+ * names this one.
  */
 export function slackDmHello(args: {
   agentName: string;
   brandShort: string;
   purpose?: string | undefined;
   isDefault: boolean;
+  otherAgentsBound: boolean;
 }): string {
-  const { agentName, brandShort, purpose, isDefault } = args;
+  const { agentName, brandShort, purpose, isDefault, otherAgentsBound } = args;
+  const unbind = otherAgentsBound
+    ? `/${brandShort} unbind ${agentName}`
+    : `/${brandShort} unbind`;
   return [
     `Hi, I'm ${agentName} from ${brandShort}.`,
     `I'll send you ${purpose && purpose.trim() ? purpose.trim() : "your results"} here, and you can message me here anytime.`,
     `Messages here can ask me to act on your ${brandShort} account.`,
-    `Not you, or want to stop? Type \`/${brandShort} unbind\` here.`,
+    `Not you, or want to stop? Type \`${unbind}\` here.`,
     ...(isDefault ? [] : [`Start a message with ${agentName} to reach me.`]),
   ].join(" ");
 }

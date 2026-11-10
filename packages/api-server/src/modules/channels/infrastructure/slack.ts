@@ -1125,6 +1125,25 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
   ): Promise<SlackLabelledConversation[]>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What the worker needs to know about the DM Bridge:
+ * whether a pairing was revoked, which closes turns and delivery into that DM
+ * for that Agent whatever a binding or a link still says, and what an in-chat
+ * unbind has to release. An unreadable answer counts as closed.
+ */
+export interface SlackDmBridgePort {
+  blocks(
+    agentId: string,
+    teamId: SlackWorkspace,
+    dmChannelId: string,
+  ): Promise<boolean>;
+  releaseInChat(args: {
+    agentId: string;
+    teamId: SlackWorkspace;
+    slackChannelId: string;
+  }): Promise<"none" | "revoked" | "incomplete">;
+}
+
 export interface SlackOAuthPending {
   slackUserId: string;
   channelId: string;
@@ -1451,15 +1470,12 @@ export type SlackWorkerDeps = {
     agentId: string,
     slackChannelId: string,
   ) => Promise<void>;
-  /* UNIT_BOUNDARY_DESCRIPTION: What an unbind leaves behind in a 1:1 DM — the
-   * threads that Agent's Sessions owned there, and the email pairing that put
-   * them there. A binding the person released must not keep either. */
-  afterUnbind?: (args: {
-    agentId: string;
-    slackChannelId: string;
-    teamId: SlackWorkspace;
-    ownerSub: string;
-  }) => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: The DM Bridge's records, as the worker needs
+   * them: whether a DM's pairing was revoked (turns and delivery there are then
+   * closed, whatever the binding or link still says), and what an in-chat
+   * unbind leaves behind — the threads that Agent's Sessions owned there and
+   * the email pairing that put them there. */
+  dmBridges?: SlackDmBridgePort;
   setSlackChannelAmbient: (
     agentId: string,
     slackChannelId: string,
@@ -1501,6 +1517,13 @@ const FIRST_LINE_MAX = 200;
  * started is the same kind of message. */
 const MESSAGE_SURFACE = "message";
 
+const BRIDGE_CLOSED_COPY =
+  "The DM Bridge released this conversation, so this agent no longer reaches it here. " +
+  "Ask its owner to connect it again.";
+
+const BRIDGE_UNKNOWN_COPY =
+  "Could not check whether this conversation still reaches the agent, so nothing was sent.";
+
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const {
     makeAcpClient,
@@ -1514,7 +1537,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ownerDisplayName,
     channelRegistry,
     unbindSlackChannel,
-    afterUnbind,
+    dmBridges,
     setSlackChannelAmbient,
     setSlackChannelHistory,
     agentsFor,
@@ -1538,6 +1561,30 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: A DM the Bridge revoked admits no turn and takes
+   * no delivery, even while a binding or an OAuth link still reaches it. Only a
+   * DM can carry a Bridge record, so nothing else pays for the check, and a
+   * record this call cannot read closes the conversation rather than opening it.
+   */
+  async function bridgeClosed(
+    agentId: string,
+    teamId: SlackWorkspace,
+    channelId: string,
+  ): Promise<{ error: string } | null> {
+    if (!dmBridges || !isDirectMessageId(channelId)) return null;
+    try {
+      return (await dmBridges.blocks(agentId, teamId, channelId))
+        ? { error: BRIDGE_CLOSED_COPY }
+        : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId, channelId, error: formatError(err) },
+        "slack.dm_bridge.unreadable",
+      );
+      return { error: BRIDGE_UNKNOWN_COPY };
+    }
+  }
 
   async function ownerReach(
     gw: SlackGateway,
@@ -4365,17 +4412,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         if (!invoker) return;
 
         await unbindSlackChannel(binding.instanceName, command.channelId);
-        await afterUnbind?.({
-          agentId: binding.instanceName,
-          slackChannelId: command.channelId,
-          teamId: command.teamId,
-          ownerSub: invoker,
-        }).catch((err: unknown) => {
+        let bridgeRelease: "none" | "revoked" | "incomplete" = "none";
+        try {
+          bridgeRelease =
+            (await dmBridges?.releaseInChat({
+              agentId: binding.instanceName,
+              teamId: command.teamId,
+              slackChannelId: command.channelId,
+            })) ?? "none";
+        } catch (err) {
+          bridgeRelease = "incomplete";
           getLogger().warn(
-            { error: err instanceof Error ? err.message : String(err) },
+            { error: formatError(err) },
             "slack.unbind.bridge_release_failed",
           );
-        });
+        }
         securityLog("info", "channel.chat_unbound", {
           category: "authz-list",
           actor: invoker,
@@ -4396,12 +4447,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         );
         await ack({
           text:
-            remaining.length === 0
+            (remaining.length === 0
               ? `\`${binding.name}\` disconnected. Run \`/${brandShort} bind\` to connect an agent again.`
               : `\`${binding.name}\` disconnected. Still connected here: ${rosterNames(remaining)}.` +
                 (binding.isDefault
                   ? ` It was this channel's default agent, so mentions with no name now reach no one until an agent's owner runs \`/${brandShort} default <agent>\`.`
-                  : ""),
+                  : "")) +
+            (bridgeRelease === "incomplete"
+              ? " The DM Bridge release did not finish, so turns and deliveries there stay closed — run the unbind again to finish it."
+              : ""),
         });
       })
       .with("ambient", async () => {
@@ -4758,6 +4812,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         oneThread: true,
         instanceName: entry.instanceName,
         speakerLabel: false,
+        directMessage: true,
         whisper: {
           whisperer: slackUserId,
           origin: session.origin,
@@ -5870,6 +5925,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const gw = gateway;
         const first = batch[0];
         if (!gw || !first) return;
+        if (
+          isDirectMessageId(first.channelId) &&
+          (await bridgeClosed(instanceName, first.teamId, first.channelId))
+        ) {
+          for (const m of batch) m.release();
+          return;
+        }
         const owner = await getInstanceOwner(instanceName);
         if (!owner || !(await isTermsAccepted(owner))) return;
         const held = await spendHold?.(instanceName, {
@@ -6201,6 +6263,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const binding = routed.target;
     if (!senderReaches(sender, binding)) return;
+    const closed = await bridgeClosed(
+      binding.instanceName,
+      event.teamId,
+      event.channel,
+    );
+    if (closed) {
+      await gateway.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        teamId: event.teamId,
+        text: closed.error,
+      });
+      return;
+    }
     const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
     if (!rateChecked && !(await admitBotPost(sender, event))) return;
 
@@ -6217,6 +6293,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         oneThread: inThread || !opts.directMessage,
         instanceName: binding.instanceName,
         speakerLabel: !opts.directMessage,
+        directMessage: opts.directMessage,
       },
       slackUserId,
       {
@@ -6247,6 +6324,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     oneThread: boolean;
     instanceName: string;
     speakerLabel: boolean;
+    directMessage: boolean;
     whisper?: SlackTurnWhisper;
   };
 
@@ -6316,6 +6394,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         settleMs,
         canSteer: (msg) => !carriesAttachments(msg),
         runTurn: async (queued, onSession, steersSettled) => {
+          if (conversation.directMessage) {
+            const closed = await bridgeClosed(
+              conversation.instanceName,
+              conversation.teamId,
+              conversation.channelId,
+            );
+            if (closed) {
+              for (const m of queued) m.release?.();
+              return;
+            }
+          }
           const threadKey = slackThreadKey(
             conversation.channelId,
             conversation.threadTs,
@@ -7458,6 +7547,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) {
         return target;
       }
+      const bridgeRefusal = await bridgeClosed(
+        instanceName,
+        target.teamId,
+        target.id,
+      );
+      if (bridgeRefusal) return bridgeRefusal;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName),
@@ -7776,6 +7871,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const id = threadTs;
         turn = findTurnRef(instanceName, (ref) => ref.threadTs === id);
       }
+      const bridgeRefusal = turn
+        ? await bridgeClosed(
+            instanceName,
+            turn.teamId,
+            args.conversationId ?? turn.channel,
+          )
+        : null;
+      if (bridgeRefusal) return bridgeRefusal;
       const whisper =
         turn?.whisper && (args.conversationId ?? turn.channel) === turn.channel
           ? turn.whisper
@@ -7796,6 +7899,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                   : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
             );
       if ("error" in target) return target;
+      const bridged = await bridgeClosed(
+        instanceName,
+        target.teamId,
+        target.id,
+      );
+      if (bridged) return bridged;
 
       const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName, turn?.sessionId, turn?.ambient),

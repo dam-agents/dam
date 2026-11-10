@@ -252,22 +252,39 @@ export interface SlackUserInfo {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A Slack person found by their mailbox, with the
- * flags that say whether that mailbox is a trustworthy identity for them at
+ * evidence that says whether that mailbox is a trustworthy identity for them at
  * all. Slack reports no single "trusted" flag, so every way a person can stand
- * outside a workspace's own membership — a guest, a Slack Connect or Grid
- * stranger, a bot or an app — is carried here for the caller to refuse.
+ * outside a workspace's own membership is carried here for the caller to
+ * refuse: the workspace Slack attributes them to (never the one we asked
+ * about), the ones an enterprise says they belong to, and the guest and
+ * external markers. A marker Slack did not report is `null` — unknown, not
+ * false — and the adapter answers nothing at all when the payload leaves a
+ * membership fact out.
  */
 export interface SlackEmailUser {
   id: string;
   teamId: string;
   enterpriseId: string | null;
-  email: string | null;
+  enterpriseTeams: string[] | null;
+  enterpriseIsGuest: boolean | null;
+  email: string;
   deleted: boolean;
   isBot: boolean;
   isAppUser: boolean;
   isRestricted: boolean;
   isUltraRestricted: boolean;
-  isStranger: boolean;
+  isStranger: boolean | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack organization a workspace belongs to, as
+ * the install record holds it; null means a standalone workspace, or an install
+ * whose handshake did not say. A pairing compares it and refuses when either
+ * side is unknown or they differ.
+ */
+export interface SlackWorkspaceIdentity {
+  teamId: SlackWorkspace;
+  enterpriseId: string | null;
 }
 
 export interface SlackMessageReaction {

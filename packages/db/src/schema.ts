@@ -106,6 +106,12 @@ export const slackCredentialStateEnum = pgEnum("slack_credential_state", [
 export const slackInstalls = pgTable("slack_installs", {
   teamId: text("team_id").primaryKey(),
   teamName: text("team_name"),
+  /* UNIT_BOUNDARY_DESCRIPTION: the Slack organization the install handshake
+   * said the workspace belongs to, null for a standalone app, a workspace whose
+   * install predates this column, or the Helm token import. Anything that pairs
+   * a person to a workspace compares it, and an unknown one on either side
+   * refuses rather than guesses. */
+  enterpriseId: text("enterprise_id"),
   secretPath: text("secret_path").notNull(),
   secretField: text("secret_field").notNull(),
   installedBy: text("installed_by"),
@@ -119,6 +125,43 @@ export const slackInstalls = pgTable("slack_installs", {
     .defaultNow()
     .notNull(),
 });
+
+export const slackDmBridgeStateEnum = pgEnum("slack_dm_bridge_state", [
+  "active",
+  "revoking",
+  "revoked",
+]);
+
+/* UNIT_BOUNDARY_DESCRIPTION: what the DM Bridge did, so that undoing it never
+ * depends on live Slack lookups or on state another path may have deleted. The
+ * row names the exact destination it settled — agent, workspace, DM, person —
+ * and its state is what stops turns and delivery after a revoke, including a
+ * revoke that a failure left half done. */
+export const slackDmBridges = pgTable(
+  "slack_dm_bridges",
+  {
+    agentId: text("agent_id").notNull(),
+    teamId: text("team_id").notNull(),
+    dmChannelId: text("dm_channel_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    slackUserId: text("slack_user_id").notNull(),
+    state: slackDmBridgeStateEnum("state").notNull().default("active"),
+    helloPostedAt: timestamp("hello_posted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.agentId, table.teamId, table.dmChannelId],
+    }),
+    index("slack_dm_bridges_owner_idx").on(table.ownerSub),
+    index("slack_dm_bridges_dm_idx").on(table.teamId, table.dmChannelId),
+  ],
+);
 
 export const slackIgnoredApps = pgTable(
   "slack_ignored_apps",

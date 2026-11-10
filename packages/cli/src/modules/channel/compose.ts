@@ -77,7 +77,7 @@ export function composeChannelModule(
   parent.addCommand(slack);
 
   const slackDm = new Command("slack-dm").description(
-    "Pair your Slack account with a DAM Agent's 1:1 DM with the bot (the DM Bridge)",
+    "Pair your Slack account with one of your agents' 1:1 DM with the bot (the DM Bridge)",
   );
   slackDm.addCommand(buildSlackDmStatusCommand(serviceScoped));
   slackDm.addCommand(buildSlackDmConnectCommand(agentScoped));

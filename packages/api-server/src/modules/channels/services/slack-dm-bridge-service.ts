@@ -12,8 +12,13 @@ import {
   slackDmHello,
 } from "../domain/slack-dm-bridge.js";
 import type {
+  SlackDmBridge,
+  SlackDmBridgeState,
+} from "../infrastructure/slack-dm-bridges-repository.js";
+import type {
   SlackConversationLookup,
   SlackEmailUser,
+  SlackWorkspaceIdentity,
 } from "../infrastructure/slack-gateway.js";
 
 /**
@@ -27,35 +32,119 @@ export type SlackDmFailureCode =
   | "unavailable"
   | "agent-not-found"
   | "linked-to-another-account"
+  | "linked-to-another-workspace"
   | "not-a-direct-message"
-  | "binding-failed"
   | "slack-failed";
 
+/** UNIT_BOUNDARY_DESCRIPTION: the part of a connect that persisted before a
+ *  later step failed, so a caller is told what now exists rather than only what
+ *  did not happen. */
+export interface SlackDmDestination {
+  teamId: string;
+  slackUserId: string;
+  dmChannelId: string;
+}
+
+export type SlackDmFailurePartial = SlackDmDestination & {
+  link?: "created" | "existing";
+  binding?: "created" | "existing";
+  helloPosted?: boolean;
+};
+
+export type SlackDmConnectOutcome = SlackDmConnectView;
+
 export type SlackDmResult<T> =
-  ({ ok: true } & T) | { ok: false; code: SlackDmFailureCode; message: string };
+  | ({ ok: true } & T)
+  | {
+      ok: false;
+      code: SlackDmFailureCode;
+      message: string;
+      partial?: SlackDmFailurePartial;
+    };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Bridge's own record, as the service needs it.
+ * Undoing a pairing reads the record it settled rather than today's bindings
+ * and links, so a revoke still finishes after a logout removed the link or a
+ * failed step removed the binding.
+ */
+export interface SlackDmBridgeStore {
+  settleConnect(input: {
+    ownerSub: string;
+    agentId: string;
+    teamId: string;
+    dmChannelId: string;
+    slackUserId: string;
+    insertEmailLink: boolean;
+  }): Promise<
+    | {
+        ok: true;
+        link: {
+          keycloakSub: string;
+          source: "oauth" | "email";
+          teamId: string | null;
+        };
+        linkCreated: boolean;
+        binding: { created: boolean; isDefault: boolean };
+        bridge: { created: boolean; state: SlackDmBridgeState };
+      }
+    | {
+        ok: false;
+        code: "linked-to-another-account" | "linked-to-another-workspace";
+        link: {
+          keycloakSub: string;
+          source: "oauth" | "email";
+          teamId: string | null;
+        };
+      }
+  >;
+  find(
+    agentId: string,
+    teamId: string,
+    dmChannelId: string,
+  ): Promise<SlackDmBridge | null>;
+  listForAgent(agentId: string): Promise<SlackDmBridge[]>;
+  setState(
+    agentId: string,
+    teamId: string,
+    dmChannelId: string,
+    state: SlackDmBridgeState,
+  ): Promise<void>;
+  claimHello(
+    agentId: string,
+    teamId: string,
+    dmChannelId: string,
+  ): Promise<boolean>;
+  clearHello(
+    agentId: string,
+    teamId: string,
+    dmChannelId: string,
+  ): Promise<void>;
+  releaseBinding(
+    agentId: string,
+    teamId: string,
+    dmChannelId: string,
+  ): Promise<void>;
+  bindingsInConversation(
+    teamId: string,
+    dmChannelId: string,
+  ): Promise<{ agentId: string; owner: string }[]>;
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Everything the Bridge needs from the platform and
  * from Slack, as ports, so the pairing rules can be checked without a database
- * or a workspace. `teamId` always names the Slack workspace a call acts for;
- * nothing here guesses one.
+ * or a workspace. `teamId` always names the Slack workspace a call acts for,
+ * and `workspace` carries that workspace's identity as its install recorded it;
+ * nothing here guesses either.
  */
 export interface SlackDmBridgePorts {
   trustedWorkspaces: readonly string[];
   slackConfigured: boolean;
-  activeWorkspaces: () => Promise<string[]>;
+  activeWorkspaces: () => Promise<SlackWorkspaceIdentity[]>;
   grantedScopes: (teamId: string) => Promise<string[] | null>;
   verifiedEmailOf: (keycloakSub: string) => Promise<string | null>;
   linksOf: (keycloakSub: string) => Promise<ExternalLink[]>;
-  linkOfExternalUser: (
-    externalUserId: string,
-  ) => Promise<{ keycloakSub: string; source: "oauth" | "email" } | null>;
-  linkByEmail: (
-    externalUserId: string,
-    keycloakSub: string,
-    teamId: string,
-  ) => Promise<void>;
-  unlinkEmailOf: (keycloakSub: string, teamId: string) => Promise<number>;
   lookupUserByEmail: (
     email: string,
     teamId: string,
@@ -69,23 +158,16 @@ export interface SlackDmBridgePorts {
     agentId: string,
     keycloakSub: string,
   ) => Promise<{ id: string; name: string } | null>;
-  bindingsOf: (
-    agentId: string,
-  ) => Promise<
-    { slackChannelId: string; teamId: string; isDefault: boolean }[]
-  >;
-  bindingsInConversation: (
-    slackChannelId: string,
-  ) => Promise<{ agentId: string; owner: string }[]>;
-  bindAgent: (
-    agentId: string,
-    slackChannelId: string,
-  ) => Promise<{ ok: true; isDefault: boolean } | { ok: false; error: string }>;
-  unbindAgent: (agentId: string, slackChannelId: string) => Promise<void>;
+  bridges: SlackDmBridgeStore;
   releaseOwnedThreads: (
     agentId: string,
-    slackChannelId: string,
+    teamId: string,
+    channelId: string,
   ) => Promise<number>;
+  unlinkEmailLink: (slackUserId: string, teamId: string) => Promise<number>;
+  /* UNIT_BOUNDARY_DESCRIPTION: reports a link this pairing created, for the
+   * attribution that reads it; a refused or existing link announces nothing. */
+  announceEmailLink: (slackUserId: string, keycloakSub: string) => void;
   postHello: (
     agentId: string,
     slackChannelId: string,
@@ -99,18 +181,98 @@ export interface SlackDmBridgeService {
   connect(
     keycloakSub: string,
     input: { agentId: string; purpose?: string },
-  ): Promise<SlackDmResult<SlackDmConnectView>>;
+  ): Promise<SlackDmResult<SlackDmConnectOutcome>>;
   disconnect(
     keycloakSub: string,
     input: { agentId: string },
   ): Promise<SlackDmResult<SlackDmDisconnectView>>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the in-chat unbind, which releases only a DM
+   *  this Bridge recorded for that Agent, and reports an unfinished revoke. */
+  releaseInChat(input: {
+    agentId: string;
+    teamId: string;
+    slackChannelId: string;
+  }): Promise<"none" | "revoked" | "incomplete">;
 }
 
 function refusal(
   code: SlackDmFailureCode,
   message: string,
-): { ok: false; code: SlackDmFailureCode; message: string } {
-  return { ok: false, code, message };
+  partial?: SlackDmFailurePartial,
+): Extract<SlackDmResult<never>, { ok: false }> {
+  return { ok: false, code, message, ...(partial ? { partial } : {}) };
+}
+
+export interface SlackDmRevokeDeps {
+  bridges: Pick<
+    SlackDmBridgeStore,
+    "find" | "setState" | "releaseBinding" | "bindingsInConversation"
+  >;
+  releaseOwnedThreads: (
+    agentId: string,
+    teamId: string,
+    channelId: string,
+  ) => Promise<number>;
+  unlinkEmailLink: (slackUserId: string, teamId: string) => Promise<number>;
+}
+
+export interface SlackDmRevoker {
+  revoke(
+    record: SlackDmBridge,
+  ): Promise<
+    | { ok: true; threadsReleased: number; linksRemoved: number }
+    | { ok: false; threadsReleased: number; linksRemoved: number }
+  >;
+  releaseInChat(input: {
+    agentId: string;
+    teamId: string;
+    slackChannelId: string;
+  }): Promise<"none" | "revoked" | "incomplete">;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Release what the record settled, in an order a
+ * retry can finish after any failure: the state refuses turns and delivery
+ * before anything is deleted, every step is idempotent, and the link goes last
+ * and only when no binding is left in that exact DM. A failure leaves the
+ * record `revoking` and is reported, never swallowed.
+ */
+export function createSlackDmRevoker(deps: SlackDmRevokeDeps): SlackDmRevoker {
+  async function revoke(record: SlackDmBridge) {
+    const { agentId, teamId, dmChannelId, slackUserId } = record;
+    await deps.bridges.setState(agentId, teamId, dmChannelId, "revoking");
+    let threadsReleased = 0;
+    let linksRemoved = 0;
+    try {
+      await deps.bridges.releaseBinding(agentId, teamId, dmChannelId);
+      threadsReleased = await deps.releaseOwnedThreads(
+        agentId,
+        teamId,
+        dmChannelId,
+      );
+      const left = await deps.bridges.bindingsInConversation(
+        teamId,
+        dmChannelId,
+      );
+      if (left.length === 0)
+        linksRemoved = await deps.unlinkEmailLink(slackUserId, teamId);
+      await deps.bridges.setState(agentId, teamId, dmChannelId, "revoked");
+      return { ok: true as const, threadsReleased, linksRemoved };
+    } catch {
+      return { ok: false as const, threadsReleased, linksRemoved };
+    }
+  }
+
+  return {
+    revoke,
+    async releaseInChat({ agentId, teamId, slackChannelId }) {
+      if (!isSlackDirectMessageId(slackChannelId)) return "none";
+      const record = await deps.bridges.find(agentId, teamId, slackChannelId);
+      if (!record) return "none";
+      const released = await revoke(record);
+      return released.ok ? "revoked" : "incomplete";
+    },
+  };
 }
 
 export function createSlackDmBridgeService(
@@ -121,35 +283,38 @@ export function createSlackDmBridgeService(
    * is known to carry every scope the Bridge needs. An unknown grant set is not
    * a grant — that is what `hasScope` answers elsewhere and must not here. */
   async function searchableWorkspaces(): Promise<{
-    teamIds: string[];
+    workspaces: SlackWorkspaceIdentity[];
     scopesMissing: boolean;
   }> {
-    const active = new Set(await deps.activeWorkspaces());
-    const trusted = deps.trustedWorkspaces.filter((teamId) =>
-      active.has(teamId),
+    const active = await deps.activeWorkspaces();
+    const trusted = deps.trustedWorkspaces.flatMap((teamId) =>
+      active.filter((workspace) => workspace.teamId === teamId),
     );
-    const ready: string[] = [];
+    const workspaces: SlackWorkspaceIdentity[] = [];
     let scopesMissing = false;
-    for (const teamId of trusted) {
-      const scopes = await deps.grantedScopes(teamId).catch(() => null);
-      if (missingRequiredScopes(scopes).length === 0) ready.push(teamId);
+    for (const workspace of trusted) {
+      const scopes = await deps
+        .grantedScopes(workspace.teamId)
+        .catch(() => null);
+      if (missingRequiredScopes(scopes).length === 0)
+        workspaces.push(workspace);
       else scopesMissing = true;
     }
-    return { teamIds: ready, scopesMissing };
+    return { workspaces, scopesMissing };
   }
 
   async function status(keycloakSub: string): Promise<SlackDmStatusView> {
     if (!deps.slackConfigured || deps.trustedWorkspaces.length === 0)
       return { state: "off", reason: "feature-off" };
-    const { teamIds, scopesMissing } = await searchableWorkspaces();
-    if (teamIds.length === 0)
+    const { workspaces, scopesMissing } = await searchableWorkspaces();
+    if (workspaces.length === 0)
       return {
         state: "unavailable",
         reason: scopesMissing ? "scopes" : "no-trusted-workspace",
       };
 
     const links = (await deps.linksOf(keycloakSub)).filter((link) =>
-      teamIds.includes(link.teamId ?? ""),
+      workspaces.some((workspace) => workspace.teamId === link.teamId),
     );
     if (links.length > 0) {
       return {
@@ -163,11 +328,15 @@ export function createSlackDmBridgeService(
      * mailbox — it is no answer at all, and the pairing fails closed either way. */
     const email = await deps.verifiedEmailOf(keycloakSub).catch(() => null);
     if (!email) return { state: "unavailable", reason: "email" };
-    for (const teamId of teamIds) {
-      const user = await deps.lookupUserByEmail(email, teamId);
+    for (const workspace of workspaces) {
+      const user = await deps.lookupUserByEmail(email, workspace.teamId);
       if (!user) continue;
-      if (acceptEmailMatch(user, email, teamId) !== null) continue;
-      return { state: "pairable", teamId, slackUserId: user.id };
+      if (acceptEmailMatch(user, email, workspace) !== null) continue;
+      return {
+        state: "pairable",
+        teamId: workspace.teamId,
+        slackUserId: user.id,
+      };
     }
     return { state: "unavailable", reason: "no-match" };
   }
@@ -212,6 +381,12 @@ export function createSlackDmBridgeService(
     return { ok: true, channelId };
   }
 
+  const revoker = createSlackDmRevoker({
+    bridges: deps.bridges,
+    releaseOwnedThreads: deps.releaseOwnedThreads,
+    unlinkEmailLink: deps.unlinkEmailLink,
+  });
+
   return {
     status,
 
@@ -233,52 +408,61 @@ export function createSlackDmBridgeService(
 
       const dm = await openOwnerDm(slackUserId, teamId);
       if (!dm.ok) return dm;
-
-      if (state.state === "pairable") {
-        await deps.linkByEmail(slackUserId, keycloakSub, teamId);
-        const link = await deps.linkOfExternalUser(slackUserId);
-        if (link?.keycloakSub !== keycloakSub)
-          return refusal(
-            "linked-to-another-account",
-            "This Slack account is linked to another account, so it was left alone.",
-          );
-      }
-
-      const existing = (await deps.bindingsOf(input.agentId)).find(
-        (binding) => binding.slackChannelId === dm.channelId,
-      );
-      if (existing)
-        return {
-          ok: true,
-          teamId,
-          slackUserId,
-          dmChannelId: dm.channelId,
-          binding: "existing",
-          isDefault: existing.isDefault,
-          helloPosted: false,
-        };
-
-      const bound = await deps.bindAgent(input.agentId, dm.channelId);
-      if (!bound.ok) return refusal("binding-failed", bound.error);
-
-      const helloPosted = await deps.postHello(
-        input.agentId,
-        dm.channelId,
-        slackDmHello({
-          agentName: agent.name,
-          brandShort: deps.brandShort,
-          purpose: input.purpose,
-          isDefault: bound.isDefault,
-        }),
-      );
-
-      return {
-        ok: true,
+      const destination = {
         teamId,
         slackUserId,
         dmChannelId: dm.channelId,
-        binding: "created",
-        isDefault: bound.isDefault,
+      };
+
+      const settled = await deps.bridges.settleConnect({
+        ownerSub: keycloakSub,
+        agentId: input.agentId,
+        teamId,
+        dmChannelId: dm.channelId,
+        slackUserId,
+        insertEmailLink: state.state === "pairable",
+      });
+      if (!settled.ok) {
+        const code = settled.code;
+        return refusal(
+          code,
+          code === "linked-to-another-account"
+            ? "This Slack account is linked to another account, so it was left alone."
+            : "This Slack account is linked in another Slack workspace, so it was left alone.",
+          { ...destination, link: "existing" },
+        );
+      }
+
+      if (settled.linkCreated && settled.link.source === "email")
+        deps.announceEmailLink(slackUserId, keycloakSub);
+      const otherAgentsBound =
+        (await deps.bridges.bindingsInConversation(teamId, dm.channelId))
+          .length > 1;
+      let helloPosted = false;
+      if (await deps.bridges.claimHello(input.agentId, teamId, dm.channelId)) {
+        helloPosted = await deps
+          .postHello(
+            input.agentId,
+            dm.channelId,
+            slackDmHello({
+              agentName: agent.name,
+              brandShort: deps.brandShort,
+              purpose: input.purpose,
+              isDefault: settled.binding.isDefault,
+              otherAgentsBound,
+            }),
+          )
+          .catch(() => false);
+        if (!helloPosted)
+          await deps.bridges.clearHello(input.agentId, teamId, dm.channelId);
+      }
+
+      return {
+        ok: true,
+        ...destination,
+        link: settled.linkCreated ? "created" : "existing",
+        binding: settled.binding.created ? "created" : "existing",
+        isDefault: settled.binding.isDefault,
         helloPosted,
       };
     },
@@ -287,70 +471,31 @@ export function createSlackDmBridgeService(
       const agent = await deps.agentOf(input.agentId, keycloakSub);
       if (!agent) return refusal("agent-not-found", "That agent is not yours.");
 
-      const links = await deps.linksOf(keycloakSub);
+      const records = (await deps.bridges.listForAgent(input.agentId)).filter(
+        (record) => record.ownerSub === keycloakSub,
+      );
       let disconnected = 0;
       let threadsReleased = 0;
       let linksRemoved = 0;
-      for (const binding of await deps.bindingsOf(input.agentId)) {
-        if (!isSlackDirectMessageId(binding.slackChannelId)) continue;
-        const owners = links.filter((link) => link.teamId === binding.teamId);
-        if (owners.length === 0) continue;
-        const info = await deps
-          .conversationInfo(binding.slackChannelId, binding.teamId)
-          .catch(() => ({ kind: "not-found" }) as const);
-        if (
-          info.kind !== "found" ||
-          !info.isDirectMessage ||
-          info.isGroupDirectMessage
-        )
-          continue;
-        const dmUser = info.directMessageUser;
-        if (!owners.some((link) => link.externalUserId === dmUser)) continue;
-
-        await deps.unbindAgent(input.agentId, binding.slackChannelId);
-        disconnected += 1;
-        threadsReleased += await deps.releaseOwnedThreads(
-          input.agentId,
-          binding.slackChannelId,
-        );
-        if (
-          (await deps.bindingsInConversation(binding.slackChannelId)).length ===
-          0
-        )
-          linksRemoved += await deps.unlinkEmailOf(keycloakSub, binding.teamId);
+      const incomplete: string[] = [];
+      for (const record of records) {
+        const released = await revoker.revoke(record);
+        threadsReleased += released.threadsReleased;
+        linksRemoved += released.linksRemoved;
+        if (released.ok) disconnected += 1;
+        else incomplete.push(record.dmChannelId);
       }
-      return { ok: true, disconnected, threadsReleased, linksRemoved };
+      return {
+        ok: true,
+        disconnected,
+        threadsReleased,
+        linksRemoved,
+        incomplete,
+      };
     },
-  };
-}
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: What `/dam unbind` leaves behind in a 1:1 DM: the
- * binding is already gone, and the threads that agent's sessions owned there go
- * with it; the email pairing that put them there goes last, and only while
- * nobody is bound in that DM any more. A proven link and every other binding
- * stay.
- */
-export function createSlackDmBridgeRelease(deps: {
-  releaseOwnedThreads: (
-    agentId: string,
-    slackChannelId: string,
-  ) => Promise<number>;
-  bindingsInConversation: (
-    slackChannelId: string,
-  ) => Promise<{ agentId: string; owner: string }[]>;
-  unlinkEmailOf: (keycloakSub: string, teamId: string) => Promise<number>;
-}) {
-  return async (args: {
-    agentId: string;
-    slackChannelId: string;
-    teamId: string;
-    ownerSub: string;
-  }): Promise<void> => {
-    if (!isSlackDirectMessageId(args.slackChannelId)) return;
-    await deps.releaseOwnedThreads(args.agentId, args.slackChannelId);
-    if ((await deps.bindingsInConversation(args.slackChannelId)).length > 0)
-      return;
-    await deps.unlinkEmailOf(args.ownerSub, args.teamId);
+    releaseInChat(input) {
+      return revoker.releaseInChat(input);
+    },
   };
 }

@@ -36,8 +36,10 @@ export interface SlackDmConnectView {
   teamId: string;
   slackUserId: string;
   dmChannelId: string;
-  /* UNIT_BOUNDARY_DESCRIPTION: `existing` is the idempotent answer — the agent
-   * was already in that DM, so nothing was written and nothing was posted. */
+  /* UNIT_BOUNDARY_DESCRIPTION: what this call settled, so a caller can tell a
+   * fresh pairing from one that was already there — `existing` is the
+   * idempotent answer, where nothing was written and nothing was posted. */
+  link: "created" | "existing";
   binding: "created" | "existing";
   isDefault: boolean;
   helloPosted: boolean;
@@ -47,6 +49,10 @@ export interface SlackDmDisconnectView {
   disconnected: number;
   threadsReleased: number;
   linksRemoved: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: DMs whose revoke did not finish. Their record
+   * stays `revoking`, which already stops turns and delivery there, and
+   * running the disconnect again finishes the cleanup. */
+  incomplete: string[];
 }
 
 export interface ChannelsService {

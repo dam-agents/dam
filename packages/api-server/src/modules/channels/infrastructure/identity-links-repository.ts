@@ -1,5 +1,6 @@
 import type { Db } from "db";
-import { identityLinks, eq, and } from "db";
+import { identityLinks, eq, and, asc, sql } from "db";
+import type { Tx } from "../../../core/unit-of-work.js";
 
 export type IdentityLinkSource = "oauth" | "email";
 
@@ -54,7 +55,10 @@ export function findExternalUsersByIdentity(db: Db) {
   };
 }
 
-export function findExternalLinksByIdentity(db: Db) {
+/** UNIT_BOUNDARY_DESCRIPTION: an owner's links in a stable order, the workspace
+ *  one before a legacy link that recorded none, so a destination chosen from
+ *  them is the same one on every read. */
+export function findExternalLinksByIdentity(db: Db | Tx) {
   return async (
     provider: string,
     keycloakSub: string,
@@ -79,20 +83,26 @@ export function findExternalLinksByIdentity(db: Db) {
             eq(identityLinks.keycloakSub, keycloakSub),
           ),
         )
+        .orderBy(
+          sql`${identityLinks.teamId} is null`,
+          asc(identityLinks.teamId),
+          asc(identityLinks.externalUserId),
+        )
     ).map((row) => ({ ...row, source: toSource(row.source) }));
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: A pairing that only found the mailbox inserts and
  *  nothing more: an existing row belongs to whoever proved it, and moving it
- *  would hand them someone else's account. */
-export function insertEmailIdentityLinkIfAbsent(db: Db) {
+ *  would hand them someone else's account. It answers whether this call was the
+ *  one that created the row, so only that call reports the link it made. */
+export function insertEmailIdentityLinkIfAbsent(db: Db | Tx) {
   return async (
     provider: string,
     externalUserId: string,
     keycloakSub: string,
     teamId?: string,
-  ): Promise<void> => {
-    await db
+  ): Promise<boolean> => {
+    const inserted = await db
       .insert(identityLinks)
       .values({
         provider,
@@ -103,27 +113,29 @@ export function insertEmailIdentityLinkIfAbsent(db: Db) {
       })
       .onConflictDoNothing({
         target: [identityLinks.provider, identityLinks.externalUserId],
-      });
+      })
+      .returning({ externalUserId: identityLinks.externalUserId });
+    return inserted.length > 0;
   };
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a pairing is a workspace's mailbox, so the
- *  revoke names that workspace: an owner paired in two trusted workspaces keeps
- *  the other one. */
-export function deleteEmailIdentityLinksOfSub(db: Db) {
+/** UNIT_BOUNDARY_DESCRIPTION: a revoke names the one person whose DM it released
+ *  and the workspace that DM is in, so an owner paired in two workspaces, or
+ *  paired twice in one, keeps every link the released DM did not use. */
+export function deleteEmailIdentityLink(db: Db | Tx) {
   return async (
     provider: string,
-    keycloakSub: string,
-    teamId?: string,
+    externalUserId: string,
+    teamId: string,
   ): Promise<number> => {
     const removed = await db
       .delete(identityLinks)
       .where(
         and(
           eq(identityLinks.provider, provider),
-          eq(identityLinks.keycloakSub, keycloakSub),
+          eq(identityLinks.externalUserId, externalUserId),
           eq(identityLinks.source, "email"),
-          teamId === undefined ? undefined : eq(identityLinks.teamId, teamId),
+          eq(identityLinks.teamId, teamId),
         ),
       )
       .returning({ externalUserId: identityLinks.externalUserId });

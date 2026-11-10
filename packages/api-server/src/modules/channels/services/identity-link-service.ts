@@ -23,20 +23,15 @@ export interface IdentityLinkService {
     keycloakSub: string,
     teamId?: string,
   ): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: the pairing's own write — it inserts a row
-   *  nobody proved and reports whether one was already there, so the caller can
-   *  refuse an account linked to another person instead of overwriting them. */
-  linkByEmail(
+  /** UNIT_BOUNDARY_DESCRIPTION: reports a link this platform made, for the
+   *  attribution that reads it. Only the caller whose insert created the row
+   *  may announce it — announcing a row somebody else proved would attribute
+   *  their account to the wrong person. */
+  announceLink(
     provider: string,
     externalUserId: string,
     keycloakSub: string,
-    teamId?: string,
-  ): Promise<void>;
-  unlinkEmailOf(
-    provider: string,
-    keycloakSub: string,
-    teamId?: string,
-  ): Promise<number>;
+  ): void;
   unlink(provider: string, externalUserId: string): Promise<void>;
 }
 
@@ -59,17 +54,6 @@ export function createIdentityLinkService(deps: {
     keycloakSub: string,
     teamId?: string,
   ) => Promise<void>;
-  insertByEmail: (
-    provider: string,
-    externalUserId: string,
-    keycloakSub: string,
-    teamId?: string,
-  ) => Promise<void>;
-  deleteEmailOfSub: (
-    provider: string,
-    keycloakSub: string,
-    teamId?: string,
-  ) => Promise<number>;
   delete: (provider: string, externalUserId: string) => Promise<void>;
 }): IdentityLinkService {
   return {
@@ -96,18 +80,13 @@ export function createIdentityLinkService(deps: {
       });
     },
 
-    async linkByEmail(provider, externalUserId, keycloakSub, teamId) {
-      await deps.insertByEmail(provider, externalUserId, keycloakSub, teamId);
+    announceLink(provider, externalUserId, keycloakSub) {
       emit({
         type: EventType.IdentityLinked,
         provider,
         externalUserId,
         keycloakSub,
       });
-    },
-
-    async unlinkEmailOf(provider, keycloakSub, teamId) {
-      return deps.deleteEmailOfSub(provider, keycloakSub, teamId);
     },
 
     async unlink(provider, externalUserId) {

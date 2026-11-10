@@ -425,15 +425,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return users.find((u) => u.id === userId) ?? null;
     },
 
+    /* UNIT_BOUNDARY_DESCRIPTION: The fake answers with what a test configured,
+     * not with a filtered result: a mismatch of mailbox, workspace or
+     * organization must reach the caller's own refusals instead of being
+     * tidied away here. */
     async lookupUserByEmail(email, teamId) {
       emailLookups.push(`${teamId}|${email}`);
-      return (
-        emailUsers.find(
-          (u) =>
-            u.teamId === teamId &&
-            u.email?.toLowerCase() === email.toLowerCase(),
-        ) ?? null
-      );
+      return emailUsers[0] ?? null;
     },
 
     async getMessageReactions(channel, ts) {

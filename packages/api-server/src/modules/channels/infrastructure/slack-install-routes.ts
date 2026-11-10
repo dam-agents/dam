@@ -206,6 +206,7 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
     await deps.installs.record({
       teamId,
       teamName: result.team?.name ?? null,
+      enterpriseId: result.enterprise?.id ?? null,
       botToken: result.access_token,
       rotation: rotating && {
         refreshToken: rotating.refreshToken,

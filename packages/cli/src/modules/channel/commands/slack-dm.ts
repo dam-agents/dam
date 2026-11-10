@@ -91,9 +91,9 @@ export function buildSlackDmConnectCommand(deps: SlackDmCommandDeps): Command {
         '  dam channel slack-dm connect my-assistant --purpose "your Friday draft"\n' +
         "\nThe deployment must trust your Slack workspace for email pairing, and your\n" +
         "account needs a verified email address there. A Slack account already linked\n" +
-        "to another DAM account is refused and left alone.\n" +
-        "Messages in the DM can ask the agent to act on your DAM account, and\n" +
-        "`/<brand> unbind` from that DM undoes the connect.\n",
+        "to another account here is refused and left alone.\n" +
+        "Messages in the DM can ask the agent to act on your account, and the\n" +
+        "unbind command in that DM undoes the connect.\n",
     )
     .action(
       async (
@@ -117,8 +117,13 @@ export function buildSlackDmConnectCommand(deps: SlackDmCommandDeps): Command {
           process.stdout.write(
             done.binding === "existing"
               ? `✓ ${agent.name} is already in your Slack DM (${done.dmChannelId}); nothing changed and nothing was posted.\n`
-              : `✓ ${agent.name} is in your Slack DM (${done.dmChannelId})${done.helloPosted ? "" : " — the hello could not be posted"}.\n`,
+              : `✓ ${agent.name} is in your Slack DM (${done.dmChannelId})${done.helloPosted ? "" : " — the hello could not be posted, and the next connect retries it"}.\n`,
           );
+          if (done.link === "created") {
+            process.stderr.write(
+              "note: your Slack account is now linked to your account by your verified email; signing in to the platform replaces that with a proven link\n",
+            );
+          }
           if (!done.isDefault && done.binding === "created") {
             process.stderr.write(
               `note: your DM already had a default agent, so start a message with ${agent.name} to reach it\n`,
@@ -146,8 +151,8 @@ export function buildSlackDmDisconnectCommand(
     .addHelpText(
       "after",
       "\nExamples:\n  dam channel slack-dm disconnect my-assistant\n" +
-        "\nA Slack account you linked with `/<brand> login` keeps its link; only an\n" +
-        "email pairing is removed, and only when nothing else is bound in that DM.\n",
+        "\nA Slack account you linked by signing in keeps its link; only an email\n" +
+        "pairing is removed, and only when nothing else is bound in that DM.\n",
     )
     .action(async (ref: string, opts: { server?: string; json?: boolean }) => {
       const host = await resolveActiveHost(deps, opts.server);
@@ -165,11 +170,17 @@ export function buildSlackDmDisconnectCommand(
       } else {
         process.stdout.write(
           res.value.disconnected === 0
-            ? `✓ ${agent.name} was not in your Slack DM; nothing changed.\n`
+            ? `✓ ${agent.name} is not in your Slack DM; nothing changed.\n`
             : `✓ ${agent.name} released from your Slack DM (${res.value.threadsReleased} thread(s) released${
                 res.value.linksRemoved > 0 ? ", email pairing removed" : ""
               }).\n`,
         );
+        if (res.value.incomplete.length > 0) {
+          process.stderr.write(
+            `warning: the release did not finish in ${res.value.incomplete.join(", ")}; ` +
+              "turns and deliveries there stay closed — run the disconnect again to finish it\n",
+          );
+        }
       }
       process.exit(EXIT_SUCCESS);
     });
