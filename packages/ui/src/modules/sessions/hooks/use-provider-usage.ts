@@ -35,8 +35,8 @@ const aliasOf = (model: string | null | undefined) =>
  * and the scheduled default runs on it, each name once; a page does when its
  * own pick runs on it or names a profile of the provider's template; a profile
  * does when it is of the provider's template and this agent's chat default,
- * subagent slot, a channel, a schedule that still runs or a page names it, never for another
- * agent's use.
+ * subagent slot, a channel, a schedule that still runs or a page names it,
+ * never for another agent's use.
  */
 export function useProviderUsage(
   agentId: string | null,
