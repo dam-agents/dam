@@ -47,7 +47,9 @@ The opt-in ceiling case is unchanged.
 It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
 The spec that deletes a user's VM runner runs after the rest of the suite, since that runner runs every other machine of that user.
-The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
+The slow scenario tier waits for smoke setup and runs one project at a time, because the projects mutate shared fixtures.
+A project whose prerequisite fails is left unrun.
+A local run asks for this tier with `--full`, and in upstream CI only the nightly run takes it.
 
 ## Scope: what a pull request runs
 
