@@ -3,6 +3,10 @@
   <img src="docs/assets/dam-light.svg#gh-dark-mode-only" alt="DAM" />
 </p>
 
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="A dense cluster of agents: some work heads down at a laptop with headphones, some chat, some sleep until someone needs them." width="480" />
+</p>
+
 <h3 align="center">
 Engineering agents that run your entire stack.<br />
 AI teammates that work with you in Slack.
@@ -23,10 +27,6 @@ AI teammates that work with you in Slack.
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
   <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam" /></a>
-</p>
-
-<p align="center">
-  <img src="docs/assets/readme-hero.svg" alt="A dense cluster of agents: some work heads down at a laptop with headphones, some chat, some sleep until someone needs them." width="760" />
 </p>
 
 ---
