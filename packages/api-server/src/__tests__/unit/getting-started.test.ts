@@ -70,10 +70,9 @@ function memoryRepo(): GettingStartedRepository & {
     },
     /* UNIT_BOUNDARY_DESCRIPTION: the transaction-scoped variants the assistant's first result uses — the memory store has one transaction, so they run the same writes the standalone ones do. */
     async unlockIn(_tx, owner, task, choose, opts) {
-      // UNIT_BOUNDARY_DESCRIPTION: as the store behaves — a person the checklist never met is enrolled empty before the write.
-      if (!checklists.has(owner))
-        checklists.set(owner, { dismissedAt: null, unlocks: [] });
-      const c = checklists.get(owner)!;
+      // UNIT_BOUNDARY_DESCRIPTION: as the store behaves — an unlock for a checklist that does not exist is refused by the foreign key, not conjured into one.
+      const c = checklists.get(owner);
+      if (c === undefined) return null;
       if (c.unlocks.some((u) => u.task === task)) return null;
       const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
       if (!chosen) return null;
@@ -266,6 +265,8 @@ describe("a task the platform reports", () => {
   /** TEST_SCENARIO: the assistant finished a schedule for the person and reports it; the task is recorded done and seen, so the checklist counts it rather than celebrating it — read back from the stored progress, not from the call. */
   it("records a task the assistant did as done and seen", async () => {
     const { repo, service } = setup();
+    // UNIT_BOUNDARY_DESCRIPTION: the checklist exists before a task lands on it, as provisioning enrols the person before the assistant is made.
+    await service("alice").progress();
     await recordTaskSeenIn(
       { repo, random: () => 0 },
       null as never,
