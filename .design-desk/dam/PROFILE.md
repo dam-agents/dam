@@ -22,8 +22,8 @@ Folder names in the code are internal: `sandboxes` is an agent's configuration p
 ## Main screens
 
 - **Home** — what changed since the user last looked: agents, usage, spend.
-- **An agent's chat** — the conversation, with the files and artifacts panel beside it.
-- **An agent's configuration** — its harness, model, connections, schedules, skills, login items and environments.
+- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from its top bar.
+- **An agent's configuration** — its harness, model, connections, schedules, skills, login items and environments; a page of its own, and the same sections in a modal over the chat, which the agent's name in the chat's top bar opens.
 - **Artifacts** — the library of published work, with sharing.
 - **Starter kits** — ready setups an agent is created from.
 - **Settings** — providers, profiles, connections, API keys, usage, appearance.
@@ -59,7 +59,7 @@ The imports from `packages/ui/src/app.tsx` are the map; these paths are hints th
 - The sidebar: its width when expanded is `SIDEBAR_DEFAULT_W` in `modules/platform/lib/sidebar-layout.ts`; its destinations, in order, come from `modules/platform/hooks/use-sidebar-destinations.ts`, with the agents and activity under them.
 - The page column: its padding and the maximum width of the view you change.
 - The right side: `modules/sessions/components/side-panel-bar.tsx`, and which tabs a view hides (`hiddenSidePanelTabs()` in `modules/sessions/lib/side-panel.ts`).
-- An agent's configuration page: `modules/sandboxes/views/sandbox-home-view.tsx`, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
+- An agent's configuration: `modules/sandboxes/components/agent-configuration.tsx`, which the page (`views/sandbox-home-view.tsx`) and the modal over the chat (`components/configure-agent-modal.tsx`) both show, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
   Read the function behind a count ("4 enabled") and make sample data agree with it.
 - The chat: `modules/sessions/views/chat-view.tsx`, whose only layout is `modules/sessions/components/classic-chat-layout.tsx`.
 

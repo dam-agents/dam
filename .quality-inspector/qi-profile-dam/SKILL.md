@@ -32,6 +32,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
   In the chat's top bar, *Show files* and *Show artifacts* open its Files and Artifacts sections beside the conversation, stacked when both are open; both start closed for an account that never opened them, and each stays as the account last left it.
   A new chat's empty message box shows example prompts that change every few seconds, each with a *Tab* hint; Tab puts the shown one in the box, and the box's placeholder (its accessible name) is still *Message…*.
+  The agent's avatar and name at the start of the chat's top bar are one button, *Configure <name>*, that opens the agent's settings in a dialog over the chat: the configuration page's sections, its rename and its avatar picker among them; the wrench, *Configure agent*, and the agent's name above a reply still open the configuration page.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.

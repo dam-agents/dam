@@ -231,6 +231,8 @@ An Agent's chat gives the conversation the room by default.
 Its Files and Artifacts sections start closed; their icons in the chat's top bar open them in a column beside the conversation, stacked when both are open, and the browser keeps each choice as a preference of the person, not of the Agent.
 A new chat's empty composer has focus and shows example prompts in place of its placeholder, one at a time, to show what an Agent can be asked; Tab puts the shown one in, and a person who asked for reduced motion sees them change without a fade.
 A chat with a conversation, or an assistant's greeting with a first task of its own, keeps the ordinary placeholder.
+The Agent's avatar and name in the top bar open its settings in a modal over the chat: the configuration page's sections and its restart bar, with the open section kept in the modal rather than in the address, so the conversation stays where it was.
+The configuration page itself stays at its own address for every other way in.
 
 ## Protocols
 

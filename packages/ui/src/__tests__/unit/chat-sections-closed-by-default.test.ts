@@ -106,6 +106,7 @@ function identity() {
     onToggleBrowser: () => {},
     onToggleChanges: () => {},
     onConfigure: () => {},
+    onOpenSettings: () => {},
   });
 }
 

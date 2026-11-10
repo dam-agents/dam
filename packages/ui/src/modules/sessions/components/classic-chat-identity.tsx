@@ -7,16 +7,16 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
+import { AgentSettingsButton } from "./agent-settings-button.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
- * state dot, its avatar and name, editable in place, the Shared badge of a
- * Shared Agent, and the buttons that toggle the browser and the changes beside
+ * state dot, its avatar and name, which open its settings over the chat, the
+ * Shared badge of a Shared Agent, and the buttons that toggle the browser and the changes beside
  * the conversation, toggle the Files and Artifacts sections on a desktop, open
  * the sections on a phone, and open the Agent's configuration.
  */
@@ -32,6 +32,7 @@ export function ClassicChatIdentity({
   onToggleBrowser,
   onToggleChanges,
   onConfigure,
+  onOpenSettings,
 }: {
   agent: AgentView | null;
   agentId: string | null;
@@ -44,6 +45,7 @@ export function ClassicChatIdentity({
   onToggleBrowser: () => void;
   onToggleChanges: () => void;
   onConfigure: () => void;
+  onOpenSettings: () => void;
 }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const filesOpen = useStore((s) => s.filesSectionOpen);
@@ -61,11 +63,10 @@ export function ClassicChatIdentity({
         )}
       />
       {agent ? (
-        <EditableAgentIdentity
+        <AgentSettingsButton
           agent={agent}
-          avatarSize={32}
           mood={avatarMood(display?.state, agent)}
-          nameClassName="text-sm font-bold text-foreground"
+          onClick={onOpenSettings}
         />
       ) : (
         <h1 className="text-sm font-bold text-foreground truncate">{name}</h1>

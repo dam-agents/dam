@@ -154,6 +154,7 @@ import {
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAgentSettingsModal } from "../hooks/use-agent-settings-modal.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
@@ -409,6 +410,7 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const { openSettings, settingsModal } = useAgentSettingsModal(agentView);
 
   const view = useStore((s) => s.view);
   const continuesInvocation = useStore((s) =>
@@ -1319,6 +1321,7 @@ export function ChatView() {
           onClose={() => setProvidersModal(false)}
         />
       )}
+      {settingsModal}
       {}
       <ClassicChatLayout
         identity={
@@ -1346,6 +1349,7 @@ export function ChatView() {
               else revealDock();
             }}
             onConfigure={handleConfigureSandbox}
+            onOpenSettings={() => openSettings("setup")}
           />
         }
         status={
