@@ -167,6 +167,7 @@ The trust model it rests on lives on [security-and-credentials](security-and-cre
 **Identity is the agent's own Service.** Each Agent keeps its own gateway Service and ClusterIP, which its machine's allowlist and resolver name, so moving an agent changes no machine spec.
 The controller gives each agent a slot on the owner gateway, a proxy port and a resolver port recorded on that Service, and the Service maps every port it declares onto that slot alone.
 A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own address reaches only its own listener.
+A slot belongs to its Service for the Service's whole lifetime, whether that Service is on the owner gateway, moved back to its own gateway, or left by an agent already deleted while its machine still runs, and only deleting the Service frees the slot, so a machine dialling its own ClusterIP never reaches the listener of the agent that takes the slot next.
 
 **One Envoy, one listener per agent.** The owner gateway's bootstrap holds only what its agents share: the harness, object store, dynamic forward proxy and collector clusters.
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.

@@ -35,19 +35,117 @@ import (
 
 // TEST_OVERVIEW: with virtualization.gateway.perOwner on, an owner's vm Agents share one gateway pod beside the owner's runner, each on a slot of ports recorded on its own gateway Service. The pod and every object it is made of are named after the owner, never after an agent, and go away when the owner's last vm Agent does.
 
-// TEST_SCENARIO: the slot is read back from the agent's own Service, so a reconcile after a controller restart gives every agent the slot it had; a new agent gets the lowest slot nobody holds, which is the gap a deleted agent left.
+// TEST_SCENARIO: the slot is read back from the agent's own Service, so a reconcile after a controller restart gives every agent the slot it had; a new agent gets the lowest slot nobody holds, which is the gap a deleted agent left; and a Service that still selects the owner gateway holds the slot its ports map even when its annotation is missing, which an older controller could leave behind.
 func TestOwnerGatewaySlot_StableAndLowestFree(t *testing.T) {
 	svc := func(agent string, slot int) corev1.Service {
 		return corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: GatewayName(agent), Annotations: map[string]string{annOwnerGatewaySlot: strconv.Itoa(slot)}}}
 	}
 	services := []corev1.Service{svc("a", 0), svc("c", 2)}
-	slot, ok := allocateOwnerGatewaySlot("c", services)
+	slot, ok := allocateOwnerGatewaySlot("c", testOwner, services)
 	require.True(t, ok)
 	assert.Equal(t, 2, slot)
-	slot, _ = allocateOwnerGatewaySlot("new", services)
+	slot, _ = allocateOwnerGatewaySlot("new", testOwner, services)
 	assert.Equal(t, 1, slot)
 	assert.Equal(t, 20002, ownerGatewayProxyPort(1))
 	assert.Equal(t, 20003, ownerGatewayResolverPort(1))
+
+	unrecorded := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("b")},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: testOwner},
+			Ports:    []corev1.ServicePort{{Name: "proxy", Port: 10000, TargetPort: intstr.FromInt(ownerGatewayProxyPort(1))}},
+		},
+	}
+	slot, _ = allocateOwnerGatewaySlot("new", testOwner, []corev1.Service{unrecorded})
+	assert.Equal(t, 0, slot, "the port an unrecorded Service maps is held")
+	slot, _ = allocateOwnerGatewaySlot("b", testOwner, []corev1.Service{unrecorded})
+	assert.Equal(t, 1, slot, "and is the slot that Service comes back on")
+}
+
+// TEST_SCENARIO: an agent is gone from the store while its delete cleanup has not run yet, so its machine still runs and its gateway Service still maps slot 0 onto the owner gateway. A new agent of the same owner must not be given slot 0, or the deleted agent's machine lands on the new agent's listener.
+func TestOwnerGatewaySlot_NotReusedWhileTheDeletedAgentsServiceMapsIt(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	old, err := r.client.CoreV1().Services("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "0", old.Annotations[annOwnerGatewaySlot])
+	require.Equal(t, ownerGatewayProxyPort(0), old.Spec.Ports[0].TargetPort.IntValue())
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-new", "10.96.42.43", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-new"))
+
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, GatewayName("agent-new"), metav1.GetOptions{})
+	require.NoError(t, err)
+	old, err = r.client.CoreV1().Services("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, old.Annotations[annOwnerGatewaySlot], svc.Annotations[annOwnerGatewaySlot], "the new agent took the slot the deleted agent's live Service still maps")
+	assert.True(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(1)), "the new agent's listener is on the slot it was given")
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(0)), "the new agent's listener is not on the deleted agent's port")
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "my-agent", ownerGatewayProxyPort(0)), "the deleted agent's listener is gone from the LDS")
+}
+
+// TEST_SCENARIO: a move back interrupted under an older controller left the Service selecting the owner gateway with no slot annotation. Its target ports still map slot 0, so a new agent of the owner must not be given slot 0.
+func TestOwnerGatewaySlot_InterruptedMoveBackStillHoldsItsPort(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	old, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	old.Annotations = map[string]string{}
+	_, err = r.client.CoreV1().Services(ns).Update(ctx, old, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-new", "10.96.42.43", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-new"))
+
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-new"), metav1.GetOptions{})
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "1", svc.Annotations[annOwnerGatewaySlot], "the Service still mapping slot 0 holds it without an annotation")
+	assert.True(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(1)))
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(0)), "the new agent's listener is not on the port the interrupted Service maps")
+}
+
+func ownerResetAnnotations(t *testing.T, r *AgentReconciler, agent string) error {
+	t.Helper()
+	ctx, ns := context.Background(), "test-agents"
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName(agent), metav1.GetOptions{})
+	require.NoError(t, err)
+	svc.Annotations = map[string]string{}
+	_, err = r.client.CoreV1().Services(ns).Update(ctx, svc, metav1.UpdateOptions{})
+	return err
+}
+
+func containsListenerOn(t *testing.T, lds, agent string, port int) bool {
+	t.Helper()
+	var doc struct {
+		Resources []struct {
+			Name    string `json:"name"`
+			Address struct {
+				SocketAddress struct {
+					PortValue int `json:"port_value"`
+				} `json:"socket_address"`
+			} `json:"address"`
+		} `json:"resources"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(lds), &doc), "the LDS must parse")
+	require.NotEmpty(t, doc.Resources, "the LDS must name its listeners")
+	for _, l := range doc.Resources {
+		if l.Name == "agent_egress_"+agent && l.Address.SocketAddress.PortValue == port {
+			return true
+		}
+	}
+	return false
 }
 
 // TEST_SCENARIO: with the flag off, a vm Agent's reconcile renders no owner gateway object at all, so an install that never switches keeps exactly what it ran before.
@@ -934,6 +1032,127 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err, "a gateway pod starts only once its leaf is issued")
+}
+
+// TEST_SCENARIO: an agent moving back to its own gateway keeps its slot, which belongs to the Service for the Service's lifetime, and gives up only the mark that puts it on the owner gateway.
+func TestOwnerGateway_MoveBackKeepsTheSlot(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "0", svc.Annotations[annOwnerGatewaySlot])
+	require.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"])
+
+	require.NoError(t, r.clearOwnerGatewayMark(ctx, BuildGatewayService("my-agent", r.config, metav1.OwnerReference{}), testOwner))
+
+	svc, err = r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", svc.Spec.Selector[LabelPair], "back on its own gateway")
+	assert.Equal(t, r.config.EnvoyPort, svc.Spec.Ports[0].TargetPort.IntValue())
+	assert.Empty(t, svc.Annotations[annOwnerGatewayServed])
+	assert.Equal(t, "0", svc.Annotations[annOwnerGatewaySlot], "and still holding its slot")
+	assert.Equal(t, testOwner, svc.Annotations[annOwnerGatewayOwner], "which names the owner it is held for")
+}
+
+// TEST_SCENARIO: the slot is held for the Service's whole lifetime: a moved-back Service keeps it after its agent is deleted, so a new agent of the owner does not take the port that Service could still forward to, and the slot is free again only once the Service is gone.
+func TestOwnerGatewaySlot_HeldUntilTheServiceIsGone(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	require.NoError(t, r.clearOwnerGatewayMark(ctx, BuildGatewayService("my-agent", r.config, metav1.OwnerReference{}), testOwner))
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-new", "10.96.42.43", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-new"))
+
+	_, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-new"), metav1.GetOptions{})
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "1", svc.Annotations[annOwnerGatewaySlot], "the moved-back Service of the deleted agent still holds slot 0")
+	assert.True(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(1)))
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(0)), "the new agent's listener is not on the port that Service could still forward to")
+
+	require.NoError(t, r.client.CoreV1().Services(ns).Delete(ctx, GatewayName("my-agent"), metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-three", "10.96.42.44", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-three"))
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	third, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-three"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "0", third.Annotations[annOwnerGatewaySlot], "the slot is free once the Service that held it is gone")
+}
+
+// TEST_SCENARIO: a Service an older controller put on its owner gateway carries a slot and the mark that it is served, but not the owner. Its first reconcile after the upgrade, with its own gateway already ready, moves it back before any owner render sees it, and that render skips it from then on because the mark is gone. Unless the move back records the owner, the slot is invisible to allocation once its agent is deleted. The retained sibling holds slot 1, so the new agent must land on slot 2.
+func TestOwnerGateway_LegacyMoveBackRecordsTheOwnerAndSlot(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, agent := servedVMReconciler(t)
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", true)
+	r.config.VM.Gateway.PerOwner = false
+	require.NoError(t, r.Reconcile(ctx, agent))
+	legacy, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	legacy.Annotations = map[string]string{annOwnerGatewaySlot: "0", annOwnerGatewayServed: "true"}
+	_, err = r.client.CoreV1().Services(ns).Update(ctx, legacy, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	markGatewayPodReady(t, r, "my-agent")
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "my-agent", svc.Spec.Selector[LabelPair], "back on its own gateway")
+	assert.Equal(t, "0", svc.Annotations[annOwnerGatewaySlot], "the slot it held")
+	assert.Equal(t, testOwner, svc.Annotations[annOwnerGatewayOwner], "recorded by the move back, not by a render that skips it from now on")
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-new", "10.96.42.44", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-new"))
+	r.config.VM.Gateway.PerOwner = true
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	fresh, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-new"), metav1.GetOptions{})
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, "0", fresh.Annotations[annOwnerGatewaySlot], "the moved-back Service of the deleted agent still holds slot 0")
+	assert.True(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(2)))
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(0)), "the new agent's listener is not on the port that Service could still forward to")
+}
+
+// TEST_SCENARIO: a move back interrupted under an older controller left the Service selecting the owner gateway on the port of slot 0 with no annotations at all. The ordinary sync replaces that selector, so the port is the only record of the slot: it must be written down with the owner before the selector changes, or a new agent of the owner takes slot 0.
+func TestOwnerGateway_InterruptedMoveBackRecordsTheOwnerAndSlot(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, agent := servedVMReconciler(t)
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", true)
+	require.NoError(t, ownerResetAnnotations(t, r, "my-agent"))
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"])
+	require.Equal(t, ownerGatewayProxyPort(0), svc.Spec.Ports[0].TargetPort.IntValue())
+
+	r.config.VM.Gateway.PerOwner = false
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	svc, err = r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "my-agent", svc.Spec.Selector[LabelPair], "the ordinary sync replaced the selector it held")
+	assert.Equal(t, "0", svc.Annotations[annOwnerGatewaySlot], "the slot its port mapped")
+	assert.Equal(t, testOwner, svc.Annotations[annOwnerGatewayOwner], "and the owner the selector named")
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	ownerSecondAgent(t, r, "agent-new", "10.96.42.44", false)
+	require.NoError(t, ownerResetAnnotations(t, r, "agent-new"))
+	r.config.VM.Gateway.PerOwner = true
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	fresh, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-new"), metav1.GetOptions{})
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, "0", fresh.Annotations[annOwnerGatewaySlot], "the Service of the deleted agent still maps slot 0")
+	assert.True(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(2)))
+	assert.False(t, containsListenerOn(t, string(files.Data[ownerGatewayLDSKey]), "agent-new", ownerGatewayProxyPort(0)), "the new agent's listener is not on the port that Service still maps")
 }
 
 // TEST_SCENARIO: a share of a fleet that shrinks can be smaller than the number of gateways still mid-roll, so every broken gateway would wait on the others for a corrective template change that never comes. A gateway already mid-roll takes the change in the place it holds.
