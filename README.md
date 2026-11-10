@@ -6,18 +6,10 @@
 <p align="center"><i>(Deploy Agents Massively)</i></p>
 
 <h3 align="center">
-Dense, long-lived AI agents that run your whole stack.
-
-Any harness, any model, on your Kubernetes.
-
-Always on Slack.
+Dense, long-lived AI agents that run your engineering stack.<br />
+Shared AI teammates that work with your team in Slack.<br />
+All on your Kubernetes.
 </h3>
-
-<p align="center">
-  Each agent runs in its own microVM, with Docker and k3s inside.
-  Agents pack densely, and idle ones sleep and give back their memory.
-  Credential injection, persistent workspaces, orchestration, schedules, Slack, and cost visibility are built in.
-</p>
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
