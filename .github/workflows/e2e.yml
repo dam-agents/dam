@@ -1,9 +1,9 @@
 name: E2E
 
 # The smoke suite on two gateway topologies — the chart's default per-agent
-# gateway and one gateway pod per owner — and the docs-only check that skips
-# both. Both install the same thing: every agent is a machine on its owner's VM
-# runner.
+# gateway and one gateway pod per owner — and the check that skips both on a
+# docs-only change and picks a pull request's scope. Both install the same
+# thing: every agent is a machine on its owner's VM runner.
 # cd.yml calls it on every run but a tag push; the github context is the
 # calling run's. Its jobs report as `e2e / <name>`.
 #
@@ -79,6 +79,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs: ${{ steps.d.outputs.docs }}
+      specs: ${{ steps.scope.outputs.specs }}
+      owner-gateway: ${{ steps.scope.outputs.owner-gateway }}
     steps:
       - if: inputs.verify
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,6 +94,17 @@ jobs:
           if git diff --quiet "$DIFF_BASE" HEAD -- . ':!docs' ':!*.md' && git diff --quiet "$DIFF_BASE" HEAD -- 'packages/*.md'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
+      # A pull request's reduced set still runs the deferred specs, and the
+      # owner-gateway lane, that cover a path its change touches:
+      # packages/e2e/playwright/pr-scope.json maps them. The merge queue is
+      # optional, so a pull request merged directly has had no other e2e run.
+      # A failure here fails the run's `verify`, so a broken detection never
+      # merges a change on the reduced set alone.
+      - id: scope
+        if: inputs.pr-scope
+        run: |
+          scope="$(.mise/tasks/e2e/pr-scope "$DIFF_BASE")"
+          echo "$scope" | tee -a "$GITHUB_OUTPUT"
 
   e2e-agent-gateway:
     name: mise e2e (vm, per-agent gateway)
@@ -124,10 +137,12 @@ jobs:
       actions: read
     env:
       IS_SANDBOX: "1"
-      # A pull request runs the specs that fail for real on one; the merge
+      # A pull request runs the specs that fail for real on one, and the
+      # deferred specs its change's paths need (E2E_PR_SPECS); the merge
       # queue, the nightly run and a tag run them all. The Playwright config
-      # applies it; see docs/architecture/e2e.md.
+      # applies both; see docs/architecture/e2e.md.
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_PR_SPECS: ${{ needs.docs-only.outputs.specs }}
       # The nightly run adds the full/ tier here, in this lane alone; the
       # summary says so beside the scope.
       E2E_FULL: ${{ inputs.full-tier && '1' || '' }}
@@ -557,12 +572,13 @@ jobs:
     # KVM setup, the background k3s provision and image builds, the suite and
     # its logs. The only difference is E2E_GATEWAY_PER_OWNER below.
     #
-    # A pull request does not run it: the merge queue runs the same suite on the
-    # same tree in full scope before anything merges, so the guard costs one
-    # 13-minute runner per push and buys a failure reported a few minutes
-    # earlier. The merge queue and the nightly run keep it.
+    # A pull request runs it only when its change touches the owner gateway's
+    # own code (pr-scope.json's lanes): elsewhere the lane differs from
+    # e2e-agent-gateway in nothing the change moved, so it costs one 13-minute
+    # runner per push and buys little. The merge queue, a push to main and the
+    # nightly run keep it.
     needs: [docs-only]
-    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && !inputs.pr-scope }}
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' && (!inputs.pr-scope || needs.docs-only.outputs.owner-gateway == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -574,6 +590,7 @@ jobs:
       E2E_TIMINGS: *e2e-timings
       E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_PR_SPECS: ${{ needs.docs-only.outputs.specs }}
       MBX_DISABLE: "1"
     steps:
       - *e2e-timing-start
