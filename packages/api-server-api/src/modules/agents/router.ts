@@ -1,3 +1,4 @@
+import { isSlackDirectMessageId } from "../channels/shared-conversations.js";
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import { match } from "ts-pattern";
@@ -269,7 +270,11 @@ export const agentsRouter = t.router({
         { ambient: input.ambient, history: input.history },
         input.customEmoji,
       );
-      if (res.ok) return toAgentView(res.value);
+      if (res.ok) {
+        if (isSlackDirectMessageId(input.slackChannelId))
+          await ctx.channels.slackDm.reopen(input.id, input.slackChannelId);
+        return toAgentView(res.value);
+      }
       switch (res.error.type) {
         case "AgentNotFound":
           throw new TRPCError({ code: "NOT_FOUND" });

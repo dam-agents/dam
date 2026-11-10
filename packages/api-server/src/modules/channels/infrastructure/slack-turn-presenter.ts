@@ -14,6 +14,10 @@ export interface TurnPresenterOpts {
   instanceName: string;
   statusMinIntervalMs?: number;
   statusRefreshMs?: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: the working status is a message into the
+   * conversation, so a turn whose conversation was released stops writing it
+   * rather than keeping the DM alive with platform text. */
+  admit?: () => Promise<boolean>;
 }
 
 export interface TurnPresenter {
@@ -68,16 +72,33 @@ export function createTurnPresenter(
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+  function onWriteFailed(err: unknown) {
+    statusDisabled = true;
+    getLogger().debug(
+      { agentId: instanceName, err: formatError(err) },
+      "slack.status.failed (disabling status for this turn)",
+    );
+  }
+
   function sendStatus(status: string) {
     if (statusDisabled) return;
     statusSent = true;
-    gw.setStatus({ channel, threadTs, teamId, status }).catch((err) => {
-      statusDisabled = true;
-      getLogger().debug(
-        { agentId: instanceName, err: formatError(err) },
-        "slack.status.failed (disabling status for this turn)",
-      );
-    });
+    const write = () =>
+      gw.setStatus({ channel, threadTs, teamId, status }).catch(onWriteFailed);
+    if (!opts.admit) {
+      void write();
+    } else {
+      void opts
+        .admit()
+        .then((ok) => {
+          if (!ok) {
+            statusDisabled = true;
+            return;
+          }
+          return write();
+        })
+        .catch(onWriteFailed);
+    }
     lastSentAt = nowMs();
   }
 
@@ -148,6 +169,7 @@ export function createTurnPresenter(
       stopTimers();
       if (!statusSent || currentStatus === "") return;
       currentStatus = "";
+      if (opts.admit && !(await opts.admit().catch(() => false))) return;
       try {
         await gw.setStatus({ channel, threadTs, teamId, status: "" });
       } catch (err) {

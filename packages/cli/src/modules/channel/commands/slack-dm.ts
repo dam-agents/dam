@@ -92,8 +92,8 @@ export function buildSlackDmConnectCommand(deps: SlackDmCommandDeps): Command {
         "\nThe deployment must trust your Slack workspace for email pairing, and your\n" +
         "account needs a verified email address there. A Slack account already linked\n" +
         "to another account here is refused and left alone.\n" +
-        "Messages in the DM can ask the agent to act on your account, and the\n" +
-        "unbind command in that DM undoes the connect.\n",
+        "The DM carries questions about the results; changing what the agent does\n" +
+        "stays in the app. The unbind command in that DM undoes the connect.\n",
     )
     .action(
       async (
@@ -114,10 +114,16 @@ export function buildSlackDmConnectCommand(deps: SlackDmCommandDeps): Command {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           const done = res.value;
+          /* UNIT_BOUNDARY_DESCRIPTION: the output is what this call settled,
+           * not a fixed story: a re-connect of a DM that was released can post
+           * the greeting while reporting an existing binding. */
+          const posted = done.helloPosted
+            ? " and the hello was posted"
+            : " — the hello was not posted; the next connect retries it";
           process.stdout.write(
             done.binding === "existing"
-              ? `✓ ${agent.name} is already in your Slack DM (${done.dmChannelId}); nothing changed and nothing was posted.\n`
-              : `✓ ${agent.name} is in your Slack DM (${done.dmChannelId})${done.helloPosted ? "" : " — the hello could not be posted, and the next connect retries it"}.\n`,
+              ? `✓ ${agent.name} is already in your Slack DM (${done.dmChannelId})${done.helloPosted ? "; the hello that was missing was posted" : "; nothing changed and nothing was posted"}.\n`
+              : `✓ ${agent.name} is in your Slack DM (${done.dmChannelId})${posted}.\n`,
           );
           if (done.link === "created") {
             process.stderr.write(

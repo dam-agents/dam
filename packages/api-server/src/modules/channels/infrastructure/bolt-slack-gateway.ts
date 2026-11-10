@@ -112,6 +112,15 @@ export function parseEmailLookup(payload: unknown): SlackEmailUser | null {
   const parsed = slackEmailLookupSchema.safeParse(payload);
   if (!parsed.success) return null;
   const { user } = parsed.data;
+  /* UNIT_BOUNDARY_DESCRIPTION: Slack can report the organization at the top
+   * level and inside `enterprise_user`; when both are there they must agree,
+   * because a precedence rule on contradictory evidence is a guess. */
+  if (
+    user.enterprise_id !== undefined &&
+    user.enterprise_user?.enterprise_id !== undefined &&
+    user.enterprise_id !== user.enterprise_user.enterprise_id
+  )
+    return null;
   return {
     id: user.id,
     teamId: user.team_id,

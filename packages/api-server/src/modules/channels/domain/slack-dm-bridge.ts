@@ -11,6 +11,7 @@ import type {
 export type SlackDmRefusal =
   | "email-mismatch"
   | "other-workspace"
+  | "unknown-enterprise"
   | "other-enterprise"
   | "deleted"
   | "bot"
@@ -42,7 +43,12 @@ export function acceptEmailMatch(
     user.teamId === workspace.teamId ||
     (user.enterpriseTeams?.includes(workspace.teamId) ?? false);
   if (!memberOfWorkspace) return "other-workspace";
-  if (user.enterpriseId !== workspace.enterpriseId) return "other-enterprise";
+  if (workspace.enterpriseId === null) return "unknown-enterprise";
+  /* UNIT_BOUNDARY_DESCRIPTION: a standalone workspace records the empty string
+   * and a person Slack places in no organization reports none, so those two are
+   * the same fact; any other pairing of the two is a mismatch. */
+  if ((user.enterpriseId ?? "") !== workspace.enterpriseId)
+    return "other-enterprise";
   if (user.deleted) return "deleted";
   if (user.isBot) return "bot";
   if (user.isAppUser) return "app-user";
@@ -115,7 +121,7 @@ export function slackDmHello(args: {
   return [
     `Hi, I'm ${agentName} from ${brandShort}.`,
     `I'll send you ${purpose && purpose.trim() ? purpose.trim() : "your results"} here, and you can message me here anytime.`,
-    `Messages here can ask me to act on your ${brandShort} account.`,
+    `You can ask me about your results here. To change what I do, ask me in ${brandShort}.`,
     `Not you, or want to stop? Type \`${unbind}\` here.`,
     ...(isDefault ? [] : [`Start a message with ${agentName} to reach me.`]),
   ].join(" ");

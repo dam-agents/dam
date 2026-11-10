@@ -73,7 +73,9 @@ export function slackWorkerHarness(
   const agents = {
     ensureReady: async () => {},
     get: async (id: string) =>
-      agentNames[id] ? { id, name: agentNames[id] } : null,
+      agentNames[id]
+        ? { id, name: agentNames[id], spec: { whispersOff: false } }
+        : null,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker({

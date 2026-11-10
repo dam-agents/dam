@@ -99,7 +99,7 @@ describe("the Slack mailbox answer", () => {
     expect(
       acceptEmailMatch(parsed(), "owner@example.com", {
         teamId: "T0TEAM",
-        enterpriseId: null,
+        enterpriseId: "",
       }),
     ).toBeNull();
   });
@@ -141,7 +141,7 @@ describe("the mailbox match", () => {
     expect(
       acceptEmailMatch(parsed({ team_id: "T0OTHER" }), "owner@example.com", {
         teamId: "T0TEAM",
-        enterpriseId: null,
+        enterpriseId: "",
       }),
     ).toBe("other-workspace");
     expect(
@@ -155,7 +155,7 @@ describe("the mailbox match", () => {
       acceptEmailMatch(
         parsed({ enterprise_user: { enterprise_id: "E0ORG" } }),
         "owner@example.com",
-        { teamId: "T0TEAM", enterpriseId: null },
+        { teamId: "T0TEAM", enterpriseId: "" },
       ),
     ).toBe("other-enterprise");
     expect(
@@ -164,6 +164,46 @@ describe("the mailbox match", () => {
         enterpriseId: "E0ORG",
       }),
     ).toBe("other-enterprise");
+  });
+
+  // TEST_SCENARIO: an install that never recorded its organization knows of none, which is not the same as standing alone, so email pairing waits for a reinstall.
+  it("refuses an install whose organization nothing recorded", () => {
+    expect(
+      acceptEmailMatch(parsed(), "owner@example.com", {
+        teamId: "T0TEAM",
+        enterpriseId: null,
+      }),
+    ).toBe("unknown-enterprise");
+  });
+
+  // TEST_SCENARIO: a workspace the handshake said stands alone pairs a person who reports no organization of their own.
+  it("accepts a standalone workspace and a person with no organization", () => {
+    expect(
+      acceptEmailMatch(parsed(), "owner@example.com", {
+        teamId: "T0TEAM",
+        enterpriseId: "",
+      }),
+    ).toBeNull();
+  });
+
+  // TEST_SCENARIO: contradictory organization fields are unknown rather than one of them winning.
+  it("refuses contradicted organization fields", () => {
+    expect(
+      parseEmailLookup(
+        rawUser({
+          enterprise_id: "E0ORG",
+          enterprise_user: { enterprise_id: "E0OTHER" },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseEmailLookup(
+        rawUser({
+          enterprise_id: "E0ORG",
+          enterprise_user: { enterprise_id: "E0ORG" },
+        }),
+      )?.enterpriseId,
+    ).toBe("E0ORG");
   });
 
   // TEST_SCENARIO: on an enterprise a person belongs to a workspace through the organization's own list, so a Grid person whose home team differs is still a member here.
@@ -262,6 +302,10 @@ describe("the DM and the hello", () => {
     });
     expect(shared).toContain("Type `/dam unbind Dammy` here.");
     expect(shared).toContain("I'll send you your Friday draft here");
+    expect(shared).toContain(
+      "You can ask me about your results here. To change what I do, ask me in dam.",
+    );
+    expect(shared).not.toContain("act on your");
     expect(shared).toContain("Start a message with Dammy to reach me.");
   });
 });

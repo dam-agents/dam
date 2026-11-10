@@ -1,5 +1,6 @@
 import type { Db } from "db";
-import { identityLinks, eq, and, asc, sql } from "db";
+import { identityLinks, eq, and, asc, sql, slackDmBridges } from "db";
+import { securityLog } from "../../../core/security-log.js";
 import type { Tx } from "../../../core/unit-of-work.js";
 
 export type IdentityLinkSource = "oauth" | "email";
@@ -127,6 +128,7 @@ export function deleteEmailIdentityLink(db: Db | Tx) {
     provider: string,
     externalUserId: string,
     teamId: string,
+    expectedOwnerSub: string,
   ): Promise<number> => {
     const removed = await db
       .delete(identityLinks)
@@ -136,6 +138,7 @@ export function deleteEmailIdentityLink(db: Db | Tx) {
           eq(identityLinks.externalUserId, externalUserId),
           eq(identityLinks.source, "email"),
           eq(identityLinks.teamId, teamId),
+          eq(identityLinks.keycloakSub, expectedOwnerSub),
         ),
       )
       .returning({ externalUserId: identityLinks.externalUserId });
@@ -143,6 +146,15 @@ export function deleteEmailIdentityLink(db: Db | Tx) {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A Keycloak sign-in proves who a Slack user is, and
+ * it overwrites whatever an email pairing guessed. When it moves that Slack
+ * user to another owner — or another workspace — the previous owner's Bridge
+ * records for that person are closed in the same transaction, before the
+ * replacement is visible: otherwise the DM the pairing bound would keep reaching
+ * the previous owner's Agent and its key. A sign-in by the same owner only
+ * promotes the link and leaves the Bridge working.
+ */
 export function upsertIdentityLink(db: Db) {
   return async (
     provider: string,
@@ -150,22 +162,65 @@ export function upsertIdentityLink(db: Db) {
     keycloakSub: string,
     teamId?: string,
   ): Promise<void> => {
-    await db
-      .insert(identityLinks)
-      .values({
-        provider,
-        externalUserId,
-        keycloakSub,
-        teamId,
-        source: "oauth",
-      })
-      .onConflictDoUpdate({
-        target: [identityLinks.provider, identityLinks.externalUserId],
-        set:
-          teamId === undefined
-            ? { keycloakSub, source: "oauth" }
-            : { keycloakSub, teamId, source: "oauth" },
-      });
+    await db.transaction(async (tx) => {
+      const previous = (
+        await tx
+          .select({
+            keycloakSub: identityLinks.keycloakSub,
+            teamId: identityLinks.teamId,
+          })
+          .from(identityLinks)
+          .where(
+            and(
+              eq(identityLinks.provider, provider),
+              eq(identityLinks.externalUserId, externalUserId),
+            ),
+          )
+          .limit(1)
+          .for("update")
+      )[0];
+      const reassigned =
+        previous !== undefined &&
+        (previous.keycloakSub !== keycloakSub ||
+          (teamId !== undefined && previous.teamId !== teamId));
+      if (reassigned) {
+        await tx
+          .update(slackDmBridges)
+          .set({ state: "revoking", updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(slackDmBridges.ownerSub, previous!.keycloakSub),
+              eq(slackDmBridges.slackUserId, externalUserId),
+              sql`${slackDmBridges.state} <> 'revoked'`,
+            ),
+          );
+        securityLog("warn", "identity.link.reassigned", {
+          category: "channel",
+          actor: keycloakSub,
+          actorKind: "user",
+          surface: "slack",
+          decision: "deny",
+          reason: "identity-reassigned",
+          detail: { previousOwner: previous!.keycloakSub },
+        });
+      }
+      await tx
+        .insert(identityLinks)
+        .values({
+          provider,
+          externalUserId,
+          keycloakSub,
+          teamId,
+          source: "oauth",
+        })
+        .onConflictDoUpdate({
+          target: [identityLinks.provider, identityLinks.externalUserId],
+          set:
+            teamId === undefined
+              ? { keycloakSub, source: "oauth" }
+              : { keycloakSub, teamId, source: "oauth" },
+        });
+    });
   };
 }
 

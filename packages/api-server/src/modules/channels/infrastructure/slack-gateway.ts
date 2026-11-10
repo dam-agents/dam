@@ -278,9 +278,11 @@ export interface SlackEmailUser {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Slack organization a workspace belongs to, as
- * the install record holds it; null means a standalone workspace, or an install
- * whose handshake did not say. A pairing compares it and refuses when either
- * side is unknown or they differ.
+ * the install record holds it: an id for a workspace in one, the empty string
+ * for a workspace the handshake said stands alone, and null when nothing
+ * recorded one — a token imported from Helm, or an install older than the
+ * column. A pairing compares it and refuses when it is unknown or differs from
+ * the organization Slack reports for the person.
  */
 export interface SlackWorkspaceIdentity {
   teamId: SlackWorkspace;

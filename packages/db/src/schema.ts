@@ -146,6 +146,15 @@ export const slackDmBridges = pgTable(
     ownerSub: text("owner_sub").notNull(),
     slackUserId: text("slack_user_id").notNull(),
     state: slackDmBridgeStateEnum("state").notNull().default("active"),
+    /* UNIT_BOUNDARY_DESCRIPTION: every connect opens a new generation, so a
+     * revoke that started before it can tell it has been superseded and stop
+     * instead of deleting what the person reconnected. */
+    generation: integer("generation").notNull().default(1),
+    /* UNIT_BOUNDARY_DESCRIPTION: the greeting is claimed before it is sent and
+     * recorded when Slack took it, so a crash mid-post strands a claim that a
+     * later connect may take over once it goes stale, and a recorded post is
+     * never repeated. */
+    helloClaimedAt: timestamp("hello_claimed_at", { withTimezone: true }),
     helloPostedAt: timestamp("hello_posted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

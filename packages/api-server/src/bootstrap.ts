@@ -1876,13 +1876,16 @@ export async function bootstrap() {
     bridges: slackDmBridges,
     releaseOwnedThreads: (agentId, teamId, channelId) =>
       slackOwnedThreads.forgetChat(agentId, channelId, teamId),
-    unlinkEmailLink: (slackUserId, teamId) =>
-      deleteEmailIdentityLink(db)("slack", slackUserId, teamId),
+    unlinkEmailLink: (slackUserId, teamId, ownerSub) =>
+      deleteEmailIdentityLink(db)("slack", slackUserId, teamId, ownerSub),
   });
   const dmBridges: SlackDmBridgePort = {
     blocks: (agentId, teamId, dmChannelId) =>
       slackDmBridges.blocked(agentId, teamId, dmChannelId),
     releaseInChat: (args) => slackDmRevoker.releaseInChat(args),
+    pendingInChat: (args) => slackDmRevoker.pendingInChat(args),
+    reopenChannel: (agentId, channelId) =>
+      slackDmBridges.reopenChannel(agentId, channelId),
   };
 
   const slackWorker = slackGatewayFactory

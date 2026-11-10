@@ -206,7 +206,10 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
     await deps.installs.record({
       teamId,
       teamName: result.team?.name ?? null,
-      enterpriseId: result.enterprise?.id ?? null,
+      /* UNIT_BOUNDARY_DESCRIPTION: nothing means the handshake said this
+       * workspace stands alone, which is a fact, so it is recorded as the empty
+       * string; null stays reserved for an identity nothing recorded. */
+      enterpriseId: result.enterprise?.id ?? "",
       botToken: result.access_token,
       rotation: rotating && {
         refreshToken: rotating.refreshToken,

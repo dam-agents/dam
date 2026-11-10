@@ -8,7 +8,6 @@ import type {
 import type { ExternalLink } from "../../modules/channels/services/identity-link-service.js";
 import type {
   SlackDmBridge,
-  SlackDmBridgeState,
   SlackDmSettleInput,
 } from "../../modules/channels/infrastructure/slack-dm-bridges-repository.js";
 import {
@@ -137,6 +136,7 @@ function createMemoryStore() {
 
       const id = key(input.agentId, input.teamId, input.dmChannelId);
       const previous = bridges.get(id);
+      const reopened = previous !== undefined && previous.state !== "active";
       bridges.set(id, {
         agentId: input.agentId,
         teamId: input.teamId,
@@ -144,14 +144,20 @@ function createMemoryStore() {
         ownerSub: input.ownerSub,
         slackUserId: input.slackUserId,
         state: "active",
-        helloPostedAt: previous?.helloPostedAt ?? null,
+        generation: (previous?.generation ?? 0) + 1,
+        helloClaimedAt: reopened ? null : (previous?.helloClaimedAt ?? null),
+        helloPostedAt: reopened ? null : (previous?.helloPostedAt ?? null),
       });
       return {
         ok: true,
         link,
         linkCreated: link.source === "email" && !previous,
         binding: { created, isDefault },
-        bridge: { created: previous === undefined, state: "active" as const },
+        bridge: {
+          created: previous === undefined,
+          state: "active" as const,
+          generation: bridges.get(id)!.generation,
+        },
       };
     },
 
@@ -161,22 +167,74 @@ function createMemoryStore() {
     async listForAgent(agentId) {
       return [...bridges.values()].filter((b) => b.agentId === agentId);
     },
-    async setState(agentId, teamId, dmChannelId, state: SlackDmBridgeState) {
-      calls.push(`setState:${state}`);
-      if (failAt === `setState:${state}`) throw new Error(`failed ${state}`);
+    async markRevoking(agentId, teamId, dmChannelId, generation) {
+      calls.push("markRevoking");
+      if (failAt === "markRevoking") throw new Error("mark failed");
       const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (record) record.state = state;
+      if (
+        !record ||
+        record.generation !== generation ||
+        record.state === "revoked"
+      )
+        return false;
+      record.state = "revoking";
+      return true;
+    },
+    async stillRevoking(agentId, teamId, dmChannelId, generation) {
+      const record = bridges.get(key(agentId, teamId, dmChannelId));
+      return record?.state === "revoking" && record.generation === generation;
+    },
+    async markRevoked(agentId, teamId, dmChannelId, generation) {
+      calls.push("markRevoked");
+      if (failAt === "markRevoked") throw new Error("final mark failed");
+      const record = bridges.get(key(agentId, teamId, dmChannelId));
+      if (
+        !record ||
+        record.state !== "revoking" ||
+        record.generation !== generation
+      )
+        return false;
+      record.state = "revoked";
+      return true;
     },
     async claimHello(agentId, teamId, dmChannelId) {
       calls.push("claimHello");
       const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (!record || record.helloPostedAt) return false;
-      record.helloPostedAt = new Date();
+      if (!record || record.helloPostedAt || record.state !== "active")
+        return false;
+      if (record.helloClaimedAt) return false;
+      record.helloClaimedAt = new Date();
       return true;
     },
-    async clearHello(agentId, teamId, dmChannelId) {
+    async recordHello(agentId, teamId, dmChannelId) {
       const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (record) record.helloPostedAt = null;
+      if (!record) return;
+      record.helloPostedAt = new Date();
+      record.helloClaimedAt = null;
+    },
+    async releaseHello(agentId, teamId, dmChannelId) {
+      const record = bridges.get(key(agentId, teamId, dmChannelId));
+      if (record) record.helloClaimedAt = null;
+    },
+    async listForConversation(teamId, dmChannelId) {
+      return [...bridges.values()].filter(
+        (record) =>
+          record.teamId === teamId && record.dmChannelId === dmChannelId,
+      );
+    },
+    async reopenChannel(agentId, slackChannelId) {
+      for (const record of bridges.values()) {
+        if (
+          record.agentId === agentId &&
+          record.dmChannelId === slackChannelId &&
+          record.state !== "active"
+        ) {
+          record.state = "active";
+          record.generation += 1;
+          record.helloPostedAt = null;
+          record.helloClaimedAt = null;
+        }
+      }
     },
     async releaseBinding(agentId, teamId, dmChannelId) {
       calls.push("releaseBinding");
@@ -224,6 +282,7 @@ interface HarnessOptions {
   slackConfigured?: boolean;
   threadsFail?: boolean;
   linkDeleteFails?: boolean;
+  helloFails?: "refused" | "unknown";
 }
 
 function harness(opts: HarnessOptions = {}) {
@@ -246,6 +305,7 @@ function harness(opts: HarnessOptions = {}) {
   const failures = {
     threads: opts.threadsFail ?? false,
     link: opts.linkDeleteFails ?? false,
+    hello: (opts.helloFails ?? "sent") as "sent" | "refused" | "unknown",
   };
   const threadsReleased = new Map<string, number>();
 
@@ -305,7 +365,7 @@ function harness(opts: HarnessOptions = {}) {
     },
     postHello: async (_agentId, _channelId, text) => {
       hellos.push(text);
-      return true;
+      return failures.hello;
     },
     brandShort: "dam",
   };
@@ -460,6 +520,9 @@ describe("slack dm bridge connect", () => {
     expect(h.hellos).toHaveLength(1);
     expect(h.hellos[0]).toContain("Hi, I'm Dammy from dam.");
     expect(h.hellos[0]).toContain("I'll send you your Friday draft here");
+    expect(h.hellos[0]).toContain(
+      "You can ask me about your results here. To change what I do, ask me in dam.",
+    );
     expect(h.hellos[0]).toContain("Type `/dam unbind` here.");
     expect(h.announced).toEqual([`U0OWNER|${OWNER}`]);
 
@@ -578,6 +641,70 @@ describe("slack dm bridge connect", () => {
   });
 });
 
+describe("the greeting", () => {
+  // TEST_SCENARIO: Slack refusing the greeting gives the claim back, so the next connect posts it and says so.
+  it("retries a greeting Slack refused", async () => {
+    const h = harness({ helloFails: "refused" });
+    const first = await h.service.connect(OWNER, { agentId: AGENT });
+    expect(first).toMatchObject({ ok: true, helloPosted: false });
+    h.failures.hello = "sent";
+    const second = await h.service.connect(OWNER, { agentId: AGENT });
+    expect(second).toMatchObject({
+      ok: true,
+      binding: "existing",
+      helloPosted: true,
+    });
+    expect(h.hellos).toHaveLength(2);
+  });
+
+  // TEST_SCENARIO: a greeting nobody saw the answer to keeps its claim, so the next connect does not post a second one.
+  it("keeps the claim of a greeting whose answer nobody saw", async () => {
+    const h = harness({ helloFails: "unknown" });
+    await h.service.connect(OWNER, { agentId: AGENT });
+    h.failures.hello = "sent";
+    const second = await h.service.connect(OWNER, { agentId: AGENT });
+    expect(second).toMatchObject({ ok: true, helloPosted: false });
+    expect(h.hellos).toHaveLength(1);
+    expect(
+      h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)?.helloClaimedAt,
+    ).toBeTruthy();
+  });
+
+  // TEST_SCENARIO: an exception after the settlement reports what exists instead of losing it.
+  it("reports the settled state when a later step throws", async () => {
+    const h = harness();
+    h.memory.store.bindingsInConversation = async () => {
+      throw new Error("database glitch");
+    };
+    const result = await h.service.connect(OWNER, { agentId: AGENT });
+    expect(result).toMatchObject({
+      ok: true,
+      binding: "created",
+      link: "created",
+      helloPosted: false,
+    });
+  });
+});
+
+describe("a connect racing a revoke", () => {
+  // TEST_SCENARIO: a revoke that started before a reconnect stops: the new generation owns the DM, and its binding and greeting survive.
+  it("stops a stale revoke at the generation boundary", async () => {
+    const h = harness();
+    await h.service.connect(OWNER, { agentId: AGENT });
+    const record = h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)!;
+    const stale = { ...record };
+    // TEST_SCENARIO: the person reconnects between the mark and the cleanup.
+    await h.service.connect(OWNER, { agentId: AGENT });
+    const released = await h.revoker.revoke(stale);
+    expect(released.ok).toBe(false);
+    expect(released.marked).toBe(false);
+    expect(h.memory.bindings).toHaveLength(1);
+    expect(h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)?.state).toBe(
+      "active",
+    );
+  });
+});
+
 describe("slack dm bridge disconnect", () => {
   // TEST_SCENARIO: A revoke removes the binding, the threads that Agent's Sessions owned there and the email link, and records it as revoked.
   it("releases the binding, its threads and the email link", async () => {
@@ -637,7 +764,7 @@ describe("slack dm bridge disconnect", () => {
 
   // TEST_SCENARIO: A failure at each cleanup step — the binding, the threads, the link, the final state — leaves the record revoking, reports the revoke as incomplete, and a retry finishes it without asking Slack anything.
   it("reports an unfinished revoke and finishes it on retry", async () => {
-    const steps = ["releaseBinding", "threads", "link", "setState:revoked"];
+    const steps = ["releaseBinding", "threads", "link", "markRevoked"];
     for (const step of steps) {
       const h = harness();
       await h.service.connect(OWNER, { agentId: AGENT });
@@ -691,6 +818,8 @@ describe("slack dm bridge disconnect", () => {
       ownerSub: OTHER_OWNER,
       slackUserId: "U0SOMEONEELSE",
       state: "active",
+      generation: 1,
+      helloClaimedAt: null,
       helloPostedAt: new Date(),
     });
     h.memory.bindings.push({

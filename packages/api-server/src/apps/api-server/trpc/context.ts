@@ -277,18 +277,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bridges: slackDmBridges,
       releaseOwnedThreads: (agentId, teamId, channelId) =>
         slackOwnedThreads.forgetChat(agentId, channelId, teamId),
-      unlinkEmailLink: (slackUserId, teamId) =>
-        deleteEmailIdentityLink(db)("slack", slackUserId, teamId),
+      unlinkEmailLink: (slackUserId, teamId, ownerSub) =>
+        deleteEmailIdentityLink(db)("slack", slackUserId, teamId, ownerSub),
       announceEmailLink: (slackUserId, sub) =>
         identityLinkService.announceLink("slack", slackUserId, sub),
       postHello: async (agentId, slackChannelId, text) => {
-        const sent = await channelManager.postMessage(
-          agentId,
-          ChannelType.Slack,
-          text,
-          { conversationId: slackChannelId },
-        );
-        return !("error" in sent);
+        const sent = await channelManager
+          .postMessage(agentId, ChannelType.Slack, text, {
+            conversationId: slackChannelId,
+          })
+          .catch(() => ({ error: "slack did not answer" }) as const);
+        return "error" in sent ? "unknown" : "sent";
       },
       brandShort: config.brand.short,
     });
@@ -713,6 +712,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         },
         slackDm: {
           status: () => slackDm.status(user.sub),
+          reopen: (agentId, slackChannelId) =>
+            slackDm.reopen(agentId, slackChannelId),
           connect: async (input) => {
             const result = await slackDm.connect(user.sub, input);
             if (!result.ok)

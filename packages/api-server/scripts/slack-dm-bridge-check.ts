@@ -52,6 +52,7 @@ const OTHER_TEAM = "T0BRIDGECHECK2";
 const USER = "U0BRIDGECHECK";
 const OTHER_USER = "U0BRIDGECHECK2";
 const PROBE_USER = "U0BRIDGECHECK3";
+const DELETE_USER = "U0BRIDGECHECK4";
 const DM = "D0BRIDGECHECK";
 
 const bridges = createSlackDmBridgesRepository(db);
@@ -70,7 +71,7 @@ async function cleanup(): Promise<void> {
     sql`delete from channels where agent_id in (${AGENT}, ${OTHER_AGENT})`,
   );
   await db.execute(
-    sql`delete from identity_links where external_user_id in (${USER}, ${OTHER_USER}, ${PROBE_USER})`,
+    sql`delete from identity_links where external_user_id in (${USER}, ${OTHER_USER}, ${PROBE_USER}, ${DELETE_USER})`,
   );
 }
 
@@ -182,18 +183,33 @@ async function main(): Promise<void> {
     vacant.ok && vacant.binding.created && !vacant.binding.isDefault,
   );
 
+  /* UNIT_BOUNDARY_DESCRIPTION: two connects can claim at the same moment, and
+   * exactly one of them may post; the greeting columns are what makes that true
+   * under real SQL rather than in one process's memory. */
+  const claims = await Promise.all([
+    bridges.claimHello(AGENT, TEAM, DM),
+    bridges.claimHello(AGENT, TEAM, DM),
+    bridges.claimHello(AGENT, TEAM, DM),
+  ]);
   check(
-    "the greeting is claimed once",
-    (await bridges.claimHello(AGENT, TEAM, DM)) === true &&
-      (await bridges.claimHello(AGENT, TEAM, DM)) === false,
+    "concurrent connects win the greeting exactly once",
+    claims.filter(Boolean).length === 1,
+    JSON.stringify(claims),
   );
-  await bridges.clearHello(AGENT, TEAM, DM);
+  await bridges.releaseHello(AGENT, TEAM, DM);
   check(
-    "and is offered again after a failed greeting",
+    "and a released claim is offered again",
     (await bridges.claimHello(AGENT, TEAM, DM)) === true,
   );
+  await bridges.recordHello(AGENT, TEAM, DM);
+  check(
+    "a recorded greeting is never repeated",
+    (await bridges.claimHello(AGENT, TEAM, DM)) === false,
+  );
 
-  await bridges.setState(AGENT, TEAM, DM, "revoking");
+  const revokeGeneration = (await bridges.find(AGENT, TEAM, DM))!.generation;
+  const marked = await bridges.markRevoking(AGENT, TEAM, DM, revokeGeneration);
+  check("a revoke closes the record at the generation it read", marked === true);
   check(
     "a revoking record blocks turns",
     (await bridges.blocked(AGENT, TEAM, DM)) === true,
@@ -218,13 +234,38 @@ async function main(): Promise<void> {
     (await bridges.bindingsInConversation(OTHER_TEAM, DM)).length === 1,
   );
 
-  await identity.deleteEmail("slack", USER, OTHER_TEAM);
+  /* UNIT_BOUNDARY_DESCRIPTION: the link a revoke deletes must be the pairing of
+   * exactly that person, that workspace and that owner — so this checks an
+   * actual email row: a second owner in another workspace keeps theirs. */
+  await identity.insert("slack", DELETE_USER, OWNER, TEAM);
   check(
-    "an email link is deleted only in the workspace it names",
-    (await identity.find("slack", USER)) !== null,
+    "a pairing writes an actual email link to delete",
+    (await identity.find("slack", DELETE_USER))?.source === "email",
+  );
+  await identity.deleteEmail("slack", DELETE_USER, OTHER_TEAM, OWNER);
+  check(
+    "deleting in another workspace leaves the email link alone",
+    (await identity.find("slack", DELETE_USER))?.source === "email",
+  );
+  await identity.deleteEmail("slack", DELETE_USER, TEAM, OTHER_OWNER);
+  check(
+    "deleting for another owner leaves the email link alone",
+    (await identity.find("slack", DELETE_USER))?.source === "email",
+  );
+  await identity.deleteEmail("slack", DELETE_USER, TEAM, OWNER);
+  check(
+    "deleting the person's pairing in their workspace removes it",
+    (await identity.find("slack", DELETE_USER)) === null,
   );
 
-  await bridges.setState(AGENT, TEAM, DM, "revoked");
+  check(
+    "a stale mark cannot close a newer generation",
+    (await bridges.markRevoking(AGENT, TEAM, DM, 99)) === false,
+  );
+  check(
+    "the revoke finishes at its own generation",
+    (await bridges.markRevoked(AGENT, TEAM, DM, revokeGeneration)) === true,
+  );
   check(
     "a revoked record keeps blocking",
     (await bridges.blocked(AGENT, TEAM, DM)) === true,
@@ -239,12 +280,104 @@ async function main(): Promise<void> {
     insertEmailLink: false,
   });
   check(
-    "a new connect reopens the same record",
+    "a new connect reopens the same record at a new generation",
     reconnect.ok &&
       !reconnect.bridge.created &&
       reconnect.bridge.state === "active" &&
+      reconnect.bridge.generation > revokeGeneration &&
       (await bridges.blocked(AGENT, TEAM, DM)) === false,
   );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: two connectors of the same destination settle at
+   * once on real SQL — one creates, the other joins, and the DM's default is
+   * claimed once. */
+  const racing = await Promise.all([
+    bridges.settleConnect({
+      ownerSub: OWNER,
+      agentId: AGENT,
+      teamId: TEAM,
+      dmChannelId: DM,
+      slackUserId: USER,
+      insertEmailLink: false,
+    }),
+    bridges.settleConnect({
+      ownerSub: OWNER,
+      agentId: AGENT,
+      teamId: TEAM,
+      dmChannelId: DM,
+      slackUserId: USER,
+      insertEmailLink: false,
+    }),
+  ]);
+  check(
+    "racing connects settle one binding",
+    racing.every((result) => result.ok) &&
+      racing.filter((result) => result.ok && result.binding.created).length <= 1,
+  );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a sign-in that proves a different owner retires
+   * the previous owner's Bridge in the same transaction, so the DM can no
+   * longer reach their Agent even if the sign-in waited for a connect to
+   * commit; the same owner signing in again leaves it working. */
+  const reassign = createDb(url, { poolMax: 1 });
+  const reassignLinks = upsertIdentityLink(reassign.db);
+  await reassignLinks("slack", USER, OTHER_OWNER, TEAM);
+  check(
+    "a sign-in for another owner closes the previous owner's Bridge",
+    (await bridges.find(AGENT, TEAM, DM))?.state === "revoking",
+  );
+  check(
+    "and the DM stops admitting turns",
+    (await bridges.blocked(AGENT, TEAM, DM)) === true,
+  );
+
+  await bridges.settleConnect({
+    ownerSub: OTHER_OWNER,
+    agentId: AGENT,
+    teamId: TEAM,
+    dmChannelId: DM,
+    slackUserId: USER,
+    insertEmailLink: false,
+  });
+  await reassignLinks("slack", USER, OTHER_OWNER, TEAM);
+  check(
+    "a sign-in by the same owner leaves the Bridge working",
+    (await bridges.find(AGENT, TEAM, DM))?.state === "active",
+  );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: whichever of the two commits first — the sign-in
+   * that proves a new owner, or the connect that settles the old one — a record
+   * must never be `active` for an owner the link no longer names. Five rounds
+   * start each of them in turn, which is the interleaving the lock and the
+   * reassignment have to survive. */
+  let unsafe = 0;
+  for (let round = 0; round < 5; round += 1) {
+    await reassignLinks("slack", USER, OWNER, TEAM);
+    const connect = () =>
+      bridges.settleConnect({
+        ownerSub: OWNER,
+        agentId: AGENT,
+        teamId: TEAM,
+        dmChannelId: DM,
+        slackUserId: USER,
+        insertEmailLink: false,
+      });
+    const signIn = () => reassignLinks("slack", USER, OTHER_OWNER, TEAM);
+    const both =
+      round % 2 === 0
+        ? await Promise.all([connect(), signIn()])
+        : await Promise.all([signIn(), connect()]);
+    void both;
+    const link = await identity.find("slack", USER);
+    const record = await bridges.find(AGENT, TEAM, DM);
+    if (record?.state === "active" && record.ownerSub !== link?.keycloakSub)
+      unsafe += 1;
+  }
+  check(
+    "a sign-in racing a connect never leaves another owner's Bridge open",
+    unsafe === 0,
+  );
+  await reassign.sql.end({ timeout: 5 });
 }
 
 await main()
