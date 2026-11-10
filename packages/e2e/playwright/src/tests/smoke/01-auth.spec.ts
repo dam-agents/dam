@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 
+import type { ApiClient } from "../../lib/api-client.js";
+
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import {
   answerDeviceGrant,
@@ -227,4 +229,31 @@ test.afterAll(async () => {
     feature: "dambledore",
     enabled: false,
   });
+  await leaveNoAssistant(api);
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the account holds no assistant when the project
+ * ends. A create runs behind the request that asked for one, so the switches
+ * above may be stored while one is still in flight: the wait lets the record
+ * settle, or turns up nothing, and the Agent the record names is then deleted —
+ * a later spec counts the Agents it made and must not meet one it did not.
+ */
+async function leaveNoAssistant(api: ApiClient): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  let state = await api.assistants.state.query();
+  while ((state === null || !state.ready) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    state = await api.assistants.state.query();
+  }
+  if (state === null) return;
+  const agentId = state.agentId;
+  await api.agents.delete.mutate({ id: agentId });
+  await expect
+    .poll(
+      async () =>
+        (await api.agents.list.query()).some((agent) => agent.id === agentId),
+      { timeout: 120_000, intervals: [2_000] },
+    )
+    .toBe(false);
+}
