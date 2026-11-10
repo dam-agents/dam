@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+#MISE description="CI only: name the deferred e2e specs and lanes a pull request's change needs, from pr-scope.json"
+#MISE hide=true
+# A pull request's e2e run defers the specs that rarely fail for real there
+# (E2E_SCOPE=pr), and the owner-gateway lane. A change to the code one of them
+# alone covers still needs it: the merge queue is optional, so a pull request
+# that merges directly would otherwise reach main with that spec never run.
+# packages/e2e/playwright/pr-scope.json is the one place that says which
+# paths each deferred spec and lane covers; the Playwright config reads the
+# same file for the list it defers. Paths are git pathspecs, `exclude` taken
+# off every entry: tests, docs and skills ship nothing those specs boot.
+# Usage: pr-scope <base>, the commit the change is diffed against (HEAD^1 on a
+# pull request's merge commit). Prints `specs=<names, space-separated>` and `owner-gateway=true|false` for
+# $GITHUB_OUTPUT. By path, like e2e:timings; it needs only git and jq, and
+# is written for bash 3.2 (macOS), as image:resolve is.
+# `--self-check` proves the selection on a throwaway repository, and that
+# every spec and path the file names exists.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/../../.." && pwd)"
+scope_file="$root/packages/e2e/playwright/pr-scope.json"
+
+# Pathspecs come out of jq one per line, so no pathspec may hold a newline.
+changed() {
+  local base="$1" file="$2" filter="$3" line
+  set --
+  while IFS= read -r line; do set -- "$@" "$line"; done < <(
+    jq -r "($filter)[], (.exclude[] | \":(exclude)\\(.)\")" "$file")
+  ! git diff --quiet "$base" HEAD -- "$@"
+}
+
+select_scope() {
+  local base="$1" file="$2" name specs="" owner=false
+  git rev-parse --quiet --verify "$base^{commit}" > /dev/null ||
+    { echo "pr-scope: $base is no commit here" >&2; exit 1; }
+  jq -e '(.specs | type == "object") and (.lanes["owner-gateway"] | type == "array") and (.exclude | type == "array")' "$file" > /dev/null ||
+    { echo "pr-scope: $file has no specs, owner-gateway lane or exclude list" >&2; exit 1; }
+  while IFS= read -r name; do
+    ! changed "$base" "$file" ".specs[\"$name\"]" || specs="${specs:+$specs }$name"
+  done < <(jq -r '.specs | keys[]' "$file")
+  ! changed "$base" "$file" '.lanes["owner-gateway"]' || owner=true
+  echo "specs=$specs"
+  echo "owner-gateway=$owner"
+}
+
+self_check() {
+  local fail=0 name pattern
+  while read -r name; do
+    [ -f "$root/packages/e2e/playwright/src/tests/smoke/$name.spec.ts" ] ||
+      { echo "pr-scope.json: no smoke spec $name.spec.ts" >&2; fail=1; }
+  done < <(jq -r '.specs | keys[]' "$scope_file")
+  while read -r pattern; do
+    [ -n "$(git -C "$root" ls-files -- "$pattern" | head -n 1)" ] ||
+      { echo "pr-scope.json: $pattern matches no tracked file" >&2; fail=1; }
+  done < <(jq -r '(.specs[], .lanes[])[]' "$scope_file" | sort -u)
+  [ "$fail" = 0 ] || exit 1
+
+  repo="$(mktemp -d)"
+  trap 'rm -rf "$repo"' EXIT
+  cat > "$repo/scope.json" <<'EOF'
+{
+  "specs": {
+    "19-agent-machine": ["packages/agents/base", "packages/vm-runner"],
+    "27-vm-boot-matrix": ["packages/vm-runner"]
+  },
+  "lanes": { "owner-gateway": ["packages/controller/pkg/reconciler/owner_gateway*"] },
+  "exclude": ["*.md", "*_tests.rs", "packages/agents/base/rootfs/usr/local/share/dam-skills"]
+}
+EOF
+  git_t() { git -C "$repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@"; }
+  change() {
+    mkdir -p "$repo/$(dirname "$1")"
+    echo "$RANDOM" >> "$repo/$1"
+    git_t add -A && git_t commit -qm change
+  }
+  expect() {
+    local got
+    got="$(cd "$repo" && select_scope HEAD^1 "$repo/scope.json" | tr '\n' ';')"
+    [ "$got" = "$2" ] || { echo "pr-scope: $1: got '$got', want '$2'" >&2; exit 1; }
+  }
+  git_t init -q
+  change README.md
+  change packages/agents/base/rootfs/etc/rc.conf.d/platform.conf
+  expect "a base rootfs change" "specs=19-agent-machine;owner-gateway=false;"
+  change packages/vm-runner/src/launch.rs
+  expect "a vm-runner change" "specs=19-agent-machine 27-vm-boot-matrix;owner-gateway=false;"
+  change packages/vm-runner/src/imagecache_tests.rs
+  expect "a vm-runner test alone" "specs=;owner-gateway=false;"
+  change packages/agents/base/rootfs/usr/local/share/dam-skills/x/SKILL.sh
+  expect "a shipped skill alone" "specs=;owner-gateway=false;"
+  change packages/ui/src/app.tsx
+  expect "a change no entry covers" "specs=;owner-gateway=false;"
+  change packages/controller/pkg/reconciler/owner_gateway_envoy.go
+  expect "an owner gateway change" "specs=;owner-gateway=true;"
+  echo "pr-scope self-check OK"
+}
+
+if [ "${1:-}" = --self-check ]; then
+  self_check
+else
+  select_scope "${1:?usage: pr-scope <base> | --self-check}" "$scope_file"
+fi

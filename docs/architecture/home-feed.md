@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-05
+Last verified: 2026-11-06
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -148,7 +148,6 @@ Accepting starts nothing unless the Agent may spend today: a spend limit or the 
 An accepted review is a regular chat Session on the Agent's chat default, opened on the same rail as a kit's onboarding Session but marked with the `cost-review` purpose instead: it is titled "Cost review", its first turn shows as a collapsed request from the platform, and the UI opens it once it appears.
 That first turn runs like a scheduled one, without anyone watching, because the owner already asked for it: a review accepted and then left behind still runs and shows as unread.
 That first turn names the skill, which holds the procedure; the review recommends and changes nothing.
-It also says whether the owner has Interactive artifacts on, which the Agent cannot see, so the review's report page has buttons that ask the Agent for a change only when they can reach it ([artifact-library](artifact-library.md#interactive-pages)).
 Later, and the card's dismiss for all its Agents at once, tells the owner when the offer returns and that they can ask the Agent for a review in its chat any time, which the skill covers on its own.
 Both answers are recorded in the activity log.
 

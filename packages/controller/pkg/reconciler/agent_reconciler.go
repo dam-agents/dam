@@ -108,7 +108,9 @@ type AgentReconciler struct {
 	preflightDone         bool
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
-	ownerGatewayAnswered  sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: how many wide owner gateway renders this reconciler made, which no production code reads: a refused owner's reconciles are counted here, because a suppressed warning alone does not show that the render is gone.
+	ownerGatewayWideRenders atomic.Int64
+	ownerGatewayAnswered    sync.Map
 	// UNIT_BOUNDARY_DESCRIPTION: the revision a member's listener carries under the previous two-volume layout, which hashes differently because its credential root does. Readiness and cutover accept either, so a retained old-layout pod is not called stale while it serves; only a canonical answer ever authorises a repair, because the two layouts are separate publications and the canonical one is no receipt for the other.
 	ownerGatewayLegacyRevisions sync.Map
 	// UNIT_BOUNDARY_DESCRIPTION: the arrival epoch the revision the owner last published for an agent encodes. Recorded with the revision and adopted with it, so a probe answer can be matched to the epoch it is evidence about.
@@ -352,7 +354,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
 			}
 			if moved {
 				dropOwnPrincipal(policy)
@@ -365,7 +367,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
 			}
 			if moved {
 				dropOwnPrincipal(policy)

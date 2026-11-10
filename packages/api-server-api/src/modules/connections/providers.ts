@@ -364,7 +364,7 @@ export function aliasForTemplateId(templateId: string): ProviderAlias | null {
  * entry of its own takes its preset's name.
  */
 const TEMPLATE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender (shared)",
+  [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender",
 };
 
 export function displayNameForTemplate(templateId: string): string | null {

@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { gunzipSync } from "node:zlib";
+import { describe, expect, it, vi } from "vitest";
 import {
   type AgentSkill,
+  type AgentSkillFile,
   createAgentDiscoveryRoutes,
   parseAgentSkill,
   readAgentSkill,
@@ -15,9 +18,12 @@ import {
  * running JavaScript. The api-server answers /llms.txt with how to install the
  * dam CLI and its skill, and the Agent Skills discovery index, which the
  * skills installer (npx skills add <url>, skills CLI 1.7.2) reads, lists the
- * skill the server ships with. The installer accepts an entry only with the
- * 0.2.0 schema, a name, a description, a type, a url relative to the index
- * and the sha256 digest of the bytes the url answers.
+ * skill the server ships with. The skill is SKILL.md and the pages beside it,
+ * such as its security advisory, so the 0.2.0 index lists it as one tar.gz
+ * archive with SKILL.md at its root. The installer accepts an entry only with
+ * the 0.2.0 schema, a name, a description, a type, a url relative to the index
+ * and the sha256 digest of the bytes the url answers, and it reads the archive
+ * as plain ustar entries. The legacy index names every file.
  */
 
 const SKILL_PATH = resolve(
@@ -25,15 +31,25 @@ const SKILL_PATH = resolve(
   "../../../../../skills/dam/SKILL.md",
 );
 
-function skillOf(markdown: string): AgentSkill {
-  const skill = parseAgentSkill(new TextEncoder().encode(markdown));
+const SKILL_MD =
+  "---\nname: dam\ndescription: >\n  Drive DAM with the dam CLI.\n---\n\nBody.\n";
+const ADVISORY_MD = "# Security advisory\n\nUse connections.\n";
+
+const fileOf = (path: string, text: string): AgentSkillFile => ({
+  path,
+  bytes: new TextEncoder().encode(text),
+});
+
+function skillOf(files: AgentSkillFile[]): AgentSkill {
+  const skill = parseAgentSkill(files);
   if (skill === null) throw new Error("fixture has no frontmatter");
   return skill;
 }
 
-const SKILL = skillOf(
-  "---\nname: dam\ndescription: >\n  Drive DAM with the dam CLI.\n---\n\nBody.\n",
-);
+const SKILL = skillOf([
+  fileOf("references/security-advisory.md", ADVISORY_MD),
+  fileOf("SKILL.md", SKILL_MD),
+]);
 
 function routes(skill: AgentSkill | null = SKILL) {
   return createAgentDiscoveryRoutes({
@@ -44,13 +60,41 @@ function routes(skill: AgentSkill | null = SKILL) {
   });
 }
 
+function unpackLikeTheInstaller(archive: Uint8Array): Map<string, string> {
+  const tar = gunzipSync(archive);
+  const field = (from: number, length: number) =>
+    tar
+      .subarray(from, from + length)
+      .toString("utf-8")
+      .replace(/\0[\s\S]*$/, "");
+  const files = new Map<string, string>();
+  let offset = 0;
+  while (
+    offset + 512 <= tar.length &&
+    tar.subarray(offset, offset + 512).some((b) => b !== 0)
+  ) {
+    const name = field(offset, 100);
+    const prefix = field(offset + 345, 155);
+    const size = Number.parseInt(field(offset + 124, 12).trim() || "0", 8);
+    const type = tar[offset + 156];
+    offset += 512;
+    if (type === 0x30 || type === 0)
+      files.set(
+        prefix ? `${prefix}/${name}` : name,
+        tar.subarray(offset, offset + size).toString("utf-8"),
+      );
+    offset += Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+
 describe("agent discovery routes", () => {
   /**
    * TEST_SCENARIO: The installer fetches the index, then the url of each
-   * entry resolved against the index, and refuses the skill when the bytes do
-   * not hash to the entry's digest.
+   * entry resolved against the index, refuses the skill when the bytes do not
+   * hash to the entry's digest, and installs the files the archive holds.
    */
-  it("lists the skill in the 0.2.0 index with the digest of the bytes it serves", async () => {
+  it("lists the skill in the 0.2.0 index as an archive of all its files", async () => {
     const app = routes();
     const index = await app.request("/.well-known/agent-skills/index.json");
     expect(index.status).toBe(200);
@@ -65,8 +109,8 @@ describe("agent discovery routes", () => {
       {
         name: "dam",
         description: "Drive DAM with the dam CLI.",
-        type: "skill-md",
-        url: "dam/SKILL.md",
+        type: "archive",
+        url: "dam.tar.gz",
         digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       },
     ]);
@@ -77,20 +121,43 @@ describe("agent discovery routes", () => {
     );
     const file = await app.request(url.pathname);
     expect(file.status).toBe(200);
-    expect(file.headers.get("Content-Type")).toContain("text/markdown");
+    expect(file.headers.get("Content-Type")).toBe("application/gzip");
     const bytes = new Uint8Array(await file.arrayBuffer());
-    expect(bytes).toEqual(SKILL.bytes);
     expect(body.skills[0]!.digest).toBe(
       `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    );
+    expect(unpackLikeTheInstaller(bytes)).toEqual(
+      new Map([
+        ["SKILL.md", SKILL_MD],
+        ["references/security-advisory.md", ADVISORY_MD],
+      ]),
     );
   });
 
   /**
-   * TEST_SCENARIO: An installer older than the 0.2.0 schema reads the legacy
-   * index, whose entry names its files, and fetches each under the skill's
-   * name.
+   * TEST_SCENARIO: Each api-server replica builds the archive at boot, and the
+   * index from one replica can be followed by the archive from another, so
+   * the same files must give the same bytes whatever the clock says.
    */
-  it("serves the legacy index and the file it names", async () => {
+  it("builds the same archive bytes from the same files", () => {
+    vi.useFakeTimers({ now: new Date("2031-05-06T07:08:09Z") });
+    try {
+      const again = skillOf([
+        fileOf("SKILL.md", SKILL_MD),
+        fileOf("references/security-advisory.md", ADVISORY_MD),
+      ]);
+      expect(again.archive).toEqual(SKILL.archive);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: An installer older than the 0.2.0 schema reads the legacy
+   * index, whose entry names its files, SKILL.md first, and fetches each under
+   * the skill's name.
+   */
+  it("serves the legacy index and every file it names", async () => {
     const app = routes();
     const index = await app.request("/.well-known/skills/index.json");
     expect(await index.json()).toEqual({
@@ -98,12 +165,17 @@ describe("agent discovery routes", () => {
         {
           name: "dam",
           description: "Drive DAM with the dam CLI.",
-          files: ["SKILL.md"],
+          files: ["SKILL.md", "references/security-advisory.md"],
         },
       ],
     });
-    const file = await app.request("/.well-known/skills/dam/SKILL.md");
-    expect(new Uint8Array(await file.arrayBuffer())).toEqual(SKILL.bytes);
+    const skillMd = await app.request("/.well-known/skills/dam/SKILL.md");
+    expect(skillMd.headers.get("Content-Type")).toContain("text/markdown");
+    expect(await skillMd.text()).toBe(SKILL_MD);
+    const advisory = await app.request(
+      "/.well-known/skills/dam/references/security-advisory.md",
+    );
+    expect(await advisory.text()).toBe(ADVISORY_MD);
   });
 
   /**
@@ -148,16 +220,39 @@ describe("agent discovery routes", () => {
   });
 
   /**
-   * TEST_SCENARIO: The image ships the repository's dam skill, and the index
-   * takes its name and description from the skill's own frontmatter, within
-   * the 1024 characters the installer accepts.
+   * TEST_SCENARIO: The image ships the repository's dam skill folder, and the
+   * index takes its name and description from the skill's own frontmatter,
+   * within the 1024 characters the installer accepts. The archive holds
+   * SKILL.md and the security advisory it links to, as the repository has them.
    */
   it("reads the repository's dam skill", () => {
     const skill = readAgentSkill(SKILL_PATH);
     expect(skill?.name).toBe("dam");
     expect(skill?.description.length).toBeGreaterThan(0);
     expect(skill?.description.length).toBeLessThanOrEqual(1024);
-    expect(skill?.bytes).toEqual(new Uint8Array(readFileSync(SKILL_PATH)));
+    const unpacked = unpackLikeTheInstaller(skill!.archive);
+    expect(unpacked.get("SKILL.md")).toBe(readFileSync(SKILL_PATH, "utf-8"));
+    expect(unpacked.get("references/security-advisory.md")).toBe(
+      readFileSync(
+        join(dirname(SKILL_PATH), "references/security-advisory.md"),
+        "utf-8",
+      ),
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A checkout or an editor can leave hidden files, such as
+   * .DS_Store, in the skill's folder; they are not part of the skill.
+   */
+  it("leaves hidden files out of the skill", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agent-skill-"));
+    mkdirSync(join(dir, "references"));
+    writeFileSync(join(dir, "SKILL.md"), SKILL_MD);
+    writeFileSync(join(dir, "references", "security-advisory.md"), ADVISORY_MD);
+    writeFileSync(join(dir, ".DS_Store"), "junk");
+    expect(
+      readAgentSkill(join(dir, "SKILL.md"))?.files.map((f) => f.path),
+    ).toEqual(["SKILL.md", "references/security-advisory.md"]);
   });
 
   /**
@@ -165,10 +260,10 @@ describe("agent discovery routes", () => {
    * booting: it serves llms.txt without the skill instead.
    */
   it("reads no skill from a file without valid frontmatter", () => {
-    const parse = (text: string) =>
-      parseAgentSkill(new TextEncoder().encode(text));
+    const parse = (text: string) => parseAgentSkill([fileOf("SKILL.md", text)]);
     expect(parse("# no frontmatter")).toBe(null);
     expect(parse("---\nname: [dam\n---\n")).toBe(null);
     expect(parse("---\nname: dam\n---\n")).toBe(null);
+    expect(parseAgentSkill([fileOf("README.md", SKILL_MD)])).toBe(null);
   });
 });

@@ -420,7 +420,7 @@ export function createStarterKitsService(
           const connected = await deps.agents.connectSlack(
             agent.id,
             slackChannelId,
-            false,
+            {},
             undefined,
             { quiet: true },
           );

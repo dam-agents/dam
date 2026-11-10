@@ -23,6 +23,9 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     agentId: row.agentId,
     ownerSub: row.ownerSub,
     resolution: verdict,
+    ...(row.payload.kind === "ext_authz" && row.payload.forAgentId
+      ? { forAgentId: row.payload.forAgentId }
+      : {}),
   });
 }
 

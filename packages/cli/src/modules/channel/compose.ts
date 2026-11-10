@@ -2,6 +2,7 @@ import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
+import type { SharingService } from "../sharing/index.js";
 import { buildAvailableCommand } from "./commands/available.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildSlackConnectCommand } from "./commands/slack-connect.js";
@@ -16,6 +17,7 @@ export interface ChannelModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  createSharingService: (host: string) => SharingService;
 }
 
 export interface ChannelModule {
@@ -34,6 +36,7 @@ export function composeChannelModule(
     configService: opts.configService,
     createAgentService: opts.createAgentService,
     createChannelService: createService,
+    createSharingService: opts.createSharingService,
   };
 
   const parent = new Command("channel").description(

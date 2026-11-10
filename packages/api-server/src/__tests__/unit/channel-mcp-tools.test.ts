@@ -15,6 +15,7 @@ import {
 import type {
   AttachmentQuery,
   AttachmentResult,
+  ChannelHistoryQuery,
   ChannelReply,
   ChannelSendResult,
   MessageReactionsResult,
@@ -43,11 +44,13 @@ async function mcpHarness(opts?: {
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
   artifacts?: Record<string, { title: string; shareUrl: string | null }>;
+  readsChannelHistory?: boolean;
 }) {
   const replies: ChannelReply[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
+  const historyQueries: ChannelHistoryQuery[] = [];
   const attachmentQueries: AttachmentQuery[] = [];
   const channelManager = {
     postMessage: vi.fn(
@@ -92,6 +95,22 @@ async function mcpHarness(opts?: {
         );
       },
     ),
+    readChannelHistory: vi.fn(
+      async (
+        _agentId: string,
+        _type: ChannelType,
+        query: ChannelHistoryQuery,
+      ) => {
+        historyQueries.push(query);
+        return {
+          messages: [
+            "U999 [Wed 2026-09-17 09:12 UTC, ts 1758100320.000000]: the plan",
+          ],
+          conversationId: "C-BOUND",
+          hasMore: false,
+        };
+      },
+    ),
     fetchAttachment: vi.fn(
       async (_agentId: string, _type: ChannelType, query: AttachmentQuery) => {
         attachmentQueries.push(query);
@@ -116,6 +135,7 @@ async function mcpHarness(opts?: {
     artifactLibrary: {
       get: async (id: string) => opts?.artifacts?.[id] ?? null,
     },
+    readsChannelHistory: opts?.readsChannelHistory ?? false,
   } as unknown as McpSessionDeps);
 
   const [clientTransport, serverTransport] =
@@ -130,6 +150,7 @@ async function mcpHarness(opts?: {
     replies,
     reactionQueries,
     threadQueries,
+    historyQueries,
     attachmentQueries,
     channelManager,
   };
@@ -407,6 +428,94 @@ describe("describe_message_reactions MCP tool", () => {
   });
 });
 
+describe("read_channel_history MCP tool", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: Channel history is an opt-in on a binding, so an agent
+   * that has it on nowhere must not be offered a tool that only refuses.
+   */
+  it("is listed only while channel history is on for one of the agent's conversations", async () => {
+    const off = await mcpHarness();
+    expect(
+      (await off.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(false);
+
+    const on = await mcpHarness({ readsChannelHistory: true });
+    expect(
+      (await on.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An agent asked about "last week" names times, not Slack
+   * timestamps, so the tool takes ISO dates and hands the worker the Slack
+   * times it pages by. The read returns message bodies, so it is logged.
+   */
+  it("turns since and until into Slack times, passes the query through, and logs what it read", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    const result = await h.client.callTool({
+      name: "read_channel_history",
+      arguments: {
+        chatId: "C-BOUND",
+        since: "2026-11-02T00:00:00Z",
+        until: "2026-11-09",
+      },
+    });
+
+    expect(h.historyQueries).toEqual([
+      {
+        conversationId: "C-BOUND",
+        since: "1793577600.000000",
+        until: "1794182400.000000",
+      },
+    ]);
+    expect(
+      JSON.parse((result.content as { text: string }[])[0]!.text),
+    ).toMatchObject({ conversationId: "C-BOUND", hasMore: false });
+    expect(auditLines).toEqual([
+      {
+        event: "channel.history_read",
+        detail: {
+          conversationId: "C-BOUND",
+          since: "2026-11-02T00:00:00Z",
+          until: "2026-11-09",
+          messages: 1,
+          hasMore: false,
+        },
+      },
+    ]);
+  });
+
+  it("refuses a time that is not an ISO 8601 date, or a range that ends before it starts, without reading anything", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    for (const args of [
+      { since: "last tuesday" },
+      { since: "1" },
+      { since: "March 5" },
+      { since: "1969-12-31" },
+      { since: "2026-02-31" },
+      { since: "2026-11-02T09:00:00" },
+      { since: "2026-11-09", until: "2026-11-01" },
+    ]) {
+      const result = await h.client.callTool({
+        name: "read_channel_history",
+        arguments: args,
+      });
+      expect(result.isError).toBe(true);
+    }
+    expect(h.historyQueries).toEqual([]);
+  });
+});
+
 describe("read_thread MCP tool", () => {
   beforeEach(() => {
     auditLines.length = 0;
@@ -535,6 +644,115 @@ describe("fetch_message_attachment MCP tool", () => {
     expect(auditLines).toEqual([
       { event: "channel.attachment_fetch", detail: { fileId: "F0NOPE" } },
     ]);
+  });
+});
+
+describe("outbound MCP tools — channel cards", () => {
+  const actions = (button: Record<string, unknown>) => ({
+    type: "Card",
+    props: { title: "Deploys" },
+    children: [{ type: "Actions", props: {}, children: [button] }],
+  });
+
+  it("describes the card components on request, naming the tools that take a card", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    const describeTool = tools.find(
+      (t) => t.name === "describe_card_components",
+    );
+    expect(describeTool?.description).toMatch(/reply, post and start_thread/);
+    for (const name of ["reply", "post"])
+      expect(
+        tools.find((t) => t.name === name)?.inputSchema.properties,
+      ).toHaveProperty("card");
+
+    const res = (await client.callTool({
+      name: "describe_card_components",
+      arguments: {},
+    })) as { content: { text: string }[] };
+    const described = JSON.parse(res.content[0]!.text) as {
+      components: { name: string }[];
+    };
+    const names = described.components.map((c) => c.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Card",
+        "Fields",
+        "Table",
+        "Chart",
+        "LinkButton",
+      ]),
+    );
+    expect(names).not.toContain("Button");
+  });
+
+  it("passes the card the platform built to the channel", async () => {
+    const { client, posts } = await mcpHarness();
+
+    await client.callTool({
+      name: "post",
+      arguments: {
+        channel: "slack",
+        text: "This week",
+        card: actions({
+          type: "LinkButton",
+          props: { label: "Open", url: "https://example.com" },
+        }),
+      },
+    });
+
+    expect(posts[0]?.options.card).toMatchObject({
+      card: { type: "card", title: "Deploys" },
+      text: expect.stringContaining("Deploys"),
+    });
+  });
+
+  // TEST_SCENARIO: a refused card must not leave half an answer in the channel, and the agent must learn why.
+  it("refuses a card that fails its check and posts nothing", async () => {
+    const { client, replies } = await mcpHarness();
+
+    const res = (await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Approve?",
+        card: actions({
+          type: "Button",
+          props: { id: "approve", label: "Approve" },
+        }),
+      },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("describe_card_components");
+    expect(replies).toEqual([]);
+  });
+
+  it("posts a public artifact's share URL in place of its in-app link inside a card", async () => {
+    const id = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
+    const { client, replies } = await mcpHarness({
+      artifacts: {
+        [id]: {
+          title: "Weekly report",
+          shareUrl: "https://share.example/a/weekly-report",
+        },
+      },
+    });
+
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Report",
+        card: actions({
+          type: "LinkButton",
+          props: { label: "Open", url: `platform://artifacts/${id}` },
+        }),
+      },
+    });
+
+    expect(replies[0]?.card?.card.children[0]).toMatchObject({
+      type: "actions",
+      children: [{ url: "https://share.example/a/weekly-report" }],
+    });
   });
 });
 

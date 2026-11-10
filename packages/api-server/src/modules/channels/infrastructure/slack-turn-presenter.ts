@@ -29,11 +29,13 @@ export interface TurnPresenter {
  * that holds just the fence. A fence that ends a line moves to its own line,
  * and text after an opening fence that is not one lowercase word moves below
  * it. This works line by line: it leaves a fence pair that opens after prose
- * as it is, and it also rewrites such lines inside a longer fence.
+ * as it is, and it also rewrites such lines inside a longer fence. A Channel
+ * Card's blocks follow the text, and the Agent Footer ends the post.
  */
 export function renderAssistantBlocks(
   footer: AgentFooter,
   text: string,
+  cardBlocks?: SlackBlock[],
 ): SlackBlock[] {
   const markdown = text
     .replace(/^([ \t]*```)(?!`|[a-z0-9+#-]*[ \t]*$)/gm, "$1\n")
@@ -41,10 +43,13 @@ export function renderAssistantBlocks(
       /```(?<!^[ \t>]*```|```.*```|[^\s`>][ \t]*```[^`]*```)(?<=[^\s`][ \t]*```)[ \t]*$/gm,
       "\n```",
     );
-  return [
-    { type: "markdown", text: markdown || "(no response)" },
-    agentContextBlock(footer),
-  ];
+  const body: SlackBlock[] = cardBlocks
+    ? [
+        ...(markdown.trim() ? [{ type: "markdown", text: markdown }] : []),
+        ...cardBlocks,
+      ]
+    : [{ type: "markdown", text: markdown || "(no response)" }];
+  return [...body, agentContextBlock(footer)];
 }
 
 export function createTurnPresenter(

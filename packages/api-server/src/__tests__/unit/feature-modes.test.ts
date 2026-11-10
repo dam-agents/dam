@@ -21,18 +21,17 @@ describe("feature modes", () => {
       surface: "test",
       modes: {
         processes: "off",
-        "interactive-artifacts": "on",
         "agent-telemetry": "experimental",
         "advanced-connections": "experimental",
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
         environments: "experimental",
         hermes: "experimental",
+        "github-enterprise-hosts": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
       processes: false,
-      "interactive-artifacts": true,
       "agent-telemetry": true,
       "advanced-connections": false,
     });

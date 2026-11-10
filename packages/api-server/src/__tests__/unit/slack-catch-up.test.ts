@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import { slackWorkerHarness } from "../helpers/slack-worker.js";
-import { AcpModelRefusedError, type AcpClient } from "../../core/acp-client.js";
+import {
+  AcpModelCallFailedError,
+  AcpModelRefusedError,
+  type AcpClient,
+} from "../../core/acp-client.js";
 import {
   selectUnseen,
   type ThreadEntry,
@@ -510,6 +514,46 @@ describe("steered messages and the boundary", () => {
           const answer = await base.sendPrompt(prompt, sendOpts);
           if (String(prompt).includes(BRAVO))
             throw new AcpModelRefusedError("s-1");
+          return answer;
+        },
+      }),
+    });
+    await h.worker.connect();
+
+    for (const [upTo, ts, text] of [
+      [1, T1, ALPHA],
+      [2, T2, BRAVO],
+      [3, T3, CHARLIE],
+    ] as const) {
+      h.gw.setThreadedHistory(threadedHistory(upTo));
+      await h.gw.fireMention({
+        user: "U9",
+        channel: BOUND,
+        ts,
+        ...thread,
+        text,
+      });
+    }
+
+    const next = h.prompts.map(String).find((p) => p.includes(CHARLIE));
+    expect(next).toBeDefined();
+    expect(next).not.toContain(BRAVO);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn whose model call failed also reached the session:
+   * the message is in its transcript, and the thread was told the call
+   * failed. The next turn in the thread does not hand it to the agent again
+   * as missed.
+   */
+  it("counts a message whose model call failed as seen", async () => {
+    const h = harness({
+      makeAcp: (base) => ({
+        ...base,
+        sendPrompt: async (prompt, sendOpts) => {
+          const answer = await base.sendPrompt(prompt, sendOpts);
+          if (String(prompt).includes(BRAVO))
+            throw new AcpModelCallFailedError("s-1", "rejected", null);
           return answer;
         },
       }),

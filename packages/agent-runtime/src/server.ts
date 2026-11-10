@@ -45,8 +45,10 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  modelCatalogCachePath,
   servesHarness,
   VENDORED_PRICE_TABLE,
+  watchHarnessCatalog,
 } from "./modules/model-catalog/index.js";
 import {
   composeModelRouter,
@@ -55,9 +57,11 @@ import {
   bedrockRouterEnv,
   createCallerSessionLookup,
   createModelCallExporter,
+  homeConnectionEnv,
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalDefaultModel } from "./modules/terminal-default-model.js";
 import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import { composeBrowser } from "./modules/browser-preview.js";
@@ -194,7 +198,16 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir, defaultHarness);
+const envStore = createEnvStateStore(
+  homeDir,
+  defaultHarness,
+  (harness, layers) =>
+    homeConnectionEnv({
+      harness,
+      binding: harnessManifests[harness]?.modelRouter,
+      layers,
+    }),
+);
 const browser = composeBrowser({ homeDir, envReader: envStore });
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
@@ -292,6 +305,7 @@ const modelCatalog = createModelCatalog({
     Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
   ),
   table: VENDORED_PRICE_TABLE,
+  cachePath: modelCatalogCachePath(homeDir),
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 
@@ -309,6 +323,8 @@ let sessionState: {
   localWork: (sessionId: string) => boolean;
   spawnedBy: (sessionId: string) => string[];
 } = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+// UNIT_BOUNDARY_DESCRIPTION: runs the platform ended while their prompt still waited behind another turn of its session; such a turn is cancelled as it starts.
+const cancelledRuns = new Set<string>();
 const invocationWatch = createInvocationWatch({
   reporter: {
     report: (input) =>
@@ -348,6 +364,7 @@ const terminalSessionOf = createTerminalSessionLookup(
   TERMINAL_PIN_REFRESH_MS,
 );
 const modelRouter = composeModelRouter({
+  leaseEnv: (harness) => envStore.forLease({ harness, provider: null }),
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;
@@ -546,6 +563,7 @@ const {
   sessions: sessionsService,
   sessionChanges,
   activeTurns,
+  undeliveredPrompts,
   subAgentSessions,
   platformMcpEntry,
   warmHistory,
@@ -615,6 +633,16 @@ const {
   agentRequests: toolApprovalReporter,
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  onInvocationTurn: (sessionId, run) => {
+    if (cancelledRuns.delete(run)) {
+      void triggerDriver.cancel(sessionId);
+      return;
+    }
+    const entry = sessionMetadata.get(sessionId);
+    if (entry)
+      sessionMetadata.set(sessionId, { ...entry.meta, invocationRun: run });
+    invocationWatch.watch(sessionId, run);
+  },
   gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) => {
     invocationWatch.turnOutcome(sessionId, end);
@@ -635,7 +663,7 @@ const {
   },
   beforeSpawn: async () => {
     await Promise.race([
-      modelCatalog.listed(),
+      modelCatalog.settled(),
       new Promise<void>((resolve) => {
         setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
       }),
@@ -706,6 +734,7 @@ function scheduleRecovery(): void {
     void recoverInterruptedTurns({
       store: activeTurns,
       sessionMetadata,
+      undeliveredPrompts,
       triggerDriver,
       bindScheduleSession: (scheduleId, sessionId) =>
         runtimeChannel.triggerStateStore.setSessionForSchedule(
@@ -746,7 +775,26 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
-  invocationWatch,
+  invocationCancel: {
+    cancelRun: async (run) => {
+      if (invocationScripts.stop(run)) return { ended: true };
+      const sessionId = Object.entries(sessionMetadata.all()).find(
+        ([id, entry]) =>
+          entry.meta.invocationRun === run && !sessionMetadata.isTombstoned(id),
+      )?.[0];
+      if (!sessionId) {
+        cancelledRuns.add(run);
+        return { ended: true };
+      }
+      invocationWatch.ended(sessionId);
+      return { ended: await triggerDriver.cancel(sessionId), sessionId };
+    },
+  },
+  invocationSessions: {
+    holds: (sessionId) =>
+      sessionMetadata.get(sessionId) !== undefined &&
+      !sessionMetadata.isTombstoned(sessionId),
+  },
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   recordContinuation: (sessionId, scheduleId) =>
     sessionMetadata.recordContinuation(sessionId, scheduleId),
@@ -765,7 +813,7 @@ const runtimeChannel = await composeRuntimeChannel({
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
         applyStartupItemEnv();
-        void modelCatalog.refresh();
+        void modelCatalog.refreshForEnvChange();
         scheduleRecovery();
       },
     }),
@@ -895,6 +943,11 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+const grantedModel = (model: string): boolean => {
+  const alias = parseQualifiedModel(model)?.alias;
+  return !alias || grantedAliases().includes(alias);
+};
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
  * refuses the terminal with the provider-removed reason, as a chat prompt
@@ -913,10 +966,12 @@ function terminalLease(
       ? acpRuntime.sessionChoice(sessionId).model
       : requested.model !== undefined
         ? canonicalModel(requested.model)
-        : null;
-  const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
-  if (alias && !grantedAliases().includes(alias))
-    return PROVIDER_REMOVED_REASON;
+        : terminalDefaultModel({
+            harness,
+            chatDefault: acpRuntime.defaults()?.chat,
+            granted: grantedModel,
+          });
+  if (chosen && !grantedModel(chosen)) return PROVIDER_REMOVED_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",
@@ -1427,17 +1482,20 @@ server.listen(config.PORT, () => {
     applyStartupItemEnv();
   }
 
-  modelCatalog.onChange(() =>
-    acpRuntime.applyEnvChange({
-      namesChanged: false,
-      base: null,
-      providers: [],
-      harnesses: Object.keys(harnessManifests).map((id) => ({
-        id,
+  watchHarnessCatalog({
+    catalog: modelCatalog,
+    harnesses: Object.keys(harnessManifests),
+    changed: () =>
+      acpRuntime.applyEnvChange({
         namesChanged: false,
-      })),
-    }),
-  );
+        base: null,
+        providers: [],
+        harnesses: Object.keys(harnessManifests).map((id) => ({
+          id,
+          namesChanged: false,
+        })),
+      }),
+  });
   if (environmentOf === "") {
     acpRuntime.prestart();
     void sessionsService.adoptHarnessTitles();

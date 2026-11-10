@@ -58,6 +58,7 @@ function harness(opts?: {
           owner: OWNER,
           teamId: "",
           ambient: false,
+          history: false,
           isDefault: true,
         },
       ],
@@ -68,6 +69,7 @@ function harness(opts?: {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],

@@ -23,12 +23,6 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Let buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
-  },
-  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
@@ -60,15 +54,21 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "environments",
-    label: "Environments",
+    label: "Environments and kept sub-agents",
     description:
-      "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
+      "Let your agents run sandboxes of their own and keep them: Environments for other people and agents to open, such as one per pull request, and sub-agents kept after their result, which your agent can enter, give more work, run in parallel and continue a conversation with. Both sleep when unused and expire.",
   },
   {
     id: "hermes",
     label: "Hermes harness",
     description:
       "Offer Nous Research's Hermes Agent beside the other harnesses when you start a session, open a terminal or pick an agent's defaults, on agents whose image carries it.",
+  },
+  {
+    id: "github-enterprise-hosts",
+    label: "GitHub Enterprise hosts",
+    description:
+      "Pick which GitHub Enterprise host to connect to, and move a GitHub Enterprise sign-in to another host, on an install that offers more than one.",
   },
 ];
 

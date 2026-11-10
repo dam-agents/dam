@@ -26,6 +26,9 @@ const RESULT_ACCEPTED = new RegExp(
 const SPAWN_LINE =
   /^(?:\d+\t)?\[invoke\] spawned .+? -> (?<id>agent-[a-z0-9]+)$/;
 
+const RUN_LINE =
+  /^(?:\d+\t)?\[invoke\] run (?<id>invocation:agent-[a-z0-9]+:\d+) started in .+$/;
+
 interface ToolCallUpdate {
   sessionUpdate?: unknown;
   status?: unknown;
@@ -90,7 +93,9 @@ function artifactTouchMarkerIn(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The sub-agents one output of a finished tool call
  * spawned, read from the `[invoke] spawned <label> -> <id>` lines that both
- * spawn_subagent and the driver SDK print.
+ * spawn_subagent and the driver SDK print, and the runs it started in kept
+ * ones, from their `[invoke] run <run id> started in ...` lines, so a run's
+ * outcome returns to the session that started it.
  */
 function subAgentSpawnOf(
   texts: readonly string[],
@@ -99,7 +104,10 @@ function subAgentSpawnOf(
   const ids = new Set<string>();
   for (const text of texts)
     for (const line of text.split("\n")) {
-      const id = SPAWN_LINE.exec(line.trim())?.groups?.id;
+      const trimmed = line.trim();
+      const id =
+        SPAWN_LINE.exec(trimmed)?.groups?.id ??
+        RUN_LINE.exec(trimmed)?.groups?.id;
       if (id) ids.add(id);
     }
   return ids.size > 0 ? { sessionId, subAgentIds: [...ids] } : null;

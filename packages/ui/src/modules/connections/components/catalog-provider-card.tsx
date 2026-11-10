@@ -86,8 +86,9 @@ export function CatalogProviderCard({
         )}
       </header>
       {connections.length > 0 ? (
-        <div className="flex flex-col gap-3 p-4">
+        <div className="divide-y divide-border">
           <ConnectionRows
+            bare
             connections={connections}
             templateById={templateById}
             grant={

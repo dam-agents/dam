@@ -35,22 +35,17 @@ const artifact: LibraryArtifact = {
 
 describe("artifact callback eligibility", () => {
   it("allows the latest private interactive HTML in its agent's chat", () => {
-    expect(canUseArtifactBridge(artifact, true, "agent", 2)).toBe(true);
+    expect(canUseArtifactBridge(artifact, "agent", 2)).toBe(true);
   });
 
   it("keeps the owner's callbacks after the page is shared with named people", () => {
     expect(
       canUseArtifactBridge(
         { ...artifact, visibility: "restricted" },
-        true,
         "agent",
         2,
       ),
     ).toBe(true);
-  });
-
-  it("disables callbacks when the feature is off", () => {
-    expect(canUseArtifactBridge(artifact, false, "agent", 2)).toBe(false);
   });
 
   it.each<Partial<LibraryArtifact>>([
@@ -60,27 +55,23 @@ describe("artifact callback eligibility", () => {
     { agentId: null },
     { agentId: "another-agent" },
   ])("refuses an ineligible artifact: %j", (patch) => {
-    expect(
-      canUseArtifactBridge({ ...artifact, ...patch }, true, "agent", 2),
-    ).toBe(false);
+    expect(canUseArtifactBridge({ ...artifact, ...patch }, "agent", 2)).toBe(
+      false,
+    );
   });
 
   it("does not send from historical versions or missing contexts", () => {
-    expect(canUseArtifactBridge(artifact, true, "agent", 1)).toBe(false);
-    expect(canUseArtifactBridge(artifact, true, null, 2)).toBe(false);
-    expect(canUseArtifactBridge(null, true, "agent", 2)).toBe(false);
+    expect(canUseArtifactBridge(artifact, "agent", 1)).toBe(false);
+    expect(canUseArtifactBridge(artifact, null, 2)).toBe(false);
+    expect(canUseArtifactBridge(null, "agent", 2)).toBe(false);
   });
 });
 
 describe("starting a session from an artifact outside a chat", () => {
   it("allows the latest interactive HTML its agent published", () => {
-    expect(canStartArtifactSession(artifact, true, 2)).toBe(true);
+    expect(canStartArtifactSession(artifact, 2)).toBe(true);
     expect(
-      canStartArtifactSession(
-        { ...artifact, visibility: "restricted" },
-        true,
-        2,
-      ),
+      canStartArtifactSession({ ...artifact, visibility: "restricted" }, 2),
     ).toBe(true);
   });
 
@@ -90,15 +81,12 @@ describe("starting a session from an artifact outside a chat", () => {
     { visibility: "public" },
     { agentId: null },
   ])("refuses an ineligible artifact: %j", (patch) => {
-    expect(canStartArtifactSession({ ...artifact, ...patch }, true, 2)).toBe(
-      false,
-    );
+    expect(canStartArtifactSession({ ...artifact, ...patch }, 2)).toBe(false);
   });
 
-  it("refuses historical versions and a disabled feature", () => {
-    expect(canStartArtifactSession(artifact, true, 1)).toBe(false);
-    expect(canStartArtifactSession(artifact, false, 2)).toBe(false);
-    expect(canStartArtifactSession(null, true, 2)).toBe(false);
+  it("refuses historical versions and a missing artifact", () => {
+    expect(canStartArtifactSession(artifact, 1)).toBe(false);
+    expect(canStartArtifactSession(null, 2)).toBe(false);
   });
 });
 

@@ -293,6 +293,7 @@ export interface SlackGateway {
     channel: string;
     limit: number;
     oldest?: string;
+    latest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   getMessage(args: {

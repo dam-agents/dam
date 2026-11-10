@@ -62,6 +62,8 @@ type bootstrapParams struct {
 	RepairGeneration       int
 	// UNIT_BOUNDARY_DESCRIPTION: the epoch this agent's credential key set last changed at. It is folded into the health revision, which is what makes a repair's receipt belong to the arrival it repairs: a rendering can return to a content hash it had before, but not to an epoch it has left.
 	ArrivalEpoch int
+	// UNIT_BOUNDARY_DESCRIPTION: whether the outer listener admits only connections from outside the pod. Every agent of an owner shares the pod's loopback and its own address, so a connection from either is a sibling re-entering through the forward proxy, never a machine.
+	ExternalSourceOnly bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's own directory, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
@@ -239,6 +241,17 @@ func buildOuterListener(p bootstrapParams) ev {
 	}
 	if p.Transparent {
 		acceptTransparentTLS(listener, p)
+	}
+	if p.ExternalSourceOnly {
+		for _, c := range listener["filter_chains"].([]any) {
+			chain := c.(ev)
+			match, ok := chain["filter_chain_match"].(ev)
+			if !ok {
+				match = ev{}
+				chain["filter_chain_match"] = match
+			}
+			match["source_type"] = "EXTERNAL"
+		}
 	}
 	return listener
 }

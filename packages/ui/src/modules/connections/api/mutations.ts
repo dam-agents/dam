@@ -176,3 +176,16 @@ export function useUpdateGitHubUserTokenScope() {
     },
   });
 }
+
+export function useMoveConnectionToHost() {
+  return useMutation({
+    ...trpc.connections.moveToHost.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      suppressErrorToast: true,
+    },
+  });
+}

@@ -1,6 +1,6 @@
 # GitHub Connections
 
-Last verified: 2026-10-29
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -48,6 +48,7 @@ A sign-in's Connection injects a scoped token GitHub derives from the user token
 A scope GitHub refuses parks that one Connection as expired without costing the sign-in or its siblings anything, and never falls back to a wider token.
 A narrowed token still never does more than the user could.
 An installation's Connection mints its own installation token with the installation's key, and the refresh loop renews it like any minted token; a new key is given to the installation only, proven the same way, and every Connection made from it mints again with it.
+A sign-in lists where its app is installed — each organization or user account, whether the install covers all its repositories, and whether it is suspended — read with its own user token when its row is shown and again when the user comes back to the page, never stored on the Connection, so an install made on GitHub shows up without changing it, and a sign-in whose app is installed nowhere says so.
 Re-authentication and credential rotation act on the parent; removing the parent removes every Connection made from it and delivers to every Agent that held one.
 Connections that predate the split each became a parent plus one Connection that kept its identity, name, grants and Secret, which it now shares with the parent; one never narrowed says full access rather than being narrowed silently, so no Agent lost access.
 
@@ -61,3 +62,15 @@ The commit identity git uses follows that default too: the active account's name
 Because the env is gone, the platform states gh's availability explicitly in that case, and the runtime's own GitHub client reads the active token from the same file.
 The Agent learns all of this from a skill every agent image ships, `platform-github`: how to list its accounts, how to switch or act as one for a single command, and what the gateway's refusal means.
 A GitHub Enterprise Server is a separate case: `gh` reads `GH_ENTERPRISE_TOKEN` for such a host and never `GH_TOKEN`, which it reserves for github.com and `ghe.com` tenants, so a Connection to an Enterprise Server hands the Agent `GH_ENTERPRISE_TOKEN` and never competes with a github.com account for one env.
+
+## GitHub Enterprise hosts
+
+An install may offer several GitHub Enterprise hosts, each with the GitHub App registered on it, set in the chart values as maps keyed by hostname, so a values file adds, changes or drops one host without restating the others ([`helm/values.yaml`](../../helm/values.yaml)).
+With two or more, the connect form asks which host, and a sign-in authorizes, renews and narrows with the app of its own host; one host keeps the single-host form, where that host and its app are presets.
+The install can also retire a host its users have moved away from.
+No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected with the retired host named, and cannot be authorized there.
+A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host; the move is written before the authorization, so a user who stops there re-authenticates from the row.
+The sign-in then uses the app the install registered on the new host, even where it had a user's own app before.
+A narrowed Connection keeps a scope that names an account of the old host, which GitHub refuses on the new one, so after the authorization it reads expired until its scope is picked again; a full-access one works at once.
+Tokens and installations do not move: they are made again on the new host.
+The UI's host list, and the move of a sign-in whose host still works, stay behind the `github-enterprise-hosts` experimental feature; a sign-in on a retired host offers the move without it, since retiring is the operator's act, and the api-server enforces the host list and the retired hosts for every caller.

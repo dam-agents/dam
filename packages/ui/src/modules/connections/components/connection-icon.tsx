@@ -1,6 +1,7 @@
 import {
   BareMetalServer,
   Link,
+  LogoFigma,
   LogoKubernetes,
   LogoSlack,
   LogoYoutube,
@@ -20,6 +21,7 @@ const MONOCHROME_BY_SLUG = new Map<
 >([
   ["github", GithubIcon],
   ["github-enterprise", GithubIcon],
+  ["figma", LogoFigma],
   ["kubernetes", LogoKubernetes],
   ["slack", LogoSlack],
   ["spotify", SpotifyIcon],

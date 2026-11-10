@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="On an overlay root a sandbox's or an Environment's cluster keeps the kubelet's root and the runner's node directories on the home disk, and nowhere else, and an Environment's kubelet keeps its images"
+#MISE description="On an overlay root a sandbox's or an Environment's cluster keeps the kubelet's root and the runner's node directories on the home disk, and nowhere else, an Environment's kubelet keeps its images, and its huge pages stay on"
 #MISE sources=["helm/values*.yaml", ".mise/lib/cluster.sh", ".mise/lib/root.sh", ".mise/tasks/check/cluster-sandbox-dirs"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -165,5 +165,39 @@ node_host_dirs_at_boot
   { echo "FAIL: a node whose directories need no mount keeps a boot service" >&2; fail=1; }
 grep -qF "rc-update del $(basename "$NODE_HOST_DIRS_SERVICE") default" "$work/root.log" ||
   { echo "FAIL: a boot service no install needs is left in the default runlevel" >&2; fail=1; }
+
+# --- an Environment's nested guests get huge pages, at every boot (#6199) --
+NODE_THP_SERVICE="$work/init.d/platform-thp"
+NODE_THP_ENABLED="$work/thp-enabled"
+mkdir -p "$work/init.d"
+echo 'always [madvise] never' > "$NODE_THP_ENABLED"
+node_sh() {
+  case "$1" in
+    rc-update) echo "$*" >> "$work/root.log" ;;
+    test) [ "$2 $3" = "-x /sbin/openrc-run" ] && return 0; "$@" ;;
+    sh) [ "$4 $5" = "_ $NODE_THP_ENABLED" ] && echo "[always] madvise never" > "$5" ;;
+    *) "$@" ;;
+  esac
+}
+: > "$work/root.log"
+rc=0; node_thp_always || rc=$?
+same "huge pages turn on now" "0 [always] madvise never" "$rc $(cat "$NODE_THP_ENABLED")"
+grep -q 'before k3s' "$NODE_THP_SERVICE" ||
+  { echo "FAIL: the huge pages service does not start before k3s" >&2; fail=1; }
+grep -qF "echo always > $NODE_THP_ENABLED" "$NODE_THP_SERVICE" ||
+  { echo "FAIL: the huge pages service does not turn huge pages on" >&2; fail=1; }
+sh -n "$NODE_THP_SERVICE" || { echo "FAIL: the huge pages service is not valid shell" >&2; fail=1; }
+grep -qF "rc-update add $(basename "$NODE_THP_SERVICE") default" "$work/root.log" ||
+  { echo "FAIL: the huge pages service is not added to the default runlevel" >&2; fail=1; }
+echo 'always [madvise] never' > "$NODE_THP_ENABLED"
+node_sh() {
+  case "$1" in
+    rc-update|sh) return 0 ;;
+    test) [ "$2 $3" = "-x /sbin/openrc-run" ] && return 0; "$@" ;;
+    *) "$@" ;;
+  esac
+}
+rc=0; node_thp_always 2>/dev/null || rc=$?
+same "a kernel that keeps madvise fails the install" 1 "$rc"
 
 exit "$fail"

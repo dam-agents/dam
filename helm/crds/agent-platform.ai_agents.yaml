@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "20"
+    agent-platform.ai/crd-schema-generation: "21"
     controller-gen.kubebuilder.io/version: v0.23.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -212,6 +212,17 @@ spec:
                   type: string
                 maxItems: 256
                 type: array
+              linkFrom:
+                description: |-
+                  LinkFrom names the one Agent that may open the agent-to-agent link into
+                  this one's machine: an Environment's owning Agent, or a sub-agent's
+                  driver. Set at create, never changed; the guest reads it as
+                  PLATFORM_LINK_FROM. An Environment created before the field accepts from
+                  its EnvironmentOf.
+                type: string
+                x-kubernetes-validations:
+                - message: linkFrom cannot change
+                  rule: self == oldSelf
               mounts:
                 description: Mounts declares the agent's volumes; a persisted mount
                   becomes a PVC.
@@ -325,6 +336,8 @@ spec:
                 == ''vm'')'
             - message: environmentOf is set at create and never added or removed
               rule: has(self.environmentOf) == has(oldSelf.environmentOf)
+            - message: linkFrom is set at create and never added or removed
+              rule: has(self.linkFrom) == has(oldSelf.linkFrom)
           status:
             description: |-
               AgentStatus is the observed state of an Agent. The controller is the sole

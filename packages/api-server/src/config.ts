@@ -64,6 +64,42 @@ const featureModesSchema = z
       ) as Record<FeatureId, FeatureMode>,
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the chart's extra GitHub Enterprise hosts, each with the app registered on it, and the hosts it retired. A user picks one of the hosts when connecting; a retired host's connections read disconnected.
+const gheHostsSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z.array(
+      z.object({
+        host: z.string().min(1),
+        clientId: z.string().optional(),
+        clientSecret: z.string().optional(),
+        appSlug: adminAppSlugSchema.transform((v) => v ?? undefined),
+      }),
+    ),
+  );
+
+const gheRetiredHostsSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().min(1)));
+
 // UNIT_BOUNDARY_DESCRIPTION: the chart's harness catalog. Without one (a dev run outside the chart) the default image's harness is Claude Code with nothing else on offer.
 const harnessesSchema = z
   .string()
@@ -273,6 +309,8 @@ const configSchema = z.object({
   defaultGithubEnterpriseClientId: z.string().nullable().default(null),
   defaultGithubEnterpriseClientSecret: z.string().nullable().default(null),
   defaultGithubEnterpriseAppSlug: adminAppSlugSchema,
+  defaultGithubEnterpriseHosts: gheHostsSchema,
+  defaultGithubEnterpriseRetiredHosts: gheRetiredHostsSchema,
   defaultSlackClientId: z.string().nullable().default(null),
   defaultSlackClientSecret: z.string().nullable().default(null),
   redisUrl: z.string().nullable().default(null),
@@ -507,6 +545,9 @@ export function loadConfig(): Config {
     defaultGithubEnterpriseClientSecret:
       process.env.PLATFORM_DEFAULT_GHE_CLIENT_SECRET,
     defaultGithubEnterpriseAppSlug: process.env.PLATFORM_DEFAULT_GHE_APP_SLUG,
+    defaultGithubEnterpriseHosts: process.env.PLATFORM_DEFAULT_GHE_HOSTS,
+    defaultGithubEnterpriseRetiredHosts:
+      process.env.PLATFORM_DEFAULT_GHE_RETIRED_HOSTS,
     defaultSlackClientId: process.env.PLATFORM_DEFAULT_SLACK_CLIENT_ID,
     defaultSlackClientSecret: process.env.PLATFORM_DEFAULT_SLACK_CLIENT_SECRET,
     redisUrl: process.env.REDIS_URL,
@@ -587,7 +628,6 @@ export function loadConfig(): Config {
     links: {
       docs: process.env.LINKS_DOCS || null,
       computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
-      curveBenderCommunity: process.env.LINKS_CURVE_BENDER_COMMUNITY || null,
       slackInstallRequest: process.env.LINKS_SLACK_INSTALL_REQUEST || null,
     },
     terms: {

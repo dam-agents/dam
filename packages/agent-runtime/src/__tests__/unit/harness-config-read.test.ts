@@ -11,7 +11,12 @@ import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructur
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
 
 function asLease(reader: RuntimeEnvReader): LeaseEnvReader {
-  return { ...reader, providers: () => [], forLease: () => reader.current() };
+  return {
+    ...reader,
+    providers: () => [],
+    forLease: () => reader.current(),
+    connectionEnvFor: () => ({}),
+  };
 }
 
 const noop = () => {};

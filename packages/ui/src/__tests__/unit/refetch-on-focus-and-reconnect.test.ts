@@ -140,11 +140,14 @@ it("refetches a fresh ACP Session list on reconnect, not on return", async () =>
   await vi.waitFor(() => expect(sessions.calls()).toBe(2));
 });
 
-// TEST_SCENARIO: provider grants and channel links change in another client. The connection list, the per-agent grants, the Telegram chats, the Telegram bot and the Slack install availability must all re-read when this tab returns, and again when the API reconnects.
+// TEST_SCENARIO: provider grants and channel links change in another client. The connection list, the per-agent grants, where a sign-in's app is installed (the user installs it in another tab), the Telegram chats, the Telegram bot and the Slack install availability must all re-read when this tab returns, and again when the API reconnects.
 it("refreshes the connection, grant and channel families", async () => {
   await expectRefetchedOnReturnAndReconnect({
     connections: trpc.connections.list.queryKey(),
     grants: trpc.connections.getAgentConnections.queryKey({ agentId: "a" }),
+    "app installations": trpc.connections.githubAppInstallations.queryKey({
+      connectionId: "conn-1",
+    }),
     "telegram chats": trpc.agents.listTelegramChats.queryKey({ agentId: "a" }),
     "telegram bot": trpc.channels.telegramBot.queryKey(),
     "slack availability": ["slack", "install", "availability"],

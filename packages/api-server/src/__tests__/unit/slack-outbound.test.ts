@@ -2,6 +2,7 @@ import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
+import { buildChannelCard } from "../../modules/channels/infrastructure/channel-card.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
@@ -65,6 +66,7 @@ function harness(opts: {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -273,7 +275,7 @@ describe("slack outbound — cross-workspace reach", () => {
   it("refuses an empty send — no DM gets opened as a side effect", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     expect(await h.post("", { conversationId: "UTEAMMATE" })).toEqual({
-      error: "nothing to send — pass text or an attachment",
+      error: "nothing to send — pass text, a card or an attachment",
     });
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
@@ -431,6 +433,121 @@ describe("slack outbound — cross-workspace reach", () => {
       throw new Error("missing_scope");
     };
     expect(await h.list()).toEqual([{ id: BOUND, title: BOUND }]);
+  });
+});
+
+function channelCard(tree: Record<string, unknown>) {
+  const built = buildChannelCard(tree);
+  if (!("card" in built)) throw new Error(built.issues.join("; "));
+  return built.card;
+}
+
+const deploys = channelCard({
+  type: "Card",
+  props: { title: "Deploys" },
+  children: [
+    {
+      type: "Fields",
+      props: {},
+      children: [{ type: "Field", props: { label: "Status", value: "green" } }],
+    },
+    {
+      type: "Table",
+      props: { headers: ["Week", "Deploys"], rows: [["W44", 12]] },
+    },
+  ],
+});
+
+describe("slack outbound — channel cards", () => {
+  it("shows the text, then the card's blocks, then the footer, and notifies with both", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const posts = vi.spyOn(h.gw, "postMessage");
+
+    expect(await h.post("This week", { card: deploys })).toMatchObject({
+      ok: true,
+    });
+
+    const sent = posts.mock.calls[0]![0];
+    const types = (sent.blocks ?? []).map((block) => block.type);
+    expect(sent.blocks?.[0]).toEqual({
+      type: "markdown",
+      text: signed("This week", "**"),
+    });
+    expect(types).toContain("data_table");
+    expect(types.at(-1)).toBe("context");
+    expect(sent.text).toContain("This week");
+    expect(sent.text).toContain("Status");
+  });
+
+  /**
+   * TEST_SCENARIO: Slack refuses blocks it cannot show, such as a table part a
+   * workspace does not have or an image it cannot fetch. The answer must still
+   * arrive, so the card goes out once more as its text form.
+   */
+  it("posts the card as text when Slack refuses its blocks", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const post = h.gw.postMessage.bind(h.gw);
+    const sent: Parameters<typeof post>[0][] = [];
+    h.gw.postMessage = async (args) => {
+      sent.push(args);
+      if (args.blocks?.some((block) => block.type === "data_table"))
+        throw Object.assign(new Error("invalid_blocks"), {
+          data: { error: "invalid_blocks" },
+        });
+      return post(args);
+    };
+
+    expect(await h.post("This week", { card: deploys })).toMatchObject({
+      ok: true,
+    });
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.blocks).toEqual([
+      {
+        type: "markdown",
+        text: signed(`This week\n\n${deploys.text}`, "**"),
+      },
+      expect.objectContaining({ type: "context" }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a card whose only text is blank renders no Slack block, and with no text of its own the post would show the Agent Footer alone.
+  it("refuses a post that would show nothing but its footer", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    h.gw.setGrantedScopes(["chat:write", "chat:write.customize"]);
+    const blank = channelCard({
+      type: "Card",
+      props: {},
+      children: [{ type: "Text", props: { content: " " } }],
+    });
+
+    const result = await h.post("", { card: blank });
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining("shows nothing"),
+    });
+    expect(h.messages()).toEqual([]);
+  });
+
+  it("refuses a card too long for one Slack message before anything posts", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const long = channelCard({
+      type: "Card",
+      props: { title: "Every check" },
+      children: Array.from({ length: 50 }, (_, i) => ({
+        type: "Text",
+        props: { content: `Check ${i + 1} passed` },
+      })),
+    });
+
+    const result = await h.post("Checks", { card: long });
+
+    const blocks = Number(
+      ("error" in result && result.error.match(/is (\d+) Slack blocks/)?.[1]) ||
+        0,
+    );
+    expect(blocks).toBeGreaterThanOrEqual(52);
+    expect(h.messages()).toEqual([]);
   });
 });
 

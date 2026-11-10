@@ -10,6 +10,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
+  AcpModelCallFailedError,
   AcpModelRefusedError,
   AcpTurnAbandonedError,
   type AcpClient,
@@ -111,6 +112,7 @@ function harness(opts: {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -249,6 +251,79 @@ describe("slack turn presentation — owner turns", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("model-refused");
     expect(h.nudgeEvents()).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: the model provider rejects the agent's model call, so the turn ends before the agent posts; the thread must say the call failed, show the provider's words, and link the agent's Providers section and the session with the error, not stay silent or get a nudge that hits the same rejection.
+  it("tells the thread the model call failed, with the provider's words", async () => {
+    const h = harness({
+      sendPrompt: async () => {
+        throw new AcpModelCallFailedError(
+          "s-1",
+          "rejected",
+          "Failed to authenticate. API Error: 403 status code (no body)",
+        );
+      },
+    });
+    await h.mention();
+    await tick();
+
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    const text = (msgs[0] as { text: string }).text;
+    expect(text).toContain("model call was refused");
+    expect(text).toContain(
+      "“Failed to authenticate. API Error: 403 status code (no body)”",
+    );
+    expect(text).toContain("http://ui/sandboxes/agent-1/providers");
+    expect(text).toContain("http://ui/a/agent-1?s=s-1");
+    expect(text).not.toContain("Something went wrong");
+    expect(h.turnEvents()[0]!.outcome).toBe("failure");
+    expect(h.turnEvents()[0]!.reason).toBe("model-call-rejected");
+    expect(h.nudgeEvents()).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: the person mentions the agent again in the thread that already got the failure reply, and the model call fails again; the thread gets the failure reply again, not silence.
+  it("tells the thread again when the call fails again", async () => {
+    const h = harness({
+      sendPrompt: async () => {
+        throw new AcpModelCallFailedError("s-1", "failed", null);
+      },
+    });
+    await h.mention();
+    await tick();
+    await h.mention({ text: "are you there?" });
+    await tick();
+
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(2);
+    for (const msg of msgs) {
+      const text = (msg as { text: string }).text;
+      expect(text).toContain("model call failed");
+      expect(text).not.toContain("The error was");
+      expect(text).toContain("http://ui/a/agent-1?s=s-1");
+    }
+    expect(h.turnEvents().map((e) => e.reason)).toEqual([
+      "model-call-failed",
+      "model-call-failed",
+    ]);
+  });
+
+  // TEST_SCENARIO: a failed model call whose words say the provider is down is answered as an outage, as before, not as a rejected call.
+  it("answers a failed call that names an outage as an outage", async () => {
+    const h = harness({
+      sendPrompt: async () => {
+        throw new AcpModelCallFailedError(
+          "s-1",
+          "failed",
+          "API Error: 529 overloaded",
+          { cause: { message: "Internal error: API Error: 529 overloaded" } },
+        );
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(h.turnEvents()[0]!.reason).toBe("provider-unavailable");
   });
 });
 

@@ -1,8 +1,10 @@
+import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
 import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
+  type InvocationCancelEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
 import {
@@ -21,6 +23,7 @@ import {
 } from "./modules/agent-store/feed.js";
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
+import { createL7HostsPortFor } from "./modules/agent-store/l7-hosts.js";
 import {
   readAgentRows,
   readOneAgent,
@@ -64,6 +67,10 @@ import {
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
+  childrenMirroringConnections,
+  inheritanceCleanup,
+  nearestOwnEgress,
+  ownEgressAgentIds,
   composeAgentEditors,
   composeAgentsModule,
   composePublicAgentPage,
@@ -82,6 +89,7 @@ import {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelHistory,
   setSlackChannelDefault,
   createAgentSweep,
   createImageUpdate,
@@ -109,6 +117,8 @@ import {
 } from "./modules/kb-shares/index.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { retryWhileUnreachable } from "./core/retry-unreachable.js";
+import { provisionBucketInBackground } from "./modules/artifacts/services/provision-bucket.js";
+import { isStoreUnavailable } from "./modules/artifacts/infrastructure/store-unavailable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -307,6 +317,7 @@ import {
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
+  createInvocationCancelOutcome,
   composeScriptOutputs,
   runtimeRunsScripts,
   HARNESS_CONFIG_STEP,
@@ -325,6 +336,7 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
+  composeWildcardEgressRequests,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -350,6 +362,7 @@ import {
   createK8sAgentL7Source,
   createL7PromotionReconcile,
   createPresetSeederAdapter,
+  createChildEgressSeederAdapter,
   listEgressRuleAgentIds,
   markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
@@ -369,7 +382,6 @@ import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-ur
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
-import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -484,11 +496,15 @@ export async function bootstrap() {
         }
       : null,
   });
-  await retryWhileUnreachable(
-    "object storage",
-    () => artifactsModule.ensureReady(),
-    bootRetry,
-  );
+  if (config.objectStorageEndpoint)
+    void provisionBucketInBackground(() => artifactsModule.ensureReady(), {
+      retryable: isStoreUnavailable,
+      log: {
+        info: (msg) => getLogger().info(msg),
+        warn: (msg) => getLogger().warn(msg),
+        error: (msg) => getLogger().error(msg),
+      },
+    });
   const artifacts = artifactsModule.service;
   const snapshotStore = artifactsModule.store
     ? {
@@ -526,7 +542,12 @@ export async function bootstrap() {
     readsRows(config.agentStore) &&
     (config.agentStore === "postgres" || absorbsEmpty)
   ) {
-    if (agentStoreMarker?.store !== "postgres")
+    if (agentStoreMarker?.store !== "postgres") {
+      await retryWhileUnreachable(
+        "object storage",
+        () => artifactsModule.ensureReady(),
+        { ...bootRetry, retryable: isStoreUnavailable },
+      );
       await absorbAgentStore({
         db,
         logger: getLogger(),
@@ -555,6 +576,7 @@ export async function bootstrap() {
         absorbedByVersion: config.appVersion,
         now: new Date(),
       });
+    }
   }
 
   if (readsRows(config.agentStore)) {
@@ -851,6 +873,11 @@ export async function bootstrap() {
     identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
     log: (m) => getLogger().warn(`[agent-keys] ${m}`),
   });
+  const environmentTokenKeys = createRemoteJWKSet(
+    new URL(
+      `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
+    ),
+  );
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -886,6 +913,10 @@ export async function bootstrap() {
         ],
         isApiKey: isApiKeyToken,
       },
+      oauth: {
+        issuer: keycloakRealmUrl(addresses.public, config.keycloakRealm),
+        keys: environmentTokenKeys,
+      },
       ensureReady: (agentId, opts) => agentsRepo.ensureReady(agentId, opts),
       stampActivity: (agentId) =>
         agentsRepo.patchAnnotation(
@@ -920,14 +951,16 @@ export async function bootstrap() {
     readsRows(config.agentStore)
       ? {
           l7Hosts: createControlAgentL7HostsPort(db),
-          listAgentL7State: async () =>
-            (await readAgentRows(db)).map((row) => ({
+          listAgentL7State: async () => {
+            const own = await ownEgressAgentIds(db)();
+            return (await readAgentRows(db)).map((row) => ({
               agentId: row.agent.id,
               current: row.hosts,
-              ...(row.agent.environmentOf
+              ...(row.agent.environmentOf && !own.has(row.agent.id)
                 ? { environmentOf: row.agent.environmentOf }
                 : {}),
-            })),
+            }));
+          },
         }
       : createK8sAgentL7Source(k8sClient),
     (m) => getLogger().info(`[l7-reconcile] ${m}`),
@@ -1168,6 +1201,8 @@ export async function bootstrap() {
         ...(config.defaultGithubEnterpriseAppSlug
           ? { appSlug: config.defaultGithubEnterpriseAppSlug }
           : {}),
+        hosts: config.defaultGithubEnterpriseHosts,
+        retiredHosts: config.defaultGithubEnterpriseRetiredHosts,
       },
       ...(config.defaultSlackClientId && config.defaultSlackClientSecret
         ? {
@@ -1183,6 +1218,7 @@ export async function bootstrap() {
     composeConnectionsForOwner({
       ownerId,
       db,
+      mirroredChildren: childrenMirroringConnections(db),
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
@@ -1693,6 +1729,7 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
+        history: row.history,
         isDefault: row.isDefault,
       }));
     },
@@ -1744,15 +1781,6 @@ export async function bootstrap() {
     });
 
   const agentApiClient = createAgentApiClient(config.namespace);
-  const interactiveArtifactsOn = async (owner: string) =>
-    (
-      await composeFeaturesForOwner({
-        db,
-        owner,
-        surface: "system",
-        modes: config.featureModes,
-      }).features.flags()
-    )["interactive-artifacts"];
   const artifactPrompts = composeArtifactPromptDelivery({
     makeAcpClient,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
@@ -1763,7 +1791,6 @@ export async function bootstrap() {
     boundary: runBoundary,
   });
   const shareBridge = composeShareBridge({
-    featureOn: interactiveArtifactsOn,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
     agentApi: agentApiClient,
     prompts: artifactPrompts,
@@ -1846,6 +1873,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackChannelHistory: setSlackChannelHistory(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         ownedThreads: slackOwnedThreads,
@@ -1978,6 +2006,26 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  let egressIdentity: ReturnType<typeof createEgressIdentityResolver> | null =
+    null;
+  const subAgentTitles = createInvocationTasksAdapter(db);
+  const childEgressSeeder = createChildEgressSeederAdapter(
+    db,
+    createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
+    async (agentId) =>
+      (await egressIdentity?.resolve(agentId))?.agentId ?? null,
+    composeWildcardEgressRequests({
+      db,
+      ownerOf: resolveAgentOwner,
+      nameOf: async (agentId) => {
+        const owner = await resolveAgentOwner(agentId);
+        const task = owner
+          ? (await subAgentTitles.tasksOf(owner, [agentId])).get(agentId)
+          : undefined;
+        return task?.name || (await resolveAgentName(agentId));
+      },
+    }),
+  );
   await markTrustedRowsTakenOverAdapter(db, trustedHosts)
     .then((marked) => {
       if (marked > 0)
@@ -2008,11 +2056,12 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: createEgressIdentityResolver({
+    identityResolver: (egressIdentity = createEgressIdentityResolver({
       resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
       identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
       environmentName: environmentNameLookup(db),
-    }),
+      nearestOwnEgress: nearestOwnEgress(db),
+    })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
@@ -2162,7 +2211,6 @@ export async function bootstrap() {
       scope: opts?.scope,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
-      featureOn: interactiveArtifactsOn,
       prompts: artifactPrompts,
       validateChoice: opts?.validateChoice,
     }).artifactLibrary;
@@ -2209,6 +2257,7 @@ export async function bootstrap() {
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
     frames: delegationFrames,
     store: artifacts,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
 
   const agentCleanupSources: AgentCleanupSource[] = [
@@ -2254,6 +2303,10 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
+      name: "agent-inheritance",
+      ...inheritanceCleanup(db),
+    },
+    {
       name: "cost-reviews",
       ...createCostReviewsCleanup(db),
     },
@@ -2291,6 +2344,7 @@ export async function bootstrap() {
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         frames: delegationFrames,
         outputs: scriptOutputs,
+        runtimeMutator: runtimeDelivery.runtimeMutator,
       }),
     },
     {
@@ -2432,6 +2486,7 @@ export async function bootstrap() {
       db,
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
+      childEgress: childEgressSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
@@ -2451,6 +2506,7 @@ export async function bootstrap() {
 
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
     agentsFor: harnessAgentsServiceFor,
     readHarnessConfigSupport,
     runsScripts: async (agentId) => {
@@ -2490,7 +2546,9 @@ export async function bootstrap() {
     db,
     agentsFor: harnessAgentsServiceFor,
     frames: delegationFrames,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
   });
+  const invocationCancelOutcome = createInvocationCancelOutcome(db);
   for (const kind of workspaceMutationEventKinds)
     runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
       if (input.outcome === "ok") return;
@@ -2520,6 +2578,20 @@ export async function bootstrap() {
         event.agentId,
         "run",
         input.detail ?? input.outcome,
+        event.id,
+        input.sessionId,
+      );
+    },
+  );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "invocation-cancel",
+    async (event, input) => {
+      const { run } = event.payload as Partial<InvocationCancelEventPayload>;
+      if (!run) return;
+      await invocationCancelOutcome(
+        run,
+        input.outcome === "ok",
+        input.sessionId,
       );
     },
   );
@@ -2621,6 +2693,7 @@ export async function bootstrap() {
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
+    childEgressSeeder,
     platformAccess: agentKeys.access,
     trustedHosts,
     agentCleanupHooks,
@@ -2753,6 +2826,7 @@ export async function bootstrap() {
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     scriptOutputs,
+    childEgressSeeder,
     sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({

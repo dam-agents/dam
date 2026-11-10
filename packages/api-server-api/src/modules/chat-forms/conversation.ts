@@ -574,7 +574,6 @@ function rendersEventButton(surface: Draft): boolean {
 
 function surfaceErrors(surface: Draft): RendererError[] {
   const errors: RendererError[] = [];
-  if (surface.assumed) return errors;
   const add = (message: string, path?: string) =>
     errors.push({
       code: "VALIDATION_FAILED",
@@ -582,6 +581,17 @@ function surfaceErrors(surface: Draft): RendererError[] {
       message,
       ...(path === undefined ? {} : { path }),
     });
+  if (surface.assumed) {
+    if (surface.components.has("root"))
+      for (const component of surface.components.values())
+        for (const child of childIds(component))
+          if (!surface.components.has(child))
+            add(
+              `Component "${component.id}" refers to missing component "${child}"; an update that replaces "root" must also send every child it lists.`,
+              `/components/${component.id}`,
+            );
+    return errors;
+  }
   if (!surface.components.has("root"))
     add(`Surface "${surface.id}" has no component with id "root".`);
   for (const message of structureErrors(surface)) add(message);

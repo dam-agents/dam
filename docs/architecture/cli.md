@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -122,7 +122,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
-- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
   A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
@@ -135,8 +135,8 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).
-  Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state.
-  An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only.
+  Slack connect binds a channel and sets ambient mode and channel history on or off; a re-connect changes only the modes it names, and the channel listing shows each binding's state of both.
+  An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
@@ -166,7 +166,7 @@ The recurring patterns, stated once:
   When no sentence comes back — the run relay closes its socket, or a gateway gives up on a slow wake and answers with its own page — the CLI reads the reason from the agent's state: the refusal of an agent waiting for room, or the error of a failed one.
 - **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
-- **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
+- **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text, which bound conversations share an Agent — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 
 ## Agent skill
 
@@ -180,13 +180,15 @@ The user installs it from the repository with an open skills installer, pinned t
 The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
 
 A deployment also serves the skill itself, so an agent given only its URL finds the CLI and the skill that matches that server.
-The api-server image carries the `dam` skill of the commit it was built from, and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` (and the legacy `/.well-known/skills/`), with the digest of the file it serves, which an open skills installer pointed at the deployment's URL installs.
+The api-server image carries the `dam` skill of the commit it was built from — its main page and the pages beside it, such as its security advisory — and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` as one archive of those files, with the archive's digest, which an open skills installer pointed at the deployment's URL installs.
+Every replica builds the same archive bytes from the same files, because an installer may read the index from one replica and the archive from another.
+The legacy index under `/.well-known/skills/` names each file instead, for older installers.
 It answers `/llms.txt` too: what the deployment is, the CLI version it recommends, how to install the skill and sign in, and the rules on secrets and the API.
 The web app's shell, which an agent's fetch reads without running its JavaScript, names the deployment in its title and points to `/llms.txt`, and the UI's web server answers 404 for any other `/.well-known/` path or root text file instead of the shell, so a file the deployment lacks does not look present.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
 The CLI's test suite checks the `dam` skill against the CLI.
-It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
+It resolves every command any of the skill's pages names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
 A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
 
 The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
@@ -197,8 +199,13 @@ The CLI warns when a checked token expires within a day, and `dam connection lis
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
 A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as its [default account](connections.md#addressing-a-connection) among them, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.
+The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
+The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
+It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
 A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.

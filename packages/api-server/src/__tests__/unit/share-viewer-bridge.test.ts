@@ -4,8 +4,8 @@
  * prompts to the share host, which checks on every call that the visitor is
  * signed in and on the viewer list, that the call comes from the share page
  * itself, by the relay token only that page holds and by its origin, and
- * that the artifact is still interactive, restricted,
- * agent-published and has its feature on. A request reaches the publishing
+ * that the artifact is still interactive, restricted and
+ * agent-published. A request reaches the publishing
  * Agent's Artifact API server; a prompt starts or continues the viewer's own
  * Session on that Agent. Every call is in the security log under the viewer.
  */
@@ -95,7 +95,6 @@ const relayTokens = createRelayTokenService({
 interface World {
   artifact: ArtifactRow;
   viewers: string[];
-  featureOn: boolean;
   agentAwake: boolean;
   wakeFails: boolean;
   appRequests: { agentId: string; method: string; path: string }[];
@@ -108,7 +107,6 @@ function world(overrides: Partial<World> = {}) {
   const w: World = {
     artifact: artifactRow(),
     viewers: ["alice@example.com"],
-    featureOn: true,
     agentAwake: false,
     wakeFails: false,
     appRequests: [],
@@ -142,7 +140,6 @@ function world(overrides: Partial<World> = {}) {
     recordView: () => {},
   };
   const bridge = createShareBridgeService({
-    featureOn: () => Promise.resolve(w.featureOn),
     ensureReady: () => {
       if (w.wakeFails) return Promise.reject(new Error("did not wake"));
       w.agentAwake = true;
@@ -344,26 +341,21 @@ describe("a viewer's request on a shared interactive page", () => {
 
   /**
    * TEST_SCENARIO: The owner can take the page's reach away at any time: by
-   * making it private, by publishing it as a plain page, or by turning
-   * Interactive artifacts off. Each one stops the next call, and a page with
-   * no publishing Agent never had one to reach.
+   * making it private, or by publishing it as a plain page. Each one stops
+   * the next call, and a page with no publishing Agent never had one to reach.
    */
   it.each([
-    ["private", { visibility: "private" as const }, {}, 404],
-    ["not interactive", { interactive: false }, {}, 200],
-    ["uploaded by a person", { agentId: null }, {}, 200],
-    ["feature off", {}, { featureOn: false }, 200],
-  ])(
-    "refuses when the artifact is %s",
-    async (_name, row, settings, status) => {
-      const { w, app } = world({ artifact: artifactRow(row), ...settings });
-      const res = await call(app, "/a/slug-a/request", getState);
-      expect(res.status).toBe(status);
-      expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
-      expect(w.agentAwake).toBe(false);
-      expect(w.appRequests).toEqual([]);
-    },
-  );
+    ["private", { visibility: "private" as const }, 404],
+    ["not interactive", { interactive: false }, 200],
+    ["uploaded by a person", { agentId: null }, 200],
+  ])("refuses when the artifact is %s", async (_name, row, status) => {
+    const { w, app } = world({ artifact: artifactRow(row) });
+    const res = await call(app, "/a/slug-a/request", getState);
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
+    expect(w.agentAwake).toBe(false);
+    expect(w.appRequests).toEqual([]);
+  });
 
   it("never relays for a public page", async () => {
     const { w, app } = world({
@@ -413,7 +405,7 @@ describe("a viewer's request on a shared interactive page", () => {
       path: "/secret-path",
     });
     await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" });
-    w.featureOn = false;
+    w.artifact = artifactRow({ interactive: false });
     await call(app, "/a/slug-a/request", getState);
     expect(loggedEvents()).toEqual([
       expect.objectContaining({
@@ -436,7 +428,7 @@ describe("a viewer's request on a shared interactive page", () => {
       expect.objectContaining({
         actor: "alice-sub",
         decision: "deny",
-        reason: "feature-off",
+        reason: "not-interactive",
       }),
     ]);
     expect(JSON.stringify(securityLog.mock.calls)).not.toContain("secret-path");

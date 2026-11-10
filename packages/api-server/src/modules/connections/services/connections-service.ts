@@ -46,11 +46,20 @@ import {
 import type {
   ConnectionTemplate,
   ConnectionTemplateRegistry,
+  OAuthConnectionTemplate,
 } from "../domain/connection-template.js";
 import {
+  hostnameOf,
   inheritsFamily,
+  isHostChoice,
+  isRetiredHost,
+  operatorAppFor,
   templateToView,
 } from "../domain/connection-template.js";
+import {
+  connectionHostOf,
+  rehostedContributions,
+} from "../domain/github-enterprise-host.js";
 import {
   buildConnection,
   configInputContributions,
@@ -273,6 +282,8 @@ export function createConnectionsService(deps: {
     connectionId: string;
     harness: string;
   } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the children whose connections follow an Agent's (launched with connections from their parent), which take the Agent's whole set each time it changes. */
+  mirroredChildren?: (agentId: string) => Promise<string[]>;
 }): ConnectionsService & ManagedProviderConnections {
   let catalog: ProviderModelCatalog | undefined;
   const providerModelCatalog = () =>
@@ -366,12 +377,15 @@ export function createConnectionsService(deps: {
         ),
       ),
     ];
+    const operatorApp =
+      conn.auth.kind === "oauth" && template?.authKind === "oauth"
+        ? operatorAppFor(template, conn.auth.host)
+        : undefined;
     const presetAppSlug =
       conn.auth.kind === "oauth" &&
-      template?.authKind === "oauth" &&
-      conn.auth.clientId === template.clientId &&
-      typeof template.extras?.appSlug === "string"
-        ? template.extras.appSlug
+      operatorApp?.clientId !== undefined &&
+      conn.auth.clientId === operatorApp.clientId
+        ? operatorApp.appSlug
         : undefined;
     const appSlug =
       conn.auth.kind === "oauth"
@@ -411,13 +425,17 @@ export function createConnectionsService(deps: {
           }
         : {};
     const provider = providerView(conn.templateId);
+    const host = connectionHostOf(conn);
+    const retiredHost =
+      template && host && isRetiredHost(template, host) ? host : undefined;
     return {
       id: conn.id,
       ownerId: conn.ownerId,
       templateId: conn.templateId,
       category: template?.category ?? "other",
       name: conn.name,
-      status: deriveStatus(conn),
+      status: retiredHost ? "disconnected" : deriveStatus(conn),
+      ...(retiredHost ? { retiredHost } : {}),
       authKind: conn.auth.kind,
       contributions: conn.contributions,
       hosts,
@@ -1011,6 +1029,19 @@ export function createConnectionsService(deps: {
     return { conn, auth: conn.auth };
   }
 
+  async function userInstallationsReadOf(connectionId: string) {
+    const { conn } = await requireGitHubUserTokenConnection(connectionId);
+    const source = conn.parentId ? await parentOf(conn) : conn;
+    if (source.auth.kind !== "oauth") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED" });
+    }
+    return {
+      id: `connection:${source.id}:${source.templateId}`,
+      apiBaseUrl: gitHubUserTokenApiBase(source.auth.host),
+      accessToken: await readGitHubUserToken(source.auth),
+    };
+  }
+
   async function readGitHubUserToken(auth: OAuthAuth): Promise<string> {
     const token = await deps.secretStore.getField(auth.accessTokenRef);
     if (!token) {
@@ -1359,11 +1390,13 @@ export function createConnectionsService(deps: {
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const ownedById = new Map(owned.map((c) => [c.id, c]));
 
+    let applied: string[] = [];
     await deps.connectionLock(`agent:connections:${agentId}`, async () => {
       const current = await deps.repo.listAgentGrants(agentId);
       const deduped = Array.from(
         new Set(desiredFrom(current.map((c) => c.connectionId))),
       );
+      applied = deduped;
       for (const id of deduped) {
         if (!ownedById.has(id)) {
           securityLog("warn", "authz.owner_mismatch", {
@@ -1419,6 +1452,25 @@ export function createConnectionsService(deps: {
         allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     });
+    await mirrorToChildren(agentId, applied);
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a parent's new grant set reaches every child that mirrors it, and through each child its own mirroring children, once the parent's change is committed, each under its own lock. A child that refuses the set is logged and keeps what it had, and never undoes the parent's change. */
+  async function mirrorToChildren(
+    agentId: string,
+    set: readonly string[],
+  ): Promise<void> {
+    if (!deps.mirroredChildren) return;
+    for (const child of await deps.mirroredChildren(agentId)) {
+      try {
+        await applyGrants(child, () => [...set]);
+      } catch (err) {
+        getLogger().warn(
+          { err, agentId: child, parentAgentId: agentId },
+          "connections: a mirroring child did not take its parent's grants",
+        );
+      }
+    }
   }
 
   async function requireParent(id: string): Promise<Connection> {
@@ -1503,6 +1555,45 @@ export function createConnectionsService(deps: {
       }
       throw err;
     }
+  }
+
+  async function rehost(
+    conn: Connection,
+    auth: OAuthAuth,
+    to: string,
+    app: { clientId: string; appSlug?: string },
+    template: OAuthConnectionTemplate,
+  ): Promise<void> {
+    const from = auth.host;
+    const contributions = from
+      ? rehostedContributions(conn.contributions, from, to)
+      : conn.contributions;
+    const next: OAuthAuth = {
+      ...withoutRefreshFailureMarker(auth),
+      clientId: app.clientId,
+      authorizationUrl: template.authorizationUrl!.replace(/\{host\}/g, to),
+      tokenUrl: template.tokenUrl!.replace(/\{host\}/g, to),
+      host: to,
+      refreshFailedAt: Math.floor(Date.now() / 1000),
+    };
+    delete next.expiresAt;
+    delete next.clientSecretRef;
+    delete next.appSlug;
+    if (app.appSlug) next.appSlug = app.appSlug;
+    const injected = conn.isParent ? [] : contributions;
+    await putConnectionSecret(
+      conn.id,
+      conn.templateId,
+      auth.accessTokenRef.path,
+      {
+        [auth.accessTokenRef.field]: "",
+        ...buildConnectionSdsFields(injected, CONNECTION_TOKEN_PLACEHOLDER),
+      },
+      injected,
+    );
+    await deps.repo.updateContributions(conn.id, contributions);
+    await deps.repo.mergeInputs(conn.id, { host: to });
+    await deps.repo.updateAuth(conn.id, next);
   }
 
   /**
@@ -2591,6 +2682,102 @@ export function createConnectionsService(deps: {
       );
     },
 
+    async moveToHost(input) {
+      const conn = await deps.repo.get(input.id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      const template = deps.templates.get(conn.templateId);
+      if (
+        conn.templateId !== "github-enterprise" ||
+        conn.auth.kind !== "oauth" ||
+        template?.authKind !== "oauth"
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only a GitHub Enterprise sign-in moves to another host.",
+        });
+      }
+      if (conn.parentId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "This connection follows the GitHub sign-in it was made from. Move the sign-in.",
+        });
+      }
+      const to = hostnameOf(input.host);
+      if (!isHostChoice(template, to)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${to} is not a GitHub Enterprise host this platform offers.`,
+        });
+      }
+      const app = operatorAppFor(template, to);
+      if (!app.clientId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `No GitHub app is registered for ${to}.`,
+        });
+      }
+      const clientId = app.clientId;
+      const { children, rehosted, from } = await deps.connectionLock(
+        connectionRefreshLockKey(conn.id),
+        async () => {
+          const fresh = await deps.repo.get(conn.id, deps.ownerId);
+          if (fresh?.auth.kind !== "oauth") {
+            return { children: [], rehosted: 0, from: undefined };
+          }
+          const kids = fresh.isParent
+            ? await deps.repo.listChildren(fresh.id)
+            : [];
+          let count = 0;
+          for (const c of [fresh, ...kids]) {
+            if (
+              c.auth.kind !== "oauth" ||
+              (c.auth.host && hostnameOf(c.auth.host) === to)
+            ) {
+              continue;
+            }
+            await rehost(c, c.auth, to, { ...app, clientId }, template);
+            count++;
+          }
+          return { children: kids, rehosted: count, from: fresh.auth.host };
+        },
+      );
+      if (rehosted === 0) return;
+
+      const moved = [conn, ...children];
+      const agents = [
+        ...new Set(
+          (
+            await Promise.all(
+              moved.map((c) => deps.repo.listAgentsForConnection(c.id)),
+            )
+          ).flat(),
+        ),
+      ];
+      if (agents.length > 0) {
+        const owned = await deps.repo.listByOwner(deps.ownerId);
+        await fanOutToAgents(
+          conn.id,
+          agents,
+          new Set(owned.map((c) => c.id)),
+          "connection.move_host.fanout_failed",
+        );
+      }
+      securityLog("info", "connection.move_host", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          from: from ?? null,
+          to,
+          connectionsMoved: rehosted,
+        },
+      });
+    },
+
     async updateGitHubAppScope(input) {
       const { conn, auth } = await requireGitHubAppConnection(input.id);
       refuseOnParent(conn);
@@ -2656,21 +2843,16 @@ export function createConnectionsService(deps: {
     },
 
     async probeGitHubUserTokenForConnection(input) {
-      const { conn } = await requireGitHubUserTokenConnection(
-        input.connectionId,
-      );
-      const source = conn.parentId ? await parentOf(conn) : conn;
-      if (source.auth.kind !== "oauth") {
-        throw new TRPCError({ code: "PRECONDITION_FAILED" });
-      }
-      const accessToken = await readGitHubUserToken(source.auth);
-      const apiBaseUrl = gitHubUserTokenApiBase(source.auth.host);
+      const opts = await userInstallationsReadOf(input.connectionId);
       return rejectIfInvalid(() =>
-        deps.githubAppEngine.readUserInstallations({
-          id: `connection:${source.id}:${source.templateId}`,
-          apiBaseUrl,
-          accessToken,
-        }),
+        deps.githubAppEngine.readUserInstallations(opts),
+      );
+    },
+
+    async listGitHubAppInstallations(input) {
+      const opts = await userInstallationsReadOf(input.connectionId);
+      return rejectIfInvalid(() =>
+        deps.githubAppEngine.listUserInstallationAccounts(opts),
       );
     },
 

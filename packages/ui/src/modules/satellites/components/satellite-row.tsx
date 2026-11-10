@@ -68,7 +68,7 @@ export function SatelliteRow({
 
   return (
     <div data-testid={rowId}>
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="@container flex items-center gap-2 px-4 py-3">
         <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
           <Satellite size={16} className="shrink-0 text-foreground/80" />
           <p

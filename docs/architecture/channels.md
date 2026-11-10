@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -57,7 +57,7 @@ Every turn relays single-track to the main agent; the **binding owner's** Terms-
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
-Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+Members use every granted Connection and Satellite; the UI and the CLI warn, never block, when a group binding and grants meet.
 
 #### Ambient mode
 
@@ -77,6 +77,8 @@ Where several Agents read along in one channel, they take each message **one at 
 Running them concurrently would have them talk over each other; in sequence, a later Agent is handed what the ones before it said — it has no other way to know — so it builds on that or stays silent rather than repeating it.
 The **default Agent goes first** where it reads along, being the conversation's primary; the rest follow **shuffled**, freshly per message — past the default there is nothing to rank them by, and a stable order would quietly hand one Agent every second look.
 The cost is deliberate: a channel with several read-along Agents spends that many turns per message, which is why ambient stays a per-Agent opt-in.
+
+A Slack binding can also carry **channel history**, which lets its Agent read the conversation's older messages ([slack-channel-history](slack-channel-history.md)).
 
 #### Posts by Agents and apps
 
@@ -252,12 +254,12 @@ The differences are transport, identity model, and where the bot token comes fro
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
 - **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
-  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
 - **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
   A group DM is outside what Slack lists for a person, so it is connected in-chat only.
   Without it, anyone who knows a conversation id could lend an Agent to a private channel they are not in.
   An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
-  Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
+  Only a new binding, or a re-connect turning channel history on, is checked.
   The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, an outage alert or a spend stop, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.

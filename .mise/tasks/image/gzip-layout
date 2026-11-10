@@ -10,6 +10,19 @@
 # the header, so a layer always gets the same digest and a registry that
 # already holds it skips the upload. The config's diff ids name the
 # uncompressed content and stay as they are.
+#
+# Env: GZIP_LAYOUT_CACHE, a directory one job's layouts share. Every workload
+# image carries the default image's plain layers, so build-workloads gzipped
+# the same 4.2 GiB once per workload; with a cache it gzips each layer once
+# and links the rest. pigz -1 -n is deterministic, so a stored blob is the one
+# a recompression makes. Unset, every layout is gzipped as before.
+# Env: GZIP_LAYOUT_REUSE, a JSON map from a plain layer's digest to the digest
+# and size of the compressed blob an image the target repository already holds
+# names for the same content (image:ci-build writes it from the image at the
+# run's own commit, when an earlier run published that commit). Such a layer is
+# named, not compressed: the repository's own blob is what a push would upload.
+# A repository that lost the blob fails the push loudly rather than publish an
+# image naming a missing layer.
 set -euo pipefail
 l="$usage_layout"
 blob() { echo "$l/blobs/${1/://}"; }
@@ -17,13 +30,36 @@ old="$(jq -r '.manifests[0].digest' "$l/index.json")"
 manifest="$(cat "$(blob "$old")")"
 plain="$(jq -r '[.layers[] | select(.mediaType == "application/vnd.oci.image.layer.v1.tar") | .digest] | unique[]' <<< "$manifest")"
 [ -n "$plain" ] || exit 0
+cache="${GZIP_LAYOUT_CACHE:-}"
+[ -z "$cache" ] || mkdir -p "$cache"
+published="${GZIP_LAYOUT_REUSE:-/dev/null}"
 for d in $plain; do
-  pigz -1 -n -c < "$(blob "$d")" > "$l/blobs/sha256/gz.tmp"
-  h="$(sha256sum "$l/blobs/sha256/gz.tmp" | cut -c1-64)"
-  manifest="$(jq -c --arg d "$d" --arg n "sha256:$h" --argjson s "$(wc -c < "$l/blobs/sha256/gz.tmp")" \
+  f="$cache/${d#sha256:}.gz"
+  n="" s=""
+  if [ -n "$cache" ] && [ -f "$f" ]; then
+    # Compressed earlier in this job.
+    ln -f "$f" "$l/blobs/sha256/gz.tmp" 2>/dev/null || cp "$f" "$l/blobs/sha256/gz.tmp"
+  elif n="$(jq -r --arg d "$d" '.[$d].digest // empty' "$published")" && [ -n "$n" ]; then
+    # Compressed in an image the target repository already holds, so no local
+    # blob: crane push asks the registry and never reads one.
+    s="$(jq -r --arg d "$d" '.[$d].size' "$published")"
+  else
+    pigz -1 -n -c < "$(blob "$d")" > "$l/blobs/sha256/gz.tmp"
+    # Renamed in, so a build running beside this one never reads a half-written
+    # blob, then linked back rather than copied a second time.
+    if [ -n "$cache" ]; then
+      mv "$l/blobs/sha256/gz.tmp" "$cache/.$$" && mv "$cache/.$$" "$f"
+      ln -f "$f" "$l/blobs/sha256/gz.tmp" 2>/dev/null || cp "$f" "$l/blobs/sha256/gz.tmp"
+    fi
+  fi
+  if [ -z "$n" ]; then
+    n="sha256:$(sha256sum "$l/blobs/sha256/gz.tmp" | cut -c1-64)"
+    s="$(wc -c < "$l/blobs/sha256/gz.tmp")"
+    mv "$l/blobs/sha256/gz.tmp" "$(blob "$n")"
+  fi
+  manifest="$(jq -c --arg d "$d" --arg n "$n" --argjson s "$s" \
     '.layers |= map(if .digest == $d then .mediaType = "application/vnd.oci.image.layer.v1.tar+gzip" | .digest = $n | .size = $s else . end)' \
     <<< "$manifest")"
-  mv "$l/blobs/sha256/gz.tmp" "$l/blobs/sha256/$h"
   rm -f "$(blob "$d")"
 done
 h="$(printf '%s' "$manifest" | sha256sum | cut -c1-64)"

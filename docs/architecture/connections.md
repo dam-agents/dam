@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -40,7 +40,7 @@ The rest of this page is what a Connection is and what a grant produces.
 ### Connection Template
 
 A code-level catalog entry.
-Premade templates (GitHub, Anthropic, Spotify, Linear MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions.
+Premade templates (GitHub, Anthropic, Spotify, Figma MCP, …) ship with full defaults — auth flow, hosts, scopes, recommended contributions.
 Custom templates (Custom MCP, Custom OAuth, Custom Header) ship the *shape* but leave the integration's identity for the user to fill in.
 
 Three display-axis attributes drive UI grouping.
@@ -50,7 +50,7 @@ Families are declared on the templates themselves and carried on the template vi
 | `category` | `isCustom` | Where the user encounters it                                                            |
 | ---------- | ---------- | --------------------------------------------------------------------------------------- |
 | `app`      | `false`    | Apps section: GitHub, Spotify, Anthropic, OpenAI, Google services, GitHub Enterprise, … |
-| `mcp`      | `false`    | MCP servers section: Linear MCP, Atlassian MCP, … (as added)                            |
+| `mcp`      | `false`    | MCP servers section: Figma MCP, … (as added)                                            |
 | `mcp`      | `true`     | Custom Connection → "Add MCP server"                                                    |
 | `other`    | `true`     | Custom Connection → "Add OAuth credential" / "Add Header credential"                    |
 
@@ -246,7 +246,9 @@ OAuth adds a placeholder Authorization header on the `mcp-entry`; a static-heade
 The OAuth client is found at create time, in the order the MCP authorization spec gives: a client ID the user entered, else the platform's **Client ID Metadata Document** when the authorization server says it accepts one, else Dynamic Client Registration.
 The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
 An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
-One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
+
+The premade Figma MCP template takes this path with Figma's server URL fixed, and registers under a client name Figma admits, since Figma refuses others.
+Figma limits tool calls per seat; the platform keeps no counter.
 
 ### Shared knowledge base
 
@@ -293,7 +295,7 @@ Which model provider an agent runs against follows from the Connection it is gra
 Bob is the case that needs more than a base URL.
 It prefixes every gateway call with its own service path, and that prefix is not configurable, so the Connection also declares the prefix rewrite the gateway applies; the auth scheme needs no such treatment, because the gateway overwrites the credential header outright.
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
-Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
+Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since only the Bob Shell Connection's own settings reach one.
 The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
 The [owner model catalog](owner-model-catalog.md) lists the same models without an agent, reading the stored key in the api-server itself.
 Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
@@ -308,7 +310,7 @@ CurveBender uses the same routing and credential scheme, including Bob's prefix 
 This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender (own key)` so it cannot be confused with the deployment's own.
 Where the deployment offers CurveBender, Settings / Providers lists the own-key row only to a user who already connected their own key.
 
-Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness.
+Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness beyond what its manifest claims.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
 A smaller number compacts well below the real ceiling, and a larger one makes it compact too late and the endpoint refuses the call.
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
@@ -320,14 +322,15 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
 It is not behind a feature flag: where the key is set, every user has it, and a user who connects nothing of their own still has a provider to run an agent on.
-Such an install shows a CurveBender notice above every chat's composer, for every user: the coloured logo on a white tile, the page's own surface colours, a link to the documentation, and a close kept in this browser alone.
-Its **Try now** button attaches the shared Connection and selects its work model — a fresh chat also moves to Pi, an open session keeps its harness — then thanks the person and links the community channel.
+Such an install shows a CurveBender notice above a new chat's composer, never in an existing chat, with a link to the documentation.
+A new chat already on the shared Connection is told it is set up and can open its picker; any other is offered **Try now**, which moves it to Pi on the shared Connection's work model and makes that the chat default.
+Each of the two closes on its own, in this browser alone.
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on the default profile while the user holds none.
 It follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
-It is named `CurveBender (shared)` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
 The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.

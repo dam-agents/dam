@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-03
+Last verified: 2026-11-10
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -10,7 +10,7 @@ It is the only test that covers a change across the whole system — login throu
 A **lane** is a gateway topology for the Agents a spec creates, each a machine on its owner's VM runner.
 One lane runs the chart's default, a gateway pod per Agent; the other turns on the [owner gateway](credential-gateway.md#owner-gateway), one gateway pod per owner.
 The lanes differ in nothing else but the nightly run's `full/` tier, which the default lane alone takes, and each runs on its own runner.
-Both run in every full-suite run; a pull request runs the default lane alone, since the push to main runs both on the merged tree, so a fault only one topology has still shows within one main run.
+Both run in every full-suite run; a pull request runs the default lane alone, unless its change touches the owner gateway's own code (see [Scope](#scope-what-a-pull-request-runs)), since the push to main runs both on the merged tree, so a fault only one topology has still shows within one main run.
 The lane is one variable, `E2E_GATEWAY_PER_OWNER`, which the install reads to turn the owner gateway on.
 
 ## Projects and the order between them
@@ -55,11 +55,18 @@ A pull request runs the smoke suite on the default lane, with a reduced set of s
 The reduction is measured, not guessed: over five weeks of CI ending 2026-10-18, about 600 failed e2e jobs came from a handful of specs, and only some of those failures were likely real — the same spec failing in both lanes of one run, or again on the pull request's next run.
 A spec that never fails for real earns nothing on a pull request.
 
-Deferral is a coverage gap until a merge queue is back: a change reaches main after its reduced run, and the push to main then takes the full set on the merged tree, so a break shows on main within one run.
-The Playwright config owns the list of specs a run takes: the workflow passes the event's scope as `E2E_SCOPE`, and the config turns that into what each project runs and which projects a reduced run leaves with no spec at all.
+A deferred spec still runs on a pull request whose change touches the code it alone covers.
+The merge queue is optional, so a pull request can merge directly on its own run, and a spec deferred there would otherwise first run on main, after the merge.
+[`packages/e2e/playwright/pr-scope.json`](../../packages/e2e/playwright/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
+A change to `packages/agents/base/` or `packages/vm-runner/`, for example, takes `19-agent-machine`, the spec that boots a machine and reads its openrc runlevels.
+`e2e:pr-scope` diffs the pull request against its base with those pathspecs; the workflow's `docs-only` job runs it and passes the names it prints to both lanes as `E2E_PR_SPECS`, and starts the owner-gateway lane when its paths moved.
+A pull request whose change touches none of them keeps the reduced set alone.
+The mapping is by path, so it is as good as its entries: a change that breaks a deferred spec through code its entry does not name still shows on main within one run, and the fix for that miss is a line in the file.
+`check:e2e-pr-scope` proves the selection on a throwaway repository, and that every spec and path the file names exists.
+The Playwright config owns the list of specs a run takes: the workflow passes the event's scope as `E2E_SCOPE`, and the config turns that, less the specs `E2E_PR_SPECS` names, into what each project runs and which projects a reduced run leaves with no spec at all; it refuses a name `pr-scope.json` does not defer.
 A spec may read that same scope for its own route: the scheduled-fire case waits up to a minute for a cron tick on a full run, and fires the same trigger with run-now on a pull request.
 What that route leaves out is proved by the full set on the push to main and on the nightly run.
-Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
+Each lane's job summary states the scope beside its timings, with the deferred specs a pull request's paths added, so a green pull request is never read as a green full suite.
 The nightly run on main is the one run that also takes the `full/` tier, in the default lane alone: `cd.yml` passes it as `full-tier`, `e2e.yml` sets `E2E_FULL` for that lane, and the config adds the tier's projects.
 A pull request, the merge queue, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
@@ -79,6 +86,7 @@ The install there takes only what the checkout changed, and is skipped when the 
 The suite reaches the install's backchannel and its cluster's API over the Environment Link, on a port of that Environment's own, so several Environments and the local test cluster run side by side on one agent.
 The specs run on the agent, and the browser they drive runs in the Environment beside the install, so the pages a spec loads do not wait on the agent's other work.
 An Environment runs no mesh, so a run there says nothing about the mesh's policies; the CI lanes still run them.
+An Environment has 4 vCPUs and boots agent machines nested two levels deep, so `e2e:loop` runs the suite there with one Playwright worker through `E2E_WORKERS`, where CI keeps two, and its install turns the node's transparent huge pages to `always` at every boot: under the kernel's `madvise` default a nested machine's boot often outlasts the VM runner's 30 s window.
 
 A CI runner and its cluster are gone once the job ends, so a failure has to explain itself in the job's own record.
 A tRPC call a spec makes that fails names its procedure, its HTTP status and the answer it got, because the api-server redacts an internal error to "internal server error" and the spec's stack names no call.

@@ -32,7 +32,11 @@ import {
   createTriggerStateStore,
   type TriggerStateStore,
 } from "./infrastructure/trigger-state-store.js";
-import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import {
+  createTriggerPlugin,
+  type InvocationSessions,
+} from "./drivers/trigger-plugin.js";
+import { createInvocationCancelPlugin } from "./drivers/invocation-cancel-plugin.js";
 import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
@@ -55,7 +59,6 @@ import {
 } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
-import type { InvocationWatch } from "./services/invocation-watch.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
   createHarnessConfigPlugin,
@@ -98,7 +101,10 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
-  invocationWatch: Pick<InvocationWatch, "watch">;
+  invocationSessions?: InvocationSessions;
+  invocationCancel: {
+    cancelRun: (run: string) => Promise<{ ended: boolean; sessionId?: string }>;
+  };
   subAgentSessions: SubAgentSessionStore;
   onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
   onStartupItems: (payload: StartupItemsEventPayload) => Promise<void>;
@@ -192,7 +198,9 @@ export async function composeRuntimeChannel(
         ? { recordContinuation: opts.recordContinuation }
         : {}),
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
-      invocationWatch: opts.invocationWatch,
+      ...(opts.invocationSessions
+        ? { invocationSessions: opts.invocationSessions }
+        : {}),
     }),
   );
   const spawnEnv = () => mergedSpawnEnv(opts.envReader);
@@ -226,6 +234,9 @@ export async function composeRuntimeChannel(
   );
   registry.register(
     createSessionMessagePlugin({ driver: opts.triggerDriver, reporter, log }),
+  );
+  registry.register(
+    createInvocationCancelPlugin({ ...opts.invocationCancel, reporter, log }),
   );
 
   const discoverModels = createModelDiscovery({ log });

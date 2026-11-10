@@ -2,6 +2,7 @@ import { scriptDeadline } from "../domain/script-output.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 
 interface PendingEvent {
+  id: string;
   kind: string;
   payload: unknown;
 }
@@ -20,28 +21,31 @@ const isInvocationTurn = (event: PendingEvent): boolean =>
  * start plus the time limit. A script's task carries its own stop and report
  * times, which are set from that start on each delivery; a redelivery finds
  * the stamp and keeps it, so a retry sends the same times. Any other event,
- * a task whose Invocation already ended, and a task whose stamp cannot be
- * written pass as stored, so a failed write never drops the task.
+ * and a task whose stamp cannot be written pass as stored, so a failed write
+ * never drops the task. A task that is not its Invocation's running run (an
+ * earlier run of a kept or clean slate target, or one whose Invocation ended)
+ * is dropped, so the machine never starts work nobody awaits.
  */
 export function createInvocationStart(deps: {
   repo: Pick<InvocationsRepository, "markStarted">;
   log: (msg: string) => void;
   now?: () => Date;
-}): <E extends PendingEvent>(agentId: string, event: E) => Promise<E> {
+}): <E extends PendingEvent>(agentId: string, event: E) => Promise<E | null> {
   const now = deps.now ?? (() => new Date());
   return async (agentId, event) => {
     const script = event.kind === "invocation-script";
     if (!script && !isInvocationTurn(event)) return event;
     let start;
     try {
-      start = await deps.repo.markStarted(agentId, now());
+      start = await deps.repo.markStarted(agentId, event.id, now());
     } catch (err) {
       deps.log(
         `[invocation-start] ${agentId}: start not stamped, the task goes as queued: ${(err as Error).message}`,
       );
       return event;
     }
-    if (!script || !start) return event;
+    if (!start) return null;
+    if (!script) return event;
     return {
       ...event,
       payload: {

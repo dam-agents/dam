@@ -76,8 +76,20 @@ export interface DelegationNode {
   children: DelegationNode[];
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent spawned with keep, at any depth below the agent asked about, that still exists: what to call it, where its last run stands, until when it is kept, and the kept sub-agent it sits under (null for the agent asked about itself), the nearest one still listed when the sub-agent between them was removed.
+export interface KeptSubAgent {
+  id: string;
+  label: string | null;
+  status: InvocationStatus;
+  keepUntil: string;
+  parentId: string | null;
+}
+
 export interface InvocationsQueryService {
   listTargets(): Promise<InvocationTarget[]>;
+  kept(input: {
+    driverAgentId: string;
+  }): Promise<{ subAgents: KeptSubAgent[] }>;
   tree(input: InvocationsTreeInput): Promise<{ nodes: DelegationNode[] }>;
   running(input: InvocationsRunningInput): Promise<{ nodes: DelegationNode[] }>;
   transcript(input: InvocationTranscriptInput): Promise<InvocationTranscript>;

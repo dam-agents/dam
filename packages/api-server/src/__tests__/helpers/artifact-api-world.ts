@@ -79,7 +79,6 @@ export function createArtifactApiWorld() {
   const rows: ArtifactRow[] = [];
   const agents = new Map<string, FakeAgent>();
   const prompts: DeliveredPrompt[] = [];
-  let featureOn = true;
   let promptOutcome: ViewerPromptOutcome = {
     ok: true,
     sessionId: "session-1",
@@ -179,7 +178,6 @@ export function createArtifactApiWorld() {
       shareBaseUrl: "https://share.example.test",
       ensureReady: cluster.ensureReady,
       agentApi: cluster.agentApi,
-      featureOn: () => Promise.resolve(featureOn),
       prompts: {
         deliver: (input) => {
           prompts.push(input);
@@ -222,9 +220,6 @@ export function createArtifactApiWorld() {
     call,
     prompt,
     prompts: () => [...prompts],
-    turnFeatureOff: () => {
-      featureOn = false;
-    },
     refusePromptsWith: (
       reason: Extract<ViewerPromptOutcome, { ok: false }>["reason"],
     ) => {

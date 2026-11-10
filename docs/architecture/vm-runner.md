@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-30
+Last verified: 2026-11-09
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -62,10 +62,11 @@ Each machine also gets a read-only **share** carrying the MITM CA, **platform-in
 The runner's claim holds the machine disks, the bookkeeping a restart rebuilds — each file of it replaced whole, never written in place, so a runner killed mid-write leaves the old one or the new — and the runtime's disk templates, expanded once per release rather than on every roll; the image directory is its own mount, read-only: the node cache ([persistence](persistence.md)).
 It publishes each guest's agent port on a port of the pod, on an address the runner is told (every interface of a pod's own network), and the agent's Service selects that runner and maps the agent port onto the one its machine publishes there.
 The selector reaches the runner only because the Service shares the agent namespace.
-**The Environment Link** joins an owning agent's machine to the sshd of an [Environment](environments.md) it owns, on the runner alone, with nothing through the api-server or the pod network.
-Each machine gets one vsock port, the first smolvm publishes (6100), mapped to a Unix socket in its own smolvm directory, the one directory Landlock leaves its VMM: an agent's port only dials out, to a socket the runner listens on, and an Environment's only accepts, from a socket its VMM listens on.
-The runner records each machine's part from `PLATFORM_ENVIRONMENT_OF` in a file beside its boot config, which the VMM reads to add its socket, since smolvm's embedded start drops the published sockets of a record.
-A connection names the Environment on its first line; the runner joins it only when that Environment names the calling machine as its owner, answers `ok` or a reason, logs it, and never connects the other way, so nothing in an Environment can reach its owning agent.
+**The Environment Link** joins one agent's machine to another's, whose platform-init serves SSH on the link itself, on any image, on the runner alone, with nothing through the api-server or the pod network: an owning agent to an [Environment](environments.md) it owns, and a driver to its own sub-agent ([invocations](invocations.md#spawning)).
+Each machine gets two vsock ports, the first two smolvm publishes, mapped to Unix sockets in its own smolvm directory, the one directory Landlock leaves its VMM: the dial port (6100) only dials out, to a socket the runner listens on, and the accept port (6101) only accepts, from a socket its VMM listens on.
+Every machine has both in that order, so the guest ports never move; the runner listens on a machine's dial socket only when the machine may dial, which every machine but an Environment may, and the guest's init listens on the accept port only when the machine names an agent it accepts from.
+The runner records each machine's part from `PLATFORM_ENVIRONMENT_OF` and `PLATFORM_LINK_FROM` (the one agent the machine accepts from, which the controller sets from the Agent's `linkFrom`) in a file beside its boot config, which the VMM reads to add its sockets, since smolvm's embedded start drops the published sockets of a record.
+A connection names the target machine on its first line; the runner joins it only when the target accepts from the calling machine, answers `ok` or a reason, logs it, and never connects the other way, so nothing in an Environment reaches its owning agent and nothing in a sub-agent reaches its driver.
 A pod restart stops every machine — they are its processes — so a runner told to stop, rather than to [hand off](vm-runner-upgrades.md), first stops each running machine the way a stop does, all at once and within a window its pod's termination grace covers, rather than leaving the pod's kill to cut their power; the controller's periodic sweep brings them back.
 A deleted runner pod is replaced at once, while the old one still runs that stop on the same claim, and the stop would reach the new runner's machines through the guest sockets both pods share; so a runner holds a lock on its claim for as long as its process lives, and a new one takes the claim, and only then serves, once the old process has exited.
 
@@ -96,7 +97,7 @@ The image's entrypoint itself is supervised.
 smolvm launches a machine's workload once per boot, and platform-init, the first process of the workload's own PID namespace, cannot power the guest off, so it stays the entrypoint's parent: it reaps orphans, passes signals on, and when the entrypoint exits it says so on the machine's console, ends every process left in the namespace, and starts the entrypoint again on the same root and home, after a delay that doubles while it keeps failing.
 An agent that crashed is back in seconds instead of at the runner's ten-minute unhealthy restart.
 A stop signal ends the supervision instead.
-platform-init's refusals to boot, the steps of each boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
+platform-init's refusals to boot, the steps of each boot with how long each took, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
 What a machine keeps across a stop is its storage disk on the runner's one claim: `HOME`, and the upper layer of its root for as long as its images share a root generation ([vm storage](vm-storage.md#the-disk) owns the rule).
 It is the machine's one disk.
@@ -104,7 +105,7 @@ The guest's init is platform-init, not smolvm's guest agent: smolvm boots it fro
 An operator's command runs in the environment the image's entrypoint got, as a container's exec does, so it finds the image's tools on the image's `PATH` without a login shell.
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
 `sysinit`, `boot` and `default` run in the entrypoint's environment, of which openrc passes a service only what the image's openrc config names, and `shutdown` runs with `PATH` alone.
-The default image's `default` runlevel holds only `user.root`, openrc's stock service that starts the agent's own openrc services, its [Startup Items](agent-processes.md#startup-items), and `platform-env`, which serves the Environment Link only on an Environment, and its docker and k3s services are in none until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
+The default image's `default` runlevel holds only `user.root`, openrc's stock service that starts the agent's own openrc services, its [Startup Items](agent-processes.md#startup-items), and its docker and k3s services are in none until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
 A new btrfs disk holds two subvolumes: `agent`, mounted as `HOME`, and `system`, the platform state and the root's layers.

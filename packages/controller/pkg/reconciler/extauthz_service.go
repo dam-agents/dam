@@ -14,17 +14,22 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: the per-agent Service the gateway dials for identity. It is bound to the waypoint, so the per-agent AuthorizationPolicy applies at all; without a mesh nothing routes through the waypoint and the label is inert.
 func BuildExtAuthzService(agentName string, cfg *config.Config) *corev1.Service {
 	extAuthzPort := portInt32(cfg.ExtAuthzPort)
+	labels := map[string]string{
+		LabelAgent:                     agentName,
+		"app.kubernetes.io/component":  "apiserver",
+		"app.kubernetes.io/managed-by": "platform-controller",
+	}
+	if cfg.IstioWaypointName != "" {
+		labels["istio.io/use-waypoint"] = cfg.IstioWaypointName
+	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cfg.ExtAuthzServiceName(agentName),
 			Namespace: cfg.ReleaseNamespace,
-			Labels: map[string]string{
-				LabelAgent:                     agentName,
-				"app.kubernetes.io/component":  "apiserver",
-				"app.kubernetes.io/managed-by": "platform-controller",
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,

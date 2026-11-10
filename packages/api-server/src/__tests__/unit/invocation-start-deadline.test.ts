@@ -7,6 +7,7 @@ import type {
 } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createInvocationLivenessSweep } from "../../modules/invocations/services/invocation-liveness.js";
 import { createInvocationStart } from "../../modules/invocations/services/invocation-start.js";
+import { invocationRow } from "../helpers/invocations-repo.js";
 
 /**
  * TEST_OVERVIEW: a sub-agent's deadline runs from its start, the first
@@ -23,6 +24,7 @@ function resolverWith(markStarted: () => Promise<InvocationStart | null>) {
 }
 
 const scriptTask = {
+  id: "invocation-agent-1:1",
   kind: "invocation-script",
   payload: {
     command: "make test",
@@ -37,11 +39,12 @@ describe("invocation start: the deadline runs from the first delivery", () => {
     const resolve = resolverWith(async () => ({
       startedAt: START,
       expiresAt: DEADLINE,
+      keepUntil: null,
     }));
 
     const event = await resolve("agent-1", scriptTask);
 
-    expect(event.payload).toEqual({
+    expect(event?.payload).toEqual({
       command: "make test",
       deadline: "2026-11-04T10:55:00.000Z",
       reportBy: DEADLINE.toISOString(),
@@ -50,52 +53,33 @@ describe("invocation start: the deadline runs from the first delivery", () => {
 });
 
 function unstartedExpiredRow(): InvocationRow {
-  return {
-    id: "agent-1",
-    driverAgentId: "driver-1",
-    rootDriverId: "driver-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
+  return invocationRow({
     ttlMs: 30 * 60_000,
     createdAt: new Date("2026-11-04T09:00:00Z"),
-    startedAt: null,
-    owner: "owner-1",
-    resultSchema: null,
-    result: null,
-    status: "running",
-    errorReason: null,
     expiresAt: new Date("2026-11-04T09:30:00Z"),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
-  };
+  });
 }
 
 async function failReasonOf(row: InvocationRow, wait: string | null) {
   const failed: string[] = [];
   const repo = {
     listExpiredRunning: async () => [row],
+    listExpiredIdle: async () => [],
+    listUnreapedByDriver: async () => [],
+    listCancelPending: async () => [],
+    clearCancel: async () => {},
     listRunning: async () => [],
     listTerminalUnreaped: async () => [],
-    failExpired: async (_id: string, reason: string) => {
+    failExpired: async (_runId: string, reason: string) => {
       failed.push(reason);
-      return true;
+      return { cancelPending: false };
     },
   } as unknown as InvocationsRepository;
   const sweep = createInvocationLivenessSweep({
     repo,
     reaper: { reap: async () => {} },
     reportedReap: { due: async () => true },
+    cancel: { settled: async () => true },
     readTargetRestart: async () => null,
     readStartWait: async () => wait,
     hasAgent: async () => true,

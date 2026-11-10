@@ -302,6 +302,8 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   # An Environment runs the platform's agent image, whose root is an overlay,
   # as a sandbox's is.
   node_volumes_on_home
+  # Nested guests boot in time only with huge pages on (NODE_THP_SERVICE).
+  node_thp_always || exit 1
   # Every image the install puts in stays, and only memory evicts
   # (NODE_IMAGE_GC_DROPIN); a k3s that already runs takes it at a restart.
   if node_image_gc_off && node_k3s_running; then

@@ -25,6 +25,10 @@ export function slackWorkerHarness(
     agentNames?: Record<string, string>;
     channels?: FakeSlackChannel[];
     ambient?: boolean;
+    history?: boolean;
+    otherBound?: string[];
+    linkedSub?: string;
+    sessions?: AcpSessionInfo[];
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
     workspaceFiles?: AgentWorkspaceFilesFactory;
@@ -32,6 +36,12 @@ export function slackWorkerHarness(
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";
+  const history = { on: opts.history ?? false };
+  const historyCalls: Array<{
+    agentId: string;
+    channelId: string;
+    history: boolean;
+  }> = [];
   const agentNames = opts.agentNames ?? { "agent-1": "Helper" };
   const gw = createFakeSlackGateway();
   if (opts.channels) gw.setChannels(opts.channels);
@@ -39,7 +49,7 @@ export function slackWorkerHarness(
   const created: AcpSessionInfo[] = [];
   const baseAcp: AcpClient = {
     steer: async () => "unsupported" as const,
-    listSessions: async () => [...created],
+    listSessions: async () => [...created, ...(opts.sessions ?? [])],
     sendPrompt: async (prompt, sendOpts) => {
       prompts.push(prompt);
       if ("platformMeta" in sendOpts && sendOpts.platformMeta) {
@@ -65,7 +75,7 @@ export function slackWorkerHarness(
     ...(opts.channelPair ? { channelPair: opts.channelPair } : {}),
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => null } as never,
+    identityLinks: { resolve: async () => opts.linkedSub ?? null } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => SLACK_HARNESS_OWNER,
@@ -76,15 +86,25 @@ export function slackWorkerHarness(
           instanceName: "agent-1",
           owner: SLACK_HARNESS_OWNER,
           ambient: opts.ambient ?? false,
+          history: history.on,
           isDefault: true,
         },
       ],
       resolveSlackChannelsByInstance: async () => [
-        { id: boundChannelId, teamId: "" },
+        {
+          id: boundChannelId,
+          teamId: "",
+          ...(history.on ? { history: true as const } : {}),
+        },
+        ...(opts.otherBound ?? []).map((id) => ({ id, teamId: "" })),
       ],
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async (agentId, channelId, on) => {
+      historyCalls.push({ agentId, channelId, history: on });
+      history.on = on;
+    },
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -109,5 +129,5 @@ export function slackWorkerHarness(
     return done();
   }
 
-  return { gw, prompts, created, worker, settled };
+  return { gw, prompts, created, worker, settled, history, historyCalls };
 }

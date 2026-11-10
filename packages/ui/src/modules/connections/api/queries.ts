@@ -45,6 +45,17 @@ export function useAgentPageConnections(agentId: string | null): {
   };
 }
 
+export function useGitHubAppInstallations(
+  connectionId: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    ...trpc.connections.githubAppInstallations.queryOptions({ connectionId }),
+    enabled,
+    retry: 1,
+  });
+}
+
 export function useConnectionTemplates(options?: { enabled?: boolean }) {
   return useQuery({
     ...trpc.connections.listTemplates.queryOptions(),

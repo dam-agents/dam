@@ -1,45 +1,26 @@
 import { describe, expect, test } from "vitest";
 
-import type {
-  InvocationRow,
-  InvocationsRepository,
-} from "../../modules/invocations/infrastructure/invocations-repository.js";
+import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createInvocationsService } from "../../modules/invocations/services/invocations-service.js";
+import {
+  fakeInvocationsRepo,
+  invocationRow,
+} from "../helpers/invocations-repo.js";
 
 function makeService(row: InvocationRow) {
   const rows = new Map<string, InvocationRow>([[row.id, row]]);
-  const repo: InvocationsRepository = {
-    insert: async () => {},
+  const repo = fakeInvocationsRepo({
     get: async (id) => rows.get(id) ?? null,
-    markStarted: async () => null,
-    failExpired: async () => false,
-    complete: async (id, result) => {
-      const r = rows.get(id);
+    getRun: async (runId) =>
+      [...rows.values()].find((r) => r.runId === runId) ?? null,
+    complete: async (runId, result) => {
+      const r = [...rows.values()].find((x) => x.runId === runId);
       if (!r || r.status !== "running") return false;
       r.status = "done";
       r.result = result;
       return true;
     },
-    fail: async () => {},
-    listExpiredRunning: async () => [],
-    listRunning: async () => [],
-    listRunningByDriver: async () => [],
-    listRunningAgentIds: async () => [],
-    listTargetsByOwner: async () => [],
-    listRootDriverIds: async () => [],
-    listTerminalUnreaped: async () => [],
-    markReaped: async () => {},
-    listByRoot: async () => [],
-    listUnreapedByRoot: async () => [],
-    delete: async () => {},
-    markTranscriptCaptured: async () => {},
-    finishScript: async () => true,
-    dropOutputStream: async () => {},
-    clearOutput: async () => {},
-    listExpiredOutputs: async () => [],
-    listScriptsByRoot: async () => [],
-    deleteReapedByRoot: async () => 0,
-  };
+  });
   const service = createInvocationsService({
     owner: "owner-1",
     repo,
@@ -49,6 +30,7 @@ function makeService(row: InvocationRow) {
     driverResolution: { resolveRoot: async (id: string) => id },
     reaper: { reap: async () => {} },
     reportedReap: { afterReport: () => {} },
+    cancel: { settled: async () => true },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
     readHarnessConfigSupport: async () => null,
@@ -58,35 +40,7 @@ function makeService(row: InvocationRow) {
 }
 
 function runningRow(resultSchema: unknown): InvocationRow {
-  return {
-    id: "agent-1",
-    driverAgentId: "driver-1",
-    rootDriverId: "driver-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
-    createdAt: new Date(),
-    owner: "owner-1",
-    resultSchema,
-    result: null,
-    status: "running",
-    errorReason: null,
-    expiresAt: new Date(Date.now() + 60_000),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
-  };
+  return invocationRow({ resultSchema });
 }
 
 describe("recordResult tolerates stringified report_result payloads", () => {

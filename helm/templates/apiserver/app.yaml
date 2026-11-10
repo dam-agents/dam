@@ -514,6 +514,17 @@ spec:
             - name: PLATFORM_DEFAULT_GHE_APP_SLUG
               value: {{ .appSlug | quote }}
             {{- end }}
+            {{- if include "platform.apiserver.gheHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_HOSTS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GHE_HOSTS
+            {{- end }}
+            {{- with include "platform.apiserver.gheRetiredHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_RETIRED_HOSTS
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.slack }}
             {{- if .clientId }}
@@ -658,10 +669,6 @@ spec:
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
-            {{- end }}
-            {{- if .Values.links.curveBenderCommunity }}
-            - name: LINKS_CURVE_BENDER_COMMUNITY
-              value: {{ .Values.links.curveBenderCommunity | quote }}
             {{- end }}
             {{- if .Values.links.slackInstallRequest }}
             - name: LINKS_SLACK_INSTALL_REQUEST

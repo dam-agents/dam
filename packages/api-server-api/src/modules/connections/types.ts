@@ -188,6 +188,7 @@ export const connectionView = z.object({
   category: connectionCategory,
   name: z.string(),
   status: connectionStatus,
+  retiredHost: z.string().min(1).optional(),
   authKind: authKind,
   contributions: z.array(contribution),
   connectedAt: z.string().optional(),
@@ -297,6 +298,20 @@ export interface GitHubUserTokenProbe {
   installationsTruncated?: boolean;
 }
 
+export interface GitHubAppInstallationAccount {
+  login: string;
+  targetId: number;
+  kind: "organization" | "user";
+  repositorySelection: "all" | "selected";
+  avatarUrl?: string;
+  suspended?: true;
+}
+
+export interface GitHubAppInstallations {
+  accounts: GitHubAppInstallationAccount[];
+  truncated?: true;
+}
+
 export interface ProviderBalance {
   unit: "bobcoins" | "usd";
   used: number;
@@ -374,6 +389,11 @@ export interface ConnectionsService {
     connectionId: string;
   }): Promise<GitHubUserTokenProbe>;
 
+  /** UNIT_BOUNDARY_DESCRIPTION: the accounts — organizations and users — a GitHub sign-in's app is installed on, read with the sign-in's own user token; for a connection made from a sign-in, its sign-in's. */
+  listGitHubAppInstallations(input: {
+    connectionId: string;
+  }): Promise<GitHubAppInstallations>;
+
   updateGitHubUserTokenScope(input: {
     id: string;
     targetId?: number;
@@ -381,6 +401,9 @@ export interface ConnectionsService {
     permissions?: string;
     fullAccess?: boolean;
   }): Promise<void>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: points a GitHub Enterprise sign-in, and every connection made from it, at another host the install offers. Names, grants and scopes stay; the tokens of the old host are dropped, so the sign-in reads expired until its owner authorizes it on the new host. */
+  moveToHost(input: { id: string; host: string }): Promise<void>;
 
   startOAuth(
     connectionId: string,

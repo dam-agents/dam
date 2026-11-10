@@ -1,31 +1,34 @@
-import { Callout } from "@/components/ui/callout";
+import { Information } from "@carbon/icons-react";
+
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
+import { INSTALL_REACH } from "../components/github-app-install-hint.js";
+import { isGithubSignInTemplate } from "../lib/github-installations.js";
 
 export function GithubStepsCallout({
   templateId,
+  host,
   className,
 }: {
   templateId: string;
+  host?: string;
   className?: string;
 }) {
-  if (templateId !== "github" && templateId !== "github-enterprise")
-    return null;
-  const brand = getBrand().name;
+  if (!isGithubSignInTemplate(templateId)) return null;
   return (
-    <Callout
-      tone="info"
-      size="md"
-      className={cn("text-sm leading-relaxed", className)}
+    <p
+      className={cn(
+        "flex items-start gap-1.5 text-xs text-muted-foreground",
+        className,
+      )}
+      data-testid="github-steps-hint"
     >
-      <p className="font-semibold text-foreground">
-        2 steps required for successful connection
-      </p>
-      <ol className="mt-1.5 list-inside list-decimal text-foreground/90">
-        <li>Authorize GitHub account</li>
-        <li>Install the {brand} application within your organization</li>
-      </ol>
-    </Callout>
+      <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
+      <span>
+        Sign in with GitHub, then install the {getBrand().name} app
+        {host ? ` on ${host}` : ""} {INSTALL_REACH}.
+      </span>
+    </p>
   );
 }
