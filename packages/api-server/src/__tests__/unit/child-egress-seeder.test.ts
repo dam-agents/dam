@@ -51,7 +51,12 @@ function setup(
     },
     listActiveForPromotionScan: async () => [],
   } as unknown as EgressRulesRepository;
-  const open = new Set<string>();
+  const open = new Map<
+    string,
+    { host: string; port?: number; method: string; path: string }
+  >();
+  const keyOf = (r: { host: string; method?: string; path?: string }) =>
+    `${r.host} ${r.method ?? "*"} ${r.path ?? "*"}`;
   const seeder = createChildEgressSeeder({
     repo,
     writer: createEgressRuleWriter({
@@ -64,12 +69,17 @@ function setup(
       request: async ({ rule, ask }) => {
         requested.push(rule.host);
         asks.push(`${rule.host}:${ask}`);
-        open.add(rule.host);
+        const shape = {
+          host: rule.host,
+          method: rule.method ?? "*",
+          path: rule.pathPattern ?? "*",
+        };
+        open.set(keyOf(shape), shape);
         return { id: `request:${rule.host}` };
       },
       withdraw: async (_childId, keep) => {
-        for (const host of open) if (!keep({ host })) open.delete(host);
-        withdrawn.push([...open].sort());
+        for (const [key, shape] of open) if (!keep(shape)) open.delete(key);
+        withdrawn.push([...open.keys()].sort());
       },
     },
   });
@@ -78,9 +88,13 @@ function setup(
       .filter((r) => r.agentId === agentId && r.status === "active")
       .map((r) => `${r.host}:${r.source}`)
       .sort();
-  const approve = (agentId: string, host: string) => {
-    open.delete(host);
-    rows.push({ ...rule(agentId, host), source: "inbox" });
+  const approve = (
+    agentId: string,
+    host: string,
+    shape: { method?: string; pathPattern?: string } = {},
+  ) => {
+    open.delete(keyOf({ host, method: shape.method, path: shape.pathPattern }));
+    rows.push({ ...rule(agentId, host, shape), source: "inbox" });
   };
   return { seeder, hostsOf, requested, asks, withdrawn, approve };
 }
@@ -225,5 +239,40 @@ describe("an open child wider than its driver", () => {
 
     await seeder.setOpenRules("agent-child", "agent-driver", []);
     expect(hostsOf("agent-child")).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the owner approved a rule for one method and path on a host; the driver then asks for another method and path on that host. That is a rule the owner never saw, so it waits for them as a new request, and the approved one, no longer asked for, goes; a host-wide approval, any method and path, covers whatever the driver asks on that host.
+  it("asks again when the driver changes an approved rule's method or path", async () => {
+    const { seeder, hostsOf, approve, withdrawn } = setup([], {
+      granted: false,
+    });
+    await seeder.seed("agent-child", openChild([]));
+    const get = {
+      host: "*.example.com",
+      method: "GET",
+      pathPattern: "/api/*",
+      verdict: "allow" as const,
+    };
+    await seeder.setOpenRules("agent-child", "agent-driver", [get]);
+    approve("agent-child", "*.example.com", {
+      method: "GET",
+      pathPattern: "/api/*",
+    });
+
+    const changed = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { ...get, method: "POST", pathPattern: "/other/*" },
+    ]);
+    expect(changed.waiting).toEqual([
+      { host: "*.example.com", id: "request:*.example.com" },
+    ]);
+    expect(hostsOf("agent-child")).toEqual([]);
+    expect(withdrawn.at(-1)).toEqual([]);
+
+    approve("agent-child", "*.example.com");
+    const covered = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { ...get, method: "DELETE", pathPattern: "/any/*" },
+    ]);
+    expect(covered.waiting).toEqual([]);
+    expect(hostsOf("agent-child")).toEqual(["*.example.com:inbox"]);
   });
 });

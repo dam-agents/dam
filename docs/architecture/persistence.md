@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -134,6 +134,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
 - **delegation records** — one row per Invocation and one per run of it (`invocation_runs`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
 - **child inheritance** — one row per sub-agent or Environment an agent launched (`agent_inheritance`): which of its parent's connections it holds and whose egress rules decide its requests, chosen at launch and kept for the child's life ([invocations](invocations.md#spawning)).
+- **child egress grants** — one row per root Agent whose owner let its sub-agents and Environments have network access of their own (`agent_child_egress_grants`), with who turned it on and when; no row is off ([invocations](invocations.md#spawning)).
 - **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; the owner's daily limits; and each user's Spend Ceiling that a platform operator set, with who set it and when.
   Redis caches the day totals.
   Owned by [spend-limits](spend-limits.md#ledger).

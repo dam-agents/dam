@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the owner's toggle that lets an Agent's sub-agents and Environments have network access of their own, wider than the Agent's: the owner reads and switches it on a root Agent with the Environments feature, it reads unavailable elsewhere, and approving a child's rule that reaches past its driver turns it on for the driver's launch root, while a wildcard approval leaves it as it was.
+// TEST_OVERVIEW: the owner's toggle that lets an Agent's sub-agents and Environments have network access of their own, wider than the Agent's: the owner reads and switches it on a root Agent with the Environments feature, it reads unavailable elsewhere, and approving a child's rule that reaches past its driver turns it on for the driver's launch root, while a wildcard approval leaves it as it was. A child's waiting request is one per host, port, method and path.
 import { describe, expect, it } from "vitest";
 
 import { configureLogger } from "../../core/logger.js";
@@ -167,5 +167,32 @@ describe("approving a child's rule wider than its driver", () => {
     await w.approvals.dismiss(wider.id);
     expect(w.written.map((r) => r.host)).toEqual(["*"]);
     expect(w.granted).toEqual([]);
+  });
+});
+
+describe("a child's waiting requests", () => {
+  // TEST_SCENARIO: asking again for the same rule finds the request already waiting, while another path on the same host is a rule the owner has not seen, so it waits as a request of its own, and approving it writes that path.
+  it("are one per host, port, method and path", async () => {
+    const w = approvalsWorld();
+    const ask = (pathPattern: string) =>
+      w.requests.request({
+        childId: "agent-child",
+        driverId: "agent-driver",
+        rule: { host: "pypi.org", verdict: "allow", pathPattern },
+        ask: "wider",
+      });
+    const simple = await ask("/simple/*");
+    expect((await ask("/simple/*")).id).toBe(simple.id);
+    const packages = await ask("/packages/*");
+    expect(packages.id).not.toBe(simple.id);
+    expect(w.rows.map((r) => r.payload)).toMatchObject([
+      { path: "/simple/*" },
+      { path: "/packages/*" },
+    ]);
+
+    await w.approvals.approvePermanent(packages.id);
+    expect(w.written).toMatchObject([
+      { agentId: "agent-child", host: "pypi.org", pathPattern: "/packages/*" },
+    ]);
   });
 });

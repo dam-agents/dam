@@ -31,15 +31,43 @@ export interface OwnerEgressPort {
   }): Promise<{ id: string }>;
   withdraw(
     childId: string,
-    keep: (request: { host: string; port?: number }) => boolean,
+    keep: (request: ChildEgressRequestShape) => boolean,
   ): Promise<void>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a waiting request asks for: a host and port, and the method and path the driver's rule names, so a changed rule is a new request.
+export interface ChildEgressRequestShape {
+  host: string;
+  port?: number;
+  method: string;
+  path: string;
 }
 
 const hostOf = (rule: { host: string }): string =>
   rule.host.trim().toLowerCase();
 
-const reachKey = (rule: { host: string; port?: number }): string =>
-  `${hostOf(rule)}:${rule.port ?? ""}`;
+const shapeOf = (rule: ChildEgressRuleSeed): ChildEgressRequestShape => ({
+  host: hostOf(rule),
+  ...(rule.port !== undefined ? { port: rule.port } : {}),
+  method: rule.method ?? "*",
+  path: rule.pathPattern ?? "*",
+});
+
+const sameRequest = (
+  a: ChildEgressRequestShape,
+  b: ChildEgressRequestShape,
+): boolean =>
+  hostOf(a) === b.host &&
+  a.port === b.port &&
+  a.method === b.method &&
+  a.path === b.path;
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a rule the owner approved on the child gives what the driver asks: the same host and port, and a method and path that are the asked ones or any, so the owner's host-wide approval covers every path on it and one for GET /api/* does not cover POST /other/*.
+const covers = (row: EgressRuleRow, asked: ChildEgressRequestShape): boolean =>
+  hostOf(row) === asked.host &&
+  row.port === asked.port &&
+  (row.method === "*" || row.method === asked.method) &&
+  (row.pathPattern === "*" || row.pathPattern === asked.path);
 
 // UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule the launching agent may not give, which waits for the owner's approval and goes when the launching agent drops it: an allow rule to a wildcard host, always, and one to a host the launching agent's own rules (as they are at that moment) do not reach, unless the owner lets the launching agent's root give its children network access of their own. A scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
 export function createChildEgressSeeder(deps: {
@@ -152,19 +180,24 @@ export function createChildEgressSeeder(deps: {
           (r): r is { rule: ChildEgressRuleSeed; ask: "wildcard" | "wider" } =>
             r.ask !== null,
         );
-      const askedKeys = new Set(asked.map(({ rule }) => reachKey(rule)));
-      const granted = new Set<string>();
+      const askedShapes = asked.map(({ rule }) => shapeOf(rule));
+      const kept: EgressRuleRow[] = [];
       for (const row of await deps.repo.listForAgent(agentId)) {
         if (row.source === CHILD_DRIVER_SOURCE) {
           await deps.repo.revoke(row.id);
           continue;
         }
         if (row.source !== "inbox" && !isWildcardEgressRule(row)) continue;
-        if (askedKeys.has(reachKey(row))) granted.add(reachKey(row));
+        if (askedShapes.some((shape) => covers(row, shape))) kept.push(row);
         else await deps.repo.revoke(row.id);
       }
+      const granted = (rule: ChildEgressRuleSeed): boolean =>
+        kept.some((row) => covers(row, shapeOf(rule)));
+      const stillAsked = asked
+        .filter(({ rule }) => !granted(rule))
+        .map(({ rule }) => shapeOf(rule));
       await deps.ownerEgress.withdraw(agentId, (request) =>
-        askedKeys.has(reachKey(request)),
+        stillAsked.some((shape) => sameRequest(request, shape)),
       );
       const waiting: { host: string; id: string }[] = [];
       for (const rule of rules) {
@@ -173,7 +206,7 @@ export function createChildEgressSeeder(deps: {
           await write(agentId, decidedBy, CHILD_DRIVER_SOURCE, rule);
           continue;
         }
-        if (granted.has(reachKey(rule))) continue;
+        if (granted(rule)) continue;
         const { id } = await deps.ownerEgress.request({
           childId: agentId,
           driverId: decidedBy,

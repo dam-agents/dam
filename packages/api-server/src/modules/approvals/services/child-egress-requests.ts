@@ -16,7 +16,12 @@ export interface ChildEgressRequests {
   }): Promise<{ id: string }>;
   withdraw(
     childId: string,
-    keep: (request: { host: string; port?: number }) => boolean,
+    keep: (request: {
+      host: string;
+      port?: number;
+      method: string;
+      path: string;
+    }) => boolean,
   ): Promise<void>;
 }
 
@@ -33,10 +38,11 @@ const reachOf = (rule: ChildEgressRuleSeed, ask: ChildEgressAsk): string => {
  * its owner has not let its children have network access of their own. The
  * rule is never written by the driver; it waits as an egress proposal on the
  * child, shown on the driver's page, and only the owner's verdict writes it
- * onto the child. One open request per child, host and port; a request the
- * driver drops from the child's rules is withdrawn, and asking again after a
- * verdict asks anew. The request carries the rule's method and path, so the
- * owner's approval writes the rule the driver asked for.
+ * onto the child. One open request per child, host, port, method and path, so
+ * a rule the driver changes asks again; a request the driver drops from the
+ * child's rules is withdrawn, and asking again after a verdict asks anew. The
+ * request carries the rule's method and path, so the owner's approval writes
+ * the rule the driver asked for.
  */
 export function createChildEgressRequests(deps: {
   repo: ApprovalsRepository;
@@ -52,11 +58,19 @@ export function createChildEgressRequests(deps: {
   return {
     async request({ childId, driverId, rule, ask }) {
       const host = rule.host.trim().toLowerCase();
+      const shape = {
+        host,
+        ...(rule.port !== undefined ? { port: rule.port } : {}),
+        method: rule.method ?? "*",
+        path: rule.pathPattern ?? "*",
+      };
       const open = (await pendingOf(childId)).find(
         (r) =>
           r.payload.kind === "egress_proposal" &&
           r.payload.host === host &&
-          r.payload.port === rule.port,
+          r.payload.port === rule.port &&
+          r.payload.method === shape.method &&
+          r.payload.path === shape.path,
       );
       if (open) return { id: open.id };
       const ownerSub = await deps.ownerOf(childId);
@@ -65,13 +79,7 @@ export function createChildEgressRequests(deps: {
         deps.nameOf(driverId),
         deps.nameOf(childId),
       ]);
-      const shape = {
-        host,
-        ...(rule.port !== undefined ? { port: rule.port } : {}),
-        method: rule.method ?? "*",
-        path: rule.pathPattern ?? "*",
-      };
-      const id = `${proposalId(childId, { host, port: rule.port, method: "*", path: "*", reason: "" })}:${now()}`;
+      const id = `${proposalId(childId, { ...shape, reason: "" })}:${now()}`;
       const child = childName ? `sub-agent ${childName}` : "child";
       const reach = reachOf({ ...rule, host }, ask);
       await deps.repo.insertPending({
@@ -113,7 +121,11 @@ export function createChildEgressRequests(deps: {
     async withdraw(childId, keep) {
       for (const row of await pendingOf(childId)) {
         if (row.payload.kind !== "egress_proposal") continue;
-        if (keep({ host: row.payload.host, port: row.payload.port })) continue;
+        const { host, port, method, path } = row.payload;
+        if (
+          keep({ host, ...(port !== undefined ? { port } : {}), method, path })
+        )
+          continue;
         if (!(await deps.repo.expirePending(row.id))) continue;
         emit({
           type: EventType.ApprovalResolved,
