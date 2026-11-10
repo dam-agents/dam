@@ -524,7 +524,11 @@ describe("slack outbound — channel cards", () => {
 
     const result = await h.post("Checks", { card: long });
 
-    expect(result).toMatchObject({ error: expect.stringContaining("50") });
+    const blocks = Number(
+      ("error" in result && result.error.match(/is (\d+) Slack blocks/)?.[1]) ||
+        0,
+    );
+    expect(blocks).toBeGreaterThanOrEqual(52);
     expect(h.messages()).toEqual([]);
   });
 });

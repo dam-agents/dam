@@ -2567,12 +2567,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return body.length < SLACK_MAX_BLOCKS ? [...body, footerBlock] : null;
   }
 
+  type AgentPost = {
+    text: string;
+    blocks: SlackBlock[];
+    asText: SlackBlock[] | null;
+    replyText: string;
+  };
+
   function agentPost(
     text: string,
     card: ChannelCard | undefined,
     footer: AgentFooter,
     sign: (text: string, bold: "*" | "**") => string,
-  ): { text: string; blocks: SlackBlock[]; asText: SlackBlock[] | null } {
+  ): AgentPost {
     const withCard = (cardText: string) =>
       [text, cardText].filter((part) => part.trim()).join("\n\n");
     return {
@@ -2581,11 +2588,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       asText: card
         ? renderAssistantBlocks(footer, sign(withCard(card.text), "**"))
         : null,
+      replyText: card ? withCard(card.text) : text,
     };
-  }
-
-  function replyTextOf(text: string, card: ChannelCard | undefined): string {
-    return [text, card?.text ?? ""].filter((part) => part.trim()).join("\n\n");
   }
 
   function tooManyBlocks(blocks: SlackBlock[]): { error: string } | null {
@@ -2596,20 +2600,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       : null;
   }
 
-  async function postAgentMessage(
-    gw: SlackGateway,
-    message: SlackPostMessage,
-    asText: SlackBlock[] | null,
-  ): Promise<{ ts: string } | null> {
+  async function sendAgentPost<T>(
+    channelId: string,
+    post: AgentPost,
+    send: (blocks: SlackBlock[]) => Promise<T>,
+  ): Promise<T> {
     try {
-      return await gw.postMessage(message);
+      return await send(post.blocks);
     } catch (err) {
-      if (!asText || !slackRefusedBlocks(err)) throw err;
+      if (!post.asText || !slackRefusedBlocks(err)) throw err;
       getLogger().warn(
-        { channelId: message.channel, err: formatError(err) },
+        { channelId, err: formatError(err) },
         "slack.card.refused: posting the card as text",
       );
-      return gw.postMessage({ ...message, blocks: asText });
+      return send(post.asText);
     }
   }
 
@@ -2983,28 +2987,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const post = agentPost(args.text, args.card, footer, sign);
     const crowded = tooManyBlocks(post.blocks);
     if (crowded) return crowded;
-    const message = {
-      channel: turn.channel,
-      user: whisper.whisperer,
-      teamId: turn.teamId,
-      text: post.text,
-      blocks: post.blocks,
-      ...persona,
-    };
     try {
-      try {
-        await gw.postEphemeral(message);
-      } catch (err) {
-        if (!post.asText || !slackRefusedBlocks(err)) throw err;
-        await gw.postEphemeral({ ...message, blocks: post.asText });
-      }
+      await sendAgentPost(turn.channel, post, (blocks) =>
+        gw.postEphemeral({
+          channel: turn.channel,
+          user: whisper.whisperer,
+          teamId: turn.teamId,
+          text: post.text,
+          blocks,
+          ...persona,
+        }),
+      );
     } catch (err) {
       return { error: formatError(err) };
     }
-    noteEngaged(engaged, {
-      messaged: true,
-      replyText: replyTextOf(args.text, args.card),
-    });
+    noteEngaged(engaged, { messaged: true, replyText: post.replyText });
     return { ok: true as const };
   }
 
@@ -7409,19 +7406,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             undefined,
             persona,
             (fileIds) =>
-              postAgentMessage(
-                gw,
-                {
+              sendAgentPost(target.id, post, (blocks) =>
+                gw.postMessage({
                   channel: target.id,
                   teamId: target.teamId,
                   text: post.text,
                   ...persona,
-                  blocks: post.blocks,
+                  blocks,
                   metadata: agentPostMetadata(fileIds),
                   ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                   ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-                },
-                post.asText,
+                }),
               ),
             unfurlLinks === false || unfurlMedia === false
               ? null
@@ -7441,10 +7436,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return { error: formatError(err) };
           }
         }
-        const replyText = replyTextOf(text, card);
         noteEngaged(engaged, {
           messaged: true,
-          ...(replyText ? { replyText } : {}),
+          ...(post.replyText ? { replyText: post.replyText } : {}),
         });
         return {
           ok: true as const,
@@ -7757,15 +7751,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           threadTs,
           persona,
           (fileIds) =>
-            postAgentMessage(
-              gw,
-              {
+            sendAgentPost(target.id, post, (blocks) =>
+              gw.postMessage({
                 channel: target.id,
                 teamId: target.teamId,
                 threadTs,
                 text: post.text,
                 ...persona,
-                blocks: post.blocks,
+                blocks,
                 metadata: agentPostMetadata(fileIds),
                 ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
                 ...(args.unfurlLinks !== undefined
@@ -7774,8 +7767,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 ...(args.unfurlMedia !== undefined
                   ? { unfurlMedia: args.unfurlMedia }
                   : {}),
-              },
-              post.asText,
+              }),
             ),
           args.alsoSendToChannel ||
             args.unfurlLinks === false ||
@@ -7787,10 +7779,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 args.card,
               ),
         );
-        noteEngaged(engaged, {
-          messaged: true,
-          replyText: replyTextOf(args.text, args.card),
-        });
+        noteEngaged(engaged, { messaged: true, replyText: post.replyText });
         return {
           ok: true as const,
           conversationId: target.id,

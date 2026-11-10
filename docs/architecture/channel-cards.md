@@ -12,7 +12,7 @@ Plain text stays the default; a card is for an answer whose structure helps the 
 ## How an agent sends one
 
 - **The posting tools take it.** `reply`, `post` and `start_thread` take an optional card beside the text, on the per-Agent MCP endpoint ([channel-turns](channel-turns.md#outbound--agent-to-channel)).
-  The text shows above the card, and a post may carry a card alone.
+  The text shows above the card; a reply or a post may carry a card alone, while a new thread opens with text.
 - **The catalog is disclosed on demand.** A card's components, their props as JSON Schema, where each one goes and an example come from `describe_card_components`, not from every session's tool list, because most agents never post a card.
   The answer is generated from json-render's catalog at runtime, so a component a later catalog adds reaches agents with the upgrade, without a change here.
 - **The agent writes a tree.** Each node is a component with its props and children; the platform flattens it into the catalog's spec before checking it.
@@ -52,8 +52,8 @@ sequenceDiagram
 
 - **Slack.** The agent's text renders as before, the card's blocks follow, and the [Agent Footer](channel-turns.md#the-agent-footer) ends the post.
   The blocks come from Chat SDK's standalone Slack converter on the existing Slack connection, so Slack's own table and chart parts show tables and charts.
-  Card text is standard Markdown, converted to Slack's mrkdwn so links and emphasis read as they do in the text.
-  When Slack refuses the blocks, such as a part a workspace lacks or an image it cannot fetch, the same message goes out once more with the card's text form in place of its blocks, so the answer always arrives.
+  A card's text and field values are standard Markdown, converted to Slack's mrkdwn so links and emphasis read as they do in the text, and a text too long for one Slack block is split across blocks, never cut.
+  When Slack refuses the blocks, such as a part a workspace lacks, an image it cannot fetch or a message too large, the same message goes out once more with the card's text form in place of its blocks, so the answer arrives.
   A message with a file keeps its one-post rule: the share carries the text, the card and the footer where Slack takes them, and otherwise the message goes first and the file after it.
   A whisper's private answer carries the card the same way.
 - **Telegram.** The card goes through the Telegram channel's Chat SDK adapter with the agent's text first: the adapter shows the card's text form and turns each link button into a Telegram button.

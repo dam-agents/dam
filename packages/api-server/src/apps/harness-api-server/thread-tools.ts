@@ -14,6 +14,7 @@ export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
   cardOf(
     tree: Record<string, unknown> | undefined,
+    channel: ChannelType,
   ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
@@ -74,7 +75,7 @@ export function registerThreadTools(
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
-        const built = await ports.cardOf(tree);
+        const built = await ports.cardOf(tree, channel);
         if ("error" in built) return errorResult(built.error);
         const result = await ports.startThread(channel, {
           sessionId,

@@ -98,7 +98,13 @@ describe("start_thread", () => {
       card: { type: "card" as const, title: "Regions", children: [] },
       text: "**Regions**",
     };
-    const h = await harness({ cardOf: async () => ({ card }) });
+    const checkedFor: ChannelType[] = [];
+    const h = await harness({
+      cardOf: async (_tree, channel) => {
+        checkedFor.push(channel);
+        return { card };
+      },
+    });
 
     await h.call("start_thread", {
       channel: "slack",
@@ -108,6 +114,7 @@ describe("start_thread", () => {
     });
 
     expect(h.starts[0]?.start.card).toEqual(card);
+    expect(checkedFor).toEqual([ChannelType.Slack]);
   });
 
   // TEST_SCENARIO: a card the platform refuses must not leave a thread behind with only half of what the agent meant to ask.

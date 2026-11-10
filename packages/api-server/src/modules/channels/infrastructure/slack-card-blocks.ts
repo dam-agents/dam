@@ -8,32 +8,41 @@ import type { ChannelCard } from "../services/worker-contract.js";
 import type { SlackBlock } from "./slack-gateway.js";
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 
-const REFUSED_BLOCKS = new Set(["invalid_blocks", "invalid_blocks_format"]);
+const REFUSED_BLOCKS = new Set([
+  "invalid_blocks",
+  "invalid_blocks_format",
+  "msg_blocks_too_long",
+]);
 
-function mrkdwnOf(markdown: string): string {
-  return markdownToSections(markdown)
-    .map((section) => (section.text as { text: string }).text)
-    .join("\n\n");
+function mrkdwnSections(markdown: string): string[] {
+  return markdownToSections(markdown).map(
+    (section) => (section.text as { text: string }).text,
+  );
 }
 
 function inMrkdwn(children: readonly CardChild[]): CardChild[] {
-  return children.map((child): CardChild => {
+  return children.flatMap((child): CardChild[] => {
     switch (child.type) {
       case "text":
-        return { ...child, content: mrkdwnOf(child.content) };
-      case "fields":
-        return {
+        return mrkdwnSections(child.content).map((content) => ({
           ...child,
-          children: child.children.map((field) => ({
-            ...field,
-            label: escapeMrkdwn(field.label),
-            value: escapeMrkdwn(field.value),
-          })),
-        };
+          content,
+        }));
+      case "fields":
+        return [
+          {
+            ...child,
+            children: child.children.map((field) => ({
+              ...field,
+              label: escapeMrkdwn(field.label),
+              value: mrkdwnSections(field.value).join("\n\n"),
+            })),
+          },
+        ];
       case "section":
-        return { ...child, children: inMrkdwn(child.children) };
+        return [{ ...child, children: inMrkdwn(child.children) }];
       default:
-        return child;
+        return [child];
     }
   });
 }
@@ -43,10 +52,13 @@ function slackCard(card: ChannelCard): SlackCardElement {
 }
 
 export function slackCardBlocks(card: ChannelCard): SlackBlock[] {
-  return cardToSlackBlocks({
-    ...slackCard(card),
-    children: inMrkdwn(card.card.children) as SlackCardElement["children"],
-  });
+  return cardToSlackBlocks(
+    {
+      ...slackCard(card),
+      children: inMrkdwn(card.card.children) as SlackCardElement["children"],
+    },
+    { maxBlocks: Number.MAX_SAFE_INTEGER },
+  );
 }
 
 export function slackCardText(card: ChannelCard): string {

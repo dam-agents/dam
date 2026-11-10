@@ -121,10 +121,11 @@ function comparable(text: string): string {
  * only when `text` is empty, because a person's post carries a `rich_text`
  * copy of its `text` and an Agent's post a `markdown` copy. A link preview
  * Slack unfurled into `attachments` repeats a link already in the post, and
- * an Agent Footer is not content, so neither is read. An Agent's post with
- * `text` carries all of its content there, a Channel Card's text form
- * included, so its blocks are not read either. Only the flattened part is
- * capped; `text` is never shortened.
+ * an Agent Footer is not content, so neither is read. An Agent's post that
+ * holds a `markdown` block carries all of its content in `text`, a Channel
+ * Card's text form included, so its blocks are not read either; an Agent's
+ * file share has no `markdown` block and is read like any other post. Only
+ * the flattened part is capped; `text` is never shortened.
  */
 export function renderSlackPostText(post: SlackPostContent): string {
   const text = post.text?.trim() ?? "";
@@ -134,7 +135,12 @@ export function renderSlackPostText(post: SlackPostContent): string {
   const blocks = Array.isArray(post.blocks)
     ? (post.blocks as SlackBlock[])
     : [];
-  if (text && parseAgentFooter({ blocks })) return post.text ?? "";
+  if (
+    text &&
+    blocks.some((block) => block.type === "markdown") &&
+    parseAgentFooter({ blocks })
+  )
+    return post.text ?? "";
   const candidates = [
     ...blocks.map((b) => blockText(b, text === "").trim()),
     ...attachments.flatMap(attachmentText),

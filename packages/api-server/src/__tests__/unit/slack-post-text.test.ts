@@ -196,6 +196,28 @@ describe("renderSlackPostText", () => {
   });
 
   /**
+   * TEST_SCENARIO: An Agent's file share carries its content in mrkdwn
+   * sections, because Slack refuses a `markdown` block there, and its `text`
+   * may not hold that content. Its sections are still read.
+   */
+  it("reads an Agent's file share from its sections", () => {
+    expect(
+      renderSlackPostText({
+        text: "report.md",
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text: "Weekly totals" } },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: "<http://ui/a/agent-abc123|Alpha>" },
+            ],
+          },
+        ],
+      }),
+    ).toBe("report.md\nWeekly totals");
+  });
+
+  /**
    * TEST_SCENARIO: Slack unfurls a link in a person's post into an
    * attachment. The preview repeats a link that is already in the text.
    */

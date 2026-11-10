@@ -348,16 +348,39 @@ export function createMcpSession(
       'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
     );
 
+  async function linkedValues(
+    value: unknown,
+    surface: string,
+  ): Promise<{ value: unknown } | { error: string }> {
+    if (typeof value === "string") {
+      const linked = await channelLinks(value, surface);
+      return "error" in linked ? linked : { value: linked.text };
+    }
+    if (value === null || typeof value !== "object") return { value };
+    const entries = Array.isArray(value)
+      ? value.map((item, index) => [String(index), item] as const)
+      : Object.entries(value);
+    const linked: [string, unknown][] = [];
+    for (const [key, item] of entries) {
+      const result = await linkedValues(item, surface);
+      if ("error" in result) return result;
+      linked.push([key, result.value]);
+    }
+    return {
+      value: Array.isArray(value)
+        ? linked.map(([, item]) => item)
+        : Object.fromEntries(linked),
+    };
+  }
+
   const cardOf = async (
     tree: Record<string, unknown> | undefined,
     surface: string,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
-    const linked = await channelLinks(JSON.stringify(tree), surface);
+    const linked = await linkedValues(tree, surface);
     if ("error" in linked) return linked;
-    const built = buildChannelCard(
-      JSON.parse(linked.text) as Record<string, unknown>,
-    );
+    const built = buildChannelCard(linked.value as Record<string, unknown>);
     if ("issues" in built)
       return {
         error: `The card was not sent: ${built.issues.join("; ")}. Fix the card — describe_card_components lists the components, their props and the limits — or send the message as text.`,
@@ -433,7 +456,7 @@ export function createMcpSession(
       textResult(
         JSON.stringify({
           format:
-            'A card is a tree. The root is { "type": "Card", "props": { … }, "children": [ … ] }, and every child is { "type": <component>, "props": { … }, "children": [ … ] }, with children only on a component that takes them. A component that names "inside" goes only in that component. Text in Text and Field is standard Markdown. The message text stays above the card. Use a card when structure helps the reader, such as a status with its key facts or numbers in a table or chart; a conversational answer reads better as plain text.',
+            'A card is a tree. The root is { "type": "Card", "props": { … }, "children": [ … ] }, and every child is { "type": <component>, "props": { … }, "children": [ … ] }, with children only on a component that takes them. A component that names "inside" goes only in that component. A Text\'s content and a Field\'s value are standard Markdown. The message text stays above the card, and reply and post may send a card alone. Use a card when structure helps the reader, such as a status with its key facts or numbers in a table or chart; a conversational answer reads better as plain text.',
           channels: {
             slack:
               "Native Slack blocks. Notifications and the history agents read show the card as text.",
@@ -1655,7 +1678,8 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
-    cardOf: (tree) => cardOf(tree, "Slack"),
+    cardOf: (tree, channel) =>
+      cardOf(tree, channel === ChannelType.Slack ? "Slack" : "Telegram"),
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>
