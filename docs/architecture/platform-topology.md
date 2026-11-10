@@ -233,6 +233,9 @@ A new chat's empty composer has focus and shows example prompts in place of its 
 A chat with a conversation, or an assistant's greeting with a first task of its own, keeps the ordinary placeholder.
 The Agent's avatar and name in the top bar open its settings in a modal over the chat: the configuration page's sections and its restart bar, with the open section kept in the modal rather than in the address, so the conversation stays where it was.
 The configuration page itself stays at its own address for every other way in.
+The composer's + menu is the other way to change an Agent from its chat: next to attaching a file, it lists the Agent's skills, schedules and Connections with the switches the platform already has for them — a skill installed or removed, a recurring schedule paused or resumed, a Connection granted or revoked — and opens each one's usual create dialog.
+For skills and schedules it also offers to describe one, which leaves a starting prompt in the composer and sends nothing, so a person learns that the Agent can set these up itself.
+Every switch is the same call the Agent's settings make, under the same permissions, so the menu adds no rule of its own.
 
 ## Protocols
 

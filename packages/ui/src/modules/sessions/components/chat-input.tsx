@@ -1,5 +1,4 @@
 import {
-  Attachment as AttachmentIcon,
   Document,
   SendAltFilled,
   StopFilledAlt,
@@ -31,9 +30,11 @@ import { usePromptHistory } from "../hooks/use-prompt-history.js";
 import { useRotatingExample } from "../hooks/use-rotating-example.js";
 import { useSkillCommands } from "../hooks/use-skill-commands.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
+import type { PlusMenuPanel } from "../lib/plus-menu.js";
 import { ChatColumn } from "./chat-column.js";
 import { CommandMenu } from "./command-menu.js";
 import { ExamplePromptHint } from "./example-prompt-hint.js";
+import { ComposerPlusMenu } from "./plus-menu/composer-plus-menu.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const NO_EXAMPLES: readonly string[] = [];
@@ -51,6 +52,7 @@ export interface ChatInputProps {
   harness?: string | null;
   emptyPlaceholder?: string | null;
   examples?: readonly string[] | null;
+  onOpenSettings?: (section: PlusMenuPanel) => void;
 }
 
 export function ChatInput({
@@ -66,6 +68,7 @@ export function ChatInput({
   harness = null,
   emptyPlaceholder = null,
   examples = null,
+  onOpenSettings,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -209,6 +212,19 @@ export function ChatInput({
     },
     [key, setDraft, textareaRef],
   );
+  const describeToAgent = useCallback(
+    (text: string) => {
+      if (!key) return;
+      setDraft(key, { text });
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(text.length, text.length);
+      });
+    },
+    [key, setDraft, textareaRef],
+  );
   const promptHistory = usePromptHistory(recallPrompt);
   const commands = useSkillCommands(agentId, sessionId, harness);
   const applyCommand = useCallback(
@@ -314,17 +330,13 @@ export function ChatInput({
             </div>
           )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
-              onClick={() => fileInputRef.current?.click()}
+            <ComposerPlusMenu
+              agentId={agentId}
               disabled={loadingSession || !key || !!blockedReason}
-              aria-label="Attach file"
-              tooltip="Attach file"
-            >
-              <AttachmentIcon size={16} />
-            </Button>
+              onAttachFile={() => fileInputRef.current?.click()}
+              onDescribe={describeToAgent}
+              onManage={onOpenSettings}
+            />
             <div className="relative flex min-w-0 flex-1">
               {shownExample && <ExamplePromptHint example={shownExample} />}
               <Textarea

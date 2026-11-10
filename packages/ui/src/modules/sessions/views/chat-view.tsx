@@ -1177,6 +1177,7 @@ export function ChatView() {
             examples={
               emptyChat && greeting.kind === "none" ? EXAMPLE_PROMPTS : null
             }
+            onOpenSettings={openSettings}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)

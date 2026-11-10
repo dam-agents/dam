@@ -33,6 +33,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
   In the chat's top bar, *Show files* and *Show artifacts* open its Files and Artifacts sections beside the conversation, stacked when both are open; both start closed for an account that never opened them, and each stays as the account last left it.
   A new chat's empty message box shows example prompts that change every few seconds, each with a *Tab* hint; Tab puts the shown one in the box, and the box's placeholder (its accessible name) is still *Message…*.
   The agent's avatar and name at the start of the chat's top bar are one button, *Configure <name>*, that opens the agent's settings in a dialog over the chat: the configuration page's sections, its rename and its avatar picker among them; the wrench, *Configure agent*, and the agent's name above a reply still open the configuration page.
+  The **+** button at the start of the message box (*Add*) opens a menu: *Attach file* (the file picker the box always had), then *Skills*, *Schedules* and *Connections*, each with a count of what the agent has on.
+  Each of the three opens a list with *Back* and *Manage* (the same section of the agent's settings): a skill's switch installs or removes it while the agent runs, a recurring schedule's switch pauses or resumes it (a one-time task has none), and a connection's switch adds it to the agent or removes it.
+  *Add source*, *Create schedule* and *Add connection* open the usual dialogs; *Or, describe to create* (skills and schedules) leaves *Create a skill that...* or *Every morning at 9am...* in the box and sends nothing.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.

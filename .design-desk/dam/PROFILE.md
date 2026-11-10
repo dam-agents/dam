@@ -22,7 +22,7 @@ Folder names in the code are internal: `sandboxes` is an agent's configuration p
 ## Main screens
 
 - **Home** — what changed since the user last looked: agents, usage, spend.
-- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from its top bar.
+- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from its top bar, and a composer whose + menu reaches the agent's skills, schedules and connections.
 - **An agent's configuration** — its harness, model, connections, schedules, skills, login items and environments; a page of its own, and the same sections in a modal over the chat, which the agent's name in the chat's top bar opens.
 - **Artifacts** — the library of published work, with sharing.
 - **Starter kits** — ready setups an agent is created from.
