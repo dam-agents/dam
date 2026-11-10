@@ -37,20 +37,35 @@ export function viewMore({
   shown,
   limit,
   hasNextPage,
-  isFetchingNextPage,
 }: {
   total: number;
   shown: number;
   limit: number;
   hasNextPage: boolean;
-  isFetchingNextPage: boolean;
-}): { more: boolean; limit: number; fetchNextPage: boolean } {
-  const next = limit + SIDEBAR_SESSION_STEP;
+}): { more: boolean; limit: number } {
   return {
     more: total > shown || hasNextPage,
-    limit: next,
-    fetchNextPage: hasNextPage && !isFetchingNextPage && total < next,
+    limit: limit + SIDEBAR_SESSION_STEP,
   };
+}
+
+export function fillsStep({
+  total,
+  limit,
+  hasNextPage,
+  fetchNextPageFailed,
+}: {
+  total: number;
+  limit: number;
+  hasNextPage: boolean;
+  fetchNextPageFailed: boolean;
+}): boolean {
+  return (
+    limit > SIDEBAR_SESSION_STEP &&
+    hasNextPage &&
+    !fetchNextPageFailed &&
+    total < limit
+  );
 }
 
 export function nextSessionCursor<C>(

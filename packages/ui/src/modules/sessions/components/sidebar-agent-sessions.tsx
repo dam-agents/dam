@@ -31,6 +31,7 @@ import { useConfirmDeleteSession } from "../hooks/use-confirm-delete-session.js"
 import { useOpenSession } from "../hooks/use-open-session.js";
 import { useAgentSessionFilter } from "../lib/agent-session-filters.js";
 import {
+  fillsStep,
   newestFirst,
   SIDEBAR_SESSION_STEP,
   sidebarSessionWindow,
@@ -63,8 +64,10 @@ interface Props {
  * first newly shown Session, also once a provisional list gives way to the
  * Agent's own list or a Retry loads the page that failed. An Agent that is not open in the page previews
  * its Sessions from the attention record and reads its own list only after
- * View more; its own list loads a further page only when the loaded rows run
- * out.
+ * View more; after a View more its own list loads further pages until the rows
+ * fill the window or the list ends. A filter on the Agent goes with the page
+ * request, so the runtime pages matching Sessions only, except Needs
+ * attention, which only the browser can tell.
  */
 export function SidebarAgentSessions({
   agentId,
@@ -172,7 +175,6 @@ function SessionPreview({
     shown: visible.length,
     limit: SIDEBAR_SESSION_STEP,
     hasNextPage: !complete,
-    isFetchingNextPage: false,
   });
 
   return (
@@ -229,7 +231,7 @@ function AgentSessionList({
   onFocusAfterChange: (shown: ReadonlySet<string> | null) => void;
   onNavigate?: () => void;
 }) {
-  const list = useAgentSessionList(agentId);
+  const list = useAgentSessionList(agentId, filter);
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -272,9 +274,18 @@ function AgentSessionList({
     shown: visible.length,
     limit,
     hasNextPage,
-    isFetchingNextPage,
   });
   const paged = limit > SIDEBAR_SESSION_STEP;
+  const filling = fillsStep({
+    total: rows.length,
+    limit,
+    hasNextPage,
+    fetchNextPageFailed,
+  });
+
+  useEffect(() => {
+    if (filling && !isFetchingNextPage && !list.loading) void fetchNextPage();
+  }, [filling, isFetchingNextPage, list.loading, fetchNextPage]);
 
   useEffect(() => {
     if (!focusAfter || list.loading || isFetchingNextPage) return;
@@ -290,7 +301,8 @@ function AgentSessionList({
           `[data-session-id="${CSS.escape(id)}"] [data-row-main]`,
         )
         ?.focus();
-    const pending = list.provisional || list.failed || fetchNextPageFailed;
+    const pending =
+      list.provisional || list.failed || fetchNextPageFailed || filling;
     if (id || !unclaimed || !pending) onFocusAfterChange(null);
   });
 
@@ -360,11 +372,9 @@ function AgentSessionList({
         next.more && (
           <ViewMoreRow
             busy={isFetchingNextPage}
-            onClick={async () => {
-              const shown = new Set(visibleIds);
+            onClick={() => {
+              onFocusAfterChange(new Set(visibleIds));
               onLimitChange(next.limit);
-              if (next.fetchNextPage) await fetchNextPage();
-              onFocusAfterChange(shown);
             }}
           />
         )

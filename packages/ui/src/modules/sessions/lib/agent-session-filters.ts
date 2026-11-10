@@ -8,10 +8,12 @@ import {
 } from "../../../lib/safe-storage.js";
 import {
   type ActivityFilters,
+  CHANNEL_TYPES,
   isFiltered,
   parseActivityFilters,
   serializeActivityFilters,
 } from "../../home/lib/activity-filter.js";
+import type { SessionListNarrowing } from "../api/keys.js";
 import { keepFirstSessionPages } from "../api/queries.js";
 
 const KEY = "platform-agent-session-filters";
@@ -96,4 +98,25 @@ export function useAgentSessionFilter(
     () => readAgentSessionFilters().get(agentId),
     () => undefined,
   );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the part of an Agent's session filter that its runtime can apply to the session list itself, so each page it sends holds matching Sessions only. Needs attention is not part of it: the runtime does not know which Sessions have an approval waiting, so the browser filters for it.
+export function sessionListNarrowing(
+  filter: ActivityFilters | undefined,
+): SessionListNarrowing {
+  if (!filter) return {};
+  const status =
+    filter.state === "in-progress"
+      ? "running"
+      : filter.state === "unread"
+        ? "unread"
+        : undefined;
+  return {
+    ...(filter.channelTypes.size < CHANNEL_TYPES.length && {
+      channelTypes: CHANNEL_TYPES.filter((type) =>
+        filter.channelTypes.has(type),
+      ),
+    }),
+    ...(status && { status }),
+  };
 }

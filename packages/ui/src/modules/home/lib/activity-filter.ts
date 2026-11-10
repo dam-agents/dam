@@ -1,16 +1,13 @@
-import { type AttentionItem, SessionMode, SessionType } from "api-server-api";
+import {
+  SESSION_CHANNEL_TYPES,
+  type SessionChannelType,
+  sessionChannelTypeOf,
+} from "agent-runtime-api";
+import type { AttentionItem } from "api-server-api";
 
-export type ChannelType =
-  "chat" | "slack" | "telegram" | "artifact" | "schedule" | "terminal";
+export type ChannelType = SessionChannelType;
 
-export const CHANNEL_TYPES: readonly ChannelType[] = [
-  "chat",
-  "slack",
-  "telegram",
-  "artifact",
-  "schedule",
-  "terminal",
-];
+export const CHANNEL_TYPES: readonly ChannelType[] = SESSION_CHANNEL_TYPES;
 
 export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   chat: "Chat",
@@ -106,15 +103,5 @@ export function channelTypeOfSession(
     scheduleId?: string | null;
   },
 ): ChannelType {
-  if (
-    session.scheduleId ||
-    session.type === SessionType.ScheduleCron ||
-    session.type === SessionType.ScheduleOnce
-  )
-    return "schedule";
-  if (session.mode === SessionMode.Terminal) return "terminal";
-  if (session.type === SessionType.ChannelSlack) return "slack";
-  if (session.type === SessionType.ChannelTelegram) return "telegram";
-  if (session.type === SessionType.Artifact) return "artifact";
-  return "chat";
+  return sessionChannelTypeOf(session);
 }

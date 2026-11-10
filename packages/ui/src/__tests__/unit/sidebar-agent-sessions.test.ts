@@ -13,6 +13,7 @@ import {
   toActivitySessions,
 } from "../../modules/home/lib/activity-sessions.js";
 import {
+  fillsStep,
   newestFirst,
   nextSessionCursor,
   SIDEBAR_SESSION_STEP,
@@ -20,7 +21,7 @@ import {
   viewMore,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first five Sessions, and each click on View more shows five more, loading one more page only when the loaded rows run out. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first five Sessions, and each click on View more shows five more, loading further pages until the rows fill the window or the list ends. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -139,42 +140,29 @@ describe("an agent's session window", () => {
 
   it("TEST_SCENARIO: View more shows while rows are hidden or another page waits, and an active Session past the window does not count as hidden", () => {
     const more = (total: number, shown: number, hasNextPage: boolean) =>
-      viewMore({
-        total,
-        shown,
-        limit: n,
-        hasNextPage,
-        isFetchingNextPage: false,
-      }).more;
+      viewMore({ total, shown, limit: n, hasNextPage }).more;
     expect(more(n, n, false)).toBe(false);
     expect(more(n, n, true)).toBe(true);
     expect(more(n + 1, n, false)).toBe(true);
     expect(more(n + 1, n + 1, false)).toBe(false);
+    expect(
+      viewMore({ total: n, shown: n, limit: n, hasNextPage: true }),
+    ).toEqual({ more: true, limit: 2 * n });
   });
 
-  it("TEST_SCENARIO: one click on View more adds five rows and fetches one page only when the loaded rows run out", () => {
-    const click = (
+  it("TEST_SCENARIO: after View more, the list loads further pages while its rows fall short of the window and another page waits; the first window, a failed page or the list's end loads none", () => {
+    const fills = (
       total: number,
-      hasNextPage: boolean,
-      isFetchingNextPage = false,
-    ) =>
-      viewMore({
-        total,
-        shown: n,
-        limit: n,
-        hasNextPage,
-        isFetchingNextPage,
-      });
-    expect(click(2 * n, true)).toMatchObject({
-      limit: 2 * n,
-      fetchNextPage: false,
-    });
-    expect(click(2 * n - 1, true)).toMatchObject({
-      limit: 2 * n,
-      fetchNextPage: true,
-    });
-    expect(click(n + 1, false).fetchNextPage).toBe(false);
-    expect(click(n + 1, true, true).fetchNextPage).toBe(false);
+      limit: number,
+      hasNextPage = true,
+      fetchNextPageFailed = false,
+    ) => fillsStep({ total, limit, hasNextPage, fetchNextPageFailed });
+    expect(fills(2 * n - 1, 2 * n)).toBe(true);
+    expect(fills(0, 2 * n)).toBe(true);
+    expect(fills(2 * n, 2 * n)).toBe(false);
+    expect(fills(0, n)).toBe(false);
+    expect(fills(0, 2 * n, false)).toBe(false);
+    expect(fills(0, 2 * n, true, true)).toBe(false);
   });
 
   it("TEST_SCENARIO: paging stops when the cursor does not move or a page brings no new Session", () => {
