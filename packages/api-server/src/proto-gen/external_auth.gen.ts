@@ -951,7 +951,7 @@ export const HttpRequest: MessageFns<HttpRequest> = {
       writer.uint32(42).string(message.host);
     }
     if (message.scheme !== "") {
-      writer.uint32(58).string(message.scheme);
+      writer.uint32(50).string(message.scheme);
     }
     if (message._unknownFields !== undefined) {
       for (const [key, values] of globalThis.Object.entries(
@@ -1018,8 +1018,8 @@ export const HttpRequest: MessageFns<HttpRequest> = {
             message.host = reader.string();
             continue;
           }
-          case 7: {
-            if (tag !== 58) {
+          case 6: {
+            if (tag !== 50) {
               break;
             }
 
