@@ -72,9 +72,9 @@ describe("Artifact prompt — no chat docked", () => {
     const world = createArtifactApiWorld();
     const dashboard = world.publish({ by: "agent-a" });
 
-    await world.prompt(dashboard, "One", {}, "thread:1");
-    await world.prompt(dashboard, "Two", {}, "thread:2");
-    await world.prompt(dashboard, "Three", {}, "thread:1");
+    await world.prompt(dashboard, "One", {}, "thread.1");
+    await world.prompt(dashboard, "Two", {}, "thread.2");
+    await world.prompt(dashboard, "Three", {}, "thread.1");
     await world.prompt(dashboard, "Four");
 
     expect(
@@ -84,16 +84,16 @@ describe("Artifact prompt — no chat docked", () => {
       })),
     ).toEqual([
       {
-        sessionKey: `artifact:${dashboard}:alice:thread:1`,
-        sessionTitle: "Dashboard · thread:1",
+        sessionKey: `artifact-conversation:${dashboard}:thread.1:alice`,
+        sessionTitle: "Dashboard · thread.1",
       },
       {
-        sessionKey: `artifact:${dashboard}:alice:thread:2`,
-        sessionTitle: "Dashboard · thread:2",
+        sessionKey: `artifact-conversation:${dashboard}:thread.2:alice`,
+        sessionTitle: "Dashboard · thread.2",
       },
       {
-        sessionKey: `artifact:${dashboard}:alice:thread:1`,
-        sessionTitle: "Dashboard · thread:1",
+        sessionKey: `artifact-conversation:${dashboard}:thread.1:alice`,
+        sessionTitle: "Dashboard · thread.1",
       },
       { sessionKey: `artifact:${dashboard}:alice`, sessionTitle: "Dashboard" },
     ]);

@@ -77,13 +77,13 @@ describe("artifact prompt buttons", () => {
   it("names the page's conversation when the page gives one", () => {
     const { platform, postMessage } = page();
     platform.sendPrompt("Answer the thread.", {
-      conversation: "thread:R-12.v2_a-b",
+      conversation: "thread.R-12.v2_a-b",
     });
     expect(postMessage).toHaveBeenCalledExactlyOnceWith(
       {
         type: ARTIFACT_PROMPT_TYPE,
         prompt: "Answer the thread.",
-        conversation: "thread:R-12.v2_a-b",
+        conversation: "thread.R-12.v2_a-b",
       },
       "*",
     );

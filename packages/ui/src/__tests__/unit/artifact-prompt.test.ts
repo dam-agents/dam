@@ -113,11 +113,11 @@ describe("artifact frame messages", () => {
     const data = {
       type: ARTIFACT_PROMPT_TYPE,
       prompt: "Go",
-      conversation: "thread:R-1.v2_a-b",
+      conversation: "thread.R-1.v2_a-b",
     };
     expect(readArtifactPrompt({ source: port1, data }, port1)).toEqual({
       prompt: "Go",
-      conversation: "thread:R-1.v2_a-b",
+      conversation: "thread.R-1.v2_a-b",
     });
     for (const conversation of ["", "a b", "x".repeat(65), "a/b", 3])
       expect(
