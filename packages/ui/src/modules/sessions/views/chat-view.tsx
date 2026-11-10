@@ -80,6 +80,7 @@ import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
 import { useAssistantGreeting } from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
@@ -1142,6 +1143,7 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
+          {greeting.kind === "greeting" && <AssistantUnlockCelebration />}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}

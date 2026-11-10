@@ -521,14 +521,21 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
-export { featureOnForUser } from "./modules/features/modes.js";
+export {
+  FEATURES_ON_BY_DEFAULT,
+  featureOnForUser,
+} from "./modules/features/modes.js";
 export type {
   AssistantState,
   AssistantsService,
 } from "./modules/assistants/types.js";
 export {
-  ASSISTANT_FIRST_TASKS,
-  ASSISTANT_ROLE_ASK,
+  ASSISTANT_IDEAS,
+  ASSISTANT_LEARN_LINE,
+  ASSISTANT_PROVIDER_LINE,
+  ASSISTANT_PROVIDER_NEUTRAL_LINE,
+  ASSISTANT_SETTINGS_LINK,
+  type AssistantIdea,
   type AssistantNames,
   assistantGreetingOpening,
   assistantInstructions,

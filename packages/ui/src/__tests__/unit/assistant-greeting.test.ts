@@ -13,10 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markAssistantUsed } from "../../modules/assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../modules/assistants/components/assistant-greeting.js";
 import {
+  GREETING_IDEAS,
   GREETING_PLACEHOLDER,
-  GREETING_SUGGESTIONS,
   greetingCopy,
   greetingShown,
+  providerLineFor,
 } from "../../modules/assistants/lib/greeting.js";
 import { draftKey } from "../../modules/sessions/lib/draft-key.js";
 import { queryClient } from "../../query-client.js";
@@ -33,8 +34,9 @@ const ON = {
 
 const copy = greetingCopy({
   firstName: "Jenna",
-  assistantName: "Dambledore",
+  assistantName: "Dammy",
   brandName: "DAM",
+  provider: "curve-bender",
 });
 
 describe("when the greeting is shown", () => {
@@ -64,9 +66,7 @@ describe("when the greeting is shown", () => {
 describe("what the greeting says", () => {
   // TEST_SCENARIO: the person's given name and the install's assistant and brand names, never a hardcoded one.
   it("names the person and the branded assistant", () => {
-    expect(copy.paragraphs[0]).toBe(
-      "Hi Jenna! I'm Dambledore, your new personal DAM agent!",
-    );
+    expect(copy.opening).toBe("Hi Jenna! I'm Dammy, your personal DAM agent.");
   });
 
   // TEST_SCENARIO: a person whose profile holds no given name is greeted without one rather than by a made-up name.
@@ -75,21 +75,46 @@ describe("what the greeting says", () => {
       expect(
         greetingCopy({
           firstName,
-          assistantName: "Dambledore",
+          assistantName: "Dammy",
           brandName: "DAM",
-        }).paragraphs[0],
-      ).toBe("Hi! I'm Dambledore, your new personal DAM agent!");
+          provider: "curve-bender",
+        }).opening,
+      ).toBe("Hi! I'm Dammy, your personal DAM agent.");
   });
 
-  // TEST_SCENARIO: the low-trust path offers tasks that need no connection and no personal context, one of them the composer's own example.
-  it("asks about the owner's role and offers tasks needing nothing", () => {
-    expect(copy.paragraphs[1]).toContain("Tell me a bit about your role");
-    expect(copy.suggestions.length).toBeGreaterThanOrEqual(3);
-    expect(copy.suggestions).toContain(GREETING_PLACEHOLDER);
-    expect(copy.placeholder).toBe(
-      "Remember I like answers short and technical",
+  // TEST_SCENARIO: the design's five ideas, each labelled with the kind of work it would be, and the composer's example is one of them.
+  it("offers the five labelled ideas", () => {
+    expect(GREETING_IDEAS.map((idea) => idea.label)).toEqual([
+      "Artifact",
+      "Schedule",
+      "Knowledge base",
+      "Skill",
+      "DAM",
+    ]);
+    expect(copy.ideas).toEqual(GREETING_IDEAS);
+    expect(copy.learn).toContain("I learn how you work, one task at a time");
+    expect(
+      GREETING_IDEAS.map((idea) => `${idea.label}: ${idea.text}`),
+    ).toContain(GREETING_PLACEHOLDER);
+  });
+
+  // TEST_SCENARIO: the provider line names CurveBender only when that is the provider the Agent runs on, and otherwise points at where it changes without naming one.
+  it("names the provider it has, and no other", () => {
+    expect(copy.provider).toContain("CurveBender");
+    const other = greetingCopy({
+      firstName: "Jenna",
+      assistantName: "Dammy",
+      brandName: "DAM",
+      provider: "other",
+    });
+    expect(other.provider).toBe(
+      "You can switch providers anytime in Agent settings.",
     );
-    expect(GREETING_SUGGESTIONS).toEqual(copy.suggestions);
+    expect(other.provider).not.toContain("CurveBender");
+    expect(providerLineFor("curve-bender-deployment")).toBe("curve-bender");
+    expect(providerLineFor("curve-bender")).toBe("curve-bender");
+    expect(providerLineFor("anthropic")).toBe("other");
+    expect(providerLineFor(undefined)).toBeNull();
   });
 });
 
@@ -152,21 +177,24 @@ afterEach(() => {
 });
 
 describe("the greeting in the chat", () => {
-  // TEST_SCENARIO: the greeting is shown with the assistant's own name above it and one chip per task it offers.
-  it("shows the assistant above the message, one chip per task", () => {
-    expect(host.textContent).toContain("Dambledore");
-    expect(host.textContent).toContain(copy.paragraphs[0]);
-    const chips = [...host.querySelectorAll("button")].filter((button) =>
-      GREETING_SUGGESTIONS.some((task) => button.textContent === task),
+  // TEST_SCENARIO: the greeting is shown with the assistant's own name above it and one pill per idea it offers, each labelled.
+  it("shows the assistant above the message, one pill per idea", () => {
+    expect(host.textContent).toContain("Dammy");
+    expect(host.textContent).toContain(copy.opening);
+    const pills = [...host.querySelectorAll("button")].filter((button) =>
+      GREETING_IDEAS.some((idea) => button.textContent?.includes(idea.text)),
     );
-    expect(chips).toHaveLength(GREETING_SUGGESTIONS.length);
+    expect(pills).toHaveLength(GREETING_IDEAS.length);
+    expect(
+      host.querySelector('[data-testid="assistant-greeting-settings"]'),
+    ).not.toBeNull();
   });
 
-  // TEST_SCENARIO: a click on a chip puts its text in the composer of this chat and stops there, so nothing runs before the person acts.
+  // TEST_SCENARIO: a click on a pill puts its labelled text in the composer of this chat and stops there, so nothing runs before the person acts.
   it("fills the composer without sending", () => {
-    const task = GREETING_SUGGESTIONS[0];
-    const chip = [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === task,
+    const task = `${GREETING_IDEAS[0]!.label}: ${GREETING_IDEAS[0]!.text}`;
+    const chip = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes(GREETING_IDEAS[0]!.text),
     );
     expect(chip).toBeDefined();
     act(() => chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

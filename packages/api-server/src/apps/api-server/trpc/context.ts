@@ -580,9 +580,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: a person is given Dambledore by their own switch, so only an install that pins the feature on gives them one at a request — once, and never again after they delete theirs. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is on for everyone who has not turned it off, so a person's first request gives them one — once, and never again after they delete theirs. `ensure` reads the person's record first and stops there, so a person who already has one costs one row and no flag read. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
     const provisionAssistant = async () => {
-      if (config.featureModes.dambledore !== "on") return;
       if (
         user.keyId !== undefined ||
         user.agentIds !== "*" ||
@@ -592,7 +591,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       await ensureAssistant();
     };
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes Dambledore whenever the person has none under that name. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes the assistant whenever the person has none under that name. */
     const optInToAssistant = async () => {
       if (
         user.keyId !== undefined ||

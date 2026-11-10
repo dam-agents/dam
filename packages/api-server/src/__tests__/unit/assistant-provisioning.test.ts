@@ -37,7 +37,7 @@ describe("an install that pins the feature on", () => {
     expect(input.name).toBe(NAME);
     expect(
       (input as unknown as { instructions: string }).instructions,
-    ).toContain(`I'm ${NAME}, your new personal DAM agent!`);
+    ).toContain(`I'm ${NAME}, your personal DAM agent.`);
     expect(w.enrolled).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(1);
     expect(w.rows.rows.get(OWNER)).toMatchObject({
@@ -83,7 +83,21 @@ describe("an install that pins the feature on", () => {
     expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
   });
 
-  // TEST_SCENARIO: the person deleted Dambledore; the record still says they were given one, so no later request makes another — a pinned-on install has no switch, and the reset is their way to ask again.
+  // TEST_SCENARIO: the create fails on the request path, where nobody asked for it and nobody waits to be told: the request completes, the claim is kept, and the next request finishes the same Agent.
+  it("never fails the request, and the next request retries", async () => {
+    const agents = agentStore();
+    const w = assistantService({ agents });
+    agents.create.mockRejectedValueOnce(new Error("store is down"));
+    await expect(w.ensure()).resolves.toBeUndefined();
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "creating" });
+
+    await w.ensure();
+    expect(agents.create).toHaveBeenCalledTimes(2);
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
+    expect(w.provisioned).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: the person deleted Dammy; the record still says they were given one, so no later request makes another — an install without a switch has no other ask, so the reset is their way to ask again.
   it("does not make another after the person deleted theirs", async () => {
     const agents = agentStore();
     const w = assistantService({ agents });

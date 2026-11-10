@@ -43,7 +43,7 @@ export function composeGettingStartedModule(deps: {
       createGettingStartedService({ repo, enrollment, owner }),
     ensureEnrolled: (owner) => enrollment.ensure(owner),
     recordProvisionedAgent: (owner, agent) =>
-      recordProvisionedAgent({ recorder, repo }, owner, agent),
+      recordProvisionedAgent({ recorder }, owner, agent),
     start() {
       sub ??= startUnlockAvatarsSaga(recorder);
     },

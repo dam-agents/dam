@@ -203,10 +203,10 @@ describe("enrollment", () => {
 });
 
 describe("an Agent the platform made", () => {
-  /** TEST_SCENARIO: the assistant's create finishes the checklist's first task as done and seen, so the person meets a first-timer's checklist — one task of eight, with nothing to celebrate — rather than an empty one. */
-  it("finishes the first task as done and seen", async () => {
-    const { repo, recorder, service } = setup();
-    await recordProvisionedAgent({ recorder, repo }, "alice", {
+  /** TEST_SCENARIO: the assistant's create finishes the checklist's first task and leaves it unseen, so the person meets the avatar it unlocks in the assistant's chat — one task of eight, and one celebration held for the moment they land in it. */
+  it("finishes the first task, unseen, for the chat to celebrate", async () => {
+    const { recorder, service } = setup();
+    await recordProvisionedAgent({ recorder }, "alice", {
       agentId: "agent-a",
       character: "tower",
     });
@@ -215,7 +215,7 @@ describe("an Agent the platform made", () => {
       expect.objectContaining({
         task: "create-agent",
         character: "tower",
-        seen: true,
+        seen: false,
         fresh: false,
       }),
     ]);

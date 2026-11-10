@@ -16,6 +16,7 @@ A feature `features` does not name takes the chart's `featureDefault` mode, `exp
 The chart names no feature itself, so an install that sets `featureDefault` to `off` keeps every feature off, including one a later release adds, until it names that feature.
 A pinned feature's switch is hidden from the settings tab, and the api-server answers its flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
 Stored rows are kept, so returning a feature to `experimental` restores each user's own choice.
+One feature is **on by default** — the [assistant](assistant.md) — so in `experimental` a person who has stored nothing has it on, and their switch turns it off; every other feature is off until switched on.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only.
