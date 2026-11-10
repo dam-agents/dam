@@ -396,7 +396,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       withoutImages(prepared, dialect, imageNote(entry.upstreamId));
     const known = textOnlyModels.has(modelKey) ? imageless() : null;
     let sent = known ?? prepared;
-    const outgoing = (): Buffer =>
+    const outgoing = () =>
       Buffer.from(JSON.stringify({ ...sent, model: entry.upstreamId }));
     const headers: Record<string, string> = {
       ...keep(Object.entries(req.headers), REQ_DROP),
