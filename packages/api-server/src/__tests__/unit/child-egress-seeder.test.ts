@@ -96,7 +96,36 @@ function setup(
     open.delete(keyOf({ host, method: shape.method, path: shape.pathPattern }));
     rows.push({ ...rule(agentId, host, shape), source: "inbox" });
   };
-  return { seeder, hostsOf, requested, asks, withdrawn, approve };
+  const block = (
+    agentId: string,
+    host: string,
+    shape: { pathPattern?: string; source?: "inbox" | "manual" } = {},
+  ) => {
+    rows.push({
+      ...rule(agentId, host, {
+        verdict: "deny",
+        ...(shape.pathPattern !== undefined && {
+          pathPattern: shape.pathPattern,
+        }),
+      }),
+      source: shape.source ?? "inbox",
+    });
+  };
+  const verdictsOf = (agentId: string) =>
+    rows
+      .filter((r) => r.agentId === agentId && r.status === "active")
+      .map((r) => `${r.verdict} ${r.host} ${r.pathPattern}:${r.source}`)
+      .sort();
+  return {
+    seeder,
+    hostsOf,
+    verdictsOf,
+    requested,
+    asks,
+    withdrawn,
+    approve,
+    block,
+  };
 }
 
 const openChild = (rules: { host: string; verdict: "allow" | "deny" }[]) => ({
@@ -274,5 +303,106 @@ describe("an open child wider than its driver", () => {
     ]);
     expect(covered.waiting).toEqual([]);
     expect(hostsOf("agent-child")).toEqual(["*.example.com:inbox"]);
+  });
+});
+
+describe("an owner's block on an open child", () => {
+  // TEST_SCENARIO: the owner blocked a host on the child from a prompt, and once more by hand; the driver then replaces the child's rules, with an allow for that host and without one. Each time both blocks stay, the allow is neither written nor asked of the owner, and the driver is told it was blocked, so the driver cannot undo the owner's decision.
+  it("stays the owner's, whatever the driver sets", async () => {
+    const { seeder, verdictsOf, requested, block } = setup([], {
+      granted: true,
+    });
+    await seeder.seed("agent-child", openChild([]));
+    block("agent-child", "evil.example");
+    block("agent-child", "gist.github.com", { source: "manual" });
+
+    const tried = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { host: "evil.example", verdict: "allow" },
+      { host: "gist.github.com", verdict: "allow" },
+      { host: "github.com", verdict: "allow" },
+    ]);
+    expect(tried).toEqual({
+      waiting: [],
+      blocked: [{ host: "evil.example" }, { host: "gist.github.com" }],
+    });
+    expect(requested).toEqual([]);
+    expect(verdictsOf("agent-child")).toEqual([
+      "allow github.com *:driver",
+      "deny evil.example *:inbox",
+      "deny gist.github.com *:manual",
+    ]);
+
+    await seeder.setOpenRules("agent-child", "agent-driver", []);
+    expect(verdictsOf("agent-child")).toEqual([
+      "deny evil.example *:inbox",
+      "deny gist.github.com *:manual",
+    ]);
+  });
+
+  // TEST_SCENARIO: with the toggle off, the owner's block on a host the driver does not reach is not an approval of it: the driver's allow is not counted as granted, and since the block would lose to it at the gate, it is not written; asking the owner again for what they blocked is not the driver's to do either.
+  it("never counts as an approval of the driver's allow", async () => {
+    const { seeder, verdictsOf, requested, block } = setup(
+      [rule("agent-root", "github.com")],
+      { granted: false },
+    );
+    await seeder.seed("agent-child", openChild([]));
+    block("agent-child", "pypi.org");
+    const tried = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { host: "pypi.org", verdict: "allow" },
+    ]);
+    expect(tried).toEqual({ waiting: [], blocked: [{ host: "pypi.org" }] });
+    expect(requested).toEqual([]);
+    expect(verdictsOf("agent-child")).toEqual(["deny pypi.org *:inbox"]);
+  });
+
+  // TEST_SCENARIO: a driver cannot get round a host-wide block with an allow the gate ranks first, a named path or method; a block of one path leaves the driver's allow for another path of the host, and a block's own path, `/*` as much as `*`, speaks for every path; the driver's own deny is still the driver's to drop.
+  it("stops the allows the gate would let past it", async () => {
+    const { seeder, verdictsOf, block } = setup([], { granted: true });
+    await seeder.seed("agent-child", openChild([]));
+    block("agent-child", "evil.example", { pathPattern: "/*" });
+    block("agent-child", "api.github.com", { pathPattern: "/admin/*" });
+    const tried = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { host: "evil.example", verdict: "allow", pathPattern: "/upload/*" },
+      { host: "evil.example", verdict: "allow", method: "POST" },
+      { host: "api.github.com", verdict: "allow", pathPattern: "/repos/*" },
+      { host: "api.github.com", verdict: "allow", pathPattern: "/admin/x/*" },
+      { host: "pypi.org", verdict: "deny" },
+    ]);
+    expect(tried.blocked).toEqual([
+      { host: "evil.example" },
+      { host: "evil.example" },
+      { host: "api.github.com" },
+    ]);
+    expect(verdictsOf("agent-child")).toEqual([
+      "allow api.github.com /repos/*:driver",
+      "deny api.github.com /admin/*:inbox",
+      "deny evil.example /*:inbox",
+      "deny pypi.org *:driver",
+    ]);
+    await seeder.setOpenRules("agent-child", "agent-driver", []);
+    expect(verdictsOf("agent-child")).toEqual([
+      "deny api.github.com /admin/*:inbox",
+      "deny evil.example /*:inbox",
+    ]);
+  });
+
+  // TEST_SCENARIO: the owner refused the driver's ask for any host forever, which writes a block of `*` on the child. The driver cannot ask for any host again, but its allow for a host it reaches itself is still written: the gate ranks a named host before `*`, so the block says "not any host", not "no host".
+  it("of a wildcard stops that wildcard, not the hosts under it", async () => {
+    const { seeder, verdictsOf, requested, block } = setup(
+      [rule("agent-root", "github.com")],
+      { granted: false },
+    );
+    await seeder.seed("agent-child", openChild([]));
+    block("agent-child", "*");
+    const tried = await seeder.setOpenRules("agent-child", "agent-driver", [
+      { host: "*", verdict: "allow" },
+      { host: "github.com", verdict: "allow" },
+    ]);
+    expect(tried).toEqual({ waiting: [], blocked: [{ host: "*" }] });
+    expect(requested).toEqual([]);
+    expect(verdictsOf("agent-child")).toEqual([
+      "allow github.com *:driver",
+      "deny * *:inbox",
+    ]);
   });
 });

@@ -10,9 +10,9 @@ const allow = (host: string, extra: { port?: number; path?: string } = {}) => ({
   pathPattern: extra.path ?? "*",
   verdict: "allow",
 });
-const deny = (host: string, path = "*") => ({
+const deny = (host: string, path = "*", method = "*") => ({
   host,
-  method: "*",
+  method,
   pathPattern: path,
   verdict: "deny",
 });
@@ -79,6 +79,45 @@ describe("reachesPastDriver", () => {
     expect(
       reachesPastDriver({ host: "ci.internal" }, [
         allow("ci.internal", { port: 443 }),
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe("a driver's every-path deny", () => {
+  // TEST_SCENARIO: the gate matches a path pattern with LIKE, so a deny of `/*` or `**` stops every path as `*` does; a driver with `allow *` and `deny github.com /*` does not reach github.com, so a child's allow for it is wider. A deny of `/` alone, or of one method, does not.
+  it("reads /* and ** as every path, as the gate does", () => {
+    for (const path of ["*", "/*", "**", "%/*"])
+      expect(
+        reachesPastDriver({ host: "github.com" }, [
+          allow("*"),
+          deny("github.com", path),
+        ]),
+      ).toBe(true);
+    for (const blocked of [deny("github.com", "/"), deny("github.com", "*", "POST")])
+      expect(
+        reachesPastDriver({ host: "github.com" }, [allow("*"), blocked]),
+      ).toBe(false);
+  });
+
+  // TEST_SCENARIO: an allow beside a host-wide deny on the same host reaches where the gate ranks it first: a named path beats a deny of `*`, and a longer named path beats `/*`; a host-wide allow ties with the deny and is read as not reaching.
+  it("lets an allow the gate ranks first beside it reach", () => {
+    expect(
+      reachesPastDriver({ host: "github.com" }, [
+        allow("github.com", { path: "/repos/*" }),
+        deny("github.com"),
+      ]),
+    ).toBe(false);
+    expect(
+      reachesPastDriver({ host: "github.com" }, [
+        allow("github.com", { path: "/repos/*" }),
+        deny("github.com", "/*"),
+      ]),
+    ).toBe(false);
+    expect(
+      reachesPastDriver({ host: "github.com" }, [
+        allow("github.com"),
+        deny("github.com", "/*"),
       ]),
     ).toBe(true);
   });

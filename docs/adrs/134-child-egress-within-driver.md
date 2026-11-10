@@ -30,6 +30,9 @@ A child never reaches a host and port its driver cannot reach, unless the owner 
   The owner flips it in the agent's network settings, or by approving the first wider rule; there is no one-time mode.
 - Only the switch of the agent at the root of a launch chain counts, so a child never gives its own children more than the owner allowed at the root.
 - A wildcard rule waits for the owner each time, with the switch on or off.
+- A block the owner set on a child (a deny, refused forever from a prompt or written by hand) is the owner's alone.
+  The driver cannot revoke it by replacing the child's rules, and its allow that the gate would rank before the block is not written and not asked of the owner again; the driver is told it was blocked.
+  A block of a wildcard says "not any host", so a host under it is still the reach check's to decide.
 
 ## Alternatives Considered
 
@@ -37,6 +40,7 @@ A child never reaches a host and port its driver cannot reach, unless the owner 
 - **Ask for every wider child** — the common case, one Environment per pull request, would prompt the owner each time.
 - **A switch per Environment** — the risk is the driver's, not one child's, so a per-child answer would be asked again for each child.
 - **Compare methods and paths too** — a child would wait for the owner over a path its driver could already reach on that host.
+- **Let the driver replace the owner's blocks with the rest of the child's rules** — an agent could undo a block its owner chose.
 
 ## Consequences
 
