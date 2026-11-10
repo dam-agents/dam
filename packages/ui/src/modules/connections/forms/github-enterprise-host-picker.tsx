@@ -30,16 +30,18 @@ export function GitHubEnterpriseHostPicker({
         <div className="flex flex-col gap-4">
           {onlyHost !== undefined ? (
             <FormField
-              label="Host"
+              label={anotherHost ? "Host: Another host" : "Host"}
               hint={anotherHost ? undefined : GHE_HOST_CHOICE_HINT}
             >
               <div
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
                 data-testid="connection-field-host"
               >
-                <span className="font-medium text-foreground">
-                  {anotherHost ? "Another host" : onlyHost}
-                </span>
+                {!anotherHost && (
+                  <span className="font-medium text-foreground">
+                    {onlyHost}
+                  </span>
+                )}
                 <Button
                   type="button"
                   variant="link"
@@ -75,7 +77,7 @@ export function GitHubEnterpriseHostPicker({
           {anotherHost && (
             <FormField
               label="Host name"
-              hint={`A host ${getBrand().name} has no app on: sign in with your own GitHub app below.`}
+              hint={`A host ${getBrand().name} has no app on: sign in with your own OAuth app below.`}
               error={fieldState.error?.message}
             >
               <Input

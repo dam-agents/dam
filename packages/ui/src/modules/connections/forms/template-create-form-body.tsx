@@ -225,6 +225,7 @@ export function TemplateCreateFormBody({
         <OAuthAppHint
           callbackUrl={extraStr("callbackUrl")}
           setupUrl={extraStr("setupUrl")}
+          where="on your GitHub Enterprise host"
         />
       )}
 

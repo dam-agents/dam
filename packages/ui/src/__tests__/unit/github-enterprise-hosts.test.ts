@@ -100,7 +100,11 @@ const SINGLE: ConnectionTemplateView = {
     { name: "clientSecret", state: "overridable", secret: true },
     { name: "appSlug", state: "overridable", presetValue: "dam-single" },
   ],
-  extras: { hostChoices: [ONE_HOST], appSlug: "dam-single" },
+  extras: {
+    hostChoices: [ONE_HOST],
+    appSlug: "dam-single",
+    callbackUrl: "https://<app>/api/oauth/callback",
+  },
 };
 
 const SIGN_IN = {
@@ -150,6 +154,24 @@ function choose(testId: string, value: string) {
     el.value = value;
     el.dispatchEvent(new Event("change", { bubbles: true }));
   });
+}
+
+function renderSingle() {
+  act(() =>
+    root.render(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    ),
+  );
 }
 
 function type(testId: string, value: string) {
@@ -242,19 +264,12 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
 
   // TEST_SCENARIO: an install with one GitHub Enterprise host and the feature on still shows the host as its own field, read-only with "Use another host", not a preset hidden under Customize defaults and not a list of one.
   it("shows the single offered host and a way to use another", async () => {
-    act(() =>
-      root.render(
-        createElement(TemplateCreateFormBody, {
-          template: SINGLE,
-          pickHost: true,
-          onCreated: () => {},
-          onAddedAlone: () => {},
-          onCancel: () => {},
-        }),
-      ),
-    );
+    renderSingle();
     const hostLine = byTestId("connection-field-host");
     expect(hostLine?.tagName).not.toBe("SELECT");
+    expect(byTestId("github-steps-hint")?.textContent).toBe(
+      `Sign in with GitHub, then install the Platform app on each account at ${ONE_HOST} whose repositories agents need.`,
+    );
     expect(hostLine?.textContent).toContain(ONE_HOST);
     expect(byTestId("connection-host-switch")?.textContent).toBe(
       "Use another host",
@@ -273,23 +288,17 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
 
   // TEST_SCENARIO: a host the install has no app on needs the user's own app, so picking "Another host…" asks for the host, a client ID and a client secret, refuses to submit without them, and sends them with the host typed.
   it("asks for your own app on another host", async () => {
-    act(() =>
-      root.render(
-        createElement(TemplateCreateFormBody, {
-          template: SINGLE,
-          pickHost: true,
-          onCreated: () => {},
-          onAddedAlone: () => {},
-          onCancel: () => {},
-        }),
-      ),
-    );
+    renderSingle();
     click(byTestId("connection-host-switch"));
     const other = byTestId<HTMLInputElement>("connection-field-host-other");
     expect(other?.value).toBe("");
     expect(other?.closest("label")?.textContent).toContain("Host name");
+    expect(document.body.textContent).toContain("Host: Another host");
+    expect(document.body.textContent).toContain(
+      "Register an OAuth app on your GitHub Enterprise host",
+    );
     expect(byTestId("github-steps-hint")?.textContent).toBe(
-      "Sign in with your own GitHub app, then install it on each account whose repositories agents need.",
+      "Sign in with your own OAuth app, then install it on each account whose repositories agents need.",
     );
     expect(document.body.textContent).toContain(
       "A host Platform has no app on",
@@ -317,17 +326,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
 
   // TEST_SCENARIO: the install's app slug names an app on its own host only; another host must not send it, even with Customize defaults open, or the connection's install link points at an app that host does not have.
   it("does not send the install's app slug for another host", async () => {
-    act(() =>
-      root.render(
-        createElement(TemplateCreateFormBody, {
-          template: SINGLE,
-          pickHost: true,
-          onCreated: () => {},
-          onAddedAlone: () => {},
-          onCancel: () => {},
-        }),
-      ),
-    );
+    renderSingle();
     click(byTestId("connection-host-switch"));
     click(byTestId("customize-defaults"));
     click(byTestId("override-defaults-toggle"));
@@ -356,17 +355,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
       .mockImplementation(function (this: HTMLElement) {
         scrolled.push(this);
       });
-    act(() =>
-      root.render(
-        createElement(TemplateCreateFormBody, {
-          template: SINGLE,
-          pickHost: true,
-          onCreated: () => {},
-          onAddedAlone: () => {},
-          onCancel: () => {},
-        }),
-      ),
-    );
+    renderSingle();
     click(byTestId("connection-host-switch"));
     type("connection-field-host-other", "ghe.own.example.com");
     click(byTestId("connection-create-submit"));
@@ -383,17 +372,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
 
   // TEST_SCENARIO: a "Required" error from an empty other host must not stay under the field once the user goes back to an offered host.
   it("clears a stale error when the host choice changes", async () => {
-    act(() =>
-      root.render(
-        createElement(TemplateCreateFormBody, {
-          template: SINGLE,
-          pickHost: true,
-          onCreated: () => {},
-          onAddedAlone: () => {},
-          onCancel: () => {},
-        }),
-      ),
-    );
+    renderSingle();
     click(byTestId("connection-host-switch"));
     click(byTestId("connection-create-submit"));
     await settle();

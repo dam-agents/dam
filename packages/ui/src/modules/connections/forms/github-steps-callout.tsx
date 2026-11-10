@@ -29,8 +29,10 @@ export function GithubStepsCallout({
       <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
       <span>
         {ownApp
-          ? `Sign in with your own GitHub app, then install it ${INSTALL_REACH}.`
-          : `Sign in with GitHub, then install the ${getBrand().name} app${host ? ` on ${host}` : ""} ${INSTALL_REACH}.`}
+          ? `Sign in with your own OAuth app, then install it ${INSTALL_REACH}.`
+          : host
+            ? `Sign in with GitHub, then install the ${getBrand().name} app on each account at ${host} whose repositories agents need.`
+            : `Sign in with GitHub, then install the ${getBrand().name} app ${INSTALL_REACH}.`}
       </span>
     </p>
   );
