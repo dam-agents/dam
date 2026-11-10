@@ -102,6 +102,7 @@ const readyRow = (agentId: string, used = true) => ({
   agentId,
   state: "ready" as const,
   legacy: false,
+  firstResult: null,
   used,
   resetAt: null,
 });
@@ -225,6 +226,7 @@ describe("resetting a person's onboarding", () => {
       legacy: false,
       used: false,
       resetAt: null,
+      firstResult: null,
     });
     const w = assistantService({ rows, waitMs: 0 });
     await w.assistants.resetOnboarding();
@@ -257,6 +259,7 @@ describe("resetting a person's onboarding", () => {
       legacy: false,
       used: true,
       resetAt: null,
+      firstResult: null,
     });
     const agents = agentStore();
     // UNIT_BOUNDARY_DESCRIPTION: the caller's own assistant is the Agent their record names, renamed.

@@ -179,8 +179,13 @@ Run \`dam --help\` for the command groups and \`dam <group> --help\` for one of 
    Read commands take \`--json\`, and an empty list is \`[]\`.
    Table output is for showing to the person.
 
+## The first result
+
+When you have actually got the person their first result — a schedule set, an artifact made, a knowledge base saved — record it once with \`dam onboarding first-result <schedule|artifact|knowledgeBase> --ref "<what it is>"\`, and only then; it is what finishes their onboarding, and a later call changes nothing.
+
 ## What it covers
 
+- **\`dam onboarding\`** — record the first result the person's onboarding reached.
 - **\`dam agent\`** — list, get, create, update, restart, sleep, disable and enable the person's Agents.
 - **\`dam schedule\`** — list, create and edit a scheduled task, and run one now.
 - **\`dam approval\`** — the queue of decisions the person has to make.

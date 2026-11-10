@@ -2,6 +2,7 @@ import type {
   ApprovalVerdict,
   ChannelType,
   EntryPointChoice,
+  FirstResultKind,
   GettingStartedTask,
   ProviderOutageReason,
   SpendLimitScope,
@@ -79,6 +80,7 @@ export enum EventType {
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
   AssistantUsed = "AssistantUsed",
+  AssistantFirstResultRecorded = "assistant.first_result_recorded",
   CostReviewStarted = "CostReviewStarted",
   CostReviewDismissed = "CostReviewDismissed",
 }
@@ -591,6 +593,21 @@ export type GettingStartedReset = {
   ownerSub: string;
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the person's onboarding reached its first result, as
+ * the assistant reported it over its own Connection — a schedule set, an artifact
+ * made, a saved knowledge base. This is the seam for anything that should carry
+ * that news somewhere else, and its name and payload are the agreed shape of that
+ * seam; `owner` is the person, because this event is that seam's rather than the
+ * bus's own, whose other events call the same field `ownerSub`.
+ */
+export type AssistantFirstResultRecorded = {
+  type: EventType.AssistantFirstResultRecorded;
+  owner: string;
+  kind: FirstResultKind;
+  ref: string | null;
+};
+
 /** UNIT_BOUNDARY_DESCRIPTION: the assistant was used for the first time since the person's onboarding reset, which takes the greeting and the first landing away in every tab that has the owner signed in. */
 export type AssistantUsed = {
   type: EventType.AssistantUsed;
@@ -662,6 +679,7 @@ export type DomainEvent =
   | AvatarUnlocked
   | GettingStartedReset
   | AssistantUsed
+  | AssistantFirstResultRecorded
   | CostReviewStarted
   | CostReviewDismissed;
 

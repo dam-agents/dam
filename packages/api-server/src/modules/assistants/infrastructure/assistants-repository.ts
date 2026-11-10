@@ -1,3 +1,4 @@
+import type { FirstResultKind } from "api-server-api";
 import { and, dambledoreProvisioned, eq, isNull, sql, type Db } from "db";
 
 /** UNIT_BOUNDARY_DESCRIPTION: how far the assistant has got: its Agent is being made, or it is there. A `creating` row is a create in flight, not a deleted assistant, so nothing that finds one may make a second. */
@@ -11,6 +12,11 @@ export interface AssistantRow {
   legacy: boolean;
   used: boolean;
   resetAt: Date | null;
+  firstResult: {
+    kind: FirstResultKind;
+    ref: string | null;
+    at: Date;
+  } | null;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a Session report needs to know about the record it may mark as used. */
@@ -34,7 +40,13 @@ export interface AssistantsRepository {
   ): Promise<boolean>;
   usageOf(agentId: string): Promise<AssistantUsage | null>;
   markUsed(agentId: string): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
+  /** UNIT_BOUNDARY_DESCRIPTION: records the person's first result if none is recorded yet, and answers whether this call is the one that wrote it: the claim is the empty column, so two reports at once settle on one. */
+  claimFirstResult(
+    owner: string,
+    kind: FirstResultKind,
+    ref: string | null,
+  ): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. The first result goes with it, since onboarding starting over has no result yet. */
   resetUsed(owner: string): Promise<void>;
 }
 
@@ -45,7 +57,13 @@ const COLUMNS = {
   legacy: dambledoreProvisioned.legacy,
   usedAt: dambledoreProvisioned.usedAt,
   resetAt: dambledoreProvisioned.resetAt,
+  firstResultKind: dambledoreProvisioned.firstResultKind,
+  firstResultRef: dambledoreProvisioned.firstResultRef,
+  firstResultAt: dambledoreProvisioned.firstResultAt,
 };
+
+const isFirstResultKind = (value: string): value is FirstResultKind =>
+  value === "schedule" || value === "artifact" || value === "knowledgeBase";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The row per owner that makes the assistant's create
@@ -68,6 +86,16 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         legacy: row.legacy,
         used: row.usedAt !== null,
         resetAt: row.resetAt,
+        firstResult:
+          row.firstResultKind !== null &&
+          row.firstResultAt !== null &&
+          isFirstResultKind(row.firstResultKind)
+            ? {
+                kind: row.firstResultKind,
+                ref: row.firstResultRef,
+                at: row.firstResultAt,
+              }
+            : null,
       };
     },
 
@@ -136,10 +164,34 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         );
     },
 
+    async claimFirstResult(owner, kind, ref) {
+      const claimed = await db
+        .update(dambledoreProvisioned)
+        .set({
+          firstResultKind: kind,
+          firstResultRef: ref,
+          firstResultAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(dambledoreProvisioned.owner, owner),
+            isNull(dambledoreProvisioned.firstResultKind),
+          ),
+        )
+        .returning({ owner: dambledoreProvisioned.owner });
+      return claimed.length > 0;
+    },
+
     async resetUsed(owner) {
       await db
         .update(dambledoreProvisioned)
-        .set({ usedAt: null, resetAt: sql`now()` })
+        .set({
+          usedAt: null,
+          resetAt: sql`now()`,
+          firstResultKind: null,
+          firstResultRef: null,
+          firstResultAt: null,
+        })
         .where(eq(dambledoreProvisioned.owner, owner));
     },
   };

@@ -79,6 +79,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `AvatarUnlocked` | _elsewhere_ | getting-started |
 | `GettingStartedReset` | _elsewhere_ | getting-started |
 | `AssistantUsed` | _elsewhere_ | assistants |
+| `AssistantFirstResultRecorded` | _elsewhere_ | assistants |
 | `CostReviewStarted` | `cost_review_started` | cost-reviews |
 | `CostReviewDismissed` | `cost_review_dismissed` | cost-reviews |
 

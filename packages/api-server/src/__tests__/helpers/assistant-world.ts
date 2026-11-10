@@ -26,6 +26,7 @@ export function rowStore(initial?: AssistantRow) {
         legacy,
         used: false,
         resetAt: null,
+        firstResult: null,
       });
       return true;
     },
@@ -45,6 +46,15 @@ export function rowStore(initial?: AssistantRow) {
       });
       return true;
     },
+    claimFirstResult: async (owner, kind, ref) => {
+      const row = rows.get(owner);
+      if (row === undefined || row.firstResult !== null) return false;
+      rows.set(owner, {
+        ...row,
+        firstResult: { kind, ref, at: new Date() },
+      });
+      return true;
+    },
     usageOf: async (agentId) => {
       for (const row of rows.values())
         if (row.agentId === agentId)
@@ -57,7 +67,13 @@ export function rowStore(initial?: AssistantRow) {
     },
     resetUsed: async (owner) => {
       const row = rows.get(owner);
-      if (row) rows.set(owner, { ...row, used: false, resetAt: new Date() });
+      if (row)
+        rows.set(owner, {
+          ...row,
+          used: false,
+          resetAt: new Date(),
+          firstResult: null,
+        });
     },
   };
   return { rows, repo };
@@ -148,6 +164,7 @@ export function assistantService(
   const agents = deps.agents ?? agentStore();
   const enrolled = vi.fn(async () => {});
   const provisioned = vi.fn(deps.provisioned ?? (async () => {}));
+  const recordTask = vi.fn(async (_task: string) => {});
   const resetChecklist = vi.fn(async () => undefined);
   const service = createAssistantsService({
     repo: rows.repo,
@@ -160,10 +177,19 @@ export function assistantService(
     agents: { list: agents.list, create: agents.create },
     enrolled,
     provisioned,
+    recordTask,
     resetChecklist,
     damConnection: deps.damConnection ?? (async () => null),
     waitMs: deps.waitMs ?? 200,
     pollMs: deps.pollMs ?? 10,
   });
-  return { rows, agents, enrolled, provisioned, resetChecklist, ...service };
+  return {
+    rows,
+    agents,
+    enrolled,
+    provisioned,
+    recordTask,
+    resetChecklist,
+    ...service,
+  };
 }

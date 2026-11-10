@@ -21,6 +21,7 @@ A user with nothing unlocked yet gets a first Agent with the character its name 
 The [assistant](assistant.md) is an Agent like any other here: provisioning enrols a person first, so the assistant counts as their first Agent and finishes `Create`.
 Because nobody made that Agent by hand, its unlock is recorded unseen and the first chat plays it — the same celebration, in the place the person first meets the Agent, and marking it seen from there is what finishes `Create`.
 An owner whose avatars are all seen has none left to unlock, so nothing celebrates for them.
+The assistant can also report the tasks it did for the person — the schedule or the artifact that was their [first result](assistant.md#the-first-result) — recorded the same way, done and seen: a saved knowledge base finishes no task here, since the checklist has no item for one.
 That is the same record a reset makes, so a person who has reset their onboarding meets a first-timer's checklist: one task of eight, its celebration waiting in their first chat.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 

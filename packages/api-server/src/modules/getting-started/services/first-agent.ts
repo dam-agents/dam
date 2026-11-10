@@ -1,3 +1,4 @@
+import type { GettingStartedTask } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 
 import type { UnlockRecorder } from "./unlock-recorder.js";
@@ -18,4 +19,19 @@ export async function recordProvisionedAgent(
   agent: { agentId: string; character: AvatarCharacter },
 ): Promise<void> {
   await deps.recorder.record(owner, "create-agent", agent);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A task the platform reports for the person — the
+ * checklist item an assistant finished, such as the first result's schedule or
+ * artifact — is recorded done and **seen**: the platform did it on their behalf, so
+ * the checklist counts it rather than celebrating it. A task the checklist has no
+ * item for is not reported here at all.
+ */
+export async function recordTaskSeen(
+  deps: { recorder: UnlockRecorder },
+  owner: string,
+  task: GettingStartedTask,
+): Promise<void> {
+  await deps.recorder.record(owner, task);
 }

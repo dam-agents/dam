@@ -1,10 +1,13 @@
 import {
   type AgentsService,
+  type AssistantFirstResultInput,
   type AssistantsService,
   assistantInstructions,
+  type GettingStartedTask,
 } from "api-server-api";
 
 import { getLogger } from "../../../core/logger.js";
+import { emit, EventType } from "../../../events.js";
 import type { InfraAgent } from "../../agents/infrastructure/agent-mappers.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import type {
@@ -60,6 +63,8 @@ export function createAssistantsService(deps: {
   enrolled: () => Promise<void>;
   /* UNIT_BOUNDARY_DESCRIPTION: how the checklist learns of the Agent the platform made — its first task, recorded done and seen, so nothing celebrates an Agent nobody made. It is also what a reset records again. */
   provisioned: (agent: CreatedAgent) => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: how the checklist counts a task the assistant did for the person, recorded done and seen: the platform reports what it did, so it holds no celebration of its own. */
+  recordTask: (task: GettingStartedTask) => Promise<void>;
   /* UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, the one its button under Experimental features calls, so both doors start it over the same way. */
   resetChecklist: () => Promise<unknown>;
   /* UNIT_BOUNDARY_DESCRIPTION: how long a reset or a switch waits for a create another caller holds, and how often it looks. A request waits not at all, since it has a page to answer. */
@@ -184,6 +189,7 @@ export function createAssistantsService(deps: {
           legacy,
           used: false,
           resetAt: null,
+          firstResult: null,
         }),
         made: true,
       };
@@ -207,8 +213,46 @@ export function createAssistantsService(deps: {
     return (await settle(forMs)).agent;
   };
 
+  /* UNIT_BOUNDARY_DESCRIPTION: which checklist task a first result finishes: the two kinds the checklist has a task for, and none for a saved knowledge base, which the checklist never had an item for. */
+  const taskOf = (
+    kind: AssistantFirstResultInput["kind"],
+  ): GettingStartedTask | null =>
+    kind === "schedule"
+      ? "create-schedule"
+      : kind === "artifact"
+        ? "create-artifact"
+        : null;
+
   return {
     assistants: {
+      async recordFirstResult(input) {
+        const ref = input.ref ?? null;
+        const recorded = await deps.repo.claimFirstResult(
+          deps.owner,
+          input.kind,
+          ref,
+        );
+        const row = await deps.repo.find(deps.owner);
+        const result =
+          row?.firstResult == null
+            ? null
+            : {
+                kind: row.firstResult.kind,
+                ref: row.firstResult.ref,
+                at: row.firstResult.at.toISOString(),
+              };
+        if (!recorded) return result;
+        const task = taskOf(input.kind);
+        if (task !== null) await deps.recordTask(task);
+        emit({
+          type: EventType.AssistantFirstResultRecorded,
+          owner: deps.owner,
+          kind: input.kind,
+          ref,
+        });
+        return result;
+      },
+
       async state() {
         const row = await deps.repo.find(deps.owner);
         return row === null
@@ -219,6 +263,14 @@ export function createAssistantsService(deps: {
               used: row.used,
               resetAt: row.resetAt?.toISOString() ?? null,
               ready: row.state === "ready",
+              firstResult:
+                row.firstResult === null
+                  ? null
+                  : {
+                      kind: row.firstResult.kind,
+                      ref: row.firstResult.ref,
+                      at: row.firstResult.at.toISOString(),
+                    },
             };
       },
 

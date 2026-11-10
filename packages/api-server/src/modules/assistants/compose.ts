@@ -46,6 +46,7 @@ export function composeAssistantsForOwner(deps: {
           agent.name,
         ),
       }),
+    recordTask: (task) => deps.gettingStarted.recordTaskSeen(deps.owner, task),
     resetChecklist: () => deps.gettingStarted.forOwner(deps.owner).reset(),
     damConnection: deps.damConnection,
   });

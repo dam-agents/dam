@@ -180,6 +180,7 @@ describe("the record's used mark", () => {
       used: false,
       resetAt: null,
       ready: true,
+      firstResult: null,
     };
     queryClient.setQueryData(key, row);
     markAssistantUsed(ASSISTANT);
@@ -201,6 +202,7 @@ describe("the record's used mark", () => {
       used: false,
       resetAt: null,
       ready: true,
+      firstResult: null,
     };
     queryClient.setQueryData(key, row);
     markAssistantUsed("agent-2");
