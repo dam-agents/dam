@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -19,7 +19,7 @@ The character a task unlocks is random among the ones still locked, with one exc
 When another task already unlocked that character, the first Agent unlocks a random locked one, and the UI does not claim it is on the Agent.
 A user with nothing unlocked yet gets a first Agent with the character its name gives it, which the create stores on the Agent.
 The [assistant](assistant.md) is an Agent like any other here: provisioning enrols a person first, so the assistant counts as their first Agent and finishes `Create`.
-Because nobody made that Agent by hand, its unlock is recorded already seen, so the checklist counts it at once instead of holding a celebration for it; the announcement that follows finds the task recorded and adds nothing.
+Because nobody made that Agent by hand, its unlock is recorded unseen and the first chat plays it — the same celebration, in the place the person first meets the Agent, and marking it seen from there is what finishes `Create`; an owner who already had their assistant before this shipped has no unseen unlock, so nothing celebrates for them.
 That is the same record a reset makes, so a person who has reset their onboarding meets a first-timer's checklist: one task of eight, already seen.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 

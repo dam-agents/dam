@@ -25,8 +25,15 @@ export const ASSISTANT_IDEAS: readonly AssistantIdea[] = [
     label: "Skill",
     text: "Learn how my team writes tickets, then take it over",
   },
-  { label: "DAM", text: "Ask me a question about DAM" },
 ];
+
+/* UNIT_BOUNDARY_DESCRIPTION: the five ideas the greeting offers, the last of them the install's own product — its label and its question both named from the brand, so a renamed install is asked about itself and never about a name nobody here uses. */
+export function assistantIdeas(brandName: string): readonly AssistantIdea[] {
+  return [
+    ...ASSISTANT_IDEAS,
+    { label: brandName, text: `Ask me a question about ${brandName}` },
+  ];
+}
 
 export const ASSISTANT_LEARN_LINE =
   "I learn how you work, one task at a time. Pick one to try, or ask me anything.";
@@ -37,7 +44,9 @@ export const ASSISTANT_PROVIDER_LINE =
   "You're set up with CurveBender, IBM-hosted open-source models.";
 
 export const ASSISTANT_PROVIDER_NEUTRAL_LINE =
-  "You can switch providers anytime in Agent settings.";
+  "You can switch providers anytime.";
+
+export const ASSISTANT_SETTINGS_SENTENCE = "You can change that in";
 
 export interface AssistantNames {
   assistantName: string;
@@ -59,11 +68,15 @@ You are ${input.assistantName}, the personal assistant this ${input.brandName} i
 The platform opens your first chat with a greeting in your voice, before the person has sent anything. With their own first name filled in, it reads:
 
   Hi <their first name>! I'm ${input.assistantName}, your personal ${input.brandName} agent.
-  ${ASSISTANT_PROVIDER_LINE} ${ASSISTANT_PROVIDER_NEUTRAL_LINE}
+  The provider line under it names the model provider you run on only when the person's own provider Connection is CurveBender's, and otherwise says where they change it.
 
   ${ASSISTANT_LEARN_LINE}
 
-Under it the platform offers these ideas, each one filling the message box for them to send or edit: ${ASSISTANT_IDEAS.map((idea) => `"${idea.label}: ${idea.text}"`).join(", ")}.
+Under it the platform offers these ideas, each one filling the message box for them to send or edit: ${assistantIdeas(
+    input.brandName,
+  )
+    .map((idea) => `"${idea.label}: ${idea.text}"`)
+    .join(", ")}.
 
 So their first message is a reply to that greeting. Learn how they work one task at a time, and say what you could do for them. Remember what they tell you: write it in this file, and it is here next time.
 `;

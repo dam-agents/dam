@@ -30,7 +30,7 @@ Then they land in Dammy's chat rather than on Home
 And the chat opens with a message from the assistant, its avatar and name above it, reading *Hi <the owner's first name>!
 I'm Dammy, your personal DAM agent.
 You're set up with CurveBender, IBM-hosted open-source models.
-You can switch providers anytime in Agent settings.*, with *Agent settings* a link
+You can change that in Agent settings.*, with *Agent settings* a link
 And below that message stands *I learn how you work, one task at a time.
 Pick one to try, or ask me anything.*
 And under the message sit five pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* Ask me a question about DAM
@@ -87,13 +87,14 @@ Then no new agent is made, and the account lands in *Research helper*, which ope
 When instead they rename it away and make an agent of their own called *Dammy*, then confirm the card's reset
 Then no new agent is made either, and the account does not land in the one they made: it is theirs, not the assistant's
 
-## AC-9 — an account that never opts in sees nothing of it
+## AC-9 — a new account meets Dammy without opting in
 
-Given the same install, and an account that has not turned the assistant on
-When the owner signs in
-Then no greeting, no first tasks and no assistant agent appear
-And they land on Home as usual
-And the message box of any agent they open hints *Message…* as it always did
+Given the same install, and an account that has never opened Experimental features
+When the owner signs in for the first time
+Then Dammy is already in their agent list and their first landing is its chat, which opens on the greeting
+And the celebration beside the composer plays before they have switched anything on
+And Experimental features shows the assistant's row already on
+And opting it out is the switch AC-10 describes
 
 ## AC-10 — turning the switch off deletes nothing
 

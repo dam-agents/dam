@@ -39,7 +39,7 @@ Its `~/AGENTS.md` is written at that create, in place of the template every othe
 
 **Ordering with the checklist.** The checklist decides once, at first meeting, whether a person used the platform before the checklist existed (`Create` in [getting-started](getting-started.md)).
 That decision reads the Agents a person already owns, so provisioning enrols them *before* it creates the assistant; the assistant is then what makes their first checklist task done rather than evidence they were here before.
-That task is recorded as seen, since the person did not make this Agent by hand: the checklist counts it at once rather than holding a celebration for it.
+That task's avatar is recorded unlocked and unseen, since the person did not make this Agent by hand: the first chat plays its celebration, and marking it seen from there is what finishes the task, so nothing celebrates an Agent nobody made.
 
 ## What its owner may do
 
@@ -85,7 +85,7 @@ The Agent the record names is **reused**, its use forgotten, whether or not it w
 When the platform's Agent is gone the reset makes one again — a new ordinary Agent on the same terms as the first — but only if no Agent of the person's carries the assistant's name: a name they hold is not the platform's to take, so such a person gets nothing made and no greeting, since an Agent they made is not the assistant.
 A create another caller holds is waited for rather than raced, so the reset lands on the one Agent being made between them.
 
-The checklist it starts over is a first-timer's from the first moment: the assistant's own `Create` task is recorded again the way provisioning records it — done, and seen, so nothing celebrates an Agent nobody made — which is one task of eight rather than an empty checklist.
+The checklist it starts over is a first-timer's from the first moment: the reset deletes the unlock rows, so the assistant's own `Create` task is recorded again the way provisioning records it — its avatar unlocked and unseen, its celebration waiting in the first chat — which is one task of eight rather than an empty checklist.
 That task's character stays unlocked, as a first-timer's own is, so "every avatar locks again" holds for every avatar but the assistant's own.
 
 What it restores is the first open: the record says the assistant has never been used, so the greeting returns to an empty chat and the first landing routes the person into it again.

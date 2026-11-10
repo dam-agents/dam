@@ -535,9 +535,11 @@ export {
   ASSISTANT_PROVIDER_LINE,
   ASSISTANT_PROVIDER_NEUTRAL_LINE,
   ASSISTANT_SETTINGS_LINK,
+  ASSISTANT_SETTINGS_SENTENCE,
   type AssistantIdea,
   type AssistantNames,
   assistantGreetingOpening,
+  assistantIdeas,
   assistantInstructions,
 } from "./modules/assistants/greeting.js";
 export type {

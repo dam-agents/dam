@@ -134,21 +134,23 @@ export function createAssistantsService(deps: {
     return row?.state === "creating" ? makeAgent(row) : null;
   };
 
-  /* UNIT_BOUNDARY_DESCRIPTION: makes the Agent the record already names, once. Every caller asks for the same id, so the store settles which of them makes it; one whose create was refused reads that Agent back and adopts it, and one whose create failed for any other reason reports the failure rather than hiding it. */
+  /* UNIT_BOUNDARY_DESCRIPTION: makes the Agent the record already names, and finishes one an earlier attempt left half-made. A row still `creating` says the create never reported success, so it is asked for again even when its Agent is already there: the create resumes that Agent rather than failing on it, and every step it repeats — the instructions, the grants, the Connection — is written to be written again. The bookkeeping comes before the row is marked ready, so a checklist or unlock that failed is retried with it. */
   const makeAgent = async (row: AssistantRow): Promise<InfraAgent | null> => {
     let agent = await deps.agentOf(row.agentId);
-    if (agent === null) {
+    if (agent === null || row.state !== "ready") {
       try {
         await create(row.agentId);
       } catch (err) {
         const joined = await deps.agentOf(row.agentId);
         if (joined === null) throw err;
-        return joined;
       }
       agent = await deps.agentOf(row.agentId);
     }
     if (agent === null) return null;
-    await deps.repo.markReady(deps.owner, row.agentId);
+    if (row.state !== "ready") {
+      await deps.provisioned(created(agent));
+      await deps.repo.markReady(deps.owner, row.agentId);
+    }
     return agent;
   };
 
@@ -161,39 +163,50 @@ export function createAssistantsService(deps: {
    * compare-and-set on the Agent it names for a later one, and a caller that loses
    * waits for the winner's Agent rather than making a second.
    */
-  const settle = async (forMs: number): Promise<InfraAgent | null> => {
+  const settle = async (
+    forMs: number,
+  ): Promise<{ agent: InfraAgent | null; made: boolean }> => {
     const row = await deps.repo.find(deps.owner);
-    if (row !== null) {
+    /* UNIT_BOUNDARY_DESCRIPTION: a record that is `ready` and whose Agent is there is an assistant made; one whose Agent exists but whose record still says `creating` is a create that stopped on its bookkeeping, so it is finished rather than handed over half-made — and before the name is read, since that half-made Agent is the one holding it. */
+    if (row !== null && row.state === "ready") {
       const mine = await deps.agentOf(row.agentId);
-      if (mine !== null) return mine;
+      if (mine !== null) return { agent: mine, made: false };
     }
-    if (await nameTaken()) return null;
+    if (row !== null && row.state === "creating")
+      return { agent: await joinOrFinish(forMs), made: false };
+    if (await nameTaken()) return { agent: null, made: false };
     if (row === null) {
       const agentId = generateK8sName("agent");
       if (!(await deps.repo.claim(deps.owner, agentId)))
-        return joinOrFinish(forMs);
-      return makeAgent({
-        owner: deps.owner,
-        agentId,
-        state: "creating",
-        used: false,
-        resetAt: null,
-      });
+        return { agent: await joinOrFinish(forMs), made: false };
+      return {
+        agent: await makeAgent({
+          owner: deps.owner,
+          agentId,
+          state: "creating",
+          used: false,
+          resetAt: null,
+        }),
+        made: true,
+      };
     }
-    // UNIT_BOUNDARY_DESCRIPTION: a claim: another caller's create in flight, or one that died.
-    if (row.state === "creating") return joinOrFinish(forMs);
     const replacement = generateK8sName("agent");
     if (!(await deps.repo.replaceAgent(deps.owner, row.agentId, replacement)))
-      return joinOrFinish(forMs);
-    return makeAgent({ ...row, agentId: replacement, state: "creating" });
+      return { agent: await joinOrFinish(forMs), made: false };
+    return {
+      agent: await makeAgent({
+        ...row,
+        agentId: replacement,
+        state: "creating",
+      }),
+      made: true,
+    };
   };
 
   const provision = async (forMs: number): Promise<InfraAgent | null> => {
     if (!(await deps.enabled())) return null;
     if (!(await deps.admitted())) return null;
-    const agent = await settle(forMs);
-    if (agent !== null) await deps.provisioned(created(agent));
-    return agent;
+    return (await settle(forMs)).agent;
   };
 
   return {
@@ -213,9 +226,10 @@ export function createAssistantsService(deps: {
         // UNIT_BOUNDARY_DESCRIPTION: the one onboarding reset. The checklist starts over for everyone, and a person the feature is on for is a first-timer in their assistant too — one they deleted is made again when nothing of theirs carries the name, one they still have is reused with its use forgotten. A person it is off for gets the checklist alone, and nothing of the assistant's is touched or refused.
         await deps.resetChecklist();
         if (!(await deps.enabled())) return;
-        const agent = await settle(waitMs);
+        /* UNIT_BOUNDARY_DESCRIPTION: an Agent the reset has to make is recorded by the create itself, before its record reads ready; one the reset reuses is recorded here, since nothing created it this time. */
+        const { agent, made } = await settle(waitMs);
         await deps.repo.resetUsed(deps.owner);
-        if (agent !== null) await deps.provisioned(created(agent));
+        if (!made && agent !== null) await deps.provisioned(created(agent));
       },
     },
 

@@ -129,12 +129,17 @@ function setup(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,
   });
+  // TEST_OVERVIEW: the store refuses a duplicate id, so a retry resumes, not a second Agent.
+  const persistedIds = new Set<string>();
   const persist = vi.fn(
-    async (spec: Record<string, unknown>, owner: string, id: string) =>
-      parseInfraAgent({
+    async (spec: Record<string, unknown>, owner: string, id: string) => {
+      if (persistedIds.has(id)) throw new Error(`${id} already exists`);
+      persistedIds.add(id);
+      return parseInfraAgent({
         metadata: { name: id, labels: { "agent-platform.ai/owner": owner } },
         spec,
-      }),
+      });
+    },
   );
   const writeRegistry = vi.fn(async () => {});
   const applyGrants = vi.fn(async () => {});
@@ -163,6 +168,16 @@ function setup(
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],
       create: persist,
+      get: async (id: string, owner: string) =>
+        persistedIds.has(id)
+          ? parseInfraAgent({
+              metadata: {
+                name: id,
+                labels: { "agent-platform.ai/owner": owner },
+              },
+              spec: {},
+            })
+          : null,
     }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
@@ -820,5 +835,23 @@ describe("the flag that offers the install's own connection", () => {
       connectionIds: [dam.id],
     });
     expect(result.grantedConnectionIds).toEqual([dam.id, provider.id]);
+  });
+});
+
+describe("a create the platform resumes", () => {
+  // TEST_SCENARIO: an earlier attempt wrote the Agent and then failed on its bookkeeping, so the same id is asked for again: the store refuses the row, and the create finishes that Agent from there — the grants applied again, the instructions re-sent — instead of failing on the row it already has or making a second Agent.
+  it("finishes the Agent an earlier attempt left half-made", async () => {
+    const { agents, persist, applyGrants, runtimeBump } = setup();
+    const created = await agents.create({ ...input, id: "agent-resumed" });
+    expect(created.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    applyGrants.mockClear();
+    runtimeBump.mockClear();
+    const again = await agents.create({ ...input, id: "agent-resumed" });
+    expect(again.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(applyGrants).toHaveBeenCalledTimes(1);
+    expect(runtimeBump).toHaveBeenCalled();
   });
 });

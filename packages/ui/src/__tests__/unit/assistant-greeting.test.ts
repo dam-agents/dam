@@ -6,6 +6,7 @@
 // TEST_OVERVIEW: owner's own assistant, only while the record says it was never
 // TEST_OVERVIEW: used — a mark a Session that just appeared sets at once, so a New
 // TEST_OVERVIEW: chat does not bring the greeting back.
+import { assistantIdeas } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markAssistantUsed } from "../../modules/assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../modules/assistants/components/assistant-greeting.js";
 import {
-  GREETING_IDEAS,
   GREETING_PLACEHOLDER,
   greetingCopy,
   greetingShown,
@@ -84,17 +84,17 @@ describe("what the greeting says", () => {
 
   // TEST_SCENARIO: the design's five ideas, each labelled with the kind of work it would be, and the composer's example is one of them.
   it("offers the five labelled ideas", () => {
-    expect(GREETING_IDEAS.map((idea) => idea.label)).toEqual([
+    expect(assistantIdeas("DAM").map((idea) => idea.label)).toEqual([
       "Artifact",
       "Schedule",
       "Knowledge base",
       "Skill",
       "DAM",
     ]);
-    expect(copy.ideas).toEqual(GREETING_IDEAS);
+    expect(copy.ideas).toEqual(assistantIdeas("DAM"));
     expect(copy.learn).toContain("I learn how you work, one task at a time");
     expect(
-      GREETING_IDEAS.map((idea) => `${idea.label}: ${idea.text}`),
+      assistantIdeas("DAM").map((idea) => `${idea.label}: ${idea.text}`),
     ).toContain(GREETING_PLACEHOLDER);
   });
 
@@ -107,9 +107,7 @@ describe("what the greeting says", () => {
       brandName: "DAM",
       provider: "other",
     });
-    expect(other.provider).toBe(
-      "You can switch providers anytime in Agent settings.",
-    );
+    expect(other.provider).toBe("You can switch providers anytime.");
     expect(other.provider).not.toContain("CurveBender");
     expect(providerLineFor("curve-bender-deployment")).toBe("curve-bender");
     expect(providerLineFor("curve-bender")).toBe("curve-bender");
@@ -182,9 +180,11 @@ describe("the greeting in the chat", () => {
     expect(host.textContent).toContain("Dammy");
     expect(host.textContent).toContain(copy.opening);
     const pills = [...host.querySelectorAll("button")].filter((button) =>
-      GREETING_IDEAS.some((idea) => button.textContent?.includes(idea.text)),
+      assistantIdeas("DAM").some((idea) =>
+        button.textContent?.includes(idea.text),
+      ),
     );
-    expect(pills).toHaveLength(GREETING_IDEAS.length);
+    expect(pills).toHaveLength(assistantIdeas("DAM").length);
     expect(
       host.querySelector('[data-testid="assistant-greeting-settings"]'),
     ).not.toBeNull();
@@ -192,9 +192,9 @@ describe("the greeting in the chat", () => {
 
   // TEST_SCENARIO: a click on a pill puts its labelled text in the composer of this chat and stops there, so nothing runs before the person acts.
   it("fills the composer without sending", () => {
-    const task = `${GREETING_IDEAS[0]!.label}: ${GREETING_IDEAS[0]!.text}`;
+    const task = `${assistantIdeas("DAM")[0]!.label}: ${assistantIdeas("DAM")[0]!.text}`;
     const chip = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes(GREETING_IDEAS[0]!.text),
+      button.textContent?.includes(assistantIdeas("DAM")[0]!.text),
     );
     expect(chip).toBeDefined();
     act(() => chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

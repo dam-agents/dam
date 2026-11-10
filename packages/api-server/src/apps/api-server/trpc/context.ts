@@ -7,6 +7,7 @@ import {
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
+import { assistantProvisioningGuard } from "../../../modules/assistants/services/provisioning-guard-instance.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -351,6 +352,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
+    const provisioning = assistantProvisioningGuard();
     /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
     const assistantOn = async (): Promise<boolean> => {
       const mode = config.featureModes.dambledore;
@@ -580,15 +582,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is on for everyone who has not turned it off, so a person's first request gives them one — once, and never again after they delete theirs. `ensure` reads the person's record first and stops there, so a person who already has one costs one row and no flag read. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
-    const provisionAssistant = async () => {
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is on for everyone who has not turned it off, so a person's first request gives them one — once, and never again after they delete theirs. It runs behind the replica's guard and is never awaited: a create takes as long as it takes, the person's page is answered without it, and the UI picks the Agent up from the agents live hint. An install pinned off pays nothing at all, and one that offers it reads the person's record first, which is one indexed read for anyone who already has it. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing. */
+    const provisionAssistant = (): void => {
+      if (config.featureModes.dambledore === "off") return;
       if (
         user.keyId !== undefined ||
         user.agentIds !== "*" ||
         user.actingEditor !== undefined
       )
         return;
-      await ensureAssistant();
+      provisioning.start(user.sub, () => ensureAssistant());
     };
 
     /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes the assistant whenever the person has none under that name. */

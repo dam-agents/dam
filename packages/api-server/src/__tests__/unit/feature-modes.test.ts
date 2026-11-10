@@ -51,11 +51,11 @@ describe("feature modes", () => {
         surface: "test",
         modes: {
           processes: "experimental",
-          "interactive-artifacts": "experimental",
           "agent-telemetry": "experimental",
           "advanced-connections": "experimental",
           "chat-forms": "experimental",
           "custom-avatars": "experimental",
+          "github-enterprise-hosts": "experimental",
           environments: "experimental",
           hermes: "experimental",
           dambledore: "experimental",

@@ -4,19 +4,20 @@ import {
   ASSISTANT_PROVIDER_LINE,
   ASSISTANT_PROVIDER_NEUTRAL_LINE,
   ASSISTANT_SETTINGS_LINK,
+  ASSISTANT_SETTINGS_SENTENCE,
   assistantGreetingOpening,
   type AssistantIdea,
+  assistantIdeas,
 } from "api-server-api";
 
-export const GREETING_IDEAS: readonly AssistantIdea[] = ASSISTANT_IDEAS;
-
-export const GREETING_PLACEHOLDER = `${GREETING_IDEAS[0]!.label}: ${GREETING_IDEAS[0]!.text}`;
+export const GREETING_PLACEHOLDER = `${ASSISTANT_IDEAS[0]!.label}: ${ASSISTANT_IDEAS[0]!.text}`;
 
 export interface GreetingCopy {
   assistantName: string;
   opening: string;
   provider: string;
   learn: string;
+  settingsPrefix: string;
   settingsLink: string;
   ideas: readonly AssistantIdea[];
   placeholder: string;
@@ -65,8 +66,9 @@ export function greetingCopy(input: {
         ? ASSISTANT_PROVIDER_LINE
         : ASSISTANT_PROVIDER_NEUTRAL_LINE,
     learn: ASSISTANT_LEARN_LINE,
+    settingsPrefix: ASSISTANT_SETTINGS_SENTENCE,
     settingsLink: ASSISTANT_SETTINGS_LINK,
-    ideas: GREETING_IDEAS,
+    ideas: assistantIdeas(input.brandName),
     placeholder: GREETING_PLACEHOLDER,
   };
 }
