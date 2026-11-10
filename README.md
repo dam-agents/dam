@@ -7,7 +7,7 @@
 
 <h3 align="center">
 Engineering agents that run your entire stack.<br />
-AI teammates that work with your team in Slack.
+AI teammates that work with you in Slack.
 </h3>
 
 <p align="center">Packed densely on your Kubernetes.</p>
