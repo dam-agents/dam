@@ -146,6 +146,7 @@ The reasons:
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps every target it still has, kept and clean slate ones too, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
   Every running run of the target and of each target below it fails with that reason and goes through the one reap, so a one-off target is removed, with every target still below it, and a kept one keeps its conversation.
+  The delegation view reads who stopped a run from the reason the stop wrote, so a stop shows as stopped, not failed, and a card whose own run ended while sub-agents it started still run counts them and stops only them.
 
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
