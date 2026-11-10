@@ -314,6 +314,7 @@ def _await(
     poll_seconds: float,
     timeout_seconds: float | None,
     cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + (
         timeout_seconds
@@ -323,7 +324,7 @@ def _await(
     waiting = None
     while True:
         if cancel is not None and cancel.is_set():
-            _stop(invocation_id)
+            _stop(invocation_id, cancel_reason)
             _log(f"stopped {name} ({invocation_id})")
             raise Stopped(invocation_id, name)
         view = _request("GET", f"/invocations/{_segment(invocation_id)}")
@@ -373,6 +374,7 @@ def spawn(
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
     cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> Any:
     """Spawn a sub-agent and block until its schema-validated result.
 
@@ -424,7 +426,9 @@ def spawn(
 
     Set ``cancel`` (a ``threading.Event``) from another thread to stop the
     sub-agent, and every sub-agent it started in turn, before it ends: the
-    call raises ``Stopped``, and an event set before the call spawns nothing."""
+    call raises ``Stopped``, and an event set before the call spawns nothing.
+    ``cancel_reason`` is the stop's reason, which the user reads and a spawn
+    with ``keep`` needs."""
     body = _target_body(
         harness=harness,
         image=image,
@@ -470,6 +474,7 @@ def spawn(
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
         cancel=cancel,
+        cancel_reason=cancel_reason,
     )
     if view["status"] == "failed":
         raise InvocationFailed(invocation_id, name, view.get("errorReason"))
@@ -755,6 +760,7 @@ def spawn_script(
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
     cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> ScriptOutput:
     """Run ``script`` on a sub-agent instead of a prompt, and block until it
     ends. No model turn runs: the sub-agent is set up exactly as ``spawn``
@@ -802,6 +808,7 @@ def spawn_script(
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
         cancel=cancel,
+        cancel_reason=cancel_reason,
     )
     output = ScriptOutput(invocation_id, view.get("exitCode"), view.get("output") or {})
     if view["status"] == "failed":
