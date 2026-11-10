@@ -49,6 +49,7 @@ export {
   childEgressRuleSchema,
   type ChildEgress,
   type ChildEgressRule,
+  type ChildEgressOutcome,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
   MAX_STOP_REASON_CHARS,

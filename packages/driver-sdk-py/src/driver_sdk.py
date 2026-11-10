@@ -598,9 +598,26 @@ class SubAgent:
         """Wake it when it sleeps; ``ssh sub-<id>`` does this itself."""
         _request("POST", f"/invocations/{self.id}/wake", {})
 
-    def set_egress(self, rules: list[dict[str, Any]]) -> None:
-        """Replace the rules of a sub-agent spawned with ``egress="open"``."""
-        _request("POST", f"/invocations/{self.id}/egress", {"rules": rules})
+    def set_egress(self, rules: list[dict[str, Any]]) -> dict[str, Any]:
+        """Replace the rules of a sub-agent spawned with ``egress="open"``.
+
+        Returns ``{"waiting": [...], "blocked": [...]}``: the rules it may not
+        give itself. ``waiting`` names each host waiting for the owner's
+        approval, with the ``id`` of its request; ``blocked`` each host whose
+        allow rule was not set because the owner blocked it on the sub-agent,
+        which only the owner can lift."""
+        outcome = _request("POST", f"/invocations/{self.id}/egress", {"rules": rules})
+        waiting = [w["host"] for w in outcome.get("waiting", [])]
+        blocked = [b["host"] for b in outcome.get("blocked", [])]
+        if waiting:
+            _log(
+                f"{self._name} ({self.id}): waiting for the owner: {', '.join(waiting)}"
+            )
+        if blocked:
+            _log(
+                f"{self._name} ({self.id}): blocked by the owner, not set: {', '.join(blocked)}"
+            )
+        return outcome
 
 
 def spawn_slate(

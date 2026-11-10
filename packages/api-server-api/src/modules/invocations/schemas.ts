@@ -43,6 +43,12 @@ export const childEgressRuleSchema = z.object({
 });
 export type ChildEgressRule = z.infer<typeof childEgressRuleSchema>;
 
+// UNIT_BOUNDARY_DESCRIPTION: what replacing an open child's rules did with those the driver may not give itself: `waiting`, each rule that waits for the owner's approval with the id of its request; `blocked`, each allow rule not set because the owner blocked it on the child, which only the owner can lift.
+export interface ChildEgressOutcome {
+  waiting: { host: string; id: string }[];
+  blocked: { host: string }[];
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whose egress rules decide a child's requests: `parent`, the root's, live; `open` (or `{ open: rules }`), rules of its own that the launching agent sets, with no prompt to the user and a host outside them denied; or `{ scoped: hosts }`, its own rules copied once from the parent's for those hosts (or all of them), widened only by the user's approval.
 export const childEgressSchema = z.union([
   z.literal("parent"),

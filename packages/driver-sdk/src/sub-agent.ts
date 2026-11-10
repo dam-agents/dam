@@ -1,4 +1,5 @@
 import type {
+  ChildEgressOutcome,
   ChildEgressRule,
   SpawnInvocationResponse,
   SpawnScriptInvocationRequest,
@@ -117,10 +118,22 @@ export class SubAgent {
     await req("POST", `/invocations/${encodeURIComponent(this.id)}/wake`, {});
   }
 
-  async setEgress(rules: ChildEgressRule[]): Promise<void> {
-    await req("POST", `/invocations/${encodeURIComponent(this.id)}/egress`, {
-      rules,
-    });
+  // UNIT_BOUNDARY_DESCRIPTION: replaces the rules of a sub-agent spawned with egress "open", and says which of them it may not give itself: those waiting for the owner's approval, and those the owner blocked on it.
+  async setEgress(rules: ChildEgressRule[]): Promise<ChildEgressOutcome> {
+    const outcome = await req<ChildEgressOutcome>(
+      "POST",
+      `/invocations/${encodeURIComponent(this.id)}/egress`,
+      { rules },
+    );
+    if (outcome.waiting.length > 0)
+      log(
+        `${this.tag} (${this.id}): waiting for the owner: ${outcome.waiting.map((w) => w.host).join(", ")}`,
+      );
+    if (outcome.blocked.length > 0)
+      log(
+        `${this.tag} (${this.id}): blocked by the owner, not set: ${outcome.blocked.map((b) => b.host).join(", ")}`,
+      );
+    return outcome;
   }
 
   private async start(body: Record<string, unknown>, opts: RunOptions) {

@@ -224,7 +224,7 @@ export function mountInvocationRoutes(
       parsed.data.rules,
     );
     return outcome.ok
-      ? c.body(null, 204)
+      ? c.json({ waiting: outcome.waiting, blocked: outcome.blocked })
       : c.json(refused(outcome.message), 409);
   });
 
