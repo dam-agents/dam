@@ -64,7 +64,7 @@ They can change later without re-entering the credential, unless one also decide
 
 Some templates (Spotify, YouTube, Google services, and the custom client-credentials shape) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created.
 Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
-The install's own [DAM Connection](connection-presets.md#platform-preset-this-install-itself) is offered to no one, because only the platform mints its credential.
+The install's own [DAM Connection](connection-presets.md#platform-preset-this-install-itself) is offered only to a person whose own flag says so, because only the platform mints its credential: with the flag off the catalog hides it and no grant of it is accepted, while a Connection already made keeps working.
 The GitHub App templates are offered to everyone, grouped with the other GitHub auth methods.
 
 ### Connection

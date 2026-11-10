@@ -5,7 +5,7 @@ Last verified: 2026-11-09
 ## Overview
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
-It never runs inside the cluster.
+Users run it on their own machine; an Agent's own image carries the same client, for the install that Agent runs on ([below](#agent-skill)).
 For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
@@ -208,7 +208,7 @@ The CLI gives the web UI's warning itself as well: a command that binds a shared
 It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
 
 A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
-Every agent image builds the CLI of its commit into `/usr/local/lib/dam/dam.mjs`, and `/usr/local/bin/dam` on the PATH runs it, with no configuration of its own.
+Every agent image builds the CLI of its commit and puts `dam` on the PATH, with no configuration of its own.
 The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
 The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
 That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).

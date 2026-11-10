@@ -11,6 +11,11 @@ import { useCreateDamConnection } from "../api/mutations.js";
  * files it in the Connection's own Secret — and the create answers with the one
  * Connection they hold either way, which is then offered to the Agent they asked
  * from.
+ * The completion fires once, from the click that asked for it, as every other
+ * create pane here does — never from an effect watching the answer: the caller
+ * re-renders this pane with a fresh callback after the create invalidates the
+ * connection list, and an effect keyed on that would grant, toast and close a
+ * second time.
  */
 export function DamConnectionCreateBody({
   connectionName,
@@ -22,9 +27,10 @@ export function DamConnectionCreateBody({
   onCancel: () => void;
 }) {
   const create = useCreateDamConnection();
-  /* UNIT_BOUNDARY_DESCRIPTION: the completion fires once, from the click that asked for it, as every other create pane here does — never from an effect watching the answer. The caller re-renders this pane with a fresh callback after the create invalidates the connection list, and an effect keyed on that would grant, toast and close a second time. */
   const [unavailable, setUnavailable] = useState(false);
   const submit = async (): Promise<void> => {
+    /* UNIT_BOUNDARY_DESCRIPTION: the alarm belongs to the answer that raised it, so a retry clears it before it asks again rather than leaving it beside a spinner. */
+    setUnavailable(false);
     try {
       const result = await create.mutateAsync();
       if (result.id === null) setUnavailable(true);

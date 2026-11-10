@@ -9,6 +9,18 @@ import { DAM_TEMPLATE_ID } from "api-server-api";
 export const isDamConnection = (connection: { templateId: string }): boolean =>
   connection.templateId === DAM_TEMPLATE_ID;
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Connection that drives this install is on offer only while the person's own flag says so: with it off the catalog offers neither the template nor a grant of the Connection an owner already holds, while that Connection, its grants, its rotation and its deletion keep working. */
+export const damConnectionOffered = (
+  flags: { damConnection?: boolean } | undefined,
+): boolean => flags?.damConnection === true;
+
+export function canGrantConnection(
+  offered: boolean,
+  connection: { templateId: string },
+): boolean {
+  return offered || !isDamConnection(connection);
+}
+
 /* UNIT_BOUNDARY_DESCRIPTION: whether an Agent holds it, as far as a page can tell: `unknown` is a library that has not arrived or a read that failed, and every warning treats it as held, because a warning that is wrong costs a sentence and one that is missing costs an account. */
 export type DamHold = "held" | "not-held" | "unknown";
 

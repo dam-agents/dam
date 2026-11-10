@@ -329,7 +329,9 @@ export function connectionGrantProvisioner(
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
-        await connections.setAgentConnections(agentId, sel.connectionIds);
+        await connections.setAgentConnections(agentId, sel.connectionIds, {
+          ...(sel.platform ? { platform: true } : {}),
+        });
     },
   };
 }

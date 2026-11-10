@@ -82,10 +82,11 @@ The CA is optional, never reaches the agent, and configures gateway-side upstrea
 
 ## Platform preset: this install itself
 
-The Connection that lets an Agent drive this install as its owner (D256A), one per owner, and the client of the [CLI](cli.md#agent-skill) inside the agent: the `dam` of the agent's own image, pointed at the install it runs on.
+The Connection that lets an Agent drive this install as its owner, one per owner, and the client of the [CLI](cli.md#agent-skill) inside the agent: the `dam` of the agent's own image, pointed at the install it runs on.
 It is never offered in the catalog unless the install offers it to that person — the `damConnection` [experimental feature](features.md) — and the owner can neither paste a credential into it nor choose its key, because the platform mints both.
 Provisioning is idempotent and takes the first free name, which is the brand's.
 With the flag on, the person has the same create themselves, from the catalog: it answers with the one Connection they hold — the one it makes, or the one already there — and they may grant it to any of their Agents.
+An install that cannot offer it makes nothing and says so, and the pane stays where it is rather than closing on a Connection that does not exist.
 With it off, their own create and their own grants are refused, and hidden from the UI; the Connection, its grants, its key and its injection keep working, and rotating or deleting it stays available, since those reduce risk.
 The platform's own provisioning is not gated: the Agent [Dambledore](assistant.md) makes is created holding this Connection whatever the flag says.
 
@@ -100,12 +101,12 @@ Its contributions are that Service's name allowed under `/api/*` and injected un
 
 **Which host.** The name is the api-server's own public Service, as the api-server learns it from `PLATFORM_APISERVER_URL`: the Agent dials it over HTTPS, its gateway terminates that TLS with the install's own leaf and [takes the request to that Service inside the cluster](credential-gateway.md#the-chain-to-the-installs-own-service).
 So the route needs no public address of its own and works on every install, a plain-HTTP localhost one included — the leaf covers the name, and the DNS answer the machine gets for it is its gateway's, as for any host.
-That name belongs to this Connection alone: any other Connection naming it is refused at create, and a gateway chain that carries this Connection's key takes its upstream port and CA from this Connection, never from a peer on the same name.
+That name belongs to this Connection alone: any other Connection naming it is refused at create, and a gateway chain that carries this Connection's key takes its upstream port and CA from this Connection, while a peer Connection on that name is dropped from the chain rather than merged.
 
 **When its key stops working.** A key the owner revokes by hand in Settings leaves the Connection reading expired, and the owner's own action puts it back: rotating mints a fresh key into the same Connection, keeping its id, its grants and every Agent's env.
 Nothing mints a replacement by itself, so a key revoked on purpose stays revoked until someone asks for a new one.
 
-**Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too (D257B), and each surface that decides it says so.
+**Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too, and each surface that decides it says so.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
 The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.
@@ -155,7 +156,7 @@ It is named `CurveBender (shared)` and takes the first free name, then `LLM`, th
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
 The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.
-Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
+Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#envoy-credential-injection)).
 One key serves every user, and the gateway's scope keeps it off the rest of the proxy: the management routes (`/key/*`, `/user/*`, `/spend/*`), where a key that outlives its Connection could be minted, the shared key's spend read, or the key deleted for everyone, and the shared-identity routes (`/v1/files`, `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`, `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …), where every user's agent would read what another stored under the one identity the key names.
 The user-keyed preset above keeps injecting on its host's every path, since the key is that user's own.
 Bob never reaches this Connection through the gateway: the Model Router folds Bob's compiled-in `/inference` prefix inside the agent and calls `/v1/chat/completions`, so the deployment preset carries no `/inference` rewrite.

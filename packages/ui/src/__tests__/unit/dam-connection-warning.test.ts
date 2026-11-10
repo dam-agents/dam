@@ -6,7 +6,7 @@
 // TEST_OVERVIEW: a sentence and one that is missing costs an account; it says
 // TEST_OVERVIEW: nothing once the library is there and the Agent holds no such
 // TEST_OVERVIEW: Connection.
-import type { ConnectionView } from "api-server-api";
+import type { AgentConnections, ConnectionView } from "api-server-api";
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -15,9 +15,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentView } from "../../types.js";
 
 const library: { data: ConnectionView[] | undefined } = { data: undefined };
+const held: { data: AgentConnections | undefined } = { data: undefined };
 
 vi.mock("../../modules/connections/api/queries.js", () => ({
   useAppConnections: () => ({ data: library.data }),
+}));
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgentConnections: () => ({ data: held.data }),
 }));
 
 vi.mock("../../modules/satellites/api/queries.js", () => ({
@@ -53,6 +57,20 @@ const agentHolding = (granted: readonly string[]): AgentView =>
     grantedConnectionIds: granted,
   }) as unknown as AgentView;
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Agent's own grants as the page reads them: the Connections it holds, and a missing one where its detail has not arrived. */
+const grants = (
+  ...connections: (ConnectionView | undefined)[]
+): AgentConnections =>
+  ({
+    agentId: "agent-1",
+    connections: connections.map((connection, index) => ({
+      connectionId: connection?.id ?? `conn-unknown-${String(index)}`,
+      grantedAt: "2026-01-01",
+      preferred: false,
+      ...(connection ? { connection } : {}),
+    })),
+  }) as unknown as AgentConnections;
+
 const CHAT = { kind: "slack-channel" as const, name: "#team-x" };
 
 let root: ReturnType<typeof createRoot>;
@@ -82,6 +100,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   library.data = undefined;
+  held.data = undefined;
   useStore.setState({ dialog: null });
 });
 
@@ -120,7 +139,7 @@ const dialogText = () => {
 describe("the warning in the channel-bind flow", () => {
   // TEST_SCENARIO: the Agent's library has not arrived yet, so the page cannot say whether it holds the Connection — the warning shows all the same.
   it("warns while the library is still loading", () => {
-    library.data = undefined;
+    held.data = undefined;
     render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
     expect(host.textContent).toBe("unknown");
 
@@ -132,7 +151,7 @@ describe("the warning in the channel-bind flow", () => {
 
   // TEST_SCENARIO: the Agent holds it and its library is there, so the flow names exactly what the chat gains: everyone in it can act as the owner.
   it("warns when the Agent holds it", () => {
-    library.data = [DAM, GITHUB];
+    held.data = grants(DAM, GITHUB);
     render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
     expect(host.textContent).toBe("held");
 
@@ -144,12 +163,29 @@ describe("the warning in the channel-bind flow", () => {
 
   // TEST_SCENARIO: the library is there and the Agent holds something else, so the flow leaves the Connection out of what it says.
   it("says nothing when the Agent holds no such Connection", () => {
-    library.data = [DAM, GITHUB];
+    held.data = grants(GITHUB);
     render(createElement(HoldProbe, { agent: agentHolding(["conn-github"]) }));
     expect(host.textContent).toBe("not-held");
 
     render(createElement(BindProbe, { agent: agentHolding(["conn-github"]) }));
     expect(host.textContent).not.toContain(`${getBrand().name} connection`);
+  });
+
+  // TEST_SCENARIO: the viewer's own library says nothing about the Agent an editor is looking at, so the hold is read from the Agent's grants: the same Agent reads the same both ways, and a grant whose detail has not arrived is not called safe.
+  it("reads the Agent's own grants, not the viewer's library", () => {
+    library.data = [];
+    held.data = grants(DAM);
+    render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
+    expect(host.textContent).toBe("held");
+
+    library.data = [DAM];
+    held.data = grants(GITHUB);
+    render(createElement(HoldProbe, { agent: agentHolding(["conn-github"]) }));
+    expect(host.textContent).toBe("not-held");
+
+    held.data = grants(undefined);
+    render(createElement(HoldProbe, { agent: agentHolding(["conn-dam"]) }));
+    expect(host.textContent).toBe("unknown");
   });
 });
 

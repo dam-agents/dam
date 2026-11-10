@@ -5,8 +5,10 @@ import { getBrand } from "../../brand.js";
 import { filterOfferedTemplates } from "../../modules/connections/internal-only.js";
 import { connectionDetail } from "../../modules/connections/lib/connection-detail.js";
 import {
+  canGrantConnection,
   damActsAsYou,
   damAudienceSentence,
+  damConnectionOffered,
   damGrantSentence,
   damHoldWarns,
   damPreGrantSentence,
@@ -26,8 +28,11 @@ describe("the DAM connection", () => {
       damActsAsYou(getBrand().name),
     );
     expect(connectionDetail(connection).account).toMatch(/^Acts as you on /);
-    expect(filterOfferedTemplates([{ id: "dam" }], true)).toEqual([]);
-    expect(filterOfferedTemplates([{ id: "dam" }], false)).toEqual([]);
+    expect(filterOfferedTemplates([{ id: "dam" }], true, false)).toEqual([]);
+    expect(filterOfferedTemplates([{ id: "dam" }], false, false)).toEqual([]);
+    expect(
+      filterOfferedTemplates([{ id: "dam" }], false, true).map((t) => t.id),
+    ).toEqual(["dam"]);
   });
 
   // TEST_SCENARIO: the confirmation before a grant says what the grant gives away, and only for this Connection; an Agent that already holds it gets the standing sentence instead, and an unread library counts as holding it.
@@ -41,6 +46,12 @@ describe("the DAM connection", () => {
     expect(damHoldWarns("held")).toBe(true);
     expect(damHoldWarns("unknown")).toBe(true);
     expect(damHoldWarns("not-held")).toBe(false);
+    expect(damConnectionOffered({ damConnection: true })).toBe(true);
+    expect(damConnectionOffered({ damConnection: false })).toBe(false);
+    expect(damConnectionOffered(undefined)).toBe(false);
+    expect(canGrantConnection(true, { templateId: "dam" })).toBe(true);
+    expect(canGrantConnection(false, { templateId: "dam" })).toBe(false);
+    expect(canGrantConnection(false, { templateId: "github" })).toBe(true);
   });
 
   // TEST_SCENARIO: whoever can steer the agent acts as the owner, so each flow names who that is.

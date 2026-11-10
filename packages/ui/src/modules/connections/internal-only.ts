@@ -8,10 +8,6 @@ const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
 
 const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = ["google-"];
 
-const NEVER_OFFERED_TEMPLATE_IDS: ReadonlySet<string> = new Set([
-  DAM_TEMPLATE_ID,
-]);
-
 export function isInternalOnlyTemplate(id: string): boolean {
   return (
     INTERNAL_ONLY_TEMPLATE_IDS.has(id) ||
@@ -19,12 +15,13 @@ export function isInternalOnlyTemplate(id: string): boolean {
   );
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: what the catalog offers: the install's own Connection Template only while the person's flag says so — the advanced-connections switch never offers it — and the internal-only templates only for a tester who turned that switch on. */
 export function filterOfferedTemplates<
   T extends Pick<ConnectionTemplateView, "id">,
->(templates: readonly T[], showInternal: boolean): T[] {
-  const neverOffered = templates.filter(
-    (t) => !NEVER_OFFERED_TEMPLATE_IDS.has(t.id),
+>(templates: readonly T[], showInternal: boolean, damOffered: boolean): T[] {
+  const offered = templates.filter(
+    (t) => damOffered || t.id !== DAM_TEMPLATE_ID,
   );
-  if (showInternal) return neverOffered;
-  return neverOffered.filter((t) => !isInternalOnlyTemplate(t.id));
+  if (showInternal) return offered;
+  return offered.filter((t) => !isInternalOnlyTemplate(t.id));
 }
