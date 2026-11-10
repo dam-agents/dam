@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -155,6 +156,47 @@ func TestOwnerGateway_FlagOffRendersNothing(t *testing.T) {
 	deps, err := r.client.AppsV1().Deployments("test-agents").List(context.Background(), metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	require.NoError(t, err)
 	assert.Empty(t, deps.Items)
+}
+
+// TEST_SCENARIO: the kubelet's readiness probe of an owner gateway in the ambient mesh arrives from the fixed link-local source istio-cni rewrites a host probe to, so the ingress policy admits each configured source on the health port alone — the agent listeners stay on the runner's range, and no other range reaches the pod.
+func TestOwnerGatewayIngressAdmitsTheMeshProbeOnTheHealthPortAlone(t *testing.T) {
+	cfg := *testConfig
+	cfg.IstioHostProbeSNAT = []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}
+	np := buildOwnerGatewayIngressPolicy(testOwner, &cfg, nil)
+
+	tcp := corev1.ProtocolTCP
+	health := intstr.FromInt(cfg.EnvoyPort)
+	require.Len(t, np.Spec.Ingress, 3)
+	assert.Contains(t, np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+		From: []networkingv1.NetworkPolicyPeer{
+			{IPBlock: &networkingv1.IPBlock{CIDR: "169.254.7.127/32"}},
+			{IPBlock: &networkingv1.IPBlock{CIDR: "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}},
+		},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}},
+	})
+
+	var blocks []string
+	for _, rule := range np.Spec.Ingress {
+		for _, peer := range rule.From {
+			if peer.IPBlock == nil {
+				continue
+			}
+			blocks = append(blocks, peer.IPBlock.CIDR)
+			assert.Equal(t, []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}}, rule.Ports, "a probe source reaches the health port and no agent listener")
+		}
+	}
+	assert.ElementsMatch(t, []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}, blocks, "no other range is admitted")
+}
+
+// TEST_SCENARIO: a policy rule with no peers admits every source, so an install that names no probe source gets no probe rule rather than a health port open to anyone.
+func TestOwnerGatewayIngressWithoutProbeSourcesAdmitsNoOneElse(t *testing.T) {
+	cfg := *testConfig
+	cfg.IstioHostProbeSNAT = nil
+	np := buildOwnerGatewayIngressPolicy(testOwner, &cfg, nil)
+	require.Len(t, np.Spec.Ingress, 2)
+	for _, rule := range np.Spec.Ingress {
+		assert.NotEmpty(t, rule.From, "every rule names who it admits")
+	}
 }
 
 // TEST_SCENARIO: with the flag on, an owner gets exactly one owner gateway with one Secret holding its files and its credentials, ServiceAccount and policies, and the agent's gateway Service records its slot, while the agent still routes to its own gateway pod. The agent's harness policy admits the owner gateway's principal, only with the guard's header.
@@ -853,6 +895,123 @@ func TestOwnerGateway_RefusedOwnerMovesItsAgentsBack(t *testing.T) {
 	assert.Equal(t, "my-agent", svc.Spec.Selector[LabelPair])
 	_, err = r.client.AppsV1().Deployments(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err))
+}
+
+// TEST_SCENARIO: a refusal is decided once for a set of agents and grants. A reconcile of the same owner with nothing changed does not render the whole configuration again, so it neither logs the refusal a second time nor spends the wide render; a second render there would be the wasted work and the log noise that a refused owner produced on every reconcile of every one of its agents.
+func TestOwnerGateway_ARefusedOwnerIsNotRenderedAgainUntilItsAgentsChange(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	captured := captureLog(t)
+	r.ownerGatewayBudget = 1
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.False(t, r.ownerGatewayOn(testOwner))
+	require.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "the refusal is decided once")
+	wide := r.ownerGatewayWideRenders.Load()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, wide, r.ownerGatewayWideRenders.Load(), "a reconcile with nothing changed renders no wide configuration")
+	assert.Len(t, captured.lines(ownerGatewayRefusalMessage), 1, "and so does not decide the refusal again")
+}
+
+// TEST_SCENARIO: the address a member answers on is rendered into the resolver's Corefile, so a gateway Service recreated at the same slot with a shorter address can bring an owner that was one byte past the budget back under it. The refusal sees the address, so it is re-decided instead of holding until something else moves.
+func TestOwnerGateway_ARefusedOwnerIsReevaluatedWhenItsServiceAddressChanges(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.255.255.254", false)
+	ownerTwoSigningSecrets(t, r)
+
+	r.ownerGatewayBudget = 0
+	for range 2 {
+		_, err := r.ensureOwnerGateway(ctx, testOwner)
+		require.NoError(t, err)
+	}
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	// TEST_SCENARIO: three bytes short of the wide render, which the six bytes agent-b's shorter address frees.
+	r.ownerGatewayBudget = secretSize(files) + ownerGatewayHeadroom - 3
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "both agents together are past the budget")
+
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("agent-b"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.client.CoreV1().Services(ns).Delete(ctx, svc.Name, metav1.DeleteOptions{}))
+	svc.ResourceVersion, svc.Spec.ClusterIP = "", "10.9.4.3"
+	_, err = r.client.CoreV1().Services(ns).Create(ctx, svc, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.True(t, r.ownerGatewayOn(testOwner), "the shorter address makes the same agents fit, so the owner is admitted at once")
+}
+
+// TEST_SCENARIO: the fingerprint cannot see everything a wide render is made of, such as repair state a migration pruned or reset, so it is not trusted forever: after the re-check interval the wide render is tried again even though nothing it sees changed, and a still-too-large owner is refused again rather than un-refused.
+func TestOwnerGateway_ARefusedOwnerIsReevaluatedAfterTheInterval(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.255.255.254", false)
+	ownerTwoSigningSecrets(t, r)
+	now := time.Date(2026, 11, 9, 13, 0, 0, 0, time.UTC)
+	r.clock = func() time.Time { return now }
+
+	r.ownerGatewayBudget = 0
+	for range 2 {
+		_, err := r.ensureOwnerGateway(ctx, testOwner)
+		require.NoError(t, err)
+	}
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	r.ownerGatewayBudget = secretSize(files) + ownerGatewayHeadroom - 1
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "the wide render is past the budget")
+	wide := r.ownerGatewayWideRenders.Load()
+
+	now = now.Add(ownerGatewayRefusalRecheck - time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.Equal(t, wide, r.ownerGatewayWideRenders.Load(), "inside the interval a refused owner costs no wide render")
+
+	now = now.Add(time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, wide+1, r.ownerGatewayWideRenders.Load(), "the interval passing re-decides the refusal")
+	assert.False(t, r.ownerGatewayOn(testOwner), "still past the budget, so the refusal holds and is decided for another interval")
+
+	now = now.Add(ownerGatewayRefusalRecheck - time.Second)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, wide+1, r.ownerGatewayWideRenders.Load(), "the decision is good for a further interval")
+}
+
+// TEST_SCENARIO: the refusal is held against what the owner's agents render, not against the owner for good: an agent that pushed the configuration past one Secret leaves, the wide render fits again, and the owner gateway serves it once more.
+func TestOwnerGateway_AnOwnerThatFitsAgainIsNoLongerRefused(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", false)
+	ownerTwoSigningSecrets(t, r)
+
+	// TEST_SCENARIO: both fit, which measures the wide render the budget is set below.
+	r.ownerGatewayBudget = 0
+	_, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Contains(t, files.Data, "platform-conn-two.aws-credentials", "both agents render to begin with")
+
+	r.ownerGatewayBudget = secretSize(files) - 512
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.False(t, r.ownerGatewayOn(testOwner), "both agents together are past one Secret")
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace(ns).Delete(ctx, "agent-b", metav1.DeleteOptions{}))
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.True(t, r.ownerGatewayOn(testOwner), "the agents that are left fit, so the owner is rendered wide and no longer refused")
 }
 
 func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {

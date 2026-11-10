@@ -163,6 +163,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	} else {
 		delete(env, environmentOfEnv)
 	}
+	if from := linkFrom(spec); from != "" {
+		env[linkFromEnv] = from
+	} else {
+		delete(env, linkFromEnv)
+	}
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 

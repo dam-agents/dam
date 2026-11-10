@@ -42,6 +42,11 @@ const (
 	ownerGatewayFilesVolume  = "gateway-files"
 	ownerGatewayDNSVolume    = "gateway-dns"
 	ownerGatewayConfigBudget = 1 << 20
+	// UNIT_BOUNDARY_DESCRIPTION: how long a refusal is trusted before the wide render is tried again, which bounds how long an owner that would now fit stays refused because of something the fingerprint does not see, such as repair state a migration pruned.
+	ownerGatewayRefusalRecheck = 10 * time.Minute
+	ownerGatewayRefusalMessage = "owner gateway: refused, past the 1 MiB one Secret holds; its agents move back to their own gateways"
+	// UNIT_BOUNDARY_DESCRIPTION: how much of the 1 MiB a render must leave free, so a credential rotation or a repair's metadata has room without a second refusal.
+	ownerGatewayHeadroom = 4096
 	// UNIT_BOUNDARY_DESCRIPTION: an owner gateway that stops cuts every agent's model streams at once. Envoy exits at once on SIGTERM, so the old pod first sleeps in preStop, out of its Services' endpoints and still serving what it holds, while the surged new pod takes every new connection; a stream that ends within the sleep is not cut. The cost is only how long a roll takes, and a stream longer than that is still reset.
 	ownerGatewayTerminationGrace int64 = 30
 )
@@ -233,7 +238,7 @@ func secretSize(secret *corev1.Secret) int {
 	return n
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, and the controller on the proxy ports for its readiness probe. The controller is in the ambient mesh, so its probe also arrives on HBONE.
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway admits only the owner's own runner, which dials it on each machine's behalf, on the agent port range for TCP and UDP, the controller on the proxy ports for its readiness probe, and the mesh's kubelet-probe source (istio-cni rewrites a host probe to one fixed link-local address, so ztunnel can tell it from a workload's traffic) on the health port alone. The controller is in the ambient mesh, so its probe also arrives on HBONE.
 func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs []metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	first, last := ownerGatewayPortRange()
@@ -249,21 +254,31 @@ func buildOwnerGatewayIngressPolicy(owner string, cfg *config.Config, ownerRefs 
 		}},
 	}
 	name := ownerGatewayName(cfg.ReleaseName, owner)
+	health := intstr.FromInt(cfg.EnvoyPort)
+	probe := make([]networkingv1.NetworkPolicyPeer, 0, len(cfg.IstioHostProbeSNAT))
+	for _, cidr := range cfg.IstioHostProbeSNAT {
+		probe = append(probe, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
+	}
+	ingress := []networkingv1.NetworkPolicyIngressRule{
+		{From: []networkingv1.NetworkPolicyPeer{runner}, Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &from, EndPort: &end},
+			{Protocol: &udp, Port: &from, EndPort: &end},
+		}},
+		{From: []networkingv1.NetworkPolicyPeer{controller}, Ports: []networkingv1.NetworkPolicyPort{
+			{Protocol: &tcp, Port: &from, EndPort: &end},
+			{Protocol: &tcp, Port: &hbone},
+		}},
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a rule with no peers admits every source, so no probe source means no rule.
+	if len(probe) > 0 {
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{From: probe, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &health}}})
+	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Name: name + "-ingress", Namespace: cfg.Namespace, Labels: ownerGatewayLabels(cfg.ReleaseName, owner), OwnerReferences: ownerRefs},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: owner}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				{From: []networkingv1.NetworkPolicyPeer{runner}, Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &tcp, Port: &from, EndPort: &end},
-					{Protocol: &udp, Port: &from, EndPort: &end},
-				}},
-				{From: []networkingv1.NetworkPolicyPeer{controller}, Ports: []networkingv1.NetworkPolicyPort{
-					{Protocol: &tcp, Port: &from, EndPort: &end},
-					{Protocol: &tcp, Port: &hbone},
-				}},
-			},
+			Ingress:     ingress,
 		},
 	}
 }
@@ -297,6 +312,26 @@ type ownerRender struct {
 	keys       []string
 	leafAgents []ownerLeafAgent
 	revisions  map[string]string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a refusal and what it was decided on: the fingerprint of the inputs that decide the wide render's size, and when it was decided, so the decision is revisited even if nothing the fingerprint sees moves.
+type ownerGatewayRefusal struct {
+	fingerprint string
+	decided     time.Time
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what decides whether an owner's wide render fits one Secret, in a fixed encoding so the same facts always hash alike: the members and each one's slot and Service address, its granted credentials by name and version, its promoted hosts, its address requirement and its attribution, with the template revision and the budget. Content changes reach it through a credential's version; anything else that changes the render's size without changing these is either the templates themselves, which moves the revision, or state the refusal's expiry covers.
+func ownerGatewayFingerprint(members map[string]ownerGatewayMember, names []string, budget int) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\n%d\n", ownerGatewayTemplateRev, budget)
+	for _, name := range names {
+		m := members[name]
+		fmt.Fprintf(h, "%q %d %q %d %q %t %q\n", name, m.slot, m.clusterIP, len(m.secrets), m.agent.Spec.L7Hosts, m.agent.Spec.RequireConnectionAddress, m.agent.Spec.TelemetryAttributionID)
+		for _, secret := range m.secrets {
+			fmt.Fprintf(h, "%q %q\n", secret.Name, secret.ResourceVersion)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: renders and applies the owner gateway for every vm Agent of the owner, from an agent's reconcile while it holds the owner's lock. Every agent gets its slot first, recorded on its own gateway Service, so the listeners render on their final ports. The Secret holding the files and the credentials must fit in 1 MiB, the limit of one object, and it is one object so that a file and the credential it names reach the pod together; a larger owner is refused, until an xDS server in the controller replaces the files. A refused owner, or one whose flag is off, renders only the agents still on it, so their grants stay current while each moves back to its own gateway, and the owner gateway goes once none is left on it.
@@ -406,22 +441,38 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		}
 		return plan
 	}
-	plan := planFor(names)
-	current, err := render(names, ownerGatewayCredentialRoot, plan)
-	if err != nil {
-		return nil, err
+	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - ownerGatewayHeadroom
+	// UNIT_BOUNDARY_DESCRIPTION: a refusal is remembered against what decides the wide render's size, so an owner that stays too large renders the membership it serves and nothing else: the wide render costs its whole configuration and its plan requeues repairs the discarded render never publishes. A fingerprint that moved (an agent added or removed, a grant, a rotation, a promoted host, a moved Service address) renders wide again. The entry also expires, so an input the fingerprint misses, such as repair state a migration pruned, is re-checked at most once per re-check interval instead of never. In memory only, so a restart decides once more.
+	fingerprint := ownerGatewayFingerprint(members, names, budget)
+	stillRefused := false
+	if held, ok := r.ownerGatewayRefused.Load(owner); ok && r.config.VM.Gateway.PerOwner {
+		refusal, _ := held.(ownerGatewayRefusal)
+		stillRefused = refusal.fingerprint == fingerprint && r.clockNow().Sub(refusal.decided) < ownerGatewayRefusalRecheck
 	}
-	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
-	if r.config.VM.Gateway.PerOwner {
-		if size := secretSize(current.files); size > budget {
-			r.ownerGatewayRefused.Store(owner, true)
-			slog.Warn("owner gateway: refused, past the 1 MiB one Secret holds; its agents move back to their own gateways", "owner", owner, "agents", len(names), "KiB", size>>10)
-			plan = planFor(onIt)
-			if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
-				return nil, err
+	var plan *ownerGatewayRepairPlan
+	var current ownerRender
+	if stillRefused {
+		plan = planFor(onIt)
+		if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
+			return nil, err
+		}
+	} else {
+		r.ownerGatewayWideRenders.Add(1)
+		plan = planFor(names)
+		if current, err = render(names, ownerGatewayCredentialRoot, plan); err != nil {
+			return nil, err
+		}
+		if r.config.VM.Gateway.PerOwner {
+			if size := secretSize(current.files); size > budget {
+				r.ownerGatewayRefused.Store(owner, ownerGatewayRefusal{fingerprint: fingerprint, decided: r.clockNow()})
+				slog.Warn(ownerGatewayRefusalMessage, "owner", owner, "agents", len(names), "KiB", size>>10)
+				plan = planFor(onIt)
+				if current, err = render(onIt, ownerGatewayCredentialRoot, plan); err != nil {
+					return nil, err
+				}
+			} else {
+				r.ownerGatewayRefused.Delete(owner)
 			}
-		} else {
-			r.ownerGatewayRefused.Delete(owner)
 		}
 	}
 	if len(onIt) == 0 && !r.ownerGatewayOn(owner) {

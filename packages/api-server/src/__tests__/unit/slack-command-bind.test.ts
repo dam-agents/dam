@@ -72,6 +72,7 @@ function harness(opts: {
       unbindCalls.push(ch);
     },
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],

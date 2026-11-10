@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-30
+Last verified: 2026-11-09
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -12,7 +12,7 @@ Sources live in [`packages/agents/`](../../packages/agents/): one directory per 
 ## One base, one image over it
 
 Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile.
-The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake, and `platform-env` with its openrc service, the [Environment Link](environments.md#the-environment-link)'s helper.
+The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake, and `platform-env`, the [Environment Link](environments.md#the-environment-link)'s helper on the dialing side; the accepting side is platform-init's, not the image's.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths.
   The default image carries all five.
@@ -51,20 +51,22 @@ The native CLI the adapter runs stays in the tools; the bundle cannot find it be
 
 One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), builds any agent image as a tar in the agent's `dist/oci/`, named `platform-<agent>:latest`, or reuses it from the registry while its source is unchanged (the same source hash [`image:resolve`](../../.mise/tasks/image/resolve) keys CI on).
 CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes each architecture's OCI layout by digest with crane.
+A push compresses the layout's plain layers with parallel gzip, each layer once per job, and a layer not at all when the repository holds its compressed blob already, as a rebuild of a commit an earlier run published does.
 
 - **Linux of the image's architecture only.** The build installs the tools for the host's architecture, whose paths the image's `PATH` names, and runs `apt-get` into a side rootfs, under root.
   On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back.
   The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with a `docker save`-style `manifest.json` beside it, by which crane reads the tar.
   A run that imports an image it built keeps the layout and writes no tar: [`cluster:import`](../../.mise/tasks/cluster/import) tars it into the import as containerd reads it, so a multi-gigabyte image is not written to disk as an archive and read back.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
-- **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a day.
+- **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a week.
+  A day would be too fine: the build is deterministic, so a day without a Debian package update only writes the same layer again.
   That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.
   Every image is then packed by [`image:pack`](../../.mise/tasks/image/pack), the platform images' own packer: the default image onto that base, each workload and the mock onto the default image, a sorted tree per layer so a digest follows content alone.
   The images share the base's layers, so a node stores them once.
 - **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then the harness tools, then Claude Code's adapter bundle, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
   Selkies' Python bytecode is checked by source hash, since a packed layer's mtimes are zero.
-- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it.
-  k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.
+- **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their environment files pin exactly, and k-search's closure, which [its own compiled lock](../../packages/agents/k-search/requirements.txt) names and its install takes as constraints (uv's tool install does not verify the hashes it was compiled with; the pins are what hold); CI caches the tool installs under it, so they change only with it.
+  k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh; the lock keeps that install to the versions it names, so the venv's layer changes only when a pin moves.
   There are no build-arg overrides.
 
 ## Ownership
@@ -110,7 +112,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
   k3s listens on 16443, the port of `cluster:install`'s own k3s in a sandbox and in the lima dev VM, so a cluster one of them made runs under the service with its kubeconfigs unchanged; a data dir made on another port keeps that one, since k3s exits when its stored kubeconfigs name another.
   A service gets only `PATH`, the gateway's proxy and CA variables, `PLATFORM_ENVIRONMENT_OF`, `XDG_RUNTIME_DIR` and `MISE_SYSTEM_DATA_DIR` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
-- The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, one of the image's two services in the `default` runlevel, beside `platform-env`, which serves the Environment Link only on an Environment; OpenRC comes from Debian testing through an apt pin for them.
+- The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, the image's one service in the `default` runlevel; OpenRC comes from Debian testing through an apt pin for them.
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image, and last until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.

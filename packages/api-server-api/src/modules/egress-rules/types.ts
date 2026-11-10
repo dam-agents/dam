@@ -17,7 +17,21 @@ export type EgressRuleSource =
   | `connection:${string}`
   | "preset:trusted"
   | "preset:all"
+  | typeof CHILD_DRIVER_SOURCE
+  | typeof CHILD_INHERITED_SOURCE
   | typeof PLATFORM_ENVIRONMENTS_SOURCE;
+
+// UNIT_BOUNDARY_DESCRIPTION: the sources of a detached child's own rules: those its launching agent set on an open child, and those copied from its parent onto a scoped child at launch.
+export const CHILD_DRIVER_SOURCE = "driver";
+export const CHILD_INHERITED_SOURCE = "inherited";
+
+// UNIT_BOUNDARY_DESCRIPTION: an allow rule with a wildcard host, from any host ("*") to every subdomain of one domain ("*.github.com"): its owner, a person, grants it on an approval; the agent that sets the child's rules never writes it.
+export function isWildcardEgressRule(rule: {
+  host: string;
+  verdict: string;
+}): boolean {
+  return rule.verdict === "allow" && rule.host.trim().startsWith("*");
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the source of the one rule the platform itself adds to every Agent on an install that serves Environments: the environments domain, allowed, with the Agent's key sent to the Environment gate. Shown to its owner as a rule of its own, which they can remove and restore, never edit.
 export const PLATFORM_ENVIRONMENTS_SOURCE = "platform:environments";

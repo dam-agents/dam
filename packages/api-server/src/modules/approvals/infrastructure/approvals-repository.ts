@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
+import { and, asc, desc, eq, isNull, lt, ne, or, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
@@ -54,6 +54,10 @@ export interface ApprovalsRepository {
   listPendingForInstance(
     agentId: string,
     opts?: ListApprovalsRepoOpts,
+  ): Promise<PendingApprovalRow[]>;
+  /* UNIT_BOUNDARY_DESCRIPTION: every waiting egress request a driver filed on its child, unpaged, so a dedupe or a withdraw sees each one; a driver replaces the whole set on each update, so it stays as large as the driver's last rules. */
+  listPendingChildEgressRequests(
+    childId: string,
   ): Promise<PendingApprovalRow[]>;
   resolvePending(
     id: string,
@@ -264,18 +268,34 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async listPendingForInstance(agentId, opts) {
       const limit = clampLimit(opts?.limit);
+      const forInstance = or(
+        eq(pendingApprovals.agentId, agentId),
+        sql`${pendingApprovals.payload}->>'forAgentId' = ${agentId}`,
+      );
       const where = opts?.status
-        ? and(
-            eq(pendingApprovals.agentId, agentId),
-            eq(pendingApprovals.status, opts.status),
-          )
-        : eq(pendingApprovals.agentId, agentId);
+        ? and(forInstance, eq(pendingApprovals.status, opts.status))
+        : forInstance;
       const rows = await db
         .select()
         .from(pendingApprovals)
         .where(where)
         .orderBy(desc(pendingApprovals.createdAt))
         .limit(limit);
+      return rows.map((r) => toPendingRow(r as RawPending));
+    },
+
+    async listPendingChildEgressRequests(childId) {
+      const rows = await db
+        .select()
+        .from(pendingApprovals)
+        .where(
+          and(
+            eq(pendingApprovals.agentId, childId),
+            eq(pendingApprovals.status, "pending"),
+            eq(pendingApprovals.type, "egress_proposal"),
+            sql`${pendingApprovals.payload}->>'forAgentId' is not null`,
+          ),
+        );
       return rows.map((r) => toPendingRow(r as RawPending));
     },
 

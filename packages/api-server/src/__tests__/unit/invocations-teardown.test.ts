@@ -1,49 +1,27 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type {
-  InvocationRow,
-  InvocationsRepository,
-} from "../../modules/invocations/infrastructure/invocations-repository.js";
+import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createDelegationControl } from "../../modules/invocations/services/delegation-control.js";
 import type { DelegationFramesPort } from "../../modules/invocations/services/delegation-frames.js";
 import { createDriverCascade } from "../../modules/invocations/services/driver-cascade.js";
 import { createTargetCapture } from "../../modules/invocations/services/target-capture.js";
 import { createTargetReaper } from "../../modules/invocations/services/target-reaper.js";
+import {
+  fakeInvocationsRepo,
+  invocationRow,
+} from "../helpers/invocations-repo.js";
 
 function row(
   id: string,
   overrides: Partial<InvocationRow> = {},
 ): InvocationRow {
-  return {
+  return invocationRow({
     id,
     driverAgentId: "root-1",
     rootDriverId: "root-1",
-    owner: "owner-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
     resultSchema: {},
-    result: null,
-    status: "running",
-    errorReason: null,
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60_000),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
     ...overrides,
-  };
+  });
 }
 
 function fakeRepo(rows: InvocationRow[]) {
@@ -52,36 +30,24 @@ function fakeRepo(rows: InvocationRow[]) {
     markReaped: vi.fn(async (_id: string) => {}),
     markTranscriptCaptured: vi.fn(async (_id: string, _t: boolean) => {}),
     deleteReapedByRoot: vi.fn(async (_root: string) => 0),
-    fail: vi.fn(async (_id: string, _reason: string) => {}),
+    fail: vi.fn(async (_runId: string, _reason: string) => null),
   };
-  const repo: InvocationsRepository = {
-    insert: async () => {},
+  const repo = fakeInvocationsRepo({
     get: async (id) => byId.get(id) ?? null,
-    markStarted: async () => null,
-    failExpired: async () => false,
-    complete: async () => true,
     fail: calls.fail,
-    listExpiredRunning: async () => [],
-    listRunning: async () => [],
+    listRunningRuns: async (id) =>
+      rows.filter((r) => r.id === id && r.status === "running"),
     listRunningByDriver: async (driver) =>
       rows.filter((r) => r.driverAgentId === driver && r.status === "running"),
-    listRunningAgentIds: async () => [],
-    listTargetsByOwner: async () => [],
-    listRootDriverIds: async () => [],
-    listTerminalUnreaped: async () => [],
     markReaped: calls.markReaped,
+    listUnreapedByDriver: async (driver) =>
+      rows.filter((r) => r.driverAgentId === driver && r.reapedAt === null),
     listByRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     listUnreapedByRoot: async (root) =>
       rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
-    delete: async () => {},
     markTranscriptCaptured: calls.markTranscriptCaptured,
-    finishScript: async () => true,
-    dropOutputStream: async () => {},
-    clearOutput: async () => {},
-    listExpiredOutputs: async () => [],
-    listScriptsByRoot: async () => [],
     deleteReapedByRoot: calls.deleteReapedByRoot,
-  };
+  });
   return { repo, calls };
 }
 
@@ -104,6 +70,7 @@ describe("the target reaper", () => {
     const reaper = createTargetReaper({
       repo,
       agentsFor: () => ({ delete: async () => {} }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await reaper.reap({ id: "agent-a", owner: "owner-1" });
@@ -120,6 +87,7 @@ describe("the target reaper", () => {
             throw new Error("k8s down");
           },
         }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await expect(
@@ -134,6 +102,7 @@ describe("the target reaper", () => {
     const reaper = createTargetReaper({
       repo,
       agentsFor: () => ({ delete: async () => {} }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await expect(
@@ -148,10 +117,14 @@ describe("the target reaper", () => {
       repo,
       agentsFor: () =>
         ({ delete: async () => void order.push("delete") }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => void order.push("capture") },
     });
     await reaper.reap({ id: "agent-a", owner: "owner-1" });
-    await reaper.reap({ id: "agent-a", owner: "owner-1" }, { capture: false });
+    await reaper.reap(
+      { id: "agent-a", owner: "owner-1" },
+      { capture: false, force: true },
+    );
     expect(order).toEqual(["capture", "delete", "delete"]);
   });
 });
@@ -233,7 +206,7 @@ describe("the driver cascade", () => {
     const reaped = reaper.reap.mock.calls.map(([r]) => r.id).sort();
     expect(reaped).toEqual(["agent-a", "agent-b", "agent-c"]);
     for (const call of reaper.reap.mock.calls) {
-      expect(call).toContainEqual({ capture: false });
+      expect(call).toContainEqual({ capture: false, force: true });
     }
     expect(calls.fail.mock.calls.map(([id]) => id).sort()).toEqual([
       "agent-a",
@@ -242,10 +215,17 @@ describe("the driver cascade", () => {
     expect(calls.deleteReapedByRoot).toHaveBeenCalledWith("root-1");
   });
 
+  // TEST_SCENARIO: a deleted sub-agent that drives its own takes every child it still has: a running one is failed, and a kept one that reported and a clean slate that never ran are reaped too, since nothing else would remove them.
   test("a deleted target captures its own children and keeps the root's records", async () => {
     const { repo, calls } = fakeRepo([
       row("agent-mid"),
       row("agent-leaf", { driverAgentId: "agent-mid" }),
+      row("agent-kept", {
+        driverAgentId: "agent-mid",
+        status: "done",
+        keepUntil: new Date(Date.now() + 60_000),
+      }),
+      row("agent-slate", { driverAgentId: "agent-mid", status: "idle" }),
     ]);
     const reaper = reaperSpy();
     await createDriverCascade({
@@ -258,8 +238,15 @@ describe("the driver cascade", () => {
       "target agent deleted",
     );
     expect(calls.markReaped).toHaveBeenCalledWith("agent-mid");
-    expect(reaper.reap).toHaveBeenCalledTimes(1);
-    expect(reaper.reap.mock.calls[0]).toContainEqual({ capture: true });
+    expect(calls.fail).not.toHaveBeenCalledWith(
+      "agent-kept",
+      expect.anything(),
+    );
+    expect(reaper.reap.mock.calls.map(([r, opts]) => [r.id, opts])).toEqual([
+      ["agent-leaf", { capture: true, force: true }],
+      ["agent-kept", { capture: true, force: true }],
+      ["agent-slate", { capture: true, force: true }],
+    ]);
     expect(calls.deleteReapedByRoot).not.toHaveBeenCalled();
   });
 });

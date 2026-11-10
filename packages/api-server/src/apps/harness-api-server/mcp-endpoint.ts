@@ -203,11 +203,13 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   environments: OwningAgentEnvironments | null;
+  keptSubAgents?: boolean;
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
   sessionMessages?: SessionMessages;
   chatForms?: ChatFormPreferences | null;
+  readsChannelHistory?: boolean;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -225,6 +227,54 @@ const SESSION_SETTINGS_INSTRUCTIONS =
 
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
+
+const ISO_DATE_OR_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function slackTsOf(label: string, raw: string): string | { error: string } {
+  const parts = ISO_DATE_OR_TIME.exec(raw);
+  const at =
+    parts &&
+    isCalendarDate(Number(parts[1]), Number(parts[2]), Number(parts[3]))
+      ? Date.parse(raw)
+      : Number.NaN;
+  if (!Number.isFinite(at) || at < 0)
+    return {
+      error: `${label} is not an ISO 8601 date, or a date-time with its offset, after 1970: ${raw}`,
+    };
+  return (at / 1000).toFixed(6);
+}
+
+function slackTsRange(range: {
+  since: string | undefined;
+  until: string | undefined;
+}): { since?: string; until?: string } | { error: string } {
+  const since =
+    range.since === undefined ? undefined : slackTsOf("since", range.since);
+  if (typeof since === "object") return since;
+  const until =
+    range.until === undefined ? undefined : slackTsOf("until", range.until);
+  if (typeof until === "object") return until;
+  if (
+    since !== undefined &&
+    until !== undefined &&
+    Number(since) >= Number(until)
+  )
+    return { error: "since must be earlier than until" };
+  return {
+    ...(since !== undefined ? { since } : {}),
+    ...(until !== undefined ? { until } : {}),
+  };
+}
 
 export function createMcpSession(
   agentId: string,
@@ -657,6 +707,81 @@ export function createMcpSession(
       return textResult(JSON.stringify(result));
     },
   );
+
+  if (deps.readsChannelHistory) {
+    server.tool(
+      "read_channel_history",
+      "Read further back in a Slack conversation's history than the history you were handed. Only where channel history is on for you: a person turned it on when they connected you to that conversation, or later. The history you are handed covers the newest messages posted outside a thread; this reads the older ones, one page at a time, the newest page first. Returns { messages, conversationId, hasMore, cursor }, messages oldest first in the same labelled form as your conversation history, each line with its ts after the time, as [<time>, ts <ts>]. A line ending in a [thread: ...] tag opened a thread whose replies are not shown here: read them with read_thread, passing that ts. With hasMore true, call again with the cursor to read the page just before this one, as far back as you need; pass back only a cursor this same conversation gave you. Pass since and until to read one stretch of time, for example the last week. A conversation where channel history is not on for you is refused, and the refusal names the ones where it is on. A turn that answers in a Slack conversation reads only that conversation; a web chat or a scheduled run reads any conversation where it is on. Slack only.",
+      {
+        chatId: z
+          .string()
+          .optional()
+          .describe(
+            "Conversation to read: the chatId of a conversation where channel history is on for you — a turn there names it, and a refusal lists every one. Omit it when history is on for you in only one conversation, or when you pass a cursor.",
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            "Read further back: the cursor a previous read of this same conversation returned, copied exactly. Omit it to start from the newest messages.",
+          ),
+        since: z
+          .string()
+          .optional()
+          .describe(
+            "Oldest time to read, as an ISO 8601 date (midnight UTC) or a date-time with its offset, for example 2026-11-02 or 2026-11-02T09:00:00+01:00. Omit it to read back to the start of the conversation.",
+          ),
+        until: z
+          .string()
+          .optional()
+          .describe(
+            "Newest time to read, as an ISO 8601 date (midnight UTC) or a date-time with its offset; messages at or after it are left out. Omit it to start from the newest message.",
+          ),
+      },
+      async ({ chatId, cursor, since, until }) => {
+        const bounds = slackTsRange({ since, until });
+        if ("error" in bounds) return errorResult(bounds.error);
+        const sessionId = await callerSessionId();
+        const result = await deps.channelManager.readChannelHistory(
+          agentId,
+          ChannelType.Slack,
+          {
+            ...(sessionId ? { sessionId } : {}),
+            ...(chatId !== undefined ? { conversationId: chatId } : {}),
+            ...(cursor !== undefined ? { cursor } : {}),
+            ...bounds,
+          },
+        );
+        const audit = channelAudit(ChannelType.Slack);
+        const asked = {
+          ...(chatId !== undefined ? { conversationId: chatId } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(since !== undefined ? { since } : {}),
+          ...(until !== undefined ? { until } : {}),
+        };
+        if ("error" in result) {
+          securityLog("warn", "channel.history_read", {
+            ...audit,
+            result: "failure",
+            reason: result.error,
+            detail: asked,
+          });
+          return errorResult(result.error);
+        }
+        securityLog("info", "channel.history_read", {
+          ...audit,
+          result: "success",
+          detail: {
+            ...asked,
+            conversationId: result.conversationId,
+            messages: result.messages.length,
+            hasMore: result.hasMore,
+          },
+        });
+        return textResult(JSON.stringify(result));
+      },
+    );
+  }
 
   server.tool(
     "fetch_message_attachment",
@@ -1505,6 +1630,25 @@ export function createMcpSession(
       },
     });
 
+  // UNIT_BOUNDARY_DESCRIPTION: the run the reporting session is working on, so the result lands on that run of a sub-agent that may run several, and the session, which a later run may continue; null when the session or its runtime cannot say, and the result is then taken for the sub-agent's latest run.
+  const reportingRun = async (): Promise<{
+    run: string;
+    sessionId: string | null;
+  } | null> => {
+    const ref = deps.sessionRef;
+    if (!ref) return null;
+    try {
+      const { run, sessionId } =
+        await runtimeClient.sessions.invocationRun.query(
+          { ref },
+          { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+        );
+      return run ? { run, sessionId: sessionId ?? null } : null;
+    } catch {
+      return null;
+    }
+  };
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Once a call is accepted, your task is over: end your turn at once, with no more text and no more tool calls. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -1516,7 +1660,11 @@ export function createMcpSession(
         ),
     },
     async ({ result }) => {
-      const outcome = await deps.invocations.recordResult(agentId, result);
+      const outcome = await deps.invocations.recordResult(
+        agentId,
+        result,
+        await reportingRun(),
+      );
       if (!outcome.ok) {
         return errorResult(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
@@ -1536,6 +1684,7 @@ export function createMcpSession(
     registerSpendLimitsTool(server, { status: deps.spendStatus });
 
   registerSubAgentTools(server, {
+    kept: deps.keptSubAgents ?? false,
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
     spawningSession: async () => {
@@ -1652,6 +1801,7 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
+  readsChannelHistory: (agentId: string) => Promise<boolean>;
   chatFormPreferences: (
     owner: string,
     agentId: string,
@@ -1661,6 +1811,8 @@ export interface MountMcpDeps {
     owner: string,
     agentId: string,
   ) => Promise<OwningAgentEnvironments | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: whether the owner's agents see the kept sub-agent tools and options, which come with the Environments feature.
+  keptSubAgents: (owner: string) => Promise<boolean>;
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
@@ -1694,35 +1846,55 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner, agentId);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const [ownerIsInspector, chatForms, grantedSatellites, environments] =
-      await Promise.all([
-        deps.carriesInspectorRole(verified.owner),
-        deps
-          .chatFormPreferences(verified.owner, agentId)
-          .catch((err: unknown) => {
-            console.error(
-              `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
-              err,
-            );
-            return null;
-          }),
-        Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
-          (err: unknown) => {
-            console.error(
-              `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
-              err,
-            );
-            return [];
-          },
-        ),
-        deps.environments(verified.owner, agentId).catch((err: unknown) => {
+    const [
+      ownerIsInspector,
+      readsChannelHistory,
+      chatForms,
+      grantedSatellites,
+      environments,
+      keptSubAgents,
+    ] = await Promise.all([
+      deps.carriesInspectorRole(verified.owner),
+      deps.readsChannelHistory(agentId).catch((err: unknown) => {
+        console.error(
+          `[channels] could not tell whether ${agentId} reads a channel's history; serving the session without read_channel_history`,
+          err,
+        );
+        return false;
+      }),
+      deps
+        .chatFormPreferences(verified.owner, agentId)
+        .catch((err: unknown) => {
           console.error(
-            `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
+            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
             err,
           );
           return null;
         }),
-      ]);
+      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+        (err: unknown) => {
+          console.error(
+            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            err,
+          );
+          return [];
+        },
+      ),
+      deps.environments(verified.owner, agentId).catch((err: unknown) => {
+        console.error(
+          `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
+          err,
+        );
+        return null;
+      }),
+      deps.keptSubAgents(verified.owner).catch((err: unknown) => {
+        console.error(
+          `[invocations] could not read whether ${verified.owner} has kept sub-agents; serving the session without them`,
+          err,
+        );
+        return false;
+      }),
+    ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
     const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
@@ -1730,6 +1902,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ...(sessionRef ? { sessionRef } : {}),
       ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
       chatForms,
+      readsChannelHistory,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
@@ -1765,6 +1938,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       environments,
+      keptSubAgents,
       agentTelemetry: deps.agentTelemetry,
       ...(spendStatusFor
         ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }

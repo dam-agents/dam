@@ -1230,7 +1230,7 @@ describe("the saved profiles behind Use a profile", () => {
         name: "Local only",
         availability: {
           available: false,
-          reason: "CurveBender (shared) is not connected",
+          reason: "CurveBender is not connected",
           attachable: false,
         },
       }),

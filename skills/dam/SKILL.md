@@ -299,7 +299,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 
-When a run fails because the agent has no model provider, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
+When a run fails because the session has no model, run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
+When it lists none, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Name and avatar
 
@@ -361,9 +362,11 @@ dam connection templates
 dam connection list my-agent
 dam connection grant my-agent --connection github
 dam connection revoke my-agent --connection github
+dam connection default my-agent --connection github-work
 ```
 
 A connection belongs to the user; granting it lets one agent use it.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
 `dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.

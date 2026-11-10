@@ -16,12 +16,16 @@ export {
   createInvocationStartAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
+  createInvocationCancelOutcome,
   composeScriptOutputs,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./compose.js";
 export {
   AttenuationError,
+  KeepError,
+  RunError,
+  OpenEgressConnectionsError,
   InvalidSchemaError,
   ModelNameError,
   NoSpawnModelError,
@@ -33,6 +37,7 @@ export {
   type InvocationsService,
   type Reachability,
   type SpawnInput,
+  type SpawnTarget,
   type ScriptSpawnInput,
 } from "./services/invocations-service.js";
 export type {

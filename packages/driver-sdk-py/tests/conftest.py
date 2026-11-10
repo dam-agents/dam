@@ -18,6 +18,7 @@ AGENT_ID = "test-driver"
 class StubPlatform:
     def __init__(self):
         self.requests = []  # (method, path, body)
+        self.headers = []  # one dict per request, in the same order
         # path suffix -> (status, response body) or callable(body) -> (status, body)
         self.routes = {}
 
@@ -39,6 +40,7 @@ def _make_handler(stub: StubPlatform):
             raw = self.rfile.read(length) if length else b""
             body = json.loads(raw) if raw else None
             stub.record(method, self.path, body)
+            stub.headers.append({k.lower(): v for k, v in self.headers.items()})
             status, response = stub.respond(method, self.path, body)
             payload = json.dumps(response).encode()
             self.send_response(status)

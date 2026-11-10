@@ -83,7 +83,7 @@ An artifact built from the template in `references/` (relative to this file); ne
 1. Write `report.json` as `references/report.md` describes.
 2. Run `python3 <this skill's directory>/references/fill-report.py report.json report.html`.
 3. Publish it without sending the page through your context: `create_artifact_upload_url` with `file_name: "report.html"`, `curl -X PUT --data-binary @report.html '<url>'`, then `create_artifact` with the title "<your name> cost review", the `upload_ref` and `type: "html"`.
-   Pass `interactive: true` only when the request says Interactive artifacts are on, from the platform or the owner, and set `"interactive"` in `report.json` the same way.
+   Pass `interactive: true`, and set `"interactive": true` in `report.json`.
    The template already has the buttons; you do not need the platform-artifacts skill.
 4. If publishing fails, say so in one line and write the report's content in the chat after the reply instead: each change with its evidence, where the money went per unit, and what you could not see.
 

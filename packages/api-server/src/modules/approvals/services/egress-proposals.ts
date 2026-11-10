@@ -22,7 +22,10 @@ export interface EgressProposals {
   status(id: string): Promise<EgressProposalState>;
 }
 
-function proposalId(agentId: string, input: EgressProposalInput): string {
+export function proposalId(
+  agentId: string,
+  input: EgressProposalInput,
+): string {
   const shape = JSON.stringify([
     input.host.toLowerCase(),
     input.port ?? null,
@@ -91,8 +94,9 @@ export function createEgressProposals(deps: {
         limit: 500,
       });
       if (
-        open.filter((r) => r.type === "egress_proposal").length >=
-        EGRESS_PROPOSALS_PENDING_MAX
+        open.filter(
+          (r) => r.type === "egress_proposal" && r.agentId === deps.agentId,
+        ).length >= EGRESS_PROPOSALS_PENDING_MAX
       ) {
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
@@ -144,9 +148,12 @@ export function createEgressProposals(deps: {
 
     async status(id) {
       const row = await deps.repo.getPending(id);
+      const askedFor =
+        row?.payload.kind === "egress_proposal" &&
+        row.payload.forAgentId === deps.agentId;
       if (
         !row ||
-        row.agentId !== deps.agentId ||
+        (row.agentId !== deps.agentId && !askedFor) ||
         row.type !== "egress_proposal"
       ) {
         throw new TRPCError({ code: "NOT_FOUND", message: "no such proposal" });

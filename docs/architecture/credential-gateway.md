@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -172,8 +172,12 @@ A slot belongs to its Service for the Service's whole lifetime, whether that Ser
 **One Envoy, one listener per agent.** The owner gateway's bootstrap holds only what its agents share: the harness, object store, dynamic forward proxy and collector clusters.
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
 Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
+An agent's listener accepts only connections from outside the pod.
+The agents share the pod's loopback and its own address, so a dial through a sibling's forward proxy to either would otherwise enter that listener, checked as the sibling.
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
 The whole set, its credentials and its leaf file source live in one Secret of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
+The refusal holds until what the owner's agents render changes (agents, grants, credentials, promoted hosts, Service addresses), so a refused owner is not re-rendered on every reconcile.
+It is also re-checked on the first reconcile after ten minutes, so an owner that would now fit is admitted without waiting for its agents to change.
 
 **Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
 Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
@@ -188,6 +192,7 @@ The resolver is one CoreDNS with one block per agent's resolver port, each answe
 It reads one file of that Secret and is handed a volume of its own that projects that key alone, so a process in the resolver container can no more read a signing key than one outside the pod can.
 
 **Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
+The pod's own readiness is the kubelet's probe of that path, which the mesh delivers from the fixed link-local source istio-cni rewrites a host probe to, so the owner gateway's ingress policy admits that source on the health port alone.
 An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
 Once moved, the agent's own gateway pod and the objects around it are removed.
 Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.

@@ -122,7 +122,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
-- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
   A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
@@ -135,8 +135,8 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).
-  Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state.
-  An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only.
+  Slack connect binds a channel and sets ambient mode and channel history on or off; a re-connect changes only the modes it names, and the channel listing shows each binding's state of both.
+  An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
 - **`satellite`** *(experimental)* — expose this machine's tools and manage the ones an account has, owned by [satellites.md](satellites.md).
@@ -199,6 +199,7 @@ The CLI warns when a checked token expires within a day, and `dam connection lis
 A GitHub App connection's check names the bot it acts as and the repositories it reaches, and `dam connection scope` reports the check of the new scope.
 A GitHub sign-in or App installation is a parent no agent holds ([github-connections](github-connections.md)), and the CLI follows the UI there: `connect` ends in a connection made from it only with a scope or an explicit full access, and otherwise keeps the parent alone and shows what it reaches; `connect --from` adds another connection beside those it has; `list` shows each parent with its connections underneath and marks full access; and removing a parent first names its connections and the agents that lose them.
 A name a parent shares with its first connection means the connection, so the agent's usual references keep naming what it holds.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as its [default account](connections.md#addressing-a-connection) among them, as the web app's Connections panel shows: `dam connection list <agent>` marks it in a DEFAULT column and in `--json`, and `dam connection default` makes another granted account the default.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 The agent never sees the web UI's warning that a connection is shared with an Agent's editors or with the chats it is bound to, so the skill's security advisory carries that rule to it: whoever can steer an Agent uses every connection and satellite it holds.

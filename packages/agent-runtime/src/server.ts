@@ -61,6 +61,7 @@ import {
 } from "./modules/model-router/index.js";
 import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalDefaultModel } from "./modules/terminal-default-model.js";
 import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import { composeBrowser } from "./modules/browser-preview.js";
@@ -322,6 +323,8 @@ let sessionState: {
   localWork: (sessionId: string) => boolean;
   spawnedBy: (sessionId: string) => string[];
 } = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+// UNIT_BOUNDARY_DESCRIPTION: runs the platform ended while their prompt still waited behind another turn of its session; such a turn is cancelled as it starts.
+const cancelledRuns = new Set<string>();
 const invocationWatch = createInvocationWatch({
   reporter: {
     report: (input) =>
@@ -629,6 +632,16 @@ const {
   agentRequests: toolApprovalReporter,
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  onInvocationTurn: (sessionId, run) => {
+    if (cancelledRuns.delete(run)) {
+      void triggerDriver.cancel(sessionId);
+      return;
+    }
+    const entry = sessionMetadata.get(sessionId);
+    if (entry)
+      sessionMetadata.set(sessionId, { ...entry.meta, invocationRun: run });
+    invocationWatch.watch(sessionId, run);
+  },
   gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) => {
     invocationWatch.turnOutcome(sessionId, end);
@@ -760,7 +773,26 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
-  invocationWatch,
+  invocationCancel: {
+    cancelRun: async (run) => {
+      if (invocationScripts.stop(run)) return { ended: true };
+      const sessionId = Object.entries(sessionMetadata.all()).find(
+        ([id, entry]) =>
+          entry.meta.invocationRun === run && !sessionMetadata.isTombstoned(id),
+      )?.[0];
+      if (!sessionId) {
+        cancelledRuns.add(run);
+        return { ended: true };
+      }
+      invocationWatch.ended(sessionId);
+      return { ended: await triggerDriver.cancel(sessionId), sessionId };
+    },
+  },
+  invocationSessions: {
+    holds: (sessionId) =>
+      sessionMetadata.get(sessionId) !== undefined &&
+      !sessionMetadata.isTombstoned(sessionId),
+  },
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   recordContinuation: (sessionId, scheduleId) =>
     sessionMetadata.recordContinuation(sessionId, scheduleId),
@@ -909,6 +941,11 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+const grantedModel = (model: string): boolean => {
+  const alias = parseQualifiedModel(model)?.alias;
+  return !alias || grantedAliases().includes(alias);
+};
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
  * refuses the terminal with the provider-removed reason, as a chat prompt
@@ -927,10 +964,12 @@ function terminalLease(
       ? acpRuntime.sessionChoice(sessionId).model
       : requested.model !== undefined
         ? canonicalModel(requested.model)
-        : null;
-  const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
-  if (alias && !grantedAliases().includes(alias))
-    return PROVIDER_REMOVED_REASON;
+        : terminalDefaultModel({
+            harness,
+            chatDefault: acpRuntime.defaults()?.chat,
+            granted: grantedModel,
+          });
+  if (chosen && !grantedModel(chosen)) return PROVIDER_REMOVED_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",

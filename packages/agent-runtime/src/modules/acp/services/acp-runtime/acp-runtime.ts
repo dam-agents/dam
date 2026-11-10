@@ -233,6 +233,8 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  // UNIT_BOUNDARY_DESCRIPTION: a sub-agent run's turn starts, the run its prompt names: a run whose prompt waited behind another turn of its session starts here, not when it was queued.
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   onTurnOutcome?: (
@@ -467,8 +469,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       queuedAt,
       frame,
       sender,
+      source,
     }) => {
       autonomousTurns.end(sessionId);
+      const invocationRun = platformString(source, "invocationRun");
+      if (invocationRun) deps.onInvocationTurn?.(sessionId, invocationRun);
       finishHeldRun(sessionId);
       interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);

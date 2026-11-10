@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import type { InvocationsRepository } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
   UnresolvableDriverError,
 } from "../../modules/invocations/services/invocations-service.js";
+import { fakeInvocationsRepo } from "../helpers/invocations-repo.js";
 
 interface Recorder {
   inserted: string[];
@@ -16,36 +16,14 @@ function makeService(opts: {
   resolveRoot: (id: string) => Promise<string | null>;
 }) {
   const rec: Recorder = { inserted: [], deleted: [], created: [] };
-  const repo: InvocationsRepository = {
+  const repo = fakeInvocationsRepo({
     insert: async (row) => {
       rec.inserted.push(row.id);
     },
-    get: async () => null,
-    complete: async () => true,
-    markStarted: async () => null,
-    failExpired: async () => false,
-    fail: async () => {},
-    listExpiredRunning: async () => [],
-    listRunning: async () => [],
-    listRunningByDriver: async () => [],
-    listRunningAgentIds: async () => [],
-    listTargetsByOwner: async () => [],
-    listRootDriverIds: async () => [],
-    listTerminalUnreaped: async () => [],
-    markReaped: async () => {},
-    listByRoot: async () => [],
-    listUnreapedByRoot: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
     },
-    markTranscriptCaptured: async () => {},
-    finishScript: async () => true,
-    dropOutputStream: async () => {},
-    clearOutput: async () => {},
-    listExpiredOutputs: async () => [],
-    listScriptsByRoot: async () => [],
-    deleteReapedByRoot: async () => 0,
-  };
+  });
   const service = createInvocationsService({
     owner: "owner-1",
     repo,
@@ -59,6 +37,7 @@ function makeService(opts: {
     driverResolution: { resolveRoot: opts.resolveRoot },
     reaper: { reap: async () => {} },
     reportedReap: { afterReport: () => {} },
+    cancel: { settled: async () => true },
     runtimeMutator: {
       bump: async () => 0,
       enqueueAfterCommit: async () => {},

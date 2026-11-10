@@ -23,12 +23,6 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Let buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
-  },
-  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
@@ -60,9 +54,9 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "environments",
-    label: "Environments",
+    label: "Environments and kept sub-agents",
     description:
-      "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
+      "Let your agents run sandboxes of their own and keep them: Environments for other people and agents to open, such as one per pull request, and sub-agents kept after their result, which your agent can enter, give more work, run in parallel and continue a conversation with. Both sleep when unused and expire.",
   },
   {
     id: "hermes",

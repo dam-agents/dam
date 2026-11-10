@@ -92,7 +92,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Every binding names its workspace by Slack's team id.
   Bindings made before the platform could connect a second workspace named none; they are rewritten to name their workspace when the install's Helm bot token is imported ([channels](channels.md)).
   A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles.
-  Each binding carries its own ambient and default flags (absent = off).
+  Each binding carries its own ambient, channel history and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
   `slack_loop_guard_drops` holds, per conversation, the bot and app posts the loop guard dropped: a count, the last drop's time and the newest five.
   `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by a hash of the image.
@@ -132,7 +132,8 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
-- **delegation records** — one row per Invocation, kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **delegation records** — one row per Invocation and one per run of it (`invocation_runs`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **child inheritance** — one row per sub-agent or Environment an agent launched (`agent_inheritance`): which of its parent's connections it holds and whose egress rules decide its requests, chosen at launch and kept for the child's life ([invocations](invocations.md#spawning)).
 - **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; the owner's daily limits; and each user's Spend Ceiling that a platform operator set, with who set it and when.
   Redis caches the day totals.
   Owned by [spend-limits](spend-limits.md#ledger).
@@ -188,7 +189,9 @@ An agent's traffic still exits only through its paired gateway; what changes wit
 Blobs are addressed by an opaque reference held in Postgres; the store itself holds no queryable state.
 
 The store is any S3-compatible endpoint, chosen at deploy time via Helm: the chart bundles a single-node SeaweedFS by default (dev and local clusters work with no external account; Apache-2.0, so bundling carries no copyleft obligations), or the operator points the platform at an external store — a cloud bucket or an on-prem installation.
-The api-server provisions its bucket at startup when missing and fails boot fast when the store is unreachable.
+The api-server provisions its bucket when missing, in the background: a replica that starts while the store is down serves at once and keeps trying while the store refuses the connection or answers a 5xx.
+Until then only the features that store files fail, each with an error that says the object store cannot be reached, and they work again once it is back with no restart.
+The one boot step that waits for the store is the switch release's absorb, which writes its second copy there before it commits.
 An install with no object store fails closed: bulk-blob features are unavailable until one is configured.
 
 ### Custom resources

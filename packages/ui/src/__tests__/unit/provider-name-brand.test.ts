@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: each CurveBender preset is named by its template in every surface that names a provider: the user-keyed one keeps its "(own key)" suffix, the deployment's its "(shared)" one.
+// TEST_OVERVIEW: each CurveBender preset is named by its template in every surface that names a provider: the user-keyed one keeps its "(own key)" suffix, the deployment's is plain "CurveBender".
 import { describe, expect, it } from "vitest";
 
 import { providerNameFor } from "../../modules/provider-status/lib/provider-name.js";
@@ -18,7 +18,7 @@ describe("provider names", () => {
     const custom = row("curve-bender");
     const deployment = row("curve-bender-deployment");
     expect(providerRowName(custom)).toBe("CurveBender (own key)");
-    expect(providerRowName(deployment)).toBe("CurveBender (shared)");
+    expect(providerRowName(deployment)).toBe("CurveBender");
     expect(providerNameFor("curve-bender-deployment")).toBe(
       providerName("curve-bender", "curve-bender-deployment"),
     );

@@ -17,7 +17,6 @@ import {
 import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
-import type { InvocationWatch } from "../services/invocation-watch.js";
 import { safeReport } from "../infrastructure/report.js";
 
 const IMPL_NAME = "trigger";
@@ -72,6 +71,20 @@ class StartTimeoutError extends Error {
   }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a run told to continue a session this machine no longer holds (deleted, or never here) fails at once instead of starting a new conversation the driver did not ask for.
+class SessionGoneError extends Error {
+  constructor(sessionId: string) {
+    super(
+      `session ${sessionId} is not on this sub-agent any more; run in a new session instead`,
+    );
+    this.name = "SessionGoneError";
+  }
+}
+
+export interface InvocationSessions {
+  holds(sessionId: string): boolean;
+}
+
 function withinStartBound<T>(start: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -90,7 +103,7 @@ export function createTriggerPlugin(deps: {
   findSessionByRef?: (ref: string) => string | undefined;
   recordContinuation?: (sessionId: string, scheduleId: string) => void;
   catalogListed?: () => Promise<void>;
-  invocationWatch: Pick<InvocationWatch, "watch">;
+  invocationSessions?: InvocationSessions;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
@@ -116,7 +129,21 @@ export function createTriggerPlugin(deps: {
       ...(payload.settings !== undefined && { settings: payload.settings }),
       follows: payload.onDefault ? ("scheduled" as const) : null,
       ...(payload.once === true && { fireEvent: eventId }),
+      ...(payload.invocation === true && { invocationRun: eventId }),
     };
+    if (payload.invocation && payload.invocationSession) {
+      const sessionId = payload.invocationSession;
+      if (!deps.invocationSessions?.holds(sessionId))
+        throw new SessionGoneError(sessionId);
+      const res = await deps.driver.start({
+        task,
+        mcpServers: payload.mcpServers,
+        resumeSessionId: sessionId,
+        model,
+        invocationRun: eventId,
+      });
+      return res.sessionId;
+    }
     const origin = payload.origin;
     if (origin?.mode === "continue") {
       const originSession = deps.findSessionByRef?.(origin.sessionRef);
@@ -183,6 +210,7 @@ export function createTriggerPlugin(deps: {
       mcpServers: payload.mcpServers,
       platformMeta,
       model,
+      ...(payload.invocation === true && { invocationRun: eventId }),
     });
     return res.sessionId;
   };
@@ -271,15 +299,13 @@ export function createTriggerPlugin(deps: {
   ): Promise<void> => {
     for (let attempt = 1; ; attempt++) {
       try {
-        deps.invocationWatch.watch(
-          await withinStartBound(startSession(payload, payload.task, eventId)),
-          eventId,
-        );
+        await withinStartBound(startSession(payload, payload.task, eventId));
         return;
       } catch (err) {
         if (
           err instanceof SessionModelError ||
           err instanceof StartTimeoutError ||
+          err instanceof SessionGoneError ||
           attempt >= START_ATTEMPTS
         ) {
           failInvocation(payload, eventId, err);
@@ -299,7 +325,7 @@ export function createTriggerPlugin(deps: {
     err: unknown,
   ): void => {
     const detail =
-      err instanceof SessionModelError
+      err instanceof SessionModelError || err instanceof SessionGoneError
         ? err.message
         : `the run could not start: ${(err as Error).message}`;
     deps.log(`[trigger] ${payload.scheduleId} ${detail}`);

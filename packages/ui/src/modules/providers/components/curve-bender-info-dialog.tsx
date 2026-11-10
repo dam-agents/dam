@@ -15,8 +15,8 @@ export const CURVE_BENDER_DOCS_URL =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the deployment's CurveBender is a provider the
  * user holds no key for and cannot change, so its row opens this instead of a
- * form: what CurveBender is, that the inference is free within fair use, and
- * where its docs are. Nothing here is editable and nothing is fetched.
+ * form: that every user of this deployment runs on it, and where its docs are.
+ * Nothing here is editable and nothing is fetched.
  */
 export function CurveBenderInfoDialog({ onClose }: { onClose: () => void }) {
   return (
@@ -24,17 +24,15 @@ export function CurveBenderInfoDialog({ onClose }: { onClose: () => void }) {
       <DialogHeader title="CurveBender" onClose={onClose} />
       <DialogBody>
         <p className="text-sm leading-relaxed text-muted-foreground">
+          All {getBrand().name} users are set up with CurveBender, IBM-hosted
+          open-source models.{" "}
           <a
             href={CURVE_BENDER_DOCS_URL}
             {...externalLinkProps}
             className="font-medium text-accent underline underline-offset-2 hover:text-primary"
           >
-            CurveBender
-          </a>{" "}
-          is an IBM Research platform that gives teams access to open weight AI
-          models running on IBM-owned infrastructure. All {getBrand().name}{" "}
-          users are provided with free inference on CurveBender, subject to
-          fair-use policy.
+            Learn more
+          </a>
         </p>
       </DialogBody>
       <DialogFooter>

@@ -27,6 +27,7 @@ import { createControlAgentsRepository } from "../agent-store/agents-repository.
 import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
+import { createInheritanceRepository } from "./infrastructure/inheritance-repository.js";
 import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
 import { accessTo } from "./domain/agent-access.js";
 import { permissionsOf } from "./domain/agent-permissions.js";
@@ -108,6 +109,7 @@ export function composeAgentsModule(deps: {
     AgentsServiceDeps["readSlackLoopGuardDrops"]
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
+  childEgress?: AgentsServiceDeps["childEgress"];
   defaultProfile?: AgentsServiceDeps["defaultProfile"];
   editorEmail: string | null;
   actor?: string;
@@ -150,6 +152,8 @@ export function composeAgentsModule(deps: {
       onboardingChecklists: deps.onboardingChecklists,
       agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
+      inheritance: createInheritanceRepository(deps.db),
+      childEgress: deps.childEgress,
       defaultProfile: deps.defaultProfile,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: (agentId, agentOwner) =>
@@ -421,4 +425,64 @@ export function composeEditorStanding(deps: {
     if (accessTo(infra.owner, list, caller) !== "editor") return null;
     return { ownerSub: infra.owner, permissions: permissionsOf("editor") };
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the children whose connections mirror an Agent's, for the connections module to keep them in step, and the cleanup that drops a deleted Agent's inheritance record.
+export function childrenMirroringConnections(
+  db: Db,
+): (parentAgentId: string) => Promise<string[]> {
+  const repo = createInheritanceRepository(db);
+  return (parentAgentId) => repo.childrenMirroringConnections(parentAgentId);
+}
+
+export function inheritanceCleanup(db: Db): {
+  listAgentIds: () => Promise<string[]>;
+  cleanup: (agentId: string) => Promise<void>;
+} {
+  const repo = createInheritanceRepository(db);
+  return {
+    listAgentIds: () => repo.listAgentIds(),
+    cleanup: (agentId) => repo.deleteForAgent(agentId),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the nearest Agent on a child's launch chain, the child itself first, whose egress is its own (open or scoped), for the egress gate to decide its requests under; null when every Agent up the chain follows its parent, so the gate resolves the chain as it always has. A chain is walked through the inheritance records alone, which every child that can have egress of its own carries, and at most MAX_INHERITANCE_DEPTH Agents up.
+export function nearestOwnEgress(db: Db): (agentId: string) => Promise<{
+  agentId: string;
+  mode: "open" | "scoped";
+  parentAgentId: string;
+} | null> {
+  const repo = createInheritanceRepository(db);
+  return async (agentId) => {
+    let current = agentId;
+    for (let depth = 0; depth < MAX_INHERITANCE_DEPTH; depth++) {
+      const row = await repo.get(current);
+      if (!row) return null;
+      if (row.egressFrom !== "parent")
+        return {
+          agentId: current,
+          mode: row.egressFrom,
+          parentAgentId: row.parentAgentId,
+        };
+      current = row.parentAgentId;
+    }
+    return null;
+  };
+}
+
+const MAX_INHERITANCE_DEPTH = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: a child's inheritance record, for a check that only its launching agent may change its open egress.
+export function inheritanceOf(db: Db): (agentId: string) => Promise<{
+  parentAgentId: string;
+  egressFrom: "parent" | "open" | "scoped";
+} | null> {
+  const repo = createInheritanceRepository(db);
+  return (agentId) => repo.get(agentId);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the children whose egress is their own, for the L7 projection to take their own rules rather than their Owning Agent's.
+export function ownEgressAgentIds(db: Db): () => Promise<Set<string>> {
+  const repo = createInheritanceRepository(db);
+  return async () => new Set(await repo.listOwnEgressAgentIds());
 }

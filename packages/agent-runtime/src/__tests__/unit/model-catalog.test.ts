@@ -257,7 +257,7 @@ describe("the model catalog", () => {
       "cb/rits/zai-org/glm-5-3",
       "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra",
     ]);
-    expect(catalog.providers()[0]?.displayName).toBe("CurveBender (shared)");
+    expect(catalog.providers()[0]?.displayName).toBe("CurveBender");
 
     const keyed = catalogWith(BOTH, [cbLayer]);
     await keyed.catalog.refresh();

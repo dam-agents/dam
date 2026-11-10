@@ -14,8 +14,7 @@ export type ViewerBridgeDenial =
   | "not-html"
   | "not-interactive"
   | "not-restricted"
-  | "not-agent-published"
-  | "feature-off";
+  | "not-agent-published";
 
 export type ViewerBridgeAccess =
   | { allowed: true; agentId: string }
@@ -40,26 +39,21 @@ export type ViewerPromptResult =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: decides whether a viewer of a shared copy may
  * reach the artifact's Agent at all. Only a restricted, interactive HTML page
- * that an Agent published qualifies, and only while its owner keeps the
- * interactive-artifacts feature on. It is asked again on every call, so a
+ * that an Agent published qualifies. It is asked again on every call, so a
  * page the owner makes private or plain stops reaching the Agent at once.
  */
-export function viewerBridgeAccess(
-  row: {
-    kind: string;
-    interactive: boolean;
-    visibility: string;
-    agentId: string | null;
-  },
-  featureOn: boolean,
-): ViewerBridgeAccess {
+export function viewerBridgeAccess(row: {
+  kind: string;
+  interactive: boolean;
+  visibility: string;
+  agentId: string | null;
+}): ViewerBridgeAccess {
   if (row.kind !== "html") return { allowed: false, denial: "not-html" };
   if (!row.interactive) return { allowed: false, denial: "not-interactive" };
   if (row.visibility !== "restricted")
     return { allowed: false, denial: "not-restricted" };
   if (row.agentId === null)
     return { allowed: false, denial: "not-agent-published" };
-  if (!featureOn) return { allowed: false, denial: "feature-off" };
   return { allowed: true, agentId: row.agentId };
 }
 

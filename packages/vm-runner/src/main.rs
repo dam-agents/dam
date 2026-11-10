@@ -103,24 +103,32 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: adds this machine's half of the Environment Link to the boot config before the VMM reads it: one published socket, which smolvm maps to the first published vsock port, with its host end in the machine's own smolvm directory, the one directory Landlock leaves the VMM. smolvm's embedded start does not carry published sockets from the record, so the VMM adds its own here. A machine with no role file, made by an earlier runner, boots with no link.
+// UNIT_BOUNDARY_DESCRIPTION: adds this machine's two link sockets to the boot config before the VMM reads it, first and second (link::published_sockets), which smolvm maps to the first two published vsock ports, with their host ends in the machine's own smolvm directory, the one directory Landlock leaves the VMM. smolvm's embedded start does not carry published sockets from the record, so the VMM adds its own here. A machine with no role file, made by an earlier runner, boots with no link.
 fn add_link_socket(boot_config: &Path) -> anyhow::Result<()> {
     let Some(dir) = boot_config.parent() else {
         return Ok(());
     };
-    let Some(role) = vm_runner::link::read_role(dir) else {
+    if vm_runner::link::read_role(dir).is_none() {
         return Ok(());
-    };
+    }
     let read = |e: &dyn std::fmt::Display| anyhow::anyhow!("{}: {e}", boot_config.display());
     let text = std::fs::read_to_string(boot_config).map_err(|e| read(&e))?;
     let mut config: smolvm::agent::boot_config::BootConfig =
         serde_json::from_str(&text).map_err(|e| read(&e))?;
+    let link = [
+        vm_runner::link::LEGACY_GUEST_PATH,
+        vm_runner::link::DIAL_GUEST_PATH,
+        vm_runner::link::ACCEPT_GUEST_PATH,
+    ];
     config
         .published_sockets
-        .retain(|s| s.guest_path != vm_runner::link::GUEST_PATH);
-    config
-        .published_sockets
-        .insert(0, vm_runner::link::published_socket(&role, dir));
+        .retain(|s| !link.contains(&s.guest_path.as_str()));
+    for (at, socket) in vm_runner::link::published_sockets(dir)
+        .into_iter()
+        .enumerate()
+    {
+        config.published_sockets.insert(at, socket);
+    }
     let text = serde_json::to_vec(&config).map_err(|e| read(&e))?;
     std::fs::write(boot_config, text).map_err(|e| read(&e))?;
     Ok(())
@@ -505,7 +513,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    // TEST_SCENARIO: the VMM adds its link socket to the boot config smolvm wrote, first among the published sockets so it takes the first published vsock port, and replaces one an earlier start added; a machine with no role file boots with its config untouched.
+    // TEST_SCENARIO: the VMM adds its two link sockets to the boot config smolvm wrote, dial first and accept second so they take the first two published vsock ports, and replaces the ones an earlier start added, the single socket of an older runner included; a machine with no role file boots with its config untouched.
     #[test]
     fn a_vmm_adds_its_link_socket_to_the_boot_config() {
         let dir = std::env::temp_dir().join(format!("vmr-boot-{}", std::process::id()));
@@ -517,7 +525,10 @@ mod tests {
             "vsock_socket": "/v", "console_log": null, "startup_error_log": "/e",
             "storage_size_gb": 1, "overlay_size_gb": 1, "mounts": [], "ports": [],
             "resources": serde_json::to_value(smolvm::data::resources::VmResources::default()).unwrap(),
-            "published_sockets": [{"direction": "expose", "guest_path": "/app.sock"}]
+            "published_sockets": [
+                {"direction": "mount", "guest_path": "/run/platform/env-link"},
+                {"direction": "expose", "guest_path": "/app.sock"}
+            ]
         });
         std::fs::write(&config, minimal.to_string()).unwrap();
 
@@ -527,7 +538,7 @@ mod tests {
             minimal.to_string()
         );
 
-        vm_runner::link::write_role(&dir, &vm_runner::link::Role::Agent).unwrap();
+        vm_runner::link::write_role(&dir, &vm_runner::link::Role::AGENT).unwrap();
         add_link_socket(&config).unwrap();
         add_link_socket(&config).unwrap();
         let written: smolvm::agent::boot_config::BootConfig =
@@ -537,10 +548,21 @@ mod tests {
             .iter()
             .map(|s| s.guest_path.as_str())
             .collect();
-        assert_eq!(paths, vec![vm_runner::link::GUEST_PATH, "/app.sock"]);
+        assert_eq!(
+            paths,
+            vec![
+                vm_runner::link::DIAL_GUEST_PATH,
+                vm_runner::link::ACCEPT_GUEST_PATH,
+                "/app.sock"
+            ]
+        );
         assert_eq!(
             written.published_sockets[0].host_path.as_deref(),
             Some(dir.join("env-link.sock").to_str().unwrap())
+        );
+        assert_eq!(
+            written.published_sockets[1].host_path.as_deref(),
+            Some(dir.join("env-sshd.sock").to_str().unwrap())
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

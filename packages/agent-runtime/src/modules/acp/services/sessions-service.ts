@@ -412,6 +412,13 @@ export function createSessionsService(deps: {
       return sessionId;
     },
 
+    async invocationRun(ref) {
+      const sessionId = deps.sessionMetadata.findByRef(ref);
+      if (sessionId === undefined) return null;
+      const run = deps.sessionMetadata.get(sessionId)?.meta.invocationRun;
+      return run ? { run, sessionId } : null;
+    },
+
     async storeDelegationFrames(input) {
       return deps.delegations.store(input);
     },

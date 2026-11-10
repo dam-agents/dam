@@ -4,18 +4,21 @@ export function planSlackChannelSave(args: {
     | {
         slackChannelId: string;
         ambient?: boolean;
+        history?: boolean;
         customEmoji?: string[] | null;
       }
     | undefined;
   values: {
     channelId: string;
     ambient: boolean;
+    history: boolean;
     customEmoji?: string[] | null;
   };
 }): {
   id: string;
   slackChannelId: string;
-  ambient?: true;
+  ambient?: boolean;
+  history?: boolean;
   customEmoji?: string[] | null;
 } | null {
   const { agentId, channel, values } = args;
@@ -23,15 +26,24 @@ export function planSlackChannelSave(args: {
   const emojiChanged =
     JSON.stringify(customEmoji) !==
     JSON.stringify(channel?.customEmoji ?? null);
-  const connect = (slackChannelId: string) => ({
-    id: agentId,
-    slackChannelId,
-    ...(values.ambient ? { ambient: true as const } : {}),
-    ...(emojiChanged ? { customEmoji } : {}),
-  });
+  const emoji = emojiChanged ? { customEmoji } : {};
 
-  if (!channel) return connect(values.channelId);
-  return values.ambient === (channel.ambient ?? false) && !emojiChanged
-    ? null
-    : connect(channel.slackChannelId);
+  if (!channel)
+    return {
+      id: agentId,
+      slackChannelId: values.channelId,
+      ...(values.ambient ? { ambient: true } : {}),
+      ...(values.history ? { history: true } : {}),
+      ...emoji,
+    };
+  const ambientChanged = values.ambient !== (channel.ambient ?? false);
+  const historyChanged = values.history !== (channel.history ?? false);
+  if (!ambientChanged && !historyChanged && !emojiChanged) return null;
+  return {
+    id: agentId,
+    slackChannelId: channel.slackChannelId,
+    ...(ambientChanged ? { ambient: values.ambient } : {}),
+    ...(historyChanged ? { history: values.history } : {}),
+    ...emoji,
+  };
 }

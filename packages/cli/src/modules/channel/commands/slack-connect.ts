@@ -35,6 +35,12 @@ export function buildSlackConnectCommand(deps: {
       "--ambient",
       "ambient mode: the agent reads along and may chime in without being mentioned",
     )
+    .option("--no-ambient", "turn ambient mode off")
+    .option(
+      "--history",
+      "channel history: the agent may read the channel's older messages and threads",
+    )
+    .option("--no-history", "turn channel history off")
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -45,7 +51,11 @@ export function buildSlackConnectCommand(deps: {
       "\nYour Slack account must be linked, and you and the bot must both be in the channel.\n" +
         "\nExamples:\n" +
         "  dam channel slack connect my-agent --channel-id C0123ABCD\n" +
-        "  dam channel slack connect my-agent --channel-id C0123ABCD --ambient\n",
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --ambient\n" +
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --history\n" +
+        "  dam channel slack connect my-agent --channel-id C0123ABCD --no-ambient\n" +
+        "\nConnecting again changes only the modes you name; a mode you leave out keeps its setting.\n" +
+        "Turning channel history on for a channel already connected needs you and the bot in it.\n",
     )
     .action(
       async (
@@ -53,6 +63,7 @@ export function buildSlackConnectCommand(deps: {
         opts: {
           channelId: string;
           ambient?: boolean;
+          history?: boolean;
           server?: string;
           json?: boolean;
         },
@@ -79,33 +90,52 @@ export function buildSlackConnectCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        const res = await svc.connectSlack(agent.id, channelId, opts.ambient);
+        const res = await svc.connectSlack(agent.id, channelId, {
+          ambient: opts.ambient,
+          history: opts.history,
+        });
         exitOnServiceError(res, host, describeChannelError);
 
-        if (opts.ambient) {
-          const slackCh = res.value.find(
-            (c) =>
-              c.type === ChannelType.Slack && c.slackChannelId === channelId,
+        const slackCh = res.value.find(
+          (c) => c.type === ChannelType.Slack && c.slackChannelId === channelId,
+        );
+        if (opts.ambient === true && !slackCh?.ambient) {
+          process.stderr.write(
+            "error: this server does not support ambient mode — the channel is connected without it\n",
           );
-          if (!slackCh?.ambient) {
-            process.stderr.write(
-              "error: this server does not support ambient mode — the channel is connected without it\n",
-            );
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          process.exit(EXIT_RUNTIME_FAILURE);
         }
+        if (opts.history === true && !slackCh?.history) {
+          process.stderr.write(
+            "error: this server does not support channel history — the channel is connected without it\n",
+          );
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+        const modes = [
+          ...(opts.ambient !== undefined
+            ? [`ambient ${opts.ambient ? "on" : "off"}`]
+            : []),
+          ...(opts.history !== undefined
+            ? [`channel history ${opts.history ? "on" : "off"}`]
+            : []),
+        ];
 
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(res.value)}\n`);
         } else {
           process.stdout.write(
             `✓ Slack channel ${channelId} connected to ${agent.name}${
-              opts.ambient ? " with ambient on" : ""
+              modes.length > 0 ? ` with ${modes.join(" and ")}` : ""
             }.\n`,
           );
-          if (opts.ambient) {
+          if (opts.ambient === true) {
             process.stderr.write(
               "note: the agent reads along in this channel and may chime in without being mentioned; ambient is per agent, so others connected here are unaffected\n",
+            );
+          }
+          if (opts.history === true) {
+            process.stderr.write(
+              "note: from its next session the agent can read this channel's older messages and threads; what it reads lands in its sessions, which you can see\n",
             );
           }
           process.stderr.write(

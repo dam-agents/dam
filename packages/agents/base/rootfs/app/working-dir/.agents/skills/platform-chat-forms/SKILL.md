@@ -148,6 +148,7 @@ A `regex` `pattern` is a JavaScript pattern with no flags and no implicit anchor
 ## Updating a form later
 
 In a later reply you can change a form you created earlier: send `updateComponents` (replaces components by id) and `updateDataModel` (`{"surfaceId", "path": "/status", "value": "Applied"}`; `"value": null` deletes the key) with the same `surfaceId`.
+When you replace `root`, send every child it lists in the same `updateComponents`, for example `{"id": "root", "component": "Column", "children": ["q"]}` together with `{"id": "q", "component": "Text", "text": "Next question"}`; `check_chat_form` cannot see the earlier form, so it reports a child the update lists and does not send.
 The form re-renders where it is and becomes the active one again.
 `deleteSurface` removes it.
 A form accepts input until the user sends it or a newer form, so a later reply without a form does not lock it.
