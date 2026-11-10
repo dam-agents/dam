@@ -72,7 +72,7 @@ spec:
     # still reaches the pod as its gateway's principal from the agent
     # namespace. The two admissions are in ONE source entry because its
     # fields are AND-ed: this denies only a source that is neither. Split
-    # into two rules they would OR and deny nothing. A later release
+    # into two rules they would OR and deny every caller. A later release
     # narrows this to the waypoint principal alone (tracked in #6416).
     - to:
         - operation:
