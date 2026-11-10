@@ -23,7 +23,9 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     agentId: row.agentId,
     ownerSub: row.ownerSub,
     resolution: verdict,
-    ...(row.payload.kind === "ext_authz" && row.payload.forAgentId
+    ...((row.payload.kind === "ext_authz" ||
+      row.payload.kind === "web_search") &&
+    row.payload.forAgentId
       ? { forAgentId: row.payload.forAgentId }
       : {}),
   });
@@ -58,6 +60,15 @@ export interface EgressRuleWriter {
   }): Promise<EgressRuleWriteOutcome>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: writes an agent's one web search rule, replacing whatever it held, so a permanent verdict on a held web search allows or refuses every later one. It is the agent's own rule, apart from its egress rules.
+export interface WebSearchRuleWriter {
+  write(input: {
+    agentId: string;
+    verdict: "allow" | "deny";
+    decidedBy: string;
+  }): Promise<void>;
+}
+
 export interface WrapperFrameSender {
   send(agentId: string, frame: string): Promise<void>;
 }
@@ -65,6 +76,7 @@ export interface WrapperFrameSender {
 interface CreateApprovalsServiceDeps {
   repo: ApprovalsRepository;
   egressRuleWriter: EgressRuleWriter;
+  webSearchRuleWriter: WebSearchRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
@@ -213,7 +225,7 @@ export function createApprovalsService(
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz") {
+      if (row.type === "ext_authz" || row.type === "web_search") {
         return resolveOnce(deps, row, "allow_once", "allow");
       }
       return resolveAndDeliverAcpNative(deps, row, "allow_once");
@@ -225,6 +237,9 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "web_search") {
+        return writeWebSearchRuleAndResolve(deps, row, "allow");
+      }
       if (
         row.payload.kind === "ext_authz" ||
         row.payload.kind === "egress_proposal"
@@ -246,6 +261,7 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "web_search") return NOT_ACTIONABLE;
       if (
         row.payload.kind === "ext_authz" ||
         row.payload.kind === "egress_proposal"
@@ -267,6 +283,9 @@ export function createApprovalsService(
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.payload.kind === "egress_proposal") {
         return declineProposal(deps, row);
+      }
+      if (row.payload.kind === "web_search") {
+        return writeWebSearchRuleAndResolve(deps, row, "deny");
       }
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port, method, path } = row.payload;
@@ -307,7 +326,7 @@ async function dismissOne(
   if (row.payload.kind === "egress_proposal") {
     return declineProposal(deps, row);
   }
-  if (row.type === "ext_authz") {
+  if (row.type === "ext_authz" || row.type === "web_search") {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
@@ -418,6 +437,32 @@ async function writeRuleAndResolve(
     outcome: casWon ? "applied" : "rule_written_expired",
     type: row.type,
     rule,
+  };
+}
+
+async function writeWebSearchRuleAndResolve(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: "allow" | "deny",
+): Promise<ApprovalActionOutcome> {
+  await deps.webSearchRuleWriter.write({
+    agentId: row.agentId,
+    verdict,
+    decidedBy: deps.actor,
+  });
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
+  const expiredFlipped = casWon
+    ? false
+    : await deps.repo.resolveExpired(row.id, verdict, deps.actor);
+  if (casWon || expiredFlipped) emitResolved(row, verdict);
+  auditVerdict(deps, row, verdict, {
+    verdict,
+    webSearchRuleWritten: true,
+  });
+  return {
+    outcome: casWon ? "applied" : "rule_written_expired",
+    type: row.type,
+    rule: null,
   };
 }
 

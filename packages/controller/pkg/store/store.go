@@ -159,7 +159,7 @@ type loadedAgent struct {
 const definitionQuery = `
 SELECT a.id, a.incarnation::text, a.owner_sub, a.template_id, a.environment_of, a.link_from, a.name,
        a.image, a.harness, a.image_pull_secret_ref, a.secret_ref, a.hibernation_timeout_ns,
-       a.nested_virtualization, a.require_connection_address, a.telemetry_attribution_id,
+       a.nested_virtualization, a.require_connection_address, a.web_search_control, a.telemetry_attribution_id,
        a.cpu_limit, a.memory_limit, a.disk_size, a.memory_fallback_bytes, a.disk_floor_bytes,
        a.sweepable, a.lifetime_ms, a.generation, a.created_at,
        COALESCE(s.version, 0), s.last_activity_at, s.last_activity_token::text,
@@ -199,7 +199,7 @@ func (s *Store) read(ctx context.Context, name string) ([]loadedAgent, error) {
 		if err := rows.Scan(
 			&row.ID, &row.Incarnation, &row.OwnerSub, &row.TemplateID, &row.EnvironmentOf, &row.LinkFrom, &row.Name,
 			&row.Image, &row.Harness, &row.ImagePullSecretRef, &row.SecretRef, &row.HibernationTimeoutNs,
-			&row.NestedVirtualization, &row.RequireConnectionAddr, &row.TelemetryAttribution,
+			&row.NestedVirtualization, &row.RequireConnectionAddr, &row.WebSearchControl, &row.TelemetryAttribution,
 			&row.CPULimit, &row.MemoryLimit, &row.DiskSize, &row.MemoryFallbackBytes, &row.DiskFloorBytes,
 			&row.Sweepable, &row.LifetimeMs, &row.Generation, &row.CreatedAt,
 			&row.SignalVersion, &row.LastActivityAt, &row.LastActivityToken, &row.SessionPinned,

@@ -195,6 +195,7 @@ describe("the object a rollback writes", () => {
     expect(spec.l7Hosts).toEqual([]);
     expect(spec.backend).toBeUndefined();
     expect(spec.requireConnectionAddress).toBe(false);
+    expect(spec.webSearchControl).toBe(false);
     expect(spec.whispersOff).toBe(false);
     expect(restored.body.metadata).toMatchObject({
       namespace: "platform-agents",

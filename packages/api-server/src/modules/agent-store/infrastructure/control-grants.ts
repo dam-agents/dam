@@ -33,6 +33,7 @@ const AGENT_READ_COLUMNS = [
   "hibernation_timeout_ns",
   "nested_virtualization",
   "require_connection_address",
+  "web_search_control",
   "telemetry_attribution_id",
   "cpu_limit",
   "memory_limit",

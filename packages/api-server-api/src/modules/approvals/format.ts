@@ -35,6 +35,12 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       subtitle: `${payload.path} · ${payload.reason}`,
     };
   }
+  if (payload.kind === "web_search") {
+    return {
+      title: "Web search",
+      subtitle: payload.query ?? "The model chooses the query",
+    };
+  }
   if (payload.kind === "spend_limit") {
     const effective = payload.amountMicros * (payload.extensions + 1);
     return {

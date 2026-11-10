@@ -64,11 +64,22 @@ export interface EgressProposalPayload {
   forAgentId?: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a model call the gateway holds because it declares a native web search tool. `query` is what the search looks up when the call has Claude Code's shape, its separate search request whose prompt names the query; null when the model chooses the query itself. `key` tells a retry of the same search, which joins this approval, from a different one.
+export interface WebSearchPayload {
+  kind: "web_search";
+  query: string | null;
+  key: string;
+  viaAgentId?: string;
+  viaEnvironment?: string;
+  forAgentId?: string;
+}
+
 export type ApprovalPayload =
   | ExtAuthzPayload
   | AcpNativePayload
   | SpendLimitPayload
-  | EgressProposalPayload;
+  | EgressProposalPayload
+  | WebSearchPayload;
 
 export interface ApprovalView {
   id: string;

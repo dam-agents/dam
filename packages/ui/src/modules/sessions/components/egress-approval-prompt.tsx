@@ -16,6 +16,7 @@ import {
 import { egressApprovalsWaiting } from "../../approvals/lib/waiting-egress.js";
 import {
   approvalDetail,
+  approvalPromptTitle,
   approvalReason,
 } from "../../home/lib/approval-copy.js";
 import { ChatColumn } from "./chat-column.js";
@@ -49,11 +50,7 @@ function EgressApprovalCard({
     >
       <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
         <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
-        <span className="min-w-0">
-          {reason === null
-            ? "Allow network access?"
-            : "Allow this network rule?"}
-        </span>
+        <span className="min-w-0">{approvalPromptTitle(approval)}</span>
       </div>
       <div className="pl-4 font-mono text-sm text-muted-foreground break-all">
         {approvalDetail(approval)}

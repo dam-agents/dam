@@ -62,6 +62,9 @@ message HttpRequest {
   string path = 4;
   string host = 5;
   string scheme = 7;
+  // Sent only by a gateway rendered with web search control, which buffers
+  // the whole body of a model-provider chain's request (pack_as_bytes).
+  bytes raw_body = 12;
 }
 
 // Populated for L4 ext_authz when the listener has a TLS inspector — that's

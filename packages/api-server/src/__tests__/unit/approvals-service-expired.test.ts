@@ -39,6 +39,7 @@ function makeService(seed: PendingApprovalRow) {
     insertSettled: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
+    findActivePendingWebSearch: async () => null,
     listPendingForOwner: async () => rows,
     listPendingForInstance: async () => rows,
     resolvePending: async (id, verdict, decidedBy) => {
@@ -71,6 +72,7 @@ function makeService(seed: PendingApprovalRow) {
   };
   const service = createApprovalsService({
     repo,
+    webSearchRuleWriter: { write: async () => {} },
     egressRuleWriter: {
       insert: async (input) => {
         inserts.push({ verdict: input.verdict, agentId: input.agentId });

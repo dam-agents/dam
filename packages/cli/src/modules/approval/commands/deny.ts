@@ -24,7 +24,7 @@ export function buildDenyCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. A spend-limit question (spend_limit)\ncannot be denied: the limit stays reached until you continue it, change it, or\nthe UTC day ends. On a rule an agent proposed (egress_proposal), every form of\ndeny declines it and writes no rule.\n",
+      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. A spend-limit question (spend_limit)\ncannot be denied: the limit stays reached until you continue it, change it, or\nthe UTC day ends. On a rule an agent proposed (egress_proposal), every form of\ndeny declines it and writes no rule. On a held web search (web_search), deny\nwrites the agent's web search rule, so every later search is refused.\n",
     )
     .action(
       async (
@@ -42,6 +42,8 @@ export function buildDenyCommand(deps: {
         printOutcomeAndExit(result.value, opts, {
           pastTense: "Denied",
           onceLine: "Denied this call only — re-prompts next time.",
+          webSearchRuleLine:
+            "every later web search of the agent is refused without asking.",
           expiredEffect: "future requests of this shape are blocked.",
         });
       },

@@ -1,7 +1,8 @@
-import type {
-  ApprovalView,
-  SpendLimitPayload,
-  SpendLimitScope,
+import {
+  type ApprovalView,
+  type SpendLimitPayload,
+  type SpendLimitScope,
+  WEB_SEARCH_FOLLOW_UP_QUERIES,
 } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -40,7 +41,15 @@ export function approvalHeadline(approval: ApprovalView): string {
         ? "Asks to open a sub-agent's network"
         : "Proposes a network rule",
     )
+    .with({ kind: "web_search" }, () => "Wants to search the web")
     .exhaustive();
+}
+
+export function approvalPromptTitle(approval: ApprovalView): string {
+  return match(approval.payload.kind)
+    .with("web_search", () => "Allow this web search?")
+    .with("egress_proposal", () => "Allow this network rule?")
+    .otherwise(() => "Allow network access?");
 }
 
 function spendLimitName(
@@ -88,6 +97,14 @@ export function approvalDetail(
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
   if (payload.kind === "acp_native") return payload.toolName;
+  if (payload.kind === "web_search") {
+    const query = payload.query ?? "The model chooses the query";
+    if (payload.viaEnvironment)
+      return `${query}, from its Environment ${payload.viaEnvironment}`;
+    return payload.forAgentId
+      ? `${query}, from its sub-agent ${approval.agentId}`
+      : query;
+  }
   const target =
     payload.path === "*"
       ? `${payload.host} (any path)`
@@ -105,10 +122,13 @@ export function approvalDetail(
     : request;
 }
 
+export const WEB_SEARCH_FOLLOW_UP_NOTE = `If you allow it, the search can also run up to ${String(WEB_SEARCH_FOLLOW_UP_QUERIES)} more queries that the model writes after it reads the first results.`;
+
 export function approvalReason(approval: ApprovalView): string | null {
-  return approval.payload.kind === "egress_proposal"
-    ? approval.payload.reason
-    : null;
+  return match(approval.payload)
+    .with({ kind: "egress_proposal" }, (payload) => payload.reason)
+    .with({ kind: "web_search" }, () => WEB_SEARCH_FOLLOW_UP_NOTE)
+    .otherwise(() => null);
 }
 
 export function approvalHideHint(approval: ApprovalView): string {
@@ -122,6 +142,11 @@ export function approvalHideHint(approval: ApprovalView): string {
       "egress_proposal",
       () =>
         "Hides this from Home. The proposal stays open in the agent's chat.",
+    )
+    .with(
+      "web_search",
+      () =>
+        "Hides this from Home. The search stays held until you answer it in the agent's chat or the hold ends.",
     )
     .otherwise(
       () =>

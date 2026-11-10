@@ -30,6 +30,7 @@ import {
   agentSetEnvInputSchema,
   agentSetSecretRefInputSchema,
   agentSetWhisperInputSchema,
+  agentSetWebSearchControlInputSchema,
   agentSetDisabledInputSchema,
   agentSleepInputSchema,
   agentUpgradeInputSchema,
@@ -175,6 +176,11 @@ export const agentsRouter = t.router({
   setWhisper: manageAgentsProcedure
     .input(agentSetWhisperInputSchema)
     .use(agentPermission("channels", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
+  setWebSearchControl: manageAgentsProcedure
+    .input(agentSetWebSearchControlInputSchema)
+    .use(agentPermission("egressRules", (input) => agentTarget(input.id)))
     .mutation(({ ctx, input }) => updated(ctx, input)),
 
   delete: manageAgentsProcedure

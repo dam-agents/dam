@@ -1417,6 +1417,13 @@ export function createAgentsService(deps: {
       if (input.linkFrom !== undefined) spec.linkFrom = input.linkFrom;
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
+      /* UNIT_BOUNDARY_DESCRIPTION: a child launched by an agent with web search control has its own gateway, so it carries the control too; without it, a sub-agent or an Environment would search where its launcher may not. */
+      const launcher = input.inheritance?.parentAgentId;
+      if (
+        launcher !== undefined &&
+        (await deps.repo.get(launcher))?.spec.webSearchControl === true
+      )
+        spec.webSearchControl = true;
 
       const providerConnectionId = input.providerConnectionId;
       const startsOnProfile =
@@ -1669,6 +1676,8 @@ export function createAgentsService(deps: {
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
       if (input.whisper !== undefined)
         patch.whispersOff = input.whisper ? null : true;
+      if (input.webSearchControl !== undefined)
+        patch.webSearchControl = input.webSearchControl || null;
       const infra =
         Object.keys(patch).length > 0
           ? await deps.repo.updateSpec(input.id, deps.owner, patch)
@@ -1699,7 +1708,8 @@ export function createAgentsService(deps: {
         input.env !== undefined ||
         input.secretRef !== undefined ||
         input.requireConnectionAddress !== undefined ||
-        input.whisper !== undefined
+        input.whisper !== undefined ||
+        input.webSearchControl !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1710,6 +1720,9 @@ export function createAgentsService(deps: {
           detail: {
             secretRefChanged: input.secretRef !== undefined,
             ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
+            ...(input.webSearchControl !== undefined
+              ? { webSearchControl: input.webSearchControl }
+              : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),

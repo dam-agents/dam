@@ -14,7 +14,7 @@ import (
 
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, false)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, gatewayChoices{})
 
 	require.NotNil(t, ss)
 	assert.Equal(t, "my-instance-gateway", ss.Name)
@@ -47,12 +47,12 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_Hibernated(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, true, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, true, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, gatewayChoices{})
 	assert.Equal(t, int32(0), *ss.Spec.Replicas, "gateway scales with the agent")
 }
 
 func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, gatewayChoices{})
 	require.NotNil(t, ss.Spec.Template.Spec.AutomountServiceAccountToken)
 	assert.False(t, *ss.Spec.Template.Spec.AutomountServiceAccountToken,
 		"gateway pod must have no SA token — Secret-read RBAC would bypass volume-mount scoping")
@@ -62,7 +62,7 @@ func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, gatewayChoices{})
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be set explicitly")
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
 	assert.Equal(t, "1", ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String(),
@@ -70,7 +70,7 @@ func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
-	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	ss := BuildGatewayStatefulSet("my-instance", testOwner, false, "", testConfig, configMapOwnerRef(testOwnerCM), nil, nil, gatewayChoices{})
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "home-agent",
 			"gateway must not mount the workspace PVC")

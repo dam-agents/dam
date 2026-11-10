@@ -16,8 +16,16 @@ import { emit, EventType } from "../../events.js";
 import {
   createApprovalsService,
   type EgressRuleWriter,
+  type WebSearchRuleWriter,
   type WrapperFrameSender,
 } from "./services/approvals-service.js";
+import {
+  createWebSearchGate,
+  type ModelCallBody,
+  type ScheduledSessions,
+  type WebSearchControl,
+  type WebSearchRules,
+} from "./services/web-search-gate.js";
 import {
   createApprovalsRelayService,
   type ApprovalsRelayService,
@@ -57,6 +65,7 @@ interface ComposeApprovalsServiceDeps {
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
+  webSearchRuleWriter: WebSearchRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
 }
 
@@ -67,6 +76,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   const service = createApprovalsService({
     repo,
     egressRuleWriter: deps.egressRuleWriter,
+    webSearchRuleWriter: deps.webSearchRuleWriter,
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
@@ -85,6 +95,11 @@ interface ComposeApprovalsSystemDeps {
   providerScopes: ProviderScopes;
   attendance: EgressAttendance;
   spend: SpendCheck;
+  webSearch: {
+    control: WebSearchControl;
+    rules: WebSearchRules;
+    sessions: ScheduledSessions;
+  };
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
@@ -108,6 +123,13 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     attendance: deps.attendance,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),
+    webSearch: createWebSearchGate({
+      repo,
+      bus: deps.bus,
+      attendance: deps.attendance,
+      holdSeconds: deps.holdSeconds,
+      ...deps.webSearch,
+    }),
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
   });
@@ -198,6 +220,8 @@ export type {
   EgressProposals,
   ApprovalsRelayService,
   ExtAuthzDecision,
+  WebSearchRuleWriter,
+  ModelCallBody,
   ExtAuthzGate,
   SpendLimitQuestions,
   WrapperFrameSender,

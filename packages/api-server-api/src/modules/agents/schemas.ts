@@ -122,6 +122,7 @@ export const agentPatchSchema = z.object({
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   requireConnectionAddress: z.boolean().optional(),
   whisper: z.boolean().optional(),
+  webSearchControl: z.boolean().optional(),
 });
 
 export const agentUpdateInputSchema = agentPatchSchema.pick({
@@ -150,6 +151,11 @@ export const agentSetCredentialInjectionInputSchema = z.object({
 export const agentSetWhisperInputSchema = z.object({
   id: z.string().min(1),
   whisper: z.boolean(),
+});
+
+export const agentSetWebSearchControlInputSchema = z.object({
+  id: z.string().min(1),
+  webSearchControl: z.boolean(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

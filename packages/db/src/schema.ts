@@ -248,6 +248,24 @@ export const egressRules = pgTable(
   ],
 );
 
+export const webSearchRules = pgTable(
+  "web_search_rules",
+  {
+    agentId: text("agent_id").primaryKey(),
+    verdict: text("verdict").notNull(),
+    decidedBy: text("decided_by").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "web_search_rules_verdict",
+      sql`${table.verdict} IN ('allow', 'deny')`,
+    ),
+  ],
+);
+
 export const pendingApprovals = pgTable(
   "pending_approvals",
   {

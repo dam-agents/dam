@@ -514,7 +514,11 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		filters = append(filters, connectionAddressHTTPFilter(p, c))
 	}
 	if c.Metered() {
-		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthzHTTPFilter(p)))
+		extAuthz := withSpendMetadata(extAuthzHTTPFilter(p))
+		if c.WebSearchControl {
+			extAuthz = withWholeRequestBody(extAuthz)
+		}
+		filters = append(filters, spendMeterHTTPFilter(p, c), extAuthz)
 	} else {
 		filters = append(filters, extAuthzHTTPFilter(p))
 	}
@@ -1243,6 +1247,18 @@ func extAuthzHTTPFilter(p bootstrapParams) ev {
 			},
 		},
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the most of a model call's body the gateway reads for web search control: the Messages API's own request limit. The check needs the whole body, because a body read in part could carry its web search tool past the part that was read, so a larger body is answered 413 at the gateway and never reaches the provider.
+const webSearchBodyLimitBytes = 32 << 20
+
+func withWholeRequestBody(extAuthz ev) ev {
+	extAuthz["typed_config"].(ev)["with_request_body"] = ev{
+		"max_request_bytes":     webSearchBodyLimitBytes,
+		"allow_partial_message": false,
+		"pack_as_bytes":         true,
+	}
+	return extAuthz
 }
 
 func extAuthzDisabledPerRoute() ev {

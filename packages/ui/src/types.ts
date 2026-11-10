@@ -170,6 +170,7 @@ export interface AgentView {
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
   whisper: boolean;
+  webSearchControl: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

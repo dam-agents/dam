@@ -176,6 +176,13 @@ type AgentSpec struct {
 	// not replace.
 	// +optional
 	RequireConnectionAddress bool `json:"requireConnectionAddress,omitempty"`
+	// WebSearchControl makes the agent's gateway read the whole body of every
+	// request on a model-provider chain and send it to the ext_authz check, so
+	// a Messages API request that declares a native web search tool is held
+	// for the owner's approval. A body larger than the gateway reads is
+	// refused rather than passed. Off, the gateway reads no body.
+	// +optional
+	WebSearchControl bool `json:"webSearchControl,omitempty"`
 }
 
 // Backend is a discriminated union selecting the agent's isolation substrate
@@ -464,7 +471,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=21
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=22
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

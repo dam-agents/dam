@@ -2,6 +2,8 @@ import type { ApprovalView } from "api-server-api";
 
 export function approvalGroupKey(approval: ApprovalView): string {
   const p = approval.payload;
+  if (p.kind === "web_search")
+    return JSON.stringify([approval.agentId, approval.status, p.key]);
   if (p.kind !== "ext_authz") return approval.id;
   return JSON.stringify([
     approval.agentId,

@@ -70,7 +70,8 @@ export function useApprovalActions(
     row.payload.kind === "ext_authz" || row.payload.kind === "egress_proposal"
       ? row.payload.host
       : null;
-  const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
+  const allowOnceDisabled =
+    row.type === "ext_authz" || row.type === "web_search" ? !live : false;
 
   const confirmed = async (
     confirm: (label: string) => Promise<boolean>,
@@ -219,10 +220,61 @@ export function useApprovalActions(
     },
   ];
 
+  const webSearchActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: "Allow once",
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || allowOnceDisabled,
+      tooltip: allowOnceDisabled
+        ? "The search already failed; pick Always allow to let later searches through"
+        : "Allow this search only — the next one asks again",
+      resolvedLabel: "Allowed",
+      run: () => direct(() => each(approveOnce.mutateAsync)),
+    },
+    {
+      id: "allow-permanent",
+      label: "Always allow web search",
+      icon: CheckmarkFilled,
+      danger: false,
+      disabled: inflight,
+      tooltip:
+        "Every later web search of this agent goes ahead without asking, whatever the query. Change it under Web search in Network settings.",
+      resolvedLabel: "Always allowed",
+      run: () => direct(() => each(approvePermanent.mutateAsync)),
+    },
+    {
+      id: "dismiss",
+      label: "Deny",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      tooltip: live
+        ? "Refuse this search only — the agent gets a failed search, and the next one asks again"
+        : "The search already failed; nothing to deny",
+      resolvedLabel: "Denied",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+    {
+      id: "deny-forever",
+      label: "Always deny web search",
+      icon: Misuse,
+      danger: true,
+      disabled: inflight,
+      tooltip:
+        "Every later web search of this agent is refused without asking. Change it under Web search in Network settings.",
+      resolvedLabel: "Always denied",
+      run: () => direct(() => each(denyForever.mutateAsync)),
+    },
+  ];
+
   const actions = match(row.type)
     .with("spend_limit", () => spendLimitActions)
     .with("egress_proposal", () => proposalActions)
-    .otherwise(() => egressActions)
+    .with("web_search", () => webSearchActions)
+    .with("ext_authz", "acp_native", () => egressActions)
+    .exhaustive()
     .filter((action) => offeredByAgent(row, action.id));
   const preferred: ApprovalActionId =
     row.type === "egress_proposal" ? "allow-permanent" : "allow-once";
@@ -238,7 +290,9 @@ export function useApprovalActions(
     expiredNote:
       row.status === "expired" && row.type === "ext_authz"
         ? "The original request already failed. Always allow writes a rule that future retries match."
-        : null,
+        : row.status === "expired" && row.type === "web_search"
+          ? "The search already failed. Always allow lets the agent's later searches through."
+          : null,
     openSettings: () => navigateToSandboxHome(row.agentId, "network"),
   };
 }

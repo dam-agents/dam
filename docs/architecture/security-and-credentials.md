@@ -271,16 +271,16 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 Each credentialed request goes through an ext_authz Check call against the api-server.
 Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`), bound to the waypoint by `istio.io/use-waypoint`.
 The waypoint ALLOWs only the matching SA principal, on that Service's own gRPC authority, so a Check that comes through the waypoint carries a proven Agent.
-The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
+The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and allows the request, denies it, or holds it while the user decides on Home.
 Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
 A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
-Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.
+Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be gone, and a request waiting on an unseen prompt would stall the agent for the whole hold window.
 
 That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
-Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
+Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals of one host, port, method and path as one approval with a count, and a verdict answers them all.
 
 An Agent can also **propose** a rule before it needs one (the `egress_proposal` tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
 A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
@@ -296,11 +296,13 @@ A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body na
 
 **Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
 A provider Connection that sets Claude Code's env also passes `api.anthropic.com`, which Claude Code calls for its settings, policy limits and bootstrap whatever host serves its model calls.
-A model call refused at the gate ends the session, and a deny written while another provider was attached — for the host a harness also calls for its own settings — would otherwise break the provider attached later.
+A model call refused at the gate ends the session, and a deny written while another provider was attached, for a host the harness also calls for its settings, would otherwise break the provider attached later.
 A rule that allows the request decides first, so the override is read only when no rule allows it.
 
 **Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
 At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
+
+**Web search.** With web search control on, the gate then holds a model call that declares a web search tool, under its own rule ([web-search-control](web-search-control.md)).
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
@@ -322,10 +324,10 @@ A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztu
 A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
 **Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.
-A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner is not necessarily present, and the conversation's other members are not the owner — so a hold raised by such a turn would occupy the entire window and deny anyway, with the turn silent throughout.
+A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner may be absent, and the conversation's other members are not the owner — so its hold would fill the window and deny anyway, the turn silent throughout.
 So when the gate sees a channel turn open on the agent and no interactive session attached to answer for it, it records the request and denies at once.
-The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt consumes, and retries reuse that one row instead of filing a copy each time.
-No in-session prompt is published on this path — the only consumers are the relay clients whose absence defines it.
+The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt meets, and retries reuse that one row.
+No in-session prompt is published on this path: the relay clients that would read it are absent by definition.
 Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 

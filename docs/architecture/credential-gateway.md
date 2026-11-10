@@ -111,6 +111,7 @@ A rewrite route keeps its plain prefix: it adds only the rewrite.
 On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
 On every chain, the gateway removes that stamp before the request leaves.
 The depth is on [spend-limits](spend-limits.md).
+For an agent with web search control on, such a chain also sends each request's whole body with its check, and refuses a body too long to send whole ([web-search-control](web-search-control.md#the-gateway)).
 
 ## The Agent Key chain
 

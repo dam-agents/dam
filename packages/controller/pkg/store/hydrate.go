@@ -52,6 +52,7 @@ type agentRow struct {
 	HibernationTimeoutNs  *int64
 	NestedVirtualization  bool
 	RequireConnectionAddr bool
+	WebSearchControl      bool
 	TelemetryAttribution  *string
 	CPULimit              string
 	MemoryLimit           string
@@ -146,6 +147,9 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 	}
 	if row.RequireConnectionAddr {
 		spec["requireConnectionAddress"] = true
+	}
+	if row.WebSearchControl {
+		spec["webSearchControl"] = true
 	}
 	if disk := diskOf(row); disk != "" {
 		spec["storageSize"] = disk

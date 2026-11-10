@@ -616,9 +616,9 @@ func TestRenderEnvoyBootstrap_RequireAddressLeavesCredentialsWithoutAConnectionP
 }
 
 func TestEnvoyGatewayRev_RollsTheGatewayWhenRequireAddressToggles(t *testing.T) {
-	assert.Equal(t, envoySecretsRev(nil, nil), envoyGatewayRev(bootstrapTestCfg, nil, nil, false),
+	assert.Equal(t, envoySecretsRev(nil, nil), envoyGatewayRev(bootstrapTestCfg, nil, nil, gatewayChoices{}),
 		"an agent that leaves the flag off keeps today's revision")
-	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, nil, nil, false), envoyGatewayRev(bootstrapTestCfg, nil, nil, true))
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, nil, nil, gatewayChoices{}), envoyGatewayRev(bootstrapTestCfg, nil, nil, gatewayChoices{RequireAddress: true}))
 }
 
 func TestBuildEnvoyBootstrapConfigMap_RequireAddressReachesEveryChain(t *testing.T) {
@@ -628,9 +628,9 @@ func TestBuildEnvoyBootstrapConfigMap_RequireAddressReachesEveryChain(t *testing
 	secret.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.anthropic.com","headerName":"Authorization"}]`
 	secret = withHostSDS(secret, "api.anthropic.com")
 
-	off, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, false)
+	off, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, gatewayChoices{})
 	require.NoError(t, err)
-	on, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, true)
+	on, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, gatewayChoices{RequireAddress: true})
 	require.NoError(t, err)
 	assert.NotContains(t, off.Data["envoy.yaml"], "matcher_list")
 	assert.Contains(t, on.Data["envoy.yaml"], "matcher_list")

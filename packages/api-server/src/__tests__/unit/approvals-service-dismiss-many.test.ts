@@ -42,6 +42,7 @@ function makeService(rows: PendingApprovalRow[]) {
     insertSettled: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
+    findActivePendingWebSearch: async () => null,
     listPendingForOwner: async () => rows,
     listPendingForInstance: async () => rows,
     resolvePending: async (id, verdict, decidedBy) => {
@@ -65,6 +66,7 @@ function makeService(rows: PendingApprovalRow[]) {
   };
   const service = createApprovalsService({
     repo,
+    webSearchRuleWriter: { write: async () => {} },
     egressRuleWriter: {
       insert: async () => {
         throw new Error("dismissMany must not write a rule");

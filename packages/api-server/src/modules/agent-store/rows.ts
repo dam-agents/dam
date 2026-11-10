@@ -520,6 +520,7 @@ export function rowsFromResource(
         hibernationTimeoutNs: timeoutNs === null ? null : Number(timeoutNs),
         nestedVirtualization: nestedVirtualizationOf(spec),
         requireConnectionAddress: spec.requireConnectionAddress === true,
+        webSearchControl: spec.webSearchControl === true,
         telemetryAttributionId: nullable(spec.telemetryAttributionId),
         cpuLimit,
         memoryLimit,
@@ -687,6 +688,8 @@ export function resourceFromRows(
     spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
   if (agent.requireConnectionAddress || complete)
     spec.requireConnectionAddress = agent.requireConnectionAddress;
+  if (agent.webSearchControl || complete)
+    spec.webSearchControl = agent.webSearchControl;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);
   putSpec("environmentOf", agent.environmentOf);
   putSpec("linkFrom", agent.linkFrom);

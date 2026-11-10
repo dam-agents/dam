@@ -19,6 +19,7 @@ const agent: AgentView = {
   image: "registry.example/agents/default:old",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
+  webSearchControl: false,
   whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: ["provider"],
