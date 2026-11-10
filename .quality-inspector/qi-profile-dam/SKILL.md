@@ -38,15 +38,18 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **Home** — what changed since the user last looked; agents, usage, spend.
-- **Assistant** — an ordinary agent the platform gives each person once, when the install offers it: it is named by the install (Dambledore by default), appears in the agent list and the sidebar like any other agent, and can be renamed, disabled, shared, bound to a channel and deleted as any other agent can.
+- **Assistant** — an ordinary agent the platform gives a person when the install offers it: it is an agent under the install's assistant name (Dambledore by default), appears in the agent list and the sidebar like any other agent, and can be renamed, disabled, shared, bound to a channel and deleted as any other agent can.
   It is the experimental feature `dambledore`, which follows the install's `featureDefault` like the others: on the QA install that is `experimental`, so no account has one until it turns it on under Settings → Experimental features (its row is labelled with the install's assistant name and described as *Smart assistant that can control DAM for you*).
-  With `on`, a fresh account gets one at its next sign-in; with `off`, nobody does.
+  Turning that switch on creates Dambledore, but only if the account has no agent called exactly that yet: an agent of theirs already named Dambledore — theirs from before, or one they made — is what the name means, and nothing is created beside it.
+  So deleting or renaming Dambledore, switching the feature off and on again, creates a new one; there is never a numbered second name like "Dambledore 2", and no agent is ever renamed to free the name.
+  With `on` the install pins it (no switch): a fresh account gets one at its next request, once, so deleting it there is not undone by a reload — the reset is the way to ask again.
+  With `off`, nobody does.
   Turning its switch off deletes nothing — the agent stays in the list — and only hides what the next bullets describe.
   An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its name and the install's brand, e.g. *Hi Jenna!
   I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
   A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
   A person whose assistant has never been used lands in its chat instead of Home; the greeting is gone once the assistant has had a conversation, so a New chat opens on the ordinary new-chat page.
-  With it on, Experimental features offers **Reset user onboarding** directly under the assistant's row: it asks first, deletes nothing, starts the Get started checklist over (counting its own create task as done), takes the account back to a first-open arrival, and creates the assistant again if the owner had deleted it.
+  With it on, Experimental features offers **Reset user onboarding** directly under the assistant's row: it asks first, deletes nothing, starts the Get started checklist over (counting its own create task as done), takes the account back to a first-open arrival, and gives the account Dambledore again when it has none under that name — an agent of theirs already called that is reused.
 
 ## What the nested install cannot do
 

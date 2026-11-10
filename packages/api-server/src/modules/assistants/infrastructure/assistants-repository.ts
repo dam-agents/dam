@@ -22,16 +22,16 @@ export interface AssistantsRepository {
   find(owner: string): Promise<AssistantRow | null>;
   /** UNIT_BOUNDARY_DESCRIPTION: settles which of several concurrent requests makes the Agent, by the primary key: exactly one insert wins, and the rest find the owner taken. */
   claim(owner: string, agentId: string): Promise<boolean>;
-  /** UNIT_BOUNDARY_DESCRIPTION: gives up a claim whose Agent was never made, so a later request may try again; a claim whose Agent exists stays. */
-  release(owner: string, agentId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: records that the Agent the row names is there, so a create in flight is no longer mistaken for one. */
   markReady(owner: string, agentId: string): Promise<void>;
-  /** UNIT_BOUNDARY_DESCRIPTION: points the row at a replacement Agent and starts the person's onboarding over on it — a compare-and-set on the old id, so two resets that replace the same Agent make one replacement between them. */
+  /** UNIT_BOUNDARY_DESCRIPTION: points the row at a replacement Agent and starts the person's onboarding over on it — a compare-and-set on the old id, so two callers that replace the same Agent make one replacement between them. */
   replaceAgent(
     owner: string,
     fromAgentId: string,
     toAgentId: string,
   ): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: points the row at the Agent the person owns under the assistant's name, ready — written when that Agent was already theirs, and when one under that name was made. A row that already names it keeps its use; one that names another Agent starts over. */
+  pointAt(owner: string, agentId: string): Promise<void>;
   usageOf(agentId: string): Promise<AssistantUsage | null>;
   markUsed(agentId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
@@ -78,17 +78,6 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       return inserted.length > 0;
     },
 
-    async release(owner, agentId) {
-      await db
-        .delete(dambledoreProvisioned)
-        .where(
-          and(
-            eq(dambledoreProvisioned.owner, owner),
-            eq(dambledoreProvisioned.agentId, agentId),
-          ),
-        );
-    },
-
     async markReady(owner, agentId) {
       await db
         .update(dambledoreProvisioned)
@@ -118,6 +107,21 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         )
         .returning({ owner: dambledoreProvisioned.owner });
       return moved.length > 0;
+    },
+
+    async pointAt(owner, agentId) {
+      await db
+        .insert(dambledoreProvisioned)
+        .values({ owner, agentId, state: "ready" })
+        .onConflictDoUpdate({
+          target: dambledoreProvisioned.owner,
+          set: {
+            agentId: sql`excluded.agent_id`,
+            state: "ready",
+            usedAt: sql`case when ${dambledoreProvisioned.agentId} = excluded.agent_id then ${dambledoreProvisioned.usedAt} else null end`,
+            resetAt: sql`case when ${dambledoreProvisioned.agentId} = excluded.agent_id then ${dambledoreProvisioned.resetAt} else now() end`,
+          },
+        });
     },
 
     async usageOf(agentId) {

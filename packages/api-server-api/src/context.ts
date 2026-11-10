@@ -124,8 +124,10 @@ export interface ApiContext {
   providerStatus: ProviderStatusService;
   user: UserIdentity;
   assistants: AssistantsService;
-  /* UNIT_BOUNDARY_DESCRIPTION: gives this person their assistant if the install offers one and they have accepted the Terms of Use. Called when a transport attaches, and again after a first acceptance or after the experimental switch is turned on, because neither of those re-creates the context. */
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person Dambledore at their first admitted request, for an install that pins the feature on and so has no switch to offer them. Called when a transport attaches and again after a first acceptance, because that makes no new request context. */
   provisionAssistant: () => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: gives this person Dambledore when they turn the feature on, since a flag change makes no new request context. Nothing is made for a person who already owns an Agent under the assistant's name. */
+  optInAssistant: () => Promise<void>;
   e2eEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;

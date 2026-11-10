@@ -338,7 +338,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       if (mode !== "experimental") return false;
       return featureOnForUser(mode, (await features.flags()).dambledore);
     };
-    const { assistants, ensure: ensureAssistant } = composeAssistantsForOwner({
+    const {
+      assistants,
+      ensure: ensureAssistant,
+      optIn: assistantOptIn,
+    } = composeAssistantsForOwner({
       db,
       owner: user.sub,
       assistantName: config.brand.assistantName,
@@ -555,9 +559,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is given to a person who has accepted the Terms of Use, once: a person whose Agent is there costs one read, an install whose mode is off asks nothing at all, and nothing a request does may fail because of it. A request from an API key or from an Agent's own credentials is not a person arriving, so it provisions nothing. */
+    /* UNIT_BOUNDARY_DESCRIPTION: a person is given Dambledore by their own switch, so only an install that pins the feature on gives them one at a request — once, and never again after they delete theirs. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
     const provisionAssistant = async () => {
-      if (config.featureModes.dambledore === "off") return;
+      if (config.featureModes.dambledore !== "on") return;
       if (
         user.keyId !== undefined ||
         user.agentIds !== "*" ||
@@ -565,6 +569,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       )
         return;
       await ensureAssistant();
+    };
+
+    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes Dambledore whenever the person has none under that name. */
+    const optInToAssistant = async () => {
+      if (
+        user.keyId !== undefined ||
+        user.agentIds !== "*" ||
+        user.actingEditor !== undefined
+      )
+        return;
+      await assistantOptIn();
     };
 
     const ctx: ApiContext = {
@@ -648,6 +663,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       assistants,
       provisionAssistant,
+      optInAssistant: optInToAssistant,
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,

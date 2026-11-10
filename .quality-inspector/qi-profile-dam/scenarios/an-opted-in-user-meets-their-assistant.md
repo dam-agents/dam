@@ -43,7 +43,7 @@ Given Dambledore in the owner's list
 When the owner opens its Manage section
 Then Disable and Delete are offered as they are on any other agent, and its name can be edited from its identity
 When they rename it and open Settings → Experimental features
-Then its row still offers *Reset user onboarding*, because the assistant is recognised by its record rather than by its name
+Then its row still offers *Reset user onboarding*, because the feature is on for them
 
 ## AC-6 — Reset user onboarding takes the account back to a first open
 
@@ -55,11 +55,37 @@ Then the app goes to its entry route and lands them in Dambledore's chat, which 
 And the Get started checklist counts one task of eight — Create your first agent — as done
 And the assistant's earlier conversations are still in the sidebar
 
-## AC-7 — Reset user onboarding creates the assistant again after a delete
+## AC-7 — Reset user onboarding gives Dambledore back when the account has none
 
-Given that account, whose assistant the owner has deleted
+Given that account, whose Dambledore the owner has deleted
 When they click *Reset user onboarding* under the assistant's row and confirm
-Then Dambledore is in their agent list again, unused, and its chat opens on the greeting
+Then a new agent named Dambledore is in their agent list, unused, and its chat opens on the greeting
+
+## AC-7b — Reset user onboarding reuses an agent already under the name
+
+Given that account, where the owner renamed Dambledore to *Research helper* and then made an agent of their own called *Dambledore*
+When they click *Reset user onboarding* under the assistant's row and confirm
+Then no second Dambledore is made
+And the account lands in the *Dambledore* they made, which opens on the greeting
+And *Research helper* is still theirs, untouched
+
+## AC-10 — the switch makes one only when the name is free
+
+Given an account with no agent called Dambledore, and Settings → Experimental features open
+When the owner switches the assistant's row on
+Then Dambledore appears in their agent list
+When they switch it off, delete Dambledore, and switch it on again
+Then a new Dambledore appears, unused
+When instead they rename Dambledore to *Research helper* and switch the row off and on again
+Then a new Dambledore appears beside *Research helper*
+And no agent is ever named *Dambledore 2*
+
+## AC-11 — an agent the owner already named Dambledore stands in for it
+
+Given an account that made an agent of their own called *Dambledore* before turning the feature on
+When they switch the assistant's row on
+Then no second agent appears for that name
+And their own Dambledore is the assistant: an unused one opens on the greeting, and their next sign-in lands there
 
 ## AC-8 — an account that never opts in sees nothing of it
 
