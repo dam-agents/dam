@@ -274,6 +274,38 @@ describe("the GitHub Enterprise hosts an install offers", () => {
   });
 });
 
+describe("a host the install does not list", () => {
+  // TEST_SCENARIO: a user whose host the install has no app on brings their own app; the sign-in is made on that host with their client ID and secret, and without a secret it is refused before any sign-in is made.
+  it("takes your own app there, client ID and secret", async () => {
+    const own = "ghe.own.example.com";
+    const pick = (extra: Record<string, string>) =>
+      buildConnection(
+        gheTemplate(),
+        {
+          templateId: "github-enterprise",
+          name: "ghe",
+          authKind: "oauth",
+          host: own,
+          ...extra,
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      );
+    const conn = await pick({ clientId: "Iv1.mine", clientSecret: "mine" });
+    expect(conn.auth).toMatchObject({
+      kind: "oauth",
+      clientId: "Iv1.mine",
+      host: own,
+      authorizationUrl: `https://${own}/login/oauth/authorize`,
+    });
+    await expect(pick({ clientId: "Iv1.mine" })).rejects.toThrow(
+      /uses your own app: enter its client secret too/,
+    );
+    await expect(pick({})).rejects.toThrow(/No GitHub app is registered/);
+  });
+});
+
 describe("hosts written with a scheme or a port", () => {
   // TEST_SCENARIO: an operator may write a host as a URL or with a port in the chart; it must still match its app and its retirement, or the picker offers a host whose every sign-in fails and a retired host is never refused.
   it("match their app and their retirement by hostname", async () => {

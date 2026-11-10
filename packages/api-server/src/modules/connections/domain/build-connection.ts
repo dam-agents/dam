@@ -170,6 +170,16 @@ async function buildOAuthStatic(
       `No GitHub app is registered for ${host}. Pick one of ${template.hostChoices?.join(", ") ?? "the listed hosts"}, or enter your own app's client ID.`,
     );
   }
+  if (
+    template.hostApps &&
+    host &&
+    !operatorApp.clientId &&
+    !input.clientSecret
+  ) {
+    throw new Error(
+      `${hostnameOf(host)} has no app the platform registered, so a sign-in there uses your own app: enter its client secret too.`,
+    );
+  }
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
   if (!authorizationUrl || authorizationUrl.includes("{host}")) {
     throw new Error(

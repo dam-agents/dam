@@ -1,7 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,18 @@ import { templateSubmitLabel } from "../lib/catalog-providers.js";
 import { newParentNameRule } from "../lib/connection-hierarchy.js";
 import { appScopeFieldsChosen } from "../lib/github-app-scope-fields.js";
 import {
+  ANOTHER_HOST,
+  offeredHostsOf,
+  picksGitHubEnterpriseHost,
+  withHostPicked,
+} from "../lib/github-enterprise-hosts.js";
+import {
   buildTemplateFormSchema,
   templateFormDefaults,
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
+import { GitHubEnterpriseHostPicker } from "./github-enterprise-host-picker.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
 import { GithubStepsCallout } from "./github-steps-callout.js";
@@ -41,11 +48,11 @@ interface TemplateCreateFormProps {
   initialName?: string;
   onNameChange?: (name: string) => void;
   autoFocusName?: boolean;
-  hostChoices?: readonly string[];
+  pickHost?: boolean;
 }
 
 export function TemplateCreateFormBody({
-  template,
+  template: baseTemplate,
   onCreated,
   onAddedAlone,
   onSignedIn,
@@ -55,7 +62,7 @@ export function TemplateCreateFormBody({
   initialName,
   onNameChange,
   autoFocusName = true,
-  hostChoices,
+  pickHost = false,
   layout = (fields, footer) => (
     <>
       {fields}
@@ -65,6 +72,14 @@ export function TemplateCreateFormBody({
 }: TemplateCreateFormProps & {
   layout?: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }) {
+  const picksHost = picksGitHubEnterpriseHost(baseTemplate, pickHost);
+  const offeredHosts = picksHost ? offeredHostsOf(baseTemplate) : [];
+  const [anotherHost, setAnotherHost] = useState(false);
+  const template = useMemo(
+    () =>
+      picksHost ? withHostPicked(baseTemplate, anotherHost) : baseTemplate,
+    [baseTemplate, picksHost, anotherHost],
+  );
   const connections = useAppConnections().data ?? NO_CONNECTIONS;
   const nameRule = useMemo(
     () => newParentNameRule(template, connections),
@@ -131,7 +146,18 @@ export function TemplateCreateFormBody({
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
   );
 
-  const required = template.inputs.filter((i) => i.state === "required");
+  const required = template.inputs.filter(
+    (i) => i.state === "required" && !(picksHost && i.name === "host"),
+  );
+  const presetOf = (name: string): string =>
+    baseTemplate.inputs.find((i) => i.name === name)?.presetValue ?? "";
+  const pickHostChoice = (choice: string) => {
+    const other = choice === ANOTHER_HOST;
+    setAnotherHost(other);
+    setValue("fields.host", other ? "" : choice, { shouldDirty: true });
+    setValue("fields.clientId", other ? "" : presetOf("clientId"));
+    setValue("fields.clientSecret", "");
+  };
   const optional = template.inputs.filter(
     (i) => i.state === "optional" && !scopeInputNames.has(i.name),
   );
@@ -146,7 +172,7 @@ export function TemplateCreateFormBody({
     <div className="flex flex-col gap-4">
       <GithubStepsCallout
         templateId={template.id}
-        host={hostChoices?.length ? fields?.host : undefined}
+        host={picksHost && !anotherHost ? fields?.host : undefined}
       />
 
       <Controller
@@ -178,13 +204,21 @@ export function TemplateCreateFormBody({
 
       {isGithubApp && <GithubAppSetupHint templateId={template.id} />}
 
+      {picksHost && (
+        <GitHubEnterpriseHostPicker
+          control={control}
+          hosts={offeredHosts}
+          anotherHost={anotherHost}
+          onPick={pickHostChoice}
+        />
+      )}
+
       {required.map((input) => (
         <TemplateFieldInput
           key={input.name}
           control={control}
           templateId={template.id}
           input={input}
-          choices={input.name === "host" ? hostChoices : undefined}
         />
       ))}
 

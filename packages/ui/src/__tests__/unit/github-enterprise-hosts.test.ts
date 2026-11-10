@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: on an install that offers several GitHub Enterprise hosts, the connect form asks which host to sign in to from a list rather than a free-text field, and sends the host picked. A GitHub Enterprise sign-in can be moved to another offered host from its row; a sign-in whose host is retired reads disconnected and offers the move in place of re-authenticating. Moving it calls the server with the new host and then starts the authorization on that host.
+// TEST_OVERVIEW: with the github-enterprise-hosts feature on, the GitHub Enterprise connect form asks which host to sign in to from the offered hosts, even when the install offers only one, or "Another host…" with the user's own app, and sends the host picked; with the feature off it keeps the form it always had. A GitHub Enterprise sign-in can be moved to another offered host from its row; a sign-in whose host is retired reads disconnected and offers the move in place of re-authenticating. Moving it calls the server with the new host and then starts the authorization on that host.
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -9,7 +9,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import {
   gheSignInOfferedHosts,
-  hostChoicesOf,
   movesBetweenHosts,
   otherHosts,
   retiredHostNote,
@@ -91,6 +90,19 @@ const GHE: ConnectionTemplateView = {
   extras: { hostChoices: HOSTS },
 };
 
+const ONE_HOST = "ghe.example.com";
+
+const SINGLE: ConnectionTemplateView = {
+  ...GHE,
+  inputs: [
+    { name: "host", state: "overridable", presetValue: ONE_HOST },
+    { name: "clientId", state: "overridable", presetValue: "Iv1.single" },
+    { name: "clientSecret", state: "overridable", secret: true },
+    { name: "appSlug", state: "overridable", presetValue: "dam-single" },
+  ],
+  extras: { hostChoices: [ONE_HOST], appSlug: "dam-single" },
+};
+
 const SIGN_IN = {
   id: "conn-ghe",
   name: "ghe",
@@ -140,6 +152,19 @@ function choose(testId: string, value: string) {
   });
 }
 
+function type(testId: string, value: string) {
+  const el = byTestId<HTMLInputElement>(testId);
+  if (!el) throw new Error(`no ${testId}`);
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 async function settle() {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -147,13 +172,8 @@ async function settle() {
 }
 
 describe("the hosts a GitHub Enterprise template offers", () => {
-  // TEST_SCENARIO: one host is no choice, so the form keeps its free-text field; two or more are offered as a list.
-  it("offers a choice only when there are two or more hosts", () => {
-    expect(hostChoicesOf(GHE)).toEqual(HOSTS);
-    expect(
-      hostChoicesOf({ extras: { hostChoices: ["github.ibm.com"] } }),
-    ).toEqual([]);
-    expect(hostChoicesOf({})).toEqual([]);
+  // TEST_SCENARIO: the hosts a sign-in may use or move to are every offered host, even the only one.
+  it("reads every offered host, even the only one", () => {
     expect(gheSignInOfferedHosts([GHE])).toEqual(HOSTS);
     expect(
       gheSignInOfferedHosts([
@@ -193,7 +213,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
       root.render(
         createElement(TemplateCreateFormBody, {
           template: GHE,
-          hostChoices: HOSTS,
+          pickHost: true,
           onCreated: () => {},
           onAddedAlone: () => {},
           onCancel: () => {},
@@ -202,7 +222,10 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     );
     const select = byTestId<HTMLSelectElement>("connection-field-host");
     expect(select?.tagName).toBe("SELECT");
-    expect([...select!.options].map((o) => o.value)).toEqual(HOSTS);
+    expect([...select!.options].map((o) => o.value)).toEqual([
+      ...HOSTS,
+      "another",
+    ]);
     expect(select!.value).toBe(HOSTS[0]);
 
     choose("connection-field-host", HOSTS[1]!);
@@ -217,8 +240,77 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     ]);
   });
 
-  // TEST_SCENARIO: with the experimental feature off nothing is passed, and the form keeps the free-text host field it always had.
-  it("keeps the free-text host field without choices", () => {
+  // TEST_SCENARIO: an install with one GitHub Enterprise host and the feature on still shows the host as its own field, a picker of that host and "Another host…", not a preset hidden under Customize defaults.
+  it("shows the host picker for a single offered host", async () => {
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    const select = byTestId<HTMLSelectElement>("connection-field-host");
+    expect(select?.tagName).toBe("SELECT");
+    expect([...select!.options].map((o) => o.value)).toEqual([
+      ONE_HOST,
+      "another",
+    ]);
+    expect(select!.value).toBe(ONE_HOST);
+    expect(byTestId("customize-defaults")?.contains(select!) ?? false).toBe(
+      false,
+    );
+
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toEqual([
+      expect.objectContaining({ host: ONE_HOST }),
+    ]);
+    expect(fake.submitted[0]).not.toHaveProperty("clientId");
+  });
+
+  // TEST_SCENARIO: a host the install has no app on needs the user's own app, so picking "Another host…" asks for the host, a client ID and a client secret, refuses to submit without them, and sends them with the host typed.
+  it("asks for your own app on another host", async () => {
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    choose("connection-field-host", "another");
+    const other = byTestId<HTMLInputElement>("connection-field-host-other");
+    expect(other?.value).toBe("");
+    expect(byTestId("connection-field-clientId")).not.toBeNull();
+    expect(byTestId("connection-field-clientSecret")).not.toBeNull();
+
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toEqual([]);
+
+    type("connection-field-host-other", "ghe.own.example.com");
+    type("connection-field-clientId", "Iv1.mine");
+    type("connection-field-clientSecret", "mine-secret");
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toEqual([
+      expect.objectContaining({
+        host: "ghe.own.example.com",
+        clientId: "Iv1.mine",
+        clientSecret: "mine-secret",
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: with the experimental feature off the form keeps the free-text host field it always had.
+  it("keeps the free-text host field with the feature off", () => {
     act(() =>
       root.render(
         createElement(TemplateCreateFormBody, {

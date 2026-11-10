@@ -635,7 +635,7 @@ async function resolveSlugTemplate(args: {
 
 async function chooseOfferedHost(
   template: ConnectionTemplateView,
-  opts: Pick<ConnectOpts, "host" | "clientId">,
+  opts: Pick<ConnectOpts, "host" | "clientId" | "clientSecret">,
   json: boolean,
 ): Promise<string | undefined> {
   const offered = offeredHostsOf(template);
@@ -643,10 +643,14 @@ async function chooseOfferedHost(
   const given = opts.host;
   if (given !== undefined && given.trim().length > 0) {
     const host = hostnameOf(given);
-    if (offered.includes(host) || opts.clientId?.trim()) return host;
+    if (offered.includes(host)) return host;
+    const ownApp = !!opts.clientId?.trim();
+    if (ownApp && opts.clientSecret?.trim()) return host;
     process.stderr.write(
-      `error: ${host} is not a GitHub Enterprise host this server offers, or it is retired\n` +
-        `hint: ${offeredHostsLine(offered)}; pass one with --host, or --client-id for your own app on another host\n`,
+      ownApp
+        ? `error: ${host} is not a host this server has an app on; your own app there needs --client-secret too\n`
+        : `error: ${host} is not a GitHub Enterprise host this server offers, or it is retired\n` +
+            `hint: ${offeredHostsLine(offered)}; pass one with --host, or --client-id and --client-secret for your own app on another host\n`,
     );
     process.exit(EXIT_INVALID_INPUT);
   }
