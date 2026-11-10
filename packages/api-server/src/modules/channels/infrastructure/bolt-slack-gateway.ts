@@ -1,4 +1,5 @@
 import { App, LogLevel, SocketModeReceiver } from "@slack/bolt";
+import { z } from "zod";
 import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
@@ -8,6 +9,7 @@ import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
   SlackChannelInfo,
   SlackConversationLookup,
+  SlackEmailUser,
   SlackGateway,
   SlackGatewayHandlers,
   SlackImageFile,
@@ -67,6 +69,73 @@ const DEAD_CREDENTIAL = new Set([
 function slackRefusal(err: unknown): string | null {
   const data = (err as { data?: { error?: unknown } } | null)?.data;
   return typeof data?.error === "string" ? data.error : null;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: What Slack must have said about a person for the
+ * answer to be usable at all. The workspace is Slack's own attribution, never
+ * the one the call asked about; the guest and external markers are required
+ * booleans except `is_stranger`, which Slack reports only for the people it
+ * applies to, and an absent one stays unknown. A payload that leaves any of
+ * them out, or nests them as something other than a boolean, parses to nothing,
+ * which the caller reads as unknown and refuses. */
+const slackEmailLookupSchema = z.object({
+  ok: z.literal(true),
+  user: z.object({
+    id: z.string().regex(/^[UW][A-Z0-9]+$/i),
+    team_id: z.string().regex(/^T[A-Z0-9]+$/i),
+    deleted: z.boolean(),
+    is_bot: z.boolean(),
+    is_app_user: z.boolean(),
+    is_restricted: z.boolean(),
+    is_ultra_restricted: z.boolean(),
+    is_stranger: z.boolean().optional(),
+    enterprise_id: z
+      .string()
+      .regex(/^E[A-Z0-9]+$/i)
+      .optional(),
+    profile: z.object({ email: z.string().min(1) }),
+    enterprise_user: z
+      .object({
+        id: z.string().optional(),
+        enterprise_id: z
+          .string()
+          .regex(/^E[A-Z0-9]+$/i)
+          .optional(),
+        is_guest: z.boolean().optional(),
+        teams: z.array(z.string().regex(/^T[A-Z0-9]+$/i)).optional(),
+      })
+      .nullish(),
+  }),
+});
+
+export function parseEmailLookup(payload: unknown): SlackEmailUser | null {
+  const parsed = slackEmailLookupSchema.safeParse(payload);
+  if (!parsed.success) return null;
+  const { user } = parsed.data;
+  /* UNIT_BOUNDARY_DESCRIPTION: Slack can report the organization at the top
+   * level and inside `enterprise_user`; when both are there they must agree,
+   * because a precedence rule on contradictory evidence is a guess. */
+  if (
+    user.enterprise_id !== undefined &&
+    user.enterprise_user?.enterprise_id !== undefined &&
+    user.enterprise_id !== user.enterprise_user.enterprise_id
+  )
+    return null;
+  return {
+    id: user.id,
+    teamId: user.team_id,
+    enterpriseId:
+      user.enterprise_user?.enterprise_id ?? user.enterprise_id ?? null,
+    enterpriseTeams: user.enterprise_user?.teams ?? null,
+    enterpriseIsGuest: user.enterprise_user?.is_guest ?? null,
+    email: user.profile.email,
+    deleted: user.deleted,
+    isBot: user.is_bot,
+    isAppUser: user.is_app_user,
+    isRestricted: user.is_restricted,
+    isUltraRestricted: user.is_ultra_restricted,
+    isStranger: user.is_stranger ?? null,
+  };
 }
 
 function directMessageUserOf(
@@ -913,6 +982,30 @@ export function createBoltSlackGateway(
         ...(user.is_bot !== undefined ? { isBot: user.is_bot } : {}),
         ...(user.deleted !== undefined ? { isDeleted: user.deleted } : {}),
       };
+    },
+
+    async lookupUserByEmail(
+      email: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackEmailUser | null> {
+      if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
+      let info: unknown;
+      try {
+        info = await app.client.users.lookupByEmail({ token, email });
+      } catch (err) {
+        if (slackRefusal(err) === "users_not_found") return null;
+        throw err;
+      }
+      const user = parseEmailLookup(info);
+      if (!user) {
+        process.stderr.write(
+          "[slack] users.lookupByEmail did not say who that mailbox belongs to; " +
+            "the bridge treats the answer as unknown\n",
+        );
+      }
+      return user;
     },
 
     async getMessageReactions(

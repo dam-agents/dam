@@ -14,6 +14,7 @@ import type {
   SlackSessionStoppedEvent,
   SlackSlashCommand,
   SlackUserInfo,
+  SlackEmailUser,
   SlackWorkspace,
 } from "./slack-gateway.js";
 
@@ -76,6 +77,8 @@ export interface FakeSlackGateway extends SlackGateway {
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
+  setEmailUsers(users: SlackEmailUser[]): void;
+  readEmailLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
@@ -191,6 +194,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
+  let emailUsers: SlackEmailUser[] = [];
+  const emailLookups: string[] = [];
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
   let nextFileId = 1;
@@ -421,6 +426,15 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return users.find((u) => u.id === userId) ?? null;
     },
 
+    /* UNIT_BOUNDARY_DESCRIPTION: The fake answers with what a test configured,
+     * not with a filtered result: a mismatch of mailbox, workspace or
+     * organization must reach the caller's own refusals instead of being
+     * tidied away here. */
+    async lookupUserByEmail(email, teamId) {
+      emailLookups.push(`${teamId}|${email}`);
+      return emailUsers[0] ?? null;
+    },
+
     async getMessageReactions(channel, ts) {
       return messageReactions.get(`${channel}:${ts}`) ?? null;
     },
@@ -538,6 +552,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     readUserLookups() {
       return [...userLookups];
+    },
+
+    setEmailUsers(next) {
+      emailUsers = [...next];
+    },
+
+    readEmailLookups() {
+      return [...emailLookups];
     },
 
     async getGrantedScopes() {

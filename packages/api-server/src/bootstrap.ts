@@ -84,8 +84,8 @@ import {
   findChannelOwnerByAgent,
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findSlackBindingsByChannelId,
   claimUnscopedSlackBindings,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
@@ -122,8 +122,9 @@ import { isStoreUnavailable } from "./modules/artifacts/infrastructure/store-una
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
-  type SlackOAuthPending,
   type ChannelRegistry,
+  type SlackDmBridgePort,
+  type SlackOAuthPending,
 } from "./modules/channels/infrastructure/slack.js";
 import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
@@ -145,6 +146,8 @@ import {
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
+import { createSlackDmRevoker } from "./modules/channels/services/slack-dm-bridge-service.js";
+import { createSlackDmBridgesRepository } from "./modules/channels/infrastructure/slack-dm-bridges-repository.js";
 import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
@@ -1932,6 +1935,24 @@ export async function bootstrap() {
 
   const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: The DM Bridge's own record, and the worker's view
+   * of it: a revoked pairing closes turns and delivery into that DM for that
+   * Agent whatever a binding or a link still says, and an in-chat unbind
+   * releases what the record settled — the threads its Sessions owned there and,
+   * when nothing else is bound, that person's email pairing. A proven link and
+   * every unrelated binding stay, which is why nothing here deletes by
+   * conversation alone. */
+  const slackDmBridges = createSlackDmBridgesRepository(db);
+  const slackDmRevoker = createSlackDmRevoker({ bridges: slackDmBridges });
+  const dmBridges: SlackDmBridgePort = {
+    blocks: (agentId, teamId, dmChannelId) =>
+      slackDmBridges.blocked(agentId, teamId, dmChannelId),
+    releaseInChat: (args) => slackDmRevoker.releaseInChat(args),
+    pendingInChat: (args) => slackDmRevoker.pendingInChat(args),
+    closedFor: (agentId, slackChannelId) =>
+      slackDmBridges.closedFor(agentId, slackChannelId),
+  };
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1953,6 +1974,7 @@ export async function bootstrap() {
           (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
+        dmBridges,
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         setSlackChannelHistory: setSlackChannelHistory(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
