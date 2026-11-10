@@ -274,15 +274,16 @@ async function buildOAuthDcr(
   oauthCallbackUrl: string,
   brandName: string,
 ): Promise<BuildResult> {
-  if (!input.url) {
+  const mcpUrl = template.mcpUrl ?? input.url;
+  if (!mcpUrl) {
     throw new Error(
       `template ${template.id}: dynamicRegistration requires a URL`,
     );
   }
-  const url = new URL(input.url);
+  const url = new URL(mcpUrl);
   const meta = await discoverMcpAuth(url);
   if (!meta) {
-    throw new Error(`No OAuth discovery metadata at ${input.url}`);
+    throw new Error(`No OAuth discovery metadata at ${mcpUrl}`);
   }
 
   let clientId: string;
@@ -294,7 +295,7 @@ async function buildOAuthDcr(
     const source = oauthClientSource(meta, oauthCallbackUrl);
     if (!source) {
       throw new Error(
-        `MCP server at ${input.url} supports neither dynamic client registration nor client ID metadata documents — enter a client ID registered with its authorization server`,
+        `MCP server at ${mcpUrl} supports neither dynamic client registration nor client ID metadata documents — enter a client ID registered with its authorization server`,
       );
     }
     if (source.kind === "metadata-document") {
@@ -302,7 +303,8 @@ async function buildOAuthDcr(
     } else {
       const dcr = await registerOAuthClient({
         registrationEndpoint: source.registrationEndpoint,
-        clientName: platformOAuthClientName(brandName),
+        clientName:
+          template.registrationClientName ?? platformOAuthClientName(brandName),
         redirectUris: [oauthCallbackUrl],
       });
       clientId = dcr.clientId;
@@ -326,7 +328,7 @@ async function buildOAuthDcr(
     {
       kind: "mcp-entry",
       name: template.id,
-      url: input.url,
+      url: mcpUrl,
       headers: { Authorization: "Bearer dummy-placeholder" },
     },
   ];

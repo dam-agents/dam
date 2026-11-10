@@ -915,6 +915,21 @@ const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   contributions: [],
 };
 
+const FIGMA_MCP: OAuthConnectionTemplate = {
+  id: "figma",
+  name: "Figma",
+  category: "mcp",
+  isCustom: false,
+  description:
+    "Figma's MCP server: agents read designs, frames and variables. Figma limits tool calls per seat — 20 a month on View and Collab seats, 200 a day on Full and Dev seats (600 on Enterprise).",
+  iconSlug: "figma",
+  authKind: "oauth",
+  dynamicRegistration: true,
+  mcpUrl: "https://mcp.figma.com/mcp",
+  registrationClientName: "Claude Code",
+  contributions: [],
+};
+
 const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   id: "custom-mcp-none",
   family: MCP_SERVER_FAMILY,
@@ -989,6 +1004,7 @@ export function buildCatalog(
     spotify(creds.spotify),
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
+    FIGMA_MCP,
     CUSTOM_HEADER,
     CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,
