@@ -1,5 +1,5 @@
 {
-  "id": "5f56a2af-5bf1-408b-b8b6-c35f21cd9fb2",
+  "id": "590a179e-adb3-47ac-9f9c-e1784133b5ae",
   "prevId": "0022f5c8-b50a-482d-8aa2-103094da28cd",
   "version": "7",
   "dialect": "postgresql",
@@ -2403,8 +2403,21 @@
           "primaryKey": false,
           "notNull": true
         },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'creating'"
+        },
         "used_at": {
           "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reset_at": {
+          "name": "reset_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -2417,7 +2430,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "dambledore_provisioned_agent_idx": {
+          "name": "dambledore_provisioned_agent_idx",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

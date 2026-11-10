@@ -33,7 +33,7 @@ export function assistantGate(
 export function useAssistantGate(): { on: boolean; known: boolean } {
   const install = useInstallCapabilities();
   const mode = install.data?.features.dambledore;
-  const flags = useFeatures(mode === "experimental");
+  const flags = useFeatures();
   if (!install.isSuccess) return { on: false, known: false };
   return assistantGate(
     mode,
