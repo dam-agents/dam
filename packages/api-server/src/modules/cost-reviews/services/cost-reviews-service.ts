@@ -47,7 +47,6 @@ export interface CostReviewsDeps {
   sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   wakeAgent: (agentId: string) => Promise<void>;
-  interactiveReports: () => Promise<boolean>;
   now?: () => Date;
 }
 
@@ -122,7 +121,7 @@ export function createCostReviews(deps: CostReviewsDeps): CostReviews {
         await deps.runtimeMutator.bump(agentId, [
           costReviewEvent(
             agentId,
-            composeCostReviewPrompt(await deps.interactiveReports()),
+            composeCostReviewPrompt(),
             COST_REVIEW_SESSION_TITLE,
             at,
             pair,

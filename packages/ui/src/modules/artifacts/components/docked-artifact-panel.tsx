@@ -6,7 +6,6 @@ import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import {
   useArtifact,
@@ -52,10 +51,6 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     isError: artifactError,
     refetch: refetchArtifact,
   } = useArtifact(openArtifactId);
-  const enabled =
-    useFeatures(artifact?.interactive === true).data?.[
-      "interactive-artifacts"
-    ] ?? false;
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [shareOpen, setShareOpen] = useState(false);
@@ -103,14 +98,9 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   );
   const startSession = useStartArtifactSession(artifact);
 
-  const bridgeOpen = canUseArtifactBridge(
-    artifact,
-    enabled,
-    agentId,
-    shownVersion,
-  );
+  const bridgeOpen = canUseArtifactBridge(artifact, agentId, shownVersion);
   const sessionPrompt = useArtifactSessionPrompt(
-    !bridgeOpen && canStartArtifactSession(artifact, enabled, shownVersion)
+    !bridgeOpen && canStartArtifactSession(artifact, shownVersion)
       ? artifact?.id
       : undefined,
   );
