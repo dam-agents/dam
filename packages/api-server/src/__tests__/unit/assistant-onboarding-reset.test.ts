@@ -8,7 +8,7 @@
 // TEST_OVERVIEW: holds is waited for rather than raced. It is one reset for
 // TEST_OVERVIEW: everyone: the checklist always, the assistant only when the feature
 // TEST_OVERVIEW: is on for them, and never a refusal.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   agentStore,
@@ -48,6 +48,31 @@ describe("resetting a person's onboarding", () => {
   });
 
   // TEST_SCENARIO: the person deleted theirs, so the reset makes a new ordinary Agent, points the record at it, unused: the next landing greets them in its chat.
+  // TEST_SCENARIO: the Agent a reset makes is one the platform creates, so it carries the owner's Connection; the reset is a door like the switch and the pinned-on request.
+  it("gives the Connection to the Agent it makes", async () => {
+    const agents = agentStore();
+    const w = assistantService({
+      agents,
+      damConnection: async () => "conn-dam",
+    });
+    await w.assistants.resetOnboarding();
+    expect(agents.create).toHaveBeenCalledTimes(1);
+    expect(agents.create.mock.calls[0]![0]).toMatchObject({
+      connectionIds: ["conn-dam"],
+      platformGrants: true,
+    });
+  });
+
+  // TEST_SCENARIO: the reset finds an Agent the person made under the name, so nothing is created and the Connection is never granted at all.
+  it("gives the Connection to nothing it does not create", async () => {
+    const agents = agentStore([NAME]);
+    const damConnection = vi.fn(async () => "conn-dam");
+    const w = assistantService({ agents, damConnection });
+    await w.assistants.resetOnboarding();
+    expect(agents.create).not.toHaveBeenCalled();
+    expect(damConnection).not.toHaveBeenCalled();
+  });
+
   it("makes the assistant again when the person deleted theirs", async () => {
     const w = assistantService();
     await w.optIn();

@@ -1083,6 +1083,23 @@ export const apiKeys = pgTable(
   ],
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: a key the platform must revoke but could not — the directory was unreachable while its Connection was deleted, or while a failed create was being rolled back. The row outlives the request that gave up on it, so a sweep revokes the key later instead of leaving one live that nothing names. */
+export const apiKeyRevocations = pgTable(
+  "api_key_revocations",
+  {
+    keyId: text("key_id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    connectionId: text("connection_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("api_key_revocations_owner_idx").on(table.ownerSub),
+    index("api_key_revocations_connection_idx").on(table.connectionId),
+  ],
+);
+
 export const userFeatures = pgTable(
   "user_features",
   {

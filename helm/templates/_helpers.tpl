@@ -363,6 +363,17 @@ and the controller both hand to agents.
 {{- end }}
 
 {{/*
+In-cluster address of the api-server's public Service, which the Connection
+that lets an Agent drive this install names over HTTPS: a gateway pod takes
+that request to this Service, and the api-server learns the name from it. The
+controller derives the same name from the release name and namespace, so a
+change here is a change there.
+*/}}
+{{- define "platform.apiserver.serviceUrl" -}}
+{{- printf "http://%s.%s.svc.cluster.local:%v" (include "platform.apiserver.fullname" .) .Release.Namespace .Values.apiServer.port }}
+{{- end }}
+
+{{/*
 API Server database host — uses external host if set, otherwise shared postgres
 */}}
 {{- define "platform.apiserver.db.host" -}}

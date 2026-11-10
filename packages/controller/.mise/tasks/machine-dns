@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Run the machine resolver in a real CoreDNS of the gateway's own image and check what it answers (needs the image)"
+#MISE sources=["pkg/reconciler/machine_egress.go", "pkg/reconciler/machine_dns_coredns_test.go", ".mise/tasks/machine-dns"]
+#MISE outputs=[]
+# A regex template that does not match answers SERVFAIL instead of falling to
+# the rule below it, so the Corefile is only proven by running the resolver it
+# ships to. This fetches the binary out of the image the gateway runs — the
+# chart's MACHINE_DNS_IMAGE default, or COREDNS_IMAGE — and hands it to the Go
+# harness that starts it on a rendered Corefile. Set COREDNS_BIN to use a
+# binary you already have, which needs no network; the harness skips without
+# one, so `mise run //packages/controller:test` stays offline.
+set -euo pipefail
+image="${COREDNS_IMAGE:-mirror.gcr.io/coredns/coredns:1.15.0}"
+
+bin="${COREDNS_BIN:-}"
+if [ -z "$bin" ]; then
+  command -v crane >/dev/null || { echo "crane is not installed (mise provides it)" >&2; exit 1; }
+  dir="$(mktemp -d)"
+  trap 'rm -rf "$dir"' EXIT
+  echo "→ extracting $image"
+  crane export "$image" - | tar -xf - -C "$dir" usr/local/bin/coredns
+  bin="$dir/usr/local/bin/coredns"
+fi
+[ -x "$bin" ] || { echo "no CoreDNS binary at $bin" >&2; exit 1; }
+COREDNS_BIN="$bin" exec go test ./pkg/reconciler/ -run '^TestMachineResolver_RealCoreDNS$' -count=1 -v "$@"

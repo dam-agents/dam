@@ -381,9 +381,11 @@ import {
   listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
 import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-url.js";
+import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
+import { createFeaturesRepository } from "./modules/features/infrastructure/features-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -1158,6 +1160,8 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    damBaseUrl: config.apiserverUrl,
+    brandName: config.brand.name,
     curveBenderDeployment: config.curveBenderDeployment !== null,
     e2eEnabled: config.e2eEnabled,
     secretStore,
@@ -1216,6 +1220,24 @@ export async function bootstrap() {
         : {}),
     },
   });
+  const featuresRepo = createFeaturesRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner is offered the Connection that drives this install, for every composition root that needs it — the per-request one in the tRPC context, and this one, which feeds the harness grant provisioner and so an Agent that spawns another: the install's mode decides, and in `experimental` the person's own switch. */
+  const damConnectionOfferedFor = async (ownerId: string): Promise<boolean> => {
+    const mode = config.featureModes.damConnection;
+    if (mode === "on") return true;
+    if (mode !== "experimental") return false;
+    const stored = await featuresRepo.listEnabled(ownerId);
+    return stored.damConnection === true;
+  };
+  const damKeyFor = (ownerId: string) =>
+    damKeyPortFor(
+      apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
+      {
+        activeKeyIds: apiKeysModule.activeKeyIds,
+        ledger: apiKeysModule.keyLedger(ownerId),
+      },
+      config.brand.name,
+    );
   const connectionsServiceFor = (ownerId: string) =>
     composeConnectionsForOwner({
       ownerId,
@@ -1235,6 +1257,8 @@ export async function bootstrap() {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      damKey: damKeyFor(ownerId),
+      damConnectionOffered: () => damConnectionOfferedFor(ownerId),
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -1243,6 +1267,18 @@ export async function bootstrap() {
     .catch((err) => {
       getLogger().error(
         `periodic job oauth-refresh registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
+  await periodicJobs
+    .register("api-key-revocation-sweep", 60_000, async () => {
+      const swept = await apiKeysModule.sweepRevocations();
+      if (swept > 0)
+        getLogger().info(`api-key revocation sweep: ${swept} key(s) revoked`);
+    })
+    .catch((err) => {
+      getLogger().error(
+        `periodic job api-key-revocation-sweep registration failed: ${formatError(err)}`,
       );
       process.exit(1);
     });
