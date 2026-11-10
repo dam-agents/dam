@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -99,6 +99,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its hash.
   `telegram_conversations` records the chat→Agent binding for Telegram, one row per chat, plus its ambient flag and its owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
   `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel; a second workspace leaves it untouched, since inside one enterprise organization a user id already identifies one person and re-keying it would make anyone who linked in one workspace link again in the next.
+  It carries the `source` of the link — `oauth` for a Keycloak sign-in, `email` for the DM Bridge's mailbox pairing — which decides what may happen to the row: a pairing inserts only and never moves an owner or a workspace, a sign-in promotes an `email` row to `oauth`, and a revoke deletes only an `email` one ([channels](channels.md)).
   `slack_installs` is one row per workspace that completed the install handshake or whose Helm bot token was imported, holding the workspace's name, who connected it, and whether its credential still works — the bot token itself lives in a Kubernetes Secret the row points at, so no credential is stored here ([channels](channels.md)).
   That Secret is platform-owned rather than per-Agent: the api-server reads it, and no agent gateway is ever handed it, so it sits outside the per-`(owner, connection)` credential classes on [security-and-credentials](security-and-credentials.md).
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use.

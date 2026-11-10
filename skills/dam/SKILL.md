@@ -433,10 +433,16 @@ Show the user what the request is and act only on their answer (hard rule 4).
 dam channel available
 dam channel list my-agent
 dam channel slack connect my-agent --channel-id C0123ABCD
+dam channel slack-dm status
+dam channel slack-dm connect my-agent --purpose "your Friday draft"
+dam channel slack-dm disconnect my-agent
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
 Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
+
+`dam channel slack-dm` is the DM Bridge: `status` reports whether the user's Slack account can be paired, `connect` binds the agent to the user's own direct message with the bot, and `disconnect` releases it.
+It works only where the deployment trusts the Slack workspace for email pairing and the user's email is verified there; `status` says why when it cannot.
 
 ### Skills on DAM agents
 

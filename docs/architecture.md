@@ -76,6 +76,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [slack-threads](architecture/slack-threads.md) — a Slack thread a Session started: its replies come back to that Session as turns.
 - [slack-channel-history](architecture/slack-channel-history.md) — a Slack binding that opts in lets its Agent read the conversation's older messages and threads.
 - [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
+- [slack-dm-bridge](architecture/slack-dm-bridge.md) — an owner's own 1:1 DM with the bot, paired by verified email in a trusted workspace and bound to one of their Agents.
 - [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
