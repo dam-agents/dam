@@ -110,7 +110,7 @@
                           },
                           "kind": "object"
                         },
-                        "weight": "integer"
+                        "weight": "int32"
                       },
                       "kind": "object"
                     },
@@ -229,7 +229,7 @@
                           },
                           "kind": "object"
                         },
-                        "weight": "integer"
+                        "weight": "int32"
                       },
                       "kind": "object"
                     },
@@ -374,7 +374,7 @@
                           },
                           "kind": "object"
                         },
-                        "weight": "integer"
+                        "weight": "int32"
                       },
                       "kind": "object"
                     },
@@ -453,14 +453,14 @@
             },
             "kind": "object"
           },
-          "bootMiB": "integer",
+          "bootMiB": "int64",
           "devices": {
             "kind": "map",
             "values": "string"
           },
-          "headroomMiB": "integer",
+          "headroomMiB": "int64",
           "hostAddress": "string",
-          "hostPort": "integer",
+          "hostPort": "int64",
           "image": "string",
           "imageCacheBudget": "string",
           "imageCacheHostPath": "string",
@@ -474,8 +474,8 @@
             },
             "kind": "array"
           },
-          "machineCPUs": "integer",
-          "machineMemoryMiB": "integer",
+          "machineCPUs": "int64",
+          "machineMemoryMiB": "int64",
           "nestedVirtualization": "boolean",
           "nodeSelector": {
             "kind": "map",
@@ -483,7 +483,7 @@
           },
           "priorityClassName": "string",
           "releaseHostPath": "string",
-          "reserveMiB": "integer",
+          "reserveMiB": "int64",
           "resources": {
             "fields": {
               "claims": {
@@ -510,8 +510,8 @@
           "rollout": {
             "fields": {
               "idleWait": "string",
-              "maxConcurrent": "integer",
-              "maxConcurrentPercent": "integer",
+              "maxConcurrent": "int64",
+              "maxConcurrentPercent": "int64",
               "settleTimeout": "string",
               "stalledTimeout": "string"
             },
@@ -527,7 +527,7 @@
                 "effect": "string",
                 "key": "string",
                 "operator": "string",
-                "tolerationSeconds": "integer",
+                "tolerationSeconds": "int64",
                 "value": "string"
               },
               "kind": "object"
@@ -550,7 +550,7 @@
             "values": "string"
           },
           "ports": {
-            "items": "integer",
+            "items": "int32",
             "kind": "array"
           }
         },
@@ -570,7 +570,7 @@
               "values": "string"
             },
             "ports": {
-              "items": "integer",
+              "items": "int32",
               "kind": "array"
             }
           },

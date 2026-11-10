@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"reflect"
@@ -78,7 +79,32 @@ var jsonKindOfTypes = map[reflect.Type]string{
 	reflect.TypeOf(resource.Quantity{}):  "string|number",
 	reflect.TypeOf(metav1.Duration{}):    "string",
 	reflect.TypeOf(metav1.Time{}):        "string",
-	reflect.TypeOf(intstr.IntOrString{}): "string|integer",
+	reflect.TypeOf(intstr.IntOrString{}): "string|int32",
+}
+
+// TEST_SCENARIO: the width of an int decides what the decoder takes, since it refuses a value its field cannot hold, and it is read from the Go kind rather than assumed: plain `int` and `uint` are 64-bit on this platform, a `[]int32` is not, and a type that reads its own JSON says its own width — `intstr`'s unquoted half is an int32.
+func TestChartControllerConfigKeyIntegerWidths(t *testing.T) {
+	type widths struct {
+		I8  int8    `json:"i8"`
+		I16 int16   `json:"i16"`
+		I32 int32   `json:"i32"`
+		I64 int64   `json:"i64"`
+		I   int     `json:"i"`
+		U8  uint8   `json:"u8"`
+		U16 uint16  `json:"u16"`
+		U32 uint32  `json:"u32"`
+		U64 uint64  `json:"u64"`
+		U   uint    `json:"u"`
+		F   float64 `json:"f"`
+	}
+	assert.Equal(t, map[string]any{
+		"kind": "object",
+		"fields": map[string]any{
+			"i8": "int8", "i16": "int16", "i32": "int32", "i64": "int64",
+			"i": "int64", "u8": "uint8", "u16": "uint16", "u32": "uint32",
+			"u64": "uint64", "u": "uint64", "f": "number",
+		},
+	}, configKeys(reflect.TypeOf(widths{})))
 }
 
 func configKeys(t reflect.Type) any {
@@ -120,9 +146,10 @@ func configKeys(t reflect.Type) any {
 		return "string"
 	case reflect.Bool:
 		return "boolean"
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return "integer"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("int%d", t.Bits())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("uint%d", t.Bits())
 	case reflect.Float32, reflect.Float64:
 		return "number"
 	default:
