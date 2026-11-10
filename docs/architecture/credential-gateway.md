@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -171,6 +171,8 @@ A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kuber
 **One Envoy, one listener per agent.** The owner gateway's bootstrap holds only what its agents share: the harness, object store, dynamic forward proxy and collector clusters.
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
 Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
+An agent's listener accepts only connections from outside the pod.
+The agents share the pod's loopback and its own address, so a dial through a sibling's forward proxy to either would otherwise enter that listener, checked as the sibling.
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
 The whole set, its credentials and its leaf file source live in one Secret of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
 

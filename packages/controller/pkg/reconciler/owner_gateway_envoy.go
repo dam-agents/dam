@@ -134,6 +134,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch
 	p.LuaDir = envoyBootstrapMount
 	p.RepairGeneration = generation
 	p.ArrivalEpoch = epoch
+	p.ExternalSourceOnly = true
 	return p
 }
 
