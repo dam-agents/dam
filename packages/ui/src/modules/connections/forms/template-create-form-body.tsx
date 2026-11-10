@@ -20,6 +20,7 @@ import {
   hostnameOf,
   offeredHostsOf,
   picksGitHubEnterpriseHost,
+  withHostListed,
   withHostPicked,
 } from "../lib/github-enterprise-hosts.js";
 import {
@@ -79,8 +80,12 @@ export function TemplateCreateFormBody({
   const [anotherHost, setAnotherHost] = useState(false);
   const template = useMemo(
     () =>
-      picksHost ? withHostPicked(baseTemplate, anotherHost) : baseTemplate,
-    [baseTemplate, picksHost, anotherHost],
+      picksHost
+        ? withHostPicked(baseTemplate, anotherHost)
+        : pickHost
+          ? withHostListed(baseTemplate)
+          : baseTemplate,
+    [baseTemplate, pickHost, picksHost, anotherHost],
   );
   const connections = useAppConnections().data ?? NO_CONNECTIONS;
   const nameRule = useMemo(

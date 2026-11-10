@@ -306,6 +306,70 @@ describe("a host the install does not list", () => {
   });
 });
 
+describe("a host typed as a URL", () => {
+  // TEST_SCENARIO: the host a user types becomes the {host} of the sign-in URLs, the egress host and GH_HOST, so a URL or upper case must be stored as the bare hostname, for a sign-in and a token alike, and a value that is no hostname is refused.
+  it("is stored as its hostname, and a non-hostname is refused", async () => {
+    const own = await buildConnection(
+      gheTemplate(),
+      {
+        templateId: "github-enterprise",
+        name: "ghe",
+        authKind: "oauth",
+        host: "https://GHE.Own.example.com/",
+        clientId: "Iv1.mine",
+        clientSecret: "mine",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    expect(own.auth).toMatchObject({
+      host: "ghe.own.example.com",
+      authorizationUrl: "https://ghe.own.example.com/login/oauth/authorize",
+    });
+
+    const pat = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-pat",
+    )!;
+    const token = await buildConnection(
+      pat,
+      {
+        templateId: pat.id,
+        name: "ghe-pat",
+        authKind: "header",
+        host: `https://${NEW.toUpperCase()}/`,
+        value: "ghp_x",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    const hosts = token.contributions.flatMap((c) =>
+      c.kind === "egress-inject" ? [c.host] : [],
+    );
+    expect(hosts).toContain(NEW);
+    expect(hosts.every((h) => h === h.toLowerCase() && !h.includes("/"))).toBe(
+      true,
+    );
+
+    await expect(
+      buildConnection(
+        pat,
+        {
+          templateId: pat.id,
+          name: "ghe-pat-2",
+          authKind: "header",
+          host: "not a host",
+          value: "ghp_x",
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      ),
+    ).rejects.toThrow(/is not a GitHub Enterprise hostname/);
+  });
+});
+
 describe("hosts written with a scheme or a port", () => {
   // TEST_SCENARIO: an operator may write a host as a URL or with a port in the chart; it must still match its app and its retirement, or the picker offers a host whose every sign-in fails and a retired host is never refused.
   it("match their app and their retirement by hostname", async () => {

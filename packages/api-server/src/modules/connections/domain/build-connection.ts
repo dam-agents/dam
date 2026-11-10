@@ -56,6 +56,12 @@ export interface BuildResult {
   secrets: Map<string, Record<string, string>>;
 }
 
+const GITHUB_ENTERPRISE_TEMPLATE_IDS = new Set([
+  "github-enterprise",
+  "github-enterprise-pat",
+  "github-enterprise-app",
+]);
+
 export async function buildConnection(
   template: ConnectionTemplate,
   input: ConnectionCreateInput,
@@ -67,6 +73,20 @@ export async function buildConnection(
     throw new Error(
       `template ${template.id} expects authKind=${template.authKind}, got ${input.authKind}`,
     );
+  }
+
+  if (
+    GITHUB_ENTERPRISE_TEMPLATE_IDS.has(template.id) &&
+    "host" in input &&
+    input.host
+  ) {
+    const host = hostnameOf(input.host);
+    if (!/^[a-z0-9.-]+$/.test(host) || !host.includes(".")) {
+      throw new Error(
+        `${input.host.trim()} is not a GitHub Enterprise hostname. Enter the host alone, e.g. github.example.com.`,
+      );
+    }
+    input = { ...input, host };
   }
 
   const inputHost = "host" in input ? input.host : undefined;

@@ -58,6 +58,19 @@ export function withHostPicked(
   };
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a GitHub Enterprise token or app installation on an install with two or more hosts must say which; the server sends its host as a preset the user may override, so the form makes it a required field of its own, shown as the list of offered hosts, not a preset under Customize defaults.
+export function withHostListed(
+  template: ConnectionTemplateView,
+): ConnectionTemplateView {
+  if (hostChoicesOf(template).length === 0) return template;
+  return {
+    ...template,
+    inputs: template.inputs.map((input) =>
+      input.name === "host" ? { ...input, state: "required" } : input,
+    ),
+  };
+}
+
 export function picksGitHubEnterpriseHost(
   template: Pick<
     ConnectionTemplateView,

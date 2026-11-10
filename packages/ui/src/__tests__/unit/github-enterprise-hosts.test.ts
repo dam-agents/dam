@@ -340,8 +340,8 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     expect(fake.submitted[0]).toMatchObject({ host: "ghe.own.example.com" });
   });
 
-  // TEST_SCENARIO: a GitHub Enterprise token or app installation on an install with several hosts keeps its list of them; only the sign-in has the picker with "Another host…".
-  it("keeps the host list for a token on several hosts", () => {
+  // TEST_SCENARIO: a GitHub Enterprise token or app installation on an install with several hosts shows its list of them as its own field, not a preset under Customize defaults; the server sends the host as an overridable preset, so that is the shape tested. Only the sign-in has the picker with "Another host…".
+  it("keeps the host list for a token on several hosts", async () => {
     act(() =>
       root.render(
         createElement(TemplateCreateFormBody, {
@@ -350,7 +350,7 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
             id: "github-enterprise-pat",
             authKind: "header",
             inputs: [
-              { name: "host", state: "required", presetValue: HOSTS[0] },
+              { name: "host", state: "overridable", presetValue: HOSTS[0] },
               { name: "value", state: "required", secret: true },
             ],
           },
@@ -364,6 +364,16 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     const select = byTestId<HTMLSelectElement>("connection-field-host");
     expect(select?.tagName).toBe("SELECT");
     expect([...select!.options].map((o) => o.value)).toEqual(HOSTS);
+    expect(byTestId("customize-defaults")?.contains(select!) ?? false).toBe(
+      false,
+    );
+    choose("connection-field-host", HOSTS[1]!);
+    type("connection-field-value", "ghp_x");
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toEqual([
+      expect.objectContaining({ host: HOSTS[1] }),
+    ]);
   });
 
   // TEST_SCENARIO: a refused submit whose first error sits below the fold must bring that field into view and focus it, so the user sees what is missing.
