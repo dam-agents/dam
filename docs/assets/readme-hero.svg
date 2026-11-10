@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 18 686 266" width="686" height="266" role="img" aria-label="A dense grid of small agents on one cluster: some work with headphones at a laptop, some chat, some sleep. The grid fades out at the sides, as part of a much larger cluster.">
-<defs><linearGradient id="fade" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.16" stop-color="#fff" stop-opacity="1"/><stop offset="0.84" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="698" height="296"><rect width="698" height="296" fill="url(#fade)"/></mask></defs>
-<g mask="url(#m)">
+<defs><linearGradient id="fade" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#eef1f6" stop-opacity="1"/><stop offset="0.15" stop-color="#eef1f6" stop-opacity="0"/><stop offset="0.85" stop-color="#eef1f6" stop-opacity="0"/><stop offset="1" stop-color="#eef1f6" stop-opacity="1"/></linearGradient><clipPath id="tray"><rect x="6" y="18" width="686" height="266" rx="28"/></clipPath></defs>
+<g clip-path="url(#tray)">
 <rect x="6" y="18" width="686" height="266" rx="28" fill="#eef1f6"/>
 <path d="M43.5,69.92 v-7.68" stroke="#1b1b1f" stroke-width="2.016" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="43.5" cy="59.36" r="3.84" fill="#ff9fbd" stroke="#1b1b1f" stroke-width="2.016" stroke-linejoin="round" stroke-linecap="round"/>
@@ -318,5 +318,6 @@
 <ellipse cx="637.5" cy="231" rx="7" ry="3.6" fill="#ffffff" opacity="0.9"/>
 <circle cx="666.5" cy="245" r="6" fill="#ffd65c" stroke="#1b1b1f" stroke-width="2.4"/>
 <circle cx="664.5" cy="243" r="1.8" fill="#ffffff" opacity="0.9"/>
+<rect x="6" y="18" width="686" height="266" fill="url(#fade)"/>
 </g>
 </svg>
