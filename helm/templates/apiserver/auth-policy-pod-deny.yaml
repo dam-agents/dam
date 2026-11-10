@@ -15,11 +15,14 @@ Per-port DENY:
   - Harness port: deny anything that isn't the waypoint principal.
     Istio names the waypoint SA after the Gateway resource, so the
     principal is `<td>/ns/<release-ns>/sa/<waypoint-name>`.
-  - ext-authz port: the same waypoint principal, because the per-agent
-    ext-authz Services are bound to the waypoint too. Their per-agent
-    AuthorizationPolicies pin the SA principal and the gRPC authority
-    to the matching agent, so nothing outside the waypoint may name an
-    agent directly.
+  - ext-authz port: a migration bridge. A caller already routed
+    through the waypoint arrives as the waypoint principal, while a
+    Service not yet relabelled still reaches the pod as its gateway's
+    own principal from the agent namespace. Both admissions sit in one
+    source entry because fields there are AND-ed, so only a source that
+    is neither is denied. A later release narrows this to the waypoint
+    principal alone once every ext-authz Service is bound (tracked in
+    #6416).
   - Public HTTP port (Keycloak-JWT-gated): no DENY rule. Traffic from
     Traefik (kube-system) and any other peer is allowed; application-
     layer auth is the gate. Adding an ns-based DENY here would block
@@ -64,16 +67,20 @@ spec:
         - source:
             notPrincipals:
               - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
-    # ext-authz port: only the waypoint principal is admitted, exactly
-    # as on the harness port. The per-agent AuthorizationPolicies on
-    # the waypoint-bound ext-authz Services pin the SA principal and
-    # the gRPC authority to the matching agent, so a direct pod-IP call
-    # names no agent at all.
+    # ext-authz port: the migration bridge. A waypoint-routed caller
+    # arrives as the waypoint principal; a Service not yet relabelled
+    # still reaches the pod as its gateway's principal from the agent
+    # namespace. The two admissions are in ONE source entry because its
+    # fields are AND-ed: this denies only a source that is neither. Split
+    # into two rules they would OR and deny nothing. A later release
+    # narrows this to the waypoint principal alone (tracked in #6416).
     - to:
         - operation:
             ports:
               - {{ .Values.apiServer.extAuthzPort | quote }}
       from:
         - source:
+            notNamespaces:
+              - {{ .Values.agentNamespace | quote }}
             notPrincipals:
               - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"

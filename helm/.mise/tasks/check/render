@@ -800,15 +800,16 @@ helm template platform . "${COMMON[@]}" \
   --set agentStore.cutover.acknowledged=true \
   --set agentStore.contract.emptyArchive=true >/dev/null \
   || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }
-# The api-server pod-level DENY ringfences both destination ports by the
-# waypoint principal alone. On ext-authz a namespace-wide admission left every
-# release-namespace pod free to name any agent, since the per-agent policies
-# only apply to traffic the waypoint routes.
+# The api-server pod-level DENY on the ext-authz port is the migration bridge:
+# one source entry admits either the agent namespace or the waypoint principal,
+# because a Service not yet relabelled still reaches the pod directly. Two
+# separate rules would OR and deny nothing.
 pod_deny=$(helm template platform . "${COMMON[@]}" \
   --show-only templates/apiserver/auth-policy-pod-deny.yaml | yq -o=json)
-jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" '
+jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" --arg agents "platform-agents" '
   [.spec.rules[] | select(any(.to[]?; any(.operation.ports[]?; . == "4002")))] as $ext
   | ($ext | length) == 1
-  and $ext[0].from[0].source.notPrincipals == [$principal]
-  and ([.. | objects | select(has("notNamespaces"))] | length) == 0' <<<"$pod_deny" >/dev/null ||
-  { echo "the api-server pod-DENY admits the agent namespace on ext-authz instead of only the waypoint: $pod_deny" >&2; exit 1; }
+  and ($ext[0].from | length) == 1
+  and $ext[0].from[0].source.notNamespaces == [$agents]
+  and $ext[0].from[0].source.notPrincipals == [$principal]' <<<"$pod_deny" >/dev/null ||
+  { echo "the api-server pod-DENY on ext-authz is not the one-source migration bridge: $pod_deny" >&2; exit 1; }

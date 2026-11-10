@@ -373,8 +373,8 @@ The machine and the gateway are gated by different mechanisms — they live on o
   A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
 - **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
   The waypoint enforces the Service's AuthorizationPolicy, which ALLOWs only the matching SA principal on its own gRPC `:authority`.
-  The destination Service is cryptographically pinned to the calling Agent; the api-server derives Agent ID from the gRPC `:authority`.
-- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't the waypoint's SA, on the harness and the ext-authz ports alike, closing the direct pod-IP bypass.
+  The api-server derives Agent ID from the gRPC `:authority`.
+- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't the waypoint's SA, closing the harness direct pod-IP bypass; its ext-authz rule also admits the agent namespace during the migration, so a direct pod-IP call from there is not yet refused.
 
 The egress allowlist and the runner's NetworkPolicy are the security boundary for the machine's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
 Each gate matches its threat model: the machine runs untrusted code and is held at the guest's own network and at the runner's kernel; the gateway is platform-controlled and its identity flows through the mesh.
