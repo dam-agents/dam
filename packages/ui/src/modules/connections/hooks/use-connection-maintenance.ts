@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import { useFeatures } from "../../features/api/queries.js";
 import { useConnectionTemplates } from "../api/queries.js";
+import { useRotateDamConnection } from "../api/mutations.js";
+import { isDamConnection } from "../lib/dam-connection.js";
 import type { RowMaintenanceActions } from "../components/catalog-connection-row.js";
 import {
   gheSignInOfferedHosts,
@@ -16,6 +18,7 @@ export function useConnectionMaintenance() {
   const [editingScope, setEditingScope] = useState<ConnectionView | null>(null);
   const [movingHost, setMovingHost] = useState<ConnectionView | null>(null);
   const { reauthenticate, busyId } = useReauthenticateConnection();
+  const rotateKey = useRotateDamConnection();
   const hostsEnabled = useFeatures().data?.["github-enterprise-hosts"] ?? false;
   const offeredHosts = gheSignInOfferedHosts(
     useConnectionTemplates().data ?? [],
@@ -58,6 +61,11 @@ export function useConnectionMaintenance() {
   const rowActions = (
     connection: ConnectionView,
   ): RowMaintenanceActions | undefined => {
+    if (isDamConnection(connection))
+      return {
+        onRotateKey: () => rotateKey.mutate({ id: connection.id }),
+        busy: rotateKey.isPending,
+      };
     switch (connection.authKind) {
       case "oauth":
         if (connection.parentId)

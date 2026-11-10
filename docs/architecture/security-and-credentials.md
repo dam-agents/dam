@@ -128,8 +128,10 @@ A key carries the owner's `sub`, a subset of permission scopes, and an optional 
 The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 
-A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
-The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
+A key outlives its sign-in: the api-server asks the identity provider whether its owner may still act, keeps an `active` answer a minute, and refuses an unanswered directory (503, retryable) rather than admit it.
+
+A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
+That re-check is a poll, because a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
@@ -204,12 +206,11 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   Editing re-reads the installation with the stored key and re-mints at once, so the narrower token replaces the live one; a subset the installation cannot cover fails the edit rather than parking the Connection at its next renewal.
   Nothing else moves, and because the token is read gateway-side the change needs no pod roll.
 
-- **Platform-minted owner keys** (the [DAM Connection](connection-presets.md#platform-preset-this-install-itself)) — the api-server mints the key with a person's own scopes and never the operator role, stores it in the per-Connection Secret, and revokes it with the Connection.
-  The Agent holds a placeholder; the Secret is the only copy.
-
 - **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret stores the access key ID and secret access key, plus a credentials file baked from them that the gateway's signing step reads.
   S3 authenticates by signing each request with the secret key, so there is no value to inject: the agent holds a placeholder key ID that names the Connection, and the gateway re-signs its requests with the real pair ([credential-gateway](credential-gateway.md#request-signing)).
   The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the machine: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
+
+A key the platform mints for a Connection of its own — the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) — is stored the same way and revoked with that Connection; the Agent holds a placeholder, and the Secret is the only copy.
 
 **Multi-host connections.** A single OAuth connection can inject the same token on more than one host with **different auth schemes per host**, all from one K8s Secret.
 The Secret carries an annotated list of per-host injection descriptors; the controller fans it into one Envoy filter chain per host, stacking entries that share a host, and mounts the Secret once.
@@ -348,7 +349,7 @@ Such a turn can also place a file in the Agent's workspace: an attachment sent i
 What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above).
 The binding owner's Terms-of-Use acceptance gates each turn — the terms bind the party whose credentials run it — and the security log attributes the allow to the messenger-native sender id with basis *place*.
 
-An Agent that holds the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) lends its owner's access to whoever drives it: allowed on purpose (D257B), and the UI says so at the grant, in the editors surface and in the chat-bind flow.
+An Agent that holds the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) lends its owner's access to whoever drives it (D257B), and the UI says so where that is decided.
 
 ## `dam-run`
 

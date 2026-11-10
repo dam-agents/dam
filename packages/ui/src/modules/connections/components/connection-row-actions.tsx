@@ -49,7 +49,9 @@ export function ConnectionRowActions({
       ? { label: "Move to another host", run: maintenance.onMoveHost }
       : connection.status !== "expired"
         ? undefined
-        : maintenance?.onReauthenticate
+        : maintenance?.onRotateKey
+          ? { label: "Rotate key", run: maintenance.onRotateKey }
+          : maintenance?.onReauthenticate
           ? {
               label: reauthLabelOf(connection),
               run: maintenance.onReauthenticate,
@@ -134,6 +136,15 @@ export function ConnectionRowMenu({
           data-testid={`catalog-move-host-${connection.id}`}
         >
           Move to another host
+        </DropdownMenuItem>
+      )}
+      {maintenance?.onRotateKey && (
+        <DropdownMenuItem
+          disabled={maintenance.busy}
+          onSelect={maintenance.onRotateKey}
+          data-testid={`catalog-rotate-${connection.id}`}
+        >
+          Rotate key
         </DropdownMenuItem>
       )}
       {maintenance?.onEditScope && (

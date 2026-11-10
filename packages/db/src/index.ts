@@ -44,6 +44,7 @@ export {
   actorRoles,
   externalActorLinks,
   termsAcceptances,
+  apiKeyRevocations,
   apiKeys,
   userFeatures,
   gettingStartedChecklists,

@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_SCOPES,
@@ -59,7 +60,9 @@ function fakeKeys() {
     agentIds: unknown;
   }[] = [];
   const revoked: string[] = [];
+  const live = new Set<string>();
   let minted = 0;
+  let refuseRevoke: Error | null = null;
   const keys: ApiKeysService = {
     list: async () => [],
     create: async (input) => {
@@ -69,6 +72,7 @@ function fakeKeys() {
         agentIds: input.agentIds,
       });
       const id = `key-${++minted}`;
+      live.add(id);
       return {
         key: {
           id,
@@ -82,19 +86,44 @@ function fakeKeys() {
         plaintext: `pk_secret_${id}`,
       };
     },
-    revoke: async (id) => void revoked.push(id),
+    revoke: async (id) => {
+      if (refuseRevoke !== null) throw refuseRevoke;
+      if (!live.delete(id))
+        throw new TRPCError({ code: "NOT_FOUND", message: "no such key" });
+      revoked.push(id);
+    },
   };
-  return { keys, calls, revoked };
+  const directory = {
+    activeKeyIds: async (ids: readonly string[]) =>
+      new Set(ids.filter((id) => live.has(id))),
+    deferRevocation: async (keyId: string) => void deferred.push(keyId),
+  };
+  const deferred: string[] = [];
+  return {
+    keys,
+    directory,
+    calls,
+    revoked,
+    live,
+    deferred,
+    refuseRevokeWith(err: Error | null) {
+      refuseRevoke = err;
+    },
+  };
 }
 
-function harness(baseUrl = BASE_URL) {
+function harness(
+  baseUrl = BASE_URL,
+  opts: { insert?: (row: Connection) => Promise<void> } = {},
+) {
   const store = newConnectionsStore();
   const keys = fakeKeys();
   const { svc } = serviceHarness({
     templates: templatesFor(baseUrl),
     store,
     brandName: BRAND,
-    damKey: damKeyPortFor(keys.keys, BRAND),
+    damKey: damKeyPortFor(keys.keys, keys.directory, BRAND),
+    ...(opts.insert ? { insert: opts.insert } : {}),
   });
   return { svc, store, keys };
 }
@@ -206,10 +235,13 @@ describe("provisioning the DAM connection", () => {
     ]);
   });
 
+  // TEST_SCENARIO: two requests arrive together — the first agent's create and a reset — and one Connection with one key comes out of them, because the per-owner lock makes the second find the first's.
   it("is one per owner, and mints nothing while one is held", async () => {
     const { svc, store, keys } = harness();
-    const first = await svc.ensureDamConnection();
-    const second = await svc.ensureDamConnection();
+    const [first, second] = await Promise.all([
+      svc.ensureDamConnection(),
+      svc.ensureDamConnection(),
+    ]);
     expect(second).toBe(first);
     expect(keys.calls).toHaveLength(1);
     expect(damRows(store.rows)).toHaveLength(1);
@@ -267,6 +299,144 @@ describe("provisioning the DAM connection", () => {
   });
 });
 
+describe("revoking the key", () => {
+  // TEST_SCENARIO: the key store refuses the revocation, so the delete must fail and leave the Connection, its Secret and its grants exactly as they were — a Connection deleted first would lose the only record of the key that is still live.
+  it("fails the delete and keeps everything when the key cannot be revoked", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    await svc.setAgentConnections("agent-1", [id!]);
+    const secretPath = secretOf(store.secrets, damRows(store.rows)[0]!)!.fields
+      .value;
+    keys.refuseRevokeWith(new Error("directory down"));
+
+    await expect(svc.deleteConnection(id!)).rejects.toThrow(
+      /could not be revoked/,
+    );
+    expect(damRows(store.rows)).toHaveLength(1);
+    expect(store.grants).toContain(`${id}|agent-1`);
+    expect(secretOf(store.secrets, damRows(store.rows)[0]!)?.fields.value).toBe(
+      secretPath,
+    );
+  });
+
+  // TEST_SCENARIO: a key that is already revoked is not a failure — the delete proceeds, so a Connection whose key the owner revoked in Settings can still be removed.
+  it("treats an already-revoked key as done", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    await keys.keys.revoke("key-1");
+    await svc.deleteConnection(id!);
+    expect(damRows(store.rows)).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a create whose insert fails must not leave its freshly minted key live, and the error it fails with must not carry the key into the log.
+  it("rolls a failed create back, and reports it without the key", async () => {
+    const { svc, keys } = harness(BASE_URL, {
+      insert: async () => {
+        throw new Error("insert failed for pk_secret_key-1");
+      },
+    });
+    await expect(svc.ensureDamConnection()).rejects.toThrow(
+      /insert failed for \[redacted\]/,
+    );
+    expect(keys.revoked).toEqual(["key-1"]);
+    expect(keys.deferred).toEqual([]);
+  });
+
+  // TEST_SCENARIO: with the key store down too, the rollback is written down for the sweep instead of being lost, so the orphan key is revoked later.
+  it("defers a rollback it cannot complete", async () => {
+    const { svc, keys } = harness(BASE_URL, {
+      insert: async () => {
+        throw new Error("insert failed");
+      },
+    });
+    keys.refuseRevokeWith(new Error("directory down"));
+    await expect(svc.ensureDamConnection()).rejects.toThrow(/insert failed/);
+    expect(keys.deferred).toEqual(["key-1"]);
+  });
+});
+
+describe("rotating the key", () => {
+  // TEST_SCENARIO: rotating mints a new key into the same Connection — its id, its grants and every Agent's env untouched — and the key it replaces stops working.
+  it("mints a new key into the same Connection and revokes the old one", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    await svc.setAgentConnections("agent-1", [id!]);
+
+    await svc.rotateDamConnection(id!);
+    const conn = damRows(store.rows)[0]!;
+    expect(conn.id).toBe(id);
+    expect(conn.inputs[DAM_KEY_INPUT]).toBe("key-2");
+    expect(secretOf(store.secrets, conn)?.fields.value).toBe("pk_secret_key-2");
+    expect(keys.revoked).toEqual(["key-1"]);
+    expect(keys.live).toEqual(new Set(["key-2"]));
+    expect(store.grants).toContain(`${id}|agent-1`);
+    expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
+  });
+
+  // TEST_SCENARIO: a key the owner revoked in Settings leaves the Connection reading expired rather than active, and rotating it is what puts it back.
+  it("reads expired while its key is revoked, and active once rotated", async () => {
+    const { svc, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
+
+    await keys.keys.revoke("key-1");
+    expect(await svc.getConnection(id!)).toMatchObject({ status: "expired" });
+    expect((await svc.listConnections()).map((c) => c.status)).toEqual([
+      "expired",
+    ]);
+
+    await svc.rotateDamConnection(id!);
+    expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
+  });
+
+  // TEST_SCENARIO: the old key cannot be revoked after the switch, which must not fail the rotation: the new key already works and the old one is written down for the sweep.
+  it("defers a rotation it could not finish revoking", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    keys.refuseRevokeWith(new Error("directory down"));
+    await svc.rotateDamConnection(id!);
+    expect(secretOf(store.secrets, damRows(store.rows)[0]!)?.fields.value).toBe(
+      "pk_secret_key-2",
+    );
+    expect(keys.deferred).toEqual(["key-1"]);
+  });
+
+  it("refuses a Connection that is not the install's own", async () => {
+    const { svc, store } = harness();
+    await store.rows.set("conn-other", {
+      id: "conn-other",
+      ownerId: "owner",
+      templateId: "custom-header",
+      name: "Billing",
+      inputs: {},
+      auth: { kind: "none" },
+      contributions: [],
+    });
+    await expect(svc.rotateDamConnection("conn-other")).rejects.toThrow(
+      /only this install's own Connection/i,
+    );
+  });
+});
+
+describe("the install's own host", () => {
+  // TEST_SCENARIO: another Connection to the install's own address would share the TLS chain the DAM key is injected on, so its create is refused whatever template it is; the platform's own Connection is not.
+  it("is reserved for the platform's Connection", async () => {
+    const { svc } = harness();
+    await expect(
+      svc.createFromTemplate({
+        templateId: "custom-header",
+        name: "Another door to the install",
+        authKind: "header",
+        host: "dam.example.com",
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+        value: "whatever",
+      }),
+    ).rejects.toThrow(/this install's own address/);
+    expect(await svc.ensureDamConnection()).not.toBeNull();
+  });
+});
+
 describe("granting the DAM connection", () => {
   it("grants it to the owner's agent", async () => {
     const { svc, store } = harness();
@@ -287,7 +457,7 @@ describe("granting the DAM connection", () => {
 describe("the minted key", () => {
   it("carries every scope a person's key has, and no satellite's", async () => {
     const keys = fakeKeys();
-    const port = damKeyPortFor(keys.keys, BRAND);
+    const port = damKeyPortFor(keys.keys, keys.directory, BRAND);
     expect(await port.mint()).toEqual({
       id: "key-1",
       plaintext: "pk_secret_key-1",

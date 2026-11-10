@@ -7,6 +7,7 @@ import {
   type Contribution,
   type Scope,
 } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import { CONNECTION_TOKEN_PLACEHOLDER } from "./connection-sds.js";
 import {
   isIpLiteral,
@@ -46,6 +47,7 @@ export function damTargetOf(baseUrl: string): DamTarget | null {
   }
   if (url.protocol !== "https:") return null;
   if (!isGatewayHostname(url.hostname)) return null;
+  if (url.hostname.startsWith("*.")) return null;
   if (isIpLiteral(url.hostname)) return null;
   if (LOOPBACK_HOSTS.has(url.hostname.toLowerCase())) return null;
   const { host, port } = parseClusterEndpoint(url.origin);
@@ -63,13 +65,22 @@ export const DAM_KEY_SCOPES: readonly Scope[] = [
 
 export const damKeyName = (brandName: string) => `${brandName} connection`;
 
+/* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install is minted, revoked and read through one. `revoke` treats a key that is already revoked as done and throws only when the key store cannot be reached; `deferRevocation` records a key that must be revoked later, so a request never gives up on one silently. */
 export interface DamKeyPort {
   mint(): Promise<{ id: string; plaintext: string }>;
   revoke(id: string): Promise<void>;
+  deferRevocation(id: string): Promise<void>;
+  active(ids: readonly string[]): Promise<ReadonlySet<string>>;
+}
+
+export interface ApiKeyDirectory {
+  activeKeyIds(ids: readonly string[]): Promise<ReadonlySet<string>>;
+  deferRevocation(keyId: string): Promise<void>;
 }
 
 export function damKeyPortFor(
   keys: ApiKeysService,
+  directory: ApiKeyDirectory,
   brandName: string,
 ): DamKeyPort {
   return {
@@ -81,9 +92,21 @@ export function damKeyPortFor(
       });
       return { id: created.key.id, plaintext: created.plaintext };
     },
-    revoke: (id) => keys.revoke(id),
+    async revoke(id) {
+      try {
+        await keys.revoke(id);
+      } catch (err) {
+        if (isAlreadyRevoked(err)) return;
+        throw err;
+      }
+    },
+    deferRevocation: (id) => directory.deferRevocation(id),
+    active: (ids) => directory.activeKeyIds(ids),
   };
 }
+
+const isAlreadyRevoked = (err: unknown): boolean =>
+  err instanceof TRPCError && err.code === "NOT_FOUND";
 
 export const isDamConnection = (templateId: string) =>
   templateId === DAM_TEMPLATE_ID;

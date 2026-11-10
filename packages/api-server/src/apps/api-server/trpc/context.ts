@@ -188,6 +188,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           ownerSub: user.sub,
           surface: "platform",
         }),
+        {
+          activeKeyIds: apiKeysModule.activeKeyIds,
+          deferRevocation: (keyId) =>
+            apiKeysModule.deferRevocation(keyId, user.sub),
+        },
         config.brand.name,
       ),
       newAgentProvider: async () => {
@@ -360,6 +365,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
       agents,
       gettingStarted,
+      damConnection: () => connections.ensureDamConnection(),
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,

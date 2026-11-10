@@ -165,6 +165,12 @@ export const connectionsRouter = t.router({
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
 
+  rotateDam: manageCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.rotateDamConnection(input.id),
+    ),
+
   requestSecret: manageCredentialsProcedure
     .input(connectionRequestSecretInputSchema)
     .mutation(({ ctx, input }) => ctx.secretRequests.request(input)),

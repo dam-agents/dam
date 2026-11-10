@@ -1,5 +1,14 @@
-import type { Db } from "db";
-import { apiKeys, and, desc, eq, isNull, sql } from "db";
+import {
+  apiKeyRevocations,
+  apiKeys,
+  and,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  sql,
+  type Db,
+} from "db";
 import type { Scope } from "api-server-api";
 import type { ApiKeyRow, NewApiKey } from "../domain/types.js";
 
@@ -81,6 +90,45 @@ export function touchApiKeyLastUsed(db: Db) {
       .update(apiKeys)
       .set({ lastUsedAt: sql`now()` })
       .where(eq(apiKeys.id, id));
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: whether one key is still live, asked by a Connection that names it, so a Connection whose key the owner revoked in Settings reads as expired rather than active. */
+export function activeApiKeyIds(db: Db) {
+  return async (ids: readonly string[]): Promise<Set<string>> => {
+    if (ids.length === 0) return new Set();
+    const rows = await db
+      .select({ id: apiKeys.id })
+      .from(apiKeys)
+      .where(and(inArray(apiKeys.id, [...ids]), isNull(apiKeys.revokedAt)));
+    return new Set(rows.map((r) => r.id));
+  };
+}
+
+export function insertApiKeyRevocation(db: Db) {
+  return async (keyId: string, ownerSub: string): Promise<void> => {
+    await db
+      .insert(apiKeyRevocations)
+      .values({ keyId, ownerSub })
+      .onConflictDoNothing();
+  };
+}
+
+export function listApiKeyRevocations(db: Db) {
+  return async (): Promise<{ keyId: string; ownerSub: string }[]> =>
+    db
+      .select({
+        keyId: apiKeyRevocations.keyId,
+        ownerSub: apiKeyRevocations.ownerSub,
+      })
+      .from(apiKeyRevocations);
+}
+
+export function deleteApiKeyRevocation(db: Db) {
+  return async (keyId: string): Promise<void> => {
+    await db
+      .delete(apiKeyRevocations)
+      .where(eq(apiKeyRevocations.keyId, keyId));
   };
 }
 

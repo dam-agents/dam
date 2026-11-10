@@ -7,6 +7,9 @@ import { connectionDetail } from "../../modules/connections/lib/connection-detai
 import {
   damActsAsYou,
   damAudienceSentence,
+  damGrantSentence,
+  damHoldWarns,
+  damPreGrantSentence,
   isDamConnection,
 } from "../../modules/connections/lib/dam-connection.js";
 
@@ -25,6 +28,19 @@ describe("the DAM connection", () => {
     expect(connectionDetail(connection).account).toMatch(/^Acts as you on /);
     expect(filterOfferedTemplates([{ id: "dam" }], true)).toEqual([]);
     expect(filterOfferedTemplates([{ id: "dam" }], false)).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the confirmation before a grant says what the grant gives away, and only for this Connection; an Agent that already holds it gets the standing sentence instead, and an unread library counts as holding it.
+  it("warns before the grant, not only after", () => {
+    expect(damPreGrantSentence("Acme", { templateId: "dam" })).toBe(
+      "This lets the agent act as you on Acme, and anyone who can drive it too.",
+    );
+    expect(damPreGrantSentence("Acme", { templateId: "github" })).toBeNull();
+    expect(damPreGrantSentence("Acme", undefined)).toBeNull();
+    expect(damGrantSentence("Acme")).toContain("anyone who can drive it too");
+    expect(damHoldWarns("held")).toBe(true);
+    expect(damHoldWarns("unknown")).toBe(true);
+    expect(damHoldWarns("not-held")).toBe(false);
   });
 
   // TEST_SCENARIO: whoever can steer the agent acts as the owner, so each flow names who that is.

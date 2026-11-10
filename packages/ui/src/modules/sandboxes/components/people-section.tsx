@@ -17,7 +17,10 @@ import { useHoldsDamConnection } from "../../agents/hooks/use-holds-dam-connecti
 import { editorsWarning } from "../../agents/lib/agent-editors.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
-import { damAudienceSentence } from "../../connections/lib/dam-connection.js";
+import {
+  damAudienceSentence,
+  damHoldWarns,
+} from "../../connections/lib/dam-connection.js";
 import { useAgentManagement } from "../hooks/use-agent-management.js";
 
 type EditorAccess = Extract<AgentAccess, { role: "editor" }>;
@@ -51,7 +54,7 @@ function OwnerPeople({
   const agentId = agent.id;
   const ownEmail = signedInEmail();
   const warning = editorsWarning(useActingConnectionNames(agentId) ?? []);
-  const holdsDam = useHoldsDamConnection(agent);
+  const holdsDam = damHoldWarns(useHoldsDamConnection(agent));
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
       <div className="flex flex-col gap-2">

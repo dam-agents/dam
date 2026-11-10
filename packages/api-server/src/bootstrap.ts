@@ -1222,6 +1222,11 @@ export async function bootstrap() {
   const damKeyFor = (ownerId: string) =>
     damKeyPortFor(
       apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
+      {
+        activeKeyIds: apiKeysModule.activeKeyIds,
+        deferRevocation: (keyId) =>
+          apiKeysModule.deferRevocation(keyId, ownerId),
+      },
       config.brand.name,
     );
   const connectionsServiceFor = (ownerId: string) =>
@@ -1252,6 +1257,18 @@ export async function bootstrap() {
     .catch((err) => {
       getLogger().error(
         `periodic job oauth-refresh registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
+  await periodicJobs
+    .register("api-key-revocation-sweep", 60_000, async () => {
+      const swept = await apiKeysModule.sweepRevocations();
+      if (swept > 0)
+        getLogger().info(`api-key revocation sweep: ${swept} key(s) revoked`);
+    })
+    .catch((err) => {
+      getLogger().error(
+        `periodic job api-key-revocation-sweep registration failed: ${formatError(err)}`,
       );
       process.exit(1);
     });

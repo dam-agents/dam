@@ -7,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgent, useAgentConnections } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
+import { useHoldsDamConnection } from "../../agents/hooks/use-holds-dam-connection.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { useSetPreferredConnection } from "../../connections/api/mutations.js";
 import { useAgentPageConnections } from "../../connections/api/queries.js";
@@ -17,6 +18,7 @@ import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js"
 import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
 import {
   damAudienceSentence,
+  damHoldWarns,
   isDamConnection,
 } from "../../connections/lib/dam-connection.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
@@ -60,7 +62,14 @@ export function ConnectionsSection({
     () => ({ editors, channels: sharedChannels }),
     [editors, sharedChannels],
   );
-  const shareConfirm = useConfirmSharedConnection(audience);
+  const agent = useAgent(agentId);
+  const damWarns = damHoldWarns(useHoldsDamConnection(agent ?? null));
+  const shareConfirm = useConfirmSharedConnection(
+    audience,
+    damWarns
+      ? damAudienceSentence(getBrand().name, "anyone who can drive it")
+      : null,
+  );
 
   const grantedIds = useMemo(
     () =>

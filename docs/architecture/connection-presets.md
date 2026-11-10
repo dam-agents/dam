@@ -89,12 +89,17 @@ Provisioning is idempotent and takes the first free name, which is the brand's.
 Its credential is an **owner API key** the platform mints at create, named so the owner sees it in Settings › API keys.
 It carries every scope a person's own key can and none of the satellite scopes, which run work queued for other Agents; an API key never carries the operator role.
 It is stored in the per-Connection Secret as a header credential, and the Connection remembers the key's id, so deleting the Connection revokes the key and a later provisioning mints another.
+A revoke the key store could not complete fails the delete and removes nothing, and the two paths that mint a key for a Connection of their own — a failed provisioning and a rotation — write down a key they could not revoke, so a sweep retries it instead of leaving it live under a name nothing holds.
 The Agent holds only placeholders: `DAM_SERVER`, the install's public base URL, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
 
 Its contributions are the install's host allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.
 
 **Which host.** The upstream is the install's own public URL (`UI_BASE_URL`), and the template exists only where that URL is `https` on a DNS name that is neither loopback nor an IP literal: the credential chain terminates TLS, so a plain-HTTP install — the local cluster's — has no such Connection.
+That host belongs to this Connection alone: any other Connection naming it is refused at create, and a gateway chain that carries this Connection's key takes its upstream port and CA from this Connection, never from a peer on the same host, so the key only goes where the install published it.
 A gateway pod reaches that host over the public internet minus the private and loopback ranges, so an install whose name resolves inside the cluster or a private network needs that range opened ([security and credentials](security-and-credentials.md#hitl-ext_authz)).
+
+**When its key stops working.** A key the owner revokes by hand in Settings leaves the Connection reading expired, and the owner's own action puts it back: rotating mints a fresh key into the same Connection, keeping its id, its grants and every Agent's env.
+Nothing mints a replacement by itself, so a key revoked on purpose stays revoked until someone asks for a new one.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
 The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.

@@ -996,3 +996,26 @@ func TestContestedAt_HeaderNamesIgnoreCase(t *testing.T) {
 	assert.True(t, chains.RefusesUnaddressedAt("/"))
 	assert.False(t, requiringAddress(chains)[0].RefusesUnaddressedAt("/"))
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: a peer Connection on the install's own host whose Secret names another upstream port and another upstream CA must not move the chain that carries the install's key: the DAM credential's own address decides, so the key only ever goes where the install published it. */
+func TestChainsFromSecrets_DamChainKeepsItsOwnAddress(t *testing.T) {
+	dam := ownerSecret("platform-conn-dam", "connection", "conn-dam")
+	dam.Annotations[envoySecretPurposeAnn] = "connection:dam"
+	dam.Annotations[envoyInjectionHostsAnn] = `[{"host":"dam.example.com","pathPattern":"/api/","headerName":"Authorization"}]`
+	dam = withHostSDS(dam, "dam.example.com")
+	dam.Data["upstream-ca.crt"] = []byte("not a real CA")
+
+	peer := ownerSecret("platform-conn-peer", "connection", "conn-peer")
+	peer.Annotations[envoySecretPurposeAnn] = "connection:custom-header"
+	peer.Annotations[envoyInjectionHostsAnn] = `[{"host":"dam.example.com","port":8443,"headerName":"X-Other","caKey":"upstream-ca.crt"}]`
+	peer = withHostSDS(peer, "dam.example.com")
+	peer.Data["upstream-ca.crt"] = []byte("not a real CA")
+
+	chains := chainsFromSecrets([]corev1.Secret{peer, dam}, nil)
+	require.Len(t, chains, 1, "both Secrets claim one host, so they render one chain")
+	chain := chains[0]
+	assert.Equal(t, "dam.example.com", chain.Host)
+	assert.Equal(t, 0, chain.UpstreamPort, "the install published 443, not the peer's 8443")
+	assert.Equal(t, 443, chain.UpstreamPortValue())
+	assert.Empty(t, chain.UpstreamCAFile, "the install's host is validated against the system trust, not a peer's CA")
+}

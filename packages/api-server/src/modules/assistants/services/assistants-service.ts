@@ -65,6 +65,8 @@ export function createAssistantsService(deps: {
   /* UNIT_BOUNDARY_DESCRIPTION: how long a reset or a switch waits for a create another caller holds, and how often it looks. A request waits not at all, since it has a page to answer. */
   waitMs?: number;
   pollMs?: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's Connection that drives this install, made if they hold none, which an Agent the platform creates is created holding — so the person's own assistant can act for them on this install. Null where the install cannot have one. The platform's path: the flag that offers that Connection to people does not apply to it. */
+  damConnection: () => Promise<string | null>;
 }): AssistantProvisioning {
   const waitMs = deps.waitMs ?? DEFAULT_WAIT_MS;
   const pollMs = deps.pollMs ?? DEFAULT_POLL_MS;
@@ -77,6 +79,7 @@ export function createAssistantsService(deps: {
   /* UNIT_BOUNDARY_DESCRIPTION: the one create every door uses — the switch, the pinned-on request and the reset — so the name, the instructions and the checklist's first task land the same way whichever asked. */
   const create = async (agentId: string): Promise<void> => {
     await deps.enrolled();
+    const dam = await damConnectionOrNull();
     await deps.agents.create({
       id: agentId,
       name: deps.assistantName,
@@ -84,6 +87,9 @@ export function createAssistantsService(deps: {
         assistantName: deps.assistantName,
         brandName: deps.brandName,
       }),
+      ...(dam !== null
+        ? { connectionIds: [dam], platformGrants: true as const }
+        : {}),
     });
   };
 
@@ -92,6 +98,19 @@ export function createAssistantsService(deps: {
     (await deps.agents.list()).some(
       (agent) => agent.name === deps.assistantName,
     );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant is made with or without its Connection: an install that cannot have one, or a key the platform could not mint, must not cost the person the Agent itself. */
+  const damConnectionOrNull = async (): Promise<string | null> => {
+    try {
+      return await deps.damConnection();
+    } catch (err) {
+      getLogger().warn(
+        { err, owner: deps.owner },
+        "assistant.dam_connection_failed",
+      );
+      return null;
+    }
+  };
 
   /* UNIT_BOUNDARY_DESCRIPTION: waits for the Agent a create in flight will make, so a caller that lost the claim finishes on the same Agent rather than on nothing. Bounded by the wait it is given, and zero for a request, which has a page to answer. */
   const awaitSettled = async (forMs: number): Promise<InfraAgent | null> => {

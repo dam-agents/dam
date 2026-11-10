@@ -162,6 +162,9 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	return out
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the template of the Connection that drives this install as its owner. Its credential is injected on the install's own host, which no other Connection may name (the api-server refuses one), but a Secret written before that rule, or by another path, could still share the host: a chain carrying this credential therefore takes its upstream port and its upstream CA from this credential alone, never from a peer, so the install's key is only ever sent to the address the install published. */
+const damConnectionTemplate = "dam"
+
 var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock"}
 
 func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
@@ -696,6 +699,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		credentials     []envoyCredential
 		signers         []envoySigner
 		opts            chainOpts
+		damOpts         *chainOpts
 		first           string
 	}
 	byHost := map[string]*bucket{}
@@ -777,6 +781,10 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			return b
 		}
 		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
+		if cred.TemplateID == damConnectionTemplate {
+			own := opts
+			b.damOpts = &own
+		}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)
@@ -829,6 +837,15 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 				"host", host, "secret", b.first)
 			continue
 		}
+		port, caFile := b.opts.port, b.opts.caFile
+		if b.damOpts != nil {
+			if port != b.damOpts.port || caFile != b.damOpts.caFile {
+				slog.Warn("a peer Connection tried to move the chain that carries the install's own key; keeping the address its Connection published",
+					"host", host, "keptPort", b.damOpts.port, "skippedPort", port,
+					"keptCA", b.damOpts.caFile, "skippedCA", caFile)
+			}
+			port, caFile = b.damOpts.port, b.damOpts.caFile
+		}
 		chains = append(chains, envoyHostChain{
 			ChainID:         "chain_" + b.first + "_" + shortHash(host),
 			UpstreamCluster: "upstream_" + b.first + "_" + shortHash(host),
@@ -836,9 +853,9 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			Credentials:     b.credentials,
 			Signers:         b.signers,
 			HTTP2:           b.opts.http2,
-			UpstreamPort:    b.opts.port,
+			UpstreamPort:    port,
 			Upgrades:        b.opts.upgrades,
-			UpstreamCAFile:  b.opts.caFile,
+			UpstreamCAFile:  caFile,
 			PathRewrites:    b.opts.pathRewrites,
 		})
 	}

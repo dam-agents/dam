@@ -104,6 +104,20 @@ export function useDeleteConnection() {
   });
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: mints a fresh key into the Connection that drives this install, for an owner whose key was revoked or is being replaced; the Connection, its grants and every Agent's env stay as they are. */
+export function useRotateDamConnection() {
+  return useMutation({
+    ...trpc.connections.rotateDam.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      errorToast: "Couldn't rotate the key",
+    },
+  });
+}
+
 export function useDiscoverMcp(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.discoverMcp.mutationOptions(),

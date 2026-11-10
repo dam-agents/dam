@@ -353,6 +353,9 @@ export interface ConnectionsService {
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection that lets an Agent drive this install as its owner, one per owner: minted with its key on first use, else the one the owner already holds; null where the install's own URL is not one a gateway can reach and inject on. */
   ensureDamConnection(): Promise<string | null>;
 
+  /* UNIT_BOUNDARY_DESCRIPTION: mints a fresh key into that Connection, on the owner's word, keeping the Connection, its grants and every Agent's env as they are: the old key stops working at once, so this is also how a key the owner revoked in Settings is replaced. */
+  rotateDamConnection(id: string): Promise<void>;
+
   discoverMcp(input: { url: string }): Promise<{
     auth: "oauth" | "none";
   }>;

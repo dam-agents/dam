@@ -321,6 +321,46 @@ export function createConnectionsService(deps: {
     };
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the key the DAM Connection names is still live. A key its owner revoked in Settings stops working at once, so the Connection has to read as expired rather than active; a key store that cannot answer says nothing, because this is a listing and not a gate. */
+  async function damKeyIsLive(conn: Connection): Promise<boolean> {
+    const keyId = rememberedInput(conn, DAM_KEY_INPUT);
+    if (keyId === null || !deps.damKey) return true;
+    try {
+      return (await deps.damKey.active([keyId])).has(keyId);
+    } catch {
+      return true;
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the install's own API host, which only the DAM Connection may claim: a second Connection there would put another credential, another upstream port and another upstream CA on the same TLS chain, so the install's key could be sent where that Connection points. */
+  function installHost(): string | null {
+    const template = deps.templates.get(DAM_TEMPLATE_ID);
+    return template && "host" in template && template.host
+      ? template.host.toLowerCase()
+      : null;
+  }
+
+  function assertNotInstallHost(
+    templateId: string,
+    contributions: readonly Contribution[],
+  ): void {
+    if (isDamConnection(templateId)) return;
+    const host = installHost();
+    if (host === null) return;
+    const claimed = contributions.some(
+      (c) =>
+        (c.kind === "egress-allow" ||
+          c.kind === "egress-inject" ||
+          c.kind === "egress-sign") &&
+        c.host.toLowerCase() === host,
+    );
+    if (!claimed) return;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `"${host}" is this install's own address, which only the Connection the platform makes for it may reach: an Agent that drives ${deps.brandName} uses that one.`,
+    });
+  }
+
   async function firstProviderPerAlias(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
     harness?: string,
@@ -594,6 +634,33 @@ export function createConnectionsService(deps: {
         extraAnnotations: connectionSecretAnnotations(contributions),
       },
     );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: revokes a key the platform no longer wants, or — when the key store cannot be reached — records it for the sweep, so a failed create or rotation never leaves a live key nobody names. */
+  async function revokeOrDeferDamKey(keyId: string): Promise<void> {
+    if (!deps.damKey) return;
+    try {
+      await deps.damKey.revoke(keyId);
+    } catch (err) {
+      securityLog("warn", "connection.dam_key_revoke_deferred", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: keyId,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+      await deps.damKey.deferRevocation(keyId).catch((deferErr: unknown) => {
+        securityLog("warn", "connection.dam_key_revoke_lost", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: keyId,
+          result: "failure",
+          reason: deferErr instanceof Error ? deferErr.message : "unknown",
+        });
+      });
+    }
   }
 
   async function rotateHeaderValue(
@@ -1811,6 +1878,10 @@ export function createConnectionsService(deps: {
       await Promise.all(
         views.map(async (view, i) => {
           const conn = conns[i]!;
+          if (isDamConnection(conn.templateId)) {
+            if (!(await damKeyIsLive(conn))) view.status = "expired";
+            return;
+          }
           if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
           if (conn.auth.kind !== "header") return;
           const remembered = rememberedInput(conn, SHARE_NAME_INPUT_KEY);
@@ -1837,9 +1908,12 @@ export function createConnectionsService(deps: {
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return null;
-      return PROVIDER_TEMPLATE_IDS.has(conn.templateId)
+      const view = PROVIDER_TEMPLATE_IDS.has(conn.templateId)
         ? toView(conn, await preferredProviderId())
         : toView(conn);
+      if (isDamConnection(conn.templateId) && !(await damKeyIsLive(conn)))
+        view.status = "expired";
+      return view;
     },
 
     async validateProviderConnection(id: string): Promise<void> {
@@ -2011,6 +2085,8 @@ export function createConnectionsService(deps: {
       const contributions = configInputs
         ? withConfigInputs(conn, configInputs)
         : null;
+      if (contributions !== null)
+        assertNotInstallHost(conn.templateId, contributions);
 
       switch (conn.auth.kind) {
         case "header": {
@@ -2102,7 +2178,9 @@ export function createConnectionsService(deps: {
       if (isDamConnection(conn.templateId) && deps.damKey) {
         const keyId = rememberedInput(conn, DAM_KEY_INPUT);
         if (keyId !== null) {
-          await deps.damKey.revoke(keyId).catch((err: unknown) => {
+          try {
+            await deps.damKey.revoke(keyId);
+          } catch (err) {
             securityLog("warn", "connection.dam_key_revoke_failed", {
               category: "credential",
               actor: deps.ownerId,
@@ -2111,7 +2189,11 @@ export function createConnectionsService(deps: {
               result: "failure",
               reason: err instanceof Error ? err.message : "unknown",
             });
-          });
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: `The key this Connection uses could not be revoked, so nothing was removed: try again in a moment. No agent keeps it working in the meantime.`,
+            });
+          }
         }
       }
 
@@ -2361,6 +2443,7 @@ export function createConnectionsService(deps: {
       const contributions = built.contributions.map((c): Contribution =>
         c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
+      assertNotInstallHost(template.id, contributions);
       const secretPath = connectionSecretPath(built.auth);
 
       let auth =
@@ -2661,11 +2744,53 @@ export function createConnectionsService(deps: {
               { rememberedInputs: { [DAM_KEY_INPUT]: minted.id } },
             );
           } catch (err) {
-            await damKey.revoke(minted.id).catch(() => {});
-            throw err;
+            await revokeOrDeferDamKey(minted.id);
+            throw withoutKeyMaterial(err, minted.plaintext);
           }
         },
       );
+    },
+
+    async rotateDamConnection(id: string): Promise<void> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!isDamConnection(conn.templateId) || conn.auth.kind !== "header") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only this install's own Connection is rotated this way.",
+        });
+      }
+      const damKey = deps.damKey;
+      if (!damKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This api-server cannot mint the key this Connection uses.",
+        });
+      }
+      await deps.connectionLock(`dam-key:${id}`, async () => {
+        const current = await deps.repo.get(id, deps.ownerId);
+        if (!current || current.auth.kind !== "header") {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        const previous = rememberedInput(current, DAM_KEY_INPUT);
+        const minted = await damKey.mint();
+        try {
+          await rotateHeaderValue(current, current.auth, minted.plaintext);
+        } catch (err) {
+          await revokeOrDeferDamKey(minted.id);
+          throw withoutKeyMaterial(err, minted.plaintext);
+        }
+        await deps.repo.mergeInputs(current.id, { [DAM_KEY_INPUT]: minted.id });
+        if (previous !== null) await revokeOrDeferDamKey(previous);
+      });
+      securityLog("info", "connection.dam_key_rotated", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { templateId: DAM_TEMPLATE_ID },
+      });
     },
 
     async createFromParent(input): Promise<string> {
@@ -3157,6 +3282,15 @@ export function createConnectionsService(deps: {
     },
     reconcileManagedConnections,
   };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: an error a failed mint or create is reported with, with the plaintext key taken out of it. Nothing on these paths should carry it, and the one that did would otherwise print it into the log the caller reports. */
+function withoutKeyMaterial(err: unknown, secret: string): unknown {
+  if (!(err instanceof Error) || secret.length === 0) return err;
+  const redact = (text: string) => text.split(secret).join("[redacted]");
+  if (err.message.includes(secret)) err.message = redact(err.message);
+  if (typeof err.stack === "string") err.stack = redact(err.stack);
+  return err;
 }
 
 function firstFreeName(base: string, taken: ReadonlySet<string>): string {

@@ -3,7 +3,10 @@ import { type ReactNode, useCallback } from "react";
 import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useDismissibleConfirm } from "../../connections/hooks/use-dismissible-confirm.js";
-import { damAudienceSentence } from "../../connections/lib/dam-connection.js";
+import {
+  damAudienceSentence,
+  damHoldWarns,
+} from "../../connections/lib/dam-connection.js";
 import {
   type SharedChannel,
   sharedChannelsTitle,
@@ -29,7 +32,7 @@ export function useBindSharingConfirm(
   agent: AgentView | null,
 ): BindSharingConfirm {
   const names = useAgentSharedAccess(agent);
-  const dam = useHoldsDamConnection(agent)
+  const dam = damHoldWarns(useHoldsDamConnection(agent))
     ? damAudienceSentence(getBrand().name, "anyone in this chat")
     : null;
   const { dismissed, confirm: confirmDismissible } = useDismissibleConfirm(

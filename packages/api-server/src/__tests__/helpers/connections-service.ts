@@ -79,6 +79,12 @@ export function memorySecretStore(
       reads.get++;
       return secrets.get(ref.path)?.fields ?? null;
     },
+    putFields: async (ref, fields) =>
+      void secrets.set(ref.path, {
+        fields: { ...(secrets.get(ref.path)?.fields ?? {}), ...fields },
+        annotations: secrets.get(ref.path)?.annotations ?? {},
+        purpose: secrets.get(ref.path)?.purpose ?? "connection",
+      }),
     getField: async (ref) => {
       reads.getField++;
       return secrets.get(ref.path)?.fields[ref.field] ?? null;
@@ -94,6 +100,7 @@ export function serviceHarness(opts: {
   brandName: string;
   curveBenderDeploymentKey?: string | null;
   damKey?: DamKeyPort;
+  insert?: (row: Connection) => Promise<void>;
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
@@ -112,16 +119,23 @@ export function serviceHarness(opts: {
     ownerId: "owner",
     templates: opts.templates,
     repo: unused<ConnectionsRepository>({
-      insert: async (c) => {
-        if ([...rows.values()].some((r) => r.name === c.name))
-          throw Object.assign(new Error("duplicate"), { code: "23505" });
-        rows.set(c.id, c);
-      },
+      insert:
+        opts.insert ??
+        (async (c) => {
+          if ([...rows.values()].some((r) => r.name === c.name))
+            throw Object.assign(new Error("duplicate"), { code: "23505" });
+          rows.set(c.id, c);
+        }),
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
       listChildren: async (parentId) =>
         [...rows.values()].filter((c) => c.parentId === parentId),
       listByOwnerOldestFirst: async () => [...rows.values()],
+      mergeInputs: async (id, patch) =>
+        void rows.set(id, {
+          ...rows.get(id)!,
+          inputs: { ...rows.get(id)!.inputs, ...patch },
+        }),
       updateContributions: async (id, contributions) =>
         void rows.set(id, { ...rows.get(id)!, contributions }),
       updateAuth: async (id, auth) =>
