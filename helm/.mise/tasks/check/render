@@ -812,14 +812,15 @@ jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" '
   and $ext[0].from == [{"source": {"notPrincipals": [$principal]}}]' <<<"$pod_deny" >/dev/null ||
   { echo "the api-server pod-DENY on ext-authz does not admit the waypoint principal alone: $pod_deny" >&2; exit 1; }
 # The api-server ingress NetworkPolicy admits the ext-authz port and HBONE from
-# the release namespace alone, where the waypoint the ext-authz Services are
-# bound to runs: a gateway reaches ext-authz only through it. The agent
-# namespace is not admitted, so the waypoint stays the only way in.
+# the release namespace, where the waypoint the ext-authz Services are bound to
+# runs, and from the agent namespace, whose gateways call the port directly on a
+# local no-mesh install. With the mesh, the pod-level DENY above admits the
+# waypoint alone, so the agent namespace opens no direct path there.
 api_netpol=$(helm template platform . "${COMMON[@]}" --set apiServer.networkPolicy.enabled=true \
   --show-only templates/apiserver/networkpolicy.yaml | yq -o=json)
-jq -e --arg release "default" '
+jq -e --arg release "default" --arg agents "platform-agents" '
   [.spec.ingress[] | select(any(.ports[]?; .port == 4002))] as $ext
   | ($ext | length) == 1
-  and ([$ext[0].from[].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]] | sort) == [$release]
+  and ([$ext[0].from[].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]] | sort) == ([$release, $agents] | sort)
   and ([$ext[0].ports[].port] | sort) == [4002, 15008]' <<<"$api_netpol" >/dev/null ||
-  { echo "the api-server ingress NetworkPolicy does not admit the waypoint's namespace alone on ext-authz and HBONE: $api_netpol" >&2; exit 1; }
+  { echo "the api-server ingress NetworkPolicy does not admit the waypoint's and the agents' namespaces on ext-authz and HBONE: $api_netpol" >&2; exit 1; }

@@ -1573,8 +1573,7 @@ apiServer:
 
   # -- Ingress NetworkPolicy for the api-server pod.
   # Restricts the agent-facing ports (`harness`, `ext-authz`) to ingress from
-  # the release namespace, where the Istio waypoint those Services are bound
-  # to runs.
+  # pods carrying `agent-platform.ai/agent` (agent + executor pods) in agentNamespace.
   # The HTTP port stays open so the UI / ingress controller can reach it;
   # JWT auth at the application layer protects that one. Disable in
   # environments without NetworkPolicy support (e.g. some bare clusters).
