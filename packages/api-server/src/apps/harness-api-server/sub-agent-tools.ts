@@ -229,6 +229,9 @@ function subAgentIdleTimeout(
 const OWNER_EGRESS_NOTE =
   "a rule to a wildcard host (* or *.example.com), or to a host your own rules do not reach while your owner has not let your sub-agents and Environments have network access of their own, is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
 
+const OWNER_BLOCK_NOTE =
+  "your owner blocked these on the sub-agent, and a block is theirs alone: the rules allowing them were not set, and only the owner can lift the block";
+
 const openEgressAllows = (egress: unknown): boolean =>
   typeof egress === "object" &&
   egress !== null &&
@@ -1127,7 +1130,7 @@ function registerKeptTools(
 
   server.tool(
     "update_subagent_egress",
-    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one allowing a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
+    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one allowing a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. A rule allowing what your owner blocked on it is not set, and the answer names that too. Refused for one that follows your egress or has scoped egress, which only the user widens.',
     {
       id: z
         .string()
@@ -1150,6 +1153,10 @@ function registerKeptTools(
               ...(outcome.waiting.length > 0 && {
                 waitingForOwner: outcome.waiting,
                 note: OWNER_EGRESS_NOTE,
+              }),
+              ...(outcome.blocked.length > 0 && {
+                blockedByOwner: outcome.blocked,
+                blockedNote: OWNER_BLOCK_NOTE,
               }),
             })
           : errorResult(`update_subagent_egress refused: ${outcome.message}`);

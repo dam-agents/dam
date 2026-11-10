@@ -1,4 +1,5 @@
 import { hostMatchCandidates } from "./host-match.js";
+import { patternCoversEveryPath } from "./path-match.js";
 import { rulePortCovers } from "./port-match.js";
 
 interface ReachRule {
@@ -14,7 +15,7 @@ const DEFAULT_PORTS = [
   { port: 80, tls: false },
 ] as const;
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a child's allow rule reaches past its driver: it is wider when one host and port it lets through is one the driver's own rules do not reach. Hosts and ports are compared, never methods or paths, so a driver that reaches some path of a host reaches the host. For each port the host patterns are read most specific first, as at the gate (the host, then its `*.parent`, then `*`): an allow there reaches, a deny of every method and path does not, and a deny of only some of them leaves the next pattern to decide. A rule with no port speaks for 443 over TLS and 80 in plain HTTP, so both must be reached.
+// UNIT_BOUNDARY_DESCRIPTION: whether a child's allow rule reaches past its driver: it is wider when one host and port it lets through is one the driver's own rules do not reach. Hosts and ports are compared, never methods or paths, so a driver that reaches some path of a host reaches the host. For each port the host patterns are read most specific first, as at the gate (the host, then its `*.parent`, then `*`): a deny of every method and path (its path pattern read with the gate's LIKE, so `/*` is one) decides that pattern: an allow there reaches only where the gate ranks it first for some request (a named method, or a named path where the deny's is `*`, or a longer one than the deny's), and a tie is read as not reaching; with no such deny, an allow there reaches, and a deny of only some methods or paths leaves the next pattern to decide. A rule with no port speaks for 443 over TLS and 80 in plain HTTP, so both must be reached.
 export function reachesPastDriver(
   rule: { host: string; port?: number },
   driverRules: readonly ReachRule[],
@@ -43,9 +44,24 @@ function driverReaches(
       (r) =>
         r.host.toLowerCase() === pattern && rulePortCovers(r.port, port, tls),
     );
-    if (speaking.some((r) => r.verdict === "allow")) return true;
-    if (speaking.some((r) => r.method === "*" && r.pathPattern === "*"))
-      return false;
+    const allows = speaking.filter((r) => r.verdict === "allow");
+    const blocks = speaking.filter(
+      (r) =>
+        r.verdict !== "allow" &&
+        r.method === "*" &&
+        patternCoversEveryPath(r.pathPattern),
+    );
+    if (blocks.length > 0)
+      return allows.some((a) => blocks.every((d) => ranksBefore(a, d)));
+    if (allows.length > 0) return true;
   }
   return false;
+}
+
+// The gate's ORDER BY within one host pattern: a named method first, then a named path, then the longer path.
+function ranksBefore(allow: ReachRule, deny: ReachRule): boolean {
+  if (allow.method !== "*") return true;
+  if (allow.pathPattern === "*") return false;
+  if (deny.pathPattern === "*") return true;
+  return allow.pathPattern.length > deny.pathPattern.length;
 }
