@@ -1,13 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
+import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { approvalsKeys } from "./queries.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: a verdict can write a network rule, and approving a sub-agent's rule that reaches past its driver also turns on the driver's switch for its children's network access, so the agent's rules and that switch are read again too, not left at their cached value.
+const AFTER_VERDICT = [approvalsKeys.all, egressRulesKeys.all];
 
 export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all, trpc.spend.status.queryKey()],
+      invalidates: [...AFTER_VERDICT, trpc.spend.status.queryKey()],
       errorToast: "Couldn't approve",
     },
   });
@@ -17,7 +21,7 @@ export function useApprovePermanent() {
   return useMutation({
     ...trpc.approvals.approvePermanent.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_VERDICT,
       errorToast: "Couldn't approve permanently",
     },
   });
@@ -27,7 +31,7 @@ export function useApproveHost() {
   return useMutation({
     ...trpc.approvals.approveHost.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_VERDICT,
       errorToast: "Couldn't allow host",
     },
   });
@@ -37,7 +41,7 @@ export function useDenyForever() {
   return useMutation({
     ...trpc.approvals.denyForever.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: AFTER_VERDICT,
       errorToast: "Couldn't deny",
     },
   });
