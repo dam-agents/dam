@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md) and [slack-channel-history](slack-channel-history.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -52,6 +52,7 @@ Two paths, both by tool call; plain assistant text is never posted.
   Ten work from any session, UI or scheduled included: `post`, `start_thread`, `list_threads`, `leave_thread`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`, `get_message_link`.
   `read_channel_history` joins them only while one of the Agent's bindings has channel history on (§6); a channel turn reads only its own conversation with it.
   `send_channel_message` is `post`'s old name, kept for one release.
+  `reply`, `post` and `start_thread` take an optional [Channel Card](channel-cards.md), whose components `describe_card_components` lists on request.
   Every post carries a footer naming the Agent and linking to the session that wrote it.
   The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection.
@@ -231,6 +232,7 @@ flowchart TD
 | Only tool calls reach Slack; answered means `reply`, `react`, `no_reply_needed`, hand-off, or a top-level post into the same channel                   | Platform                               | Prose is lost unless the reminder rescues it. A post via the owner's Connection doesn't count; close such a turn with `no_reply_needed`                   |
 | Answer, react, stay silent or hand off; thread vs. top-level; `alsoSendToChannel`; names not raw ids                                                   | **Agent**, prompted                    | A `no_reply_needed` is final. A top-level answer counts, just noisier                                                                                     |
 | Standard Markdown rendering for agent posts, with compact Slack-style code fences moved onto their own lines                                           | Platform                               | A fence pair inside one line of prose stays as it is; tools ask for separate fence lines                                                                  |
+| A Channel Card shows under the text as native Slack blocks; a card Slack refuses goes out as its text form                                             | Platform                               | Checked before posting: one table, two charts, link buttons only, 50 blocks; a refused card names every problem and nothing posts                         |
 | Stop on the working status cancels the running turn, for the person who started it or the Agent's owner; anyone else gets an ephemeral refusal         | Platform                               | Needs the `agent_session_stopped` subscription and agent messaging (**Setup**). A stopped turn gets no reminder. Ambient turns show no status, so no Stop |
 | One reminder after a silent addressed turn                                                                                                             | Platform                               | Never on ambient. A reply whose attachment failed still counts; the agent is told which file                                                              |
 | A tagged reply sent while a turn works joins that turn at the agent's next steer point, never twice; the turn is judged once that steer has its answer | Platform                               | Only where the harness steers; otherwise it becomes the next turn. A steer can wait as long as a command runs                                             |

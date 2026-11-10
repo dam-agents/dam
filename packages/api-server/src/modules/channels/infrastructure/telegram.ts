@@ -13,6 +13,8 @@ import {
   type Adapter,
   type LogLevel,
   type CardElement,
+  type FileUpload,
+  type PostableCard,
   type Thread,
   type StateAdapter,
 } from "chat";
@@ -240,10 +242,85 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
   }
 }
 
+export function telegramPayload(
+  text: string,
+  options?: Pick<PostMessageOptions, "attachment" | "card">,
+): string | PostableCard | { markdown: string; files: FileUpload[] } {
+  const { attachment, card } = options ?? {};
+  const files: FileUpload[] | undefined = attachment
+    ? [
+        {
+          data: attachment.data,
+          filename: attachment.filename,
+          ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+        },
+      ]
+    : undefined;
+  if (card) {
+    const { title, subtitle, ...rest } = card.card;
+    return {
+      card: text.trim()
+        ? {
+            ...rest,
+            children: [
+              { type: "text" as const, content: text },
+              ...(title
+                ? [
+                    {
+                      type: "text" as const,
+                      content: title,
+                      style: "bold" as const,
+                    },
+                  ]
+                : []),
+              ...(subtitle
+                ? [
+                    {
+                      type: "text" as const,
+                      content: subtitle,
+                      style: "muted" as const,
+                    },
+                  ]
+                : []),
+              ...card.card.children,
+            ],
+          }
+        : card.card,
+      ...(files ? { files } : {}),
+    };
+  }
+  return files ? { markdown: text, files } : text;
+}
+
+export const TELEGRAM_MESSAGE_CHARS = 4096;
+
+export const TELEGRAM_CAPTION_CHARS = 1024;
+
+const MARKDOWN_V2_ESCAPED = /[_*[\]()~`>#+\-=|{}.!\\]/g;
+
+export function telegramCardTooLong(
+  text: string,
+  options?: Pick<PostMessageOptions, "attachment" | "card">,
+): { error: string } | null {
+  const { attachment, card } = options ?? {};
+  if (!card) return null;
+  const limit = attachment ? TELEGRAM_CAPTION_CHARS : TELEGRAM_MESSAGE_CHARS;
+  const message = [text, card.text].filter((part) => part.trim()).join("\n\n");
+  const length =
+    message.length + (message.match(MARKDOWN_V2_ESCAPED)?.length ?? 0);
+  return length > limit
+    ? {
+        error: `With its card the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the card or the text, or send them as two messages.`,
+      }
+    : null;
+}
+
 export interface ThreadLike {
   id: string;
   isDM: boolean;
-  post(message: string | CardElement | { markdown: string }): Promise<unknown>;
+  post(
+    message: string | CardElement | PostableCard | { markdown: string },
+  ): Promise<unknown>;
 }
 
 export interface TelegramInboundMessage {
@@ -1084,21 +1161,10 @@ export function createTelegramWorker(deps: {
     ) {
       if (!bot) return { error: "telegram bot is not running" };
 
-      const { conversationId, attachment } = options ?? {};
-      const payload = attachment
-        ? {
-            markdown: text,
-            files: [
-              {
-                data: attachment.data,
-                filename: attachment.filename,
-                ...(attachment.mimeType
-                  ? { mimeType: attachment.mimeType }
-                  : {}),
-              },
-            ],
-          }
-        : text;
+      const { conversationId } = options ?? {};
+      const tooLong = telegramCardTooLong(text, options);
+      if (tooLong) return tooLong;
+      const payload = telegramPayload(text, options);
 
       if (conversationId) {
         const binding = await deps.conversations.findAgentByConversation(

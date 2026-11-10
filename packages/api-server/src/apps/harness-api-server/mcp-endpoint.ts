@@ -20,6 +20,7 @@ import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
+  ARTIFACT_INTERNAL_LINK_PREFIX,
   ChannelType,
   onceState,
   precheckSchema,
@@ -52,7 +53,7 @@ import {
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { registerSessionMessageTools } from "./session-message-tools.js";
-import { registerThreadTools } from "./thread-tools.js";
+import { cardTreeSchema, registerThreadTools } from "./thread-tools.js";
 import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
@@ -65,6 +66,20 @@ import {
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
 import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
+import {
+  buildChannelCard,
+  CARD_LIMITS,
+  cardComponents,
+  FIELD_CHARS,
+  LINK_BUTTONS_PER_ROW,
+  TABLE_CHARS,
+  TITLE_CHARS,
+} from "../../modules/channels/infrastructure/channel-card.js";
+import {
+  TELEGRAM_CAPTION_CHARS,
+  TELEGRAM_MESSAGE_CHARS,
+} from "../../modules/channels/infrastructure/telegram.js";
+import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -334,6 +349,63 @@ export function createMcpSession(
       deps.artifactLibrary.get(id),
     );
 
+  const cardInput = cardTreeSchema
+    .optional()
+    .describe(
+      'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
+    );
+
+  async function linkedValues(
+    value: unknown,
+    surface: string,
+    lookup: (id: string) => ReturnType<typeof deps.artifactLibrary.get>,
+  ): Promise<{ value: unknown } | { error: string }> {
+    if (typeof value === "string") {
+      if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
+      const linked = await withChannelArtifactLinks(value, surface, lookup);
+      return "error" in linked ? linked : { value: linked.text };
+    }
+    if (value === null || typeof value !== "object") return { value };
+    const entries = Array.isArray(value)
+      ? value.map((item, index) => [String(index), item] as const)
+      : Object.entries(value);
+    const linked: [string, unknown][] = [];
+    for (const [key, item] of entries) {
+      const result = await linkedValues(item, surface, lookup);
+      if ("error" in result) return result;
+      linked.push([key, result.value]);
+    }
+    return {
+      value: Array.isArray(value)
+        ? linked.map(([, item]) => item)
+        : Object.fromEntries(linked),
+    };
+  }
+
+  const cardOf = async (
+    tree: Record<string, unknown> | undefined,
+    surface: string,
+  ): Promise<{ card?: ChannelCard } | { error: string }> => {
+    if (!tree) return {};
+    const artifacts = new Map<
+      string,
+      ReturnType<typeof deps.artifactLibrary.get>
+    >();
+    const lookup = (id: string) => {
+      const known = artifacts.get(id) ?? deps.artifactLibrary.get(id);
+      artifacts.set(id, known);
+      return known;
+    };
+    const linked = await linkedValues(tree, surface, lookup);
+    if ("error" in linked) return linked;
+    const built = buildChannelCard(linked.value as Record<string, unknown>);
+    if ("issues" in built)
+      return {
+        error: `The card was not sent: ${built.issues.join("; ")}. Fix the card — describe_card_components lists the components, their props and the limits — or send the message as text.`,
+      };
+    return { card: built.card };
+  };
+
   async function loadAttachment(
     attachment: NonNullable<z.infer<typeof attachmentInput>>,
   ): Promise<
@@ -394,6 +466,34 @@ export function createMcpSession(
     },
   );
 
+  server.tool(
+    "describe_card_components",
+    "Describe what a card can hold. reply, post and start_thread take an optional card that shows key facts, a table, a chart, an image or link buttons under the message text: in Slack as native Slack blocks, in Telegram as text with its link buttons as Telegram buttons. Returns the card's format, its limits, and every component with its description, where it goes, whether it takes children, its props as JSON Schema and an example. Call it before your first card; a plain-text message needs none of it.",
+    {},
+    async () =>
+      textResult(
+        JSON.stringify({
+          format:
+            'A card is a tree. The root is { "type": "Card", "props": { … }, "children": [ … ] }, and every child is { "type": <component>, "props": { … }, "children": [ … ] }, with children only on a component that takes them. A component that names "inside" goes only in that component. A Text\'s content and a Field\'s value are standard Markdown. The message text stays above the card, and reply and post may send a card alone. Use a card when structure helps the reader, such as a status with its key facts or numbers in a table or chart; a conversational answer reads better as plain text.',
+          channels: {
+            slack:
+              "Native Slack blocks. Notifications and the history agents read show the card as text.",
+            telegram: `Text, with each LinkButton as a Telegram button. Telegram has no tables or charts, so they arrive as text. The text and the card together hold at most ${TELEGRAM_MESSAGE_CHARS} characters, or ${TELEGRAM_CAPTION_CHARS} beside a file.`,
+          },
+          limits: {
+            ...CARD_LIMITS,
+            linkButtonsPerRow: LINK_BUTTONS_PER_ROW,
+            titleChars: TITLE_CHARS,
+            fieldChars: FIELD_CHARS,
+            tableCellChars: TABLE_CHARS,
+          },
+          buttons:
+            "Only LinkButton: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
+          components: cardComponents(),
+        }),
+      ),
+  );
+
   const POST_ANSWERS: Record<ChannelType, string> = {
     [ChannelType.Slack]:
       "Replies under it are not followed and do not come back to this session; to get an answer here, ask with start_thread",
@@ -415,6 +515,7 @@ export function createMcpSession(
         "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
       ),
     attachment: attachmentInput,
+    card: cardInput,
     unfurlLinks: z
       .boolean()
       .optional()
@@ -434,15 +535,17 @@ export function createMcpSession(
     text: written,
     chatId,
     attachment,
+    card: tree,
     unfurlLinks,
     unfurlMedia,
   }: z.infer<z.ZodObject<typeof postInput>>) => {
-    const linked = await channelLinks(
-      written,
-      channel === ChannelType.Slack ? "Slack" : "Telegram",
-    );
+    const surface = channel === ChannelType.Slack ? "Slack" : "Telegram";
+    const linked = await channelLinks(written, surface);
     if ("error" in linked) return errorResult(linked.error);
     const { text } = linked;
+    const built = await cardOf(tree, surface);
+    if ("error" in built) return errorResult(built.error);
+    const { card } = built;
     const loaded = attachment ? await loadAttachment(attachment) : undefined;
     if (loaded && "error" in loaded) return errorResult(loaded.error);
     const resolved = loaded?.resolved;
@@ -454,6 +557,7 @@ export function createMcpSession(
       {
         ...(chatId ? { conversationId: chatId } : {}),
         ...(resolved ? { attachment: resolved } : {}),
+        ...(card ? { card } : {}),
         ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
         ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
       },
@@ -479,6 +583,7 @@ export function createMcpSession(
         ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
         ...(attachmentError ? { attachmentError } : {}),
         textLength: text.length,
+        hasCard: card !== undefined,
         ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
         ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
       },
@@ -835,6 +940,7 @@ export function createMcpSession(
           "Use standard Markdown, not Slack mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
         ),
       attachment: attachmentInput,
+      card: cardInput,
       threadTs: z
         .string()
         .optional()
@@ -869,6 +975,7 @@ export function createMcpSession(
     async ({
       text: written,
       attachment,
+      card: tree,
       threadTs,
       chatId,
       alsoSendToChannel,
@@ -878,6 +985,9 @@ export function createMcpSession(
       const linked = await channelLinks(written, "Slack");
       if ("error" in linked) return errorResult(linked.error);
       const { text } = linked;
+      const built = await cardOf(tree, "Slack");
+      if ("error" in built) return errorResult(built.error);
+      const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
       if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.reply(
@@ -889,6 +999,7 @@ export function createMcpSession(
           ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
+          ...(card ? { card } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
@@ -912,6 +1023,7 @@ export function createMcpSession(
         detail: {
           action: "reply",
           textLength: text.length,
+          hasCard: card !== undefined,
           ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
@@ -1589,13 +1701,15 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
+    cardOf: (tree, channel) =>
+      cardOf(tree, channel === ChannelType.Slack ? "Slack" : "Telegram"),
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>
       deps.channelManager.listThreads(agentId, channel, sessionId),
     leaveThread: (channel, leave) =>
       deps.channelManager.leaveThread(agentId, channel, leave),
-    audit: (action, outcome) =>
+    audit: (action, outcome, detail) =>
       securityLog(
         "error" in outcome ? "warn" : "info",
         `channel.thread_${action}`,
@@ -1603,11 +1717,12 @@ export function createMcpSession(
           ...channelAudit(ChannelType.Slack),
           result: "error" in outcome ? "failure" : "success",
           ...("error" in outcome
-            ? { reason: outcome.error }
+            ? { reason: outcome.error, ...(detail ? { detail } : {}) }
             : {
                 detail: {
                   conversationId: outcome.conversationId,
                   threadTs: outcome.threadTs,
+                  ...detail,
                 },
               }),
         },

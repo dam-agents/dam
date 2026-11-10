@@ -647,6 +647,115 @@ describe("fetch_message_attachment MCP tool", () => {
   });
 });
 
+describe("outbound MCP tools — channel cards", () => {
+  const actions = (button: Record<string, unknown>) => ({
+    type: "Card",
+    props: { title: "Deploys" },
+    children: [{ type: "Actions", props: {}, children: [button] }],
+  });
+
+  it("describes the card components on request, naming the tools that take a card", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    const describeTool = tools.find(
+      (t) => t.name === "describe_card_components",
+    );
+    expect(describeTool?.description).toMatch(/reply, post and start_thread/);
+    for (const name of ["reply", "post"])
+      expect(
+        tools.find((t) => t.name === name)?.inputSchema.properties,
+      ).toHaveProperty("card");
+
+    const res = (await client.callTool({
+      name: "describe_card_components",
+      arguments: {},
+    })) as { content: { text: string }[] };
+    const described = JSON.parse(res.content[0]!.text) as {
+      components: { name: string }[];
+    };
+    const names = described.components.map((c) => c.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Card",
+        "Fields",
+        "Table",
+        "Chart",
+        "LinkButton",
+      ]),
+    );
+    expect(names).not.toContain("Button");
+  });
+
+  it("passes the card the platform built to the channel", async () => {
+    const { client, posts } = await mcpHarness();
+
+    await client.callTool({
+      name: "post",
+      arguments: {
+        channel: "slack",
+        text: "This week",
+        card: actions({
+          type: "LinkButton",
+          props: { label: "Open", url: "https://example.com" },
+        }),
+      },
+    });
+
+    expect(posts[0]?.options.card).toMatchObject({
+      card: { type: "card", title: "Deploys" },
+      text: expect.stringContaining("Deploys"),
+    });
+  });
+
+  // TEST_SCENARIO: a refused card must not leave half an answer in the channel, and the agent must learn why.
+  it("refuses a card that fails its check and posts nothing", async () => {
+    const { client, replies } = await mcpHarness();
+
+    const res = (await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Approve?",
+        card: actions({
+          type: "Button",
+          props: { id: "approve", label: "Approve" },
+        }),
+      },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("describe_card_components");
+    expect(replies).toEqual([]);
+  });
+
+  it("posts a public artifact's share URL in place of its in-app link inside a card", async () => {
+    const id = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
+    const { client, replies } = await mcpHarness({
+      artifacts: {
+        [id]: {
+          title: "Weekly report",
+          shareUrl: "https://share.example/a/weekly-report",
+        },
+      },
+    });
+
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Report",
+        card: actions({
+          type: "LinkButton",
+          props: { label: "Open", url: `platform://artifacts/${id}` },
+        }),
+      },
+    });
+
+    expect(replies[0]?.card?.card.children[0]).toMatchObject({
+      type: "actions",
+      children: [{ url: "https://share.example/a/weekly-report" }],
+    });
+  });
+});
+
 describe("outbound MCP tools — post and its old name", () => {
   // TEST_SCENARIO: post is send_channel_message renamed; the old name stays for one release, does the same, and says it is deprecated.
   it("posts through both names, and marks the old one deprecated", async () => {
