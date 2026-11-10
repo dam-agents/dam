@@ -10,6 +10,7 @@ import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { offeredHostsOf } from "../domain/github-enterprise-host.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
 const HEADER = ["ID", "NAME", "CATEGORY", "AUTH", "PROVIDER", "DESCRIPTION"];
@@ -33,6 +34,14 @@ function providerCell({ provider, id }: ConnectionTemplateView): string {
     : `${provider.alias} (no harness)`;
 }
 
+function descriptionCell(t: ConnectionTemplateView): string {
+  const hosts = offeredHostsOf(t);
+  const description = t.description ?? "";
+  if (hosts.length === 0) return description;
+  const offered = `hosts: ${hosts.join(", ")}`;
+  return description ? `${description} (${offered})` : offered;
+}
+
 function tableFor(views: readonly ConnectionTemplateView[]): string {
   return renderTable([
     HEADER,
@@ -42,7 +51,7 @@ function tableFor(views: readonly ConnectionTemplateView[]): string {
       t.category,
       t.authKind,
       providerCell(t),
-      t.description ?? "",
+      descriptionCell(t),
     ]),
   ]);
 }
@@ -61,10 +70,15 @@ export function buildTemplatesCommand(deps: {
       "override the configured server URL for this call",
     )
     .option("--providers", "list only model-provider templates")
-    .option("--json", "emit raw JSON instead of the default table")
+    .option(
+      "--json",
+      "emit raw JSON instead of the default table; github-enterprise on a server that offers several hosts carries them in extras.hostChoices",
+    )
     .addHelpText(
       "after",
       "\nPROVIDER names a model provider's alias and the harnesses that run on it.\n" +
+        "\nOn a server that offers several GitHub Enterprise hosts, github-enterprise\n" +
+        "lists them; pick one with `dam connection connect github-enterprise --host <host>`.\n" +
         "\nExamples:\n" +
         "  dam connection templates\n" +
         "  dam connection templates --providers\n" +
