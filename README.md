@@ -15,11 +15,14 @@ AI teammates that work with you in Slack.
   ·
   <a href="#capabilities"><strong>Capabilities</strong></a>
   ·
+  <a href="docs/architecture/security-and-credentials.md"><strong>Security</strong></a>
+  ·
   <a href="https://github.com/dam-agents/dam/issues"><strong>Contribute</strong></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
+  <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam" /></a>
 </p>
 
 ---
