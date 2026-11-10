@@ -1217,6 +1217,9 @@ export const dambledoreProvisioned = pgTable(
     legacy: boolean("legacy").notNull().default(false),
     usedAt: timestamp("used_at", { withTimezone: true }),
     resetAt: timestamp("reset_at", { withTimezone: true }),
+    firstResultKind: text("first_result_kind"),
+    firstResultRef: text("first_result_ref"),
+    firstResultAt: timestamp("first_result_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
