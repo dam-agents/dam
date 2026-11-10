@@ -1,12 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 
+import { prefersReducedMotion } from "@/lib/reduced-motion";
 import { cn } from "@/lib/utils";
 
 const CLOSE_MS = 250;
-
-export function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: content that slides open and closed; content that is open when it first renders shows at once, with no slide.
 export function Collapse({

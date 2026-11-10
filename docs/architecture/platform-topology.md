@@ -229,6 +229,8 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 
 An Agent's chat gives the conversation the room by default.
 Its Files and Artifacts sections start closed; their icons in the chat's top bar open them in a column beside the conversation, stacked when both are open, and the browser keeps each choice as a preference of the person, not of the Agent.
+A new chat's empty composer has focus and shows example prompts in place of its placeholder, one at a time, to show what an Agent can be asked; Tab puts the shown one in, and a person who asked for reduced motion sees them change without a fade.
+A chat with a conversation, or an assistant's greeting with a first task of its own, keeps the ordinary placeholder.
 
 ## Protocols
 

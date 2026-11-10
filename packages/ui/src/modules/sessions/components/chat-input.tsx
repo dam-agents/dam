@@ -28,12 +28,15 @@ import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { useCommandMenu } from "../hooks/use-command-menu.js";
 import { usePromptHistory } from "../hooks/use-prompt-history.js";
+import { useRotatingExample } from "../hooks/use-rotating-example.js";
 import { useSkillCommands } from "../hooks/use-skill-commands.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
 import { CommandMenu } from "./command-menu.js";
+import { ExamplePromptHint } from "./example-prompt-hint.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const NO_EXAMPLES: readonly string[] = [];
 
 export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -47,6 +50,7 @@ export interface ChatInputProps {
   stopBlockedReason?: string | null;
   harness?: string | null;
   emptyPlaceholder?: string | null;
+  examples?: readonly string[] | null;
 }
 
 export function ChatInput({
@@ -61,6 +65,7 @@ export function ChatInput({
   stopBlockedReason,
   harness = null,
   emptyPlaceholder = null,
+  examples = null,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -184,6 +189,14 @@ export function ChatInput({
   const showStop = isComputing;
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
+  const shownExample = useRotatingExample(
+    examples ?? NO_EXAMPLES,
+    !!key &&
+      !blockedReason &&
+      input === "" &&
+      attachments.length === 0 &&
+      !isComputing,
+  );
 
   const recallPrompt = useCallback(
     (text: string) => {
@@ -237,6 +250,11 @@ export function ChatInput({
     }
     if (!isMobile() && promptHistory.navigate(e)) {
       e.preventDefault();
+      return;
+    }
+    if (e.key === "Tab" && !e.shiftKey && shownExample && key) {
+      e.preventDefault();
+      setDraft(key, { text: shownExample.text });
       return;
     }
     if (
@@ -307,24 +325,31 @@ export function ChatInput({
             >
               <AttachmentIcon size={16} />
             </Button>
-            <Textarea
-              ref={textareaRef}
-              className={`flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0${blockedReason && onBlockedClick ? " cursor-pointer" : ""}`}
-              value={input}
-              {...commandMenu.inputProps}
-              onChange={(e) => {
-                promptHistory.reset();
-                commandMenu.track(e.target);
-                if (key) setDraft(key, { text: e.target.value });
-              }}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              onClick={blockedReason ? onBlockedClick : undefined}
-              placeholder={placeholder}
-              rows={1}
-              readOnly={!!blockedReason}
-              disabled={!key || (!!blockedReason && !onBlockedClick)}
-            />
+            <div className="relative flex min-w-0 flex-1">
+              {shownExample && <ExamplePromptHint example={shownExample} />}
+              <Textarea
+                ref={textareaRef}
+                className={cn(
+                  "flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0",
+                  blockedReason && onBlockedClick && "cursor-pointer",
+                  shownExample && "placeholder:text-transparent",
+                )}
+                value={input}
+                {...commandMenu.inputProps}
+                onChange={(e) => {
+                  promptHistory.reset();
+                  commandMenu.track(e.target);
+                  if (key) setDraft(key, { text: e.target.value });
+                }}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                onClick={blockedReason ? onBlockedClick : undefined}
+                placeholder={placeholder}
+                rows={1}
+                readOnly={!!blockedReason}
+                disabled={!key || (!!blockedReason && !onBlockedClick)}
+              />
+            </div>
             {showStop && (
               <Button
                 variant="ghost"

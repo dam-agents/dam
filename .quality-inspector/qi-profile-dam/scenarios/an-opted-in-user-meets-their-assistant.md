@@ -34,7 +34,7 @@ When the owner sends it and the assistant replies
 Then the conversation is listed in the sidebar
 When they open a new chat on Dambledore
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
-And the message box hints *Message…*
+And the empty message box shows example prompts one after another, each with a *Tab* hint, in place of a first task
 And no greeting and no first tasks are shown
 
 ## AC-5 — the assistant is an ordinary agent
@@ -75,7 +75,7 @@ Given the same install, and an account that has not turned the assistant on
 When the owner signs in
 Then no greeting, no first tasks and no assistant agent appear
 And they land on Home as usual
-And the message box of any agent they open hints *Message…* as it always did
+And a new chat on any agent they open shows the example prompts in its empty message box, never a first task
 
 ## AC-10 — turning the switch off deletes nothing
 

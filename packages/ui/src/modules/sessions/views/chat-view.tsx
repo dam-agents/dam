@@ -182,6 +182,7 @@ import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
+import { EXAMPLE_PROMPTS } from "../lib/example-prompts.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import { sendPreparation } from "../lib/send-preparation.js";
 import { applySettingChanges } from "../lib/session-settings.js";
@@ -1170,6 +1171,9 @@ export function ChatView() {
             harness={sendHarness ?? null}
             emptyPlaceholder={
               greeting.kind === "greeting" ? greeting.copy.placeholder : null
+            }
+            examples={
+              emptyChat && greeting.kind === "none" ? EXAMPLE_PROMPTS : null
             }
             onBlockedClick={
               block?.kind === "connect"
