@@ -85,6 +85,18 @@ jobs:
     # its key has moved, every PR pays the full cold cost until the next main
     # push rewrites it. That run is the one this budget has to fit.
     timeout-minutes: 30
+    # The chart's Postgres, for the database suites `test` leaves out because
+    # they need a real server. Trust auth, because the controller's login role
+    # is created by those suites, with no password of its own.
+    services:
+      postgres:
+        image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -190,6 +202,29 @@ jobs:
           TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           if [ "$TAG" = true ]; then mise run --jobs "$(nproc)" check; else mise run --jobs "$(nproc)" --continue-on-error check ::: test; fi
+      # The database suites, one database each so none can disturb another.
+      # The controller's runs last: `platform_controller` is a cluster-wide
+      # role, and the grants suite before it creates and drops one.
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          url=postgresql://postgres@localhost:5432
+          for db in agent_store control_grants harness_config controller_store; do
+            createdb -h localhost -U postgres "$db"
+          done
+          for db in agent_store control_grants; do
+            DATABASE_URL="$url/$db" mise run //packages/db:migrate
+          done
+          HARNESS_CONFIG_DATABASE_URL="$url/harness_config" \
+            mise run //packages/api-server:test:harness-config-concurrency
+          CONTROL_GRANTS_DATABASE_URL="$url/control_grants" \
+            mise run //packages/api-server:test:control-grants
+          AGENT_STORE_DATABASE_URL="$url/agent_store" \
+            mise run //packages/api-server:test:agent-store
+          AGENT_STORE_DATABASE_URL="$url/controller_store" \
+            AGENT_STORE_CONTROLLER_URL="postgresql://platform_controller@localhost:5432/controller_store" \
+            AGENT_STORE_ADMIN_DATABASE_URL="$url/controller_store" \
+            mise run //packages/controller:test:agent-store
       # platform-init's tests that need root (loop-mounted btrfs and ext4),
       # which the sandboxed, cached `test` cannot run. Only when the Rust cache
       # was needed: otherwise `test` replays, and this step alone would fill
