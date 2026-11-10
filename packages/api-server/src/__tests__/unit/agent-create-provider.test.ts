@@ -13,8 +13,11 @@ import {
   getLogger,
   type LogLevel,
 } from "../../core/logger.js";
+import {
+  parseInfraAgent,
+  type InfraAgent,
+} from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
-import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -129,12 +132,18 @@ function setup(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,
   });
+  // TEST_OVERVIEW: the store refuses a duplicate id and lists what it holds, so a retry resumes the Agent it already has under the same name rather than making a second one.
+  const persisted = new Map<string, InfraAgent>();
   const persist = vi.fn(
-    async (spec: Record<string, unknown>, owner: string, id: string) =>
-      parseInfraAgent({
+    async (spec: Record<string, unknown>, owner: string, id: string) => {
+      if (persisted.has(id)) throw new Error(`${id} already exists`);
+      const agent = parseInfraAgent({
         metadata: { name: id, labels: { "agent-platform.ai/owner": owner } },
         spec,
-      }),
+      });
+      persisted.set(id, agent);
+      return agent;
+    },
   );
   const writeRegistry = vi.fn(async () => {});
   const applyGrants = vi.fn(async () => {});
@@ -161,8 +170,9 @@ function setup(
     owner: "owner-1",
     actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
-      list: async () => [],
+      list: async () => [...persisted.values()],
       create: persist,
+      get: async (id: string) => persisted.get(id) ?? null,
     }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
@@ -414,6 +424,7 @@ describe("the default profile a new agent starts on", () => {
     });
     await agents.create({
       ...byTemplate,
+      name: "test-agent-environment",
       providerConnectionId: provider.id,
       environmentOf: "agent-root",
     });
@@ -820,5 +831,23 @@ describe("the flag that offers the install's own connection", () => {
       connectionIds: [dam.id],
     });
     expect(result.grantedConnectionIds).toEqual([dam.id, provider.id]);
+  });
+});
+
+describe("a create the platform resumes", () => {
+  // TEST_SCENARIO: an earlier attempt wrote the Agent and then failed on its bookkeeping, so the same id is asked for again: the store refuses the row, and the create finishes that Agent from there — the grants applied again, the instructions re-sent — instead of failing on the row it already has or making a second Agent.
+  it("finishes the Agent an earlier attempt left half-made", async () => {
+    const { agents, persist, applyGrants, runtimeBump } = setup();
+    const created = await agents.create({ ...input, id: "agent-resumed" });
+    expect(created.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    applyGrants.mockClear();
+    runtimeBump.mockClear();
+    const again = await agents.create({ ...input, id: "agent-resumed" });
+    expect(again.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(applyGrants).toHaveBeenCalledTimes(1);
+    expect(runtimeBump).toHaveBeenCalled();
   });
 });

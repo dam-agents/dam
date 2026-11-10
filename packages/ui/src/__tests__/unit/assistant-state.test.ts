@@ -24,12 +24,18 @@ import { trpc } from "../../trpc.js";
 const ASSISTANT = "agent-00000000000000a1";
 const RESET = "2026-11-09T12:00:00.000Z";
 
-type Record = { agentId: string; used: boolean; resetAt: string | null };
+type Record = {
+  agentId: string;
+  used: boolean;
+  resetAt: string | null;
+  ready: boolean;
+};
 
 const record = (used: boolean, resetAt: string | null = null): Record => ({
   agentId: ASSISTANT,
   used,
   resetAt,
+  ready: true,
 });
 
 const cached = () =>

@@ -84,6 +84,9 @@ export function agentStore(initialNames: readonly string[] = []) {
   const gates: (() => Promise<void>)[] = [];
   const create = vi.fn(
     async (input: { id?: string; name: string; instructions?: string }) => {
+      /* UNIT_BOUNDARY_DESCRIPTION: the same id asked for again is a resume — the Agent an earlier attempt wrote, finished rather than refused — as the real create does for the platform's own ids. */
+      const existing = input.id ? live.get(input.id) : undefined;
+      if (existing) return existing as unknown as Agent;
       if ([...live.values()].some((agent) => agent.name === input.name))
         throw new Error(`you already have an agent named "${input.name}"`);
       const gate = gates.shift();
@@ -136,12 +139,14 @@ export function assistantService(
     damConnection?: () => Promise<string | null>;
     waitMs?: number;
     pollMs?: number;
+    /* UNIT_BOUNDARY_DESCRIPTION: the real bookkeeping, for a test that asks what the checklist ends up holding rather than that it was told. */
+    provisioned?: (agent: { id: string }) => Promise<void>;
   } = {},
 ) {
   const rows = deps.rows ?? rowStore();
   const agents = deps.agents ?? agentStore();
   const enrolled = vi.fn(async () => {});
-  const provisioned = vi.fn(async (_agent: { id: string }) => {});
+  const provisioned = vi.fn(deps.provisioned ?? (async () => {}));
   const resetChecklist = vi.fn(async () => undefined);
   const service = createAssistantsService({
     repo: rows.repo,

@@ -8,8 +8,15 @@
 // TEST_OVERVIEW: holds is waited for rather than raced. It is one reset for
 // TEST_OVERVIEW: everyone: the checklist always, the assistant only when the feature
 // TEST_OVERVIEW: is on for them, and never a refusal.
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import { describe, expect, it, vi } from "vitest";
 
+import { toProgress } from "../../modules/getting-started/domain/unlocks.js";
+import type { Checklist } from "../../modules/getting-started/domain/unlocks.js";
+import type { GettingStartedRepository } from "../../modules/getting-started/infrastructure/getting-started-repository.js";
+import { createEnrollment } from "../../modules/getting-started/services/enrollment.js";
+import { recordProvisionedAgent } from "../../modules/getting-started/services/first-agent.js";
+import { createUnlockRecorder } from "../../modules/getting-started/services/unlock-recorder.js";
 import {
   agentStore,
   assistantService,
@@ -17,6 +24,78 @@ import {
   OWNER,
   rowStore,
 } from "../helpers/assistant-world.js";
+
+/** UNIT_BOUNDARY_DESCRIPTION: the checklist's store as the database behaves — a task unlocks once, the character it was created with is the one it records, and a reset deletes every row. */
+function checklistRepo(): GettingStartedRepository & {
+  checklists: Map<string, Checklist>;
+} {
+  const checklists = new Map<string, Checklist>();
+  let clock = 0;
+  const tick = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
+  return {
+    checklists,
+    async find(owner) {
+      return checklists.get(owner) ?? null;
+    },
+    async enroll(owner, unlocked) {
+      if (checklists.has(owner)) return;
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: unlocked.map((u) => ({
+          ...u,
+          unlockedAt: tick(),
+          seenAt: tick(),
+          pickedAt: tick(),
+        })),
+      });
+    },
+    async unlock(owner, task, choose) {
+      const c = checklists.get(owner)!;
+      if (c.unlocks.some((u) => u.task === task)) return null;
+      const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
+      if (!chosen) return null;
+      const unlock = {
+        task,
+        character: chosen.character,
+        unlockedAt: tick(),
+        seenAt: null,
+        pickedAt: chosen.picked ? tick() : null,
+      };
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: [...c.unlocks, unlock],
+      });
+      return unlock;
+    },
+    async markSeen(owner, task) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.task === task ? { ...u, seenAt: u.seenAt ?? tick() } : u,
+        ),
+      });
+    },
+    async markPicked(owner, character) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.character === character
+            ? { ...u, pickedAt: u.pickedAt ?? tick() }
+            : u,
+        ),
+      });
+    },
+    async setDismissed(owner, dismissed) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, { ...c, dismissedAt: dismissed ? tick() : null });
+    },
+    async reset(owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
+  };
+}
 
 const readyRow = (agentId: string, used = true) => ({
   owner: OWNER,
@@ -203,5 +282,44 @@ describe("resetting a person's onboarding", () => {
       resetAt: null,
     });
     expect(w.provisioned).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: what the reset leaves for the first chat to play — the assistant's create task recorded again, on the Agent's own character and left unseen, which is the row the celebration renders and the one the checklist counts only once the person has seen it.
+  it("leaves its create task unseen, for the first chat to celebrate", async () => {
+    const repo = checklistRepo();
+    const recorder = createUnlockRecorder({
+      repo,
+      enrollment: createEnrollment({
+        repo,
+        ownedAgentIds: async () => [],
+      }),
+      random: () => 0,
+    });
+    const agents = agentStore();
+    const w = assistantService({
+      agents,
+      provisioned: (agent) =>
+        recordProvisionedAgent({ recorder }, OWNER, {
+          agentId: agent.id,
+          character: avatarCharacter(
+            (
+              agents.live.get(agent.id) as
+                { spec?: { avatar?: string } } | undefined
+            )?.spec?.avatar,
+            OWNER,
+            NAME,
+          ),
+        }),
+    });
+    await w.ensure();
+    await w.assistants.resetOnboarding();
+
+    const progress = toProgress((await repo.find(OWNER))!);
+    expect(progress.unlocks).toHaveLength(1);
+    expect(progress.unlocks[0]).toMatchObject({
+      task: "create-agent",
+      seen: false,
+      fresh: false,
+    });
   });
 });
