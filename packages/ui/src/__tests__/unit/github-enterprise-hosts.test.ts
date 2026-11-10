@@ -309,6 +309,56 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     ]);
   });
 
+  // TEST_SCENARIO: the install's app slug names an app on its own host only; another host must not send it, even with Customize defaults open, or the connection's install link points at an app that host does not have.
+  it("does not send the install's app slug for another host", async () => {
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    choose("connection-field-host", "another");
+    click(byTestId("customize-defaults"));
+    click(byTestId("override-defaults-toggle"));
+    expect(
+      byTestId<HTMLInputElement>("connection-field-appSlug")?.value ?? "",
+    ).toBe("");
+    type("connection-field-host-other", "ghe.own.example.com");
+    type("connection-field-clientId", "Iv1.mine");
+    type("connection-field-clientSecret", "mine-secret");
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toHaveLength(1);
+    expect(fake.submitted[0]).not.toHaveProperty("appSlug");
+  });
+
+  // TEST_SCENARIO: a "Required" error from an empty other host must not stay under the field once the user goes back to an offered host.
+  it("clears a stale error when the host choice changes", async () => {
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: SINGLE,
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    choose("connection-field-host", "another");
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(document.body.textContent).toContain("Required");
+    choose("connection-field-host", ONE_HOST);
+    await settle();
+    expect(document.body.textContent).not.toContain("Required");
+  });
+
   // TEST_SCENARIO: with the experimental feature off the form keeps the free-text host field it always had.
   it("keeps the free-text host field with the feature off", () => {
     act(() =>

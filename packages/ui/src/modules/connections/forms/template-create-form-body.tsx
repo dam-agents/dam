@@ -89,14 +89,15 @@ export function TemplateCreateFormBody({
     () => buildTemplateFormSchema(template, nameRule),
     [template, nameRule],
   );
-  const { control, handleSubmit, setValue } = useForm<TemplateFormValues>({
-    resolver: zodResolver(schema),
-    mode: "onChange",
-    defaultValues: {
-      ...templateFormDefaults(template, nameRule),
-      ...(initialName !== undefined ? { name: initialName } : {}),
-    },
-  });
+  const { control, handleSubmit, setValue, clearErrors } =
+    useForm<TemplateFormValues>({
+      resolver: zodResolver(schema),
+      mode: "onChange",
+      defaultValues: {
+        ...templateFormDefaults(template, nameRule),
+        ...(initialName !== undefined ? { name: initialName } : {}),
+      },
+    });
   const isGithubApp = template.authKind === "github-app";
   const [access, fields] = useWatch({ control, name: ["access", "fields"] });
   const alone = isGithubApp && access === "later";
@@ -157,6 +158,8 @@ export function TemplateCreateFormBody({
     setValue("fields.host", other ? "" : choice, { shouldDirty: true });
     setValue("fields.clientId", other ? "" : presetOf("clientId"));
     setValue("fields.clientSecret", "");
+    setValue("fields.appSlug", other ? "" : presetOf("appSlug"));
+    clearErrors("fields");
   };
   const optional = template.inputs.filter(
     (i) => i.state === "optional" && !scopeInputNames.has(i.name),
