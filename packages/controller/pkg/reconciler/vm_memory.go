@@ -289,6 +289,9 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	var up []string
 	lock := r.ownerLock(owner)
 	for _, a := range agents {
+		if r.specFromCustomResources() && !a.Spec.IsVM() {
+			continue
+		}
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue

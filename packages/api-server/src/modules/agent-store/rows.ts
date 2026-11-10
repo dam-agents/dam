@@ -683,8 +683,9 @@ export function resourceFromRows(
       ? undefined
       : goDuration(agent.hibernationTimeoutNs),
   );
-  if (agent.nestedVirtualization)
-    spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
+  spec.backend = agent.nestedVirtualization
+    ? { type: "vm", vm: { nestedVirtualization: true } }
+    : { type: "vm" };
   if (agent.requireConnectionAddress || complete)
     spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);
