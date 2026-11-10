@@ -235,9 +235,9 @@ export function createAssistantsService(deps: {
    * the report and by every reset. Inside the per-owner transaction: the record is
    * read with its row locked; a report with no result yet claims one; the checklist
    * tick and the completion mark follow, so nothing is ticked or marked by two
-   * callers and no reset can land between the claim and them. A record already
-   * completed is answered, never re-announced, and an uncompleted one — a caller
-   * that died — is finished here.
+   * callers, no reset can land between the claim and them, and a report that dies
+   * inside the section leaves nothing behind. A record already completed is
+   * answered, never re-announced.
    * The event goes out after the transaction commits, and only from the call that
    * marked the result completed: at most once, never twice. A crash between the
    * commit and the emit loses it, which is accepted — the seam has no consumer yet.
