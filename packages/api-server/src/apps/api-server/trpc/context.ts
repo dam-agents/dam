@@ -30,6 +30,7 @@ import {
 import { createSlackDmBridgesRepository } from "../../../modules/channels/infrastructure/slack-dm-bridges-repository.js";
 import {
   createSlackDmBridgeService,
+  greetingOutcome,
   type SlackDmFailureCode,
 } from "../../../modules/channels/services/slack-dm-bridge-service.js";
 import type { SlackDmFailurePartial } from "../../../modules/channels/services/slack-dm-bridge-service.js";
@@ -274,14 +275,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bridges: slackDmBridges,
       announceEmailLink: (slackUserId, sub) =>
         identityLinkService.announceLink("slack", slackUserId, sub),
-      postHello: async (agentId, slackChannelId, text) => {
-        const sent = await channelManager
-          .postMessage(agentId, ChannelType.Slack, text, {
+      postHello: (agentId, slackChannelId, text) =>
+        greetingOutcome(() =>
+          channelManager.postMessage(agentId, ChannelType.Slack, text, {
             conversationId: slackChannelId,
-          })
-          .catch(() => ({ error: "slack did not answer" }) as const);
-        return "error" in sent ? "unknown" : "sent";
-      },
+          }),
+        ),
       brandShort: config.brand.short,
     });
 

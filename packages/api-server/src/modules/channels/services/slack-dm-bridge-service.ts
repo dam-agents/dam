@@ -364,6 +364,26 @@ export function createSlackDmRevoker(deps: SlackDmRevokeDeps): SlackDmRevoker {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a greeting's send actually was. Slack
+ * refusing it is a `refused` — nothing was posted, so its claim may be given
+ * back and the next connect greets straight away. Only a call that never
+ * answered is `unknown`, because a message may exist that nobody saw.
+ */
+export async function greetingOutcome(
+  send: () => Promise<unknown>,
+): Promise<"sent" | "refused" | "unknown"> {
+  let result: unknown;
+  try {
+    result = await send();
+  } catch {
+    return "unknown";
+  }
+  if (result !== null && typeof result === "object" && "error" in result)
+    return "refused";
+  return "sent";
+}
+
 export function createSlackDmBridgeService(
   deps: SlackDmBridgePorts,
 ): SlackDmBridgeService {

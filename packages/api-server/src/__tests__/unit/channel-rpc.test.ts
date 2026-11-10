@@ -4,8 +4,10 @@ import { createBusRpc } from "../../core/bus-rpc.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 import {
   createChannelManager,
+  slackEmailUserSchema,
   type ChannelRpcRequest,
 } from "../../modules/channels/services/channel-manager.js";
+import type { SlackEmailUser } from "../../modules/channels/infrastructure/slack-gateway.js";
 import type { SlackWorker } from "../../modules/channels/infrastructure/slack.js";
 
 function fakeBus(): RedisBus {
@@ -520,5 +522,43 @@ describe("platform notices across replicas", () => {
       "storage is full",
     );
     expect(followerWorker.notifyPerson).not.toHaveBeenCalled();
+  });
+});
+
+// TEST_OVERVIEW: the mailbox answer crosses the RPC between replicas, so its schema has to mirror the type field for field — a dropped field or a marker the schema refuses would turn usable evidence into a refusal on every replica that is not the leader.
+describe("the mailbox answer over the RPC", () => {
+  const everyField: SlackEmailUser = {
+    id: "U0OWNER",
+    teamId: "T0TEAM",
+    enterpriseId: "E0ORG",
+    enterpriseTeams: ["T0TEAM", "T0OTHER"],
+    enterpriseIsGuest: false,
+    email: "owner@example.com",
+    deleted: false,
+    isBot: false,
+    isAppUser: false,
+    isRestricted: false,
+    isUltraRestricted: false,
+    isStranger: false,
+  };
+
+  // TEST_SCENARIO: every field survives a round trip, including the organization's membership list and its guest marker.
+  it("carries every field through a round trip", () => {
+    expect(
+      slackEmailUserSchema.parse(JSON.parse(JSON.stringify(everyField))),
+    ).toEqual(everyField);
+  });
+
+  // TEST_SCENARIO: a marker Slack did not report is null, which the schema must accept rather than refuse.
+  it("accepts an unreported stranger marker", () => {
+    const unreported: SlackEmailUser = {
+      ...everyField,
+      enterpriseTeams: null,
+      enterpriseIsGuest: null,
+      isStranger: null,
+    };
+    expect(
+      slackEmailUserSchema.parse(JSON.parse(JSON.stringify(unreported))),
+    ).toEqual(unreported);
   });
 });

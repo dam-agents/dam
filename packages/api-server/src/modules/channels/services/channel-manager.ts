@@ -257,17 +257,24 @@ const slackConversationLookupSchema = z.union([
   z.object({ kind: z.literal("not-found") }),
   z.object({ kind: z.literal("no-credential") }),
 ]);
-const slackEmailUserSchema = z.object({
+/* UNIT_BOUNDARY_DESCRIPTION: the mailbox answer as it crosses the RPC, which
+ *  must mirror `SlackEmailUser` field for field: a schema that drops the
+ *  organization's membership list, or refuses a marker Slack left unreported,
+ *  would turn a usable answer into a refusal for every replica that is not the
+ *  leader. */
+export const slackEmailUserSchema = z.object({
   id: z.string(),
   teamId: z.string(),
   enterpriseId: z.string().nullable(),
-  email: z.string().nullable(),
+  enterpriseTeams: z.array(z.string()).nullable(),
+  enterpriseIsGuest: z.boolean().nullable(),
+  email: z.string(),
   deleted: z.boolean(),
   isBot: z.boolean(),
   isAppUser: z.boolean(),
   isRestricted: z.boolean(),
   isUltraRestricted: z.boolean(),
-  isStranger: z.boolean(),
+  isStranger: z.boolean().nullable(),
 });
 const slackConversationLabelSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("channel"), name: z.string() }),

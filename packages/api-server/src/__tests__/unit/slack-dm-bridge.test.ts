@@ -13,6 +13,7 @@ import type {
 import {
   createSlackDmBridgeService,
   createSlackDmRevoker,
+  greetingOutcome,
   type SlackDmBridgePorts,
   type SlackDmBridgeStore,
 } from "../../modules/channels/services/slack-dm-bridge-service.js";
@@ -672,6 +673,21 @@ describe("slack dm bridge connect", () => {
 });
 
 describe("the greeting", () => {
+  // TEST_SCENARIO: Slack refusing the greeting is a refusal — nothing was posted — while a call nobody saw the answer to stays unknown.
+  it("reads a returned error as refused and a thrown call as unknown", async () => {
+    expect(
+      await greetingOutcome(async () => ({ error: "missing_scope" })),
+    ).toBe("refused");
+    expect(await greetingOutcome(async () => ({ ok: true as const }))).toBe(
+      "sent",
+    );
+    expect(
+      await greetingOutcome(async () => {
+        throw new Error("socket closed");
+      }),
+    ).toBe("unknown");
+  });
+
   // TEST_SCENARIO: Slack refusing the greeting gives the claim back, so the next connect posts it and says so.
   it("retries a greeting Slack refused", async () => {
     const h = harness({ helloFails: "refused" });
