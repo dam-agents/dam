@@ -158,7 +158,7 @@ function StopDelegation({
       disabled={stop.isPending}
       onClick={async () => {
         const ok = await showConfirm(
-          "The agent is removed and the driver gets a failed result.",
+          "Its work ends, and so does the work of every agent it started. A kept agent keeps its files and its conversation; any other is removed. The driver gets a failed result.",
           "Stop this temporary agent?",
           { kind: "destructive", confirmLabel: "Stop agent" },
         );

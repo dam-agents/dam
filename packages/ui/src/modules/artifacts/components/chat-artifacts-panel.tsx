@@ -323,8 +323,9 @@ export function ChatArtifactsPanel({
               }
             />
           )}
-          {kept.subAgents.length > 0 && (
+          {scopeAgentId && kept.subAgents.length > 0 && (
             <KeptSubAgentsGroup
+              driverAgentId={scopeAgentId}
               subAgents={kept.subAgents}
               environments={kept.environments}
               collapsed={folderCollapse?.[KEPT_SUB_AGENTS_KEY] ?? false}

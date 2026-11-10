@@ -1,4 +1,4 @@
-import { Cube, TrashCan } from "@carbon/icons-react";
+import { Cube, StopFilledAlt, TrashCan } from "@carbon/icons-react";
 import type { EnvironmentView, KeptSubAgent } from "api-server-api";
 import { type CSSProperties, useState } from "react";
 
@@ -14,7 +14,7 @@ import { ArtifactDeletionChip } from "../../artifacts/components/artifact-badges
 import { EnvironmentExpiryDialog } from "../../environments/components/environment-expiry-dialog.js";
 import { EnvironmentRow } from "../../environments/components/environment-row.js";
 import { EnvironmentShareDialog } from "../../environments/components/environment-share-dialog.js";
-import { useDeleteKeptSubAgent } from "../api/mutations.js";
+import { useDeleteKeptSubAgent, useStopDelegation } from "../api/mutations.js";
 import { keptStateLabel } from "../lib/kept-state.js";
 
 /**
@@ -22,18 +22,21 @@ import { keptStateLabel } from "../lib/kept-state.js";
  * Environments in the Artifacts list: a group that folds like a folder, with
  * a tree of every kept sub-agent at any depth, each under the kept sub-agent
  * that spawned it, and under each its own Environments. A row says what the
- * sub-agent does and until when it is kept, and its menu deletes it with
- * everything under it. A kept sub-agent counts against its owner's limits
+ * sub-agent does and until when it is kept, and its menu stops it while it
+ * runs, with every sub-agent under it, or deletes it with everything under
+ * it. A kept sub-agent counts against its owner's limits
  * while it exists, so it is listed where it is easy to see and remove. The
  * list passes only the ones it shows, so the group is absent when there are
  * none.
  */
 export function KeptSubAgentsGroup({
+  driverAgentId,
   subAgents,
   environments,
   collapsed,
   onToggle,
 }: {
+  driverAgentId: string;
   subAgents: readonly KeptSubAgent[];
   environments: readonly EnvironmentView[];
   collapsed: boolean;
@@ -45,6 +48,7 @@ export function KeptSubAgentsGroup({
   const expiryTarget = environments.find((e) => e.id === expiryId);
   const count = subAgents.length;
   const branch: Branch = {
+    driverAgentId,
     childrenOf: (id) => subAgents.filter((s) => s.parentId === id),
     environmentsOf: (id) => environments.filter((e) => e.owningAgentId === id),
     onShare: (e) => setShareId(e.id),
@@ -91,6 +95,7 @@ export function KeptSubAgentsGroup({
 }
 
 interface Branch {
+  driverAgentId: string;
   childrenOf: (parentId: string | null) => KeptSubAgent[];
   environmentsOf: (agentId: string) => EnvironmentView[];
   onShare: (environment: EnvironmentView) => void;
@@ -125,7 +130,11 @@ function KeptLevel({
       ))}
       {subAgents.map((subAgent) => (
         <div key={subAgent.id} className={TREE_GUIDE}>
-          <KeptSubAgentRow subAgent={subAgent} depth={depth} />
+          <KeptSubAgentRow
+            subAgent={subAgent}
+            depth={depth}
+            driverAgentId={branch.driverAgentId}
+          />
           <KeptLevel
             subAgents={branch.childrenOf(subAgent.id)}
             environments={branch.environmentsOf(subAgent.id)}
@@ -141,12 +150,15 @@ function KeptLevel({
 function KeptSubAgentRow({
   subAgent,
   depth,
+  driverAgentId,
 }: {
   subAgent: KeptSubAgent;
   depth: number;
+  driverAgentId: string;
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const remove = useDeleteKeptSubAgent();
+  const stop = useStopDelegation();
   const agent = useAgentsList().find((a) => a.id === subAgent.id);
   const name = subAgent.label ?? subAgent.id;
   const state = keptStateLabel(subAgent, agent?.state);
@@ -160,6 +172,17 @@ function KeptSubAgentRow({
       )
     )
       remove.mutate({ id: subAgent.id });
+  };
+
+  const handleStop = async () => {
+    if (
+      await showConfirm(
+        "Its runs end, and so does the work of every sub-agent it started. It keeps its files and its conversation, and its driver gets a failed result.",
+        `Stop sub-agent “${name}”?`,
+        { kind: "destructive", confirmLabel: "Stop sub-agent" },
+      )
+    )
+      stop.mutate({ driverAgentId, id: subAgent.id });
   };
 
   return (
@@ -189,8 +212,14 @@ function KeptSubAgentRow({
           testId="kept-sub-agent-actions"
           dense
           className={HOVER_ACTION}
-          disabled={remove.isPending}
+          disabled={remove.isPending || stop.isPending}
         >
+          {subAgent.status === "running" && (
+            <DropdownMenuItem onSelect={() => void handleStop()}>
+              <StopFilledAlt size={14} />
+              Stop sub-agent
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem tone="danger" onSelect={() => void handleDelete()}>
             <TrashCan size={14} />
             Delete sub-agent
