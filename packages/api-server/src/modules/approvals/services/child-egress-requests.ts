@@ -79,7 +79,7 @@ export function createChildEgressRequests(deps: {
         deps.nameOf(driverId),
         deps.nameOf(childId),
       ]);
-      const id = `${proposalId(childId, { ...shape, reason: "" })}:${now()}`;
+      const id = `${proposalId(childId, shape)}:${now()}`;
       const child = childName ? `sub-agent ${childName}` : "child";
       const reach = reachOf({ ...rule, host }, ask);
       await deps.repo.insertPending({

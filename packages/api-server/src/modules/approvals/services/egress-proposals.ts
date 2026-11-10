@@ -24,7 +24,7 @@ export interface EgressProposals {
 
 export function proposalId(
   agentId: string,
-  input: EgressProposalInput,
+  input: { host: string; port?: number; method: string; path: string },
 ): string {
   const shape = JSON.stringify([
     input.host.toLowerCase(),
