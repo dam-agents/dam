@@ -109,14 +109,19 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
             />
           </span>
         )}
-        {ownRunning ? (
-          <span className="inline-flex shrink-0 items-stretch overflow-hidden rounded-full bg-success-light text-green-700 dark:text-success">
+        {ownRunning && (state === "working" || state === "waiting") ? (
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-stretch overflow-hidden rounded-full",
+              RUNNING_CAPSULE[state].surface,
+            )}
+          >
             <DelegationStatePill state={state} className="rounded-none" />
             <StopSegment
               node={node}
               driverAgentId={driverAgentId}
               working={null}
-              className="border-success/30"
+              className={RUNNING_CAPSULE[state].divider}
             />
           </span>
         ) : (
@@ -177,6 +182,17 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   );
 }
 
+const RUNNING_CAPSULE = {
+  working: {
+    surface: "bg-success-light text-green-700 dark:text-success",
+    divider: "border-success/30",
+  },
+  waiting: {
+    surface: "bg-warning/15 text-warning-fg",
+    divider: "border-warning/30",
+  },
+} as const;
+
 // UNIT_BOUNDARY_DESCRIPTION: the stop at the end of the pill it acts on: on the state pill while a run of its own goes, the agent and everything it started; on the sub-agents pill, where `working` counts the sub-agents it started that still run, only they.
 function StopSegment({
   node,
@@ -194,13 +210,14 @@ function StopSegment({
   const subAgents = `${working} sub-agent${working === 1 ? "" : "s"}`;
   const label = working === null ? "Stop this agent" : `Stop ${subAgents}`;
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      tooltip={label}
       aria-label={label}
-      title={label}
       disabled={stop.isPending}
       className={cn(
-        "flex items-center border-l px-1.5 transition-colors hover:bg-danger-light hover:text-danger focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50",
+        "h-auto min-h-6 rounded-none border-l text-inherit hover:bg-danger-light hover:text-danger",
         className,
       )}
       onClick={async () => {
@@ -220,7 +237,7 @@ function StopSegment({
       }}
     >
       <StopFilledAlt size={9} aria-hidden />
-    </button>
+    </Button>
   );
 }
 

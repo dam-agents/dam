@@ -15,6 +15,7 @@ import {
   parseQualifiedModel,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  stopReasonSchema,
 } from "api-server-api";
 import {
   errorResult,
@@ -27,11 +28,10 @@ import {
   NO_SPAWN_MODEL_MESSAGE,
   type SubAgentAwaitMarks,
 } from "../../modules/invocations/index.js";
-import {
-  stopReasonSchema,
-  type DriverOps,
-  type ScriptSpawnRequest,
-  type SpawnOutcome,
+import type {
+  DriverOps,
+  ScriptSpawnRequest,
+  SpawnOutcome,
 } from "./driver-ops.js";
 
 /**

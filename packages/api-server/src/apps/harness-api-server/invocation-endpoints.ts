@@ -7,13 +7,14 @@ import {
   OVERSIZED_ARRAY_MESSAGE,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  stopInvocationRequestSchema,
+  type StopInvocationResponse,
 } from "api-server-api";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
   createDriverOps,
   type DriverOps,
   type DriverOpsDeps,
-  stopReasonSchema,
   type SpawnOutcome,
 } from "./driver-ops.js";
 import { resolveAgent } from "./agent-auth.js";
@@ -198,7 +199,7 @@ export function mountInvocationRoutes(
   app.post("/api/agents/:id/invocations/:invocationId/stop", async (c) => {
     const ops = await driverOps(c.req.param("id")!);
     if (!ops) return c.json({ error: "not found" }, 404);
-    const parsed = stopRequestSchema.safeParse(
+    const parsed = stopInvocationRequestSchema.safeParse(
       await c.req.json().catch(() => ({})),
     );
     if (!parsed.success) return c.json(refused(parsed.error.message), 400);
@@ -207,7 +208,7 @@ export function mountInvocationRoutes(
       parsed.data.reason,
     );
     return outcome.ok
-      ? c.json({ stopped: outcome.stopped })
+      ? c.json({ stopped: outcome.stopped } satisfies StopInvocationResponse)
       : c.json(refused(outcome.message), 409);
   });
 
@@ -267,10 +268,6 @@ const keepRequestSchema = z
   .refine((r) => r.keepForMs !== undefined || r.idleTimeoutMin !== undefined, {
     message: "pass keepForMs, idleTimeoutMin or both",
   });
-
-const stopRequestSchema = z.object({
-  reason: stopReasonSchema.optional(),
-});
 
 const egressRequestSchema = z.object({
   rules: z.array(childEgressRuleSchema).max(200),

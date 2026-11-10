@@ -23,7 +23,8 @@ export interface DelegationStop {
  * whoever asks: each running run in that tree fails with the stop's reason,
  * and each target goes through the one reap path, which removes a one-off
  * target, and with it what it still has below, and ends a kept one's runs
- * on their own, so a kept target keeps its conversation. The target's runs
+ * on their own, so a kept target keeps its conversation. The walk crosses
+ * reaped rows too, so nothing below a removed target is missed. The target's runs
  * fail first, and the tree is read again after each pass until no running
  * run is left in it, so a child a running target spawned while the stop
  * began is stopped too. What stops below the target is collected, so no
@@ -34,12 +35,12 @@ export interface DelegationStop {
 export function createDelegationStop(deps: {
   repo: Pick<
     InvocationsRepository,
-    "listRunningRunsOf" | "listUnreapedByRoot" | "failStopped"
+    "listRunningRunsOf" | "listTreeOfRoot" | "failStopped"
   >;
   reaper: TargetReaper;
 }): DelegationStop {
   async function below(target: InvocationRow): Promise<string[]> {
-    const rows = await deps.repo.listUnreapedByRoot(target.rootDriverId);
+    const rows = await deps.repo.listTreeOfRoot(target.rootDriverId);
     const childrenOf = new Map<string, string[]>();
     for (const row of rows)
       childrenOf.set(row.driverAgentId, [

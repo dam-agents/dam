@@ -96,6 +96,22 @@ export const spawnInvocationRequestSchema = refineSpawnTarget(
   }),
 );
 
+export const MAX_STOP_REASON_CHARS = 500;
+
+export const stopReasonSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_STOP_REASON_CHARS);
+
+export const stopInvocationRequestSchema = z.object({
+  reason: stopReasonSchema.optional(),
+});
+
+export const stopInvocationResponseSchema = z.object({
+  stopped: z.boolean(),
+});
+
 export const MAX_INVOCATION_SCRIPT_CHARS = 64 * 1024;
 
 export const spawnScriptInvocationRequestSchema = refineSpawnTarget(

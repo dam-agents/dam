@@ -55,6 +55,7 @@ __all__ = [
 
 _DEFAULT_POLL_SECONDS = 5.0
 _SCRIPT_STOP_REASON = "its script aborted the spawn"
+_MAX_STOP_REASON_CHARS = 500
 # A sub-agent may wait up to its ttl for room to start, then has its whole
 # ttl for the work: twice the ttl (the server's default is 1h) plus the
 # liveness sweep's period and a few polls of slack.
@@ -344,7 +345,7 @@ def _await(
 
 
 def _stop(invocation_id: str, reason: str | None = None) -> bool:
-    reason = reason.strip() if reason else None
+    reason = reason.strip()[:_MAX_STOP_REASON_CHARS].strip() if reason else None
     body = {"reason": reason} if reason else {}
     return _request("POST", f"/invocations/{_segment(invocation_id)}/stop", body)[
         "stopped"

@@ -83,6 +83,7 @@ export function fakeInvocationsRepo(
     markTranscriptCaptured: async () => {},
     listByRoot: async () => [],
     listUnreapedByRoot: async () => [],
+    listTreeOfRoot: async () => [],
     listTargetsByOwner: async () => [],
     delete: async () => {},
     deleteReapedByRoot: async () => 0,

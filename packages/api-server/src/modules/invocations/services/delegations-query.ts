@@ -32,7 +32,22 @@ export function createDelegationsQuery(deps: {
         `[invocations] delegation tree for ${root} hit the ${DELEGATION_TREE_ROW_LIMIT}-row limit\n`,
       );
     }
-    return rows.filter((r) => r.owner === deps.owner);
+    return withAnyRunRunning(rows.filter((r) => r.owner === deps.owner));
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a row reads as running while any of its runs runs, not only its latest, since a kept target runs several at once; every read of the tree and of the kept sub-agents goes through here.
+  async function withAnyRunRunning(
+    rows: Awaited<ReturnType<InvocationsRepository["listByRoot"]>>,
+  ) {
+    const others = rows
+      .filter((r) => r.reapedAt === null && r.status !== "running")
+      .map((r) => r.id);
+    const running = new Set(
+      (await deps.repo.listRunningRunsOf(others)).map((r) => r.id),
+    );
+    return rows.map((r) =>
+      running.has(r.id) ? { ...r, status: "running" as const } : r,
+    );
   }
 
   return {
@@ -45,9 +60,6 @@ export function createDelegationsQuery(deps: {
         (r) => r.keepUntil !== null && r.reapedAt === null,
       );
       const listed = new Set(kept.map((r) => r.id));
-      const running = new Set(
-        (await deps.repo.listRunningRunsOf([...listed])).map((r) => r.id),
-      );
       // UNIT_BOUNDARY_DESCRIPTION: the kept sub-agent a row sits under, walking up its drivers: the agent asked about gives null, a listed one gives itself, and a chain that never reaches the agent asked about is not under it.
       const parentOf = (row: {
         driverAgentId: string;
@@ -73,7 +85,7 @@ export function createDelegationsQuery(deps: {
                   {
                     id: r.id,
                     label: r.label,
-                    status: running.has(r.id) ? "running" : r.status,
+                    status: r.status,
                     keepUntil: r.keepUntil!.toISOString(),
                     parentId,
                   },

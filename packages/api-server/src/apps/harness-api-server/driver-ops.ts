@@ -1,5 +1,5 @@
 import { match } from "ts-pattern";
-import { z } from "zod";
+import type { z } from "zod";
 import {
   isQualifiedModel,
   PROVIDERS,
@@ -84,8 +84,6 @@ export interface DriverOpsDeps {
     egressFrom: "parent" | "open" | "scoped";
   } | null>;
 }
-
-export const stopReasonSchema = z.string().trim().min(1).max(500);
 
 const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
   "nothing names the sub-agent's model: pass a provider-qualified model, as the agent's Config panel lists it, or spawn on the harness of this agent's default model to run on that model; an agent with no default gets one on its Providers page";

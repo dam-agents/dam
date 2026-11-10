@@ -12,6 +12,8 @@ import type {
   invocationViewSchema,
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
+  stopInvocationRequestSchema,
+  stopInvocationResponseSchema,
   spawnScriptInvocationRequestSchema,
 } from "./schemas.js";
 
@@ -31,6 +33,10 @@ export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
 export type InvocationView = z.infer<typeof invocationViewSchema>;
+export type StopInvocationRequest = z.infer<typeof stopInvocationRequestSchema>;
+export type StopInvocationResponse = z.infer<
+  typeof stopInvocationResponseSchema
+>;
 export type InvocationStatus = InvocationView["status"];
 export type InvocationsTreeInput = z.infer<typeof invocationsTreeInputSchema>;
 export type InvocationTranscriptInput = z.infer<

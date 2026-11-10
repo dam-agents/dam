@@ -2,6 +2,8 @@ import type {
   SpawnInvocationRequest,
   SpawnInvocationResponse,
   InvocationView,
+  StopInvocationRequest,
+  StopInvocationResponse,
 } from "api-server-api";
 import { req, log, sleep, spawningSessionHeaders } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
@@ -249,14 +251,18 @@ export async function awaitInvocation(
   }
 }
 
+const MAX_STOP_REASON_CHARS = 500;
+
 export async function stopInvocation(
   id: string,
   reason?: string,
 ): Promise<boolean> {
-  const { stopped } = await req<{ stopped: boolean }>(
+  const why = reason?.trim().slice(0, MAX_STOP_REASON_CHARS).trim();
+  const body: StopInvocationRequest = why ? { reason: why } : {};
+  const { stopped } = await req<StopInvocationResponse>(
     "POST",
     `/invocations/${encodeURIComponent(id)}/stop`,
-    reason?.trim() ? { reason: reason.trim() } : {},
+    body,
   );
   return stopped;
 }

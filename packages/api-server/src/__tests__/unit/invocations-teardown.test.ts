@@ -57,6 +57,7 @@ function fakeRepo(rows: InvocationRow[]) {
     listByRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     listUnreapedByRoot: async (root) =>
       rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
+    listTreeOfRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     markTranscriptCaptured: calls.markTranscriptCaptured,
     deleteReapedByRoot: calls.deleteReapedByRoot,
   });

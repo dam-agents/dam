@@ -174,6 +174,9 @@ export interface InvocationsRepository {
   markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
   listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
   listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
+  listTreeOfRoot(
+    rootDriverId: string,
+  ): Promise<{ id: string; driverAgentId: string }[]>;
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
@@ -736,6 +739,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .orderBy(desc(invocationsTable.createdAt))
         .limit(limit);
       return withLatestRun(targets.reverse());
+    },
+
+    listTreeOfRoot(rootDriverId) {
+      return db
+        .select({
+          id: invocationsTable.id,
+          driverAgentId: invocationsTable.driverAgentId,
+        })
+        .from(invocationsTable)
+        .where(eq(invocationsTable.rootDriverId, rootDriverId));
     },
 
     async listUnreapedByRoot(rootDriverId) {
