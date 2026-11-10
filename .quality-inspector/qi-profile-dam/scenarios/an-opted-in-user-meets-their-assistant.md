@@ -61,13 +61,13 @@ Given that account, whose Dambledore the owner has deleted
 When they click *Reset user onboarding* under the assistant's row and confirm
 Then a new agent named Dambledore is in their agent list, unused, and its chat opens on the greeting
 
-## AC-8 — Reset user onboarding reuses an agent already under the name
+## AC-8 — Reset user onboarding reuses the agent the platform made, renamed or not
 
-Given that account, where the owner renamed Dambledore to *Research helper* and then made an agent of their own called *Dambledore*
+Given that account, where the owner renamed Dambledore to *Research helper* and used it
 When they click *Reset user onboarding* under the assistant's row and confirm
-Then no second Dambledore is made
-And the account lands in the *Dambledore* they made, which opens on the greeting
-And *Research helper* is still theirs, untouched
+Then no new agent is made, and the account lands in *Research helper*, which opens on the greeting
+When instead they rename it away and make an agent of their own called *Dambledore*, then reset
+Then no new agent is made either, and the account does not land in the one they made: it is theirs, not the assistant's
 
 ## AC-9 — an account that never opts in sees nothing of it
 
@@ -84,20 +84,22 @@ When they switch the assistant's row off
 Then no confirm appears, and Dambledore is still in their agent list with its conversations
 And no greeting, landing or *Reset user onboarding* is shown until they switch it back on
 
-## AC-11 — the switch makes one only when the name is free
+## AC-11 — the switch makes one only when the name is free, and keeps the one it made
 
-Given an account with no agent called Dambledore, and Settings → Experimental features open
+Given an account with no agent under the assistant's name, and Settings → Experimental features open
 When the owner switches the assistant's row on
 Then Dambledore appears in their agent list
 When they switch it off, delete Dambledore, and switch it on again
 Then a new Dambledore appears, unused
 When instead they rename Dambledore to *Research helper* and switch the row off and on again
-Then a new Dambledore appears beside *Research helper*
+Then no new agent appears: *Research helper* is still the assistant, and its chat does not greet them again
 And no agent is ever named *Dambledore 2*
 
-## AC-12 — an agent the owner already named Dambledore stands in for it
+## AC-12 — an agent the owner made under the name is never the assistant
 
 Given an account that made an agent of their own called *Dambledore* before turning the feature on
 When they switch the assistant's row on
-Then no second agent appears for that name
-And their own Dambledore is the assistant: an unused one opens on the greeting, and their next sign-in lands there
+Then no second agent appears for that name, and their own Dambledore opens on the ordinary new-chat page with no greeting
+And their next sign-in lands on Home rather than in that chat
+When they delete or rename their own Dambledore and switch the row off and on again
+Then the platform's Dambledore appears, unused, and greets them
