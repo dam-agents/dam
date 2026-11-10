@@ -9,9 +9,14 @@ const PROVIDER_UNITS: Readonly<Record<string, SpendUnit>> = {
   bob: "bobcoin",
   "curve-bender": "free",
   "curve-bender-deployment": "free",
+  "curve-bender-cloud-gateway": "usd",
 };
 
-const UNPRICED_PROVIDERS: ReadonlySet<string> = new Set(["openai", "bedrock"]);
+const UNPRICED_PROVIDERS: ReadonlySet<string> = new Set([
+  "openai",
+  "bedrock",
+  "curve-bender-cloud-gateway",
+]);
 
 export function spendUnitOfProvider(templateId: string): SpendUnit | null {
   return PROVIDER_UNITS[templateId] ?? null;

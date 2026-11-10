@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -262,31 +262,12 @@ Connections of this template are capped per owner.
 
 ### App preset: Kubernetes / OpenShift
 
-The external-cluster connection (#2314).
+The external-cluster connection.
 The user supplies the cluster API endpoint, a service-account token, and — only when the API cert isn't publicly trusted — the cluster's CA.
 The build synthesizes an `egress-inject`, a `file` contribution writing a ready-to-use kubeconfig at a **per-connection path**, and a `KUBECONFIG` `env` pointing at it.
 The kubeconfig carries only an inert placeholder token; the gateway overwrites it with the real service-account token on the wire, so the token only ever exists gateway-side.
 Multiple cluster connections compose: each writes its own kubeconfig keyed by connection name, and the `env` driver joins their `KUBECONFIG` entries into the `:`-separated list `kubectl`/`oc` merge at load, so clusters that share a host on different ports stay distinct.
 The CA is optional, never reaches the agent, and configures gateway-side upstream validation only.
-
-```jsonc
-{
-  "id": "conn-9c1d",
-  "templateId": "kubernetes",
-  "name": "prod-cluster",
-  "inputs": { "host": "api.prod.example:6443", "value": "…", "caData": "…" },
-  "auth": { "kind": "header", "valueRef": { "…": "…" }, "headerName": "Authorization", "valueFormat": "Bearer {value}" },
-  "contributions": [
-    { "kind": "egress-inject", "host": "api.prod.example", "port": 6443,
-      "headerName": "Authorization", "valueFormat": "Bearer {value}",
-      "upgrades": true, "upstreamCa": true },
-    { "kind": "env", "name": "KUBECONFIG", "placeholder": "$HOME/.kube/connections/prod-cluster.config" },
-    { "kind": "file", "path": "$HOME/.kube/connections/prod-cluster.config", "format": "yaml",
-      "mergeMode": "overwrite",
-      "content": { /* a one-cluster kubeconfig: the endpoint, the mounted CA path, and a placeholder token */ } }
-  ]
-}
-```
 
 ### App preset: IBM LiteLLM proxy
 
@@ -342,6 +323,13 @@ The scope is not evidence that the key itself is limited: the operator must stil
 Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
 Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
+### App preset: CurveBender through the IBM Cloud Gateway
+
+CurveBender's models through a team's IBM Cloud Gateway project instead of CurveBender's proxy, connected with the user's gateway key and project endpoint.
+It is its own provider, alias `cbgw`: it serves other model ids, and chat completions only, so only Pi, Bob, Copilot and Hermes run on it.
+The endpoint must be HTTPS on one region under `rhai.ibm.com` with a project's inference path, because it decides where the key goes: the gateway injects the key on that host under that path alone, and a new endpoint means connecting again.
+The key check, the [model catalog](harness-config.md#the-model-catalog) and the [owner model catalog](owner-model-catalog.md) read the project's model list; a 401 there refuses the key, and a failed listing reads as unavailable.
+
 ### App preset: AWS Bedrock
 
 Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API key**.
@@ -388,29 +376,12 @@ The gateway picks the new file up without a roll and the agent's placeholders ar
 
 ### Custom Header credential
 
-```jsonc
-{
-  "id": "conn-3f4a",
-  "templateId": "custom-header",
-  "name": "Internal billing API",
-  "inputs": { "host": "billing.acme.internal", "headerName": "X-API-Key", "value": "…" },
-  "auth": {
-    "kind": "header",
-    "valueRef":   { "secretName": "platform-secret-conn-3f4a", "key": "value" },
-    "headerName": "X-API-Key",
-    "valueFormat": "{value}"
-  },
-  "contributions": [
-    { "kind": "egress-inject", "host": "billing.acme.internal",
-      "headerName": "X-API-Key", "valueFormat": "{value}" }
-  ]
-}
-```
+The user names the host, the header and its value format; the build is one `egress-inject` for that host and header, so the secret stays gateway-side.
 
 ## Built-in contributions
 
 Not every contribution comes from a grant: the runtime state builder also merges **built-ins** the platform itself contributes.
-Every agent gets the platform MCP entry and its display name as the `PLATFORM_AGENT_NAME` env var, which a rename refreshes at the next harness spawn without a restart; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP entry), appearing and disappearing with its first and last such grant.
+Every agent gets the platform MCP entry and its display name as the `PLATFORM_AGENT_NAME` env var, which a rename refreshes at the next harness spawn without a restart; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route, alongside the platform MCP entry, appearing and disappearing with its first and last such grant.
 
 ## Contribution fan-out
 

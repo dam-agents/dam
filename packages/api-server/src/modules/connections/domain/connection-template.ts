@@ -87,6 +87,7 @@ export interface ConfigInputSpec {
   pattern?: string;
   patternHint?: string;
   enumValues?: readonly string[];
+  decidesHost?: true;
 }
 
 export interface HeaderConnectionTemplate extends TemplateCommon {

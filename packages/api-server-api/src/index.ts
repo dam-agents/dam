@@ -610,6 +610,7 @@ export {
   CURVE_BENDER_HOST,
   CURVE_BENDER_WORK_MODEL,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
   displayNameForTemplate,
   shortNameForTemplate,
   BOB_HOST,
@@ -628,6 +629,14 @@ export {
   templateIdsForAlias,
   providerAliasConflict,
 } from "./modules/connections/providers.js";
+export {
+  CLOUD_GATEWAY_ENDPOINT_ENV,
+  CLOUD_GATEWAY_ENDPOINT_PATTERN,
+  CLOUD_GATEWAY_KEY_ENV,
+  cloudGatewayEnvMappings,
+  parseCloudGatewayEndpoint,
+} from "./modules/connections/cloud-gateway.js";
+export type { CloudGatewayEndpoint } from "./modules/connections/cloud-gateway.js";
 
 export {
   connectionEgressPathPrefix,

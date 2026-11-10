@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -174,12 +174,12 @@ Which choices a harness offers is its catalog's to say: Codex's offers no mode, 
 ## The model catalog
 
 agent-runtime keeps one **Model Catalog** per agent: every granted provider Connection's models, listed from that Connection's env layer (the api-server tags each provider layer with its Connection and template), under the **qualified name** `<alias>/<upstream id>`, the alias fixed per preset ([connections](connections.md)).
-Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info.
+Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info, and the OpenAI model list under an IBM Cloud Gateway project's endpoint.
 A LiteLLM proxy is listed from `/v1/models` on its root with the Connection's placeholder, so the gateway adds the key, and the maximum model length each entry reports, where it reports one, is its context window.
 Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: the router lists no models for it, and every harness but Claude Code and Pi sees it as unsupported.
-Claude Code and Pi run on it in their own Bedrock mode with the router as their Bedrock endpoint (`/bedrock/<connection id>`), and the router passes those calls on unchanged.
+Claude Code and Pi run on it in their own Bedrock mode with the router as their Bedrock endpoint, and the router passes those calls on unchanged.
 Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`), Pi's with the region's inference profiles ([connections](connections.md#app-preset-aws-bedrock)).
 A session on one runs in a harness process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
 Beside a routed provider, a turn with no model is refused (see **A turn with no model**), and a web terminal with none starts through the router on the harness's own default; Bedrock's env reaches a process only when no routed provider serves the harness.
@@ -197,14 +197,14 @@ A routed harness answers its model list from the catalog; `harnessConfig.catalog
 
 ## The Model Router
 
-agent-runtime runs one **Model Router** per agent, a loopback HTTP listener (`127.0.0.1:24180`, `PLATFORM_MODEL_ROUTER_PORT`) every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
+agent-runtime runs one **Model Router** per agent, a loopback HTTP listener every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
 It passes through and never translates: the path classifies the dialect (`/v1/messages` and `count_tokens`: Messages; `/v1/chat/completions`: chat; `/v1/responses`: Responses; doubled slashes, pi-ai's `/v1/v1/` and Bob's `/inference` prefix folded first), the `model` resolves to a catalog entry, and the call leaves for that entry's Connection only when it serves the dialect, else it is refused with the reason.
 A qualified name resolves outright, case-insensitively on the upstream id; a bare name is looked for on the session's provider, then the harness's default provider, then the single provider listing it, and refused naming the candidates when several do.
 A bare name no provider lists, in either case, falls back to the entry whose upstream id's last `/`-separated segment is that name, compared without case, so a provider fronting a cloud account answers for the exact model it serves under its deployment prefix (`aws/claude-sonnet-5`), and one that does list the bare name keeps it.
 Two ids of one provider that match that way, like two of its deployments, are refused naming both.
 The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` (its `session_id`, or the `_session_<uuid>` an older release ends it with) or its `x-claude-code-session-id` header, with `x-claude-code-agent-id` on a subagent's call, and Pi's `x-platform-session`, which its extension sets to the platform's session id.
 A Claude Code subagent's call belongs to the conversation it runs in when that is a Session, as a rewound Session's copy is, and else to the conversation that one was forked from, as Claude Code's fork subagent runs in a private conversation of its own; the metadata's `parent_session_id` alone marks no subagent, since the copy carries it too.
-In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write (`terminalSessionPins`); Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
+In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write; Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
 A Codex terminal also sends the platform's id in `x-platform-session`, which names the session of a thread that has no pin, such as the TUI's title thread; a chat session starts no naming thread of its own and keeps the title the platform derives from its first prompt.
 Copilot stamps nothing on its calls, so a call from its chat process is routed by its qualified name alone, and its manifest's `sessionFromRunningTurn` books it to the one Copilot session running a turn; while several run at once, the call names no session.
 A Copilot terminal runs under the platform's id (`--session-id`) and sends it in `x-platform-session` through `COPILOT_PROVIDER_HEADERS`.

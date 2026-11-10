@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
   BOB_HOST,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
   CURVE_BENDER_HOST,
   hasKeyCheck,
+  parseCloudGatewayEndpoint,
   IBM_LITELLM_HOST,
   type KeyCheckTemplateId,
 } from "api-server-api";
@@ -129,9 +131,10 @@ const MODELS_ENDPOINTS: Record<
   KeyCheckTemplateId,
   {
     url: (target: ProviderKeyTarget) => string | null;
+    missingTarget?: string;
     headers: (key: string) => Record<string, string>;
     refusedStatus?: number;
-    invalidKey?: RegExp;
+    invalidKey?: RegExp | "any-body";
     account?: ProviderAccountLookup;
   }
 > = {
@@ -159,11 +162,21 @@ const MODELS_ENDPOINTS: Record<
     url: fixed(`https://${CURVE_BENDER_HOST}/v1/models`),
     headers: bearer,
   },
+  [CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID]: {
+    url: ({ endpoint }) => {
+      const parsed = endpoint ? parseCloudGatewayEndpoint(endpoint) : null;
+      return parsed ? `${parsed.url}/models` : null;
+    },
+    missingTarget: "the connection names no IBM Cloud Gateway project endpoint",
+    headers: bearer,
+    invalidKey: "any-body",
+  },
   bedrock: {
     url: ({ region }) =>
       region
         ? `https://bedrock.${region}.amazonaws.com/inference-profiles?maxResults=1`
         : null,
+    missingTarget: "the connection names no region",
     headers: bearer,
     refusedStatus: 403,
     invalidKey: BEDROCK_INVALID_KEY_MARKER,
@@ -180,7 +193,7 @@ const MODELS_ENDPOINTS: Record<
   },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. Bob answers its model list with a 403 for a key it accepts everywhere else, so Bob's check asks the profile route its Bobcoin budget comes from: a key that route answers is one the platform already treats as working. A key that passes names its account where the provider tells that key: an Anthropic OAuth token by the email and organization of its profile, falling back to the organization header of the model list; an Anthropic or OpenAI API key by that header; an IBM LiteLLM key by the user of its key info; a Bob key by the user of the profile it was checked on; a Bedrock key by the AWS account in its inference profiles' ARN. The account is extra, so a lookup that fails or names nobody leaves the key passed with no account; a failed one is logged, so a broken identity route reads apart from a provider that names nobody. A template with no check here (the CurveBender deployment's, the built-in platform provider's) is accepted, marked unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. The IBM Cloud Gateway lists the models of the Connection's own project endpoint, and a 401 there refuses the key whatever its body says, because that endpoint is the key's own project. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. Bob answers its model list with a 403 for a key it accepts everywhere else, so Bob's check asks the profile route its Bobcoin budget comes from: a key that route answers is one the platform already treats as working. A key that passes names its account where the provider tells that key: an Anthropic OAuth token by the email and organization of its profile, falling back to the organization header of the model list; an Anthropic or OpenAI API key by that header; an IBM LiteLLM key by the user of its key info; a Bob key by the user of the profile it was checked on; a Bedrock key by the AWS account in its inference profiles' ARN. The account is extra, so a lookup that fails or names nobody leaves the key passed with no account; a failed one is logged, so a broken identity route reads apart from a provider that names nobody. A template with no check here (the CurveBender deployment's, the built-in platform provider's) is accepted, marked unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {
@@ -219,7 +232,7 @@ export function createProviderKeyProbe(
         return {
           ok: false,
           reason: "unverified",
-          detail: "the connection names no region",
+          detail: endpoint.missingTarget ?? "the connection names no target",
         };
       }
       try {
@@ -234,11 +247,12 @@ export function createProviderKeyProbe(
           return { ok: true, ...(account ? { account } : {}) };
         }
         const body = await res.text();
+        const invalidKey = endpoint.invalidKey ?? INVALID_KEY_MARKER;
         return {
           ok: false,
           reason:
             res.status === (endpoint.refusedStatus ?? 401) &&
-            (endpoint.invalidKey ?? INVALID_KEY_MARKER).test(body)
+            (invalidKey === "any-body" || invalidKey.test(body))
               ? "refused"
               : "unverified",
           detail: `HTTP ${res.status}`,

@@ -2159,7 +2159,7 @@ func TestChainsFromSecrets_ProviderChainIsMetered(t *testing.T) {
 	for _, tc := range []struct {
 		template string
 		metered  bool
-	}{{"ibm-litellm", true}, {"curve-bender-deployment", true}, {"github", false}} {
+	}{{"ibm-litellm", true}, {"curve-bender-deployment", true}, {"curve-bender-cloud-gateway", true}, {"github", false}} {
 		s := ownerSecret("platform-conn-"+tc.template, "connection", "conn-"+tc.template)
 		delete(s.Annotations, envoyHostPatternAnn)
 		s.Annotations[envoySecretPurposeAnn] = "connection:" + tc.template

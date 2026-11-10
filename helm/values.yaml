@@ -2254,7 +2254,7 @@ harnesses:
       enabled: true
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
-      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      providers: [ibm-litellm, curve-bender, curve-bender-cloud-gateway, anthropic, openai, bedrock]
       # Pi has no exporter of its own; the image's extension writes the
       # per-call log records on this rail.
       telemetry: pi
@@ -2264,7 +2264,7 @@ harnesses:
       displayName: "Bob"
       description: "Bob shell agent"
       releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
-      providers: [ibm-litellm, curve-bender, bob]
+      providers: [ibm-litellm, curve-bender, curve-bender-cloud-gateway, bob]
       # Bob exports OTLP traces rather than the per-call log records Claude
       # Code writes, so it rides its own env rail.
       telemetry: bob
@@ -2276,7 +2276,7 @@ harnesses:
       releaseNotesUrl: "https://github.com/github/copilot-cli/releases"
       # Copilot's BYOK provider speaks Chat Completions through the Model
       # Router, which meters its spend; no export rail.
-      providers: [ibm-litellm, curve-bender, openai]
+      providers: [ibm-litellm, curve-bender, curve-bender-cloud-gateway, openai]
       tags: ["Any provider"]
     hermes:
       enabled: true
@@ -2285,7 +2285,7 @@ harnesses:
       releaseNotesUrl: "https://github.com/NousResearch/hermes-agent/releases"
       # Hermes speaks Chat Completions through the Model Router, which meters
       # its spend; no export rail.
-      providers: [ibm-litellm, curve-bender, openai]
+      providers: [ibm-litellm, curve-bender, curve-bender-cloud-gateway, openai]
       tags: ["Any provider"]
 
 # -- E2E test affordances. Gated test-only surface: the api-server

@@ -301,13 +301,13 @@ It lets an Agent call tools on a host it has no other access to — Architecture
 
 ## Secrets (bounded context)
 
-| Term              | Definition                                                                                                                                                                                                                  |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secret            | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the Agent's gateway for wire-level injection on outbound traffic                               |
-| Secret Type       | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns)                                                                                              |
-| Host Pattern      | The hostname pattern that identifies which outbound requests the Envoy credential gateway should inject this secret into                                                                                                    |
-| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the Agent ConfigMap |
-| Provider          | The external LLM service a provider Connection authenticates against (IBM LiteLLM, Curve Bender, Anthropic, OpenAI, Bedrock, Bob), named in model names by its Provider Alias ([Agents](#agents-bounded-context))           |
+| Term              | Definition                                                                                                                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secret            | A user-owned credential (e.g., an Anthropic API key) stored as a K8s Secret labelled with the owner's `sub` and mounted into the Agent's gateway for wire-level injection on outbound traffic                                                                 |
+| Secret Type       | The provider taxonomy for a secret — currently `anthropic` (hostPattern fixed) or `generic` (user-supplied host/path patterns)                                                                                                                                |
+| Host Pattern      | The hostname pattern that identifies which outbound requests the Envoy credential gateway should inject this secret into                                                                                                                                      |
+| Secret Assignment | The linkage between a Secret and an Agent that makes the secret available to that Agent's egress; stored as the `agent-platform.ai/secret-mode` + `agent-platform.ai/granted-secret-ids` annotations on the Agent ConfigMap                                   |
+| Provider          | The external LLM service a provider Connection authenticates against (IBM LiteLLM, Curve Bender, Curve Bender through the IBM Cloud Gateway, Anthropic, OpenAI, Bedrock, Bob), named in model names by its Provider Alias ([Agents](#agents-bounded-context)) |
 
 ## Terms (bounded context)
 

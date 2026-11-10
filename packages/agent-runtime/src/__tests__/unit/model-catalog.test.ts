@@ -7,7 +7,8 @@
  * failed listing keeps that Connection's last good list and never touches
  * another's. An Anthropic subscription token is listed like the key and
  * offered to Claude Code alone. Bob's gateway is offered to the Bob harness
- * alone, though Pi speaks its dialect. A Connection the router never serves
+ * alone, though Pi speaks its dialect. CurveBender through the IBM Cloud
+ * Gateway speaks chat completions only, so only the chat harnesses see it. A Connection the router never serves
  * (Bedrock) is listed as unsupported with no models; a harness that runs it
  * natively sees that Connection's models as its own names, or as the models
  * the Connection lists, which the router never routes.
@@ -70,6 +71,14 @@ const cbDeploymentLayer = {
     OPENAI_API_KEY: "platform:conn:conn-cbd",
     OPENAI_PROXY_CONTEXT_WINDOW: "256000",
     OPENAI_PROXY_REASONING: "1",
+  },
+};
+const gatewayLayer = {
+  id: "conn-gw",
+  template: "curve-bender-cloud-gateway",
+  env: {
+    OPENAI_BASE_URL: "https://us-east.rhai.ibm.com/v1/projects/p-1/inference",
+    OPENAI_API_KEY: "platform:conn:conn-gw",
   },
 };
 const bobLayer = {
@@ -462,6 +471,40 @@ describe("the model catalog", () => {
     expect(bobFor("bob").models.map((m) => m.upstreamId)).toEqual(["fast"]);
     expect(bobFor("pi")).toMatchObject({ status: "unsupported", models: [] });
     expect(catalog.forHarness("pi").map((e) => e.alias)).not.toContain("bob");
+  });
+
+  /** TEST_SCENARIO: the IBM Cloud Gateway's project endpoint serves chat
+   * completions only, so its models are listed under `cbgw/…` for Pi and
+   * Bob, which speak chat, while Claude Code (Messages) and Codex
+   * (Responses) see the provider as unsupported rather than as one with no
+   * models. */
+  it("offers the IBM Cloud Gateway to the chat harnesses only", async () => {
+    const { catalog } = catalogWith(
+      {
+        "https://us-east.rhai.ibm.com/v1/projects/p-1/inference": {
+          ids: ["zai-org/GLM-5.3"],
+        },
+      },
+      [gatewayLayer],
+    );
+    await catalog.refresh();
+    const gatewayFor = (harness: string) =>
+      catalog
+        .view(harness)
+        .providers.find((p) => p.connectionId === "conn-gw")!;
+    for (const harness of ["pi", "bob"]) {
+      expect(gatewayFor(harness).status).toBe("listed");
+      expect(catalog.forHarness(harness).map((e) => e.name)).toEqual([
+        "cbgw/zai-org/GLM-5.3",
+      ]);
+    }
+    for (const harness of ["claude-code", "codex"]) {
+      expect(gatewayFor(harness)).toMatchObject({
+        status: "unsupported",
+        models: [],
+      });
+      expect(catalog.forHarness(harness)).toEqual([]);
+    }
   });
 
   /** TEST_SCENARIO: Nothing is listed before the env rail is materialised,
