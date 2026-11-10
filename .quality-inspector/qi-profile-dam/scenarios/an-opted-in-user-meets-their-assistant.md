@@ -43,30 +43,30 @@ Given Dambledore in the owner's list
 When the owner opens its Manage section
 Then Disable and Delete are offered as they are on any other agent, and its name can be edited from its identity
 When they rename it and open Settings → Experimental features
-Then its row still offers *Reset user onboarding*, because the feature is on for them
+Then the *Onboarding progress* card at the bottom of the tab still offers its reset, and the tab offers no second one under the assistant's row
 
-## AC-6 — Reset user onboarding takes the account back to a first open
+## AC-6 — the Onboarding progress card takes the account back to a first open
 
 Given that account with the assistant used, and the Switch on
-When the owner clicks *Reset user onboarding* under the assistant's row
-Then a confirm asks first, naming Dambledore, and says nothing is deleted
+When the owner clicks *Reset onboarding progress* on the *Onboarding progress* card at the bottom of Experimental features
+Then one confirm asks first, saying that every avatar locks again, that agents keep theirs and that nothing in the account is deleted
 When they confirm
 Then the app goes to its entry route and lands them in Dambledore's chat, which opens on the greeting again
-And the Get started checklist counts one task of eight — Create your first agent — as done
+And the Get started checklist counts one task of eight — Create your first agent — as done, its avatar unlocked and seen
 And the assistant's earlier conversations are still in the sidebar
 
-## AC-7 — Reset user onboarding gives Dambledore back when the account has none
+## AC-7 — the same card gives Dambledore back when the account has none
 
 Given that account, whose Dambledore the owner has deleted
-When they click *Reset user onboarding* under the assistant's row and confirm
+When they confirm the *Onboarding progress* card's reset
 Then a new agent named Dambledore is in their agent list, unused, and its chat opens on the greeting
 
-## AC-8 — Reset user onboarding reuses the agent the platform made, renamed or not
+## AC-8 — the same card reuses the agent the platform made, renamed or not
 
 Given that account, where the owner renamed Dambledore to *Research helper* and used it
-When they click *Reset user onboarding* under the assistant's row and confirm
+When they confirm the *Onboarding progress* card's reset
 Then no new agent is made, and the account lands in *Research helper*, which opens on the greeting
-When instead they rename it away and make an agent of their own called *Dambledore*, then reset
+When instead they rename it away and make an agent of their own called *Dambledore*, then confirm the card's reset
 Then no new agent is made either, and the account does not land in the one they made: it is theirs, not the assistant's
 
 ## AC-9 — an account that never opts in sees nothing of it
@@ -82,7 +82,8 @@ And the message box of any agent they open hints *Message…* as it always did
 Given that account with the assistant switched on and used
 When they switch the assistant's row off
 Then no confirm appears, and Dambledore is still in their agent list with its conversations
-And no greeting, landing or *Reset user onboarding* is shown until they switch it back on
+And no greeting and no landing are shown until they switch it back on
+And the *Onboarding progress* card's reset still restarts the checklist, leaving Dambledore and its use where they are
 
 ## AC-11 — the switch makes one only when the name is free, and keeps the one it made
 

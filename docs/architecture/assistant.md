@@ -75,14 +75,16 @@ Nothing runs on the person's behalf: there is no `initialization` Session and no
 
 ## Starting it over
 
-Experimental features carries **Reset user onboarding** under the assistant's own row, offered whenever the feature is on for the person — an install that pins it `on` shows no switch for them to flip, so only that row goes and the reset stays.
-It is the person's own reset, scoped to the caller: it forgets that their assistant was ever used and starts the [Getting Started](getting-started.md) checklist over through the checklist's own reset.
+Experimental features ends with one **Onboarding progress** card, one button and one confirm: it restarts the person's [Getting Started](getting-started.md) checklist and, for a person the feature is on for, gives them a first open in their assistant too.
+There is no second button, and the reset is not refused for anyone: a person the feature is off for gets the checklist alone, and the assistant, its record and its use are left as they were.
+It is the person's own reset, scoped to the caller.
 Nothing is deleted — not the assistant, its sessions or its files.
 The Agent the record names is **reused**, its use forgotten, whether or not it was renamed since.
 When the platform's Agent is gone the reset makes one again — a new ordinary Agent on the same terms as the first — but only if no Agent of the person's carries the assistant's name: a name they hold is not the platform's to take, so such a person gets nothing made and no greeting, since an Agent they made is not the assistant.
 A create another caller holds is waited for rather than raced, so the reset lands on the one Agent being made between them.
 
 The checklist it starts over is a first-timer's from the first moment: the assistant's own `Create` task is recorded again the way provisioning records it — done, and seen, so nothing celebrates an Agent nobody made — which is one task of eight rather than an empty checklist.
+That task's character stays unlocked, as a first-timer's own is, so "every avatar locks again" holds for every avatar but the assistant's own.
 
 What it restores is the first open: the record says the assistant has never been used, so the greeting returns to an empty chat and the first landing routes the person into it again.
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.

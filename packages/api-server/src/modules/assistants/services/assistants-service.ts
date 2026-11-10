@@ -1,4 +1,3 @@
-import { TRPCError } from "@trpc/server";
 import {
   type AgentsService,
   type AssistantsService,
@@ -192,13 +191,9 @@ export function createAssistantsService(deps: {
       },
 
       async resetOnboarding() {
-        if (!(await deps.enabled()))
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "This install does not offer the assistant to you.",
-          });
+        // UNIT_BOUNDARY_DESCRIPTION: the one onboarding reset. The checklist starts over for everyone, and a person the feature is on for is a first-timer in their assistant too — one they deleted is made again when nothing of theirs carries the name, one they still have is reused with its use forgotten. A person it is off for gets the checklist alone, and nothing of the assistant's is touched or refused.
         await deps.resetChecklist();
-        // UNIT_BOUNDARY_DESCRIPTION: the person is a first-timer again, so a Dambledore they deleted is made again — when nothing of theirs carries the name — and one they still have is reused with its use forgotten.
+        if (!(await deps.enabled())) return;
         const agent = await settle(waitMs);
         await deps.repo.resetUsed(deps.owner);
         if (agent !== null) await deps.provisioned(created(agent));

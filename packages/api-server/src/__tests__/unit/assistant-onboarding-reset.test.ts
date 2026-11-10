@@ -5,8 +5,9 @@
 // TEST_OVERVIEW: them Dambledore again when the platform's own is gone — but only
 // TEST_OVERVIEW: when no Agent of theirs carries the name, since an Agent they made
 // TEST_OVERVIEW: is not the platform's and is never adopted. A create another caller
-// TEST_OVERVIEW: holds is waited for rather than raced. It is refused while the
-// TEST_OVERVIEW: feature is off for them.
+// TEST_OVERVIEW: holds is waited for rather than raced. It is one reset for
+// TEST_OVERVIEW: everyone: the checklist always, the assistant only when the feature
+// TEST_OVERVIEW: is on for them, and never a refusal.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -164,13 +165,18 @@ describe("resetting a person's onboarding", () => {
     expect(rows.rows.get("bob")).toMatchObject({ used: true });
   });
 
-  // TEST_SCENARIO: the feature is off for the caller — the install pins it off, or they turned it off — so the reset is refused rather than quietly giving them Dambledore.
-  it("is refused while the feature is off for the caller", async () => {
-    const w = assistantService({ enabled: false });
-    await expect(w.assistants.resetOnboarding()).rejects.toThrow(
-      "does not offer the assistant",
-    );
+  // TEST_SCENARIO: the assistant is off for the person — the install pins it off, or they turned it off — so the one reset restarts the Get started checklist and leaves their agent and its record alone: it is never refused, because it is their onboarding reset either way.
+  it("restarts only the checklist for a person it is off for", async () => {
+    const rows = rowStore(readyRow("agent-a"));
+    const w = assistantService({ rows, agents: agentStore(), enabled: false });
+    await w.assistants.resetOnboarding();
+    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
     expect(w.agents.create).not.toHaveBeenCalled();
-    expect(w.resetChecklist).not.toHaveBeenCalled();
+    expect(rows.rows.get(OWNER)).toMatchObject({
+      agentId: "agent-a",
+      used: true,
+      resetAt: null,
+    });
+    expect(w.provisioned).not.toHaveBeenCalled();
   });
 });

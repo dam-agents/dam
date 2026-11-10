@@ -8,8 +8,6 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
-import { useAssistantOn } from "../../assistants/api/assistant-state.js";
-import { AssistantOnboardingReset } from "../../assistants/components/assistant-onboarding-reset.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
@@ -128,7 +126,6 @@ export function FeaturesTab() {
   const offeredRows = featureRows(brand).filter((row) =>
     isFeatureOffered(row.id, install),
   );
-  const assistantOn = useAssistantOn();
 
   return (
     <div>
@@ -148,8 +145,6 @@ export function FeaturesTab() {
             }
           />
         ))}
-        {/* UNIT_BOUNDARY_DESCRIPTION: the reset sits under the assistant's own row whenever the person has the assistant on — including an install that pins the feature on, where the switch itself is not offered, so only the switch is hidden by the mode. */}
-        {assistantOn && <AssistantOnboardingReset />}
       </div>
 
       <SectionLabel spaced className="mt-8">

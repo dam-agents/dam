@@ -14,12 +14,13 @@ export interface AssistantState {
 export interface AssistantsService {
   state(): Promise<AssistantState | null>;
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: starts this person's onboarding over: the
-   * assistant counts as never used again, so the first landing and the greeting
-   * come back, and the Get started checklist resets through the same reset its
-   * own button uses. Nothing is deleted — not the assistant, its sessions or its
-   * files — and an assistant the person deleted is created again, so there is
-   * something to greet them with. Refused while the feature is off for them.
+   * UNIT_BOUNDARY_DESCRIPTION: the person's one onboarding reset, which Settings ›
+   * Experimental features offers as a single button. The Get started checklist
+   * starts over — every avatar locked again — and when the feature is on for them
+   * the assistant counts as never used again, so the first landing and the
+   * greeting come back, with an assistant they deleted made again when the name is
+   * free. Nothing is deleted — not the assistant, its sessions or its files — and
+   * a person the feature is off for gets the checklist alone.
    */
   resetOnboarding(): Promise<void>;
 }

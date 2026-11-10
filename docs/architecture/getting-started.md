@@ -43,8 +43,8 @@ Every unlock is pushed to the owner's open tabs as a [live hint](platform-topolo
 The item stays in the footer until the checklist is done; closing the popover only closes it.
 A checklist dismissed through the API stays hidden until the next unlock, which brings the item back, or until the user asks for the checklist from the avatar picker, which opens the popover.
 Once every character is unlocked and seen, the item is gone until the user resets their onboarding progress from the Experimental features tab.
-That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
-The [assistant](assistant.md#starting-it-over)'s own row in the same tab carries **Reset user onboarding**, which resets this checklist the same way and also forgets that the assistant was ever used.
+That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them, and the one the [assistant](assistant.md#starting-it-over) carries stays unlocked and seen, since a first-timer meets it that way.
+For a person the assistant is on for, the same reset also gives them a first open in it — its use forgotten, and one they deleted made again — and takes them to the entry route as a first-timer; a person it is off for keeps the checklist alone.
 The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.
 The avatar picker offers only unlocked characters, plus the one the Agent already shows; the rest appear as eggs.
 A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first opens the picker; the dots stay while that picker is open, so the user sees which characters are new.

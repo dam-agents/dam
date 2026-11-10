@@ -51,7 +51,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
   I'm Dambledore, your new personal DAM agent!* — and under it a few **first tasks** (*Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste*, *Remember I like answers short and technical*).
   A click on a first task fills the message box and sends nothing; the box itself hints one of them while it is empty.
   A person whose assistant has never been used lands in its chat instead of Home, whatever it is called; the greeting is gone once it has had a conversation, so a New chat opens on the ordinary new-chat page.
-  With it on, Experimental features offers **Reset user onboarding** directly under the assistant's row: it asks first, deletes nothing, starts the Get started checklist over (counting its own create task as done), takes the account back to a first-open arrival, and gives the account a new Dambledore when the one the platform made is gone and the name is free — the Dambledore they still have, even renamed, is reused and greets them again.
+  Experimental features ends with one **Onboarding progress** card — *Restarts your onboarding.
+  Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done (its avatar stays unlocked, as a first-timer's is).
+  For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dambledore the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
+  For an account it is off for the card does the checklist alone and leaves the account where it is.
 
 ## What the nested install cannot do
 
