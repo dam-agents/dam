@@ -11,6 +11,7 @@ it("answers the rules that wait and those the owner blocked", async () => {
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
+    spawningSession: async () => null,
     readAgent: async (id: string) =>
       id === "driver-1"
         ? {
