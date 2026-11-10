@@ -21,7 +21,7 @@ export {
   type SpawnSlateOptions,
   type RunOptions,
 } from "./sub-agent.js";
-export { type Inheritance } from "./spawn.js";
+export { type Inheritance, type Stoppable } from "./spawn.js";
 export {
   spawnScript,
   ScriptOutput,

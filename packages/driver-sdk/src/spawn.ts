@@ -45,6 +45,11 @@ export type Setup = Pick<
   "harness" | "image" | "seed" | "install" | "env" | "resources" | "skills"
 >;
 
+// UNIT_BOUNDARY_DESCRIPTION: a signal that stops a one-off sub-agent when it aborts, and every sub-agent it started in turn; the call then throws the signal's reason, and an abort before the spawn spawns nothing. A string reason (abort("why")) is the stop's reason, which a spawn with keep needs.
+export interface Stoppable {
+  signal?: AbortSignal;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: what a sub-agent takes from this driver and how long it stays: its connections ("none", the default, only its model; "parent", all of the driver's kept in step; or ids copied once), its egress ("parent", the default; "open" or {open: rules}; {scoped: hosts}), and with keep, that it outlives its result until keepForMs, sleeping after idleTimeoutMin minutes idle (the install's default otherwise). onSpawned gets its id at once, so a kept one can be entered or run in later.
 export interface Inheritance {
   connections?: SpawnInvocationRequest["connections"];
@@ -74,7 +79,7 @@ export function inheritanceBody(
   };
 }
 
-export interface SpawnOptions extends Setup, Inheritance {
+export interface SpawnOptions extends Setup, Inheritance, Stoppable {
   prompt: string;
   schema: SchemaSpec;
   label?: string;
@@ -104,6 +109,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     env,
     resources,
     skills,
+    signal,
   } = opts;
 
   if (!prompt) throw new Error("spawn: `prompt` is required");
@@ -144,6 +150,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     };
   }
 
+  signal?.throwIfAborted();
   const { id } = await req<SpawnInvocationResponse>(
     "POST",
     "/invocations",
@@ -154,7 +161,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   log(`spawned ${tag} -> ${id}`);
   opts.onSpawned?.(id);
 
-  const view = await awaitInvocation(id, tag, { pollMs, timeoutMs });
+  const view = await awaitInvocation(id, tag, { pollMs, timeoutMs, signal });
   if (view.status === "failed") {
     log(
       `failed ${tag} (${id})${view.errorReason ? `: ${view.errorReason}` : ""}`,
@@ -172,12 +179,18 @@ export function defaultTimeoutMs(ttlMs: number | undefined): number {
 export async function awaitInvocation(
   id: string,
   tag: string,
-  opts: { pollMs: number; timeoutMs: number },
+  opts: { pollMs: number; timeoutMs: number; signal?: AbortSignal },
 ): Promise<InvocationView & { status: "done" | "failed" }> {
   const deadline = Date.now() + opts.timeoutMs;
   let consecutiveErrors = 0;
   let waiting: string | undefined;
   for (;;) {
+    if (opts.signal?.aborted) {
+      const why: unknown = opts.signal.reason;
+      await stopInvocation(id, typeof why === "string" ? why : undefined);
+      log(`stopped ${tag} (${id})`);
+      opts.signal.throwIfAborted();
+    }
     let view: InvocationView;
     try {
       view = await req<InvocationView>(
@@ -187,7 +200,7 @@ export async function awaitInvocation(
       consecutiveErrors = 0;
     } catch (err) {
       if (++consecutiveErrors >= 5) throw err;
-      await sleep(opts.pollMs);
+      await sleep(opts.pollMs, opts.signal);
       continue;
     }
     if (view.status === "done" || view.status === "failed")
@@ -201,6 +214,18 @@ export async function awaitInvocation(
         `spawn ${tag} (${id}) timed out after ${Math.round(opts.timeoutMs / 1000)}s`,
       );
     }
-    await sleep(opts.pollMs);
+    await sleep(opts.pollMs, opts.signal);
   }
+}
+
+export async function stopInvocation(
+  id: string,
+  reason?: string,
+): Promise<boolean> {
+  const { stopped } = await req<{ stopped: boolean }>(
+    "POST",
+    `/invocations/${encodeURIComponent(id)}/stop`,
+    reason !== undefined ? { reason } : {},
+  );
+  return stopped;
 }

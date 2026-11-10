@@ -11,6 +11,7 @@ import {
   defaultTimeoutMs,
   inheritanceBody,
   InvocationFailed,
+  stopInvocation,
   type Inheritance,
   type Setup,
 } from "./spawn.js";
@@ -36,7 +37,9 @@ export interface RunOptions {
  * when it is removed. A kept one takes several runs at once, each awaited on
  * its own. A prompt run continues the conversation of the latest prompt run
  * unless it names another session (lastSession holds the one each run ran
- * in), or "new" for a fresh one.
+ * in), or "new" for a fresh one. stop() ends its runs and every sub-agent it
+ * started in turn; a kept one keeps its conversation and is stopped only with
+ * a reason, which its user reads.
  */
 export class SubAgent {
   lastSession: string | undefined;
@@ -100,6 +103,14 @@ export class SubAgent {
       },
     );
     return new Date(keepUntil);
+  }
+
+  async stop(reason?: string): Promise<boolean> {
+    const stopped = await stopInvocation(this.id, reason);
+    log(
+      `${stopped ? "stopped" : "nothing running in"} ${this.tag} (${this.id})`,
+    );
+    return stopped;
   }
 
   async wake(): Promise<void> {
