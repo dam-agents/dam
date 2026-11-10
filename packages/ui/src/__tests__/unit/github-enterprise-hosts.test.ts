@@ -404,6 +404,27 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     scroll.mockRestore();
   });
 
+  // TEST_SCENARIO: a user who chooses "Another host…" and then types a host the install offers must get that host's own app back, not be asked for their own; the form switches back once the field loses focus.
+  it("switches back when another host is an offered one", async () => {
+    renderSingle();
+    click(byTestId("connection-host-switch"));
+    type("connection-field-host-other", `https://${ONE_HOST.toUpperCase()}/`);
+    act(() => {
+      byTestId("connection-field-host-other")!.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true }),
+      );
+    });
+    expect(byTestId("connection-field-host-other")).toBeNull();
+    expect(byTestId("connection-field-host")?.textContent).toContain(ONE_HOST);
+    expect(byTestId("connection-field-clientId")).toBeNull();
+    click(byTestId("connection-create-submit"));
+    await settle();
+    expect(fake.submitted).toEqual([
+      expect.objectContaining({ host: ONE_HOST }),
+    ]);
+    expect(fake.submitted[0]).not.toHaveProperty("clientId");
+  });
+
   // TEST_SCENARIO: a "Required" error from an empty other host must not stay under the field once the user goes back to an offered host.
   it("clears a stale error when the host choice changes", async () => {
     renderSingle();

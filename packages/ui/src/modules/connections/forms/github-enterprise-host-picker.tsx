@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 import { getBrand } from "../../../brand.js";
-import { ANOTHER_HOST } from "../lib/github-enterprise-hosts.js";
+import { ANOTHER_HOST, hostnameOf } from "../lib/github-enterprise-hosts.js";
 import type { TemplateFormValues } from "../lib/template-form-schema.js";
 import { GHE_HOST_CHOICE_HINT, placeholderFor } from "./field-copy.js";
 
@@ -86,7 +86,11 @@ export function GitHubEnterpriseHostPicker({
                 placeholder={placeholderFor("github-enterprise", "host")}
                 value={field.value ?? ""}
                 onChange={(e) => field.onChange(e.target.value)}
-                onBlur={field.onBlur}
+                onBlur={() => {
+                  field.onBlur();
+                  const typed = hostnameOf(field.value ?? "");
+                  if (hosts.includes(typed)) onPick(typed);
+                }}
               />
             </FormField>
           )}
