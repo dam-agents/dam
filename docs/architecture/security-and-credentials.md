@@ -270,7 +270,7 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 
 Each credentialed request goes through an ext_authz Check call against the api-server.
 Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`), bound to the waypoint by `istio.io/use-waypoint`.
-The waypoint ALLOWs only the matching SA principal, on that Service's own gRPC authority, so by the time a Check arrives the calling Agent is already proven cryptographically.
+The waypoint ALLOWs only the matching SA principal, on that Service's own gRPC authority, so a Check that comes through the waypoint carries a proven Agent.
 The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
 Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
