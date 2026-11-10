@@ -45,6 +45,11 @@ import {
 import { withSubagentEffort } from "../domain/subagent-effort.js";
 import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
+import {
+  imageNote,
+  refusesImages,
+  withoutImages,
+} from "../domain/image-blocks.js";
 import { createSseModelRewrite, rewriteBody } from "../domain/model-rewrite.js";
 import {
   createUsageScanner,
@@ -231,14 +236,18 @@ const keep = keepHeaders;
  * harness process points its one base URL at. It resolves each call's model
  * to a catalog entry and forwards the call to that provider Connection's host
  * with the Connection's credential placeholder, which Envoy swaps for the
- * key; the client's own credential never leaves the pod. No retries: a
- * second model call is a second bill.
+ * key; the client's own credential never leaves the pod. No retries, since
+ * a second model call is a second bill, but one: a model that refuses a call
+ * for its images gets it once more with each image as a text note, and the
+ * router keeps the model as text-only, so later calls go without them from
+ * the start.
  */
 export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
   const wantPort = deps.port ?? MODEL_ROUTER_DEFAULT_PORT;
   let port = wantPort;
   const sessionModels = new Map<string, SessionModelChoice>();
+  const textOnlyModels = new Set<string>();
   const choiceOf = (sessionId: string): SessionModelChoice | null =>
     sessionModels.get(sessionId) ?? deps.sessionModelOf?.(sessionId) ?? null;
 
@@ -382,9 +391,13 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       : body;
     const prepared =
       deps.prepareBody?.(asked, { entry, dialect, stream }) ?? asked;
-    const outgoing = Buffer.from(
-      JSON.stringify({ ...prepared, model: entry.upstreamId }),
-    );
+    const modelKey = `${entry.connectionId}/${entry.upstreamId}`;
+    const imageless = (): Record<string, unknown> | null =>
+      withoutImages(prepared, dialect, imageNote(entry.upstreamId));
+    const known = textOnlyModels.has(modelKey) ? imageless() : null;
+    let sent = known ?? prepared;
+    const outgoing = (): Buffer =>
+      Buffer.from(JSON.stringify({ ...sent, model: entry.upstreamId }));
     const headers: Record<string, string> = {
       ...keep(Object.entries(req.headers), REQ_DROP),
       "content-type": "application/json",
@@ -393,7 +406,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       headers[wire.credential.header] = wire.credential.value;
     if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
     if (booked && STAMP_VALUE.test(booked)) headers[SESSION_HEADER] = booked;
-    const callId = randomUUID();
+    let callId = randomUUID();
     headers[CALL_HEADER] = callId;
     const beta = anthropicBetaFor(
       headers["anthropic-beta"],
@@ -407,10 +420,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const trace = traceOf(req.headers.traceparent);
     let recorded = false;
     let upstreamHeaders: Headers | null = null;
-    const record = (status: number, usage: ModelUsage | null): void => {
-      if (recorded) return;
-      recorded = true;
-      deps.onCallEnded?.(session, status < 400);
+    const report = (status: number, usage: ModelUsage | null): void => {
       if (!billed) return;
       const uncounted: UncountedReason | null =
         usage === null
@@ -440,6 +450,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         trace,
       });
     };
+    const record = (status: number, usage: ModelUsage | null): void => {
+      if (recorded) return;
+      recorded = true;
+      deps.onCallEnded?.(session, status < 400);
+      report(status, usage);
+    };
     let streamed: { usage(): ModelUsage | null; completed(): boolean } | null =
       null;
     let upstreamStatus = 499;
@@ -464,14 +480,38 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
 
     deps.onCallStarted?.(session);
     if (res.destroyed) return record(499, null);
-    let upstream: Response;
-    try {
-      upstream = await doFetch(upstreamUrl(wire, dialect, path, search), {
+    const send = (): Promise<Response> =>
+      doFetch(upstreamUrl(wire, dialect, path, search), {
         method: "POST",
         headers,
-        body: outgoing,
+        body: outgoing(),
         signal: ac.signal,
       });
+    let upstream: Response;
+    let refusalText: string | null = null;
+    try {
+      upstream = await send();
+      if (
+        upstream.status >= 400 &&
+        !upstream.headers.has(PLATFORM_REFUSAL_HEADER)
+      ) {
+        refusalText = await upstream.text().catch(() => "");
+        const retry =
+          known === null && refusesImages(refusalText) ? imageless() : null;
+        if (retry) {
+          textOnlyModels.add(modelKey);
+          deps.log(
+            `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: the model takes no images, sent again without them`,
+          );
+          upstreamHeaders = upstream.headers;
+          report(upstream.status, null);
+          sent = retry;
+          callId = randomUUID();
+          headers[CALL_HEADER] = callId;
+          refusalText = null;
+          upstream = await send();
+        }
+      }
     } catch (err) {
       if (ac.signal.aborted) return record(499, null);
       const reason =
@@ -490,7 +530,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const contentType = upstream.headers.get("content-type") ?? "";
     const isSse = contentType.includes("text/event-stream");
     if (upstream.status >= 400) {
-      const text = await upstream.text().catch(() => "");
+      const text = refusalText ?? (await upstream.text().catch(() => ""));
       deps.log(
         `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
       );

@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -197,24 +197,24 @@ A routed harness answers its model list from the catalog; `harnessConfig.catalog
 
 ## The Model Router
 
-agent-runtime runs one **Model Router** per agent, a loopback HTTP listener (`127.0.0.1:24180`, `PLATFORM_MODEL_ROUTER_PORT`) every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
+agent-runtime runs one **Model Router** per agent, a loopback HTTP listener every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
 It passes through and never translates: the path classifies the dialect (`/v1/messages` and `count_tokens`: Messages; `/v1/chat/completions`: chat; `/v1/responses`: Responses; doubled slashes, pi-ai's `/v1/v1/` and Bob's `/inference` prefix folded first), the `model` resolves to a catalog entry, and the call leaves for that entry's Connection only when it serves the dialect, else it is refused with the reason.
 A qualified name resolves outright, case-insensitively on the upstream id; a bare name is looked for on the session's provider, then the harness's default provider, then the single provider listing it, and refused naming the candidates when several do.
 A bare name no provider lists, in either case, falls back to the entry whose upstream id's last `/`-separated segment is that name, compared without case, so a provider fronting a cloud account answers for the exact model it serves under its deployment prefix (`aws/claude-sonnet-5`), and one that does list the bare name keeps it.
 Two ids of one provider that match that way, like two of its deployments, are refused naming both.
 The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` (its `session_id`, or the `_session_<uuid>` an older release ends it with) or its `x-claude-code-session-id` header, with `x-claude-code-agent-id` on a subagent's call, and Pi's `x-platform-session`, which its extension sets to the platform's session id.
 A Claude Code subagent's call belongs to the conversation it runs in when that is a Session, as a rewound Session's copy is, and else to the conversation that one was forked from, as Claude Code's fork subagent runs in a private conversation of its own; the metadata's `parent_session_id` alone marks no subagent, since the copy carries it too.
-In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write (`terminalSessionPins`); Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
+In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write; Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
 A Codex terminal also sends the platform's id in `x-platform-session`, which names the session of a thread that has no pin, such as the TUI's title thread; a chat session starts no naming thread of its own and keeps the title the platform derives from its first prompt.
 Copilot stamps nothing on its calls, so a call from its chat process is routed by its qualified name alone, and its manifest's `sessionFromRunningTurn` books it to the one Copilot session running a turn; while several run at once, the call names no session.
-A Copilot terminal runs under the platform's id (`--session-id`) and sends it in `x-platform-session` through `COPILOT_PROVIDER_HEADERS`.
+A Copilot terminal runs under the platform's id and sends it in `x-platform-session`.
 A call that names no session, such as one from a `claude -p` or a script started in a session's shell, is booked to the session its process inherited; booking never picks the model.
 The router stamps each forwarded call with `x-platform-session` (the session it booked the call to), `x-platform-harness` and a call id, and it never passes the stamp that a harness sent; the gateway's [meter](spend-limits.md#meter) records the stamp and removes it before the provider.
 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
-No retries: a second model call is a second bill.
+No retries, as a second call is a second bill, but one: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
 
@@ -225,12 +225,12 @@ The effort level Claude Code persists, sent as `output_config.effort`, is rewrit
 Beyond the model routes the router serves each harness's **catalog endpoint** in the shape it reads, Claude Code's probe, and Pi's measured session cost from the ledger; before the first listing it answers 503, which a harness retries, and a harness with no router binding gets the same view under plain qualified names, the preferred work model first.
 A Bob call it has no route for (profile, team budget, docs search) goes to the Bob Shell Connection's gateway with its placeholder, outside the [meter](spend-limits.md#meter); the profile loses the region that would move Bob off the router and puts the pinned team and instance first, the agent's env over the Connection's; any other unrouted path gets a 404 and one log line.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for, and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
-Claude Code's tier slots (`ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`, manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
+Claude Code's tier slots (manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
 The router moves such a **side call**, one Claude Code classes as auxiliary, a subagent's, a workflow agent's or a side reply (`x-claude-code-request-class`, sent since the image turns its gateway hint headers on) or stamps with a subagent's id, to the session provider's model of the same tier, else to the session's own model, when it names a tier of another provider, or a model its own provider no longer lists: the tier of the slot the id fills on that provider, the smallest where one id fills several, else the tier its word carries.
 A bare id Claude Code sends for a skill or an agent definition goes the same way when the session's provider lists neither that id nor a deployment of it; a bare id the provider lists resolves as any bare name does, on the session's provider first.
 A main-conversation turn is never moved: it names the model the session was given, and a switch applies from the next turn.
 On a provider whose models carry no tier word, such as Curve Bender, a tier names nothing, so every slot call of a session there runs on the session's own model, whichever provider filled the slot.
-The auto-mode classifier is not a slot call: Claude Code takes its model from its own knob (`CLAUDE_CODE_AUTO_MODE_MODEL`, manifest `classifierModelEnv`), filled with the platform's preferred classifier on the agent's default provider, so the Sonnet slot keeps meaning what it says; a provider listing none leaves the knob unset.
+The auto-mode classifier is not a slot call: Claude Code takes its model from its own knob (manifest `classifierModelEnv`), filled with the platform's preferred classifier on the agent's default provider, so the Sonnet slot keeps meaning what it says; a provider listing none leaves the knob unset.
 The router recognizes that call (auxiliary, no subagent id) and sends it to the session provider's preferred classifier, else to the session's own model; a subagent's or workflow agent's call naming it is work and keeps the side-call rule.
 A session with **server-side auto mode** — a Claude model on a preset flagged `serverAutoMode` (Anthropic and the IBM proxy), and no non-Claude subagent model — leaves the call alone, since that provider answers the check itself.
 The router reads the catalog at each call while the process holds its spawn value, so a replaced listing reaches a running process only when it recycles.
