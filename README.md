@@ -12,7 +12,7 @@ Engineering agents that run your entire stack.<br />
 AI teammates that work with you in Slack.
 </h3>
 
-<p align="center">Packed densely on your Kubernetes.</p>
+<p align="center">An open platform to run them densely on your Kubernetes.</p>
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
@@ -76,7 +76,7 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 - **A microVM for every agent:** Each agent gets its own VM with its own kernel.
   Its VMM is confined with Landlock and seccomp, and each owner's agents run in their own unprivileged pod.
 - **Isolated by design:** Credential isolation, network controls, and optional human approval.
-- **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
+- **Persistent workspaces:** Files, memory, and context survive beyond individual sessions.
 - **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
 - **Built for teams:** Shared agents accessible through Slack, Telegram, web UI, and CLI.
 - **Automate and coordinate:** Scheduled workflows and subagents that can split work across harnesses and models.
