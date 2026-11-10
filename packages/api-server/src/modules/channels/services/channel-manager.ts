@@ -700,6 +700,9 @@ export function createChannelManager(deps: {
       .subscribe((event) => {
         if (slackWorker && isLeader()) {
           slackWorker.start(event.agentId);
+          void slackWorker
+            .notifyClosedBind(event.agentId, event.slackChannelId)
+            .catch(() => {});
         }
       }),
   );

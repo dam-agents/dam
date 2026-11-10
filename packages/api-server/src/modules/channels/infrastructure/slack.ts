@@ -1118,6 +1118,9 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
     teamId: SlackWorkspace,
   ): Promise<SlackConversationLookup>;
   grantedScopesOf(teamId: SlackWorkspace): Promise<string[] | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: tell the person who just bound an Agent into a
+   *  DM the Bridge released that the DM stays closed. */
+  notifyClosedBind(instanceName: string, slackChannelId: string): Promise<void>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   resolveConversationLabels(
@@ -1132,7 +1135,7 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
  * unbind has to release. An unreadable answer counts as closed.
  */
 export type SlackDmReleaseOutcome =
-  "none" | "revoked" | "incomplete" | "failed";
+  "none" | "revoked" | "superseded" | "failed";
 
 export interface SlackDmBridgePort {
   blocks(
@@ -1145,6 +1148,13 @@ export interface SlackDmBridgePort {
     teamId: SlackWorkspace;
     slackChannelId: string;
   }): Promise<SlackDmReleaseOutcome>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the records of an Agent in one conversation
+   *  that are not active, wherever their workspace, so an ordinary bind into a
+   *  DM the Bridge released can tell the person that the DM stays closed. */
+  closedFor(
+    agentId: string,
+    slackChannelId: string,
+  ): Promise<{ teamId: string; dmChannelId: string }[]>;
   /** UNIT_BOUNDARY_DESCRIPTION: the DMs this Bridge recorded in one workspace
    *  that are not finished, so an in-chat unbind can resolve and authorize a
    *  revoke whose binding is already gone. */
@@ -1154,10 +1164,6 @@ export interface SlackDmBridgePort {
   }): Promise<
     { agentId: string; ownerSub: string; state: "active" | "revoking" }[]
   >;
-  /** UNIT_BOUNDARY_DESCRIPTION: a plain rebind of an Agent into a DM the Bridge
-   *  released reopens it, so the ordinary bind command is not a binding nothing
-   *  will admit. */
-  reopenChannel(agentId: string, slackChannelId: string): Promise<void>;
 }
 
 export interface SlackOAuthPending {
@@ -3278,6 +3284,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         );
         await agents().ensureReady(instanceName);
         if (args.isDelivered() || args.isCancelled()) return;
+        /* UNIT_BOUNDARY_DESCRIPTION: the wake can outlive the conversation, so
+         * the release is judged again after it, right before the nudge. */
+        if (
+          await bridgeClosed(
+            instanceName,
+            args.anchorRef.teamId,
+            args.anchorRef.channel,
+          )
+        ) {
+          getLogger().info(
+            { agentId: instanceName, channelId: args.anchorRef.channel },
+            "slack.turn.recovery_skipped: the conversation was released",
+          );
+          return;
+        }
         const before = disposition();
         beginTurn(instanceName, args.anchorRef);
         try {
@@ -6107,14 +6128,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               return;
             }
             /* UNIT_BOUNDARY_DESCRIPTION: the DM may have been revoked while the
-             * machinery woke or waited; nothing is prompted on a permit that
-             * has gone stale. */
-            if (
-              isDirectMessageId(first.channelId) &&
-              (await bridgeClosed(instanceName, first.teamId, first.channelId))
-            )
-              return;
-            const prompt = await ownedTurnPrompt(gw, instanceName, batch);
+             * machinery woke or waited, so every message is judged again here
+             * by its own destination — the unrelated threads of this batch
+             * still run. */
+            const admitted = await admittedOwned(instanceName, batch);
+            for (const message of batch)
+              if (!admitted.includes(message)) message.release();
+            if (admitted.length === 0) return;
+            const prompt = await ownedTurnPrompt(gw, instanceName, admitted);
             await acp.sendPrompt(prompt, {
               resumeSessionId: sessionId,
               surface: MESSAGE_SURFACE,
@@ -6165,17 +6186,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       steer: async (target, batch, request) => {
         const gw = gateway;
         if (!gw) return "refused";
-        const first = batch[0];
-        if (
-          first &&
-          isDirectMessageId(first.channelId) &&
-          (await bridgeClosed(instanceName, first.teamId, first.channelId))
-        )
-          return "refused";
+        const admitted = await admittedOwned(instanceName, batch);
+        if (admitted.length === 0) return "refused";
         return steerChannelTurn(
           makeAcpClient(instanceName),
           target,
-          await ownedSteerText(gw, instanceName, batch),
+          await ownedSteerText(gw, instanceName, admitted),
           request,
           {
             surface: "slack",
@@ -6210,6 +6226,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   type OwnedRouting =
     { owner: null } | { owner: string; dropped: boolean; rateChecked: boolean };
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: keep only the owned messages whose own
+   * destination still admits the Agent. It is the last thing that happens
+   * before a prompt or a steer, so a batch admitted before a revoke cannot
+   * carry a released DM's content into a running or new turn, and its unrelated
+   * threads are kept rather than dropped with it.
+   */
+  async function admittedOwned(
+    instanceName: string,
+    messages: OwnedPending[],
+  ): Promise<OwnedPending[]> {
+    const kept: OwnedPending[] = [];
+    for (const message of messages) {
+      if (
+        isDirectMessageId(message.channelId) &&
+        (await bridgeClosed(instanceName, message.teamId, message.channelId))
+      )
+        continue;
+      kept.push(message);
+    }
+    return kept;
+  }
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a message in a thread one of an Agent's
@@ -6420,6 +6459,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const who = label ?? "The agent";
     if (outcome === "failed")
       return `Could not close ${who} here, so nothing was changed. Try again in a moment.`;
+    if (outcome === "superseded")
+      return `${who} was connected again while it was being released, so it stays connected.`;
 
     /* UNIT_BOUNDARY_DESCRIPTION: the binding is gone from the worker's point of
      * view whether or not the cleanup finished — a half-done revoke deleted it
@@ -6444,11 +6485,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       slackChannelId: command.channelId,
       ownerSub: record.ownerSub,
     });
-    if (outcome === "incomplete")
-      return (
-        `${who} is closed to turns and deliveries here, but the release did not ` +
-        `finish. Run \`/${brandShort} unbind\` again to finish it.`
-      );
     return `${who} disconnected. The owner can pair it again from the platform when they want it back.`;
   }
 
@@ -7617,6 +7653,37 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       gatewayFailed = false;
       if (!(await ensureGateway()))
         throw new Error("Slack gateway failed to connect");
+    },
+
+    async notifyClosedBind(instanceName: string, slackChannelId: string) {
+      const closed =
+        (await dmBridges?.closedFor(instanceName, slackChannelId)) ?? [];
+      const record = closed[0];
+      const gw = await ensureGateway();
+      if (!record || !gw) return;
+      const info = await gw
+        .getConversationInfo(record.dmChannelId, record.teamId)
+        .catch(() => null);
+      const user = info?.kind === "found" ? info.directMessageUser : null;
+      if (!user) return;
+      /* UNIT_BOUNDARY_DESCRIPTION: the platform speaking, not the Agent — the
+       * one message a released DM may still receive, because it is how the
+       * person who just ran the ordinary bind learns that it stays closed. */
+      await gw
+        .postEphemeral({
+          channel: record.dmChannelId,
+          user,
+          teamId: record.teamId,
+          text:
+            "This DM is connected to the agent, but its DM Bridge release has not been undone, " +
+            "so the agent still does not read or answer here. Its owner can pair it again from the platform.",
+        })
+        .catch((err: unknown) => {
+          getLogger().warn(
+            { agentId: instanceName, error: formatError(err) },
+            "slack.bind.closed_notice_failed",
+          );
+        });
     },
 
     async start(instanceName: string) {

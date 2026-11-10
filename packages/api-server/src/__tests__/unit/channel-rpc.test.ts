@@ -36,6 +36,7 @@ function fakeSlackWorker(): SlackWorker {
     openDirectMessageWith: vi.fn(async () => ({ kind: "not-found" as const })),
     conversationInfoOf: vi.fn(async () => ({ kind: "not-found" as const })),
     grantedScopesOf: vi.fn(async () => null),
+    notifyClosedBind: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),

@@ -38,6 +38,7 @@ export function slackWorkerHarness(
     channelPair?: ChannelPair;
     dmBridges?: SlackDmBridgePort;
     ownedThreads?: SlackOwnedThreads;
+    ensureReady?: () => Promise<void>;
     unbindSlackChannel?: (agentId: string, channelId: string) => Promise<void>;
   } = {},
 ) {
@@ -71,7 +72,7 @@ export function slackWorkerHarness(
   };
   const acp = opts.makeAcp?.(baseAcp) ?? baseAcp;
   const agents = {
-    ensureReady: async () => {},
+    ensureReady: opts.ensureReady ?? (async () => {}),
     get: async (id: string) =>
       agentNames[id]
         ? { id, name: agentNames[id], spec: { whispersOff: false } }

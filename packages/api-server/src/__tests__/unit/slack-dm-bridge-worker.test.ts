@@ -18,7 +18,7 @@ interface BridgeFake {
   port: SlackDmBridgePort;
   releases: { agentId: string; teamId: string; slackChannelId: string }[];
   blockCalls: number;
-  setRelease: (result: "none" | "revoked" | "incomplete" | "failed") => void;
+  setRelease: (result: "none" | "revoked" | "superseded" | "failed") => void;
   setPending: (
     records: {
       agentId: string;
@@ -30,7 +30,7 @@ interface BridgeFake {
 
 function bridgePort(blocked: (channelId: string) => boolean): BridgeFake {
   const state = {
-    release: "revoked" as "none" | "revoked" | "incomplete" | "failed",
+    release: "revoked" as "none" | "revoked" | "superseded" | "failed",
     pending: [] as {
       agentId: string;
       ownerSub: string;
@@ -61,7 +61,7 @@ function bridgePort(blocked: (channelId: string) => boolean): BridgeFake {
         return state.release;
       },
       pendingInChat: async () => state.pending,
-      reopenChannel: async () => {},
+      closedFor: async () => [],
     },
   };
   return fake;
@@ -331,9 +331,212 @@ describe("every path into and out of a revoked DM", () => {
   });
 });
 
+describe("an ordinary bind into a released DM", () => {
+  // TEST_SCENARIO: the binding succeeds and the Bridge stays closed, so the platform tells the person in that DM why it stays quiet.
+  it("tells the person the DM stays closed", async () => {
+    const bridge = bridgePort(() => true);
+    const port = bridge.port;
+    port.closedFor = async () => [
+      { teamId: "", dmChannelId: `D-${OWNER_USER}` },
+    ];
+    const h = slackWorkerHarness({
+      boundChannelId: DM,
+      dmBridges: port,
+      linkedSub: SLACK_HARNESS_OWNER,
+      linkedSlackUsers: [OWNER_USER],
+    });
+    await h.worker.connect();
+    await h.worker.notifyClosedBind("agent-1", DM);
+    const notices = h.gw
+      .readOutbound()
+      .filter((record) => record.kind === "ephemeral");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      channel: `D-${OWNER_USER}`,
+      user: OWNER_USER,
+      text: expect.stringContaining("still does not read or answer here"),
+    });
+  });
+});
+
+describe("barriers: a permit that goes stale while work waits", () => {
+  // TEST_SCENARIO: both messages are admitted while active, the wake takes long enough for the DM to be released, and the prompt that follows keeps the unrelated thread.
+  it("keeps the live thread and drops the released one after a slow wake", async () => {
+    let blocked = false;
+    const bridge = bridgePort((channelId) => blocked && channelId === DM);
+    const ownedThreads: SlackOwnedThreads = createMemorySlackOwnedThreads();
+    for (const [channelId, threadTs] of [
+      [CHANNEL, "222.1"],
+      [DM, "111.1"],
+    ] as const)
+      await ownedThreads.own({
+        channelId,
+        threadTs,
+        teamId: "",
+        agentId: "agent-1",
+        sessionId: "s-1",
+        firstLine: "a thread",
+      });
+    let releaseWake = () => {};
+    const woke = new Promise<void>((resolve) => {
+      releaseWake = resolve;
+    });
+    let wakeEntered = () => {};
+    const woken = new Promise<void>((resolve) => {
+      wakeEntered = resolve;
+    });
+    const h = slackWorkerHarness({
+      boundChannelId: DM,
+      otherBound: [CHANNEL],
+      dmBridges: bridge.port,
+      ownedThreads,
+      linkedSub: SLACK_HARNESS_OWNER,
+      linkedSlackUsers: [OWNER_USER],
+      settleMs: 10,
+      ensureReady: async () => {
+        wakeEntered();
+        await woke;
+      },
+    });
+    await h.worker.connect();
+
+    const first = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: DM,
+      threadTs: "111.1",
+      ts: "333.3",
+      text: "in the released dm",
+    });
+    const second = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: CHANNEL,
+      threadTs: "222.1",
+      ts: "444.4",
+      text: "in the live channel",
+    });
+    await woken;
+    blocked = true;
+    releaseWake();
+    await Promise.all([first, second]);
+    await quiet(60);
+
+    expect(h.prompts).toHaveLength(1);
+    expect(String(h.prompts[0])).toContain("in the live channel");
+    expect(String(h.prompts[0])).not.toContain("released dm");
+  });
+
+  // TEST_SCENARIO: a steer held while the turn runs is filtered too, so only the live thread's message joins it.
+  it("filters a held steer by each message's own destination", async () => {
+    let blocked = false;
+    const bridge = bridgePort((channelId) => blocked && channelId === DM);
+    const ownedThreads: SlackOwnedThreads = createMemorySlackOwnedThreads();
+    for (const [channelId, threadTs] of [
+      [CHANNEL, "222.1"],
+      [DM, "111.1"],
+    ] as const)
+      await ownedThreads.own({
+        channelId,
+        threadTs,
+        teamId: "",
+        agentId: "agent-1",
+        sessionId: "s-1",
+        firstLine: "a thread",
+      });
+    const steered: string[] = [];
+    let releaseTurn = () => {};
+    const turnGate = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    const h = slackWorkerHarness({
+      boundChannelId: DM,
+      otherBound: [CHANNEL],
+      dmBridges: bridge.port,
+      ownedThreads,
+      linkedSub: SLACK_HARNESS_OWNER,
+      linkedSlackUsers: [OWNER_USER],
+      settleMs: 10,
+      makeAcp: (base) => ({
+        ...base,
+        steer: async (_sessionId, batch) => {
+          const text = Array.isArray(batch)
+            ? batch.map(String)
+            : [String(batch)];
+          steered.push(...text);
+          return "injected" as const;
+        },
+        sendPrompt: async (prompt, opts) => {
+          await turnGate;
+          return base.sendPrompt(prompt, opts);
+        },
+      }),
+    });
+    await h.worker.connect();
+
+    const running = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: CHANNEL,
+      threadTs: "222.1",
+      ts: "444.4",
+      text: "the running turn",
+    });
+    await quiet(40);
+    blocked = true;
+    const steering = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: DM,
+      threadTs: "111.1",
+      ts: "555.5",
+      text: "steered from the released dm",
+    });
+    await quiet(40);
+    releaseTurn();
+    await Promise.all([running, steering]);
+    await quiet(60);
+
+    expect(steered.join(" ")).not.toContain("released dm");
+    expect(h.prompts.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // TEST_SCENARIO: the recovery nudge asks again after its wait, so a conversation released in the meantime is not prompted.
+  it("does not nudge a conversation released while the turn was watched", async () => {
+    vi.useFakeTimers();
+    try {
+      let blocked = false;
+      const bridge = bridgePort((channelId) => blocked && channelId === DM);
+      const h = slackWorkerHarness({
+        boundChannelId: DM,
+        dmBridges: bridge.port,
+        linkedSub: SLACK_HARNESS_OWNER,
+        linkedSlackUsers: [OWNER_USER],
+        makeAcp: (base) => ({
+          ...base,
+          turnStatus: async () => "ended" as const,
+        }),
+      });
+      await h.worker.connect();
+
+      const fired = h.gw.fireDirectMessage({
+        user: OWNER_USER,
+        channel: DM,
+        ts: "1.1",
+        text: "hi",
+      });
+      await vi.advanceTimersByTimeAsync(10);
+      await fired;
+      expect(h.prompts).toHaveLength(1);
+
+      blocked = true;
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      expect(h.prompts).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("the in-chat unbind", () => {
   // TEST_SCENARIO: The slash command releases the Bridge record of the DM it ran in and tells the person when that release did not finish.
-  it("runs the release and reports an unfinished one", async () => {
+  it("runs the release and reports a reconnect that superseded it", async () => {
     const bridge = bridgePort(() => false);
     const unbind = vi.fn(async () => {});
     const h = slackWorkerHarness({
@@ -348,8 +551,8 @@ describe("the in-chat unbind", () => {
     bridge.setPending([
       { agentId: "agent-1", ownerSub: SLACK_HARNESS_OWNER, state: "active" },
     ]);
-    bridge.setRelease("incomplete");
-    const incomplete = await h.gw.fireCommand({
+    bridge.setRelease("superseded");
+    const reconnected = await h.gw.fireCommand({
       text: "unbind",
       channelId: DM,
       userId: OWNER_USER,
@@ -359,8 +562,9 @@ describe("the in-chat unbind", () => {
     ]);
     // TEST_SCENARIO: the Bridge's own record released the binding; the unscoped delete never ran.
     expect(unbind).not.toHaveBeenCalled();
-    expect(incomplete).toContain("closed to turns and deliveries");
-    expect(incomplete).toContain("did not finish");
+    expect(reconnected).toContain(
+      "connected again while it was being released",
+    );
 
     bridge.setRelease("revoked");
     const clean = await h.gw.fireCommand({
@@ -369,7 +573,6 @@ describe("the in-chat unbind", () => {
       userId: OWNER_USER,
     });
     expect(clean).toContain("disconnected");
-    expect(clean).not.toContain("did not finish");
     expect(clean).toContain("pair it again from the platform");
   });
 

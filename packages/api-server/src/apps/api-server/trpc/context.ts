@@ -24,12 +24,10 @@ import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { createChannelProfiles } from "../../../modules/channels/infrastructure/channel-profile.js";
 import {
-  deleteEmailIdentityLink,
   findExternalLinksByIdentity,
   findExternalUsersByIdentity,
 } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import { createSlackDmBridgesRepository } from "../../../modules/channels/infrastructure/slack-dm-bridges-repository.js";
-import { createSlackOwnedThreadsRepository } from "../../../modules/channels/infrastructure/slack-owned-threads-repository.js";
 import {
   createSlackDmBridgeService,
   type SlackDmFailureCode,
@@ -192,7 +190,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     memory: config.agentDefaultMemoryLimit,
   };
   const readChatFormPreferences = createChatFormPreferencesReader(db);
-  const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
   const slackDmBridges = createSlackDmBridgesRepository(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
@@ -275,10 +272,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         return agent ? { id: agent.id, name: agent.name } : null;
       },
       bridges: slackDmBridges,
-      releaseOwnedThreads: (agentId, teamId, channelId) =>
-        slackOwnedThreads.forgetChat(agentId, channelId, teamId),
-      unlinkEmailLink: (slackUserId, teamId, ownerSub) =>
-        deleteEmailIdentityLink(db)("slack", slackUserId, teamId, ownerSub),
       announceEmailLink: (slackUserId, sub) =>
         identityLinkService.announceLink("slack", slackUserId, sub),
       postHello: async (agentId, slackChannelId, text) => {
@@ -712,8 +705,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         },
         slackDm: {
           status: () => slackDm.status(user.sub),
-          reopen: (agentId, slackChannelId) =>
-            slackDm.reopen(agentId, slackChannelId),
           connect: async (input) => {
             const result = await slackDm.connect(user.sub, input);
             if (!result.ok)

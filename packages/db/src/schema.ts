@@ -155,6 +155,11 @@ export const slackDmBridges = pgTable(
      * later connect may take over once it goes stale, and a recorded post is
      * never repeated. */
     helloClaimedAt: timestamp("hello_claimed_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the claim's own identity. Recording or
+     * releasing the greeting applies only with the token this claim returned,
+     * so a slow or superseded sender cannot overwrite the bookkeeping of the
+     * attempt that replaced it. */
+    helloClaimToken: text("hello_claim_token"),
     helloPostedAt: timestamp("hello_posted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

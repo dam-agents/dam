@@ -70,6 +70,12 @@ function createMemoryStore() {
   }[] = [];
   const bridges = new Map<string, SlackDmBridge>();
   const calls: string[] = [];
+  const threads: { agentId: string; teamId: string; channelId: string }[] = [];
+  const failures = {
+    threads: false,
+    link: false,
+    hello: "sent" as "sent" | "refused" | "unknown",
+  };
   let failAt: string | null = null;
 
   const key = (agentId: string, teamId: string, dm: string) =>
@@ -146,6 +152,7 @@ function createMemoryStore() {
         state: "active",
         generation: (previous?.generation ?? 0) + 1,
         helloClaimedAt: reopened ? null : (previous?.helloClaimedAt ?? null),
+        helloClaimToken: reopened ? null : (previous?.helloClaimToken ?? null),
         helloPostedAt: reopened ? null : (previous?.helloPostedAt ?? null),
       });
       return {
@@ -167,86 +174,110 @@ function createMemoryStore() {
     async listForAgent(agentId) {
       return [...bridges.values()].filter((b) => b.agentId === agentId);
     },
-    async markRevoking(agentId, teamId, dmChannelId, generation) {
-      calls.push("markRevoking");
-      if (failAt === "markRevoking") throw new Error("mark failed");
-      const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (
-        !record ||
-        record.generation !== generation ||
-        record.state === "revoked"
-      )
-        return false;
-      record.state = "revoking";
-      return true;
+    /* UNIT_BOUNDARY_DESCRIPTION: the store's revoke is one operation, as the
+     * database's is: everything is checked against the generation before any
+     * delete, and a failure leaves every row exactly as it was. */
+    async revokeBridge(input) {
+      calls.push("revokeBridge");
+      const record = bridges.get(
+        key(input.agentId, input.teamId, input.dmChannelId),
+      );
+      if (!record) return { outcome: "absent" as const };
+      if (record.generation !== input.generation || record.state === "revoked")
+        return { outcome: "superseded" as const };
+      if (failAt === "revokeBridge") throw new Error("revoke failed");
+      const before = {
+        state: record.state,
+        bindings: [...bindings],
+        links: new Map(links),
+        threads: threads.length,
+      };
+      try {
+        record.state = "revoking";
+        if (failAt === "releaseBinding")
+          throw new Error("binding release failed");
+        const index = bindings.findIndex(
+          (b) =>
+            b.agentId === input.agentId &&
+            b.teamId === input.teamId &&
+            b.slackChannelId === input.dmChannelId,
+        );
+        if (index >= 0) bindings.splice(index, 1);
+        if (failures.threads) throw new Error("threads release failed");
+        threads.push({
+          agentId: input.agentId,
+          teamId: input.teamId,
+          channelId: input.dmChannelId,
+        });
+        const left = bindings.filter(
+          (b) =>
+            b.teamId === input.teamId && b.slackChannelId === input.dmChannelId,
+        );
+        let linksRemoved = 0;
+        if (left.length === 0) {
+          if (failures.link) throw new Error("link delete failed");
+          const link = links.get(input.slackUserId);
+          if (
+            link &&
+            link.source === "email" &&
+            link.teamId === input.teamId &&
+            link.keycloakSub === input.ownerSub
+          ) {
+            links.delete(input.slackUserId);
+            linksRemoved = 1;
+          }
+        }
+        if (failAt === "markRevoked") throw new Error("final mark failed");
+        record.state = "revoked";
+        return {
+          outcome: "revoked" as const,
+          threadsReleased: threads.length - before.threads,
+          linksRemoved,
+        };
+      } catch (err) {
+        record.state = before.state;
+        bindings.splice(0, bindings.length, ...before.bindings);
+        links.clear();
+        for (const [k, v] of before.links) links.set(k, v);
+        threads.length = before.threads;
+        throw err;
+      }
     },
-    async stillRevoking(agentId, teamId, dmChannelId, generation) {
-      const record = bridges.get(key(agentId, teamId, dmChannelId));
-      return record?.state === "revoking" && record.generation === generation;
-    },
-    async markRevoked(agentId, teamId, dmChannelId, generation) {
-      calls.push("markRevoked");
-      if (failAt === "markRevoked") throw new Error("final mark failed");
-      const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (
-        !record ||
-        record.state !== "revoking" ||
-        record.generation !== generation
-      )
-        return false;
-      record.state = "revoked";
-      return true;
-    },
-    async claimHello(agentId, teamId, dmChannelId) {
+
+    async claimHello(agentId, teamId, dmChannelId, slackUserId) {
       calls.push("claimHello");
       const record = bridges.get(key(agentId, teamId, dmChannelId));
+      void slackUserId;
       if (!record || record.helloPostedAt || record.state !== "active")
-        return false;
-      if (record.helloClaimedAt) return false;
+        return null;
+      if (record.helloClaimedAt) return null;
       record.helloClaimedAt = new Date();
-      return true;
+      const token = `token-${record.generation}-${calls.length}`;
+      record.helloClaimToken = token;
+      return token;
     },
-    async recordHello(agentId, teamId, dmChannelId) {
+    async recordHello(agentId, teamId, dmChannelId, slackUserId, token) {
       const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (!record) return;
+      void slackUserId;
+      if (!record || record.helloClaimToken !== token) return false;
       record.helloPostedAt = new Date();
       record.helloClaimedAt = null;
+      record.helloClaimToken = null;
+      return true;
     },
-    async releaseHello(agentId, teamId, dmChannelId) {
+    async releaseHello(agentId, teamId, dmChannelId, slackUserId, token) {
       const record = bridges.get(key(agentId, teamId, dmChannelId));
-      if (record) record.helloClaimedAt = null;
+      void slackUserId;
+      if (!record || record.helloClaimToken !== token) return false;
+      record.helloClaimedAt = null;
+      record.helloClaimToken = null;
+      return true;
     },
     async listForConversation(teamId, dmChannelId) {
       return [...bridges.values()].filter(
         (record) =>
           record.teamId === teamId && record.dmChannelId === dmChannelId,
       );
-    },
-    async reopenChannel(agentId, slackChannelId) {
-      for (const record of bridges.values()) {
-        if (
-          record.agentId === agentId &&
-          record.dmChannelId === slackChannelId &&
-          record.state !== "active"
-        ) {
-          record.state = "active";
-          record.generation += 1;
-          record.helloPostedAt = null;
-          record.helloClaimedAt = null;
-        }
-      }
-    },
-    async releaseBinding(agentId, teamId, dmChannelId) {
-      calls.push("releaseBinding");
-      if (failAt === "releaseBinding")
-        throw new Error("binding release failed");
-      const index = bindings.findIndex(
-        (b) =>
-          b.agentId === agentId &&
-          b.teamId === teamId &&
-          b.slackChannelId === dmChannelId,
-      );
-      if (index >= 0) bindings.splice(index, 1);
     },
     async bindingsInConversation(teamId, dmChannelId) {
       return bindings
@@ -261,6 +292,8 @@ function createMemoryStore() {
     bindings,
     bridges,
     calls,
+    threads,
+    failures,
     failNext(step: string) {
       failAt = step;
     },
@@ -300,14 +333,11 @@ function harness(opts: HarnessOptions = {}) {
     });
   }
   const hellos: string[] = [];
-  const threads: { agentId: string; teamId: string; channelId: string }[] = [];
   const announced: string[] = [];
-  const failures = {
-    threads: opts.threadsFail ?? false,
-    link: opts.linkDeleteFails ?? false,
-    hello: (opts.helloFails ?? "sent") as "sent" | "refused" | "unknown",
-  };
-  const threadsReleased = new Map<string, number>();
+  const { threads, failures } = memory;
+  failures.threads = opts.threadsFail ?? false;
+  failures.link = opts.linkDeleteFails ?? false;
+  failures.hello = opts.helloFails ?? "sent";
 
   const ports: SlackDmBridgePorts = {
     trustedWorkspaces: opts.trusted ?? [TEAM],
@@ -347,19 +377,6 @@ function harness(opts: HarnessOptions = {}) {
     agentOf: async (agentId, sub) =>
       agentId === AGENT && sub === OWNER ? { id: AGENT, name: "Dammy" } : null,
     bridges: memory.store,
-    releaseOwnedThreads: async (agentId, teamId, channelId) => {
-      threads.push({ agentId, teamId, channelId });
-      if (failures.threads) throw new Error("threads release failed");
-      threadsReleased.set(`${agentId}|${teamId}|${channelId}`, 1);
-      return 1;
-    },
-    unlinkEmailLink: async (slackUserId, teamId) => {
-      if (failures.link) throw new Error("link delete failed");
-      const link = memory.links.get(slackUserId);
-      if (!link || link.source !== "email" || link.teamId !== teamId) return 0;
-      memory.links.delete(slackUserId);
-      return 1;
-    },
     announceEmailLink: (slackUserId, sub) => {
       announced.push(`${slackUserId}|${sub}`);
     },
@@ -375,15 +392,11 @@ function harness(opts: HarnessOptions = {}) {
     memory,
     hellos,
     threads,
-    announced,
     failures,
+    announced,
     ports,
     service: createSlackDmBridgeService(ports),
-    revoker: createSlackDmRevoker({
-      bridges: memory.store,
-      releaseOwnedThreads: ports.releaseOwnedThreads,
-      unlinkEmailLink: ports.unlinkEmailLink,
-    }),
+    revoker: createSlackDmRevoker({ bridges: memory.store }),
   };
 }
 
@@ -472,6 +485,23 @@ describe("slack dm bridge status", () => {
         reason: "no-match",
       });
     }
+  });
+
+  // TEST_SCENARIO: a workspace whose install recorded no organization is not ready at all, so even an owner whose link is proven is refused until it is reinstalled.
+  it("refuses a legacy install before the link or the mailbox is considered", async () => {
+    const h = harness({
+      active: [{ teamId: TEAM, enterpriseId: null }],
+      links: [{ externalUserId: "U0OWNER", teamId: TEAM, source: "oauth" }],
+    });
+    expect(await h.service.status(OWNER)).toEqual({
+      state: "unavailable",
+      reason: "no-trusted-workspace",
+    });
+    expect(h.gw.readEmailLookups()).toEqual([]);
+    expect(await h.service.connect(OWNER, { agentId: AGENT })).toMatchObject({
+      ok: false,
+      code: "unavailable",
+    });
   });
 
   // TEST_SCENARIO: A proven link in a trusted, ready workspace is ready without any lookup, and the destination is the same one on every read.
@@ -698,6 +728,7 @@ describe("a connect racing a revoke", () => {
     const released = await h.revoker.revoke(stale);
     expect(released.ok).toBe(false);
     expect(released.marked).toBe(false);
+    expect("superseded" in released && released.superseded).toBe(true);
     expect(h.memory.bindings).toHaveLength(1);
     expect(h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)?.state).toBe(
       "active",
@@ -762,9 +793,9 @@ describe("slack dm bridge disconnect", () => {
     expect(h.memory.bindings).toEqual([]);
   });
 
-  // TEST_SCENARIO: A failure at each cleanup step — the binding, the threads, the link, the final state — leaves the record revoking, reports the revoke as incomplete, and a retry finishes it without asking Slack anything.
-  it("reports an unfinished revoke and finishes it on retry", async () => {
-    const steps = ["releaseBinding", "threads", "link", "markRevoked"];
+  // TEST_SCENARIO: A revoke is one transaction, so a failure at any step changes nothing at all — the record stays open with its binding — and reports it as unfinished; running it again finishes it without asking Slack anything.
+  it("changes nothing when a revoke fails, and finishes it on retry", async () => {
+    const steps = ["revokeBridge", "markRevoked"];
     for (const step of steps) {
       const h = harness();
       await h.service.connect(OWNER, { agentId: AGENT });
@@ -780,7 +811,8 @@ describe("slack dm bridge disconnect", () => {
       expect(
         h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)?.state,
         step,
-      ).toBe("revoking");
+      ).toBe("active");
+      expect(h.memory.bindings, step).toHaveLength(1);
       expect(h.gw.readEmailLookups()).toEqual([`${TEAM}|owner@example.com`]);
 
       h.memory.recover();
@@ -794,6 +826,10 @@ describe("slack dm bridge disconnect", () => {
       });
       expect(h.memory.bindings, step).toEqual([]);
       expect(h.memory.links.has("U0OWNER"), step).toBe(false);
+      expect(
+        h.memory.bridges.get(`${AGENT}|${TEAM}|D-U0OWNER`)?.state,
+        step,
+      ).toBe("revoked");
     }
   });
 
@@ -820,6 +856,7 @@ describe("slack dm bridge disconnect", () => {
       state: "active",
       generation: 1,
       helloClaimedAt: null,
+      helloClaimToken: null,
       helloPostedAt: new Date(),
     });
     h.memory.bindings.push({
@@ -876,14 +913,14 @@ describe("the in-chat unbind", () => {
     ).toBe("none");
     expect(h.memory.calls.filter((c) => c.startsWith("setState"))).toEqual([]);
 
-    h.memory.failNext("releaseBinding");
+    h.memory.failNext("revokeBridge");
     expect(
       await h.revoker.releaseInChat({
         agentId: AGENT,
         teamId: TEAM,
         slackChannelId: "D-U0OWNER",
       }),
-    ).toBe("incomplete");
+    ).toBe("failed");
 
     h.memory.recover();
     expect(

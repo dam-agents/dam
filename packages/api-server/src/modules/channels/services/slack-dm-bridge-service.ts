@@ -109,44 +109,26 @@ export interface SlackDmBridgeStore {
     dmChannelId: string,
   ): Promise<SlackDmBridge | null>;
   listForAgent(agentId: string): Promise<SlackDmBridge[]>;
-  markRevoking(
-    agentId: string,
-    teamId: string,
-    dmChannelId: string,
-    generation: number,
-  ): Promise<boolean>;
-  stillRevoking(
-    agentId: string,
-    teamId: string,
-    dmChannelId: string,
-    generation: number,
-  ): Promise<boolean>;
-  markRevoked(
-    agentId: string,
-    teamId: string,
-    dmChannelId: string,
-    generation: number,
-  ): Promise<boolean>;
   claimHello(
     agentId: string,
     teamId: string,
     dmChannelId: string,
-  ): Promise<boolean>;
+    slackUserId: string,
+  ): Promise<string | null>;
   recordHello(
     agentId: string,
     teamId: string,
     dmChannelId: string,
-  ): Promise<void>;
+    slackUserId: string,
+    token: string,
+  ): Promise<boolean>;
   releaseHello(
     agentId: string,
     teamId: string,
     dmChannelId: string,
-  ): Promise<void>;
-  releaseBinding(
-    agentId: string,
-    teamId: string,
-    dmChannelId: string,
-  ): Promise<void>;
+    slackUserId: string,
+    token: string,
+  ): Promise<boolean>;
   bindingsInConversation(
     teamId: string,
     dmChannelId: string,
@@ -155,7 +137,21 @@ export interface SlackDmBridgeStore {
     teamId: string,
     dmChannelId: string,
   ): Promise<SlackDmBridge[]>;
-  reopenChannel(agentId: string, slackChannelId: string): Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the revoke is one serialized repository
+   * operation — the generation it read is checked, every delete runs under the
+   * user's lock, and only then is the record marked — so a reconnect can never
+   * lose the binding and threads a stale revoke would have deleted. */
+  revokeBridge(input: {
+    agentId: string;
+    teamId: string;
+    dmChannelId: string;
+    slackUserId: string;
+    ownerSub: string;
+    generation: number;
+  }): Promise<
+    | { outcome: "revoked"; threadsReleased: number; linksRemoved: number }
+    | { outcome: "superseded" | "absent" }
+  >;
 }
 
 /**
@@ -186,16 +182,6 @@ export interface SlackDmBridgePorts {
     keycloakSub: string,
   ) => Promise<{ id: string; name: string } | null>;
   bridges: SlackDmBridgeStore;
-  releaseOwnedThreads: (
-    agentId: string,
-    teamId: string,
-    channelId: string,
-  ) => Promise<number>;
-  unlinkEmailLink: (
-    slackUserId: string,
-    teamId: string,
-    ownerSub: string,
-  ) => Promise<number>;
   /* UNIT_BOUNDARY_DESCRIPTION: reports a link this pairing created, for the
    * attribution that reads it; a refused or existing link announces nothing. */
   announceEmailLink: (slackUserId: string, keycloakSub: string) => void;
@@ -221,9 +207,6 @@ export interface SlackDmBridgeService {
     keycloakSub: string,
     input: { agentId: string },
   ): Promise<SlackDmResult<SlackDmDisconnectView>>;
-  /** UNIT_BOUNDARY_DESCRIPTION: a plain connect of an Agent into a DM this
-   *  Bridge released reopens it. */
-  reopen(agentId: string, slackChannelId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: the in-chat unbind, which releases only a DM
    *  this Bridge recorded for that Agent, and reports an unfinished revoke. */
   releaseInChat(input: {
@@ -250,7 +233,7 @@ export interface SlackDmBridgeService {
  * must not claim that anything is closed.
  */
 export type SlackDmReleaseOutcome =
-  "none" | "revoked" | "incomplete" | "failed";
+  "none" | "revoked" | "superseded" | "failed";
 
 function refusal(
   code: SlackDmFailureCode,
@@ -263,25 +246,19 @@ function refusal(
 export interface SlackDmRevokeDeps {
   bridges: Pick<
     SlackDmBridgeStore,
-    | "find"
-    | "markRevoking"
-    | "stillRevoking"
-    | "markRevoked"
-    | "releaseBinding"
-    | "bindingsInConversation"
-    | "listForConversation"
+    "find" | "revokeBridge" | "listForConversation"
   >;
-  releaseOwnedThreads: (
-    agentId: string,
-    teamId: string,
-    channelId: string,
-  ) => Promise<number>;
-  unlinkEmailLink: (
-    slackUserId: string,
-    teamId: string,
-    ownerSub: string,
-  ) => Promise<number>;
 }
+
+export type SlackDmRevokeResult =
+  | { ok: true; marked: boolean; threadsReleased: number; linksRemoved: number }
+  | {
+      ok: false;
+      marked: boolean;
+      superseded: boolean;
+      threadsReleased: number;
+      linksRemoved: number;
+    };
 
 export interface SlackDmRevoker {
   revoke(record: SlackDmBridge): Promise<
@@ -330,67 +307,31 @@ export interface SlackDmRevoker {
  */
 export function createSlackDmRevoker(deps: SlackDmRevokeDeps): SlackDmRevoker {
   async function revoke(record: SlackDmBridge) {
-    const { agentId, teamId, dmChannelId, slackUserId, generation } = record;
-    /* UNIT_BOUNDARY_DESCRIPTION: the state write is not the cleanup's to lose:
-     * if it fails nothing else is deleted and the caller is told the record is
-     * still open, so no one claims the DM is closed when it is not. */
-    const marked = await deps.bridges
-      .markRevoking(agentId, teamId, dmChannelId, generation)
-      .catch(() => false);
-    if (!marked)
+    const released = await deps.bridges
+      .revokeBridge({
+        agentId: record.agentId,
+        teamId: record.teamId,
+        dmChannelId: record.dmChannelId,
+        slackUserId: record.slackUserId,
+        ownerSub: record.ownerSub,
+        generation: record.generation,
+      })
+      .catch(() => ({ outcome: "failed" as const }));
+    if (released.outcome === "revoked")
       return {
-        ok: false as const,
-        marked: false,
-        threadsReleased: 0,
-        linksRemoved: 0,
-      };
-    let threadsReleased = 0;
-    let linksRemoved = 0;
-    try {
-      /* UNIT_BOUNDARY_DESCRIPTION: a connect that reopened this DM in between
-       * owns it now, and a stale revoke stops rather than deleting its work. */
-      const current = () =>
-        deps.bridges.stillRevoking(agentId, teamId, dmChannelId, generation);
-      if (!(await current()))
-        return {
-          ok: false as const,
-          marked: true,
-          threadsReleased,
-          linksRemoved,
-        };
-      await deps.bridges.releaseBinding(agentId, teamId, dmChannelId);
-      threadsReleased = await deps.releaseOwnedThreads(
-        agentId,
-        teamId,
-        dmChannelId,
-      );
-      if (!(await current()))
-        return {
-          ok: false as const,
-          marked: true,
-          threadsReleased,
-          linksRemoved,
-        };
-      const left = await deps.bridges.bindingsInConversation(
-        teamId,
-        dmChannelId,
-      );
-      if (left.length === 0)
-        linksRemoved = await deps.unlinkEmailLink(
-          slackUserId,
-          teamId,
-          record.ownerSub,
-        );
-      await deps.bridges.markRevoked(agentId, teamId, dmChannelId, generation);
-      return { ok: true as const, marked: true, threadsReleased, linksRemoved };
-    } catch {
-      return {
-        ok: false as const,
+        ok: true as const,
         marked: true,
-        threadsReleased,
-        linksRemoved,
+        superseded: false,
+        threadsReleased: released.threadsReleased,
+        linksRemoved: released.linksRemoved,
       };
-    }
+    return {
+      ok: false as const,
+      marked: false,
+      superseded: released.outcome === "superseded",
+      threadsReleased: 0,
+      linksRemoved: 0,
+    };
   }
 
   return {
@@ -401,7 +342,8 @@ export function createSlackDmRevoker(deps: SlackDmRevokeDeps): SlackDmRevoker {
       if (!record) return "none";
       const released = await revoke(record);
       if (released.ok) return "revoked";
-      return released.marked ? "incomplete" : "failed";
+      if (released.superseded) return "superseded";
+      return "failed";
     },
 
     async pendingInChat({ teamId, slackChannelId }) {
@@ -434,8 +376,15 @@ export function createSlackDmBridgeService(
     scopesMissing: boolean;
   }> {
     const active = await deps.activeWorkspaces();
+    /* UNIT_BOUNDARY_DESCRIPTION: an install that recorded no organization is
+     * not ready for the Bridge at all — not even for an owner whose link is
+     * already proven — because the workspace cannot be shown to be the one the
+     * pairing would vouch for. Reinstalling it records the identity. */
     const trusted = deps.trustedWorkspaces.flatMap((teamId) =>
-      active.filter((workspace) => workspace.teamId === teamId),
+      active.filter(
+        (workspace) =>
+          workspace.teamId === teamId && workspace.enterpriseId !== null,
+      ),
     );
     const workspaces: SlackWorkspaceIdentity[] = [];
     let scopesMissing = false;
@@ -528,11 +477,7 @@ export function createSlackDmBridgeService(
     return { ok: true, channelId };
   }
 
-  const revoker = createSlackDmRevoker({
-    bridges: deps.bridges,
-    releaseOwnedThreads: deps.releaseOwnedThreads,
-    unlinkEmailLink: deps.unlinkEmailLink,
-  });
+  const revoker = createSlackDmRevoker({ bridges: deps.bridges });
 
   return {
     status,
@@ -592,9 +537,13 @@ export function createSlackDmBridgeService(
         const otherAgentsBound =
           (await deps.bridges.bindingsInConversation(teamId, dm.channelId))
             .length > 1;
-        if (
-          await deps.bridges.claimHello(input.agentId, teamId, dm.channelId)
-        ) {
+        const helloToken = await deps.bridges.claimHello(
+          input.agentId,
+          teamId,
+          dm.channelId,
+          slackUserId,
+        );
+        if (helloToken) {
           const sent = await deps
             .postHello(
               input.agentId,
@@ -609,8 +558,13 @@ export function createSlackDmBridgeService(
             )
             .catch(() => "unknown" as const);
           if (sent === "sent") {
-            helloPosted = true;
-            await deps.bridges.recordHello(input.agentId, teamId, dm.channelId);
+            helloPosted = await deps.bridges.recordHello(
+              input.agentId,
+              teamId,
+              dm.channelId,
+              slackUserId,
+              helloToken,
+            );
           } else if (sent === "refused") {
             /* UNIT_BOUNDARY_DESCRIPTION: Slack refused, so nothing was posted
              * and the next connect may try again straight away. */
@@ -618,6 +572,8 @@ export function createSlackDmBridgeService(
               input.agentId,
               teamId,
               dm.channelId,
+              slackUserId,
+              helloToken,
             );
           }
         }
@@ -664,10 +620,6 @@ export function createSlackDmBridgeService(
         linksRemoved,
         incomplete,
       };
-    },
-
-    reopen(agentId, slackChannelId) {
-      return deps.bridges.reopenChannel(agentId, slackChannelId);
     },
 
     releaseInChat(input) {

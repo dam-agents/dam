@@ -62,10 +62,6 @@ export interface ChannelsService {
   slackChannelChoices: () => Promise<SlackChannelChoicesView>;
   slackDm: {
     status: () => Promise<SlackDmStatusView>;
-    /* UNIT_BOUNDARY_DESCRIPTION: a plain connect of an Agent into a DM the DM
-     * Bridge released reopens it, so the ordinary bind command is not a binding
-     * nothing will admit. */
-    reopen: (agentId: string, slackChannelId: string) => Promise<void>;
     connect: (input: {
       agentId: string;
       purpose?: string;

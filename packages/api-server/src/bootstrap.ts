@@ -148,7 +148,6 @@ import {
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import { createSlackDmRevoker } from "./modules/channels/services/slack-dm-bridge-service.js";
 import { createSlackDmBridgesRepository } from "./modules/channels/infrastructure/slack-dm-bridges-repository.js";
-import { deleteEmailIdentityLink } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
@@ -1872,20 +1871,14 @@ export async function bootstrap() {
    * every unrelated binding stay, which is why nothing here deletes by
    * conversation alone. */
   const slackDmBridges = createSlackDmBridgesRepository(db);
-  const slackDmRevoker = createSlackDmRevoker({
-    bridges: slackDmBridges,
-    releaseOwnedThreads: (agentId, teamId, channelId) =>
-      slackOwnedThreads.forgetChat(agentId, channelId, teamId),
-    unlinkEmailLink: (slackUserId, teamId, ownerSub) =>
-      deleteEmailIdentityLink(db)("slack", slackUserId, teamId, ownerSub),
-  });
+  const slackDmRevoker = createSlackDmRevoker({ bridges: slackDmBridges });
   const dmBridges: SlackDmBridgePort = {
     blocks: (agentId, teamId, dmChannelId) =>
       slackDmBridges.blocked(agentId, teamId, dmChannelId),
     releaseInChat: (args) => slackDmRevoker.releaseInChat(args),
     pendingInChat: (args) => slackDmRevoker.pendingInChat(args),
-    reopenChannel: (agentId, channelId) =>
-      slackDmBridges.reopenChannel(agentId, channelId),
+    closedFor: (agentId, slackChannelId) =>
+      slackDmBridges.closedFor(agentId, slackChannelId),
   };
 
   const slackWorker = slackGatewayFactory

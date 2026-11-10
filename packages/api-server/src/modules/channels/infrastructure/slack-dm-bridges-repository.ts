@@ -1,5 +1,13 @@
 import type { Db } from "db";
-import { and, channels, eq, identityLinks, slackDmBridges, sql } from "db";
+import {
+  and,
+  channels,
+  eq,
+  identityLinks,
+  slackDmBridges,
+  slackOwnedThreads,
+  sql,
+} from "db";
 import { ChannelType } from "api-server-api";
 import type { Tx } from "../../../core/unit-of-work.js";
 import {
@@ -18,6 +26,7 @@ export interface SlackDmBridge {
   state: SlackDmBridgeState;
   generation: number;
   helloClaimedAt: Date | null;
+  helloClaimToken: string | null;
   helloPostedAt: Date | null;
 }
 
@@ -86,8 +95,29 @@ function toBridge(row: typeof slackDmBridges.$inferSelect): SlackDmBridge {
     state: row.state,
     generation: row.generation,
     helloClaimedAt: row.helloClaimedAt,
+    helloClaimToken: row.helloClaimToken,
     helloPostedAt: row.helloPostedAt,
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The one serialization point for a Slack user's
+ * link and Bridge state. Every write below takes it first, in one fixed order —
+ * this advisory lock, then `identity_links`, then `slack_dm_bridges`, then
+ * `channels`, then `slack_owned_threads` — so writers cannot deadlock against
+ * each other and, more importantly, so the lock exists even when the identity
+ * row does not yet: a connect that inserts the first link and a sign-in that
+ * confirms a different owner then serialize instead of one of them reading an
+ * absence and skipping the retirement the other needed.
+ */
+export async function lockSlackDm(
+  tx: Tx,
+  teamId: string,
+  slackUserId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`slack-dm:${teamId}:${slackUserId}`}, 0))`,
+  );
 }
 
 /**
@@ -112,6 +142,7 @@ export function createSlackDmBridgesRepository(db: Db) {
   ): Promise<SlackDmSettleResult> {
     try {
       const settled = await tx(async (t) => {
+        await lockSlackDm(t, input.teamId, input.slackUserId);
         const linkCreated = input.insertEmailLink
           ? await insertEmailIdentityLinkIfAbsent(t)(
               "slack",
@@ -184,6 +215,21 @@ export function createSlackDmBridgesRepository(db: Db) {
           input.teamId,
           input.dmChannelId,
         );
+
+        /* UNIT_BOUNDARY_DESCRIPTION: whatever this person's other records say,
+         * only the identity just settled here may keep one: a record settled by
+         * an owner or workspace that no longer holds the link is retired in the
+         * same transaction, so a disproved pairing cannot stay open. */
+        await t
+          .update(slackDmBridges)
+          .set({ state: "revoking", updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(slackDmBridges.slackUserId, input.slackUserId),
+              sql`(${slackDmBridges.ownerSub} <> ${input.ownerSub} or ${slackDmBridges.teamId} <> ${input.teamId})`,
+              sql`${slackDmBridges.state} <> 'revoked'`,
+            ),
+          );
 
         const bridge = (
           await t
@@ -273,8 +319,113 @@ export function createSlackDmBridgesRepository(db: Db) {
     return claimed.length > 0;
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Release one recorded pairing in one transaction
+   * under the user's lock: the generation this revoke was read from is checked,
+   * every delete runs while nothing else can write, and only then is the record
+   * marked. A revoke that started before a reconnect therefore deletes nothing
+   * at all, and a failed transaction leaves the record exactly as it was, so
+   * nobody reports a closure or a cleanup that did not happen.
+   */
+  async function revokeBridge(input: {
+    agentId: string;
+    teamId: string;
+    dmChannelId: string;
+    slackUserId: string;
+    ownerSub: string;
+    generation: number;
+  }): Promise<
+    | { outcome: "revoked"; threadsReleased: number; linksRemoved: number }
+    | { outcome: "superseded" | "absent" }
+  > {
+    return tx(async (t) => {
+      await lockSlackDm(t, input.teamId, input.slackUserId);
+      const record = (
+        await t
+          .select()
+          .from(slackDmBridges)
+          .where(
+            and(
+              eq(slackDmBridges.agentId, input.agentId),
+              eq(slackDmBridges.teamId, input.teamId),
+              eq(slackDmBridges.dmChannelId, input.dmChannelId),
+            ),
+          )
+          .limit(1)
+          .for("update")
+      )[0];
+      if (!record) return { outcome: "absent" as const };
+      if (record.generation !== input.generation || record.state === "revoked")
+        return { outcome: "superseded" as const };
+
+      await t
+        .update(slackDmBridges)
+        .set({ state: "revoking", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(slackDmBridges.agentId, input.agentId),
+            eq(slackDmBridges.teamId, input.teamId),
+            eq(slackDmBridges.dmChannelId, input.dmChannelId),
+          ),
+        );
+      await t
+        .delete(channels)
+        .where(
+          and(
+            eq(channels.agentId, input.agentId),
+            slackBindingInConversation(input.teamId, input.dmChannelId),
+          ),
+        );
+      const threads = await t
+        .delete(slackOwnedThreads)
+        .where(
+          and(
+            eq(slackOwnedThreads.agentId, input.agentId),
+            eq(slackOwnedThreads.channelId, input.dmChannelId),
+            eq(slackOwnedThreads.teamId, input.teamId),
+          ),
+        )
+        .returning({ threadTs: slackOwnedThreads.threadTs });
+      const left = await t
+        .select({ agentId: channels.agentId })
+        .from(channels)
+        .where(slackBindingInConversation(input.teamId, input.dmChannelId));
+      const links =
+        left.length === 0
+          ? await t
+              .delete(identityLinks)
+              .where(
+                and(
+                  eq(identityLinks.provider, "slack"),
+                  eq(identityLinks.externalUserId, input.slackUserId),
+                  eq(identityLinks.source, "email"),
+                  eq(identityLinks.teamId, input.teamId),
+                  eq(identityLinks.keycloakSub, input.ownerSub),
+                ),
+              )
+              .returning({ externalUserId: identityLinks.externalUserId })
+          : [];
+      await t
+        .update(slackDmBridges)
+        .set({ state: "revoked", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(slackDmBridges.agentId, input.agentId),
+            eq(slackDmBridges.teamId, input.teamId),
+            eq(slackDmBridges.dmChannelId, input.dmChannelId),
+          ),
+        );
+      return {
+        outcome: "revoked" as const,
+        threadsReleased: threads.length,
+        linksRemoved: links.length,
+      };
+    });
+  }
+
   return {
     settleConnect,
+    revokeBridge,
 
     async find(
       agentId: string,
@@ -301,6 +452,26 @@ export function createSlackDmBridgesRepository(db: Db) {
         .from(slackDmBridges)
         .where(eq(slackDmBridges.agentId, agentId));
       return rows.map(toBridge);
+    },
+
+    async closedFor(
+      agentId: string,
+      channelId: string,
+    ): Promise<{ teamId: string; dmChannelId: string }[]> {
+      const rows = await db
+        .select({
+          teamId: slackDmBridges.teamId,
+          dmChannelId: slackDmBridges.dmChannelId,
+        })
+        .from(slackDmBridges)
+        .where(
+          and(
+            eq(slackDmBridges.agentId, agentId),
+            eq(slackDmBridges.dmChannelId, channelId),
+            sql`${slackDmBridges.state} <> 'active'`,
+          ),
+        );
+      return rows;
     },
 
     async listForConversation(
@@ -341,163 +512,101 @@ export function createSlackDmBridgesRepository(db: Db) {
       return rows[0] === undefined ? false : rows[0].state !== "active";
     },
 
-    /** UNIT_BOUNDARY_DESCRIPTION: close the DM for turns and delivery before
-     *  anything is deleted. Conditional on the generation the revoke read, so a
-     *  connect that happened in between is not closed by a stale revoke. */
-    async markRevoking(
-      agentId: string,
-      teamId: string,
-      dmChannelId: string,
-      generation: number,
-    ): Promise<boolean> {
-      const marked = await db
-        .update(slackDmBridges)
-        .set({ state: "revoking", updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-            eq(slackDmBridges.generation, generation),
-            sql`${slackDmBridges.state} <> 'revoked'`,
-          ),
-        )
-        .returning({ agentId: slackDmBridges.agentId });
-      return marked.length > 0;
-    },
-
-    async stillRevoking(
-      agentId: string,
-      teamId: string,
-      dmChannelId: string,
-      generation: number,
-    ): Promise<boolean> {
-      const rows = await db
-        .select({ state: slackDmBridges.state })
-        .from(slackDmBridges)
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-            eq(slackDmBridges.generation, generation),
-            eq(slackDmBridges.state, "revoking"),
-          ),
-        )
-        .limit(1);
-      return rows.length > 0;
-    },
-
-    async markRevoked(
-      agentId: string,
-      teamId: string,
-      dmChannelId: string,
-      generation: number,
-    ): Promise<boolean> {
-      const marked = await db
-        .update(slackDmBridges)
-        .set({ state: "revoked", updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-            eq(slackDmBridges.generation, generation),
-            eq(slackDmBridges.state, "revoking"),
-          ),
-        )
-        .returning({ agentId: slackDmBridges.agentId });
-      return marked.length > 0;
-    },
-
-    /** UNIT_BOUNDARY_DESCRIPTION: one caller holds the greeting at a time, and a
-     *  claim nobody finished — a process that died between claiming and posting
-     *  — goes stale so a later connect may take it over instead of the greeting
-     *  being stranded forever. */
+    /** UNIT_BOUNDARY_DESCRIPTION: the greeting is claimed, recorded and
+     *  released under the user's lock and owned by the token the claim returns,
+     *  so exactly one attempt may finish: a claim taken over after going stale
+     *  leaves the earlier sender unable to record or release anything, and a
+     *  reconnect's fresh generation cannot have its greeting bookkeeping
+     *  overwritten by the attempt it superseded. */
     async claimHello(
       agentId: string,
       teamId: string,
       dmChannelId: string,
-    ): Promise<boolean> {
-      const claimed = await db
-        .update(slackDmBridges)
-        .set({ helloClaimedAt: sql`now()`, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-            eq(slackDmBridges.state, "active"),
-            sql`${slackDmBridges.helloPostedAt} is null`,
-            sql`(${slackDmBridges.helloClaimedAt} is null or ${slackDmBridges.helloClaimedAt} < now() - interval '5 minutes')`,
-          ),
-        )
-        .returning({ agentId: slackDmBridges.agentId });
-      return claimed.length > 0;
+      slackUserId: string,
+    ): Promise<string | null> {
+      return tx(async (t) => {
+        await lockSlackDm(t, teamId, slackUserId);
+        const token = crypto.randomUUID();
+        const claimed = await t
+          .update(slackDmBridges)
+          .set({
+            helloClaimedAt: sql`now()`,
+            helloClaimToken: token,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(slackDmBridges.agentId, agentId),
+              eq(slackDmBridges.teamId, teamId),
+              eq(slackDmBridges.dmChannelId, dmChannelId),
+              eq(slackDmBridges.state, "active"),
+              sql`${slackDmBridges.helloPostedAt} is null`,
+              sql`(${slackDmBridges.helloClaimedAt} is null or ${slackDmBridges.helloClaimedAt} < now() - interval '5 minutes')`,
+            ),
+          )
+          .returning({ agentId: slackDmBridges.agentId });
+        return claimed.length > 0 ? token : null;
+      });
     },
 
     async recordHello(
       agentId: string,
       teamId: string,
       dmChannelId: string,
-    ): Promise<void> {
-      await db
-        .update(slackDmBridges)
-        .set({
-          helloPostedAt: sql`now()`,
-          helloClaimedAt: null,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-          ),
-        );
+      slackUserId: string,
+      token: string,
+    ): Promise<boolean> {
+      return tx(async (t) => {
+        await lockSlackDm(t, teamId, slackUserId);
+        const recorded = await t
+          .update(slackDmBridges)
+          .set({
+            helloPostedAt: sql`now()`,
+            helloClaimedAt: null,
+            helloClaimToken: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(slackDmBridges.agentId, agentId),
+              eq(slackDmBridges.teamId, teamId),
+              eq(slackDmBridges.dmChannelId, dmChannelId),
+              eq(slackDmBridges.helloClaimToken, token),
+            ),
+          )
+          .returning({ agentId: slackDmBridges.agentId });
+        return recorded.length > 0;
+      });
     },
 
-    /** UNIT_BOUNDARY_DESCRIPTION: give the claim back only when Slack certainly
-     *  did not take the greeting — a refused or unreachable call. An answer
-     *  nobody saw is left claimed, so the next attempt waits for the claim to
-     *  go stale rather than risk posting the greeting twice. */
     async releaseHello(
       agentId: string,
       teamId: string,
       dmChannelId: string,
-    ): Promise<void> {
-      await db
-        .update(slackDmBridges)
-        .set({ helloClaimedAt: null, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.teamId, teamId),
-            eq(slackDmBridges.dmChannelId, dmChannelId),
-          ),
-        );
-    },
-
-    /** UNIT_BOUNDARY_DESCRIPTION: a plain rebind of an Agent into a DM the
-     *  Bridge released reopens that record, so a person who runs the ordinary
-     *  bind command is not left with a binding nothing will admit. */
-    async reopenChannel(agentId: string, channelId: string): Promise<void> {
-      await db
-        .update(slackDmBridges)
-        .set({
-          state: "active",
-          generation: sql`${slackDmBridges.generation} + 1`,
-          helloPostedAt: null,
-          helloClaimedAt: null,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(slackDmBridges.agentId, agentId),
-            eq(slackDmBridges.dmChannelId, channelId),
-            sql`${slackDmBridges.state} <> 'active'`,
-          ),
-        );
+      slackUserId: string,
+      token: string,
+    ): Promise<boolean> {
+      return tx(async (t) => {
+        await lockSlackDm(t, teamId, slackUserId);
+        const released = await t
+          .update(slackDmBridges)
+          .set({
+            helloClaimedAt: null,
+            helloClaimToken: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(slackDmBridges.agentId, agentId),
+              eq(slackDmBridges.teamId, teamId),
+              eq(slackDmBridges.dmChannelId, dmChannelId),
+              eq(slackDmBridges.helloClaimToken, token),
+              sql`${slackDmBridges.helloPostedAt} is null`,
+            ),
+          )
+          .returning({ agentId: slackDmBridges.agentId });
+        return released.length > 0;
+      });
     },
 
     /** UNIT_BOUNDARY_DESCRIPTION: the binding release a revoke needs, scoped by

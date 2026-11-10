@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import { identityLinks, eq, and, asc, sql, slackDmBridges } from "db";
 import { securityLog } from "../../../core/security-log.js";
+import { lockSlackDm } from "./slack-dm-bridges-repository.js";
 import type { Tx } from "../../../core/unit-of-work.js";
 
 export type IdentityLinkSource = "oauth" | "email";
@@ -148,12 +149,17 @@ export function deleteEmailIdentityLink(db: Db | Tx) {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A Keycloak sign-in proves who a Slack user is, and
- * it overwrites whatever an email pairing guessed. When it moves that Slack
- * user to another owner — or another workspace — the previous owner's Bridge
- * records for that person are closed in the same transaction, before the
- * replacement is visible: otherwise the DM the pairing bound would keep reaching
- * the previous owner's Agent and its key. A sign-in by the same owner only
- * promotes the link and leaves the Bridge working.
+ * it overwrites whatever an email pairing guessed. It runs under the same
+ * serialization every Bridge write takes — the advisory lock on the workspace
+ * and the Slack user, which exists even before the row does — so a connect that
+ * inserts the first link and a sign-in that proves another owner cannot each
+ * read their own moment and skip the other's work.
+ *
+ * Under that lock the identity it settled is read back and every Bridge record
+ * of the person that does not match it is retired in the same transaction:
+ * whatever a pairing bound for a previous owner, or in another workspace, stops
+ * admitting turns before the replacement is visible. A sign-in by the same
+ * owner only promotes the link and leaves the Bridge working.
  */
 export function upsertIdentityLink(db: Db) {
   return async (
@@ -163,63 +169,71 @@ export function upsertIdentityLink(db: Db) {
     teamId?: string,
   ): Promise<void> => {
     await db.transaction(async (tx) => {
-      const previous = (
+      if (provider === "slack") {
+        await lockSlackDm(tx, teamId ?? "", externalUserId);
+        const previous = (
+          await tx
+            .select({
+              keycloakSub: identityLinks.keycloakSub,
+              teamId: identityLinks.teamId,
+            })
+            .from(identityLinks)
+            .where(
+              and(
+                eq(identityLinks.provider, provider),
+                eq(identityLinks.externalUserId, externalUserId),
+              ),
+            )
+            .limit(1)
+        )[0];
+        if (
+          previous !== undefined &&
+          (previous.keycloakSub !== keycloakSub ||
+            (teamId !== undefined && previous.teamId !== teamId))
+        )
+          securityLog("warn", "identity.link.reassigned", {
+            category: "channel",
+            actor: keycloakSub,
+            actorKind: "user",
+            surface: "slack",
+            decision: "deny",
+            reason: "identity-reassigned",
+            detail: { previousOwner: previous.keycloakSub },
+          });
+      }
+      const settled = (
         await tx
-          .select({
+          .insert(identityLinks)
+          .values({
+            provider,
+            externalUserId,
+            keycloakSub,
+            teamId,
+            source: "oauth",
+          })
+          .onConflictDoUpdate({
+            target: [identityLinks.provider, identityLinks.externalUserId],
+            set:
+              teamId === undefined
+                ? { keycloakSub, source: "oauth" }
+                : { keycloakSub, teamId, source: "oauth" },
+          })
+          .returning({
             keycloakSub: identityLinks.keycloakSub,
             teamId: identityLinks.teamId,
           })
-          .from(identityLinks)
-          .where(
-            and(
-              eq(identityLinks.provider, provider),
-              eq(identityLinks.externalUserId, externalUserId),
-            ),
-          )
-          .limit(1)
-          .for("update")
       )[0];
-      const reassigned =
-        previous !== undefined &&
-        (previous.keycloakSub !== keycloakSub ||
-          (teamId !== undefined && previous.teamId !== teamId));
-      if (reassigned) {
-        await tx
-          .update(slackDmBridges)
-          .set({ state: "revoking", updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(slackDmBridges.ownerSub, previous!.keycloakSub),
-              eq(slackDmBridges.slackUserId, externalUserId),
-              sql`${slackDmBridges.state} <> 'revoked'`,
-            ),
-          );
-        securityLog("warn", "identity.link.reassigned", {
-          category: "channel",
-          actor: keycloakSub,
-          actorKind: "user",
-          surface: "slack",
-          decision: "deny",
-          reason: "identity-reassigned",
-          detail: { previousOwner: previous!.keycloakSub },
-        });
-      }
+      if (provider !== "slack" || settled === undefined) return;
       await tx
-        .insert(identityLinks)
-        .values({
-          provider,
-          externalUserId,
-          keycloakSub,
-          teamId,
-          source: "oauth",
-        })
-        .onConflictDoUpdate({
-          target: [identityLinks.provider, identityLinks.externalUserId],
-          set:
-            teamId === undefined
-              ? { keycloakSub, source: "oauth" }
-              : { keycloakSub, teamId, source: "oauth" },
-        });
+        .update(slackDmBridges)
+        .set({ state: "revoking", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(slackDmBridges.slackUserId, externalUserId),
+            sql`(${slackDmBridges.ownerSub} <> ${settled.keycloakSub} or ${slackDmBridges.teamId} is distinct from ${settled.teamId})`,
+            sql`${slackDmBridges.state} <> 'revoked'`,
+          ),
+        );
     });
   };
 }
