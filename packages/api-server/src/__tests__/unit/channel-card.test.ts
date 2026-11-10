@@ -77,6 +77,26 @@ describe("buildChannelCard", () => {
     expect("issues" in built && built.issues.join(" ")).toMatch(/Table/);
   });
 
+  // TEST_SCENARIO: Slack cuts a header at 150 characters and a field at 2000 without refusing the post, so the reader would lose text no one is told about.
+  it("refuses a title or a field Slack would cut", () => {
+    const built = buildChannelCard({
+      type: "Card",
+      props: { title: "t".repeat(151) },
+      children: [
+        {
+          type: "Fields",
+          props: {},
+          children: [
+            { type: "Field", props: { label: "Log", value: "v".repeat(2001) } },
+          ],
+        },
+      ],
+    });
+    const issues = "issues" in built ? built.issues.join(" ") : "";
+    expect(issues).toMatch(/title holds 151 characters/);
+    expect(issues).toMatch(/Field "Log"/);
+  });
+
   // TEST_SCENARIO: A channel has no way yet for a click to reach the agent, so a button that sends a choice back would do nothing.
   it("refuses a button that sends a choice back", () => {
     const built = buildChannelCard({

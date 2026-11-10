@@ -24,6 +24,10 @@ export const CARD_LIMITS = {
 
 export const LINK_BUTTONS_PER_ROW = 25;
 
+export const TITLE_CHARS = 150;
+
+export const FIELD_CHARS = 2000;
+
 const INTERACTIVE_NAMES: Record<string, string> = {
   button: "button that sends a choice back",
   select: "select menu",
@@ -72,8 +76,30 @@ function crowdedRows(children: readonly CardChild[]): number[] {
   });
 }
 
+function longFields(children: readonly CardChild[]): string[] {
+  return children.flatMap((child): string[] => {
+    if (child.type === "fields")
+      return child.children
+        .filter(
+          (field) => field.label.length + field.value.length > FIELD_CHARS,
+        )
+        .map((field) => field.label);
+    if (child.type === "section") return longFields(child.children);
+    return [];
+  });
+}
+
 function cardIssues(card: CardElement): string[] {
   return [
+    ...((card.title?.length ?? 0) > TITLE_CHARS
+      ? [
+          `the card title holds ${card.title?.length} characters; Slack shows at most ${TITLE_CHARS}`,
+        ]
+      : []),
+    ...longFields(card.children).map(
+      (label) =>
+        `the Field "${label}" holds more than ${FIELD_CHARS} characters, which Slack cuts; shorten it, or put the long part in a Text`,
+    ),
     ...interactiveParts(card.children).map(
       (type) =>
         `the card holds a ${INTERACTIVE_NAMES[type] ?? type}, which needs a click to reach you, and a channel card cannot carry one yet: use a LinkButton, or ask in the text`,

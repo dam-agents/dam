@@ -23,8 +23,8 @@ Every card is checked before anything posts, and a card that fails comes back as
 Nothing is posted, so the channel never shows half an answer; the agent fixes the card or sends text.
 
 - **Catalog and structure.** Props are checked against each component's schema, and children against where a component may go, by json-render.
-- **Per-message limits.** A card holds what one Slack message can show: one table, two charts, ten fields per group, 100 rows and 20 columns per table, Slack's limits on chart titles, labels, series and points, and 25 link buttons per row.
-  The same limits apply in Telegram, so a card that fits one messenger fits both.
+- **Per-message limits.** A card holds what one Slack message can show: one table, two charts, ten fields per group, 100 rows and 20 columns per table, Slack's limits on chart titles, labels, series and points, 25 link buttons per row, a title of 150 characters and a field of 2000, the lengths past which Slack would cut without refusing.
+  The same limits apply in Telegram, so a card that fits one messenger fits both; Telegram also refuses a text and card longer than one message, or than a file's caption.
 - **No interactive elements.** A channel has no way yet for a click to reach the agent, so a button that sends a choice back, a select menu, radio buttons and a text input are refused; only link buttons remain.
   The rule judges the rendered card, not component names, so an interactive component a later catalog adds is refused too, and the catalog an agent reads leaves out every component whose example renders one.
 - **Artifact links.** An in-app artifact link inside a card becomes the artifact's share URL, under the same rule as links in the text.
@@ -52,18 +52,19 @@ sequenceDiagram
 
 - **Slack.** The agent's text renders as before, the card's blocks follow, and the [Agent Footer](channel-turns.md#the-agent-footer) ends the post.
   The blocks come from Chat SDK's standalone Slack converter on the existing Slack connection, so Slack's own table and chart parts show tables and charts.
-  A card's text and field values are standard Markdown, converted to Slack's mrkdwn so links and emphasis read as they do in the text, and a text too long for one Slack block is split across blocks, never cut.
+  A card's text and field values are standard Markdown, converted to Slack's mrkdwn so links and emphasis read as they do in the text, and a text too long for one Slack block is split across blocks rather than cut.
   When Slack refuses the blocks, such as a part a workspace lacks, an image it cannot fetch or a message too large, the same message goes out once more with the card's text form in place of its blocks, so the answer arrives.
   A message with a file keeps its one-post rule: the share carries the text, the card and the footer where Slack takes them, and otherwise the message goes first and the file after it.
   A whisper's private answer carries the card the same way.
-- **Telegram.** The card goes through the Telegram channel's Chat SDK adapter with the agent's text first: the adapter shows the card's text form and turns each link button into a Telegram button.
+- **Telegram.** The card goes through the Telegram channel's Chat SDK adapter, with the agent's text first and the card's title under it: the adapter shows the card's text form and turns each link button into a Telegram button.
   Telegram has no tables or charts, so they arrive as text.
 
 ## The text form
 
 Every card has a Markdown text form derived from it.
 It is the post's notification text in Slack, the fallback when Slack refuses the blocks, and the reply text the turn records.
-History lines and `read_thread` read an Agent's post with text from that text alone, never again from its blocks, so a card's facts are not repeated.
+History lines and `read_thread` read an Agent's post that opens with its text block from its text alone, so a card's facts are not repeated.
+A post with no text block, an Agent's file share or a card sent alone under the Agent's own name, is read like any other post: its text first, then the block content the text does not already hold, so no content is lost and a few of a card's facts may appear twice.
 
 ## Libraries
 

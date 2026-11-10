@@ -2558,17 +2558,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   function fileShareBlocks(
     markdown: string,
     footerBlock: SlackBlock,
-    card?: ChannelCard,
+    cardBlocks: SlackBlock[] = [],
   ): SlackBlock[] | null {
-    const body = [
-      ...markdownToSections(markdown),
-      ...(card ? slackCardBlocks(card) : []),
-    ];
+    const body = [...markdownToSections(markdown), ...cardBlocks];
     return body.length < SLACK_MAX_BLOCKS ? [...body, footerBlock] : null;
   }
 
   type AgentPost = {
     text: string;
+    cardBlocks: SlackBlock[] | undefined;
     blocks: SlackBlock[];
     asText: SlackBlock[] | null;
     replyText: string;
@@ -2582,9 +2580,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): AgentPost {
     const withCard = (cardText: string) =>
       [text, cardText].filter((part) => part.trim()).join("\n\n");
+    const cardBlocks = card ? slackCardBlocks(card) : undefined;
     return {
       text: sign(card ? withCard(slackCardText(card)) : text, "*"),
-      blocks: renderAssistantBlocks(footer, sign(text, "**"), card),
+      cardBlocks,
+      blocks: renderAssistantBlocks(footer, sign(text, "**"), cardBlocks),
       asText: card
         ? renderAssistantBlocks(footer, sign(withCard(card.text), "**"))
         : null,
@@ -7420,7 +7420,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               ),
             unfurlLinks === false || unfurlMedia === false
               ? null
-              : fileShareBlocks(sign(text, "**"), contextBlock, card),
+              : fileShareBlocks(
+                  sign(text, "**"),
+                  contextBlock,
+                  post.cardBlocks,
+                ),
           ));
         } else if (attachment) {
           try {
@@ -7776,7 +7780,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             : fileShareBlocks(
                 sign(args.text, "**"),
                 agentContextBlock(footer),
-                args.card,
+                post.cardBlocks,
               ),
         );
         noteEngaged(engaged, { messaged: true, replyText: post.replyText });

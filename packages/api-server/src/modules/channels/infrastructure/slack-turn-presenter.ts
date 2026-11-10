@@ -1,9 +1,7 @@
 import type { PromptUpdate } from "../../../core/acp-client.js";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
-import type { ChannelCard } from "../services/worker-contract.js";
 import { agentContextBlock, type AgentFooter } from "./agent-footer.js";
-import { slackCardBlocks } from "./slack-card-blocks.js";
 import type { SlackBlock, SlackGateway } from "./slack-gateway.js";
 
 const THINKING = "is thinking…";
@@ -37,7 +35,7 @@ export interface TurnPresenter {
 export function renderAssistantBlocks(
   footer: AgentFooter,
   text: string,
-  card?: ChannelCard,
+  cardBlocks?: SlackBlock[],
 ): SlackBlock[] {
   const markdown = text
     .replace(/^([ \t]*```)(?!`|[a-z0-9+#-]*[ \t]*$)/gm, "$1\n")
@@ -45,10 +43,10 @@ export function renderAssistantBlocks(
       /```(?<!^[ \t>]*```|```.*```|[^\s`>][ \t]*```[^`]*```)(?<=[^\s`][ \t]*```)[ \t]*$/gm,
       "\n```",
     );
-  const body: SlackBlock[] = card
+  const body: SlackBlock[] = cardBlocks
     ? [
         ...(markdown.trim() ? [{ type: "markdown", text: markdown }] : []),
-        ...slackCardBlocks(card),
+        ...cardBlocks,
       ]
     : [{ type: "markdown", text: markdown || "(no response)" }];
   return [...body, agentContextBlock(footer)];

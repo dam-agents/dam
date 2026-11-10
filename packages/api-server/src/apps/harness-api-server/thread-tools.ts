@@ -31,8 +31,11 @@ export interface ThreadToolPorts {
   audit(
     action: "start" | "leave",
     outcome: { error: string } | { conversationId: string; threadTs: string },
+    detail?: { hasCard: boolean },
   ): void;
 }
+
+export const cardTreeSchema = z.record(z.string(), z.unknown());
 
 const UNIDENTIFIED =
   "this session could not be identified, so it cannot own a thread; post the message with post instead, and its replies open a session of their own.";
@@ -64,8 +67,7 @@ export function registerThreadTools(
         .describe(
           "The opening message, in standard Markdown. Say who should answer, and tag them when they should be notified.",
         ),
-      card: z
-        .record(z.string(), z.unknown())
+      card: cardTreeSchema
         .optional()
         .describe(
           "Optional card shown under the opening message. Call describe_card_components for its components.",
@@ -83,7 +85,7 @@ export function registerThreadTools(
           text,
           ...(built.card ? { card: built.card } : {}),
         });
-        ports.audit("start", result);
+        ports.audit("start", result, { hasCard: built.card !== undefined });
         if ("error" in result) return errorResult(result.error);
         return json({
           chatId: result.conversationId,

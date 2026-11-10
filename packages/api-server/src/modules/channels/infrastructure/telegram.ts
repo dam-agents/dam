@@ -256,18 +256,61 @@ export function telegramPayload(
         },
       ]
     : undefined;
-  if (card)
+  if (card) {
+    const { title, subtitle, ...rest } = card.card;
     return {
-      card: {
-        ...card.card,
-        children: [
-          ...(text.trim() ? [{ type: "text" as const, content: text }] : []),
-          ...card.card.children,
-        ],
-      },
+      card: text.trim()
+        ? {
+            ...rest,
+            children: [
+              { type: "text" as const, content: text },
+              ...(title
+                ? [
+                    {
+                      type: "text" as const,
+                      content: title,
+                      style: "bold" as const,
+                    },
+                  ]
+                : []),
+              ...(subtitle
+                ? [
+                    {
+                      type: "text" as const,
+                      content: subtitle,
+                      style: "muted" as const,
+                    },
+                  ]
+                : []),
+              ...card.card.children,
+            ],
+          }
+        : card.card,
       ...(files ? { files } : {}),
     };
+  }
   return files ? { markdown: text, files } : text;
+}
+
+export const TELEGRAM_MESSAGE_CHARS = 4096;
+
+export const TELEGRAM_CAPTION_CHARS = 1024;
+
+export function telegramCardTooLong(
+  text: string,
+  options?: Pick<PostMessageOptions, "attachment" | "card">,
+): { error: string } | null {
+  const { attachment, card } = options ?? {};
+  if (!card) return null;
+  const limit = attachment ? TELEGRAM_CAPTION_CHARS : TELEGRAM_MESSAGE_CHARS;
+  const length = [text, card.text]
+    .filter((part) => part.trim())
+    .join("\n\n").length;
+  return length > limit
+    ? {
+        error: `With its card the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the card or the text, or send them as two messages.`,
+      }
+    : null;
 }
 
 export interface ThreadLike {
@@ -1117,6 +1160,8 @@ export function createTelegramWorker(deps: {
       if (!bot) return { error: "telegram bot is not running" };
 
       const { conversationId } = options ?? {};
+      const tooLong = telegramCardTooLong(text, options);
+      if (tooLong) return tooLong;
       const payload = telegramPayload(text, options);
 
       if (conversationId) {

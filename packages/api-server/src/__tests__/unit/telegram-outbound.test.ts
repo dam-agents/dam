@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildChannelCard } from "../../modules/channels/infrastructure/channel-card.js";
-import { telegramPayload } from "../../modules/channels/infrastructure/telegram.js";
+import {
+  telegramCardTooLong,
+  telegramPayload,
+} from "../../modules/channels/infrastructure/telegram.js";
 
 /**
  * TEST_OVERVIEW: What an Agent post sends to Telegram through the Chat SDK
@@ -38,15 +41,17 @@ describe("telegramPayload", () => {
     expect(telegramPayload("hello")).toBe("hello");
   });
 
-  it("puts the agent's text first in the card, and keeps its link buttons", () => {
+  // TEST_SCENARIO: the adapter shows a card's title above its children, so the title moves under the agent's text to keep the text first, as in Slack.
+  it("puts the agent's text first, then the card's title, and keeps its link buttons", () => {
     const payload = telegramPayload("This week", { card });
     if (typeof payload === "string" || !("card" in payload))
       throw new Error("expected a card");
-    expect(payload.card.children[0]).toEqual({
-      type: "text",
-      content: "This week",
-    });
-    expect(payload.card.children[1]).toMatchObject({
+    expect(payload.card.title).toBeUndefined();
+    expect(payload.card.children.slice(0, 2)).toEqual([
+      { type: "text", content: "This week" },
+      { type: "text", content: "Deploys", style: "bold" },
+    ]);
+    expect(payload.card.children[2]).toMatchObject({
       type: "actions",
       children: [{ type: "link-button", url: "https://example.com" }],
     });
@@ -63,5 +68,23 @@ describe("telegramPayload", () => {
       "actions",
     ]);
     expect(payload.files?.[0]?.filename).toBe("report.md");
+  });
+});
+
+describe("telegramCardTooLong", () => {
+  // TEST_SCENARIO: the adapter cuts a card message at Telegram's length limit instead of splitting it, so a card that would lose its end is refused before it posts.
+  it("refuses text and card longer than one Telegram message, and a shorter limit beside a file", () => {
+    const long = "x".repeat(3000);
+    expect(telegramCardTooLong(long, { card })).toBeNull();
+    expect(telegramCardTooLong(`${long}${long}`, { card })).toMatchObject({
+      error: expect.stringContaining("4096"),
+    });
+    expect(
+      telegramCardTooLong(long, {
+        card,
+        attachment: { filename: "report.md", data: Buffer.from("x") },
+      }),
+    ).toMatchObject({ error: expect.stringContaining("1024") });
+    expect(telegramCardTooLong(`${long}${long}`)).toBeNull();
   });
 });

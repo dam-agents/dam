@@ -20,6 +20,7 @@ import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
+  ARTIFACT_INTERNAL_LINK_PREFIX,
   ChannelType,
   onceState,
   precheckSchema,
@@ -52,7 +53,7 @@ import {
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { registerSessionMessageTools } from "./session-message-tools.js";
-import { registerThreadTools } from "./thread-tools.js";
+import { cardTreeSchema, registerThreadTools } from "./thread-tools.js";
 import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
@@ -69,8 +70,14 @@ import {
   buildChannelCard,
   CARD_LIMITS,
   cardComponents,
+  FIELD_CHARS,
   LINK_BUTTONS_PER_ROW,
+  TITLE_CHARS,
 } from "../../modules/channels/infrastructure/channel-card.js";
+import {
+  TELEGRAM_CAPTION_CHARS,
+  TELEGRAM_MESSAGE_CHARS,
+} from "../../modules/channels/infrastructure/telegram.js";
 import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
@@ -341,8 +348,7 @@ export function createMcpSession(
       deps.artifactLibrary.get(id),
     );
 
-  const cardInput = z
-    .record(z.string(), z.unknown())
+  const cardInput = cardTreeSchema
     .optional()
     .describe(
       'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
@@ -378,7 +384,9 @@ export function createMcpSession(
     surface: string,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
-    const linked = await linkedValues(tree, surface);
+    const linked = JSON.stringify(tree).includes(ARTIFACT_INTERNAL_LINK_PREFIX)
+      ? await linkedValues(tree, surface)
+      : { value: tree };
     if ("error" in linked) return linked;
     const built = buildChannelCard(linked.value as Record<string, unknown>);
     if ("issues" in built)
@@ -460,10 +468,14 @@ export function createMcpSession(
           channels: {
             slack:
               "Native Slack blocks. Notifications and the history agents read show the card as text.",
-            telegram:
-              "Text, with each LinkButton as a Telegram button. Telegram has no tables or charts, so they arrive as text.",
+            telegram: `Text, with each LinkButton as a Telegram button. Telegram has no tables or charts, so they arrive as text. The text and the card together hold at most ${TELEGRAM_MESSAGE_CHARS} characters, or ${TELEGRAM_CAPTION_CHARS} beside a file.`,
           },
-          limits: { ...CARD_LIMITS, linkButtonsPerRow: LINK_BUTTONS_PER_ROW },
+          limits: {
+            ...CARD_LIMITS,
+            linkButtonsPerRow: LINK_BUTTONS_PER_ROW,
+            titleChars: TITLE_CHARS,
+            fieldChars: FIELD_CHARS,
+          },
           buttons:
             "Only LinkButton: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
           components: cardComponents(),
@@ -1686,7 +1698,7 @@ export function createMcpSession(
       deps.channelManager.listThreads(agentId, channel, sessionId),
     leaveThread: (channel, leave) =>
       deps.channelManager.leaveThread(agentId, channel, leave),
-    audit: (action, outcome) =>
+    audit: (action, outcome, detail) =>
       securityLog(
         "error" in outcome ? "warn" : "info",
         `channel.thread_${action}`,
@@ -1694,11 +1706,12 @@ export function createMcpSession(
           ...channelAudit(ChannelType.Slack),
           result: "error" in outcome ? "failure" : "success",
           ...("error" in outcome
-            ? { reason: outcome.error }
+            ? { reason: outcome.error, ...(detail ? { detail } : {}) }
             : {
                 detail: {
                   conversationId: outcome.conversationId,
                   threadTs: outcome.threadTs,
+                  ...detail,
                 },
               }),
         },
