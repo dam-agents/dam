@@ -21,6 +21,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
 {{- include "platform.validate.templateDefaultsRenamed" . -}}
+{{- include "platform.validate.controllerConfigKeys" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -694,5 +695,56 @@ instead, naming the key to rename.
 {{- define "platform.validate.templateDefaultsRenamed" -}}
 {{- if hasKey .Values.controller.agent "templateDefaults" -}}
 {{- fail "controller.agent.templateDefaults is no longer read: the key was renamed to harnessTemplateDefaults with no alias, so this install would render the chart's defaults instead of its own for every agent built from a harness template. Rename the key to harnessTemplateDefaults in every values file." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS, AGENT_VM and
+GATEWAY_EGRESS with DisallowUnknownFields and exits on a key its structs do not
+declare, so an install whose values carry one renders fine and then crash-loops.
+The declared keys are chart data, controller-config-keys.json, which the config
+package's own test generates from the structs, Kubernetes types included; a key
+under `*` accepts any key or list element beneath it, for a field the decoder
+reads as a free-form map — `limits`, `podLabels`, `nodeSelector`, `devices`.
+AGENT_VM is the chart's own dict, so what a value can put in it is what the
+chart copies wholesale: the pull Secrets, the runner's tolerations, affinity and
+resources.
+*/}}
+{{- define "platform.validate.controllerConfigKeys" -}}
+{{- $keys := .Files.Get "controller-config-keys.json" | fromJson -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.base "keys" $keys.AGENT_BASE "path" "controller.agent.base" "env" "AGENT_BASE") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.harnessTemplateDefaults "keys" $keys.AGENT_HARNESS_TEMPLATE_DEFAULTS "path" "controller.agent.harnessTemplateDefaults" "env" "AGENT_HARNESS_TEMPLATE_DEFAULTS") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.gatewayEgress "keys" $keys.GATEWAY_EGRESS "path" "controller.gatewayEgress" "env" "GATEWAY_EGRESS") -}}
+{{- $runner := .Values.virtualization.runner -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.imagePullSecrets "keys" $keys.AGENT_VM.runner.imagePullSecrets "path" "imagePullSecrets" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.tolerations "keys" $keys.AGENT_VM.runner.tolerations "path" "virtualization.runner.tolerations" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.affinity "keys" $keys.AGENT_VM.runner.affinity "path" "virtualization.runner.affinity" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $runner.resources "keys" $keys.AGENT_VM.runner.resources "path" "virtualization.runner.resources" "env" "AGENT_VM") -}}
+{{- end -}}
+
+{{/*
+One values block against its key list. A list is checked element by element,
+and every key the list does not name fails the render — whether it is a key the
+controller ever read or a typo.
+*/}}
+{{- define "platform.validate.controllerConfigKeysIn" -}}
+{{- if kindIs "map" .keys -}}
+{{- if kindIs "slice" .value -}}
+{{- range $i, $item := .value -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys "*") "path" (printf "%s[%d]" $.path $i) "env" $.env) -}}
+{{- end -}}
+{{- else if kindIs "map" .value -}}
+{{- range $key, $item := .value -}}
+{{- if hasKey $.keys $key -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys $key) "path" (printf "%s.%s" $.path $key) "env" $.env) -}}
+{{- else if hasKey $.keys "*" -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $.keys "*") "path" (printf "%s.%s" $.path $key) "env" $.env) -}}
+{{- else if and (eq $.env "AGENT_BASE") (has $key (list "accessMode" "affinity" "containerSecurityContext" "extraAnnotations" "extraLabels" "idleTimeout" "iptablesInit" "nodeSelector" "npGateInit" "podSecurityContext" "priorityClassName" "probes" "runtimeClassName" "storageClass" "terminationGracePeriod" "tolerations" "topologySpreadConstraints")) -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it configured the agent pod, which went with the container backend, and the controller exits on a key its config does not declare — so this install would crash-loop. Delete it." $.path $key) -}}
+{{- else -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it decodes %s strictly and exits on an unknown field, so this install would crash-loop. Delete it, or fix the spelling." $.path $key $.env) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

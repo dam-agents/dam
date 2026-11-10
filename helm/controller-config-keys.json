@@ -1,0 +1,274 @@
+{
+  "AGENT_BASE": {
+    "imagePullSecrets": null,
+    "vmIdleTimeout": null
+  },
+  "AGENT_HARNESS_TEMPLATE_DEFAULTS": {
+    "env": {
+      "*": {
+        "name": null,
+        "value": null
+      }
+    },
+    "mounts": {
+      "*": {
+        "path": null,
+        "persist": null,
+        "size": null
+      }
+    },
+    "nestedVirtualization": null,
+    "resources": {
+      "claims": {
+        "*": {
+          "name": null,
+          "request": null
+        }
+      },
+      "limits": null,
+      "requests": null
+    },
+    "storageSize": null
+  },
+  "AGENT_VM": {
+    "gateway": {
+      "perOwner": null
+    },
+    "runner": {
+      "affinity": {
+        "nodeAffinity": {
+          "preferredDuringSchedulingIgnoredDuringExecution": {
+            "*": {
+              "preference": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchFields": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                }
+              },
+              "weight": null
+            }
+          },
+          "requiredDuringSchedulingIgnoredDuringExecution": {
+            "nodeSelectorTerms": {
+              "*": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchFields": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "podAffinity": {
+          "preferredDuringSchedulingIgnoredDuringExecution": {
+            "*": {
+              "podAffinityTerm": {
+                "labelSelector": {
+                  "matchExpressions": {
+                    "*": {
+                      "key": null,
+                      "operator": null,
+                      "values": null
+                    }
+                  },
+                  "matchLabels": null
+                },
+                "matchLabelKeys": null,
+                "mismatchLabelKeys": null,
+                "namespaceSelector": {
+                  "matchExpressions": {
+                    "*": {
+                      "key": null,
+                      "operator": null,
+                      "values": null
+                    }
+                  },
+                  "matchLabels": null
+                },
+                "namespaces": null,
+                "topologyKey": null
+              },
+              "weight": null
+            }
+          },
+          "requiredDuringSchedulingIgnoredDuringExecution": {
+            "*": {
+              "labelSelector": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchLabels": null
+              },
+              "matchLabelKeys": null,
+              "mismatchLabelKeys": null,
+              "namespaceSelector": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchLabels": null
+              },
+              "namespaces": null,
+              "topologyKey": null
+            }
+          }
+        },
+        "podAntiAffinity": {
+          "preferredDuringSchedulingIgnoredDuringExecution": {
+            "*": {
+              "podAffinityTerm": {
+                "labelSelector": {
+                  "matchExpressions": {
+                    "*": {
+                      "key": null,
+                      "operator": null,
+                      "values": null
+                    }
+                  },
+                  "matchLabels": null
+                },
+                "matchLabelKeys": null,
+                "mismatchLabelKeys": null,
+                "namespaceSelector": {
+                  "matchExpressions": {
+                    "*": {
+                      "key": null,
+                      "operator": null,
+                      "values": null
+                    }
+                  },
+                  "matchLabels": null
+                },
+                "namespaces": null,
+                "topologyKey": null
+              },
+              "weight": null
+            }
+          },
+          "requiredDuringSchedulingIgnoredDuringExecution": {
+            "*": {
+              "labelSelector": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchLabels": null
+              },
+              "matchLabelKeys": null,
+              "mismatchLabelKeys": null,
+              "namespaceSelector": {
+                "matchExpressions": {
+                  "*": {
+                    "key": null,
+                    "operator": null,
+                    "values": null
+                  }
+                },
+                "matchLabels": null
+              },
+              "namespaces": null,
+              "topologyKey": null
+            }
+          }
+        }
+      },
+      "bootMiB": null,
+      "devices": null,
+      "headroomMiB": null,
+      "hostAddress": null,
+      "hostPort": null,
+      "image": null,
+      "imageCacheBudget": null,
+      "imageCacheHostPath": null,
+      "imagePullPolicy": null,
+      "imagePullSecrets": {
+        "*": {
+          "name": null
+        }
+      },
+      "machineCPUs": null,
+      "machineMemoryMiB": null,
+      "nestedVirtualization": null,
+      "nodeSelector": null,
+      "priorityClassName": null,
+      "releaseHostPath": null,
+      "reserveMiB": null,
+      "resources": {
+        "claims": {
+          "*": {
+            "name": null,
+            "request": null
+          }
+        },
+        "limits": null,
+        "requests": null
+      },
+      "rollout": {
+        "idleWait": null,
+        "maxConcurrent": null,
+        "maxConcurrentPercent": null,
+        "settleTimeout": null,
+        "stalledTimeout": null
+      },
+      "seccomp": null,
+      "serviceAccountName": null,
+      "storage": null,
+      "storageClass": null,
+      "tolerations": {
+        "*": {
+          "effect": null,
+          "key": null,
+          "operator": null,
+          "tolerationSeconds": null,
+          "value": null
+        }
+      }
+    }
+  },
+  "GATEWAY_EGRESS": {
+    "clusterDns": {
+      "namespace": null,
+      "podLabels": null,
+      "ports": null
+    },
+    "extraCidrs": null,
+    "peers": {
+      "*": {
+        "mesh": null,
+        "namespace": null,
+        "podLabels": null,
+        "ports": null
+      }
+    }
+  }
+}
