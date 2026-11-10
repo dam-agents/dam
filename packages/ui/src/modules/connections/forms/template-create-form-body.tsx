@@ -16,6 +16,8 @@ import { newParentNameRule } from "../lib/connection-hierarchy.js";
 import { appScopeFieldsChosen } from "../lib/github-app-scope-fields.js";
 import {
   ANOTHER_HOST,
+  hostChoicesOf,
+  hostnameOf,
   offeredHostsOf,
   picksGitHubEnterpriseHost,
   withHostPicked,
@@ -134,7 +136,13 @@ export function TemplateCreateFormBody({
   const fieldsRef = useRef<HTMLDivElement>(null);
   const onSubmit = handleSubmit(
     (values) => {
-      const payload = buildCreatePayload(template, values);
+      const host = values.fields.host;
+      const payload = buildCreatePayload(
+        template,
+        picksHost && anotherHost && host
+          ? { ...values, fields: { ...values.fields, host: hostnameOf(host) } }
+          : values,
+      );
       if ("error" in payload) {
         emitToast({ kind: "error", message: payload.error });
         return;
@@ -162,7 +170,7 @@ export function TemplateCreateFormBody({
     setValue("fields.host", other ? "" : choice, { shouldDirty: true });
     setValue("fields.clientId", other ? "" : presetOf("clientId"));
     setValue("fields.clientSecret", "");
-    setValue("fields.appSlug", other ? "" : presetOf("appSlug"));
+    if (!other) setValue("fields.appSlug", presetOf("appSlug"));
     clearErrors("fields");
   };
   const optional = template.inputs.filter(
@@ -235,6 +243,11 @@ export function TemplateCreateFormBody({
           control={control}
           templateId={template.id}
           input={input}
+          choices={
+            pickHost && input.name === "host"
+              ? hostChoicesOf(template)
+              : undefined
+          }
         />
       ))}
 

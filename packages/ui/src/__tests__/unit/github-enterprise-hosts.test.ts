@@ -324,22 +324,46 @@ describe("connecting to a GitHub Enterprise host", RENDER_TIMEOUT, () => {
     ]);
   });
 
-  // TEST_SCENARIO: the install's app slug names an app on its own host only; another host must not send it, even with Customize defaults open, or the connection's install link points at an app that host does not have.
-  it("does not send the install's app slug for another host", async () => {
+  // TEST_SCENARIO: an app slug names an app the platform has on a host; another host has none, so the form must not offer the field there, under Customize defaults or anywhere, or the connection's install link points at an app that host does not have. A host pasted as a URL is sent as its hostname, as the CLI sends it.
+  it("offers no app slug for another host, and sends its hostname", async () => {
     renderSingle();
     click(byTestId("connection-host-switch"));
-    click(byTestId("customize-defaults"));
-    click(byTestId("override-defaults-toggle"));
-    expect(
-      byTestId<HTMLInputElement>("connection-field-appSlug")?.value ?? "",
-    ).toBe("");
-    type("connection-field-host-other", "ghe.own.example.com");
+    expect(byTestId("connection-field-appSlug")).toBeNull();
+    expect(byTestId("customize-defaults")).toBeNull();
+    type("connection-field-host-other", "https://GHE.own.example.com/");
     type("connection-field-clientId", "Iv1.mine");
     type("connection-field-clientSecret", "mine-secret");
     click(byTestId("connection-create-submit"));
     await settle();
     expect(fake.submitted).toHaveLength(1);
     expect(fake.submitted[0]).not.toHaveProperty("appSlug");
+    expect(fake.submitted[0]).toMatchObject({ host: "ghe.own.example.com" });
+  });
+
+  // TEST_SCENARIO: a GitHub Enterprise token or app installation on an install with several hosts keeps its list of them; only the sign-in has the picker with "Another host…".
+  it("keeps the host list for a token on several hosts", () => {
+    act(() =>
+      root.render(
+        createElement(TemplateCreateFormBody, {
+          template: {
+            ...GHE,
+            id: "github-enterprise-pat",
+            authKind: "header",
+            inputs: [
+              { name: "host", state: "required", presetValue: HOSTS[0] },
+              { name: "value", state: "required", secret: true },
+            ],
+          },
+          pickHost: true,
+          onCreated: () => {},
+          onAddedAlone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    const select = byTestId<HTMLSelectElement>("connection-field-host");
+    expect(select?.tagName).toBe("SELECT");
+    expect([...select!.options].map((o) => o.value)).toEqual(HOSTS);
   });
 
   // TEST_SCENARIO: a refused submit whose first error sits below the fold must bring that field into view and focus it, so the user sees what is missing.

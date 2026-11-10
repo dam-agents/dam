@@ -11,31 +11,50 @@ export function offeredHostsOf(
   return raw.filter((h): h is string => typeof h === "string");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a GitHub Enterprise token or app installation offers the install's hosts as a list only when there are two or more; the sign-in has a picker of its own, which also offers one host and another host.
+export function hostChoicesOf(
+  template: Pick<ConnectionTemplateView, "extras"> | undefined,
+): string[] {
+  const hosts = offeredHostsOf(template);
+  return hosts.length > 1 ? hosts : [];
+}
+
+export function hostnameOf(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    return new URL(
+      trimmed.includes("://") ? trimmed : `https://${trimmed}`,
+    ).hostname.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
 export const ANOTHER_HOST = "another";
 
-// UNIT_BOUNDARY_DESCRIPTION: with the github-enterprise-hosts feature on, a GitHub Enterprise sign-in's host is always picked in the form, from the offered hosts or "Another host…". An offered host signs in with its own app; another host has none the platform registered, so the user brings theirs: the host, client ID and client secret become required, and none of the install's app presets — client ID, client secret, app slug — is offered or sent.
+// UNIT_BOUNDARY_DESCRIPTION: with the github-enterprise-hosts feature on, a GitHub Enterprise sign-in's host is always picked in the form, from the offered hosts or "Another host…". An offered host signs in with its own app; another host has none the platform registered, so the user brings theirs: the host, client ID and client secret become required, and none of the install's app presets is offered or sent: the client ID and secret are the user's own, and the app slug input is gone.
 export function withHostPicked(
   template: ConnectionTemplateView,
   anotherHost: boolean,
 ): ConnectionTemplateView {
   return {
     ...template,
-    inputs: template.inputs.map((input) => {
-      if (input.name === "host")
-        return {
-          ...input,
-          state: "required",
-          ...(anotherHost ? { presetValue: undefined } : {}),
-        };
-      if (anotherHost && input.name === "appSlug")
-        return { ...input, presetValue: undefined };
-      if (
-        anotherHost &&
-        (input.name === "clientId" || input.name === "clientSecret")
-      )
-        return { ...input, state: "required", presetValue: undefined };
-      return input;
-    }),
+    inputs: template.inputs
+      .filter((input) => !(anotherHost && input.name === "appSlug"))
+      .map((input) => {
+        if (input.name === "host")
+          return {
+            ...input,
+            state: "required",
+            ...(anotherHost ? { presetValue: undefined } : {}),
+          };
+        if (
+          anotherHost &&
+          (input.name === "clientId" || input.name === "clientSecret")
+        )
+          return { ...input, state: "required", presetValue: undefined };
+        return input;
+      }),
   };
 }
 
