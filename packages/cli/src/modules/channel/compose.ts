@@ -8,6 +8,11 @@ import { buildListCommand } from "./commands/list.js";
 import { buildSlackConnectCommand } from "./commands/slack-connect.js";
 import { buildSlackDisconnectCommand } from "./commands/slack-disconnect.js";
 import {
+  buildSlackDmConnectCommand,
+  buildSlackDmDisconnectCommand,
+  buildSlackDmStatusCommand,
+} from "./commands/slack-dm.js";
+import {
   createChannelService,
   type ChannelService,
 } from "./services/channel-service.js";
@@ -30,6 +35,13 @@ export function composeChannelModule(
 ): ChannelModule {
   const createService = (host: string): ChannelService =>
     createChannelService({ trpc: opts.buildTrpc(host) });
+
+  const serviceScoped = {
+    compatService: opts.compatService,
+    configService: opts.configService,
+    createAgentService: opts.createAgentService,
+    createChannelService: createService,
+  };
 
   const agentScoped = {
     compatService: opts.compatService,
@@ -63,6 +75,14 @@ export function composeChannelModule(
   slack.addCommand(buildSlackConnectCommand(agentScoped));
   slack.addCommand(buildSlackDisconnectCommand(agentScoped));
   parent.addCommand(slack);
+
+  const slackDm = new Command("slack-dm").description(
+    "Pair your Slack account with a DAM Agent's 1:1 DM with the bot (the DM Bridge)",
+  );
+  slackDm.addCommand(buildSlackDmStatusCommand(serviceScoped));
+  slackDm.addCommand(buildSlackDmConnectCommand(agentScoped));
+  slackDm.addCommand(buildSlackDmDisconnectCommand(agentScoped));
+  parent.addCommand(slackDm);
 
   return { commands: [parent], exports: { createService } };
 }
