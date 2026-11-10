@@ -565,6 +565,7 @@ const kubeAgent = (granted: string[]): KubeObject => ({
   } as KubeObject["metadata"],
   spec: {
     image: "agent:absorb",
+    backend: { type: "vm" },
     resources: { limits: { cpu: "2", memory: "4Gi" } },
     hibernationTimeout: "30m0s",
     l7Hosts: ["absorb.example.test"],
