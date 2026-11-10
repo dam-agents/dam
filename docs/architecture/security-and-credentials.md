@@ -128,10 +128,10 @@ A key carries the owner's `sub`, a subset of permission scopes, and an optional 
 The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 
-A key outlives its sign-in: the api-server asks the identity provider whether its owner still may act, keeps a yes for a minute, and refuses a directory that does not answer as unavailable (503, retryable).
+A key outlives its sign-in: the api-server asks the identity provider whether its owner still may act, keeps a yes a minute, and refuses an unanswered directory as unavailable (503, retryable).
 
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
-That re-check is a poll, because a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
+That re-check is a poll, since a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
@@ -266,7 +266,7 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
 A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades instead of wedging the gateway — are on [credential-gateway](credential-gateway.md).
+The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
