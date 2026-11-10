@@ -271,6 +271,7 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 Each credentialed request goes through an ext_authz Check call against the api-server.
 Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`), bound to the waypoint by `istio.io/use-waypoint`.
 The waypoint ALLOWs only the matching SA principal, on that Service's own gRPC authority, so a Check that comes through the waypoint carries a proven Agent.
+The api-server pod's DENY rule admits only the waypoint on that port, so no other source reaches it.
 The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
 Whose rules decide a sub-agent's or an [Environment](environments.md#network-access)'s request is set out under Egress Aliasing below.
 
@@ -374,7 +375,7 @@ The machine and the gateway are gated by different mechanisms — they live on o
 - **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
   The waypoint enforces the Service's AuthorizationPolicy, which ALLOWs only the matching SA principal on its own gRPC `:authority`.
   The api-server derives Agent ID from the gRPC `:authority`.
-- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't the waypoint's SA, closing the harness direct pod-IP bypass; its ext-authz rule also admits the agent namespace during the migration, so a direct pod-IP call from there is not yet refused.
+- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't the waypoint's SA, on the harness port and on ext-authz, so a direct pod-IP call reaches neither.
 
 The egress allowlist and the runner's NetworkPolicy are the security boundary for the machine's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
 Each gate matches its threat model: the machine runs untrusted code and is held at the guest's own network and at the runner's kernel; the gateway is platform-controlled and its identity flows through the mesh.

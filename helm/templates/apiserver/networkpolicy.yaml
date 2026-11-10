@@ -17,11 +17,11 @@
       synthesised by Istio lives here. The cryptographic per-agent
       check is the per-agent AuthorizationPolicy on the harness path,
       not netpol.
-    - ext-authz (4002) from the release namespace, where the waypoint
-      the per-agent ext-authz Services are bound to runs, and from the
-      agent namespace, whose gateways still call a Service that is not
-      relabelled yet. The per-agent check is the AuthorizationPolicy at
-      the waypoint; auth-policy-pod-deny.yaml gates the direct path.
+    - ext-authz (4002) from the release namespace alone, where the waypoint
+      the per-agent ext-authz Services are bound to runs: a gateway reaches
+      ext-authz only through that waypoint. The per-agent check is the
+      AuthorizationPolicy at the waypoint; auth-policy-pod-deny.yaml denies
+      every source that is not the waypoint.
     - HBONE (15008) listed alongside each app port so the kernel-level
       netpol sees the right thing for ambient-routed traffic (Istio
       iptables redirect happens in NAT/MANGLE before FILTER).
@@ -61,18 +61,15 @@ spec:
         - protocol: TCP
           port: 15008  # HBONE — required for any mesh-to-mesh hop
 
-    # ext-authz — from the release namespace, where the waypoint the
-    # per-agent ext-authz Services are bound to runs, and from the agent
-    # namespace, whose gateways reach a Service not yet relabelled
-    # directly. The release namespace's HBONE is admitted by the harness
-    # rule too; naming it here keeps the ext-authz hop independent of it.
+    # ext-authz — from the release namespace alone, where the waypoint the
+    # per-agent ext-authz Services are bound to runs. A gateway in the agent
+    # namespace reaches the port only through that waypoint. The release
+    # namespace's HBONE is admitted by the harness rule too; naming it here
+    # keeps the ext-authz hop independent of it.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}
       ports:
         - protocol: TCP
           port: {{ .Values.apiServer.extAuthzPort }}
