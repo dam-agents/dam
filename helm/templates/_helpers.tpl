@@ -381,6 +381,43 @@ API Server secrets name — chart-managed Secret holding operator-supplied crede
 {{- end }}
 
 {{/*
+The extra GitHub Enterprise hosts a user may connect to, from the hostname-keyed
+map in the values, as the JSON list the api-server reads, in name order; empty
+when the install names none. It carries each host's client secret, so it is
+stored in the api-server's Secret and never in the pod spec.
+*/}}
+{{- define "platform.apiserver.gheHosts" -}}
+{{- $hosts := dig "oauthAppDefaults" "githubEnterprise" "hosts" dict .Values.apiServer | default dict -}}
+{{- if not (kindIs "map" $hosts) -}}
+{{- fail "apiServer.oauthAppDefaults.githubEnterprise.hosts is a map by hostname: `hosts: {<host>: {clientId, clientSecret, appSlug}}`." -}}
+{{- end -}}
+{{- $list := list -}}
+{{- range $host := keys $hosts | sortAlpha -}}
+{{- $app := get $hosts $host -}}
+{{- if $app -}}
+{{- $list = append $list (merge (dict "host" $host) (pick $app "clientId" "clientSecret" "appSlug")) -}}
+{{- end -}}
+{{- end -}}
+{{- if $list }}{{ $list | toJson }}{{ end -}}
+{{- end }}
+
+{{/*
+The retired GitHub Enterprise hosts, from the hostname-keyed map in the values,
+as a JSON list in name order; empty when none is retired.
+*/}}
+{{- define "platform.apiserver.gheRetiredHosts" -}}
+{{- $retired := dig "oauthAppDefaults" "githubEnterprise" "retiredHosts" dict .Values.apiServer | default dict -}}
+{{- if not (kindIs "map" $retired) -}}
+{{- fail "apiServer.oauthAppDefaults.githubEnterprise.retiredHosts is a map by hostname: `retiredHosts: {<host>: true}`." -}}
+{{- end -}}
+{{- $list := list -}}
+{{- range $host := keys $retired | sortAlpha -}}
+{{- if get $retired $host }}{{ $list = append $list $host }}{{ end -}}
+{{- end -}}
+{{- if $list }}{{ $list | toJson }}{{ end -}}
+{{- end }}
+
+{{/*
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
 {{/*

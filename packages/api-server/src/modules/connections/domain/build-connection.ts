@@ -8,9 +8,12 @@ import {
   type SecretRef,
 } from "api-server-api";
 import { parseShareString, tokenHeaderName } from "../../kb-shares/index.js";
-import type {
-  ConfigInputSpec,
-  ConnectionTemplate,
+import {
+  hostnameOf,
+  isRetiredHost,
+  operatorAppFor,
+  type ConfigInputSpec,
+  type ConnectionTemplate,
 } from "./connection-template.js";
 import {
   discoverIssuerFromResourceHost,
@@ -63,6 +66,13 @@ export async function buildConnection(
   if (input.authKind !== template.authKind) {
     throw new Error(
       `template ${template.id} expects authKind=${template.authKind}, got ${input.authKind}`,
+    );
+  }
+
+  const inputHost = "host" in input ? input.host : undefined;
+  if (inputHost && isRetiredHost(template, inputHost)) {
+    throw new Error(
+      `${hostnameOf(inputHost)} is retired on this platform. Pick another GitHub Enterprise host.`,
     );
   }
 
@@ -149,11 +159,17 @@ async function buildOAuthStatic(
   const subst = (s: string | undefined): string | undefined =>
     host ? s?.replace(/\{host\}/g, host) : s;
 
-  const clientId = input.clientId ?? template.clientId;
+  const operatorApp = operatorAppFor(template, host);
+  const clientId = input.clientId ?? operatorApp.clientId;
   const authorizationUrl = subst(template.authorizationUrl);
   const tokenUrl = subst(template.tokenUrl);
   const scopes = template.scopes ?? [];
 
+  if (!clientId && template.hostApps && host) {
+    throw new Error(
+      `No GitHub app is registered for ${host}. Pick one of ${template.hostChoices?.join(", ") ?? "the listed hosts"}, or enter your own app's client ID.`,
+    );
+  }
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
   if (!authorizationUrl || authorizationUrl.includes("{host}")) {
     throw new Error(
@@ -182,12 +198,9 @@ async function buildOAuthStatic(
     contributions.push(...githubEnterpriseHostContributions(host));
   }
 
-  const presetSlug =
-    typeof template.extras?.appSlug === "string"
-      ? template.extras.appSlug
-      : undefined;
+  const presetSlug = operatorApp.appSlug;
   const usesTemplateApp =
-    !input.clientId || input.clientId === template.clientId;
+    !input.clientId || input.clientId === operatorApp.clientId;
   const inputSlug =
     usesTemplateApp || input.appSlug !== presetSlug ? input.appSlug : undefined;
   const appSlug = inputSlug ?? (usesTemplateApp ? presetSlug : undefined);

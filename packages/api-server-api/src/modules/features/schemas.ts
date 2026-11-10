@@ -8,6 +8,7 @@ export const featureIdSchema = z.enum([
   "custom-avatars",
   "environments",
   "hermes",
+  "github-enterprise-hosts",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

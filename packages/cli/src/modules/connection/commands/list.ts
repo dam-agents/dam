@@ -52,7 +52,8 @@ function providerCell({ provider, templateId }: ConnectionView): string {
   return `${provider.alias} (${harnesses})${provider.preferred ? " preferred" : ""}`;
 }
 
-function statusCell({ status, check }: ConnectionView): string {
+function statusCell({ status, check, retiredHost }: ConnectionView): string {
+  if (retiredHost) return `${status} (${retiredHost} retired)`;
   return check && check.status !== "passed"
     ? `${status} (check ${check.status})`
     : status;
@@ -156,6 +157,7 @@ export function buildListCommand(deps: {
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, fullAccess?, account?, repositories?, repositoryIds?, permissions? }, " +
         "with fullAccess: true when it reaches everything its sign-in or installation reaches; " +
         "a GitHub sign-in or installation carries isParent: true, and each connection made from it parentId; " +
+        "a connection on a GitHub Enterprise host the server retired carries retiredHost; " +
         "a checked credential carries its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }; " +
         "listed for an agent, a connection that shares its host with another granted one carries default { kind, scope, active }",
     )

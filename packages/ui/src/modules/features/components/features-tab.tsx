@@ -64,6 +64,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Offer Nous Research's Hermes Agent beside the other harnesses when you start a session, open a terminal or pick an agent's defaults, on agents whose image carries it.",
   },
+  {
+    id: "github-enterprise-hosts",
+    label: "GitHub Enterprise hosts",
+    description:
+      "Pick which GitHub Enterprise host to connect to, and move a GitHub Enterprise sign-in to another host, on an install that offers more than one.",
+  },
 ];
 
 function FeatureRowCard({

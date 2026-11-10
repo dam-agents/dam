@@ -41,6 +41,7 @@ interface TemplateCreateFormProps {
   initialName?: string;
   onNameChange?: (name: string) => void;
   autoFocusName?: boolean;
+  hostChoices?: readonly string[];
 }
 
 export function TemplateCreateFormBody({
@@ -54,6 +55,7 @@ export function TemplateCreateFormBody({
   initialName,
   onNameChange,
   autoFocusName = true,
+  hostChoices,
   layout = (fields, footer) => (
     <>
       {fields}
@@ -142,7 +144,10 @@ export function TemplateCreateFormBody({
 
   const fieldsRegion = (
     <div className="flex flex-col gap-4">
-      <GithubStepsCallout templateId={template.id} />
+      <GithubStepsCallout
+        templateId={template.id}
+        host={hostChoices?.length ? fields?.host : undefined}
+      />
 
       <Controller
         control={control}
@@ -179,6 +184,7 @@ export function TemplateCreateFormBody({
           control={control}
           templateId={template.id}
           input={input}
+          choices={input.name === "host" ? hostChoices : undefined}
         />
       ))}
 

@@ -8,9 +8,11 @@ import { isGithubSignInTemplate } from "../lib/github-installations.js";
 
 export function GithubStepsCallout({
   templateId,
+  host,
   className,
 }: {
   templateId: string;
+  host?: string;
   className?: string;
 }) {
   if (!isGithubSignInTemplate(templateId)) return null;
@@ -24,8 +26,8 @@ export function GithubStepsCallout({
     >
       <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
       <span>
-        Sign in with GitHub, then install the {getBrand().name} app{" "}
-        {INSTALL_REACH}.
+        Sign in with GitHub, then install the {getBrand().name} app
+        {host ? ` on ${host}` : ""} {INSTALL_REACH}.
       </span>
     </p>
   );

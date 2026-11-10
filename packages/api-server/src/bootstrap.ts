@@ -1201,6 +1201,8 @@ export async function bootstrap() {
         ...(config.defaultGithubEnterpriseAppSlug
           ? { appSlug: config.defaultGithubEnterpriseAppSlug }
           : {}),
+        hosts: config.defaultGithubEnterpriseHosts,
+        retiredHosts: config.defaultGithubEnterpriseRetiredHosts,
       },
       ...(config.defaultSlackClientId && config.defaultSlackClientSecret
         ? {

@@ -21,6 +21,7 @@ import {
   connectionCreateFromParentInputSchema,
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
+  connectionMoveToHostInputSchema,
   connectionAgentCatalogInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
@@ -151,6 +152,10 @@ export const connectionsRouter = t.router({
     .mutation(({ ctx, input }) =>
       ctx.connections.updateGitHubUserTokenScope(input),
     ),
+
+  moveToHost: manageCredentialsProcedure
+    .input(connectionMoveToHostInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.moveToHost(input)),
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)
