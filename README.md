@@ -3,6 +3,8 @@
   <img src="docs/assets/dam-light.svg#gh-dark-mode-only" alt="DAM" />
 </p>
 
+<p align="center"><i>(Deploy Agents Massively)</i></p>
+
 <h3 align="center">
 Dense, long-lived AI agents that run your whole stack.
 
