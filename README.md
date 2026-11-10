@@ -9,6 +9,8 @@
 Dense, long-lived AI agents that run your whole stack.
 
 Any harness, any model, on your Kubernetes.
+
+Always on Slack.
 </h3>
 
 <p align="center">
