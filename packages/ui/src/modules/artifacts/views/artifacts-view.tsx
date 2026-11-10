@@ -1,5 +1,5 @@
 import { Checkmark, Earth, Share } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { SlackColorIcon } from "@/components/brand-icons";
 import { Button } from "@/components/ui/button";
@@ -12,17 +12,28 @@ import {
 } from "@/components/ui/empty-hero";
 import { PageHeader } from "@/components/ui/page-header";
 
+import { useStore } from "../../../store.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useListedEnvironments } from "../../environments/api/queries.js";
 import { SidePanelCloseScope } from "../../sessions/components/side-panel-close-button.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ChatArtifactsPanel } from "../components/chat-artifacts-panel.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
+import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 
 export function ArtifactsView() {
   const artifacts = useArtifacts({}).data;
   const folders = useArtifactFolders().data;
   const environments = useListedEnvironments(true);
+  const routedArtifactId = useStore((s) => s.artifactId);
+  const openArtifact = useOpenArtifact();
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (routedArtifactId === null || opened.current === routedArtifactId)
+      return;
+    opened.current = routedArtifactId;
+    void openArtifact(routedArtifactId);
+  }, [routedArtifactId, openArtifact]);
   if (
     artifacts?.length === 0 &&
     folders?.length === 0 &&

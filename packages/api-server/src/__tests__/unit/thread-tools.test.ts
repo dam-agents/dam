@@ -16,7 +16,7 @@ import type {
 
 const artifactLinks = (): ChannelArtifactLinks => ({
   surface: "Slack",
-  appArtifactUrl: "http://ui/artifacts",
+  appArtifactUrl: (id) => `http://ui/artifacts/${id}`,
   lookup: async () => null,
   ownerDirectMessage: async () => false,
 });

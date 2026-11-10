@@ -1025,7 +1025,7 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
   });
 
   const OWNER_DM = "U-OWNER";
-  const APP_URL = "http://ui/artifacts";
+  const APP_URL = `http://ui/artifacts/${PRIVATE_ID}`;
 
   /**
    * TEST_SCENARIO: The owner asks for private artifacts to arrive in their own

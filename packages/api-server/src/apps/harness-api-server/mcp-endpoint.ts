@@ -356,7 +356,8 @@ export function createMcpSession(
     let answer: Promise<boolean> | undefined;
     return {
       surface: channel === ChannelType.Slack ? "Slack" : "Telegram",
-      appArtifactUrl: `${deps.uiBaseUrl}/artifacts`,
+      appArtifactUrl: (id) =>
+        `${deps.uiBaseUrl}/artifacts/${encodeURIComponent(id)}`,
       lookup: (id) => deps.artifactLibrary.get(id),
       ownerDirectMessage: () =>
         (answer ??=
