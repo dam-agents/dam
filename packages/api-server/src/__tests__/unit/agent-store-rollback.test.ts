@@ -39,7 +39,7 @@ const agent = (overrides: {
     labels: { "agent-platform.ai/owner": "sub-1" },
     annotations: overrides.annotations ?? {},
   } as KubeObject["metadata"],
-  spec: overrides.spec ?? { image: "agent:1" },
+  spec: { image: "agent:1", backend: { type: "vm" }, ...overrides.spec },
   status: {},
 });
 
