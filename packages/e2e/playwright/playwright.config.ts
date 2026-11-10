@@ -63,6 +63,14 @@ const suite: NamedProject[] = [
     use: { ...devices["Desktop Chrome"] },
   },
   {
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant spec signs in as accounts of its own, so it takes no stored session and no other spec's account: it runs once, before anything that shares the suite's state. */
+    name: "assistant",
+    testMatch: /16-.*\.spec\.ts$/,
+    dependencies: ["auth"],
+    workers: 1,
+    use: { ...devices["Desktop Chrome"] },
+  },
+  {
     name: "agent",
     testMatch: /03-.*\.spec\.ts$/,
     dependencies: ["connection"],
@@ -198,6 +206,8 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  */
 export default defineConfig({
   testDir: "./src/tests",
+  /* UNIT_BOUNDARY_DESCRIPTION: the suite's shared account declines the assistant before any spec signs in, so no lane depends on a feature that ships on for everyone. */
+  globalSetup: "./src/global-setup.ts",
   fullyParallel: false,
   workers,
   retries: 0,

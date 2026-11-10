@@ -6,13 +6,22 @@
 e2e:
   enabled: true
 
-# The assistant is pinned off for the whole suite. It is on for everyone by
-# default, so without this every lane's first sign-in would create a Dammy and
-# land the user in its chat, where the provider notice covers the page the
-# specs click on. A spec that needs the assistant needs a lane of its own, not
-# a switch: the mode decides for every user, whatever they stored.
-features:
-  dambledore: "off"
+# The install keeps the chart's `experimental` mode, so the assistant is on by
+# default exactly as in a release. The suite's shared users store the switch
+# off for themselves (src/global-setup.ts), which keeps every other lane
+# deterministic, and 16-assistant.spec.ts signs in as its own users, which have
+# stored nothing and so keep the default.
+#
+# Two accounts of its own, so they are fresh on the first run and on every
+# rerun against the same cluster: nothing else signs in as them.
+keycloak:
+  extraTestUsers:
+    - username: dammy-first
+      password: dammy-e2e
+      firstName: First
+    - username: dammy-owner
+      password: dammy-e2e
+      firstName: Owner
 
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
