@@ -1,6 +1,7 @@
 import { Checkmark, StopFilledAlt } from "@carbon/icons-react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 import type { DelegationDisplayState } from "../lib/delegation-state.js";
 
@@ -17,12 +18,17 @@ const pill: Record<
 
 interface Props {
   state: DelegationDisplayState;
+  className?: string;
 }
 
-export function DelegationStatePill({ state }: Props) {
+export function DelegationStatePill({ state, className }: Props) {
   const { variant, label } = pill[state];
   return (
-    <Badge variant={variant} size="sm" className="shrink-0 gap-1">
+    <Badge
+      variant={variant}
+      size="sm"
+      className={cn("shrink-0 gap-1", className)}
+    >
       {state === "done" && <Checkmark size={11} aria-hidden />}
       {state === "stopped" && <StopFilledAlt size={9} aria-hidden />}
       {label}
