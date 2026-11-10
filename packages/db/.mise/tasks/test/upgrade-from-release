@@ -8,8 +8,9 @@
 #   1. Start a throwaway Postgres from mise and provision it as an operator
 #      provisions an external database: a non-superuser `platform` owning the
 #      databases, plus `platform_controller` and `usage_readers`.
-#   2. `git worktree` the release tag and apply its own migrations with the
-#      release's own migrator (packages/db/src/migrate.ts runMigrations), so
+#   2. `git worktree` the release tag, fetching it first when this clone does not
+#      have it, and apply its own migrations with the release's own migrator
+#      (packages/db/src/migrate.ts runMigrations), so
 #      `drizzle.__drizzle_migrations` holds that release's history exactly.
 #   3. Load the synthetic rows of upgrade-rehearsal-seed.sql, one per shape the
 #      newer migrations rewrite or delete, and snapshot the counts and the rows.
@@ -20,9 +21,11 @@
 #      check the release's migrator finds nothing pending, and check the restored
 #      rows project identically to the snapshot taken before the upgrade.
 #
-# Needs a PostgreSQL tool from mise (`mise install postgres@18`) and the release
-# tag fetched; the release worktree installs its own lockfile from the pnpm
-# store, so a cold store means a network fetch.
+# Needs a PostgreSQL tool from mise (`mise install postgres@18`) and the network
+# once per release: the tag is fetched from origin when this clone lacks it (a CI
+# clone is shallow and carries no release tags), and the release worktree
+# installs its own lockfile — from the pnpm store when it is warm, from the
+# registry when it is not.
 set -euo pipefail
 
 from_tag="${usage_tag:-v0.2.26}"
@@ -111,11 +114,18 @@ SQL
 echo "running as: $(psql_ -d postgres -tA -c "SELECT current_user || ' super=' || rolsuper || ' createdb=' || rolcreatedb || ' createrole=' || rolcreaterole || ' search_path=' || current_setting('search_path') FROM pg_roles WHERE rolname = current_user")"
 
 step "release worktree at $from_tag"
+if git -C "$repo" rev-parse -q --verify "refs/tags/$from_tag" >/dev/null; then
+  echo "tag $from_tag is in this clone"
+else
+  echo "tag $from_tag is not in this clone: fetching it from origin"
+  git -C "$repo" fetch origin tag "$from_tag" --no-tags >"$work/fetch.log" 2>&1 ||
+    { cat "$work/fetch.log" >&2; echo "cannot fetch $from_tag: pass a tag on origin, or fetch it yourself" >&2; exit 1; }
+fi
 git -C "$repo" worktree add --detach "$work/release" "$from_tag" >"$work/worktree.log" 2>&1 ||
   { cat "$work/worktree.log" >&2; exit 1; }
 # `db` for the migrator's own dependencies, `api-server` for the tsx that runs
 # its TypeScript. Both sides then migrate with their own code and lockfile.
-(cd "$work/release" && pnpm install --frozen-lockfile --offline --filter db --filter api-server >"$work/install.log" 2>&1) ||
+(cd "$work/release" && pnpm install --frozen-lockfile --filter db --filter api-server >"$work/install.log" 2>&1) ||
   { cat "$work/install.log" >&2; exit 1; }
 mkdir -p "$work/release/packages/db/scripts"
 cp "$scripts/upgrade-rehearsal-migrate.ts" "$work/release/packages/db/scripts/"
