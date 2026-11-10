@@ -1089,11 +1089,15 @@ export const apiKeyRevocations = pgTable(
   {
     keyId: text("key_id").primaryKey(),
     ownerSub: text("owner_sub").notNull(),
+    connectionId: text("connection_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("api_key_revocations_owner_idx").on(table.ownerSub)],
+  (table) => [
+    index("api_key_revocations_owner_idx").on(table.ownerSub),
+    index("api_key_revocations_connection_idx").on(table.connectionId),
+  ],
 );
 
 export const userFeatures = pgTable(

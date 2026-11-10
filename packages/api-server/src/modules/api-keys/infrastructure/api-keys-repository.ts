@@ -106,22 +106,39 @@ export function activeApiKeyIds(db: Db) {
 }
 
 export function insertApiKeyRevocation(db: Db) {
-  return async (keyId: string, ownerSub: string): Promise<void> => {
+  return async (
+    keyId: string,
+    ownerSub: string,
+    connectionId: string | null,
+  ): Promise<void> => {
     await db
       .insert(apiKeyRevocations)
-      .values({ keyId, ownerSub })
+      .values({ keyId, ownerSub, connectionId })
       .onConflictDoNothing();
   };
 }
 
 export function listApiKeyRevocations(db: Db) {
-  return async (): Promise<{ keyId: string; ownerSub: string }[]> =>
+  return async (): Promise<
+    { keyId: string; ownerSub: string; connectionId: string | null }[]
+  > =>
     db
       .select({
         keyId: apiKeyRevocations.keyId,
         ownerSub: apiKeyRevocations.ownerSub,
+        connectionId: apiKeyRevocations.connectionId,
       })
       .from(apiKeyRevocations);
+}
+
+export function listApiKeyRevocationsForConnection(db: Db) {
+  return async (connectionId: string): Promise<string[]> => {
+    const rows = await db
+      .select({ keyId: apiKeyRevocations.keyId })
+      .from(apiKeyRevocations)
+      .where(eq(apiKeyRevocations.connectionId, connectionId));
+    return rows.map((r) => r.keyId);
+  };
 }
 
 export function deleteApiKeyRevocation(db: Db) {
@@ -129,6 +146,25 @@ export function deleteApiKeyRevocation(db: Db) {
     await db
       .delete(apiKeyRevocations)
       .where(eq(apiKeyRevocations.keyId, keyId));
+  };
+}
+
+export function deleteApiKeyRevocationsForConnection(db: Db) {
+  return async (connectionId: string): Promise<void> => {
+    await db
+      .delete(apiKeyRevocations)
+      .where(eq(apiKeyRevocations.connectionId, connectionId));
+  };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: whether any Connection's record names this key as the one it uses, read by the sweep so a key a Connection took over is never revoked for having been queued before that write landed. */
+export function isApiKeyNamedByAConnection(db: Db) {
+  return async (keyId: string): Promise<boolean> => {
+    const rows = await db.execute<{ exists: number }>(sql`
+      SELECT 1 AS exists FROM connections
+      WHERE inputs->>'apiKeyId' = ${keyId}
+      LIMIT 1`);
+    return (rows as unknown as unknown[]).length > 0;
   };
 }
 

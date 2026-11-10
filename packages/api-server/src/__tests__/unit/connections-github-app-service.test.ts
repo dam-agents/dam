@@ -45,6 +45,7 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
+    adoptDamKey: async () => {},
     mergeInputs: async (id, inputs) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });

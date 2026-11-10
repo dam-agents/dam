@@ -1224,8 +1224,7 @@ export async function bootstrap() {
       apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
       {
         activeKeyIds: apiKeysModule.activeKeyIds,
-        deferRevocation: (keyId) =>
-          apiKeysModule.deferRevocation(keyId, ownerId),
+        ledger: apiKeysModule.keyLedger(ownerId),
       },
       config.brand.name,
     );

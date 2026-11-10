@@ -190,8 +190,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         }),
         {
           activeKeyIds: apiKeysModule.activeKeyIds,
-          deferRevocation: (keyId) =>
-            apiKeysModule.deferRevocation(keyId, user.sub),
+          ledger: apiKeysModule.keyLedger(user.sub),
         },
         config.brand.name,
       ),

@@ -89,7 +89,8 @@ Provisioning is idempotent and takes the first free name, which is the brand's.
 Its credential is an **owner API key** the platform mints at create, named so the owner sees it in Settings › API keys.
 It carries every scope a person's own key can and none of the satellite scopes, which run work queued for other Agents; an API key never carries the operator role.
 It is stored in the per-Connection Secret as a header credential, and the Connection remembers the key's id, so deleting the Connection revokes the key and a later provisioning mints another.
-A revoke the key store could not complete fails the delete and removes nothing, and the two paths that mint a key for a Connection of their own — a failed provisioning and a rotation — write down a key they could not revoke, so a sweep retries it instead of leaving it live under a name nothing holds.
+Every key is written to a ledger before anything uses it and taken out only once this Connection names it, so a failure anywhere between minting and that write costs a key rather than leaving one live and unnamed: a queued key no Connection names is revoked by a sweep, which also drops the entries a Connection did take over.
+A delete revokes every key the Connection names and every key still queued under it, and a revoke the key store could not complete fails the delete and removes nothing; the delete and a rotation of one Connection take the same lock, so neither acts on a key the other has just replaced.
 The Agent holds only placeholders: `DAM_SERVER`, the install's public base URL, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
 
 Its contributions are the install's host allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.

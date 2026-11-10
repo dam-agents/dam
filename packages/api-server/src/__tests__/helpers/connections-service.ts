@@ -101,6 +101,11 @@ export function serviceHarness(opts: {
   curveBenderDeploymentKey?: string | null;
   damKey?: DamKeyPort;
   insert?: (row: Connection) => Promise<void>;
+  adoptDamKey?: (input: {
+    id: string;
+    keyId: string;
+    previousKeyId: string | null;
+  }) => Promise<void>;
   providerModelCatalog?: ProviderModelCatalog;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
@@ -135,6 +140,13 @@ export function serviceHarness(opts: {
         void rows.set(id, {
           ...rows.get(id)!,
           inputs: { ...rows.get(id)!.inputs, ...patch },
+        }),
+      adoptDamKey:
+        opts.adoptDamKey ??
+        (async ({ id, keyId }) => {
+          const row = rows.get(id);
+          if (!row) return;
+          rows.set(id, { ...row, inputs: { ...row.inputs, apiKeyId: keyId } });
         }),
       updateContributions: async (id, contributions) =>
         void rows.set(id, { ...rows.get(id)!, contributions }),

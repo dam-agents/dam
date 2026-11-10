@@ -3,10 +3,13 @@ import type { ApiKeysService } from "api-server-api";
 import {
   activeApiKeyIds,
   deleteApiKeyRevocation,
+  deleteApiKeyRevocationsForConnection,
   findActiveApiKeyByHash,
   insertApiKey,
   insertApiKeyRevocation,
+  isApiKeyNamedByAConnection,
   listApiKeyRevocations,
+  listApiKeyRevocationsForConnection,
   listApiKeysByOwner,
   listScopedAgentIds,
   removeAgentIdFromScopes,
@@ -25,6 +28,14 @@ import {
 } from "./services/owner-active-probe.js";
 import { createApiKeyTokenCodec } from "./domain/token.js";
 
+/* UNIT_BOUNDARY_DESCRIPTION: the record a key is written to before anything uses it, and removed from once a Connection names it. An entry means the key is not a Connection's and must be revoked; the sweep reads it that way, which is what makes a crash between minting and recording cost a key rather than leave one live. */
+export interface ApiKeyLedger {
+  queue(keyId: string, connectionId: string): Promise<void>;
+  settle(keyId: string): Promise<void>;
+  pendingFor(connectionId: string): Promise<string[]>;
+  forget(connectionId: string): Promise<void>;
+}
+
 export function composeApiKeysModule(deps: {
   db: Db;
   hmacKey: string;
@@ -38,7 +49,7 @@ export function composeApiKeysModule(deps: {
     surface: string;
   }) => ApiKeysService;
   activeKeyIds: (ids: readonly string[]) => Promise<ReadonlySet<string>>;
-  deferRevocation: (keyId: string, ownerSub: string) => Promise<void>;
+  keyLedger: (ownerSub: string) => ApiKeyLedger;
   sweepRevocations: () => Promise<number>;
 } {
   const { db, hmacKey, isAgentOwnedBy } = deps;
@@ -57,6 +68,9 @@ export function composeApiKeysModule(deps: {
   const insertRevocation = insertApiKeyRevocation(db);
   const listRevocations = listApiKeyRevocations(db);
   const deleteRevocation = deleteApiKeyRevocation(db);
+  const listForConnection = listApiKeyRevocationsForConnection(db);
+  const deleteForConnection = deleteApiKeyRevocationsForConnection(db);
+  const namedByAConnection = isApiKeyNamedByAConnection(db);
 
   return {
     validator,
@@ -64,15 +78,23 @@ export function composeApiKeysModule(deps: {
       directory: deps.ownerDirectory,
     }),
     activeKeyIds: activeKeys,
-    deferRevocation: insertRevocation,
-    /* UNIT_BOUNDARY_DESCRIPTION: revokes every key a request gave up on, and drops the record once the key cannot be used any more, so a key the platform could not revoke at the time does not stay live under a name nothing holds. */
+    keyLedger: (ownerSub) => ({
+      queue: (keyId, connectionId) =>
+        insertRevocation(keyId, ownerSub, connectionId),
+      settle: (keyId) => deleteRevocation(keyId),
+      pendingFor: listForConnection,
+      forget: deleteForConnection,
+    }),
+    /* UNIT_BOUNDARY_DESCRIPTION: revokes every queued key no Connection names, and drops every record it has settled, so a key the platform could not revoke at the time does not stay live under a name nothing holds, and one a Connection did take over is not revoked for having been queued first. */
     async sweepRevocations() {
       const pending = await listRevocations();
       let revoked = 0;
       for (const rec of pending) {
-        await revoke(rec.keyId, rec.ownerSub);
+        if (!(await namedByAConnection(rec.keyId))) {
+          await revoke(rec.keyId, rec.ownerSub);
+          revoked += 1;
+        }
         await deleteRevocation(rec.keyId);
-        revoked += 1;
       }
       return revoked;
     },

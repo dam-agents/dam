@@ -78,6 +78,7 @@ function makeRepoFake() {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
     },
+    adoptDamKey: async () => {},
     mergeInputs: async (id, patch) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...patch } });

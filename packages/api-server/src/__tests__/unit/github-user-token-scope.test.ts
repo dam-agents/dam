@@ -171,6 +171,7 @@ function makeRepoFake(initial: Connection) {
     },
     updateContributions: async () => {},
     mergeInputs: async () => {},
+    adoptDamKey: async () => {},
     delete: async (id) => {
       rows.delete(id);
     },

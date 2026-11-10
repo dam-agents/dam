@@ -65,17 +65,24 @@ export const DAM_KEY_SCOPES: readonly Scope[] = [
 
 export const damKeyName = (brandName: string) => `${brandName} connection`;
 
-/* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install is minted, revoked and read through one. `revoke` treats a key that is already revoked as done and throws only when the key store cannot be reached; `deferRevocation` records a key that must be revoked later, so a request never gives up on one silently. */
+/* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install mints, revokes and reads one. `revoke` treats a key that is already revoked as done and throws only when the key store cannot be reached. `ledger` is the record a key is written to before anything uses it: an entry means the key is not a Connection's yet and must be revoked, so a crash anywhere between minting and the Connection naming it costs a key rather than leaving one live and untracked. */
 export interface DamKeyPort {
   mint(): Promise<{ id: string; plaintext: string }>;
   revoke(id: string): Promise<void>;
-  deferRevocation(id: string): Promise<void>;
   active(ids: readonly string[]): Promise<ReadonlySet<string>>;
+  ledger: DamKeyLedger;
+}
+
+export interface DamKeyLedger {
+  queue(keyId: string, connectionId: string): Promise<void>;
+  settle(keyId: string): Promise<void>;
+  pendingFor(connectionId: string): Promise<string[]>;
+  forget(connectionId: string): Promise<void>;
 }
 
 export interface ApiKeyDirectory {
   activeKeyIds(ids: readonly string[]): Promise<ReadonlySet<string>>;
-  deferRevocation(keyId: string): Promise<void>;
+  ledger: DamKeyLedger;
 }
 
 export function damKeyPortFor(
@@ -100,8 +107,8 @@ export function damKeyPortFor(
         throw err;
       }
     },
-    deferRevocation: (id) => directory.deferRevocation(id),
     active: (ids) => directory.activeKeyIds(ids),
+    ledger: directory.ledger,
   };
 }
 

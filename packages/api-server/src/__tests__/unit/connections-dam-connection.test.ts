@@ -93,28 +93,51 @@ function fakeKeys() {
       revoked.push(id);
     },
   };
+  const queued = new Map<string, string>();
+  let refuseQueue = false;
   const directory = {
     activeKeyIds: async (ids: readonly string[]) =>
       new Set(ids.filter((id) => live.has(id))),
-    deferRevocation: async (keyId: string) => void deferred.push(keyId),
+    ledger: {
+      queue: async (keyId: string, connectionId: string) => {
+        if (refuseQueue) throw new Error("ledger down");
+        queued.set(keyId, connectionId);
+      },
+      settle: async (keyId: string) => void queued.delete(keyId),
+      pendingFor: async (connectionId: string) =>
+        [...queued].filter(([, c]) => c === connectionId).map(([k]) => k),
+      forget: async (connectionId: string) => {
+        for (const [k, c] of [...queued])
+          if (c === connectionId) queued.delete(k);
+      },
+    },
   };
-  const deferred: string[] = [];
   return {
     keys,
     directory,
     calls,
     revoked,
     live,
-    deferred,
+    queued,
     refuseRevokeWith(err: Error | null) {
       refuseRevoke = err;
+    },
+    refuseQueueWrites(refuse = true) {
+      refuseQueue = refuse;
     },
   };
 }
 
 function harness(
   baseUrl = BASE_URL,
-  opts: { insert?: (row: Connection) => Promise<void> } = {},
+  opts: {
+    insert?: (row: Connection) => Promise<void>;
+    adoptDamKey?: (input: {
+      id: string;
+      keyId: string;
+      previousKeyId: string | null;
+    }) => Promise<void>;
+  } = {},
 ) {
   const store = newConnectionsStore();
   const keys = fakeKeys();
@@ -124,6 +147,17 @@ function harness(
     brandName: BRAND,
     damKey: damKeyPortFor(keys.keys, keys.directory, BRAND),
     ...(opts.insert ? { insert: opts.insert } : {}),
+    adoptDamKey:
+      opts.adoptDamKey ??
+      (async ({ id, keyId, previousKeyId }) => {
+        const row = store.rows.get(id);
+        if (!row) return;
+        store.rows.set(id, {
+          ...row,
+          inputs: { ...row.inputs, apiKeyId: keyId },
+        });
+        if (previousKeyId !== null) keys.queued.set(previousKeyId, id);
+      }),
   });
   return { svc, store, keys };
 }
@@ -339,11 +373,11 @@ describe("revoking the key", () => {
       /insert failed for \[redacted\]/,
     );
     expect(keys.revoked).toEqual(["key-1"]);
-    expect(keys.deferred).toEqual([]);
+    expect(keys.queued.size).toBe(0);
   });
 
-  // TEST_SCENARIO: with the key store down too, the rollback is written down for the sweep instead of being lost, so the orphan key is revoked later.
-  it("defers a rollback it cannot complete", async () => {
+  // TEST_SCENARIO: with the key store down too, the key stays in the ledger for the sweep instead of being lost, so the orphan is revoked later.
+  it("leaves a rollback it cannot complete queued", async () => {
     const { svc, keys } = harness(BASE_URL, {
       insert: async () => {
         throw new Error("insert failed");
@@ -351,7 +385,19 @@ describe("revoking the key", () => {
     });
     keys.refuseRevokeWith(new Error("directory down"));
     await expect(svc.ensureDamConnection()).rejects.toThrow(/insert failed/);
-    expect(keys.deferred).toEqual(["key-1"]);
+    expect([...keys.queued.keys()]).toEqual(["key-1"]);
+  });
+
+  // TEST_SCENARIO: the ledger cannot take the record of a freshly minted key, so the key is revoked at once and nothing is created: no key may exist that neither a Connection nor the ledger names.
+  it("revokes the key and creates nothing when it cannot be recorded", async () => {
+    const { svc, store, keys } = harness();
+    keys.refuseQueueWrites();
+    await expect(svc.ensureDamConnection()).rejects.toThrow(
+      /could not be recorded/,
+    );
+    expect(keys.revoked).toEqual(["key-1"]);
+    expect(keys.live.size).toBe(0);
+    expect(damRows(store.rows)).toHaveLength(0);
   });
 });
 
@@ -369,8 +415,40 @@ describe("rotating the key", () => {
     expect(secretOf(store.secrets, conn)?.fields.value).toBe("pk_secret_key-2");
     expect(keys.revoked).toEqual(["key-1"]);
     expect(keys.live).toEqual(new Set(["key-2"]));
+    expect(keys.queued.size).toBe(0);
     expect(store.grants).toContain(`${id}|agent-1`);
     expect(await svc.getConnection(id!)).toMatchObject({ status: "active" });
+  });
+
+  // TEST_SCENARIO: the Connection cannot take over the new key — its row write fails after the Secret already holds it — so the rotation fails with the new key revoked, and the Connection still names the key it named before.
+  it("revokes the new key when the Connection cannot take it over", async () => {
+    const { svc, store, keys } = harness(BASE_URL, {
+      adoptDamKey: async () => {
+        throw new Error("row write failed");
+      },
+    });
+    const id = await svc.ensureDamConnection();
+
+    await expect(svc.rotateDamConnection(id!)).rejects.toThrow(
+      /row write failed/,
+    );
+    expect(keys.revoked).toEqual(["key-2"]);
+    expect(keys.live).toEqual(new Set(["key-1"]));
+    expect(keys.queued.size).toBe(0);
+    expect(damRows(store.rows)[0]!.inputs[DAM_KEY_INPUT]).toBe("key-1");
+  });
+
+  // TEST_SCENARIO: a rotation and a delete of the same Connection started together are serialized on one lock, so whichever runs second sees the other's key: no key minted for the Connection is left live.
+  it("leaves no key live when a rotation and a delete race", async () => {
+    const { svc, store, keys } = harness();
+    const id = await svc.ensureDamConnection();
+    const rotation = svc.rotateDamConnection(id!);
+    const deletion = svc.deleteConnection(id!);
+    await Promise.allSettled([rotation, deletion]);
+
+    expect(keys.live.size).toBe(0);
+    expect(damRows(store.rows)).toHaveLength(0);
+    expect(keys.queued.size).toBe(0);
   });
 
   // TEST_SCENARIO: a key the owner revoked in Settings leaves the Connection reading expired rather than active, and rotating it is what puts it back.
@@ -398,7 +476,7 @@ describe("rotating the key", () => {
     expect(secretOf(store.secrets, damRows(store.rows)[0]!)?.fields.value).toBe(
       "pk_secret_key-2",
     );
-    expect(keys.deferred).toEqual(["key-1"]);
+    expect([...keys.queued.keys()]).toEqual(["key-1"]);
   });
 
   it("refuses a Connection that is not the install's own", async () => {

@@ -54,6 +54,7 @@ function makeService(initial: CredentialProbeOutcome) {
       listByOwner: async () => [...rows.values()],
       listByOwnerOldestFirst: async () => [...rows.values()],
       listAgentsForConnection: async () => [],
+      adoptDamKey: async () => {},
       mergeInputs: async (id, patch) => {
         const row = rows.get(id);
         if (row) rows.set(id, { ...row, inputs: { ...row.inputs, ...patch } });

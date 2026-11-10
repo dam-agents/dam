@@ -1,4 +1,5 @@
 export {
+  type ApiKeyLedger,
   composeApiKeysModule,
   createApiKeysCleanupHook,
   listApiKeyAgentIds,
