@@ -128,11 +128,21 @@ And their next sign-in lands on Home rather than in that chat
 When they delete or rename their own Dammy and switch the row off and on again
 Then the platform's Dammy appears, unused, and greets them
 
-<<<<<<< HEAD
-
 ## AC-13 — the CurveBender notice keeps off the assistant's chat, and off the accounts it was made for
 
-# Given an install that provides the shared CurveBender, and that account, which was onboarded with the assistant When the owner is in Dammy's chat, on a new chat Then no CurveBender notice is shown above the composer And the greeting opens that chat, because the assistant has never been used And no chat of theirs on any agent shows the notice either, because their first agent was Dammy When they send a message there and open a new chat on Dammy again Then that chat opens on the ordinary new-chat page, and still shows no CurveBender notice When an account that had agents before Dammy opens a new chat on one of them Then the CurveBender notice is shown there as it always was, on that agent's new chat When that account opens a new chat on its own Dammy Then no CurveBender notice is shown there at all; only the greeting, while it is unused When it deletes and recreates Dammy, or resets its onboarding Then its new chats on other agents still show the notice, because the account was judged once and that does not change ||||||| parent of 563c19427 (feat(assistant): the first result, recorded once and announced)
+Given an install that provides the shared CurveBender, and that account, which was onboarded with the assistant
+When the owner is in Dammy's chat, on a new chat
+Then no CurveBender notice is shown above the composer
+And the greeting opens that chat, because the assistant has never been used
+And no chat of theirs on any agent shows the notice either, because their first agent was Dammy
+When they send a message there and open a new chat on Dammy again
+Then that chat opens on the ordinary new-chat page, and still shows no CurveBender notice
+When an account that had agents before Dammy opens a new chat on one of them
+Then the CurveBender notice is shown there as it always was, on that agent's new chat
+When that account opens a new chat on its own Dammy
+Then no CurveBender notice is shown there at all; only the greeting, while it is unused
+When it deletes and recreates Dammy, or resets its onboarding
+Then its new chats on other agents still show the notice, because the account was judged once and that does not change
 
 ## AC-14 — the assistant marks the person's first result, and onboarding is done
 
@@ -146,4 +156,3 @@ When the owner asks Dammy to save something as a knowledge base, and it reports 
 Then nothing changes either, since a knowledge base is not the first result any more
 When the owner restarts their onboarding from the Onboarding progress card
 Then the recorded first result is gone, and a later one is recorded as if it were the first
-> > > > > > > 563c19427 (feat(assistant): the first result, recorded once and announced)
