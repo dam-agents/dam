@@ -9,6 +9,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { useAgentPromptChoices } from "../../artifacts/api/queries.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
+import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useSessionDefaults } from "../api/session-pair.js";
 import type { ProviderConnectionRef } from "../lib/session-pair-options.js";
 import { subagentProfileOf } from "../lib/subagent-choice.js";
@@ -29,18 +30,20 @@ const aliasOf = (model: string | null | undefined) =>
  * UNIT_BOUNDARY_DESCRIPTION: which of the agent's defaults, schedules,
  * interactive pages and profiles run on a provider, so detaching it can say
  * what stops. A default runs on it when it names the Connection or a model of
- * its alias; a schedule does when its own model has that alias, or when it
- * names no model and the scheduled default runs on it; a page does when its
+ * its alias; a schedule does when it still runs (enabled, and not a one-off
+ * that already ran) and its own model has that alias, or it names no model
+ * and the scheduled default runs on it, each name once; a page does when its
  * own pick runs on it or names a profile of the provider's template; a profile
  * does when it is of the provider's template and this agent's chat default,
- * subagent slot, a channel, a schedule or a page names it, never for another
+ * subagent slot, a channel, a schedule that still runs or a page names it, never for another
  * agent's use.
  */
 export function useProviderUsage(
   agentId: string | null,
 ): (provider: ProviderConnectionRef) => ProviderUsage {
   const { data: saved } = useSessionDefaults(agentId);
-  const { data: schedules = [] } = useSchedules(agentId);
+  const { data: allSchedules = [] } = useSchedules(agentId);
+  const schedules = allSchedules.filter(isUpcoming);
   const { data: profiles = [] } = useProfiles();
   const channels = useAgent(agentId)?.channels ?? [];
   const { data: pages = [] } = useAgentPromptChoices(agentId);
@@ -68,11 +71,15 @@ export function useProviderUsage(
       profiles.find((p) => p.id === profileId)?.providerTemplate;
     return {
       kinds,
-      schedules: schedules
-        .filter((s) =>
-          s.model ? aliasOf(s.model) === alias : runsOn(effective("scheduled")),
-        )
-        .map((s) => s.name),
+      schedules: unique(
+        schedules
+          .filter((s) =>
+            s.model
+              ? aliasOf(s.model) === alias
+              : runsOn(effective("scheduled")),
+          )
+          .map((s) => s.name),
+      ),
       pages: pages
         .filter(({ choice }) =>
           choice.profileId
@@ -90,3 +97,5 @@ export function useProviderUsage(
     };
   };
 }
+
+const unique = (names: string[]): string[] => [...new Set(names)];

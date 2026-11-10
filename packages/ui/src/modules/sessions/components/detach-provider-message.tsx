@@ -24,34 +24,36 @@ export function DetachProviderMessage({
       {usage.profiles.length > 0 && (
         <div>
           <p>These profiles run on it:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.profiles.map((profile) => (
-              <li key={profile}>{profile}</li>
-            ))}
-          </ul>
+          <NameList names={usage.profiles} />
         </div>
       )}
       {usage.schedules.length > 0 && (
         <div>
           <p>These schedules won&rsquo;t run:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.schedules.map((schedule) => (
-              <li key={schedule}>{schedule}</li>
-            ))}
-          </ul>
+          <NameList names={usage.schedules} />
         </div>
       )}
       {usage.pages.length > 0 && (
         <div>
           <p>Prompts from these pages won&rsquo;t run:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.pages.map((page) => (
-              <li key={page}>{page}</li>
-            ))}
-          </ul>
+          <NameList names={usage.pages} />
         </div>
       )}
     </div>
+  );
+}
+
+const MAX_LISTED = 5;
+
+function NameList({ names }: { names: readonly string[] }) {
+  const hidden = names.length > MAX_LISTED ? names.length - MAX_LISTED + 1 : 0;
+  return (
+    <ul className="mt-1 list-disc pl-5">
+      {names.slice(0, names.length - hidden).map((name) => (
+        <li key={name}>{name}</li>
+      ))}
+      {hidden > 0 && <li>and {hidden} more</li>}
+    </ul>
   );
 }
 

@@ -79,6 +79,7 @@ export function ConfirmDialog({
       }}
     >
       <AlertDialogContent
+        className="flex max-h-[95dvh] flex-col md:max-h-[85vh]"
         onAnimationEnd={handleAnimationEnd}
         onCloseAutoFocus={(event) => {
           if (!opener?.isConnected) return;
@@ -91,7 +92,7 @@ export function ConfirmDialog({
           onOpenChange(false);
         }}
       >
-        <AlertDialogHeader>
+        <AlertDialogHeader className="min-h-0">
           <div className="flex items-center gap-3">
             <div
               className={cn(
@@ -110,13 +111,13 @@ export function ConfirmDialog({
           </div>
           {description && (
             <AlertDialogDescription asChild>
-              <div className="pt-1 text-sm text-muted-foreground">
+              <div className="min-h-0 overflow-y-auto pt-1 text-sm text-muted-foreground">
                 {description}
               </div>
             </AlertDialogDescription>
           )}
         </AlertDialogHeader>
-        <AlertDialogFooter>
+        <AlertDialogFooter className="shrink-0">
           {showCancel && (
             <AlertDialogCancel onClick={() => onCancel?.()}>
               {cancelLabel}
