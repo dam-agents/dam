@@ -170,6 +170,7 @@ import {
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import {
   slackCardBlocks,
+  slackCardIssues,
   slackCardText,
   slackRefusedBlocks,
 } from "./slack-card-blocks.js";
@@ -2567,6 +2568,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   type AgentPost = {
     text: string;
     cardBlocks: SlackBlock[] | undefined;
+    cardIssues: string[];
     blocks: SlackBlock[];
     asText: SlackBlock[] | null;
     replyText: string;
@@ -2584,6 +2586,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       text: sign(card ? withCard(slackCardText(card)) : text, "*"),
       cardBlocks,
+      cardIssues: card ? slackCardIssues(card) : [],
       blocks: renderAssistantBlocks(footer, sign(text, "**"), cardBlocks),
       asText: card
         ? renderAssistantBlocks(footer, sign(withCard(card.text), "**"))
@@ -2592,10 +2595,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
   }
 
-  function tooManyBlocks(blocks: SlackBlock[]): { error: string } | null {
-    return blocks.length > SLACK_MAX_BLOCKS
+  function postRefusal(post: AgentPost): { error: string } | null {
+    if (post.cardIssues.length > 0)
+      return {
+        error: `The card was not sent: ${post.cardIssues.join("; ")}.`,
+      };
+    if (post.cardBlocks && post.blocks.length === 1)
+      return {
+        error:
+          "The message shows nothing in Slack: its text is empty and its card renders no block. Add text or content to the card.",
+      };
+    return post.blocks.length > SLACK_MAX_BLOCKS
       ? {
-          error: `With its card the message is ${blocks.length} Slack blocks long, and Slack takes at most ${SLACK_MAX_BLOCKS}. Shorten the card, or move part of it to a second message.`,
+          error: `With its card the message is ${post.blocks.length} Slack blocks long, and Slack takes at most ${SLACK_MAX_BLOCKS}. Shorten the card, or move part of it to a second message.`,
         }
       : null;
   }
@@ -2985,8 +2997,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
     );
     const post = agentPost(args.text, args.card, footer, sign);
-    const crowded = tooManyBlocks(post.blocks);
-    if (crowded) return crowded;
+    const refused = postRefusal(post);
+    if (refused) return refused;
     try {
       await sendAgentPost(turn.channel, post, (blocks) =>
         gw.postEphemeral({
@@ -7392,8 +7404,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
 
       const post = agentPost(text, card, footer, sign);
-      const crowded = tooManyBlocks(post.blocks);
-      if (crowded) return crowded;
+      const refused = postRefusal(post);
+      if (refused) return refused;
 
       try {
         let attachmentError: string | null = null;
@@ -7745,8 +7757,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { ok: true as const, conversationId: target.id };
       }
       const post = agentPost(args.text, args.card, footer, sign);
-      const crowded = tooManyBlocks(post.blocks);
-      if (crowded) return crowded;
+      const refused = postRefusal(post);
+      if (refused) return refused;
       try {
         const { uploadError, ts } = await postWithAttachment(
           gw,

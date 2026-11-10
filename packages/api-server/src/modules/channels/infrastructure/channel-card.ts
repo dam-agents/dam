@@ -28,6 +28,8 @@ export const TITLE_CHARS = 150;
 
 export const FIELD_CHARS = 2000;
 
+export const TABLE_CHARS = 10_000;
+
 const INTERACTIVE_NAMES: Record<string, string> = {
   button: "button that sends a choice back",
   select: "select menu",
@@ -81,7 +83,7 @@ function longFields(children: readonly CardChild[]): string[] {
     if (child.type === "fields")
       return child.children
         .filter(
-          (field) => field.label.length + field.value.length > FIELD_CHARS,
+          (field) => `*${field.label}*\n${field.value}`.length > FIELD_CHARS,
         )
         .map((field) => field.label);
     if (child.type === "section") return longFields(child.children);
@@ -89,8 +91,23 @@ function longFields(children: readonly CardChild[]): string[] {
   });
 }
 
+function longTables(children: readonly CardChild[]): number[] {
+  return children.flatMap((child): number[] => {
+    if (child.type === "table") {
+      const chars = [...child.headers, ...child.rows.flat()].join("").length;
+      return chars > TABLE_CHARS ? [chars] : [];
+    }
+    if (child.type === "section") return longTables(child.children);
+    return [];
+  });
+}
+
 function cardIssues(card: CardElement): string[] {
   return [
+    ...longTables(card.children).map(
+      (chars) =>
+        `a Table holds ${chars} characters in its cells; Slack shows at most ${TABLE_CHARS} as a table`,
+    ),
     ...((card.title?.length ?? 0) > TITLE_CHARS
       ? [
           `the card title holds ${card.title?.length} characters; Slack shows at most ${TITLE_CHARS}`,

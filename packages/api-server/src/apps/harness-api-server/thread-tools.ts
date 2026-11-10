@@ -78,7 +78,10 @@ export function registerThreadTools(
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
         const built = await ports.cardOf(tree, channel);
-        if ("error" in built) return errorResult(built.error);
+        if ("error" in built) {
+          ports.audit("start", built, { hasCard: true });
+          return errorResult(built.error);
+        }
         const result = await ports.startThread(channel, {
           sessionId,
           conversationId: chatId,

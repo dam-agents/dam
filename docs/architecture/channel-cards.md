@@ -23,7 +23,7 @@ Every card is checked before anything posts, and a card that fails comes back as
 Nothing is posted, so the channel never shows half an answer; the agent fixes the card or sends text.
 
 - **Catalog and structure.** Props are checked against each component's schema, and children against where a component may go, by json-render.
-- **Per-message limits.** A card holds what one Slack message can show: one table, two charts, ten fields per group, 100 rows and 20 columns per table, Slack's limits on chart titles, labels, series and points, 25 link buttons per row, a title of 150 characters and a field of 2000, the lengths past which Slack would cut without refusing.
+- **Per-message limits.** A card holds what one Slack message can show: one table, two charts, ten fields per group, 100 rows, 20 columns and 10000 characters of cells per table, Slack's limits on chart titles, labels, series and points, 25 link buttons per row, a title of 150 characters and a field of 2000, the lengths past which Slack would cut without refusing.
   The same limits apply in Telegram, so a card that fits one messenger fits both; Telegram also refuses a text and card longer than one message, or than a file's caption.
 - **No interactive elements.** A channel has no way yet for a click to reach the agent, so a button that sends a choice back, a select menu, radio buttons and a text input are refused; only link buttons remain.
   The rule judges the rendered card, not component names, so an interactive component a later catalog adds is refused too, and the catalog an agent reads leaves out every component whose example renders one.

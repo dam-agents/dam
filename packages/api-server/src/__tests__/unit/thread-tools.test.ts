@@ -135,6 +135,7 @@ describe("start_thread", () => {
     expect(res.isError).toBe(true);
     expect(res.text).toContain("root must be a Card");
     expect(h.starts).toEqual([]);
+    expect(h.audits).toEqual(["start:failure"]);
   });
 
   // TEST_SCENARIO: a call the platform cannot tie to a Session owns nothing, and points at post instead.

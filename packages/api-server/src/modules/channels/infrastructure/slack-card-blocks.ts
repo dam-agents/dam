@@ -20,6 +20,10 @@ function mrkdwnSections(markdown: string): string[] {
   );
 }
 
+const FIELD_TEXT = 2000;
+
+const TEXT_OBJECT = 3000;
+
 function inMrkdwn(children: readonly CardChild[]): CardChild[] {
   return children.flatMap((child): CardChild[] => {
     switch (child.type) {
@@ -27,6 +31,9 @@ function inMrkdwn(children: readonly CardChild[]): CardChild[] {
         return mrkdwnSections(child.content).map((content) => ({
           ...child,
           content,
+          ...(child.style === "bold" && content.length > TEXT_OBJECT - 2
+            ? { style: "plain" as const }
+            : {}),
         }));
       case "fields":
         return [
@@ -59,6 +66,26 @@ export function slackCardBlocks(card: ChannelCard): SlackBlock[] {
     },
     { maxBlocks: Number.MAX_SAFE_INTEGER },
   );
+}
+
+function cutFields(children: readonly CardChild[]): string[] {
+  return children.flatMap((child): string[] => {
+    if (child.type === "fields")
+      return child.children
+        .filter(
+          (field) => `*${field.label}*\n${field.value}`.length > FIELD_TEXT,
+        )
+        .map(
+          (field) =>
+            `the Field "${field.label}" is more than ${FIELD_TEXT} characters long in Slack's format, which Slack cuts; shorten it, or put the long part in a Text`,
+        );
+    if (child.type === "section") return cutFields(child.children);
+    return [];
+  });
+}
+
+export function slackCardIssues(card: ChannelCard): string[] {
+  return cutFields(inMrkdwn(card.card.children));
 }
 
 export function slackCardText(card: ChannelCard): string {

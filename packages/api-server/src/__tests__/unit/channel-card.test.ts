@@ -97,6 +97,26 @@ describe("buildChannelCard", () => {
     expect(issues).toMatch(/Field "Log"/);
   });
 
+  // TEST_SCENARIO: Slack's adapter turns a table with more than 10000 characters in its cells into a cut ASCII block, so the card is refused instead.
+  it("refuses a table with more characters than Slack shows as a table", () => {
+    const built = buildChannelCard({
+      type: "Card",
+      props: { title: "Log" },
+      children: [
+        {
+          type: "Table",
+          props: {
+            headers: ["Line"],
+            rows: Array.from({ length: 50 }, () => ["x".repeat(250)]),
+          },
+        },
+      ],
+    });
+    expect("issues" in built && built.issues.join(" ")).toMatch(
+      /characters in its cells/,
+    );
+  });
+
   // TEST_SCENARIO: A channel has no way yet for a click to reach the agent, so a button that sends a choice back would do nothing.
   it("refuses a button that sends a choice back", () => {
     const built = buildChannelCard({

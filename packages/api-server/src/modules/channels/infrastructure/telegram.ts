@@ -296,6 +296,8 @@ export const TELEGRAM_MESSAGE_CHARS = 4096;
 
 export const TELEGRAM_CAPTION_CHARS = 1024;
 
+const MARKDOWN_V2_ESCAPED = /[_*[\]()~`>#+\-=|{}.!\\]/g;
+
 export function telegramCardTooLong(
   text: string,
   options?: Pick<PostMessageOptions, "attachment" | "card">,
@@ -303,9 +305,9 @@ export function telegramCardTooLong(
   const { attachment, card } = options ?? {};
   if (!card) return null;
   const limit = attachment ? TELEGRAM_CAPTION_CHARS : TELEGRAM_MESSAGE_CHARS;
-  const length = [text, card.text]
-    .filter((part) => part.trim())
-    .join("\n\n").length;
+  const message = [text, card.text].filter((part) => part.trim()).join("\n\n");
+  const length =
+    message.length + (message.match(MARKDOWN_V2_ESCAPED)?.length ?? 0);
   return length > limit
     ? {
         error: `With its card the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the card or the text, or send them as two messages.`,

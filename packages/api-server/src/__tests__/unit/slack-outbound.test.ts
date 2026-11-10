@@ -511,6 +511,24 @@ describe("slack outbound — channel cards", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a card whose only text is blank renders no Slack block, and with no text of its own the post would show the Agent Footer alone.
+  it("refuses a post that would show nothing but its footer", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    h.gw.setGrantedScopes(["chat:write", "chat:write.customize"]);
+    const blank = channelCard({
+      type: "Card",
+      props: {},
+      children: [{ type: "Text", props: { content: " " } }],
+    });
+
+    const result = await h.post("", { card: blank });
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining("shows nothing"),
+    });
+    expect(h.messages()).toEqual([]);
+  });
+
   it("refuses a card too long for one Slack message before anything posts", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     const long = channelCard({

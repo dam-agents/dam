@@ -87,4 +87,11 @@ describe("telegramCardTooLong", () => {
     ).toMatchObject({ error: expect.stringContaining("1024") });
     expect(telegramCardTooLong(`${long}${long}`)).toBeNull();
   });
+
+  // TEST_SCENARIO: the adapter sends the text escaped for Telegram's Markdown, so punctuation counts twice against the limit.
+  it("counts the characters Telegram's Markdown escapes", () => {
+    expect(telegramCardTooLong(".".repeat(2100), { card })).toMatchObject({
+      error: expect.stringContaining("4096"),
+    });
+  });
 });

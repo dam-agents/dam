@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildChannelCard } from "../../modules/channels/infrastructure/channel-card.js";
 import {
   slackCardBlocks,
+  slackCardIssues,
   slackRefusedBlocks,
 } from "../../modules/channels/infrastructure/slack-card-blocks.js";
 
@@ -72,6 +73,39 @@ describe("slackCardBlocks", () => {
       ),
     );
     expect(blocks.length).toBeGreaterThan(60);
+  });
+});
+
+describe("slackCardIssues", () => {
+  // TEST_SCENARIO: escaping grows a field in Slack's format, so a field that passes the platform-wide check can still be cut by Slack.
+  it("refuses a field Slack would cut once its text is escaped", () => {
+    const issues = slackCardIssues(
+      card([
+        {
+          type: "Fields",
+          props: {},
+          children: [
+            {
+              type: "Field",
+              props: { label: "&".repeat(10), value: "v".repeat(1980) },
+            },
+          ],
+        },
+      ]),
+    );
+    expect(issues.join(" ")).toMatch(/Slack cuts/);
+  });
+
+  it("keeps a long bold text whole by showing it plain", () => {
+    const blocks = slackCardBlocks(
+      card([
+        {
+          type: "Text",
+          props: { content: `${"w".repeat(2999)}.`, style: "bold" },
+        },
+      ]),
+    );
+    expect(texts(blocks)).toContain(`${"w".repeat(2999)}.`);
   });
 });
 

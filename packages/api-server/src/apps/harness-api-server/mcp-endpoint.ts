@@ -72,6 +72,7 @@ import {
   cardComponents,
   FIELD_CHARS,
   LINK_BUTTONS_PER_ROW,
+  TABLE_CHARS,
   TITLE_CHARS,
 } from "../../modules/channels/infrastructure/channel-card.js";
 import {
@@ -357,9 +358,11 @@ export function createMcpSession(
   async function linkedValues(
     value: unknown,
     surface: string,
+    lookup: (id: string) => ReturnType<typeof deps.artifactLibrary.get>,
   ): Promise<{ value: unknown } | { error: string }> {
     if (typeof value === "string") {
-      const linked = await channelLinks(value, surface);
+      if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
+      const linked = await withChannelArtifactLinks(value, surface, lookup);
       return "error" in linked ? linked : { value: linked.text };
     }
     if (value === null || typeof value !== "object") return { value };
@@ -368,7 +371,7 @@ export function createMcpSession(
       : Object.entries(value);
     const linked: [string, unknown][] = [];
     for (const [key, item] of entries) {
-      const result = await linkedValues(item, surface);
+      const result = await linkedValues(item, surface, lookup);
       if ("error" in result) return result;
       linked.push([key, result.value]);
     }
@@ -384,9 +387,16 @@ export function createMcpSession(
     surface: string,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
-    const linked = JSON.stringify(tree).includes(ARTIFACT_INTERNAL_LINK_PREFIX)
-      ? await linkedValues(tree, surface)
-      : { value: tree };
+    const artifacts = new Map<
+      string,
+      ReturnType<typeof deps.artifactLibrary.get>
+    >();
+    const lookup = (id: string) => {
+      const known = artifacts.get(id) ?? deps.artifactLibrary.get(id);
+      artifacts.set(id, known);
+      return known;
+    };
+    const linked = await linkedValues(tree, surface, lookup);
     if ("error" in linked) return linked;
     const built = buildChannelCard(linked.value as Record<string, unknown>);
     if ("issues" in built)
@@ -475,6 +485,7 @@ export function createMcpSession(
             linkButtonsPerRow: LINK_BUTTONS_PER_ROW,
             titleChars: TITLE_CHARS,
             fieldChars: FIELD_CHARS,
+            tableCellChars: TABLE_CHARS,
           },
           buttons:
             "Only LinkButton: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
