@@ -191,6 +191,28 @@ describe("an agent's session window", () => {
       nextSessionCursor([first, page([], "s9")], { sessionId: "s2" }),
     ).toBeNull();
   });
+
+  it("TEST_SCENARIO: a runtime older than the filter sends a page the browser empties; paging goes on past it while the cursor moves", () => {
+    const page = (
+      ids: string[],
+      next: string | null,
+      hiddenByBrowser?: number,
+    ) => ({
+      sessions: ids.map((sessionId) => ({ sessionId })),
+      nextCursor: next === null ? null : { sessionId: next },
+      ...(hiddenByBrowser !== undefined && { hiddenByBrowser }),
+    });
+    const first = page(["s1"], "s50", 49);
+    expect(
+      nextSessionCursor([first, page([], "s100", 50)], { sessionId: "s50" }),
+    ).toEqual({ sessionId: "s100" });
+    expect(
+      nextSessionCursor([first, page([], "s50", 50)], { sessionId: "s50" }),
+    ).toBeNull();
+    expect(
+      nextSessionCursor([first, page([], null, 50)], { sessionId: "s50" }),
+    ).toBeNull();
+  });
 });
 
 describe("the sidebar session filter", () => {

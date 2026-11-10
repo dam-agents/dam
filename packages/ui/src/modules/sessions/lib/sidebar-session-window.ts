@@ -87,6 +87,7 @@ export function nextSessionCursor<C>(
   pages: readonly {
     sessions: readonly { sessionId: string }[];
     nextCursor: C | null;
+    hiddenByBrowser?: number;
   }[],
   lastCursor: C | null,
 ): C | null {
@@ -97,6 +98,8 @@ export function nextSessionCursor<C>(
     JSON.stringify(lastCursor) === JSON.stringify(last.nextCursor)
   )
     return null;
+  if (last.sessions.length === 0 && (last.hiddenByBrowser ?? 0) > 0)
+    return last.nextCursor;
   const seen = new Set(
     pages.slice(0, -1).flatMap((p) => p.sessions.map((s) => s.sessionId)),
   );
