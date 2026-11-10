@@ -3,8 +3,6 @@
   <img src="docs/assets/dam-light.svg#gh-dark-mode-only" alt="DAM" />
 </p>
 
-<p align="center"><i>(Deploy Agents Massively)</i></p>
-
 <h3 align="center">
 Engineering agents that run your entire stack.<br />
 AI teammates that work with you in Slack.
@@ -22,7 +20,6 @@ AI teammates that work with you in Slack.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
-  <img alt="Kubernetes" src="https://img.shields.io/badge/runs%20on-Kubernetes-326ce5" />
 </p>
 
 ---
