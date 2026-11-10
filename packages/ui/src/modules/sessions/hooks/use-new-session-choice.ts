@@ -2,7 +2,11 @@ import { type HarnessCapability, routesSessionPairs } from "agent-runtime-api";
 
 import type { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import type { useAgentSession } from "../api/queries.js";
-import { useProviderConnections } from "../api/session-pair.js";
+import {
+  useHarnessCatalog,
+  useProviderConnections,
+  useRememberedPair,
+} from "../api/session-pair.js";
 import { useNextSessionPair } from "./use-next-session-pair.js";
 
 type Status = ReturnType<typeof useHarnessConfigStatus>["data"];
@@ -76,6 +80,7 @@ export interface NewSessionChoiceResult {
   choice: NewSessionChoice;
   newSessionAgent: string | null;
   pair: ReturnType<typeof useNextSessionPair>;
+  pairSettled: boolean;
   pairHarness: string | null;
   noProviders: boolean;
   noGrantedProvider: boolean;
@@ -111,16 +116,26 @@ export function useNewSessionChoice({
     sessionHarness,
   });
   const providerConnections = useProviderConnections(newSessionAgent);
+  const pairAgentId =
+    choice.kind === "picker" && choice.routed ? choice.agentId : null;
+  const remembered = useRememberedPair(pairAgentId);
+  const { data: catalog } = useHarnessCatalog();
   const pair = useNextSessionPair(
-    choice.kind === "picker" && choice.routed ? choice.agentId : null,
+    pairAgentId,
     carried.map((h) => h.name),
     choice.kind === "picker" ? choice.defaultHarness : undefined,
   );
+  const pairSettled =
+    pairAgentId !== null &&
+    providerConnections.loaded &&
+    !remembered.isPending &&
+    catalog !== undefined;
 
   return {
     choice,
     newSessionAgent,
     pair,
+    pairSettled,
     pairHarness:
       choice.kind === "picker"
         ? (pair?.harness ?? choice.defaultHarness)

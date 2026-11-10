@@ -176,7 +176,7 @@ import {
   classicPanel,
 } from "../lib/classic-chat-layout.js";
 import { composerBlock } from "../lib/composer-block.js";
-import { sharedCurveBender } from "../lib/curve-bender.js";
+import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -346,6 +346,7 @@ export function ChatView() {
     choice,
     newSessionAgent,
     pair,
+    pairSettled,
     pairHarness,
     noProviders,
     noGrantedProvider,
@@ -361,6 +362,12 @@ export function ChatView() {
   const shared = sharedCurveBender(providers.owned);
   const routed =
     choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
+  const notice = curveBenderNotice({
+    sessionId,
+    shared,
+    pair,
+    pairSettled,
+  });
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(
@@ -1122,7 +1129,11 @@ export function ChatView() {
           />
           <KitUpdateBar agentId={selectedAgent} />
           <HomeVolumeBar agentId={selectedAgent} />
-          <CurveBenderAlert visible={!!shared} onTry={curveBender.tryIt} />
+          <CurveBenderAlert
+            variant={notice}
+            onTry={curveBender.tryIt}
+            onPickProvider={() => setPairPickerOpen(true)}
+          />
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
