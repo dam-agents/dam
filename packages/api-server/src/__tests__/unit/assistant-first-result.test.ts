@@ -31,18 +31,6 @@ async function withEvents<T>(
   }
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a claim written without its side effects — the state a caller leaves when it dies inside the locked section. */
-function crashedClaim(
-  w: ReturnType<typeof assistantService>,
-  kind: "schedule" | "artifact" | "knowledgeBase" = "schedule",
-) {
-  const row = w.rows.rows.get(OWNER)!;
-  w.rows.rows.set(OWNER, {
-    ...row,
-    firstResult: { kind, ref: null, at: new Date(), completed: false },
-  });
-}
-
 async function until(reached: () => boolean): Promise<void> {
   while (!reached()) await new Promise((resolve) => setImmediate(resolve));
 }
@@ -66,7 +54,8 @@ describe("the first result", () => {
     expect(await w.assistants.state()).toMatchObject({
       firstResult: { kind: "schedule" },
     });
-    expect(w.recordTask).toHaveBeenCalledWith("create-schedule");
+    expect(w.recordTaskIn).toHaveBeenCalledTimes(1);
+    expect(w.recordTaskIn.mock.calls[0]![1]).toBe("create-schedule");
     expect(recorded).toEqual([
       {
         type: EventType.AssistantFirstResultRecorded,
@@ -88,8 +77,8 @@ describe("the first result", () => {
     );
     expect(value).toEqual(first);
     expect(recorded).toEqual([]);
-    expect(w.recordTask).toHaveBeenCalledTimes(1);
-    expect(w.recordTask).toHaveBeenCalledWith("create-artifact");
+    expect(w.recordTaskIn).toHaveBeenCalledTimes(1);
+    expect(w.recordTaskIn.mock.calls[0]![1]).toBe("create-artifact");
   });
 
   // TEST_SCENARIO: a saved knowledge base has no checklist item, so the result is recorded and nothing new shows on the checklist.
@@ -104,7 +93,7 @@ describe("the first result", () => {
       kind: "knowledgeBase",
       ref: "Team handbook",
     });
-    expect(w.recordTask).not.toHaveBeenCalled();
+    expect(w.recordTaskIn).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: a report is written to the caller's own record only.
@@ -152,36 +141,31 @@ describe("the first result", () => {
     );
     expect(value).toBeNull();
     expect(recorded).toEqual([]);
-    expect(w.recordTask).not.toHaveBeenCalled();
+    expect(w.recordTaskIn).not.toHaveBeenCalled();
   });
 });
 
 describe("the first result's side effects", () => {
-  // TEST_SCENARIO: the claim was written and its caller died before the checklist and the announcement, so a later report finishes them — one tick, one event, and the result it answers with is the one already claimed.
-  it("finishes a claim whose caller never completed it", async () => {
+  // TEST_SCENARIO: a report dies inside its critical section, at its checklist tick: nothing it wrote lands — no result, no tick, no event — and a later report starts the onboarding's first result from nothing.
+  it("lands nothing when a report dies inside the lock", async () => {
     const w = assistantService();
     await w.optIn();
-    crashedClaim(w);
-
-    const { value, recorded } = await withEvents(() =>
-      w.assistants.recordFirstResult({ kind: "artifact", ref: "later" }),
+    w.recordTaskIn.mockRejectedValueOnce(
+      new Error("the checklist is unreachable"),
     );
-    expect(value).toMatchObject({ kind: "schedule", ref: null });
-    expect(w.recordTask).toHaveBeenCalledTimes(1);
-    expect(w.recordTask).toHaveBeenCalledWith("create-schedule");
-    expect(recorded).toEqual([
-      expect.objectContaining({ kind: "schedule", ref: null }),
-    ]);
-  });
+    const { recorded } = await withEvents(async () => {
+      await expect(
+        w.assistants.recordFirstResult({ kind: "schedule" }),
+      ).rejects.toThrow("the checklist is unreachable");
+    });
+    expect(recorded).toEqual([]);
+    expect(w.rows.rows.get(OWNER)?.firstResult).toBeNull();
 
-  // TEST_SCENARIO: the request path finishes it too, in the same locked section, so a claim nobody completed does not wait for another report.
-  it("finishes it on the request path as well", async () => {
-    const w = assistantService();
-    await w.optIn();
-    crashedClaim(w, "artifact");
-    const { recorded } = await withEvents(() => w.ensure());
-    expect(w.recordTask).toHaveBeenCalledWith("create-artifact");
-    expect(recorded).toHaveLength(1);
+    const again = await w.assistants.recordFirstResult({ kind: "schedule" });
+    expect(again).toMatchObject({ kind: "schedule" });
+    expect(w.rows.rows.get(OWNER)?.firstResult).toMatchObject({
+      completed: true,
+    });
   });
 
   // TEST_SCENARIO: a report that has finished leaves nothing for the next caller: no second tick and no second event, however many calls come.
@@ -194,7 +178,7 @@ describe("the first result's side effects", () => {
       await w.ensure();
     });
     expect(recorded).toEqual([]);
-    expect(w.recordTask).toHaveBeenCalledTimes(1);
+    expect(w.recordTaskIn).toHaveBeenCalledTimes(1);
   });
 
   // TEST_SCENARIO: a report holds the lock, parked at its checklist tick, while a reset waits behind it: the report finishes first — its tick and its event — and only then does the reset clear the result and move the epoch on.
@@ -205,14 +189,15 @@ describe("the first result's side effects", () => {
     const gate = new Promise<void>((resolve) => {
       open = resolve;
     });
-    w.recordTask.mockImplementationOnce(async () => {
+    w.recordTaskIn.mockImplementationOnce(async () => {
       await gate;
+      return null;
     });
 
     const report = withEvents(() =>
       w.assistants.recordFirstResult({ kind: "schedule" }),
     );
-    await until(() => w.recordTask.mock.calls.length === 1);
+    await until(() => w.recordTaskIn.mock.calls.length === 1);
     expect(w.rows.rows.get(OWNER)?.firstResult).toMatchObject({
       completed: false,
     });
@@ -222,7 +207,7 @@ describe("the first result's side effects", () => {
     await reset;
 
     expect(recorded).toHaveLength(1);
-    expect(w.recordTask).toHaveBeenCalledTimes(1);
+    expect(w.recordTaskIn).toHaveBeenCalledTimes(1);
     expect(w.rows.rows.get(OWNER)).toMatchObject({
       firstResult: null,
       epoch: 1,
@@ -239,7 +224,7 @@ describe("the first result's side effects", () => {
     const gate = new Promise<void>((resolve) => {
       open = resolve;
     });
-    w.resetChecklist.mockImplementationOnce(async () => {
+    w.resetChecklistIn.mockImplementationOnce(async () => {
       await gate;
     });
 
@@ -255,8 +240,8 @@ describe("the first result's side effects", () => {
 
     expect(value).toMatchObject({ kind: "artifact" });
     expect(recorded).toEqual([expect.objectContaining({ kind: "artifact" })]);
-    expect(w.rows.rows.get(OWNER)).toMatchObject({ epoch: 1 });
-    expect(w.recordTask).toHaveBeenCalledWith("create-artifact");
+    expect(w.recordTaskIn).toHaveBeenCalledTimes(2);
+    expect(w.recordTaskIn.mock.calls[1]![1]).toBe("create-artifact");
   });
 
   // TEST_SCENARIO: the reset forgets the first result whether or not the feature is on for the person, and each reset moves the onboarding epoch on by exactly one — a number, not a timestamp, so nothing is decided by a clock.

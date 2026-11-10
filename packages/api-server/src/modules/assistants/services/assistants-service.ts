@@ -8,6 +8,8 @@ import {
 } from "api-server-api";
 
 import { getLogger } from "../../../core/logger.js";
+import type { DbTx } from "db";
+import type { Unlock } from "../../getting-started/domain/unlocks.js";
 import { emit, EventType } from "../../../events.js";
 import type { InfraAgent } from "../../agents/infrastructure/agent-mappers.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
@@ -65,10 +67,10 @@ export function createAssistantsService(deps: {
   enrolled: () => Promise<void>;
   /* UNIT_BOUNDARY_DESCRIPTION: how the checklist learns of the Agent the platform made — its first task, recorded done and seen, so nothing celebrates an Agent nobody made. It is also what a reset records again. */
   provisioned: (agent: CreatedAgent) => Promise<void>;
-  /* UNIT_BOUNDARY_DESCRIPTION: how the checklist counts a task the assistant did for the person, recorded done and seen: the platform reports what it did, so it holds no celebration of its own. */
-  recordTask: (task: GettingStartedTask) => Promise<void>;
-  /* UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, the one its button under Experimental features calls, so both doors start it over the same way. */
-  resetChecklist: () => Promise<unknown>;
+  /* UNIT_BOUNDARY_DESCRIPTION: how the checklist counts a task the assistant did for the person — done and seen, written on this caller's own transaction — and the unlock it wrote, which is announced after that transaction commits. */
+  recordTaskIn: (tx: DbTx, task: GettingStartedTask) => Promise<Unlock | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, on this caller's transaction, so the first result and the checklist it belongs to change together. */
+  resetChecklistIn: (tx: DbTx) => Promise<void>;
   /* UNIT_BOUNDARY_DESCRIPTION: one per-owner transaction around the first result, taken by its report and by every reset — what a report reads is what its writes settle against. */
   firstResultLock: XactTxLock;
   /* UNIT_BOUNDARY_DESCRIPTION: how long a reset or a switch waits for a create another caller holds, and how often it looks. A request waits not at all, since it has a page to answer. */
@@ -252,46 +254,54 @@ export function createAssistantsService(deps: {
       ref: string | null;
       epoch: number;
     } | null;
+    unlock: Unlock | null;
   }> =>
     deps.firstResultLock(deps.owner, async (tx) => {
       const row = await deps.repo.firstResultIn(tx, deps.owner);
-      if (row === null) return { result: null, announce: null };
+      if (row === null) return { result: null, announce: null, unlock: null };
       let result = row.firstResult;
       if (result === null) {
-        if (input === null) return { result: null, announce: null };
-        if (
-          !(await deps.repo.claimFirstResultIn(
-            tx,
-            deps.owner,
-            input.kind,
-            input.ref,
-          ))
-        ) {
-          const claimed = await deps.repo.firstResultIn(tx, deps.owner);
-          return { result: claimed?.firstResult ?? null, announce: null };
-        }
-        result = {
-          kind: input.kind,
-          ref: input.ref,
-          at: new Date(),
-          completed: false,
-        };
+        if (input === null)
+          return { result: null, announce: null, unlock: null };
+        await deps.repo.claimFirstResultIn(
+          tx,
+          deps.owner,
+          input.kind,
+          input.ref,
+        );
+        /* UNIT_BOUNDARY_DESCRIPTION: the claim is read back from the row rather than rebuilt here, so the moment it records is the store's own. */
+        result =
+          (await deps.repo.firstResultIn(tx, deps.owner))?.firstResult ?? null;
+        if (result === null)
+          return { result: null, announce: null, unlock: null };
       }
-      if (result.completed) return { result, announce: null };
+      if (result.completed) return { result, announce: null, unlock: null };
       const task = taskOf(result.kind);
-      if (task !== null) await deps.recordTask(task);
+      /* UNIT_BOUNDARY_DESCRIPTION: the tick is written on this transaction, so the checklist and the completion land together; its unlock is announced by the caller once the transaction commits. */
+      const unlock = task === null ? null : await deps.recordTaskIn(tx, task);
       await deps.repo.completeFirstResultIn(tx, deps.owner);
       return {
         result: { ...result, completed: true },
         announce: { kind: result.kind, ref: result.ref, epoch: row.epoch },
+        unlock,
       };
     });
 
-  const announce = (first: {
-    kind: AssistantFirstResultInput["kind"];
-    ref: string | null;
-    epoch: number;
-  }): void => {
+  const announce = (
+    first: {
+      kind: AssistantFirstResultInput["kind"];
+      ref: string | null;
+      epoch: number;
+    },
+    unlock: Unlock | null,
+  ): void => {
+    if (unlock !== null)
+      emit({
+        type: EventType.AvatarUnlocked,
+        ownerSub: deps.owner,
+        task: unlock.task,
+        character: unlock.character,
+      });
     emit({
       type: EventType.AssistantFirstResultRecorded,
       owner: deps.owner,
@@ -312,11 +322,15 @@ export function createAssistantsService(deps: {
   return {
     assistants: {
       async recordFirstResult(input) {
-        const { result, announce: news } = await runFirstResult({
+        const {
+          result,
+          announce: news,
+          unlock,
+        } = await runFirstResult({
           kind: input.kind,
           ref: input.ref ?? null,
         });
-        if (news !== null) announce(news);
+        if (news !== null) announce(news, unlock);
         return answer(result);
       },
 
@@ -343,11 +357,12 @@ export function createAssistantsService(deps: {
 
       async resetOnboarding() {
         // UNIT_BOUNDARY_DESCRIPTION: the one onboarding reset. The checklist starts over for everyone, and a person the feature is on for is a first-timer in their assistant too — one they deleted is made again when nothing of theirs carries the name, one they still have is reused with its use forgotten. A person it is off for gets the checklist alone, and nothing of the assistant's is touched or refused — the first result aside, which is the checklist's own state and goes with it either way.
-        /* UNIT_BOUNDARY_DESCRIPTION: the reset takes the first result's own lock, so a report inside it finishes before this clears, and one that started after it reads a record with no result and a later epoch. The checklist restarts inside the lock, so no tick lands on the fresh one. */
+        /* UNIT_BOUNDARY_DESCRIPTION: the reset takes the first result's own lock, so a report inside it finishes before this clears, and one that started after it reads a record with no result and a later epoch. The checklist restarts on the same transaction, so no tick lands on the fresh one and neither change commits without the other; its own event leaves after the commit. */
         await deps.firstResultLock(deps.owner, async (tx) => {
           await deps.repo.clearFirstResultIn(tx, deps.owner);
-          await deps.resetChecklist();
+          await deps.resetChecklistIn(tx);
         });
+        emit({ type: EventType.GettingStartedReset, ownerSub: deps.owner });
         if (!(await deps.enabled())) return;
         /* UNIT_BOUNDARY_DESCRIPTION: an Agent the reset has to make is recorded by the create itself, before its record reads ready; one the reset reuses is recorded here, since nothing created it this time. */
         const { agent, made } = await settle(waitMs);
@@ -360,11 +375,6 @@ export function createAssistantsService(deps: {
       try {
         // UNIT_BOUNDARY_DESCRIPTION: a ready record is what says a pinned-on person was given theirs, so a Dambledore they delete is not made again by a request — such an install has no switch, and the reset is their way to ask again. A record still `creating` is a create that never finished, which this request finishes.
         const row = await deps.repo.find(deps.owner);
-        /* UNIT_BOUNDARY_DESCRIPTION: a claim whose caller died before its side effects lands here, finished in the same locked section a report uses — a reset would have cleared the result rather than leaving it. */
-        if (row?.firstResult != null && !row.firstResult.completed) {
-          const { announce: news } = await runFirstResult(null);
-          if (news !== null) announce(news);
-        }
         if (row?.state === "ready") return;
         await provision(0);
       } catch (err) {

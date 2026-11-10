@@ -1,6 +1,8 @@
 import type { GettingStartedTask } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
+import type { DbTx } from "db";
 
+import { chooseUnlock, type Unlock } from "../domain/unlocks.js";
 import type { GettingStartedRepository } from "../infrastructure/getting-started-repository.js";
 import type { UnlockRecorder } from "./unlock-recorder.js";
 
@@ -25,19 +27,41 @@ export async function recordProvisionedAgent(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A task the platform reports for the person — the
  * checklist item an assistant finished, such as the first result's schedule or
- * artifact — is recorded done and **seen**: the platform did it on their behalf, so
- * the checklist counts it rather than celebrating it. A task the checklist has no
- * item for is not reported here at all.
- * The unlock is written already seen, in the same statement, so no unseen hint and
- * no celebration ever goes out for it; a row that is already there — the domain
- * event reached it first, as a schedule the person set themselves does — is marked
- * seen here too, or the task would never tick.
+ * artifact — is recorded done and **seen**, and it is written on the caller's own
+ * transaction: the assistant's first result holds one for its whole critical
+ * section, and the checklist must not commit apart from it. The unlock is inserted
+ * already seen, so no unseen hint and no celebration goes out for it. A row that is
+ * already there — the domain event reached it first, as a schedule the person set
+ * themselves does — is marked seen instead, or the task would never tick.
+ * The caller announces the returned unlock after its transaction commits.
  */
-export async function recordTaskSeen(
-  deps: { recorder: UnlockRecorder; repo: GettingStartedRepository },
+export async function recordTaskSeenIn(
+  deps: { repo: GettingStartedRepository; random: () => number },
+  tx: DbTx,
   owner: string,
   task: GettingStartedTask,
+): Promise<Unlock | null> {
+  const unlock = await deps.repo.unlockIn(
+    tx,
+    owner,
+    task,
+    (taken) => chooseUnlock(taken, undefined, deps.random),
+    { seen: true },
+  );
+  await deps.repo.markSeenIn(tx, owner, task);
+  return unlock;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, on the caller's
+ * transaction, so the assistant's onboarding reset clears the checklist and the
+ * first result together or not at all. The caller announces the reset after its
+ * transaction commits.
+ */
+export async function resetChecklistIn(
+  deps: { repo: GettingStartedRepository },
+  tx: DbTx,
+  owner: string,
 ): Promise<void> {
-  await deps.recorder.record(owner, task, undefined, { seen: true });
-  await deps.repo.markSeen(owner, task);
+  await deps.repo.resetIn(tx, owner);
 }

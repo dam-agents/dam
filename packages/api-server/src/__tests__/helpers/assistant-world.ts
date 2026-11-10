@@ -91,15 +91,10 @@ export function rowStore(initial?: AssistantRow) {
       for (const [owner, row] of rows)
         if (row.agentId === agentId) rows.set(owner, { ...row, used: true });
     },
+    /* UNIT_BOUNDARY_DESCRIPTION: as PostgreSQL behaves — the used mark and its epoch are this write's, and the first result is cleared by the reset's own locked statement, not here. */
     resetUsed: async (owner) => {
       const row = rows.get(owner);
-      if (row)
-        rows.set(owner, {
-          ...row,
-          used: false,
-          resetAt: new Date(),
-          firstResult: null,
-        });
+      if (row) rows.set(owner, { ...row, used: false, resetAt: new Date() });
     },
   };
   return { rows, repo };
@@ -190,8 +185,8 @@ export function assistantService(
   const agents = deps.agents ?? agentStore();
   const enrolled = vi.fn(async () => {});
   const provisioned = vi.fn(deps.provisioned ?? (async () => {}));
-  const recordTask = vi.fn(async (_task: string) => {});
-  const resetChecklist = vi.fn(async () => undefined);
+  const recordTaskIn = vi.fn(async (_tx: unknown, _task: string) => null);
+  const resetChecklistIn = vi.fn(async () => undefined);
   /* UNIT_BOUNDARY_DESCRIPTION: the per-owner transaction as PostgreSQL behaves — one holder per owner, the next caller waiting for it, and a gate a test can park the work behind so a reset and a report can be interleaved. */
   const tails = new Map<string, Promise<unknown>>();
   const gates: Promise<void>[] = [];
@@ -203,7 +198,15 @@ export function assistantService(
     const run = previous.then(async () => {
       const gate = gates.shift();
       if (gate !== undefined) await gate;
-      return work(null as never);
+      /* UNIT_BOUNDARY_DESCRIPTION: as PostgreSQL behaves — the work's writes land only when it returns, and a throw rolls the record back to what it was. */
+      const before = structuredClone(rows.rows);
+      try {
+        return await work(null as never);
+      } catch (err) {
+        rows.rows.clear();
+        for (const [key, value] of before) rows.rows.set(key, value);
+        throw err;
+      }
     });
     tails.set(
       owner,
@@ -222,8 +225,8 @@ export function assistantService(
     agents: { list: agents.list, create: agents.create },
     enrolled,
     provisioned,
-    recordTask,
-    resetChecklist,
+    recordTaskIn,
+    resetChecklistIn,
     firstResultLock,
     damConnection: deps.damConnection ?? (async () => null),
     waitMs: deps.waitMs ?? 200,
@@ -234,8 +237,8 @@ export function assistantService(
     agents,
     enrolled,
     provisioned,
-    recordTask,
-    resetChecklist,
+    recordTaskIn,
+    resetChecklistIn,
     ...service,
   };
 }

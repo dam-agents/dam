@@ -1,14 +1,16 @@
 import type { GettingStartedService, GettingStartedTask } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import type { Subscription } from "rxjs";
-import type { Db } from "db";
+import type { Db, DbTx } from "db";
 
+import type { Unlock } from "./domain/unlocks.js";
 import { createGettingStartedRepository } from "./infrastructure/getting-started-repository.js";
 import { startUnlockAvatarsSaga } from "./sagas/unlock-avatars.js";
 import { createEnrollment, type OwnedAgentIds } from "./services/enrollment.js";
 import {
   recordProvisionedAgent,
-  recordTaskSeen,
+  recordTaskSeenIn,
+  resetChecklistIn,
 } from "./services/first-agent.js";
 import { createGettingStartedService } from "./services/getting-started-service.js";
 import { createUnlockRecorder } from "./services/unlock-recorder.js";
@@ -22,8 +24,14 @@ export interface GettingStartedModule {
     owner: string,
     agent: { agentId: string; character: AvatarCharacter },
   ): Promise<void>;
-  /* UNIT_BOUNDARY_DESCRIPTION: records one checklist task as done and seen, for what the platform did on the person's behalf rather than what they did themselves. */
-  recordTaskSeen(owner: string, task: GettingStartedTask): Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: records one checklist task as done and seen, on the caller's own transaction, for what the platform did on the person's behalf rather than what they did themselves; the caller announces the returned unlock after it commits. */
+  recordTaskSeenIn(
+    tx: DbTx,
+    owner: string,
+    task: GettingStartedTask,
+  ): Promise<Unlock | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the checklist's own reset, on the caller's transaction, so it cannot commit apart from the first result the same reset clears. */
+  resetChecklistIn(tx: DbTx, owner: string): Promise<void>;
   start(): void;
   stop(): void;
 }
@@ -49,8 +57,9 @@ export function composeGettingStartedModule(deps: {
     ensureEnrolled: (owner) => enrollment.ensure(owner),
     recordProvisionedAgent: (owner, agent) =>
       recordProvisionedAgent({ recorder }, owner, agent),
-    recordTaskSeen: (owner, task) =>
-      recordTaskSeen({ recorder, repo }, owner, task),
+    recordTaskSeenIn: (tx, owner, task) =>
+      recordTaskSeenIn({ repo, random: Math.random }, tx, owner, task),
+    resetChecklistIn: (tx, owner) => resetChecklistIn({ repo }, tx, owner),
     start() {
       sub ??= startUnlockAvatarsSaga(recorder);
     },

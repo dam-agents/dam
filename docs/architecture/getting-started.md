@@ -31,6 +31,9 @@ The api-server decides once, the first time it meets a user here, whether the ch
 A user who already owns an Agent at that moment used the product before the checklist existed: they get every character at once, already seen, and no checklist.
 The Agent whose create is that first meeting does not count.
 
+The checklist has one reset door left: the assistant's onboarding reset ([assistant](assistant.md#starting-it-over)), which clears the checklist and the assistant's first result in one locked transaction.
+There is no checklist-only reset procedure: a second door that cleared the checklist without the first result was a way around the protocol.
+
 ## In the browser
 
 The UI shows the checklist as the **Get started** item in the sidebar footer, above Documentation and Settings: a progress ring, its label, and a count of the unlocks the user has not seen.

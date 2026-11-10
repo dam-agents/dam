@@ -49,8 +49,10 @@ export function composeAssistantsForOwner(deps: {
           agent.name,
         ),
       }),
-    recordTask: (task) => deps.gettingStarted.recordTaskSeen(deps.owner, task),
-    resetChecklist: () => deps.gettingStarted.forOwner(deps.owner).reset(),
+    recordTaskIn: (tx, task) =>
+      deps.gettingStarted.recordTaskSeenIn(tx, deps.owner, task),
+    resetChecklistIn: (tx) =>
+      deps.gettingStarted.resetChecklistIn(tx, deps.owner),
     firstResultLock: deps.firstResultLock,
     damConnection: deps.damConnection,
   });
