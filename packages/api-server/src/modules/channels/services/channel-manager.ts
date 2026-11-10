@@ -9,7 +9,10 @@ import {
   type SlackDisconnected,
   type AgentDeleted,
 } from "../../../events.js";
-import type { SlackWorker } from "../infrastructure/slack.js";
+import type {
+  SlackSendDestination,
+  SlackWorker,
+} from "../infrastructure/slack.js";
 import type {
   SlackConversationRef,
   SlackLabelledConversation,
@@ -150,6 +153,10 @@ export interface ChannelManager {
     slackChannelId: string,
     teamId: string,
   ): Promise<SlackChannelMembership>;
+  sendReachesOwnerDm(
+    instanceName: string,
+    query: SlackSendDestination,
+  ): Promise<boolean>;
   readThread(
     instanceName: string,
     channelType: ChannelType,
@@ -212,6 +219,7 @@ const METHOD_NAMES = [
   "slackConversationStanding",
   "slackChannelChoices",
   "slackChannelMembership",
+  "sendReachesOwnerDm",
   "notifyPerson",
 ] as const;
 
@@ -249,6 +257,13 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   slackChannelChoices: z.tuple([z.string()]),
   slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
+  sendReachesOwnerDm: z.tuple([
+    z.string(),
+    z.object({
+      conversationId: z.string().optional(),
+      answeringTurn: z.boolean().optional(),
+    }),
+  ]),
   readThread: forInstance.rest(z.unknown()),
   readChannelHistory: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
@@ -320,6 +335,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ kind: z.literal("not-member") }),
     z.object({ kind: z.literal("unlinked") }),
   ]),
+  sendReachesOwnerDm: z.boolean(),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   readChannelHistory: z.union([
     channelHistoryResultSchema,
@@ -565,6 +581,13 @@ export function createChannelManager(deps: {
             teamId,
           )
         : Promise.reject(new Error("slack worker not available")),
+    sendReachesOwnerDm: (
+      instanceName: string,
+      query: SlackSendDestination,
+    ): Promise<boolean> =>
+      deps.slackWorker
+        ? deps.slackWorker.sendReachesOwnerDm(instanceName, query)
+        : Promise.resolve(false),
     notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
       const inSlack = slackWorker
         ? await slackWorker
@@ -769,6 +792,12 @@ export function createChannelManager(deps: {
             teamId,
           ),
       );
+    },
+
+    sendReachesOwnerDm(instanceName, query) {
+      return dispatch("sendReachesOwnerDm", [instanceName, query], () =>
+        explicitHandlers.sendReachesOwnerDm(instanceName, query),
+      ).catch(() => false);
     },
 
     notifyPerson(keycloakSub, notice) {

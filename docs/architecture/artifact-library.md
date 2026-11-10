@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-06
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -121,6 +121,8 @@ Out of scope: limits per viewer on what the Agent may do.
 **Visibility** is one field with three values, and the share link — a URL on the share host keyed by an unguessable random **slug** — is the same for the two that have one, so switching between them never changes the link.
 
 - An artifact is **private** by default: visible in-app only, no link.
+  A channel message that carries its in-app `platform://artifacts/<id>` link is refused, so the link never reaches Slack or Telegram as dead text or as a page nobody shared: the platform replaces the link with the artifact's share URL, and a private artifact has none ([slack guarantees](slack-guarantees.md#3-who-decides-what)).
+  The one exception is the 1:1 Slack DM between an Agent and its owner: there the link becomes the app's artifact page, which opens behind the owner's sign-in, and only for an artifact that Agent published.
 - **Restricted** opens the link to a named group.
   The owner keeps a **viewer allowlist** of email addresses — emails, not user ids, because a listed person may exist only in the identity provider and never have signed in to the platform.
   Viewers need an account admitted by that identity provider; an email address alone does not create one.

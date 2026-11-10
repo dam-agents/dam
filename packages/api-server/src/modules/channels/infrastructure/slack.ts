@@ -1104,11 +1104,20 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackChannelMembership>;
+  sendReachesOwnerDm(
+    instanceName: string,
+    query: SlackSendDestination,
+  ): Promise<boolean>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   resolveConversationLabels(
     refs: SlackConversationRef[],
   ): Promise<SlackLabelledConversation[]>;
+}
+
+export interface SlackSendDestination {
+  conversationId?: string;
+  answeringTurn?: boolean;
 }
 
 export interface SlackOAuthPending {
@@ -1625,6 +1634,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       };
     }
     return null;
+  }
+
+  async function reachesOwnerDm(
+    gw: SlackGateway,
+    instanceName: string,
+    conversationId: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean> {
+    let counterpart: string | null;
+    if (/^[UW][A-Z0-9]+$/.test(conversationId)) counterpart = conversationId;
+    else {
+      const info = await gw.getConversationInfo(conversationId, teamId);
+      counterpart =
+        info.kind === "found" &&
+        info.isDirectMessage &&
+        !info.isGroupDirectMessage
+          ? info.directMessageUser
+          : null;
+    }
+    if (counterpart === null) return false;
+    const owner = await getInstanceOwner(instanceName);
+    if (owner === null) return false;
+    return (
+      (await ownerSlackUserId(instanceName, owner, teamId)) === counterpart
+    );
   }
 
   type TurnRef = {
@@ -7309,6 +7343,44 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         }
       }
       return { kind: "not-member" };
+    },
+
+    async sendReachesOwnerDm(
+      instanceName: string,
+      query: SlackSendDestination,
+    ): Promise<boolean> {
+      try {
+        const gw = await ensureGateway();
+        if (!gw) return false;
+        const bound =
+          await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+        let conversationId = query.conversationId;
+        let teamId: SlackWorkspace | undefined;
+        if (conversationId === undefined) {
+          if (query.answeringTurn) {
+            const turn = resolveTurn(instanceName, "reply");
+            if (!("ref" in turn)) return false;
+            conversationId = turn.ref.channel;
+            teamId = turn.ref.teamId;
+          } else {
+            if (bound.length !== 1) return false;
+            ({ id: conversationId, teamId } = bound[0]!);
+          }
+        }
+        teamId ??= workspaceOf(
+          bound,
+          conversationId,
+          turnWorkspace(instanceName),
+        );
+        if (teamId === undefined) return false;
+        return await reachesOwnerDm(gw, instanceName, conversationId, teamId);
+      } catch (err) {
+        getLogger().warn(
+          { agentId: instanceName, error: formatError(err) },
+          "slack.owner_dm_lookup.failed",
+        );
+        return false;
+      }
     },
 
     async listConversations(instanceName: string) {

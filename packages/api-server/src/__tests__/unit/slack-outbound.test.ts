@@ -26,6 +26,8 @@ function harness(opts: {
   gatewayDown?: boolean;
   workspace?: string;
   ownerSlackUsers?: string[];
+  ownerSlackLinks?: string[];
+  identityLinksFail?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   gw.setChannels(opts.channels ?? [], opts.workspace ?? "");
@@ -50,6 +52,15 @@ function harness(opts: {
       resolve: async () => null,
       externalUsersOf: async (_provider: string, sub: string) =>
         sub === OWNER ? (opts.ownerSlackUsers ?? [OWNER_SLACK]) : [],
+      externalLinksOf: async (_provider: string, sub: string) => {
+        if (opts.identityLinksFail) throw new Error("identity store down");
+        return sub === OWNER
+          ? (opts.ownerSlackLinks ?? [OWNER_SLACK]).map((externalUserId) => ({
+              externalUserId,
+              teamId: opts.workspace ?? "",
+            }))
+          : [];
+      },
     } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
@@ -784,5 +795,91 @@ describe("slack outbound — a direct message stays within reach (#5509)", () =>
     expect(
       await h.post("hello", { conversationId: "USTRANGER" }),
     ).toMatchObject({ error: expect.stringContaining("is not your owner") });
+  });
+});
+
+describe("slack outbound — which sends land in the owner's own DM", () => {
+  const groupDm: FakeSlackChannel = {
+    id: "G-GROUP",
+    name: "group",
+    botIsMember: true,
+    isGroupDirectMessage: true,
+  };
+
+  async function reachesOwnerDm(
+    h: ReturnType<typeof harness>,
+    query: Parameters<
+      ReturnType<typeof harness>["worker"]["sendReachesOwnerDm"]
+    >[1],
+  ) {
+    await h.worker.connect();
+    return h.worker.sendReachesOwnerDm("agent-1", query);
+  }
+
+  /**
+   * TEST_SCENARIO: A private artifact's link may reach Slack only in the 1:1 DM
+   * between the bot and the artifact's owner, so the send asks its real
+   * destination: the bound DM, a user id opened as a DM, but never a channel
+   * and never a group DM, whose other members would read the link too.
+   */
+  it("is a 1:1 DM with the owner and nothing else", async () => {
+    expect(
+      await reachesOwnerDm(
+        harness({ boundChannelId: `D-${OWNER_SLACK}`, channels: [] }),
+        {},
+      ),
+    ).toBe(true);
+    expect(
+      await reachesOwnerDm(
+        harness({ boundChannelId: "D-U-STRANGER", channels: [] }),
+        {},
+      ),
+    ).toBe(false);
+    expect(
+      await reachesOwnerDm(
+        harness({ boundChannelId: BOUND, channels: workspace }),
+        {},
+      ),
+    ).toBe(false);
+    expect(
+      await reachesOwnerDm(
+        harness({ boundChannelId: groupDm.id, channels: [groupDm] }),
+        {},
+      ),
+    ).toBe(false);
+  });
+
+  it("reads a user id as the DM with that person", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      ownerSlackLinks: ["UOWNER"],
+    });
+
+    expect(await reachesOwnerDm(h, { conversationId: "UOWNER" })).toBe(true);
+    expect(await reachesOwnerDm(h, { conversationId: "USTRANGER" })).toBe(
+      false,
+    );
+  });
+
+  it("answers an unidentified destination, not the owner's DM", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+
+    expect(await reachesOwnerDm(h, { answeringTurn: true })).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: The owner's Slack identity is the proof that the DM's other
+   * end is them. When that row cannot be read, nothing was proved, so the send
+   * is not the owner's DM and a private artifact's link stays refused.
+   */
+  it("fails closed when the owner's identity link cannot be read", async () => {
+    const h = harness({
+      boundChannelId: `D-${OWNER_SLACK}`,
+      channels: [],
+      identityLinksFail: true,
+    });
+
+    expect(await reachesOwnerDm(h, {})).toBe(false);
   });
 });

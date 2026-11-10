@@ -65,7 +65,10 @@ import {
   type TextContent,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
-import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
+import {
+  withChannelArtifactLinks,
+  type ChannelArtifactLinks,
+} from "../../modules/artifact-library/channel-links.js";
 import {
   buildChannelCard,
   CARD_LIMITS,
@@ -80,6 +83,7 @@ import {
   TELEGRAM_MESSAGE_CHARS,
 } from "../../modules/channels/infrastructure/telegram.js";
 import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
+import type { SlackSendDestination } from "../../modules/channels/infrastructure/slack.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -191,6 +195,7 @@ const SESSION_LOOKUP_TIMEOUT_MS = 2_000;
 
 export interface McpSessionDeps {
   owner: string;
+  uiBaseUrl: string;
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
@@ -344,10 +349,22 @@ export function createMcpSession(
     })
     .optional();
 
-  const channelLinks = (text: string, surface: string) =>
-    withChannelArtifactLinks(text, surface, (id) =>
-      deps.artifactLibrary.get(id),
-    );
+  const artifactLinks = (
+    channel: ChannelType,
+    destination: SlackSendDestination,
+  ): ChannelArtifactLinks => {
+    let answer: Promise<boolean> | undefined;
+    return {
+      surface: channel === ChannelType.Slack ? "Slack" : "Telegram",
+      appArtifactUrl: `${deps.uiBaseUrl}/artifacts`,
+      lookup: (id) => deps.artifactLibrary.get(id),
+      ownerDirectMessage: () =>
+        (answer ??=
+          channel === ChannelType.Slack
+            ? deps.channelManager.sendReachesOwnerDm(agentId, destination)
+            : Promise.resolve(false)),
+    };
+  };
 
   const cardInput = cardTreeSchema
     .optional()
@@ -357,12 +374,11 @@ export function createMcpSession(
 
   async function linkedValues(
     value: unknown,
-    surface: string,
-    lookup: (id: string) => ReturnType<typeof deps.artifactLibrary.get>,
+    links: ChannelArtifactLinks,
   ): Promise<{ value: unknown } | { error: string }> {
     if (typeof value === "string") {
       if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
-      const linked = await withChannelArtifactLinks(value, surface, lookup);
+      const linked = await withChannelArtifactLinks(value, links);
       return "error" in linked ? linked : { value: linked.text };
     }
     if (value === null || typeof value !== "object") return { value };
@@ -371,7 +387,7 @@ export function createMcpSession(
       : Object.entries(value);
     const linked: [string, unknown][] = [];
     for (const [key, item] of entries) {
-      const result = await linkedValues(item, surface, lookup);
+      const result = await linkedValues(item, links);
       if ("error" in result) return result;
       linked.push([key, result.value]);
     }
@@ -384,7 +400,7 @@ export function createMcpSession(
 
   const cardOf = async (
     tree: Record<string, unknown> | undefined,
-    surface: string,
+    links: ChannelArtifactLinks,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
     const artifacts = new Map<
@@ -396,7 +412,7 @@ export function createMcpSession(
       artifacts.set(id, known);
       return known;
     };
-    const linked = await linkedValues(tree, surface, lookup);
+    const linked = await linkedValues(tree, { ...links, lookup });
     if ("error" in linked) return linked;
     const built = buildChannelCard(linked.value as Record<string, unknown>);
     if ("issues" in built)
@@ -539,11 +555,14 @@ export function createMcpSession(
     unfurlLinks,
     unfurlMedia,
   }: z.infer<z.ZodObject<typeof postInput>>) => {
-    const surface = channel === ChannelType.Slack ? "Slack" : "Telegram";
-    const linked = await channelLinks(written, surface);
+    const links = artifactLinks(
+      channel,
+      chatId === undefined ? {} : { conversationId: chatId },
+    );
+    const linked = await withChannelArtifactLinks(written, links);
     if ("error" in linked) return errorResult(linked.error);
     const { text } = linked;
-    const built = await cardOf(tree, surface);
+    const built = await cardOf(tree, links);
     if ("error" in built) return errorResult(built.error);
     const { card } = built;
     const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -982,10 +1001,14 @@ export function createMcpSession(
       unfurlLinks,
       unfurlMedia,
     }) => {
-      const linked = await channelLinks(written, "Slack");
+      const links = artifactLinks(ChannelType.Slack, {
+        ...(chatId === undefined ? {} : { conversationId: chatId }),
+        answeringTurn: true,
+      });
+      const linked = await withChannelArtifactLinks(written, links);
       if ("error" in linked) return errorResult(linked.error);
       const { text } = linked;
-      const built = await cardOf(tree, "Slack");
+      const built = await cardOf(tree, links);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -1701,8 +1724,9 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
-    cardOf: (tree, channel) =>
-      cardOf(tree, channel === ChannelType.Slack ? "Slack" : "Telegram"),
+    linksFor: (channel, chatId) =>
+      artifactLinks(channel, { conversationId: chatId }),
+    cardOf,
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>
@@ -1896,6 +1920,7 @@ function localTime(iso: string, timeZone: string): string {
 }
 
 export interface MountMcpDeps {
+  uiBaseUrl: string;
   channelManager: ChannelManager;
   k8s: K8sClient;
   readAgent: (id: string) => Promise<KubeObject | null>;
@@ -2014,6 +2039,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
       owner: verified.owner,
+      uiBaseUrl: deps.uiBaseUrl,
       ...(sessionRef ? { sessionRef } : {}),
       ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
       chatForms,
