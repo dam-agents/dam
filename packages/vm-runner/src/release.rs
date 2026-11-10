@@ -496,7 +496,28 @@ mod tests {
     #[test]
     fn the_key_this_release_ships_rolls_a_pod_onto_the_loader_that_becomes_another() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert_eq!(reboot_id(dir).as_deref(), Some("runner-3"));
+        assert_eq!(reboot_id(dir).as_deref(), Some("runner-4"));
+    }
+
+    // TEST_SCENARIO: the runtime is what a machine booted, so a release built against another one reaches a running machine only by rebooting it. `reboot-id.pins` records the pins the key in `reboot-id` was declared for, and a `smolvm.pin` that no longer names one fails here: the failure is a tripwire, since nothing else makes whoever moves a pin decide the key. It compares no key, and it says nothing about `platform-init` or the loader, which take the same decision.
+    #[test]
+    fn a_runtime_pin_that_moves_forces_a_decision_on_the_reboot_key() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let pin = std::fs::read_to_string(dir.join("smolvm.pin")).unwrap();
+        let declared = std::fs::read_to_string(dir.join("reboot-id.pins")).unwrap();
+        let lines: Vec<&str> = declared
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect();
+        assert!(!lines.is_empty(), "reboot-id.pins names no pin");
+        for line in lines {
+            assert!(
+                pin.lines().any(|pinned| pinned.trim() == line),
+                "smolvm.pin no longer names {line}, which `reboot-id.pins` declares for `{}`: decide whether the new runtime needs a new key, bump `reboot-id` if it does, and re-declare the pins there",
+                reboot_id(dir).unwrap_or_default()
+            );
+        }
     }
 
     // TEST_SCENARIO: a release carries its own loader, and the loader copies what the release carries into the pod: the release's loader travels with its runner, its guest binaries and its key. A release built before loaders travelled in releases carries none, and the pod keeps the loader it has.

@@ -1,0 +1,10 @@
+# The smolvm pins the key in `reboot-id` was declared for: the release, and the
+# libkrun and libkrunfw guest kernel it builds. A machine booted with an older
+# runtime takes them only by rebooting, and a pin that moves here fails a test
+# until whoever moved it decides the key and re-declares these lines. That is a
+# tripwire, not a check: nothing compares the key, and `platform-init` and the
+# loader take the same decision with no file to fail on.
+tag=v1.33.0
+libkrun-commit=2b0b86da373f5fb500d2c284929dfc41d265bd19
+libkrunfw-commit=eab8d72d0778c8dd60ed9c97859145096670cc79
+libkrunfw-kernel-sha256=3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e
