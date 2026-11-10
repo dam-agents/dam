@@ -73,7 +73,8 @@ interface Props {
  * its Sessions from the attention record and reads its own list only after
  * View more; after a View more its own list loads further pages until the rows
  * fill the window or the list ends, at most five pages per click before it
- * offers Keep looking. A filter on the Agent goes with the page request, so
+ * offers Keep looking; a changed filter starts again at five. A filter on the
+ * Agent goes with the page request, so
  * the runtime pages matching Sessions only, except Needs attention, which only
  * the browser can tell; the list names the filter and offers to clear it.
  */
@@ -95,6 +96,11 @@ export function SidebarAgentSessions({
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
+  const [limitFilter, setLimitFilter] = useState(filter);
+  if (limitFilter !== filter) {
+    setLimitFilter(filter);
+    setLimit(SIDEBAR_SESSION_STEP);
+  }
 
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),

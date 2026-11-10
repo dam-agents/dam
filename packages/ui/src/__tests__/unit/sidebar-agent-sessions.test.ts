@@ -206,6 +206,18 @@ describe("the sidebar session filter", () => {
       }),
     ).toBe("3 types · Needs attention");
     expect(activityFilterSummary({ ...base, state: "unread" })).toBe("Unread");
+    expect(
+      activityFilterSummary({
+        ...base,
+        channelTypes: new Set([
+          "slack",
+          "telegram",
+          "artifact",
+          "schedule",
+          "terminal",
+        ]),
+      }),
+    ).toBe("All but Chat");
   });
 
   it("TEST_SCENARIO: a Session from the Agent's own list, which may carry no schedule id, filters by its channel like an attention record", () => {

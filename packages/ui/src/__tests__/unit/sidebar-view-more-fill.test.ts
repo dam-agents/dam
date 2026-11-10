@@ -8,16 +8,18 @@ import { afterEach, expect, it, vi } from "vitest";
 const fake = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
   setFilter: vi.fn(),
+  filter: null as unknown,
 }));
 
 vi.mock("../../modules/sessions/lib/agent-session-filters.js", async () => {
   const { defaultActivityFilters } =
     await import("../../modules/home/lib/activity-filter.js");
   return {
-    useAgentSessionFilter: () => ({
-      ...defaultActivityFilters(),
-      channelTypes: new Set(["chat"]),
-    }),
+    useAgentSessionFilter: () =>
+      (fake.filter ??= {
+        ...defaultActivityFilters(),
+        channelTypes: new Set(["chat"]),
+      }),
     setAgentSessionFilter: fake.setFilter,
   };
 });
@@ -131,6 +133,7 @@ const viewMore = () =>
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  fake.filter = null;
 });
 
 // TEST_SCENARIO: the first page brings two matching Sessions and the Agent has more; one View more loads pages until ten rows show, also when a page brings only two, and loads no page once they do.
@@ -245,4 +248,21 @@ it("keeps the open Session and marks it outside the filter", () => {
     ...container.querySelectorAll("[data-outside-filter='true']"),
   ].map((el) => el.getAttribute("data-session-id"));
   expect(marked).toEqual(["s9"]);
+});
+
+// TEST_SCENARIO: after a View more the user picks another filter; the list starts again at five rows and loads no page by itself, as with no click at all.
+it("starts again at five rows when the filter changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const fetchNextPage = vi.fn(async () => {});
+  setList({ sessions: sessions(12), hasNextPage: true, fetchNextPage });
+  const render = mount();
+  await act(async () => viewMore()?.click());
+  expect(shown()).toHaveLength(10);
+
+  fake.filter = { channelTypes: new Set(["chat"]), state: "needs-attention" };
+  setList({ sessions: [], hasNextPage: true, fetchNextPage });
+  render();
+  render();
+  expect(fetchNextPage).not.toHaveBeenCalled();
+  expect(viewMore()?.textContent).toBe("Look further");
 });

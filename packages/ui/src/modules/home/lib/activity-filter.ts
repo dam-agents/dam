@@ -51,14 +51,21 @@ export function isFiltered(filters: ActivityFilters): boolean {
 
 export function activityFilterSummary(filters: ActivityFilters): string {
   const types = CHANNEL_TYPES.filter((type) => filters.channelTypes.has(type));
+  const hidden = CHANNEL_TYPES.filter(
+    (type) => !filters.channelTypes.has(type),
+  );
+  const labels = (list: readonly ChannelType[]) =>
+    list.map((type) => CHANNEL_TYPE_LABELS[type]).join(", ");
   const parts = [
-    ...(types.length < CHANNEL_TYPES.length
+    ...(hidden.length > 0
       ? [
           types.length === 0
             ? "No types"
             : types.length <= 2
-              ? types.map((type) => CHANNEL_TYPE_LABELS[type]).join(", ")
-              : `${types.length} types`,
+              ? labels(types)
+              : hidden.length <= 2
+                ? `All but ${labels(hidden)}`
+                : `${types.length} types`,
         ]
       : []),
     ...(filters.state !== "any" ? [STATE_FILTER_LABELS[filters.state]] : []),
