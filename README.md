@@ -6,10 +6,11 @@
 <p align="center"><i>(Deploy Agents Massively)</i></p>
 
 <h3 align="center">
-Dense, long-lived AI agents that run your engineering stack.<br />
-Shared AI teammates that work with your team in Slack.<br />
-All on your Kubernetes.
+Engineering agents that run your entire stack.<br />
+Shared AI teammates that work with your team in Slack.
 </h3>
+
+<p align="center">All on your Kubernetes.</p>
 
 <p align="center">
   <a href="#get-started"><strong>Get started</strong></a>
