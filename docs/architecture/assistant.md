@@ -94,8 +94,11 @@ The report is caller-scoped: it writes the caller's own record and nobody else's
 The checklist counts what it can of it: a schedule finishes `create-schedule` and an artifact `create-artifact`, recorded as the platform's — done, and seen, since the assistant did it for the person rather than the other way round.
 A saved knowledge base has no checklist item, so it is recorded and nothing new appears there; that is the design's limit, not a gap in the record.
 
-The report also announces itself as one domain event, `assistant.first_result_recorded` with the owner, the kind and the reference, which is the seam for carrying the news somewhere else; the app's open tabs refresh the checklist and the record from it.
-[Starting over](#starting-it-over) forgets it along with the rest, so a person who starts again reaches their first result again.
+The report and every onboarding reset run in one per-owner transaction, so nothing lands between a report's claim and its side effects: the reset clears the result, moves the record's onboarding epoch on and restarts the checklist inside the same lock, and a report that began in the earlier onboarding finds its result gone.
+The record's epoch is a number, not a timestamp, so two clocks' microseconds never decide whether a report still applies.
+The report also announces itself as one domain event, `assistant.first_result_recorded` with the owner, the kind, the reference and the epoch it completed in, which is the seam for carrying the news somewhere else; the app's open tabs refresh the checklist and the record from it.
+At most once: the event leaves after the transaction commits, and only from the call that marked the result done, so a crash in between loses it and nothing ever repeats it — the seam has no consumer yet, and the epoch is what a later one would dedupe on.
+[Starting over](#starting-it-over) forgets it along with the rest, so a person who starts again reaches their first result again — and that holds for a person the assistant is off for too, since the first result is the checklist's own state rather than the assistant's.
 
 ## Starting it over
 

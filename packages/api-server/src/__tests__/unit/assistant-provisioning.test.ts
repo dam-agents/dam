@@ -25,6 +25,7 @@ const readyRow = (agentId: string, used = false) => ({
   state: "ready" as const,
   legacy: false,
   firstResult: null,
+  epoch: 0,
   used,
   resetAt: null,
 });
@@ -101,6 +102,7 @@ describe("an install that pins the feature on", () => {
       state: "creating",
       legacy: false,
       firstResult: null,
+      epoch: 0,
       used: false,
       resetAt: null,
     });

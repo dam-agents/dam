@@ -1,6 +1,7 @@
 import type { AgentsService } from "api-server-api";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { Db } from "db";
+import type { XactTxLock } from "../../core/xact-lock.js";
 
 import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 import type { GettingStartedModule } from "../getting-started/compose.js";
@@ -26,6 +27,8 @@ export function composeAssistantsForOwner(deps: {
   agents: Pick<AgentsService, "list" | "create">;
   gettingStarted: GettingStartedModule;
   damConnection: () => Promise<string | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: one per-owner transaction around the first result, taken by its report and by every reset. */
+  firstResultLock: XactTxLock;
 }): AssistantProvisioning {
   return createAssistantsService({
     repo: createAssistantsRepository(deps.db),
@@ -48,6 +51,7 @@ export function composeAssistantsForOwner(deps: {
       }),
     recordTask: (task) => deps.gettingStarted.recordTaskSeen(deps.owner, task),
     resetChecklist: () => deps.gettingStarted.forOwner(deps.owner).reset(),
+    firstResultLock: deps.firstResultLock,
     damConnection: deps.damConnection,
   });
 }

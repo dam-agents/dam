@@ -28,15 +28,16 @@ export async function recordProvisionedAgent(
  * artifact — is recorded done and **seen**: the platform did it on their behalf, so
  * the checklist counts it rather than celebrating it. A task the checklist has no
  * item for is not reported here at all.
- * A row that is already unlocked — the domain event reached it first, as a schedule
- * the person set themselves does — is left unseen by the recorder, so the mark is
- * written here too, or the task would never tick.
+ * The unlock is written already seen, in the same statement, so no unseen hint and
+ * no celebration ever goes out for it; a row that is already there — the domain
+ * event reached it first, as a schedule the person set themselves does — is marked
+ * seen here too, or the task would never tick.
  */
 export async function recordTaskSeen(
   deps: { recorder: UnlockRecorder; repo: GettingStartedRepository },
   owner: string,
   task: GettingStartedTask,
 ): Promise<void> {
-  await deps.recorder.record(owner, task);
+  await deps.recorder.record(owner, task, undefined, { seen: true });
   await deps.repo.markSeen(owner, task);
 }

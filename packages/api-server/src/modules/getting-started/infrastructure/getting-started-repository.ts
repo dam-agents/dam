@@ -27,12 +27,19 @@ export interface GettingStartedRepository {
       character: AvatarCharacter;
     }>,
   ): Promise<void>;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: records the task's unlock, unless it is already
+   * recorded. `seen` writes it already seen, in the same statement: a task the
+   * platform reports for the person is counted, never announced, so no unseen hint
+   * and no celebration goes out for it.
+   */
   unlock(
     owner: string,
     task: GettingStartedTask,
     choose: (
       taken: ReadonlySet<AvatarCharacter>,
     ) => { character: AvatarCharacter; picked: boolean } | null,
+    opts?: { seen: boolean },
   ): Promise<Unlock | null>;
   markSeen(owner: string, task: GettingStartedTask): Promise<void>;
   markPicked(owner: string, character: AvatarCharacter): Promise<void>;
@@ -94,7 +101,7 @@ export function createGettingStartedRepository(
       });
     },
 
-    async unlock(owner, task, choose) {
+    async unlock(owner, task, choose, opts) {
       return db.transaction(async (tx) => {
         await tx
           .select({ owner: gettingStartedChecklists.owner })
@@ -117,6 +124,7 @@ export function createGettingStartedRepository(
             task,
             character: chosen.character,
             ...(chosen.picked ? { pickedAt: sql`now()` } : {}),
+            ...(opts?.seen ? { seenAt: sql`now()` } : {}),
           })
           .returning();
         await tx

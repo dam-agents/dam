@@ -200,6 +200,8 @@ Run \`dam --help\` for the command groups and \`dam <group> --help\` for one of 
    Read commands take \`--json\`, and an empty list is \`[]\`.
    Table output is for showing to the person.
 
+> This file is the platform's: this install writes it, and an upgrade replaces it. Edit it and your edits go; put your own notes in another file beside it.
+
 ## The first result
 
 When you have actually got the person their first result — a schedule set, an artifact made, a knowledge base saved — record it once with \`dam onboarding first-result <schedule|artifact|knowledgeBase> --ref "<what it is>"\`, and only then; it is what finishes their onboarding, and a later call changes nothing.

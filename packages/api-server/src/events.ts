@@ -606,6 +606,8 @@ export type AssistantFirstResultRecorded = {
   owner: string;
   kind: FirstResultKind;
   ref: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the onboarding epoch the result completed in, so a consumer can tell two onboardings' first results apart, and dedupe on it. */
+  epoch: number;
 };
 
 /** UNIT_BOUNDARY_DESCRIPTION: the assistant was used for the first time since the person's onboarding reset, which takes the greeting and the first landing away in every tab that has the owner signed in. */

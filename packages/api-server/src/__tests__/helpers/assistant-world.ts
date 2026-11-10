@@ -27,6 +27,7 @@ export function rowStore(initial?: AssistantRow) {
         used: false,
         resetAt: null,
         firstResult: null,
+        epoch: 0,
       });
       return true;
     },
@@ -46,7 +47,13 @@ export function rowStore(initial?: AssistantRow) {
       });
       return true;
     },
-    claimFirstResult: async (owner, kind, ref) => {
+    /* UNIT_BOUNDARY_DESCRIPTION: the transaction's own reads and writes; the test's lock hands the same store through, and holding the lock is what serializes callers. */
+    firstResultIn: async (tx, owner) => {
+      void tx;
+      return rows.get(owner) ?? null;
+    },
+    claimFirstResultIn: async (tx, owner, kind, ref) => {
+      void tx;
       const row = rows.get(owner);
       if (row === undefined || row.firstResult !== null) return false;
       rows.set(owner, {
@@ -55,34 +62,24 @@ export function rowStore(initial?: AssistantRow) {
       });
       return true;
     },
-    completeFirstResult: async (owner, kind, epoch) => {
+    completeFirstResultIn: async (tx, owner) => {
+      void tx;
       const row = rows.get(owner);
-      const result = row?.firstResult ?? null;
-      if (row === undefined || result === null) return false;
-      if (result.kind !== kind || result.completed) return false;
-      if ((row.resetAt?.getTime() ?? null) !== (epoch?.getTime() ?? null))
-        return false;
+      if (row?.firstResult == null) return;
       rows.set(owner, {
         ...row,
-        firstResult: { ...result, completed: true },
+        firstResult: { ...row.firstResult, completed: true },
       });
-      return true;
     },
-    uncompleteFirstResult: async (owner, kind, epoch) => {
+    clearFirstResultIn: async (tx, owner) => {
+      void tx;
       const row = rows.get(owner);
-      const result = row?.firstResult ?? null;
-      if (row === undefined || result === null) return;
-      if (result.kind !== kind) return;
-      if ((row.resetAt?.getTime() ?? null) !== (epoch?.getTime() ?? null))
-        return;
+      if (row === undefined) return;
       rows.set(owner, {
         ...row,
-        firstResult: { ...result, completed: false },
+        firstResult: null,
+        epoch: row.epoch + 1,
       });
-    },
-    resetFirstResult: async (owner) => {
-      const row = rows.get(owner);
-      if (row) rows.set(owner, { ...row, firstResult: null });
     },
     usageOf: async (agentId) => {
       for (const row of rows.values())
@@ -195,6 +192,25 @@ export function assistantService(
   const provisioned = vi.fn(deps.provisioned ?? (async () => {}));
   const recordTask = vi.fn(async (_task: string) => {});
   const resetChecklist = vi.fn(async () => undefined);
+  /* UNIT_BOUNDARY_DESCRIPTION: the per-owner transaction as PostgreSQL behaves — one holder per owner, the next caller waiting for it, and a gate a test can park the work behind so a reset and a report can be interleaved. */
+  const tails = new Map<string, Promise<unknown>>();
+  const gates: Promise<void>[] = [];
+  const firstResultLock = async <T>(
+    owner: string,
+    work: (tx: never) => Promise<T>,
+  ): Promise<T> => {
+    const previous = tails.get(owner) ?? Promise.resolve();
+    const run = previous.then(async () => {
+      const gate = gates.shift();
+      if (gate !== undefined) await gate;
+      return work(null as never);
+    });
+    tails.set(
+      owner,
+      run.catch(() => {}),
+    );
+    return run;
+  };
   const service = createAssistantsService({
     repo: rows.repo,
     owner: OWNER,
@@ -208,6 +224,7 @@ export function assistantService(
     provisioned,
     recordTask,
     resetChecklist,
+    firstResultLock,
     damConnection: deps.damConnection ?? (async () => null),
     waitMs: deps.waitMs ?? 200,
     pollMs: deps.pollMs ?? 10,
