@@ -639,6 +639,7 @@ export function createAgentsService(deps: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
       providerConnectionId?: string;
+      platform?: boolean;
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],

@@ -592,3 +592,91 @@ describe("the minted key", () => {
     ]);
   });
 });
+
+describe("the flag that offers the DAM connection", () => {
+  // TEST_SCENARIO: the install does not offer it, so a person's own create is refused — and the platform's provisioning, which Dambledore's create runs, still makes it.
+  it("refuses the person's create while the platform's still works", async () => {
+    const { svc, store, keys } = harness(BASE_URL, {
+      offered: async () => false,
+    });
+    await expect(svc.ensureDamConnection()).rejects.toThrow(
+      /does not offer .* own connection/,
+    );
+    expect(damRows(store.rows)).toHaveLength(0);
+    expect(keys.calls).toHaveLength(0);
+
+    const id = await svc.ensureDamConnection({ platform: true });
+    expect(id).not.toBeNull();
+    expect(damRows(store.rows)).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the flag cannot be read at all — the store behind it is down — so the person's paths are refused rather than let through: an unread flag is not an offer.
+  it("refuses the person's paths when the flag cannot be read", async () => {
+    const { svc, store } = harness(BASE_URL, {
+      offered: async () => {
+        throw new Error("features store down");
+      },
+    });
+    await expect(svc.ensureDamConnection()).rejects.toThrow(
+      /does not offer .* own connection/,
+    );
+    expect(damRows(store.rows)).toHaveLength(0);
+    expect(await svc.ensureDamConnection({ platform: true })).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: granting it to another agent is the person's move, so it is refused while the flag is off; the platform's grant, which Dambledore's create carries, is not.
+  it("refuses a person's grant while the platform's still works", async () => {
+    const { svc, store } = harness(BASE_URL, { offered: async () => false });
+    const id = (await svc.ensureDamConnection({ platform: true }))!;
+
+    await expect(svc.setAgentConnections("agent-1", [id])).rejects.toThrow(
+      /does not offer .* own connection/,
+    );
+    expect(store.grants.size).toBe(0);
+
+    await svc.setAgentConnections("agent-1", [id], { platform: true });
+    expect(store.grants).toContain(`${id}|agent-1`);
+  });
+
+  // TEST_SCENARIO: a Connection the owner already holds, and the grant it has, keep working when the flag goes off: it still lists, still injects, and its key still authenticates; only new creates and grants are closed.
+  it("keeps an existing connection and its grants when the flag goes off", async () => {
+    let offered = true;
+    const { svc, store, keys } = harness(BASE_URL, {
+      offered: async () => offered,
+    });
+    const id = (await svc.ensureDamConnection())!;
+    await svc.setAgentConnections("agent-1", [id]);
+    const before = JSON.stringify(
+      secretOf(store.secrets, damRows(store.rows)[0]),
+    );
+
+    offered = false;
+    const listed = await svc.listConnections();
+    expect(listed.map((c) => c.id)).toContain(id);
+    expect(listed.find((c) => c.id === id)).toMatchObject({ status: "active" });
+    expect(store.grants).toContain(`${id}|agent-1`);
+    expect(
+      JSON.stringify(secretOf(store.secrets, damRows(store.rows)[0])),
+    ).toBe(before);
+    expect(keys.revoked).toEqual([]);
+
+    await svc.setAgentConnections("agent-1", [id]);
+  });
+
+  // TEST_SCENARIO: rotation and deletion reduce risk, so the flag has no say over them.
+  it("still rotates and deletes while the flag is off", async () => {
+    let offered = true;
+    const { svc, store, keys } = harness(BASE_URL, {
+      offered: async () => offered,
+    });
+    const id = (await svc.ensureDamConnection())!;
+    offered = false;
+
+    await svc.rotateDamConnection(id);
+    expect(keys.revoked).toEqual(["key-1"]);
+    expect(damRows(store.rows)[0]!.inputs[DAM_KEY_INPUT]).toBe("key-2");
+
+    await svc.deleteConnection(id);
+    expect(damRows(store.rows)).toHaveLength(0);
+  });
+});

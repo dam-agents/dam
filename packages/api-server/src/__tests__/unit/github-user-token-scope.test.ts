@@ -228,6 +228,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

@@ -16,6 +16,8 @@ import {
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
+import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import {
   attachProviderToBareAgents,
   connectionGrantProvisioner,
@@ -32,6 +34,21 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
     },
   }) as T;
 }
+
+const dam: Connection = {
+  id: "conn-dam",
+  ownerId: "owner-1",
+  templateId: "dam",
+  name: "DAM",
+  inputs: {},
+  auth: {
+    kind: "header",
+    valueRef: { storeId: "test", path: "dam", field: "value" },
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+  },
+  contributions: [],
+};
 
 const provider: Connection = {
   id: "conn-provider",
@@ -65,8 +82,10 @@ function oauthAuth(
 function setup(
   rows: Connection[] = [provider],
   templates: Record<string, Partial<TemplateSpec>> = {},
+  opts: { damOffered?: boolean } = {},
 ) {
   const connections = createConnectionsService({
+    damConnectionOffered: async () => opts.damOffered ?? true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
@@ -76,7 +95,26 @@ function setup(
       listByOwner: async () => rows,
       listByOwnerOldestFirst: async () => rows,
     }),
-    templates: unused(),
+    templates: createConnectionTemplateRegistry(
+      buildCatalog(
+        {},
+        {
+          damBaseUrl: "http://dam-apiserver.default.svc.cluster.local:4000",
+          brandName: "Test",
+        },
+      ),
+    ),
+    damKey: {
+      mint: async () => ({ id: "key-1", plaintext: "pk_secret" }),
+      revoke: async () => {},
+      active: async (ids: readonly string[]) => new Set(ids),
+      ledger: {
+        queue: async () => {},
+        settle: async () => {},
+        pendingFor: async () => [],
+        forget: async () => {},
+      },
+    },
     secretStore: unused(),
     fanOut: unused(),
     oauthFlow: unused(),
@@ -141,13 +179,9 @@ function setup(
     contributionsProgress: unused(),
     agentServiceStatus: unused(),
     grantProvisioner: {
-      async resolveSpecGrants(sel) {
-        if (sel.providerConnectionId)
-          await connections.validateProviderConnection(
-            sel.providerConnectionId,
-          );
-        return { grantedConnectionIds: sel.connectionIds };
-      },
+      resolveSpecGrants: connectionGrantProvisioner(connections, {
+        harnesses: [],
+      }).resolveSpecGrants,
       defaultProviders,
       applyAfterCreate: applyGrants,
     },
@@ -735,5 +769,56 @@ describe("attachProviderToBareAgents", () => {
     const other = { ...provider, id: "other", templateId: "openai" };
     expect(await attach([old, fresh], "fresh")).toEqual([]);
     expect(await attach([old, other], "other")).toEqual([]);
+  });
+});
+
+describe("the flag that offers the install's own connection", () => {
+  // TEST_SCENARIO: an Agent that already holds it spawns a child naming it while the owner's flag is off, so the child's create is refused before anything is written — no Agent, no registry Secret, no grant — as the person's own create would be.
+  it("refuses a spawn that names it while the flag is off", async () => {
+    const { caller, persist, writeRegistry } = setup(
+      [provider, dam],
+      {},
+      { damOffered: false },
+    );
+    await expect(
+      caller.agents.create({ ...input, connectionIds: [dam.id] }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(persist).not.toHaveBeenCalled();
+    expect(writeRegistry).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the platform's mark is not expressible over the API: `platformGrants` in a raw create payload is stripped by the schema, so the same request is still refused.
+  it("refuses a payload that claims the platform's mark", async () => {
+    const { caller, persist } = setup(
+      [provider, dam],
+      {},
+      { damOffered: false },
+    );
+    await expect(
+      caller.agents.create({
+        ...input,
+        connectionIds: [dam.id],
+        platformGrants: true,
+      } as never),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the same is true where a person can make the Connection themselves: `createDam` takes no input, so a payload naming the platform's path buys nothing and the create is refused while the flag is off.
+  it("refuses a createDam payload that names the platform's path", async () => {
+    const { caller } = setup([provider, dam], {}, { damOffered: false });
+    await expect(
+      caller.connections.createDam({ platform: true } as never),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // TEST_SCENARIO: with the flag on, the same create goes through and the Agent names the grant.
+  it("allows the same create while the flag is on", async () => {
+    const { caller } = setup([provider, dam], {}, { damOffered: true });
+    const result = await caller.agents.create({
+      ...input,
+      connectionIds: [dam.id],
+    });
+    expect(result.grantedConnectionIds).toEqual([dam.id, provider.id]);
   });
 });

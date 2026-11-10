@@ -342,7 +342,10 @@ export interface ConnectionsService {
 
   recheckProviderKeys(): Promise<ProviderKeyRecheck[]>;
 
-  validateGrantSet(connectionIds: string[]): Promise<void>;
+  validateGrantSet(
+    connectionIds: string[],
+    opts?: { platform?: boolean },
+  ): Promise<void>;
 
   createFromTemplate(
     input: ConnectionCreateInput & { id?: string },

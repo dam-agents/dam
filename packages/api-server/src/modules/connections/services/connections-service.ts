@@ -283,6 +283,8 @@ export function createConnectionsService(deps: {
   curveBenderDeploymentKey?: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install is minted with one; absent means this api-server cannot mint it, so no such Connection is provisioned. */
   damKey?: DamKeyPort;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the install offers the person the Connection that drives it — its per-user flag — which decides their own create and their own grants of it, and never the platform's provisioning. Required, so no composition root can leave this path ungated by forgetting it, and read as not offered when it fails. */
+  damConnectionOffered: () => Promise<boolean>;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -319,6 +321,16 @@ export function createConnectionsService(deps: {
         .filter((h) => harnessFits(deps.harnesses, h.name, type, templateId))
         .map((h) => h.name),
     };
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the one gate the flag puts on this Connection: a person may create it and grant it to their Agents only while the install offers it. Existing Connections, their grants, their rotation and their deletion are untouched — the flag decides what is on offer, and taking an offer away must never take a credential away. */
+  async function assertDamConnectionOffered(action: string): Promise<void> {
+    const offered = await deps.damConnectionOffered().catch(() => false);
+    if (offered) return;
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `This install does not offer ${deps.brandName}'s own connection, so it cannot ${action}. Existing connections and grants keep working.`,
+    });
   }
 
   /* UNIT_BOUNDARY_DESCRIPTION: whether the key the DAM Connection names is still live. A key its owner revoked in Settings stops working at once, so the Connection has to read as expired rather than active; a key store that cannot answer says nothing, because this is a listing and not a gate. */
@@ -2185,13 +2197,19 @@ export function createConnectionsService(deps: {
       return check;
     },
 
-    async validateGrantSet(connectionIds: string[]): Promise<void> {
+    /* UNIT_BOUNDARY_DESCRIPTION: what a grant set must satisfy before anything is written for it — grantable, no unaddressable rival, and, for a grant the person is making, the flag that offers the install's own Connection. It runs before the Agent exists, so a create it refuses leaves no Agent, no registry Secret and no grant behind. */
+    async validateGrantSet(
+      connectionIds: string[],
+      opts?: { platform?: boolean },
+    ): Promise<void> {
       const wanted = new Set(connectionIds);
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
         wanted.has(c.id),
       );
       granted.forEach(assertGrantable);
       assertNoUnaddressableRival(granted, granted);
+      if (!opts?.platform && granted.some((c) => isDamConnection(c.templateId)))
+        await assertDamConnectionOffered("be granted to an agent");
     },
 
     startOAuth(

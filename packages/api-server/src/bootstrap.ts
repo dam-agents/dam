@@ -385,6 +385,8 @@ import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
+import { composeFeaturesForOwner } from "./modules/features/index.js";
+import { createFeaturesRepository } from "./modules/features/infrastructure/features-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -1219,6 +1221,15 @@ export async function bootstrap() {
         : {}),
     },
   });
+  const featuresRepo = createFeaturesRepository(db);
+  /* UNIT_BOUNDARY_DESCRIPTION: whether an owner is offered the Connection that drives this install, for every composition root that needs it — the per-request one in the tRPC context, and this one, which feeds the harness grant provisioner and so an Agent that spawns another: the install's mode decides, and in `experimental` the person's own switch. */
+  const damConnectionOfferedFor = async (ownerId: string): Promise<boolean> => {
+    const mode = config.featureModes.damConnection;
+    if (mode === "on") return true;
+    if (mode !== "experimental") return false;
+    const stored = await featuresRepo.listEnabled(ownerId);
+    return stored.damConnection === true;
+  };
   const damKeyFor = (ownerId: string) =>
     damKeyPortFor(
       apiKeysModule.createService({ ownerSub: ownerId, surface: "platform" }),
@@ -1248,6 +1259,7 @@ export async function bootstrap() {
       harnesses: harnessCatalog,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
       damKey: damKeyFor(ownerId),
+      damConnectionOffered: () => damConnectionOfferedFor(ownerId),
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>

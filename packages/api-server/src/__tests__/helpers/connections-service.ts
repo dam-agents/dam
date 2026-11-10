@@ -195,6 +195,7 @@ export function serviceHarness(opts: {
     resolveKbShare: unused(),
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
     ...(opts.damKey ? { damKey: opts.damKey } : {}),
+    damConnectionOffered: opts.damConnectionOffered ?? (async () => true),
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

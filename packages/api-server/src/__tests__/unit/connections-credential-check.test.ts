@@ -44,6 +44,7 @@ function makeService(initial: CredentialProbeOutcome) {
   const probed: (CredentialProbeTarget & { value: string })[] = [];
   const answer = { outcome: initial };
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner",

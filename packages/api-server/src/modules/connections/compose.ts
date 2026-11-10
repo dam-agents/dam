@@ -260,6 +260,7 @@ export function composeConnectionsForOwner(opts: {
   brandName: string;
   maxSharedKbConnections?: number;
   damKey: DamKeyPort;
+  damConnectionOffered: () => Promise<boolean>;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
@@ -319,6 +320,7 @@ export function composeConnectionsForOwner(opts: {
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     damKey: opts.damKey,
+    damConnectionOffered: opts.damConnectionOffered,
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),

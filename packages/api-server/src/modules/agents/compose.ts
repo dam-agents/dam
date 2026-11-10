@@ -311,7 +311,9 @@ export function connectionGrantProvisioner(
     async resolveSpecGrants(sel) {
       if (sel.providerConnectionId)
         await connections.validateProviderConnection(sel.providerConnectionId);
-      await connections.validateGrantSet(sel.connectionIds);
+      await connections.validateGrantSet(sel.connectionIds, {
+        ...(sel.platform ? { platform: true } : {}),
+      });
       return {
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };

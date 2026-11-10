@@ -32,6 +32,7 @@ function makeService() {
   const probed: string[] = [];
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),
