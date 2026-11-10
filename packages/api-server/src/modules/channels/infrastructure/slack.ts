@@ -146,6 +146,7 @@ import type {
   SlackConversationInfo,
   SlackConversationLookup,
   SlackConversationRef,
+  SlackEmailUser,
   SlackLabelledConversation,
   SlackWorkspace,
   SlackChannelInfo,
@@ -1104,6 +1105,19 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackChannelMembership>;
+  emailUserByEmail(
+    email: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackEmailUser | null>;
+  openDirectMessageWith(
+    slackUserId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackConversationLookup & { channelId?: string }>;
+  conversationInfoOf(
+    channelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackConversationLookup>;
+  grantedScopesOf(teamId: SlackWorkspace): Promise<string[] | null>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   resolveConversationLabels(
@@ -1437,6 +1451,15 @@ export type SlackWorkerDeps = {
     agentId: string,
     slackChannelId: string,
   ) => Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: What an unbind leaves behind in a 1:1 DM — the
+   * threads that Agent's Sessions owned there, and the email pairing that put
+   * them there. A binding the person released must not keep either. */
+  afterUnbind?: (args: {
+    agentId: string;
+    slackChannelId: string;
+    teamId: SlackWorkspace;
+    ownerSub: string;
+  }) => Promise<void>;
   setSlackChannelAmbient: (
     agentId: string,
     slackChannelId: string,
@@ -1491,6 +1514,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ownerDisplayName,
     channelRegistry,
     unbindSlackChannel,
+    afterUnbind,
     setSlackChannelAmbient,
     setSlackChannelHistory,
     agentsFor,
@@ -4341,6 +4365,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         if (!invoker) return;
 
         await unbindSlackChannel(binding.instanceName, command.channelId);
+        await afterUnbind?.({
+          agentId: binding.instanceName,
+          slackChannelId: command.channelId,
+          teamId: command.teamId,
+          ownerSub: invoker,
+        }).catch((err: unknown) => {
+          getLogger().warn(
+            { error: err instanceof Error ? err.message : String(err) },
+            "slack.unbind.bridge_release_failed",
+          );
+        });
         securityLog("info", "channel.chat_unbound", {
           category: "authz-list",
           actor: invoker,
@@ -7309,6 +7344,33 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         }
       }
       return { kind: "not-member" };
+    },
+
+    async emailUserByEmail(email, teamId) {
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      return gw.lookupUserByEmail(email, teamId);
+    },
+
+    async openDirectMessageWith(slackUserId, teamId) {
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      const channelId = await gw.openDirectMessage(slackUserId, teamId);
+      const info = await gw.getConversationInfo(channelId, teamId);
+      return info.kind === "found" ? { ...info, channelId } : info;
+    },
+
+    async conversationInfoOf(channelId, teamId) {
+      const gw = await ensureGateway();
+      if (!gw) return { kind: "no-credential" };
+      return gw.getConversationInfo(channelId, teamId);
+    },
+
+    async grantedScopesOf(teamId) {
+      const gw = await ensureGateway();
+      if (!gw) return null;
+      const scopes = await grantedScopes(gw, teamId);
+      return scopes ? [...scopes] : null;
     },
 
     async listConversations(instanceName: string) {

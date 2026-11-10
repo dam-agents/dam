@@ -40,6 +40,10 @@ export interface SlackOwnedThreads {
     threadTs: string,
   ): Promise<boolean>;
   forgetSession(agentId: string, sessionId: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: every owned thread of one Agent in one
+   *  conversation — what releasing a DM binding has to take with it, since a
+   *  thread there would otherwise keep taking replies for an Agent that left. */
+  forgetChat(agentId: string, channelId: string): Promise<number>;
   listAgentIds(): Promise<string[]>;
   forgetAgent(agentId: string): Promise<void>;
 }
@@ -138,6 +142,18 @@ export function createSlackOwnedThreadsRepository(db: Db): SlackOwnedThreads {
           ),
         );
     },
+    async forgetChat(agentId, channelId) {
+      const removed = await db
+        .delete(slackOwnedThreads)
+        .where(
+          and(
+            eq(slackOwnedThreads.agentId, agentId),
+            eq(slackOwnedThreads.channelId, channelId),
+          ),
+        )
+        .returning({ threadTs: slackOwnedThreads.threadTs });
+      return removed.length;
+    },
     async listAgentIds() {
       const rows = await db
         .selectDistinct({ agentId: slackOwnedThreads.agentId })
@@ -196,6 +212,15 @@ export function createMemorySlackOwnedThreads(): SlackOwnedThreads {
     async forgetSession(agentId, sessionId) {
       for (const [k, r] of rows)
         if (r.agentId === agentId && r.sessionId === sessionId) rows.delete(k);
+    },
+    async forgetChat(agentId, channelId) {
+      let removed = 0;
+      for (const [k, r] of rows)
+        if (r.agentId === agentId && r.channelId === channelId) {
+          rows.delete(k);
+          removed += 1;
+        }
+      return removed;
     },
     async listAgentIds() {
       return [...new Set([...rows.values()].map((r) => r.agentId))];

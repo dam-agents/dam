@@ -8,6 +8,7 @@ import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
   SlackChannelInfo,
   SlackConversationLookup,
+  SlackEmailUser,
   SlackGateway,
   SlackGatewayHandlers,
   SlackImageFile,
@@ -912,6 +913,45 @@ export function createBoltSlackGateway(
         ...(profile.status_emoji ? { statusEmoji: profile.status_emoji } : {}),
         ...(user.is_bot !== undefined ? { isBot: user.is_bot } : {}),
         ...(user.deleted !== undefined ? { isDeleted: user.deleted } : {}),
+      };
+    },
+
+    async lookupUserByEmail(
+      email: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackEmailUser | null> {
+      if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
+      let info;
+      try {
+        info = await app.client.users.lookupByEmail({ token, email });
+      } catch (err) {
+        if (slackRefusal(err) === "users_not_found") return null;
+        throw err;
+      }
+      /* UNIT_BOUNDARY_DESCRIPTION: Slack's typings lag its payload — the Grid
+       * flags exist on the wire and not in `User` — so the external markers are
+       * read through one widening and default to false, which is what the
+       * caller refuses on. */
+      const user = info.user as
+        | (NonNullable<typeof info.user> & {
+            enterprise_user?: { enterprise_id?: string };
+            is_stranger?: boolean;
+          })
+        | undefined;
+      if (!user?.id) return null;
+      return {
+        id: user.id,
+        teamId: user.team_id ?? teamId,
+        enterpriseId: user.enterprise_user?.enterprise_id ?? null,
+        email: user.profile?.email ?? null,
+        deleted: user.deleted === true,
+        isBot: user.is_bot === true,
+        isAppUser: user.is_app_user === true,
+        isRestricted: user.is_restricted === true,
+        isUltraRestricted: user.is_ultra_restricted === true,
+        isStranger: user.is_stranger === true,
       };
     },
 

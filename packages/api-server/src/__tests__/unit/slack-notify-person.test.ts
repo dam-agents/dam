@@ -59,8 +59,8 @@ describe("slack notifyPerson", () => {
   it("sends one direct message per linked identity", async () => {
     const h = await harness(
       [
-        { externalUserId: "U1", teamId: "T1" },
-        { externalUserId: "U2", teamId: "T2" },
+        { externalUserId: "U1", teamId: "T1", source: "oauth" as const },
+        { externalUserId: "U2", teamId: "T2", source: "oauth" as const },
       ],
       ["T1", "T2"],
     );
@@ -82,12 +82,15 @@ describe("slack notifyPerson", () => {
 
   // TEST_SCENARIO: A link made before links recorded their workspace reaches the one active install, and nothing when several are active.
   it("falls back to the only active workspace for a legacy link", async () => {
-    const one = await harness([{ externalUserId: "U1", teamId: null }], ["T1"]);
+    const one = await harness(
+      [{ externalUserId: "U1", teamId: null, source: "oauth" as const }],
+      ["T1"],
+    );
     expect(await one.worker.notifyPerson("kc|a", "x")).toEqual({ sent: 1 });
     expect(one.dms()).toMatchObject([{ teamId: "T1" }]);
 
     const two = await harness(
-      [{ externalUserId: "U1", teamId: null }],
+      [{ externalUserId: "U1", teamId: null, source: "oauth" as const }],
       ["T1", "T2"],
     );
     expect(await two.worker.notifyPerson("kc|a", "x")).toEqual({ sent: 0 });
@@ -96,13 +99,13 @@ describe("slack notifyPerson", () => {
   // TEST_SCENARIO: A link whose workspace is no longer active, or one that did not grant im:write, is skipped.
   it("skips an inactive workspace and one without im:write", async () => {
     const gone = await harness(
-      [{ externalUserId: "U1", teamId: "T9" }],
+      [{ externalUserId: "U1", teamId: "T9", source: "oauth" as const }],
       ["T1"],
     );
     expect(await gone.worker.notifyPerson("kc|a", "x")).toEqual({ sent: 0 });
 
     const noScope = await harness(
-      [{ externalUserId: "U1", teamId: "T1" }],
+      [{ externalUserId: "U1", teamId: "T1", source: "oauth" as const }],
       ["T1"],
     );
     noScope.gw.setGrantedScopes(["chat:write"]);

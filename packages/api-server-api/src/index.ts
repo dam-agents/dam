@@ -30,6 +30,10 @@ export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
+  SlackDmBridgeState,
+  SlackDmConnectView,
+  SlackDmDisconnectView,
+  SlackDmStatusView,
 } from "./modules/channels/types.js";
 export {
   isSlackDirectMessageId,

@@ -3,6 +3,7 @@ import { boundedSet } from "../../../core/bounded-map.js";
 export interface KeycloakUserDirectory {
   resolveByEmail(email: string): Promise<string | null>;
   resolveBySub(sub: string): Promise<string | null>;
+  resolveVerifiedEmailBySub(sub: string): Promise<string | null>;
   resolveDisplayNameBySub(sub: string): Promise<string | null>;
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
   searchSubs(text: string, max: number): Promise<Set<string>>;
@@ -38,6 +39,8 @@ interface CachedLookup {
 
 export interface KeycloakUserRecord {
   email?: string;
+  emailVerified?: boolean;
+  enabled?: boolean;
   firstName?: string;
   lastName?: string;
 }
@@ -187,6 +190,28 @@ export function createKeycloakUserDirectory(
 
     async resolveBySub(sub) {
       return (await fetchUser(sub))?.email ?? null;
+    },
+
+    /* UNIT_BOUNDARY_DESCRIPTION: pairing a Slack account to an owner rests on
+     * this mailbox, so it answers only a mailbox Keycloak calls verified on an
+     * enabled user, and nothing at all when it cannot tell — the cached
+     * DirectoryUser drops the flag, so this reads the record itself. */
+    async resolveVerifiedEmailBySub(sub) {
+      try {
+        const res = await adminFetch(
+          `/users/${encodeURIComponent(sub)}`,
+          AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
+        );
+        if (!res.ok) return null;
+        const user = (await res.json()) as KeycloakUserRecord;
+        if (user.enabled === false || user.emailVerified !== true) return null;
+        return user.email ?? null;
+      } catch (err) {
+        process.stderr.write(
+          `[keycloak-user-directory] verified email lookup ${sub} errored: ${err}\n`,
+        );
+        return null;
+      }
     },
 
     async resolveDisplayNameBySub(sub) {

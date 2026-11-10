@@ -145,12 +145,15 @@ import {
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
+import { createSlackDmBridgeRelease } from "./modules/channels/services/slack-dm-bridge-service.js";
 import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
   upsertIdentityLink,
   findExternalLinksByIdentity,
   deleteIdentityLink,
+  deleteEmailIdentityLinksOfSub,
+  insertEmailIdentityLinkIfAbsent,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
   findAgentByConversation,
@@ -1553,6 +1556,8 @@ export async function bootstrap() {
     findExternalUsers: findExternalUsersByIdentity(db),
     findExternalLinks: findExternalLinksByIdentity(db),
     upsert: upsertIdentityLink(db),
+    insertByEmail: insertEmailIdentityLinkIfAbsent(db),
+    deleteEmailOfSub: deleteEmailIdentityLinksOfSub(db),
     delete: deleteIdentityLink(db),
   });
 
@@ -1860,6 +1865,18 @@ export async function bootstrap() {
 
   const slackOwnedThreads = createSlackOwnedThreadsRepository(db);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: An in-chat unbind in a 1:1 DM releases what the
+   * Bridge put there — the threads that Agent's sessions owned and, when
+   * nothing else is bound, the email pairing. A proven link and every unrelated
+   * binding stay, which is why this never deletes by conversation alone. */
+  const releaseBridgeOnUnbind = createSlackDmBridgeRelease({
+    releaseOwnedThreads: (agentId, channelId) =>
+      slackOwnedThreads.forgetChat(agentId, channelId),
+    bindingsInConversation: findSlackBindingsByChannelId(db),
+    unlinkEmailOf: (sub, teamId) =>
+      identityLinkService.unlinkEmailOf("slack", sub, teamId),
+  });
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1881,6 +1898,7 @@ export async function bootstrap() {
           (await templatesRepo.readSpec(id))?.spec.description ?? null,
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
+        afterUnbind: releaseBridgeOnUnbind,
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         setSlackChannelHistory: setSlackChannelHistory(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),

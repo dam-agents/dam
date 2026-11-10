@@ -1405,6 +1405,13 @@ apiServer:
   # organizations connected at once would let a conversation reach the wrong
   # Agent and a person inherit another person's platform identity.
   slackEnterpriseId: ""
+  # -- Slack workspace (team) ids an operator vouches for as naming the same
+  # people DAM knows by mailbox: the DM Bridge pairs an owner's verified email
+  # with their Slack account only inside these, and only while the workspace is
+  # installed and active. Empty disables the Bridge, and nothing pairs. A paid
+  # plan lets a workspace admin set a member's email without verification, so
+  # list only a workspace whose addresses you trust as identities.
+  slackEmailPairingWorkspaces: []
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

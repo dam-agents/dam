@@ -86,6 +86,11 @@ export const identityLinks = pgTable(
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
     teamId: text("team_id"),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the link was proven — `oauth` by a
+     * Keycloak sign-in, `email` by a pairing that only looked the person up in
+     * a trusted workspace. An email link inserts only and never moves a
+     * workspace; an OAuth sign-in promotes it. */
+    source: text("source").notNull().default("oauth"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -250,6 +250,26 @@ export interface SlackUserInfo {
   isDeleted?: boolean;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A Slack person found by their mailbox, with the
+ * flags that say whether that mailbox is a trustworthy identity for them at
+ * all. Slack reports no single "trusted" flag, so every way a person can stand
+ * outside a workspace's own membership — a guest, a Slack Connect or Grid
+ * stranger, a bot or an app — is carried here for the caller to refuse.
+ */
+export interface SlackEmailUser {
+  id: string;
+  teamId: string;
+  enterpriseId: string | null;
+  email: string | null;
+  deleted: boolean;
+  isBot: boolean;
+  isAppUser: boolean;
+  isRestricted: boolean;
+  isUltraRestricted: boolean;
+  isStranger: boolean;
+}
+
 export interface SlackMessageReaction {
   name: string;
   count: number;
@@ -340,6 +360,10 @@ export interface SlackGateway {
     userId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackUserInfo | null>;
+  lookupUserByEmail(
+    email: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackEmailUser | null>;
   getMessageReactions(
     channel: string,
     ts: string,

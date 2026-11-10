@@ -87,6 +87,23 @@ const gheHostsSchema = z
     ),
   );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack workspaces an operator vouches for as
+ * naming the same people DAM knows by mailbox. Empty is the shipped state —
+ * no workspace is trusted, so nothing pairs — and each entry is searched only
+ * while it is installed and active. */
+const slackEmailPairingWorkspacesSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().min(1)));
+
 const gheRetiredHostsSchema = z
   .string()
   .default("[]")
@@ -259,6 +276,7 @@ const configSchema = z.object({
   slackOauthCallbackUrl: z.string().nullable().default(null),
   slackInstallCallbackUrl: z.string().nullable().default(null),
   slackEnterpriseId: z.string().default(""),
+  slackEmailPairingWorkspaces: slackEmailPairingWorkspacesSchema,
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
   slackTokenRotation: z.coerce.boolean().default(false),
@@ -481,6 +499,7 @@ export function loadConfig(): Config {
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     slackInstallCallbackUrl: process.env.SLACK_INSTALL_CALLBACK_URL,
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
+    slackEmailPairingWorkspaces: process.env.SLACK_EMAIL_PAIRING_WORKSPACES,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
     slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,

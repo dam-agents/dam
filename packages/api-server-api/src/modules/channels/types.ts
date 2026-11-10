@@ -14,9 +14,52 @@ export interface SlackChannelChoiceView {
 export type SlackChannelChoicesView =
   { linked: false } | { linked: true; channels: SlackChannelChoiceView[] };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether the Bridge can put an agent into the
+ * owner's own 1:1 DM with the bot. `off` is an install that trusts no workspace
+ * for email pairing; `linked` is a proven Slack identity; `pairable` is a
+ * mailbox match the owner has not confirmed yet; `unavailable` says why nothing
+ * can be offered, and is the answer that must suppress an offer rather than
+ * produce one.
+ */
+export type SlackDmBridgeState = "off" | "linked" | "pairable" | "unavailable";
+
+export interface SlackDmStatusView {
+  state: SlackDmBridgeState;
+  reason?: string;
+  teamId?: string;
+  slackUserId?: string;
+  dmChannelId?: string;
+}
+
+export interface SlackDmConnectView {
+  teamId: string;
+  slackUserId: string;
+  dmChannelId: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: `existing` is the idempotent answer — the agent
+   * was already in that DM, so nothing was written and nothing was posted. */
+  binding: "created" | "existing";
+  isDefault: boolean;
+  helloPosted: boolean;
+}
+
+export interface SlackDmDisconnectView {
+  disconnected: number;
+  threadsReleased: number;
+  linksRemoved: number;
+}
+
 export interface ChannelsService {
   available: Partial<Record<ChannelType, boolean>>;
   telegramBotUsername: () => string | null;
   setChoice: (input: ChannelChoiceInput) => Promise<void>;
   slackChannelChoices: () => Promise<SlackChannelChoicesView>;
+  slackDm: {
+    status: () => Promise<SlackDmStatusView>;
+    connect: (input: {
+      agentId: string;
+      purpose?: string;
+    }) => Promise<SlackDmConnectView>;
+    disconnect: (input: { agentId: string }) => Promise<SlackDmDisconnectView>;
+  };
 }

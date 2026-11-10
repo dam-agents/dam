@@ -14,6 +14,7 @@ import type {
   SlackSessionStoppedEvent,
   SlackSlashCommand,
   SlackUserInfo,
+  SlackEmailUser,
   SlackWorkspace,
 } from "./slack-gateway.js";
 
@@ -75,6 +76,8 @@ export interface FakeSlackGateway extends SlackGateway {
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
+  setEmailUsers(users: SlackEmailUser[]): void;
+  readEmailLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
@@ -190,6 +193,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
+  let emailUsers: SlackEmailUser[] = [];
+  const emailLookups: string[] = [];
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
   let nextFileId = 1;
@@ -420,6 +425,17 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return users.find((u) => u.id === userId) ?? null;
     },
 
+    async lookupUserByEmail(email, teamId) {
+      emailLookups.push(`${teamId}|${email}`);
+      return (
+        emailUsers.find(
+          (u) =>
+            u.teamId === teamId &&
+            u.email?.toLowerCase() === email.toLowerCase(),
+        ) ?? null
+      );
+    },
+
     async getMessageReactions(channel, ts) {
       return messageReactions.get(`${channel}:${ts}`) ?? null;
     },
@@ -537,6 +553,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     readUserLookups() {
       return [...userLookups];
+    },
+
+    setEmailUsers(next) {
+      emailUsers = [...next];
+    },
+
+    readEmailLookups() {
+      return [...emailLookups];
     },
 
     async getGrantedScopes() {
