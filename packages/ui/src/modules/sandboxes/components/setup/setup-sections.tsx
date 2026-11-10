@@ -62,10 +62,12 @@ export function ProviderSection({
   selected,
   onSelect,
   policy,
+  preferShared,
 }: {
   selected: ProviderRef | null;
   onSelect: (ref: ProviderRef | null) => void;
   policy: ReturnType<typeof setupProviderPolicy>;
+  preferShared?: boolean;
 }) {
   return (
     <section className="mb-8">
@@ -78,6 +80,7 @@ export function ProviderSection({
           required
           allow={policy.allow}
           recommended={policy.recommended}
+          preferShared={preferShared}
         />
       </Inset>
     </section>

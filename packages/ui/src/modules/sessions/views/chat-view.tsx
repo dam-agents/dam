@@ -6,7 +6,11 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  SessionMode,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
 import {
   type CSSProperties,
   Fragment,
@@ -41,7 +45,11 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
+import {
+  useChatDefault,
+  useHarnessConfigCurrent,
+  useTryCurveBender,
+} from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   useAgents,
@@ -76,6 +84,7 @@ import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -99,6 +108,7 @@ import { BackgroundWorkIndicator } from "../components/background-work-indicator
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { CurveBenderAlert } from "../components/curve-bender-alert.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -119,6 +129,7 @@ import {
   type SidebarPanelStack,
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
+import { curveBenderNotice } from "../lib/curve-bender.js";
 import { draftKey } from "../lib/draft-key.js";
 import { modelDisplayName } from "../lib/session-model.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
@@ -265,6 +276,12 @@ export function ChatView() {
     ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
         ?.name ?? modelDisplayName(sessionModel.current))
     : harnessCurrent?.model;
+
+  const sharedCurveBender = useAppConnections().data?.find(
+    (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  );
+  const chatDefault = useChatDefault(sharedCurveBender ? selectedAgent : null);
+  const tryCurveBender = useTryCurveBender();
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -854,6 +871,22 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
+                <CurveBenderAlert
+                  variant={curveBenderNotice({
+                    sessionId,
+                    sharedId: sharedCurveBender?.id,
+                    pair: chatDefault.data,
+                    pairSettled: !chatDefault.isPending,
+                  })}
+                  onTry={async () => {
+                    if (!selectedAgent || !sharedCurveBender) return;
+                    await tryCurveBender.mutateAsync({
+                      agentId: selectedAgent,
+                      sharedId: sharedCurveBender.id,
+                    });
+                  }}
+                  onPickProvider={handleConfigureSandbox}
+                />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

@@ -3,11 +3,12 @@ import type { HarnessFamily, HarnessView } from "api-server-api";
 import type { TemplateView } from "../../../types.js";
 
 export const SHARED_IMAGE_TEMPLATE_ID = "default";
+export const PI_TEMPLATE_ID = "pi-agent";
 
 const TEMPLATE_ID_OF_HARNESS: Readonly<Record<string, string>> = {
   "claude-code": "claude-code",
   codex: "codex",
-  pi: "pi-agent",
+  pi: PI_TEMPLATE_ID,
   bob: "bob",
 };
 

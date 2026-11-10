@@ -1,9 +1,13 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
-import type {
-  AgentConnections,
-  ConnectionView,
-  HarnessConfigChange,
+import {
+  type AgentConnections,
+  aliasForProviderType,
+  type ConnectionView,
+  CURVE_BENDER_WORK_MODEL,
+  formatQualifiedModel,
+  type HarnessConfigChange,
+  providerTypeForTemplateId,
 } from "api-server-api";
 import { useRef } from "react";
 
@@ -236,6 +240,71 @@ export function useApplyHarnessConfig() {
           refetchType: "none",
         });
       }
+    },
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Try now on the CurveBender offer. An agent holds
+ * one `cb` provider, so the shared Connection replaces any own-key CurveBender
+ * grant, and every other grant stays. Then the new-chat pair moves to Pi on it
+ * with the CurveBender work model. When the server refuses that pair, the
+ * grants go back as they were, so the agent's old default keeps its provider.
+ */
+export function useTryCurveBender() {
+  return useMutation<void, Error, { agentId: string; sharedId: string }>({
+    mutationFn: async ({ agentId, sharedId }) => {
+      const grants = await api.connections.getAgentConnections.query({
+        agentId,
+      });
+      const granted = new Set(grants.connections.map((g) => g.connectionId));
+      const ownKeys = (
+        queryClient.getQueryData<ConnectionView[]>(
+          trpc.connections.list.queryKey(),
+        ) ?? []
+      )
+        .filter(
+          (c) =>
+            c.id !== sharedId &&
+            granted.has(c.id) &&
+            providerTypeForTemplateId(c.templateId) === "curve-bender",
+        )
+        .map((c) => c.id);
+      const change = granted.has(sharedId)
+        ? null
+        : { grant: [sharedId], revoke: ownKeys };
+      if (change)
+        await api.connections.updateAgentConnections.mutate({
+          agentId,
+          ...change,
+        });
+      try {
+        await api.harnessConfig.rememberSessionPair.mutate({
+          agentId,
+          kind: "chat",
+          harness: "pi",
+          provider: sharedId,
+          model: formatQualifiedModel(
+            aliasForProviderType("curve-bender"),
+            CURVE_BENDER_WORK_MODEL,
+          ),
+        });
+      } catch (error) {
+        if (change)
+          await api.connections.updateAgentConnections.mutate({
+            agentId,
+            grant: change.revoke,
+            revoke: change.grant,
+          });
+        throw error;
+      }
+    },
+    meta: {
+      errorToast: "Couldn't switch to CurveBender",
+      invalidates: [
+        trpc.harnessConfig.sessionPair.pathKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
     },
   });
 }

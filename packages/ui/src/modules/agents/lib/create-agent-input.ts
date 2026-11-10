@@ -1,10 +1,15 @@
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
+
 import type { EgressPreset } from "../../../types.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import {
   type RegistryCredential,
   registryFilledCount,
 } from "../../sandboxes/components/registry-credential-section.js";
-import { harnessForTemplateId } from "../../templates/lib/harness-templates.js";
+import {
+  harnessForTemplateId,
+  PI_TEMPLATE_ID,
+} from "../../templates/lib/harness-templates.js";
 import type { CreateAgentInput } from "../api/mutations.js";
 
 export interface CreateAgentDraft {
@@ -112,4 +117,25 @@ export function buildCodingAgentSetupInput(
         }
       : {}),
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the harness and provider a create form starts
+ * on. A person who holds the deployment's shared CurveBender starts on Pi and
+ * that Connection, so a new agent runs on it without a choice; they can still
+ * pick another. A kit keeps its own harness and provider, and until the
+ * Connection list has answered the form waits, so it never saves the old
+ * default as a choice first.
+ */
+export function curveBenderPreselection(
+  kit: object | null,
+  connections: readonly { templateId: string }[] | undefined,
+): { harnessTemplateId?: string; settled: boolean; preferShared: boolean } {
+  if (kit) return { settled: true, preferShared: false };
+  if (!connections) return { settled: false, preferShared: false };
+  return connections.some(
+    (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  )
+    ? { harnessTemplateId: PI_TEMPLATE_ID, settled: true, preferShared: true }
+    : { settled: true, preferShared: false };
 }

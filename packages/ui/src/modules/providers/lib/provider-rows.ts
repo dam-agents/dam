@@ -1,4 +1,7 @@
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
+
 import type { ProviderPresetType } from "../../../types.js";
+import type { ProviderItem } from "../components/provider-item.js";
 
 interface ProviderRowDef {
   type: ProviderPresetType;
@@ -52,4 +55,49 @@ export function offeredProviderRows(
   return [...offered].sort(
     (a, b) => Number(b.type === recommended) - Number(a.type === recommended),
   );
+}
+
+export type ProviderChoice =
+  ProviderPresetType | typeof CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
+
+interface ProviderChoiceRow extends ProviderRowDef {
+  choice: ProviderChoice;
+  item: ProviderItem | undefined;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the choices the provider picker lists, in row
+ * order. The deployment's shared CurveBender is a choice of its own, next to
+ * the own-key row; the own-key row stays only while the person holds an own
+ * key, as on Settings / Providers. Auto-select takes the first choice the
+ * person holds, or the shared one when the form asks for it.
+ */
+export function providerChoices(
+  rows: readonly ProviderRowDef[],
+  items: {
+    itemByType: ReadonlyMap<ProviderPresetType, ProviderItem>;
+    shared: ProviderItem | undefined;
+  },
+  preferShared: boolean,
+): { choices: ProviderChoiceRow[]; autoSelect: ProviderItem | undefined } {
+  const { itemByType, shared } = items;
+  const choices = rows.flatMap((row): ProviderChoiceRow[] => {
+    const own = { ...row, choice: row.type, item: itemByType.get(row.type) };
+    if (row.type !== "curve-bender" || !shared) return [own];
+    const sharedChoice: ProviderChoiceRow = {
+      ...row,
+      choice: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      item: shared,
+    };
+    return own.item ? [sharedChoice, own] : [sharedChoice];
+  });
+  const sharedOffered = choices.find(
+    (c) => c.choice === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  )?.item;
+  return {
+    choices,
+    autoSelect:
+      (preferShared ? sharedOffered : undefined) ??
+      choices.find((c) => c.item)?.item,
+  };
 }

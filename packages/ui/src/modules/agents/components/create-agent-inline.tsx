@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 
 import type { AgentView } from "../../../types.js";
 import { showStorageFull } from "../../budgets/lib/storage-full.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
@@ -19,6 +20,7 @@ import { usePrefilledSandboxName } from "../hooks/use-default-sandbox-name.js";
 import {
   buildCreateAgentInput,
   type CreateAgentDraft,
+  curveBenderPreselection,
   isCreateAgentDraftComplete,
 } from "../lib/create-agent-input.js";
 import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
@@ -41,9 +43,14 @@ export function CreateAgentInline({ onCreated }: Props) {
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
   usePrefilledSandboxName(AGENT_NAME_PREFIX, name, setName);
 
+  const preselection = curveBenderPreselection(null, useAppConnections().data);
   const selectedTemplateId =
     templateId ??
-    (harnesses.find((t) => !t.experimental) ?? harnesses[0])?.id ??
+    (
+      harnesses.find((t) => t.id === preselection.harnessTemplateId) ??
+      harnesses.find((t) => !t.experimental) ??
+      harnesses[0]
+    )?.id ??
     null;
 
   const draft: CreateAgentDraft = {
@@ -99,6 +106,7 @@ export function CreateAgentInline({ onCreated }: Props) {
           onSelect={setProviderRef}
           autoSelectFirst
           required
+          preferShared={preselection.preferShared}
         />
       </div>
 
