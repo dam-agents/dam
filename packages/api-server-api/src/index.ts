@@ -47,6 +47,9 @@ export {
   type ChildEgressRule,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  MAX_STOP_REASON_CHARS,
+  stopReasonSchema,
+  stopInvocationRequestSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -67,6 +70,8 @@ export type {
   SpawnInvocationRequest,
   SpawnScriptInvocationRequest,
   SpawnInvocationResponse,
+  StopInvocationRequest,
+  StopInvocationResponse,
   InvocationOutput,
   InvocationOutputBlob,
   InvocationOutputLink,
@@ -78,6 +83,7 @@ export type {
   InvocationsQueryService,
   KeptSubAgent,
   DelegationNode,
+  DelegationStopped,
 } from "./modules/invocations/types.js";
 
 export {

@@ -32,7 +32,22 @@ export function createDelegationsQuery(deps: {
         `[invocations] delegation tree for ${root} hit the ${DELEGATION_TREE_ROW_LIMIT}-row limit\n`,
       );
     }
-    return rows.filter((r) => r.owner === deps.owner);
+    return withAnyRunRunning(rows.filter((r) => r.owner === deps.owner));
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a row reads as running while any of its runs runs, not only its latest, since a kept target runs several at once; every read of the tree and of the kept sub-agents goes through here.
+  async function withAnyRunRunning(
+    rows: Awaited<ReturnType<InvocationsRepository["listByRoot"]>>,
+  ) {
+    const others = rows
+      .filter((r) => r.reapedAt === null && r.status !== "running")
+      .map((r) => r.id);
+    const running = new Set(
+      (await deps.repo.listRunningRunsOf(others)).map((r) => r.id),
+    );
+    return rows.map((r) =>
+      running.has(r.id) ? { ...r, status: "running" as const } : r,
+    );
   }
 
   return {

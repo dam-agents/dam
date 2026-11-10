@@ -7,6 +7,8 @@ import {
   OVERSIZED_ARRAY_MESSAGE,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  stopInvocationRequestSchema,
+  type StopInvocationResponse,
 } from "api-server-api";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
@@ -191,6 +193,22 @@ export function mountInvocationRoutes(
     const outcome = await ops.wakeSubagent(c.req.param("invocationId")!);
     return outcome.ok
       ? c.body(null, 204)
+      : c.json(refused(outcome.message), 409);
+  });
+
+  app.post("/api/agents/:id/invocations/:invocationId/stop", async (c) => {
+    const ops = await driverOps(c.req.param("id")!);
+    if (!ops) return c.json({ error: "not found" }, 404);
+    const parsed = stopInvocationRequestSchema.safeParse(
+      await c.req.json().catch(() => ({})),
+    );
+    if (!parsed.success) return c.json(refused(parsed.error.message), 400);
+    const outcome = await ops.stopSubagent(
+      c.req.param("invocationId")!,
+      parsed.data.reason,
+    );
+    return outcome.ok
+      ? c.json({ stopped: outcome.stopped } satisfies StopInvocationResponse)
       : c.json(refused(outcome.message), 409);
   });
 

@@ -4,6 +4,8 @@ import type {
   InvocationStatus,
 } from "api-server-api";
 
+import { stoppedOf } from "./stop-reason.js";
+
 export interface DelegationRecord {
   id: string;
   driverAgentId: string;
@@ -34,6 +36,7 @@ function toNode(
     driverAgentId: row.driverAgentId,
     status: row.status,
     errorReason: row.errorReason,
+    stopped: row.status === "failed" ? stoppedOf(row.errorReason) : null,
     result: row.status === "done" ? row.result : null,
     prompt: row.prompt,
     script: row.script,

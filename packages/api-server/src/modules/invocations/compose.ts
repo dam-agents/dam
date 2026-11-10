@@ -16,6 +16,7 @@ import {
   type SpawnSessions,
 } from "./services/spawn-sessions.js";
 import { createDelegationControl } from "./services/delegation-control.js";
+import { createDelegationStop } from "./services/delegation-stop.js";
 import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
@@ -119,17 +120,19 @@ export function composeInvocationsForOwner(opts: {
   idleTimeoutMaxMin: number;
 }): InvocationsService {
   const repo = createInvocationsRepository(opts.db);
+  const reaper = composeReaper(
+    repo,
+    () => opts.agents,
+    opts.frames,
+    opts.runtimeMutator,
+  );
   return createInvocationsService({
     owner: opts.owner,
     repo,
     agents: opts.agents,
     driverResolution: createDriverResolution({ repo }),
-    reaper: composeReaper(
-      repo,
-      () => opts.agents,
-      opts.frames,
-      opts.runtimeMutator,
-    ),
+    reaper,
+    stopper: createDelegationStop({ repo, reaper }),
     cancel: composeCancel(repo, () => opts.agents, opts.runtimeMutator),
     reportedReap: composeReportedReap(
       repo,
@@ -174,12 +177,15 @@ export function composeInvocationsControlForOwner(opts: {
   return createDelegationControl({
     repo,
     owner: opts.owner,
-    reaper: composeReaper(
+    stopper: createDelegationStop({
       repo,
-      () => opts.agents,
-      opts.frames,
-      opts.runtimeMutator,
-    ),
+      reaper: composeReaper(
+        repo,
+        () => opts.agents,
+        opts.frames,
+        opts.runtimeMutator,
+      ),
+    }),
   });
 }
 

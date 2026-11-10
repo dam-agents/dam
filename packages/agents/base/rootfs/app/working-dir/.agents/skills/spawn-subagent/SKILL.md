@@ -60,6 +60,10 @@ For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in 
 **You may stop waiting.** If you end your turn or stop calling `await_subagents`, the platform delivers each result to this session as a new turn when its sub-agent ends — on every harness, and also after the user has left.
 So never keep a shell command or a background job alive only to wait for a sub-agent.
 
+**Stop a sub-agent you no longer need.** When another sub-agent already found the answer, the user changed the request, or you gave it the wrong task, call `stop_subagent` with its id and a short `reason` at once: it stops spending, and so does every sub-agent it started.
+A sub-agent you spawned with `keep` keeps its conversation and needs a reason; any other is removed.
+Its result never comes back to you as a turn; the user sees your reason in the delegation view.
+
 **Report only what you checked.** Never tell the user that a sub-agent or a script is running unless you checked it just now.
 `await_subagents`, or the script's own output, is the source of truth.
 A shell job left in the background can die at once on some harnesses, while it still looks started.
@@ -255,6 +259,8 @@ Its own Environments go with it when it is removed.
 
 - Spawns past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.
 - In a script, run parallel spawns from threads (Python) or `Promise.all` (JS); a wide or long fan-out belongs to the tools.
+- **Stop the spawns a script no longer needs**, as soon as it knows: pass `cancel=threading.Event()` to `spawn` or `spawn_script` and `set()` it, which raises `Stopped` (`cancel_reason="why"` gives the user your reason); in JS pass `signal` from an `AbortController` and `abort("why")`, which throws `Stopped`.
+  `sub.stop("why")` stops a clean slate or a kept sub-agent.
 - **You stay awake while your sub-agents run.** The platform keeps this agent from hibernating while any sub-agent it spawned is still running.
 
 ## Things to know

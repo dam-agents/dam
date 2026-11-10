@@ -50,6 +50,8 @@ import {
 import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetReaper } from "./target-reaper.js";
+import type { DelegationStop } from "./delegation-stop.js";
+import { driverStopReason } from "../domain/stop-reason.js";
 import type { RunCancel } from "./run-cancel.js";
 import type { ReportedTargetReap } from "./reported-target-reap.js";
 import type {
@@ -276,6 +278,12 @@ export interface InvocationsService {
   ): Promise<StartedRun>;
   // UNIT_BOUNDARY_DESCRIPTION: wakes a sleeping sub-agent of the driver's, so it can be entered over the link; refused for one that is not the driver's, is gone, or whose machine is being stopped.
   wakeTarget(invocationId: string, driverAgentId: string): Promise<void>;
+  // UNIT_BOUNDARY_DESCRIPTION: the driver's stop of a sub-agent of its own, which takes every sub-agent below it down too; nothing of it comes back to the driver as a turn. A kept sub-agent is stopped only with a reason, since it lives on and its user reads why its work was cut short. Refused for one that is not the driver's.
+  stopTarget(
+    invocationId: string,
+    driverAgentId: string,
+    reason?: string,
+  ): Promise<{ stopped: boolean }>;
   reachability(
     input: Pick<
       SpawnInput,
@@ -318,6 +326,7 @@ export function createInvocationsService(deps: {
   scriptOutputsAvailable: boolean;
   spendHold?: SpendHoldGate;
   reaper: TargetReaper;
+  stopper: DelegationStop;
   cancel: Pick<RunCancel, "settled">;
   reportedReap: Pick<ReportedTargetReap, "afterReport">;
   skills?: Pick<SkillsService, "applyEntries">;
@@ -898,6 +907,27 @@ export function createInvocationsService(deps: {
           `${invocationId}'s machine is being stopped after a run that could not be ended; try again in a minute`,
         );
       await deps.wakeAgent(invocationId);
+    },
+
+    async stopTarget(invocationId, driverAgentId, reason) {
+      const row = await deps.repo.get(invocationId);
+      if (!row || row.driverAgentId !== driverAgentId)
+        throw new RunError(
+          `${invocationId} is not a sub-agent you started. Pass the id that spawn_subagent returned; a run id from run_subagent is not one.`,
+        );
+      const kept = row.keepUntil && row.keepUntil.getTime() > now().getTime();
+      if (kept && !reason) {
+        if (!(await deps.stopper.running(row))) return { stopped: false };
+        throw new RunError(
+          `${invocationId} is kept, so stopping it takes a reason: its user reads it beside the stopped run`,
+        );
+      }
+      return deps.stopper.stop(row, {
+        reason: driverStopReason(reason),
+        actor: driverAgentId,
+        actorKind: "agent",
+        collectTarget: true,
+      });
     },
 
     async get(invocationId, driverAgentId) {

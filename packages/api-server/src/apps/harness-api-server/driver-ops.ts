@@ -419,6 +419,22 @@ function driverOps(
       }
     },
 
+    // UNIT_BOUNDARY_DESCRIPTION: stops a sub-agent of this driver's and every sub-agent below it; a refusal says why, and one with nothing running says it was not stopped.
+    async stopSubagent(
+      id: string,
+      reason?: string,
+    ): Promise<
+      { ok: true; stopped: boolean } | { ok: false; message: string }
+    > {
+      try {
+        const { stopped } = await invocations.stopTarget(id, driverId, reason);
+        return { ok: true, stopped };
+      } catch (err) {
+        if (err instanceof RunError) return { ok: false, message: err.message };
+        throw err;
+      }
+    },
+
     // UNIT_BOUNDARY_DESCRIPTION: starts a run in an idle or kept sub-agent of this driver, refused for the same reasons a spawn is: a task runs on the model named, or this driver's default on the sub-agent's harness, and on a provider the sub-agent holds. Its result goes to the caller that started it.
     async runSubagent(
       id: string,
