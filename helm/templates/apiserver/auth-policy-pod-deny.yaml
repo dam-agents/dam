@@ -15,9 +15,11 @@ Per-port DENY:
   - Harness port: deny anything that isn't the waypoint principal.
     Istio names the waypoint SA after the Gateway resource, so the
     principal is `<td>/ns/<release-ns>/sa/<waypoint-name>`.
-  - ext-authz port: deny anything that isn't sourced in the agent
-    namespace. Per-agent AuthorizationPolicies on per-agent
-    ext-authz Services gate further by SA principal.
+  - ext-authz port: the same waypoint principal, because the per-agent
+    ext-authz Services are bound to the waypoint too. Their per-agent
+    AuthorizationPolicies pin the SA principal and the gRPC authority
+    to the matching agent, so nothing outside the waypoint may name an
+    agent directly.
   - Public HTTP port (Keycloak-JWT-gated): no DENY rule. Traffic from
     Traefik (kube-system) and any other peer is allowed; application-
     layer auth is the gate. Adding an ns-based DENY here would block
@@ -62,14 +64,16 @@ spec:
         - source:
             notPrincipals:
               - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
-    # ext-authz port: only sources in the agent namespace are admitted.
-    # Per-agent AuthorizationPolicies on per-agent ext-authz
-    # Services pin the SA principal to the matching agent.
+    # ext-authz port: only the waypoint principal is admitted, exactly
+    # as on the harness port. The per-agent AuthorizationPolicies on
+    # the waypoint-bound ext-authz Services pin the SA principal and
+    # the gRPC authority to the matching agent, so a direct pod-IP call
+    # names no agent at all.
     - to:
         - operation:
             ports:
               - {{ .Values.apiServer.extAuthzPort | quote }}
       from:
         - source:
-            notNamespaces:
-              - {{ .Values.agentNamespace | quote }}
+            notPrincipals:
+              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"

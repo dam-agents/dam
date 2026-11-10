@@ -800,3 +800,15 @@ helm template platform . "${COMMON[@]}" \
   --set agentStore.cutover.acknowledged=true \
   --set agentStore.contract.emptyArchive=true >/dev/null \
   || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }
+# The api-server pod-level DENY ringfences both destination ports by the
+# waypoint principal alone. On ext-authz a namespace-wide admission left every
+# release-namespace pod free to name any agent, since the per-agent policies
+# only apply to traffic the waypoint routes.
+pod_deny=$(helm template platform . "${COMMON[@]}" \
+  --show-only templates/apiserver/auth-policy-pod-deny.yaml | yq -o=json)
+jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" '
+  [.spec.rules[] | select(any(.to[]?; any(.operation.ports[]?; . == "4002")))] as $ext
+  | ($ext | length) == 1
+  and $ext[0].from[0].source.notPrincipals == [$principal]
+  and ([.. | objects | select(has("notNamespaces"))] | length) == 0' <<<"$pod_deny" >/dev/null ||
+  { echo "the api-server pod-DENY admits the agent namespace on ext-authz instead of only the waypoint: $pod_deny" >&2; exit 1; }
