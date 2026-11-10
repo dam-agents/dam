@@ -59,7 +59,7 @@ export function ArtifactRowMenuItems({
       {isEditableArtifact(artifact) && (
         <Item onSelect={() => onEdit(artifact)}>
           <RequestQuote size={14} />
-          Edit
+          Edit source
         </Item>
       )}
       <Item onSelect={() => onRename(artifact)}>

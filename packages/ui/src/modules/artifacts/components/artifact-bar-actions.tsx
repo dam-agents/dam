@@ -6,9 +6,7 @@ import {
   Download,
   Edit,
   FolderMoveTo,
-  Launch,
-  Maximize,
-  Minimize,
+  Popup,
   RequestQuote,
   TrashCan,
   View,
@@ -84,7 +82,7 @@ export function ArtifactBarActions({
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Launch size={16} />
+            <Popup size={16} />
           </a>
         </Button>
       )}
@@ -93,50 +91,26 @@ export function ArtifactBarActions({
 }
 
 export function ArtifactPanelMenu({
-  onEdit,
-  onStartSession,
-  fullPage,
-  onToggleFullPage,
   onRename,
   onMove,
+  onEdit,
+  onStartSession,
   source,
   onToggleSource,
   onSetRetention,
   onDelete,
 }: {
-  onEdit?: () => void;
-  onStartSession?: () => void;
-  fullPage: boolean;
-  onToggleFullPage?: () => void;
   onRename: () => void;
   onMove: () => void;
+  onEdit?: () => void;
+  onStartSession?: () => void;
   source: boolean;
   onToggleSource?: () => void;
   onSetRetention: () => void;
   onDelete: () => void;
 }) {
-  const leads = onEdit || onStartSession || onToggleFullPage;
   return (
     <RowActionsMenu label="More actions">
-      {onEdit && (
-        <DropdownMenuItem onSelect={onEdit}>
-          <RequestQuote size={14} />
-          Edit
-        </DropdownMenuItem>
-      )}
-      {onStartSession && (
-        <DropdownMenuItem onSelect={onStartSession}>
-          <AddComment size={14} />
-          Start a new session
-        </DropdownMenuItem>
-      )}
-      {onToggleFullPage && (
-        <DropdownMenuItem onSelect={onToggleFullPage}>
-          {fullPage ? <Minimize size={14} /> : <Maximize size={14} />}
-          {fullPage ? "Exit full page" : "Full page"}
-        </DropdownMenuItem>
-      )}
-      {leads && <DropdownMenuSeparator />}
       <DropdownMenuItem onSelect={onRename}>
         <Edit size={14} />
         Rename
@@ -145,6 +119,19 @@ export function ArtifactPanelMenu({
         <FolderMoveTo size={14} />
         Move
       </DropdownMenuItem>
+      {(onEdit || onStartSession) && <DropdownMenuSeparator />}
+      {onEdit && (
+        <DropdownMenuItem onSelect={onEdit}>
+          <RequestQuote size={14} />
+          Edit source
+        </DropdownMenuItem>
+      )}
+      {onStartSession && (
+        <DropdownMenuItem onSelect={onStartSession}>
+          <AddComment size={14} />
+          Start a new session
+        </DropdownMenuItem>
+      )}
       {onToggleSource && (
         <>
           <DropdownMenuSeparator />

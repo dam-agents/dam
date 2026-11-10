@@ -43,7 +43,7 @@ const env = vi.hoisted(() => {
 import { installBrowserHistory } from "../../modules/platform/hooks/use-browser-history.js";
 import { useStore } from "../../store.js";
 
-// TEST_OVERVIEW: Browser Back or Forward out of a chat closes the docked artifact. With an unsaved edit it asks first: "Keep editing" puts the left URL and its history state back, "Discard" follows the browser. The /artifacts path opens the Artifacts page.
+// TEST_OVERVIEW: Browser Back or Forward out of a chat closes the docked artifact, and out of the artifact page leaves that page's editor. With an unsaved edit it asks first: "Keep editing" puts the left URL and its history state back, "Discard" follows the browser. Between other pages the side panel keeps its dock and the draft, so nothing asks. The /artifacts path opens the Artifacts page.
 
 const settle = () => new Promise((resolve) => setTimeout(resolve));
 
@@ -88,6 +88,46 @@ describe("browser history with an unsaved artifact edit", () => {
     await settle();
     expect(useStore.getState().view).toBe("settings");
     expect(useStore.getState().dock).toBeNull();
+    uninstall();
+  });
+});
+
+describe("browser history with an unsaved edit outside a chat", () => {
+  // TEST_SCENARIO: the user edits an artifact on its own page and presses Back to the Artifacts list; the app asks first, and "Keep editing" keeps the page.
+  it("asks before leaving the artifact page", async () => {
+    env.location.pathname = "/artifacts/art-1";
+    env.location.search = "";
+    env.history.state = "in-app";
+    const uninstall = installBrowserHistory();
+    useStore.setState({ dialog: null });
+    useStore.getState().setOpenArtifactDirty(true);
+    env.history.pushState.mockClear();
+    env.popTo("/artifacts");
+    expect(useStore.getState().dialog?.open).toBe(true);
+    useStore.getState().closeDialog(false);
+    await settle();
+    expect(env.history.pushState).toHaveBeenCalledWith(
+      "in-app",
+      "",
+      "/artifacts/art-1",
+    );
+    expect(useStore.getState().view).toBe("artifact");
+    expect(useStore.getState().pageArtifactId).toBe("art-1");
+    uninstall();
+  });
+
+  // TEST_SCENARIO: an artifact with an unsaved edit is docked beside Settings, and Back goes to the Artifacts page; the side panel keeps the dock and the draft, so nothing asks.
+  it("does not ask between pages that keep the side panel", () => {
+    env.location.pathname = "/settings";
+    env.location.search = "";
+    const uninstall = installBrowserHistory();
+    useStore.setState({ dialog: null });
+    useStore.getState().setDock({ kind: "artifact", id: "art-1" });
+    useStore.getState().setOpenArtifactDirty(true);
+    env.popTo("/artifacts");
+    expect(useStore.getState().dialog).toBeNull();
+    expect(useStore.getState().view).toBe("artifacts");
+    expect(useStore.getState().dock).toEqual({ kind: "artifact", id: "art-1" });
     uninstall();
   });
 });

@@ -1,11 +1,5 @@
 import { ArrowLeft, Close, Save } from "@carbon/icons-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
@@ -21,7 +15,6 @@ import {
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { useArtifactSessionPrompt } from "../hooks/use-artifact-session-prompt.js";
 import { useConfirmDeleteArtifact } from "../hooks/use-confirm-delete-artifact.js";
-import { useFullPage } from "../hooks/use-full-page.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import {
   canStartArtifactSession,
@@ -52,7 +45,7 @@ type ArtifactDialog = "share" | "rename" | "move" | "retention";
  * chat, and the artifact page shows it alone in its own browser tab, so both
  * places offer the same actions. `onBack` and `close` are the side panel's;
  * the artifact page has neither, and as it already fills its tab it offers no
- * Full page and no Open in new tab.
+ * Open in new tab.
  */
 export function ArtifactPanel({
   artifactId,
@@ -84,8 +77,6 @@ export function ArtifactPanel({
   const [dialog, setDialog] = useState<ArtifactDialog | null>(null);
   const closeDialog = () => setDialog(null);
   const [source, setSource] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const { fullPage, toggleFullPage } = useFullPage(rootRef);
 
   const { data: versions } = useArtifactVersions(artifactId);
   const latest = artifact?.version;
@@ -146,14 +137,7 @@ export function ArtifactPanel({
   );
 
   return (
-    <div
-      ref={rootRef}
-      data-full-page={fullPage || undefined}
-      className={cn(
-        "flex h-full flex-col",
-        fullPage && "fixed inset-0 z-overlay bg-background",
-      )}
-    >
+    <div className="flex h-full flex-col">
       <div
         className={cn(
           "flex h-12 shrink-0 items-center gap-2 border-b border-border pr-4",
@@ -212,6 +196,8 @@ export function ArtifactPanel({
               />
               <ArtifactBarActions artifact={artifact} newTab={!standalone} />
               <ArtifactPanelMenu
+                onRename={() => setDialog("rename")}
+                onMove={() => setDialog("move")}
                 onEdit={
                   editor.editable
                     ? () => {
@@ -225,10 +211,6 @@ export function ArtifactPanel({
                     ? startSession.start
                     : undefined
                 }
-                fullPage={fullPage}
-                onToggleFullPage={standalone ? undefined : toggleFullPage}
-                onRename={() => setDialog("rename")}
-                onMove={() => setDialog("move")}
                 source={source}
                 onToggleSource={
                   renderable ? () => setSource((s) => !s) : undefined

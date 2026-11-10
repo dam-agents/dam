@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The artifact panel's top bar shows only the actions users take most: the title, the version switcher, Share with the current visibility, Download, Open in new tab, a ⋮ menu and close. Open in new tab opens the app's own page for the artifact, so a private artifact, which has no share link, opens in its own tab too. The ⋮ menu holds the rest: Edit, Start a new session and Full page, then Rename and Move, then View source, then Set expiration and Delete. The artifact page in its own tab shows the same bar without the actions it has no use for.
+// TEST_OVERVIEW: The artifact panel's top bar shows only the actions users take most: the title, the version switcher, Share with the current visibility, Download, Open in new tab, a ⋮ menu and close. Open in new tab opens the app's own page for the artifact, so a private artifact, which has no share link, opens in its own tab too, and its icon is the in-app one. The ⋮ menu holds the rest: Rename and Move, then Edit source and Start a new session, then View source, then Set expiration and Delete. There is no Full page: a wider panel or Open in new tab covers it. The artifact page in its own tab shows the same bar without the actions it has no use for, and another artifact's route starts it afresh.
+import { Popup } from "@carbon/icons-react";
 import type { ArtifactVersionInfo, LibraryArtifact } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
@@ -51,6 +53,8 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 const { useStore } = await import("../../store.js");
 const { ArtifactPanel } =
   await import("../../modules/artifacts/components/artifact-panel.js");
+const { ArtifactPageView } =
+  await import("../../modules/artifacts/views/artifact-page-view.js");
 
 function artifact(overrides: Partial<LibraryArtifact> = {}): LibraryArtifact {
   return {
@@ -175,6 +179,15 @@ describe("artifact panel top bar", () => {
     expect(link.getAttribute("target")).toBe("_blank");
   });
 
+  // TEST_SCENARIO: Open in new tab stays in the app, so it carries the in-app Popup icon, not Launch, which marks a link that leaves the app.
+  it("marks Open in new tab with the in-app icon", () => {
+    render();
+    const link = bar().querySelector('[aria-label="Open in new tab"]')!;
+    expect(link.innerHTML).toBe(
+      renderToStaticMarkup(createElement(Popup, { size: 16 })),
+    );
+  });
+
   // TEST_SCENARIO: the Share button names the visibility the artifact has now, so the state and the means to change it sit in one place.
   it("names the current visibility on Share", () => {
     fake.artifact = artifact({
@@ -185,16 +198,15 @@ describe("artifact panel top bar", () => {
     expect(barLabels()).toContain("Share: Public");
   });
 
-  // TEST_SCENARIO: AC-3 — the ⋮ menu lists Rename and Move, then View source, then Set expiration and Delete, after the actions the bar no longer shows: Edit, Start a new session and Full page. Deleting the artifact from its own page opens the Artifacts list.
+  // TEST_SCENARIO: AC-3 — the ⋮ menu lists Rename and Move first, then Edit source and Start a new session, then View source, then Set expiration and Delete. It offers no Full page.
   it("puts every other action in the menu", () => {
     render();
     expect(openMenu()).toEqual([
-      "Edit",
-      "Start a new session",
-      "Full page",
-      "—",
       "Rename",
       "Move",
+      "—",
+      "Edit source",
+      "Start a new session",
       "—",
       "View source",
       "—",
@@ -242,6 +254,35 @@ describe("artifact page in its own tab", () => {
       "More actions",
     ]);
     expect(openMenu()).not.toContain("Full page");
+  });
+
+  // TEST_SCENARIO: the user pins an older version on one artifact's page, then the route changes to another artifact; that artifact's page opens at its latest version, as it would in a new tab.
+  it("starts afresh on another artifact's route", () => {
+    useStore.setState({ view: "artifact", pageArtifactId: "art-1" });
+    act(() =>
+      root.render(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(ArtifactPageView, { artifactId: "art-1" }),
+        ),
+      ),
+    );
+    act(() => {
+      host.querySelector<HTMLElement>('[aria-label="Older version"]')!.click();
+    });
+    expect(barLabels()).toContain("v1 / 2");
+    fake.artifact = artifact({ id: "art-2", title: "Roadmap" });
+    act(() =>
+      root.render(
+        createElement(
+          TooltipProvider,
+          null,
+          createElement(ArtifactPageView, { artifactId: "art-2" }),
+        ),
+      ),
+    );
+    expect(barLabels()).toContain("v2 / 2");
   });
 
   // TEST_SCENARIO: the user deletes the artifact from its own page and confirms; the page leaves the deleted artifact for the Artifacts list instead of a dead route.
