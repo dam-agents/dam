@@ -1,12 +1,13 @@
-import { Slot } from "@radix-ui/react-slot";
-import type { SessionPair } from "api-server-api";
+import { Terminal } from "@carbon/icons-react";
 import { type ReactElement, useRef } from "react";
+import { match } from "ts-pattern";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -20,9 +21,15 @@ import {
   type TerminalHarness,
   terminalHarnessChoice,
 } from "../lib/session-pair-options.js";
+import type { TerminalLaunch } from "../lib/terminal-launch.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the button it wraps opens a menu of the harnesses a new web terminal can start with. Picking one stores it as the agent's next terminal pair, which the terminal hands the runtime on connect: the harness, with no model and no settings, so the harness starts on its own default model, and with the first attached provider it accepts, which a runtime from before the Model Router needs. The chat picker's pair is neither read nor changed. A harness whose fitting providers the owner holds but has not attached asks which to attach first. A pick runs only once the menu has closed and given focus back to the button, so the attach dialog gives focus back to the button too, not to a menu item that is gone. When the harnesses cannot be read or the agent names none, the button opens a plain terminal on the runtime's default harness.
+type MenuPick =
+  | { kind: "harness"; harness: TerminalHarness }
+  | { kind: "default" }
+  | { kind: "shell" };
+
+// UNIT_BOUNDARY_DESCRIPTION: the button it wraps opens a menu of what a new web terminal can start. Picking a harness stores it as the agent's next terminal launch, which the terminal hands the runtime on connect: the harness, with no model and no settings, so the harness starts on its own default model, and with the first attached provider it accepts, which a runtime from before the Model Router needs. The chat picker's pair is neither read nor changed. A harness whose fitting providers the owner holds but has not attached asks which to attach first. Shell is offered on every agent, whatever its harnesses and providers and while they load: it starts the agent user's login shell, which needs no harness, provider or model. A pick runs only once the menu has closed and given focus back to the button, so the attach dialog gives focus back to the button too, not to a menu item that is gone. When the harnesses cannot be read or the agent names none, the menu offers the runtime's default harness in their place.
 export function TerminalHarnessMenu({
   agentId,
   onOpen,
@@ -32,12 +39,12 @@ export function TerminalHarnessMenu({
   onOpen: () => void;
   children: ReactElement;
 }) {
-  const setNextTerminalPair = useStore((s) => s.setNextTerminalPair);
+  const setNextTerminalLaunch = useStore((s) => s.setNextTerminalLaunch);
   const status = useHarnessConfigStatus(agentId);
   const catalogQuery = useHarnessCatalog();
   const { granted, owned, loaded, failed } = useProviderConnections(agentId);
   const attach = useAttachProvidersDialog(agentId);
-  const picked = useRef<TerminalHarness | null>(null);
+  const picked = useRef<MenuPick | null>(null);
   const choice = terminalHarnessChoice({
     loading: status.isPending || catalogQuery.isPending || (!loaded && !failed),
     failed: failed || status.isError || catalogQuery.isError,
@@ -46,17 +53,32 @@ export function TerminalHarnessMenu({
     granted,
     owned,
   });
-  const start = (pair: SessionPair | null) => {
-    setNextTerminalPair(agentId, pair);
+  const start = (launch: TerminalLaunch | null) => {
+    setNextTerminalLaunch(agentId, launch);
     onOpen();
   };
-  const pick = async ({ name, provider, attachable }: TerminalHarness) => {
+  const startHarness = async ({
+    name,
+    provider,
+    attachable,
+  }: TerminalHarness) => {
     const chosen = provider ?? (await attach.ask(name, attachable))?.[0];
-    if (chosen) start({ harness: name, provider: chosen, model: null });
+    if (chosen)
+      start({
+        kind: "harness",
+        pair: { harness: name, provider: chosen, model: null },
+      });
+  };
+  const run = (pick: MenuPick) =>
+    match(pick)
+      .with({ kind: "harness" }, ({ harness }) => void startHarness(harness))
+      .with({ kind: "default" }, () => start(null))
+      .with({ kind: "shell" }, () => start({ kind: "shell" }))
+      .exhaustive();
+  const choose = (pick: MenuPick) => () => {
+    picked.current = pick;
   };
 
-  if (choice.kind === "fallback")
-    return <Slot onClick={() => start(null)}>{children}</Slot>;
   return (
     <>
       {attach.dialog}
@@ -66,33 +88,52 @@ export function TerminalHarnessMenu({
           align="start"
           className="max-w-72"
           onCloseAutoFocus={() => {
-            const harness = picked.current;
+            const pick = picked.current;
             picked.current = null;
-            if (harness) void pick(harness);
+            if (pick) run(pick);
           }}
         >
-          {choice.kind === "loading" ? (
-            <DropdownMenuItem disabled>Loading harnesses…</DropdownMenuItem>
-          ) : choice.harnesses.length === 0 ? (
-            <DropdownMenuItem disabled className="h-auto py-2">
-              No harness supports the LLM providers you have configured.
-            </DropdownMenuItem>
-          ) : (
-            choice.harnesses.map((harness) => (
+          {match(choice)
+            .with({ kind: "loading" }, () => (
+              <DropdownMenuItem disabled>Loading harnesses…</DropdownMenuItem>
+            ))
+            .with({ kind: "fallback" }, () => (
               <DropdownMenuItem
-                key={harness.name}
                 className="text-muted-foreground"
-                onSelect={() => {
-                  picked.current = harness;
-                }}
+                onSelect={choose({ kind: "default" })}
               >
-                <span aria-hidden>
-                  <HarnessIcons harnesses={[harness.name]} size="xs" />
-                </span>
-                {harness.displayName}
+                Default harness
               </DropdownMenuItem>
             ))
-          )}
+            .with({ kind: "harnesses" }, ({ harnesses }) =>
+              harnesses.length === 0 ? (
+                <DropdownMenuItem disabled className="h-auto py-2">
+                  No harness supports the LLM providers you have configured.
+                </DropdownMenuItem>
+              ) : (
+                harnesses.map((harness) => (
+                  <DropdownMenuItem
+                    key={harness.name}
+                    className="text-muted-foreground"
+                    onSelect={choose({ kind: "harness", harness })}
+                  >
+                    <span aria-hidden>
+                      <HarnessIcons harnesses={[harness.name]} size="xs" />
+                    </span>
+                    {harness.displayName}
+                  </DropdownMenuItem>
+                ))
+              ),
+            )
+            .exhaustive()}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-muted-foreground"
+            onSelect={choose({ kind: "shell" })}
+          >
+            <Terminal size={14} aria-hidden />
+            Shell
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>

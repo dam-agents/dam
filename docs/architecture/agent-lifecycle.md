@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-04
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -97,7 +97,7 @@ It never enters the agent, and a bad one surfaces as a pull failure rather than 
 See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 Every harness ships in one image; a workload's image adds its own files ([agent-images](agent-images.md)).
-The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume).
+The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume; a shell session runs the agent user's login shell instead).
 agent-runtime otherwise treats the harness as opaque.
 It also reserves the loopback **Artifact API Port** for the Agent's own [Artifact API](artifact-library.md#interactive-pages): the platform never starts anything there, and a server left running on it does not keep the Agent awake.
 The machine's disk is made with the machine, at its owner's pool size, so no first start waits on storage ([vm storage](vm-storage.md#the-disk)).

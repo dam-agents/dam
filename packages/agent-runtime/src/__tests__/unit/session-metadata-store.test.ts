@@ -102,6 +102,21 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")?.meta).toEqual({ mode: "chat" });
   });
 
+  // TEST_SCENARIO: A shell terminal Session is marked as one so its next PTY starts a shell again. A later write that does not name the mark, such as a rename, keeps it, and so does a restart.
+  it("keeps a shell Session's mark across metadata writes and a restart", () => {
+    const store = createSessionMetadataStore(backend);
+    store.set("s1", { mode: "terminal", shell: true, title: "Shell" });
+    store.set("s1", { mode: "terminal", customTitle: "Logs" });
+    expect(store.get("s1")?.meta).toEqual({
+      mode: "terminal",
+      shell: true,
+      customTitle: "Logs",
+    });
+    expect(createSessionMetadataStore(backend).get("s1")?.meta.shell).toBe(
+      true,
+    );
+  });
+
   it("sums run time across fires and ignores an unopened run", () => {
     let clock = "2026-01-01T00:00:00Z";
     const store = createSessionMetadataStore(backend, () => clock);

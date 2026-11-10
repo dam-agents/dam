@@ -21,6 +21,22 @@ const EVICT_CHANNEL = "terminal:evict";
 
 export type TerminalRelay = WakeGatedRelay;
 
+const TERMINAL_LEASE_PARAMS = ["harness", "provider", "model"] as const;
+
+// UNIT_BOUNDARY_DESCRIPTION: the runtime's terminal path for one viewer connection. It carries the Session, a reset, and what a new Session starts with: a harness pair, or `shell=1` for the agent user's login shell, which needs no harness, provider or model. Nothing else the client sent, its token included, reaches the agent.
+export function terminalUpstreamPath(query: URLSearchParams): string {
+  const upstream = new URLSearchParams({
+    sessionId: query.get("sessionId") ?? "default",
+  });
+  if (query.get("reset") === "1") upstream.set("reset", "1");
+  for (const name of TERMINAL_LEASE_PARAMS) {
+    const value = query.get(name);
+    if (value) upstream.set(name, value);
+  }
+  if (query.get("shell") === "1") upstream.set("shell", "1");
+  return `/api/terminal?${upstream.toString()}`;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a terminal wakes a hibernated agent, unless its client asks with `wake=0`, as the web app does for a connect of its own rather than the user's: then it only waits out a wake already asked for, so a tab left open does not wake an agent its user just put to sleep. It holds the agent awake only once the agent's end is open, since the hold alone would wake it.
 export function createTerminalRelay(
   namespace: string,
@@ -67,17 +83,7 @@ export function createTerminalRelay(
     upstreamBase,
     ensureReady: (agentId, req) =>
       repo.ensureReady(agentId, { waitOnly: params(req).get("wake") === "0" }),
-    upstreamPath: (agentId, req) => {
-      const query = params(req);
-      const sessionId = query.get("sessionId") ?? "default";
-      const reset = query.get("reset") === "1";
-      const lease = new URLSearchParams();
-      for (const name of ["harness", "provider", "model"]) {
-        const value = query.get(name);
-        if (value) lease.set(name, value);
-      }
-      return `/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`;
-    },
+    upstreamPath: (_agentId, req) => terminalUpstreamPath(params(req)),
     refuse: async () => null,
     activity: null,
     holdPresence: { when: "open", port: presence },
