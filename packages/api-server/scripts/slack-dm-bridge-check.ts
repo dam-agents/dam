@@ -273,9 +273,10 @@ async function main(): Promise<void> {
     })).outcome === "superseded",
   );
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the reconnect-before-delete window — a revoke
-   * read at one generation, a connect that opens the next, and the revoke then
-   * running: nothing of the reconnect may be deleted. */
+  /* TEST_SCENARIO: a revoke read at one generation, a connect that opens the
+   * next, and the revoke then running. This is sequential on purpose: the
+   * transaction under the lock is what closes the window, so what is asserted
+   * here is that a revoke carrying a stale generation deletes nothing. */
   const reconnect = await bridges.settleConnect({
     ownerSub: OWNER,
     agentId: AGENT,
@@ -338,11 +339,47 @@ async function main(): Promise<void> {
     (await bridges.find(AGENT, TEAM, DM))?.state === "active",
   );
 
-  /* UNIT_BOUNDARY_DESCRIPTION: whichever of the two commits first — the sign-in
-   * that proves a new owner, or the connect that settles the old one — a record
-   * must never be `active` for an owner the link no longer names. Five rounds
-   * start each of them in turn, which is the interleaving the lock and the
-   * reassignment have to survive. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a greeting claimed before a revoke must not be
+   * able to finish against the generation a later connect opened. The reopen
+   * clears the claim token, so a completion carrying the old one is refused
+   * even in the window before the new generation claims its own greeting. */
+  const pending = await bridges.claimHello(AGENT, TEAM, DM, USER);
+  await bridges.revokeBridge({
+    agentId: AGENT,
+    teamId: TEAM,
+    dmChannelId: DM,
+    slackUserId: USER,
+    ownerSub: OTHER_OWNER,
+    generation: (await bridges.find(AGENT, TEAM, DM))!.generation,
+  });
+  const reopened = await bridges.settleConnect({
+    ownerSub: OTHER_OWNER,
+    agentId: AGENT,
+    teamId: TEAM,
+    dmChannelId: DM,
+    slackUserId: USER,
+    insertEmailLink: false,
+  });
+  check(
+    "a reopen clears the claim a revoke interrupted",
+    pending !== null &&
+      reopened.ok &&
+      (await bridges.find(AGENT, TEAM, DM))?.helloClaimToken === null,
+  );
+  check(
+    "and the late completion of that claim is refused",
+    pending !== null &&
+      (await bridges.recordHello(AGENT, TEAM, DM, USER, pending)) === false,
+  );
+  check(
+    "while the reopened generation can greet",
+    (await bridges.claimHello(AGENT, TEAM, DM, USER)) !== null,
+  );
+
+  /* TEST_SCENARIO: a concurrency smoke check rather than a forced barrier —
+   * five rounds start each of the two in turn, which raises the chance of the
+   * interleaving without pinning it. Whichever commits first, a record must
+   * never be `active` for an owner the link no longer names. */
   let unsafe = 0;
   for (let round = 0; round < 5; round += 1) {
     await reassignLinks("slack", USER, OWNER, TEAM);
@@ -371,10 +408,10 @@ async function main(): Promise<void> {
     unsafe === 0,
   );
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the race that has no row to lock — a connect
-   * that inserts the first link for a person at the same moment a sign-in
-   * proves who they are. Rounds start each of them in turn and, after both, an
-   * active record must belong to the owner the link actually names. */
+  /* TEST_SCENARIO: another smoke check, for the race that has no row to lock —
+   * a connect inserting the first link while a sign-in proves who the person
+   * is. Rounds alternate which one starts; after both, an active record must
+   * belong to the owner the link actually names. */
   let wrongOwner = 0;
   for (let round = 0; round < 6; round += 1) {
     await db.execute(

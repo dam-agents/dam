@@ -39,6 +39,7 @@ export function slackWorkerHarness(
     dmBridges?: SlackDmBridgePort;
     ownedThreads?: SlackOwnedThreads;
     ensureReady?: () => Promise<void>;
+    reportSession?: boolean;
     unbindSlackChannel?: (agentId: string, channelId: string) => Promise<void>;
   } = {},
 ) {
@@ -59,6 +60,16 @@ export function slackWorkerHarness(
     listSessions: async () => [...created, ...(opts.sessions ?? [])],
     sendPrompt: async (prompt, sendOpts) => {
       prompts.push(prompt);
+      /* TEST_SCENARIO: a runtime reports the turn's session and prompt as it
+       * starts one, which is what lets a later message steer it and what a
+       * recovery nudge is watched against. */
+      if (opts.reportSession) {
+        const session =
+          "sessionId" in sendOpts && sendOpts.sessionId
+            ? String(sendOpts.sessionId)
+            : `s-${created.length + 1}`;
+        sendOpts.onSession?.(session, `p-${prompts.length}`);
+      }
       if ("platformMeta" in sendOpts && sendOpts.platformMeta) {
         created.push({
           sessionId: `s-${created.length + 1}`,

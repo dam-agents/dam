@@ -5869,6 +5869,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     threadTs: string;
     teamId: SlackWorkspace;
     reroute: () => Promise<void>;
+    /* UNIT_BOUNDARY_DESCRIPTION: set when a final admission check drops this
+     * message, so the steer's bookkeeping covers only what was admitted. */
+    droppedByRelease?: boolean;
   };
 
   const ownedQueues = new Map<string, ConversationQueue<OwnedPending>>();
@@ -6201,6 +6204,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       },
       onSteered: (batch) => {
         for (const msg of batch) {
+          if (msg.droppedByRelease) {
+            msg.release();
+            continue;
+          }
           const ref = { ...ownedRefOf(msg, sessionId), steered: true };
           beginTurn(instanceName, ref);
           steeredRefs.push(ref);
@@ -6243,8 +6250,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (
         isDirectMessageId(message.channelId) &&
         (await bridgeClosed(instanceName, message.teamId, message.channelId))
-      )
+      ) {
+        message.droppedByRelease = true;
         continue;
+      }
       kept.push(message);
     }
     return kept;
@@ -6327,7 +6336,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       release: fetched.release,
       channelId: event.channel,
       threadTs: event.threadTs,
-      teamId: event.teamId,
+      /* UNIT_BOUNDARY_DESCRIPTION: the workspace the thread was recorded in,
+       * not the one the event happens to be tagged with — a Grid reply can
+       * carry the person's home workspace, and every later admission and TurnRef
+       * must use the workspace the authorization was made in. */
+      teamId: owned.teamId,
       reroute,
     });
     return { owner: agentId, dropped: false, rateChecked: true };

@@ -425,8 +425,86 @@ describe("barriers: a permit that goes stale while work waits", () => {
     expect(String(h.prompts[0])).not.toContain("released dm");
   });
 
-  // TEST_SCENARIO: a steer held while the turn runs is filtered too, so only the live thread's message joins it.
-  it("filters a held steer by each message's own destination", async () => {
+  // TEST_SCENARIO: the reply can arrive tagged with another workspace (a Grid home workspace) while the thread is recorded in the workspace the Bridge paired; the final check uses the recorded one, so the revoked DM's text is dropped and the unrelated thread still runs.
+  it("judges the owned destination by the thread's workspace, not the event's", async () => {
+    const OWNED_TEAM = "T0OWNED";
+    const HOME_TEAM = "T0HOME";
+    let blocked = false;
+    const bridge = bridgePort((channelId) => blocked && channelId === DM);
+    const seen: string[] = [];
+    const port = bridge.port;
+    port.blocks = async (_agentId, teamId, channelId) => {
+      seen.push(`${teamId}|${channelId}`);
+      return blocked && teamId === OWNED_TEAM && channelId === DM;
+    };
+    const ownedThreads: SlackOwnedThreads = createMemorySlackOwnedThreads();
+    for (const [channelId, threadTs] of [
+      [CHANNEL, "222.1"],
+      [DM, "111.1"],
+    ] as const)
+      await ownedThreads.own({
+        channelId,
+        threadTs,
+        teamId: OWNED_TEAM,
+        agentId: "agent-1",
+        sessionId: "s-1",
+        firstLine: "a thread",
+      });
+    let releaseWake = () => {};
+    const woke = new Promise<void>((resolve) => {
+      releaseWake = resolve;
+    });
+    let wakeEntered = () => {};
+    const woken = new Promise<void>((resolve) => {
+      wakeEntered = resolve;
+    });
+    const h = slackWorkerHarness({
+      boundChannelId: DM,
+      otherBound: [CHANNEL],
+      dmBridges: port,
+      ownedThreads,
+      linkedSub: SLACK_HARNESS_OWNER,
+      linkedSlackUsers: [OWNER_USER],
+      sessions: [{ sessionId: "s-1" } as never],
+      settleMs: 10,
+      ensureReady: async () => {
+        wakeEntered();
+        await woke;
+      },
+    });
+    await h.worker.connect();
+
+    const first = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: DM,
+      threadTs: "111.1",
+      ts: "333.3",
+      teamId: HOME_TEAM,
+      text: "in the released dm",
+    });
+    const second = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: CHANNEL,
+      threadTs: "222.1",
+      ts: "444.4",
+      teamId: HOME_TEAM,
+      text: "in the live channel",
+    });
+    await woken;
+    blocked = true;
+    releaseWake();
+    await Promise.all([first, second]);
+    await quiet(60);
+
+    expect(h.prompts).toHaveLength(1);
+    expect(String(h.prompts[0])).toContain("in the live channel");
+    expect(String(h.prompts[0])).not.toContain("released dm");
+    expect(seen).toContain(`${OWNED_TEAM}|${DM}`);
+    expect(seen).not.toContain(`${HOME_TEAM}|${DM}`);
+  });
+
+  // TEST_SCENARIO: the messages reach a live steer before the DM closes, and the filter that runs at the steer keeps the live thread's message and drops the released one.
+  it("filters a live steer by each message's own destination", async () => {
     let blocked = false;
     const bridge = bridgePort((channelId) => blocked && channelId === DM);
     const ownedThreads: SlackOwnedThreads = createMemorySlackOwnedThreads();
@@ -454,7 +532,9 @@ describe("barriers: a permit that goes stale while work waits", () => {
       ownedThreads,
       linkedSub: SLACK_HARNESS_OWNER,
       linkedSlackUsers: [OWNER_USER],
+      sessions: [{ sessionId: "s-1" } as never],
       settleMs: 10,
+      reportSession: true,
       makeAcp: (base) => ({
         ...base,
         steer: async (_sessionId, batch) => {
@@ -465,6 +545,7 @@ describe("barriers: a permit that goes stale while work waits", () => {
           return "injected" as const;
         },
         sendPrompt: async (prompt, opts) => {
+          opts.onSession?.("s-1", "p-1");
           await turnGate;
           return base.sendPrompt(prompt, opts);
         },
@@ -479,30 +560,48 @@ describe("barriers: a permit that goes stale while work waits", () => {
       ts: "444.4",
       text: "the running turn",
     });
-    await quiet(40);
-    blocked = true;
-    const steering = h.gw.fireDirectMessage({
+    await quiet(30);
+    // TEST_SCENARIO: both are admitted while the DM is still active; the DM closes before the steer.
+    const live = h.gw.fireDirectMessage({
+      user: OWNER_USER,
+      channel: CHANNEL,
+      threadTs: "222.1",
+      ts: "555.5",
+      text: "more from the live thread",
+    });
+    const dead = h.gw.fireDirectMessage({
       user: OWNER_USER,
       channel: DM,
       threadTs: "111.1",
-      ts: "555.5",
+      ts: "666.6",
       text: "steered from the released dm",
     });
+    await Promise.all([live, dead]);
+    blocked = true;
     await quiet(40);
     releaseTurn();
-    await Promise.all([running, steering]);
+    await running;
     await quiet(60);
 
+    expect(steered.join(" ")).toContain("more from the live thread");
     expect(steered.join(" ")).not.toContain("released dm");
-    expect(h.prompts.length).toBeGreaterThanOrEqual(1);
   });
 
-  // TEST_SCENARIO: the recovery nudge asks again after its wait, so a conversation released in the meantime is not prompted.
-  it("does not nudge a conversation released while the turn was watched", async () => {
+  // TEST_SCENARIO: the recovery nudge asks again after its wake, so a conversation released while that wake waits is not prompted.
+  it("does not nudge a conversation released while the wake waits", async () => {
     vi.useFakeTimers();
     try {
       let blocked = false;
       const bridge = bridgePort((channelId) => blocked && channelId === DM);
+      let wakes = 0;
+      let releaseWake = () => {};
+      const woke = new Promise<void>((resolve) => {
+        releaseWake = resolve;
+      });
+      let wakeEntered = () => {};
+      const wakeWaiting = new Promise<void>((resolve) => {
+        wakeEntered = resolve;
+      });
       const h = slackWorkerHarness({
         boundChannelId: DM,
         dmBridges: bridge.port,
@@ -512,6 +611,14 @@ describe("barriers: a permit that goes stale while work waits", () => {
           ...base,
           turnStatus: async () => "ended" as const,
         }),
+        reportSession: true,
+        ensureReady: async () => {
+          wakes += 1;
+          // TEST_SCENARIO: the first wake is the turn itself; the second is the recovery nudge.
+          if (wakes === 1) return;
+          wakeEntered();
+          await woke;
+        },
       });
       await h.worker.connect();
 
@@ -525,8 +632,13 @@ describe("barriers: a permit that goes stale while work waits", () => {
       await fired;
       expect(h.prompts).toHaveLength(1);
 
+      // TEST_SCENARIO: the recovery watch ticks, and its wake waits while the DM closes.
+      await vi.advanceTimersByTimeAsync(2 * 60_000 + 1_000);
+      await wakeWaiting;
+      expect(wakes).toBeGreaterThanOrEqual(2);
       blocked = true;
-      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      releaseWake();
+      await vi.advanceTimersByTimeAsync(1_000);
       expect(h.prompts).toHaveLength(1);
     } finally {
       vi.useRealTimers();

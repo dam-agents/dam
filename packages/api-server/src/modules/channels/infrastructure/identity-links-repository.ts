@@ -170,7 +170,7 @@ export function upsertIdentityLink(db: Db) {
   ): Promise<void> => {
     await db.transaction(async (tx) => {
       if (provider === "slack") {
-        await lockSlackDm(tx, teamId ?? "", externalUserId);
+        await lockSlackDm(tx, externalUserId);
         const previous = (
           await tx
             .select({
@@ -238,15 +238,21 @@ export function upsertIdentityLink(db: Db) {
   };
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: a logout is a write to the same identity, so it
+ *  takes the same lock: a sign-in that is retiring Bridges, or a revoke that is
+ *  deleting this row, must not interleave with it. */
 export function deleteIdentityLink(db: Db) {
   return async (provider: string, externalUserId: string): Promise<void> => {
-    await db
-      .delete(identityLinks)
-      .where(
-        and(
-          eq(identityLinks.provider, provider),
-          eq(identityLinks.externalUserId, externalUserId),
-        ),
-      );
+    await db.transaction(async (tx) => {
+      if (provider === "slack") await lockSlackDm(tx, externalUserId);
+      await tx
+        .delete(identityLinks)
+        .where(
+          and(
+            eq(identityLinks.provider, provider),
+            eq(identityLinks.externalUserId, externalUserId),
+          ),
+        );
+    });
   };
 }

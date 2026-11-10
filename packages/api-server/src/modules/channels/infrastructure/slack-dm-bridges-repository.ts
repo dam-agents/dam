@@ -101,22 +101,22 @@ function toBridge(row: typeof slackDmBridges.$inferSelect): SlackDmBridge {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The one serialization point for a Slack user's
- * link and Bridge state. Every write below takes it first, in one fixed order —
- * this advisory lock, then `identity_links`, then `slack_dm_bridges`, then
- * `channels`, then `slack_owned_threads` — so writers cannot deadlock against
- * each other and, more importantly, so the lock exists even when the identity
- * row does not yet: a connect that inserts the first link and a sign-in that
- * confirms a different owner then serialize instead of one of them reading an
- * absence and skipping the retirement the other needed.
+ * UNIT_BOUNDARY_DESCRIPTION: The one serialization point for a Slack identity.
+ * A Slack user id is the identity's real key — `identity_links` is keyed by it
+ * alone, across workspaces — so the lock is taken on the user, not on the
+ * workspace and user together: otherwise a revoke in one workspace and a
+ * sign-in in another, for the same person, take different locks while touching
+ * the same identity row.
+ *
+ * Every write to that person's link or Bridge state takes it first, and then its
+ * rows in one fixed order: `identity_links`, `slack_dm_bridges`, `channels`,
+ * `slack_owned_threads`. The order is what keeps two writers from deadlocking on
+ * rows; the lock existing before any row does is what serializes a connect that
+ * inserts the first link against a sign-in that proves a different owner.
  */
-export async function lockSlackDm(
-  tx: Tx,
-  teamId: string,
-  slackUserId: string,
-): Promise<void> {
+export async function lockSlackDm(tx: Tx, slackUserId: string): Promise<void> {
   await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtextextended(${`slack-dm:${teamId}:${slackUserId}`}, 0))`,
+    sql`select pg_advisory_xact_lock(hashtextextended(${`slack-dm:${slackUserId}`}, 0))`,
   );
 }
 
@@ -142,7 +142,7 @@ export function createSlackDmBridgesRepository(db: Db) {
   ): Promise<SlackDmSettleResult> {
     try {
       const settled = await tx(async (t) => {
-        await lockSlackDm(t, input.teamId, input.slackUserId);
+        await lockSlackDm(t, input.slackUserId);
         const linkCreated = input.insertEmailLink
           ? await insertEmailIdentityLinkIfAbsent(t)(
               "slack",
@@ -258,6 +258,7 @@ export function createSlackDmBridgesRepository(db: Db) {
                  * that stayed open keeps the greeting it already posted. */
                 helloPostedAt: sql`case when ${slackDmBridges.state} = 'active' then ${slackDmBridges.helloPostedAt} else null end`,
                 helloClaimedAt: sql`case when ${slackDmBridges.state} = 'active' then ${slackDmBridges.helloClaimedAt} else null end`,
+                helloClaimToken: sql`case when ${slackDmBridges.state} = 'active' then ${slackDmBridges.helloClaimToken} else null end`,
                 updatedAt: sql`now()`,
               },
             })
@@ -339,7 +340,21 @@ export function createSlackDmBridgesRepository(db: Db) {
     | { outcome: "superseded" | "absent" }
   > {
     return tx(async (t) => {
-      await lockSlackDm(t, input.teamId, input.slackUserId);
+      await lockSlackDm(t, input.slackUserId);
+      /* UNIT_BOUNDARY_DESCRIPTION: the identity row is taken before the Bridge
+       * row on every path, so a sign-in waiting to rewrite the link and a
+       * revoke waiting to delete it queue in one order instead of deadlocking. */
+      await t
+        .select({ keycloakSub: identityLinks.keycloakSub })
+        .from(identityLinks)
+        .where(
+          and(
+            eq(identityLinks.provider, "slack"),
+            eq(identityLinks.externalUserId, input.slackUserId),
+          ),
+        )
+        .limit(1)
+        .for("update");
       const record = (
         await t
           .select()
@@ -525,7 +540,7 @@ export function createSlackDmBridgesRepository(db: Db) {
       slackUserId: string,
     ): Promise<string | null> {
       return tx(async (t) => {
-        await lockSlackDm(t, teamId, slackUserId);
+        await lockSlackDm(t, slackUserId);
         const token = crypto.randomUUID();
         const claimed = await t
           .update(slackDmBridges)
@@ -557,7 +572,7 @@ export function createSlackDmBridgesRepository(db: Db) {
       token: string,
     ): Promise<boolean> {
       return tx(async (t) => {
-        await lockSlackDm(t, teamId, slackUserId);
+        await lockSlackDm(t, slackUserId);
         const recorded = await t
           .update(slackDmBridges)
           .set({
@@ -587,7 +602,7 @@ export function createSlackDmBridgesRepository(db: Db) {
       token: string,
     ): Promise<boolean> {
       return tx(async (t) => {
-        await lockSlackDm(t, teamId, slackUserId);
+        await lockSlackDm(t, slackUserId);
         const released = await t
           .update(slackDmBridges)
           .set({

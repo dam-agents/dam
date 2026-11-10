@@ -93,7 +93,9 @@ export function buildSlackDmConnectCommand(deps: SlackDmCommandDeps): Command {
         "account needs a verified email address there. A Slack account already linked\n" +
         "to another account here is refused and left alone.\n" +
         "The DM carries questions about the results; changing what the agent does\n" +
-        "stays in the app. The unbind command in that DM undoes the connect.\n",
+        "stays in the app. The unbind command in that DM undoes the connect, and\n" +
+        "only a later connect here reopens it — binding the DM another way leaves it\n" +
+        "closed.\n",
     )
     .action(
       async (
@@ -182,9 +184,12 @@ export function buildSlackDmDisconnectCommand(
               }).\n`,
         );
         if (res.value.incomplete.length > 0) {
+          /* UNIT_BOUNDARY_DESCRIPTION: the release is one transaction, so a
+           * failure rolled it back — the binding and the DM's state are exactly
+           * as they were, which may mean the agent still reaches that DM. */
           process.stderr.write(
-            `warning: the release did not finish in ${res.value.incomplete.join(", ")}; ` +
-              "turns and deliveries there stay closed — run the disconnect again to finish it\n",
+            `warning: the release of ${res.value.incomplete.join(", ")} failed and changed nothing, ` +
+              "so the agent may still reach that DM — run the disconnect again\n",
           );
         }
       }

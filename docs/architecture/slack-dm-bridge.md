@@ -61,13 +61,14 @@ Failures are reported as far as they got, never compensated: a refusal names the
 ## Revoking
 
 A revoke works from the Bridge's own record, never from today's bindings and links: the record names the Agent, the workspace, the DM and the person it settled, so a revoke still finishes after a logout removed the link or a failed step removed the binding, and it asks Slack nothing.
-It marks the record `revoking` first, which is what closes the DM immediately, and only then releases the binding, the threads the Agent's Sessions owned there, and the email link — the link last, and only once nothing is bound in that exact DM, and only for that person and that workspace.
-A failure at any step leaves the record `revoking` and says the revoke is incomplete; the DM stays closed and running the revoke again finishes it.
-A record that could not be closed at all reports that instead, so nothing claims a closure that did not happen.
-When it is done the record says `revoked`, and a later connect of the same destination reopens it, greeting again because the DM is being handed back — which is also what an ordinary bind of the Agent into that DM does.
+It is one transaction under the person's lock: the generation the revoke read is checked, the record is closed, the binding and the threads that Agent's Sessions owned there go, and the email link goes last — only once nothing is bound in that exact DM, and only for that person, that workspace and that owner.
+All of it commits or none of it does, so a failure changes nothing at all and says so — the DM may therefore still be **open**, and the revoke has to be run again; a revoke that a reconnect superseded deletes nothing, because the reconnect opened a new generation.
+When it is done the record says `revoked`, and a later connect of the same destination reopens it, greeting again because the DM is being handed back.
 
 Every connect opens a new generation of the record, and a revoke is tied to the generation it read: a reconnect during a revoke supersedes it, so the stale revoke stops rather than deleting the binding the person just made.
 A sign-in that proves a different owner for a Slack user closes that user's records for the previous owner in the same transaction that writes the link, because a pairing that a sign-in has just disproved must not stay an open path to the previous owner's Agent.
+
+Only a Bridge connect reopens it — `dam channel slack-dm connect`, which re-proves the identity, the workspace and the 1:1; an ordinary bind of the Agent into that DM binds normally and never reopens it, so the recorded closure stays in force and the platform says so in the DM.
 
 `disconnect`, from the CLI or the tRPC surface, does that for the caller's own pairings of that Agent; the in-chat unbind in the DM does the same, since a binding the person released must not keep delivering or answering, and it acts only on a DM this Bridge recorded.
 A proven link stays, an email pairing in another trusted workspace stays, and every unrelated binding stays.
