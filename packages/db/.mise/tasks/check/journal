@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="drizzle skips a migration older than the newest applied one, so journal timestamps must increase with index"
-//MISE sources=["drizzle/meta/_journal.json"]
+//MISE sources=["drizzle/meta/_journal.json", "drizzle/*.sql"]
 //MISE outputs=[]
 //MISE cache.enabled=true
 // UNIT_BOUNDARY_DESCRIPTION: drizzle's migrator records the newest applied
