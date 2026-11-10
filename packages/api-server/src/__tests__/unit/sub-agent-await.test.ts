@@ -9,8 +9,10 @@ import type { DriverOps } from "../../apps/harness-api-server/driver-ops.js";
  * terminal, or at its deadline with what still runs; an id that is not the
  * caller's answers as unknown. The lease it holds on its ids is short and
  * renewed on every poll, so an id the call stops waiting on is pushed as a turn
- * soon after, and a call whose client aborted collects nothing, so the sweep
- * tells the agent instead of a closed transport.
+ * soon after. A call whose client aborted collects nothing, as its answer goes
+ * to a closed transport, and keeps its ids for the grace the agent has to call
+ * again. A result a turn already carried is named as delivered, never returned
+ * a second time.
  */
 
 type Handler = (
@@ -18,7 +20,10 @@ type Handler = (
   extra: { signal: AbortSignal },
 ) => Promise<unknown>;
 
-function setup(views: Record<string, InvocationView | null>) {
+function setup(
+  views: Record<string, InvocationView | null>,
+  inTurn: string[] = [],
+) {
   const tools = new Map<string, Handler>();
   const server = {
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
@@ -44,8 +49,9 @@ function setup(views: Record<string, InvocationView | null>) {
       markAwaited: async (_ids, until) => {
         leases.push(until);
       },
-      markCollected: async (ids) => {
+      collect: async (ids) => {
         collected.push(ids);
+        return { inTurn: ids.filter((id) => inTurn.includes(id)) };
       },
     },
     spawningSession: async () => null,
@@ -109,12 +115,30 @@ describe("await_subagents", () => {
     expect(s.collected).toEqual([[]]);
   });
 
-  it("collects nothing when the client aborted the call", async () => {
+  it("collects nothing when the client aborted the call, and keeps its ids for the agent to call again", async () => {
     const s = setup({ "agent-a": { status: "done", result: 7 } });
     const controller = new AbortController();
     controller.abort();
+    const before = Date.now();
     const summary = await s.wait(["agent-a"], controller.signal);
     expect(summary.done).toEqual([{ id: "agent-a", result: 7 }]);
     expect(s.collected).toEqual([]);
+    expect(s.leases.at(-1)!.getTime() - before).toBeGreaterThanOrEqual(60_000);
+  });
+
+  // TEST_SCENARIO: the sub-agent's outcome turn was written while the agent's earlier wait was cut; the next wait must not hand the agent the same result again beside that turn.
+  it("names a result its turn carried as delivered, without the result", async () => {
+    const s = setup(
+      {
+        "agent-a": { status: "done", result: 42 },
+        "agent-b": { status: "failed", result: null, errorReason: "oom" },
+        "agent-c": { status: "done", result: 9 },
+      },
+      ["agent-a", "agent-b"],
+    );
+    const summary = await s.wait(["agent-a", "agent-b", "agent-c"]);
+    expect(summary.delivered).toEqual([{ id: "agent-a" }, { id: "agent-b" }]);
+    expect(summary.done).toEqual([{ id: "agent-c", result: 9 }]);
+    expect(summary.failed).toEqual([]);
   });
 });

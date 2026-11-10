@@ -70,7 +70,7 @@ async function deliverTo(
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<boolean> {
-  const { told, task } = composeOutcomeTurn({
+  const { told, task, trimmed } = composeOutcomeTurn({
     descriptions: rows.map(describe),
     subject: (count) =>
       count === 1
@@ -98,7 +98,7 @@ async function deliverTo(
       payloadValues: routed,
     },
     release: () => deps.repo.release(ids, lease),
-    markWritten: () => deps.repo.markDelivered(ids, lease),
+    markWritten: () => deps.repo.markDelivered(ids, lease, !trimmed),
     wake: () =>
       wakeOutcomeTurn(deps, {
         tag: "sub-agents",
@@ -114,7 +114,10 @@ async function deliverTo(
  * them. Each tick leases such outcomes cluster-wide for one lease, writes one
  * sub-agent-outcome turn per Driver, marks them delivered only once the turn is
  * written, and wakes the Driver; outcomes past one turn's budget are released
- * for the next tick. Every write after the claim names the lease, so a tick
+ * for the next tick. A turn that carries its outcomes whole marks them so, and
+ * a later await_subagents names them as delivered instead of returning them
+ * again; a trimmed one stays readable there in full, as the turn tells the
+ * agent. Every write after the claim names the lease, so a tick
  * that outlives its lease cannot touch a row another tick holds. A lease the
  * server dies holding expires, so one outcome owes at least one turn and
  * loses none. Script spawns are never claimed:

@@ -4,6 +4,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   sql,
   type Db,
   invocations as invocationsTable,
@@ -17,12 +18,16 @@ export interface SubAgentOutcomesRepository {
     runIds: string[],
     until: Date,
   ): Promise<void>;
-  markCollected(driverAgentId: string, runIds: string[]): Promise<void>;
+  collect(driverAgentId: string, runIds: string[]): Promise<CollectOutcome>;
   claimUndelivered(limit: number, until: Date): Promise<InvocationRow[]>;
   release(runIds: string[], lease: Date): Promise<void>;
-  markDelivered(runIds: string[], lease: Date): Promise<void>;
+  markDelivered(runIds: string[], lease: Date, inTurn: boolean): Promise<void>;
   markWoken(runIds: string[]): Promise<void>;
   listDeliveredUnwoken(limit: number): Promise<InvocationRow[]>;
+}
+
+export interface CollectOutcome {
+  inTurn: string[];
 }
 
 const terminalToolOutcome = () =>
@@ -31,12 +36,15 @@ const terminalToolOutcome = () =>
     inArray(runsTable.status, ["done", "failed"]),
   );
 
+const unclaimed = () =>
+  sql`(${runsTable.claimedUntil} is null or ${runsTable.claimedUntil} < now())`;
+
 const claimable = () =>
   and(
     terminalToolOutcome(),
     isNull(runsTable.deliveredAt),
     sql`(${runsTable.awaitedUntil} is null or ${runsTable.awaitedUntil} < now())`,
-    sql`(${runsTable.claimedUntil} is null or ${runsTable.claimedUntil} < now())`,
+    unclaimed(),
   );
 
 /**
@@ -44,6 +52,8 @@ const claimable = () =>
  * an Invocation. A claim is a lease, not a delivery: `claimedUntil` holds the
  * run for one tick, and only the turn being written sets `deliveredAt`, so a
  * server that dies between the two leaves a run the next tick claims again.
+ * A wait collects a run only where no tick holds it, in one conditional write,
+ * so a turn and a wait never both deliver the same outcome.
  */
 export function createSubAgentOutcomesRepository(
   db: Db,
@@ -85,19 +95,31 @@ export function createSubAgentOutcomesRepository(
         .where(and(drivenBy(driverAgentId), inArray(runsTable.id, runIds)));
     },
 
-    async markCollected(driverAgentId, runIds) {
-      if (runIds.length === 0) return;
+    async collect(driverAgentId, runIds) {
+      if (runIds.length === 0) return { inTurn: [] };
       const now = new Date();
+      const asked = () =>
+        and(drivenBy(driverAgentId), inArray(runsTable.id, runIds));
       await db
         .update(runsTable)
         .set({ deliveredAt: now, wokeAt: now, claimedUntil: null })
+        .where(and(asked(), isNull(runsTable.deliveredAt), unclaimed()));
+      const inTurn = await db
+        .select({ id: runsTable.id })
+        .from(runsTable)
         .where(
           and(
-            drivenBy(driverAgentId),
-            inArray(runsTable.id, runIds),
-            isNull(runsTable.deliveredAt),
+            asked(),
+            or(
+              eq(runsTable.deliveredInTurn, true),
+              and(
+                isNull(runsTable.deliveredAt),
+                isNotNull(runsTable.claimedUntil),
+              ),
+            ),
           ),
         );
+      return { inTurn: inTurn.map((r) => r.id) };
     },
 
     async claimUndelivered(limit, until) {
@@ -138,11 +160,15 @@ export function createSubAgentOutcomesRepository(
         );
     },
 
-    async markDelivered(runIds, lease) {
+    async markDelivered(runIds, lease, inTurn) {
       if (runIds.length === 0) return;
       await db
         .update(runsTable)
-        .set({ deliveredAt: new Date(), claimedUntil: null })
+        .set({
+          deliveredAt: new Date(),
+          deliveredInTurn: inTurn,
+          claimedUntil: null,
+        })
         .where(
           and(
             inArray(runsTable.id, runIds),

@@ -17,7 +17,10 @@ import {
 } from "./services/spawn-sessions.js";
 import { createDelegationControl } from "./services/delegation-control.js";
 import { createDelegationStop } from "./services/delegation-stop.js";
-import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
+import {
+  createSubAgentOutcomesRepository,
+  type CollectOutcome,
+} from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
@@ -242,7 +245,7 @@ export function composeSubAgentOutcomeDelivery(
 
 export interface SubAgentAwaitMarks {
   markAwaited(ids: string[], until: Date): Promise<void>;
-  markCollected(ids: string[]): Promise<void>;
+  collect(ids: string[]): Promise<CollectOutcome>;
 }
 
 export function composeSubAgentAwaitMarks(
@@ -251,7 +254,7 @@ export function composeSubAgentAwaitMarks(
   const repo = createSubAgentOutcomesRepository(db);
   return (driverAgentId) => ({
     markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
-    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
+    collect: (ids) => repo.collect(driverAgentId, ids),
   });
 }
 

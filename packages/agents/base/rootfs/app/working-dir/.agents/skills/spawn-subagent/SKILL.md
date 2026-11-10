@@ -50,6 +50,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
 3. **Wait.** Call `await_subagents` with the ids.
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
    A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
+   An id under `delivered` has finished and its result comes to you as a new turn, maybe after this turn ends: it is that one result, not a second one.
    For a script, it gives the exit code and the start and end of stdout and stderr.
 4. **Save a script's output in full** with `fetch_subagent_output` and a `path`, then run the command it returns: it downloads the stream byte for byte to that file in this sandbox and checks it.
    Read the file as often as you need; the user can open it too.
