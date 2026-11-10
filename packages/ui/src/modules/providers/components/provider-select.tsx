@@ -1,3 +1,4 @@
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +7,11 @@ import { RichSelect, type RichSelectOption } from "@/components/ui/rich-select";
 
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
-import { offeredProviderRows } from "../lib/provider-rows.js";
+import {
+  offeredProviderRows,
+  type ProviderChoice,
+  providerChoices,
+} from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import { type ProviderRef, providerRef } from "./provider-item.js";
@@ -20,6 +25,7 @@ interface Props {
   required?: boolean;
   allow?: readonly ProviderPresetType[];
   recommended?: ProviderPresetType;
+  preferShared?: boolean;
 }
 
 export function ProviderSelect({
@@ -31,8 +37,9 @@ export function ProviderSelect({
   required = false,
   allow,
   recommended,
+  preferShared = false,
 }: Props) {
-  const { itemByType, typeByConnectionId, isPending, isSuccess } =
+  const { itemByType, shared, typeByConnectionId, isPending, isSuccess } =
     useProviderItems();
   const [connecting, setConnecting] = useState<ProviderPresetType | null>(null);
   const [connected, setConnected] = useState<{
@@ -44,22 +51,22 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  const resolvedType = selected
-    ? (typeByConnectionId.get(selected.id) ??
-      (connected?.id === selected.id ? connected.type : null))
+  const { choices, autoSelect } = useMemo(
+    () => providerChoices(rows, { itemByType, shared }, preferShared),
+    [rows, itemByType, shared, preferShared],
+  );
+  const resolvedChoice: ProviderChoice | null = selected
+    ? selected.id === shared?.id
+      ? CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID
+      : (typeByConnectionId.get(selected.id) ??
+        (connected?.id === selected.id ? connected.type : null))
     : null;
   const selectedType =
-    resolvedType && rows.some((row) => row.type === resolvedType)
-      ? resolvedType
+    resolvedChoice && choices.some((c) => c.choice === resolvedChoice)
+      ? resolvedChoice
       : null;
 
-  const autoSelectTarget = useMemo(
-    () =>
-      autoSelectFirst
-        ? rows.map((r) => itemByType.get(r.type)).find(Boolean)
-        : undefined,
-    [autoSelectFirst, rows, itemByType],
-  );
+  const autoSelectTarget = autoSelectFirst ? autoSelect : undefined;
 
   useEffect(() => {
     if (!isSuccess || selectedType) return;
@@ -70,36 +77,37 @@ export function ProviderSelect({
     }
   }, [isSuccess, selectedType, autoSelectTarget, selected, onSelect]);
 
-  const pick = async (type: ProviderPresetType) => {
-    if (type === selectedType) return;
+  const pick = async (choice: ProviderChoice) => {
+    if (choice === selectedType) return;
     if (selectedType && confirmSwitch && !(await confirmSwitch())) return;
-    const item = itemByType.get(type);
-    if (!item) {
-      setConnecting(type);
-      return;
-    }
-    onSelect(providerRef(item));
+    const item = choices.find((c) => c.choice === choice)?.item;
+    if (item) onSelect(providerRef(item));
+    else if (choice !== CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
+      setConnecting(choice);
   };
 
   if (isPending) return <Card className="h-[76px] animate-pulse" />;
 
-  const options: RichSelectOption<ProviderPresetType>[] = rows.map((row) => ({
-    value: row.type,
-    title: PROVIDERS[row.type].displayName,
-    description: row.description,
-    icon: <CardIcon provider={row.type} size="sm" />,
-    triggerIcon: <CardIcon provider={row.type} />,
+  const options: RichSelectOption<ProviderChoice>[] = choices.map((c) => ({
+    value: c.choice,
+    title:
+      c.choice === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID
+        ? "CurveBender"
+        : PROVIDERS[c.type].displayName,
+    description: c.description,
+    icon: <CardIcon provider={c.type} size="sm" />,
+    triggerIcon: <CardIcon provider={c.type} />,
     badge:
-      row.type === recommended ? (
+      c.choice === recommended ? (
         <Badge variant="muted">Recommended</Badge>
       ) : undefined,
-    triggerBadge: itemByType.has(row.type) ? (
+    triggerBadge: c.item ? (
       <Badge variant="success">Connected</Badge>
     ) : undefined,
-    trailing: itemByType.has(row.type) ? undefined : (
+    trailing: c.item ? undefined : (
       <span className="shrink-0 text-sm text-muted-foreground">Connect</span>
     ),
-    testId: `provider-option-${row.type}`,
+    testId: `provider-option-${c.choice}`,
   }));
 
   return (
@@ -107,7 +115,7 @@ export function ProviderSelect({
       <RichSelect
         options={options}
         value={selectedType}
-        onSelect={(type) => void pick(type)}
+        onSelect={(choice) => void pick(choice)}
         placeholder="Select a provider"
         ariaLabel="Provider"
         disabled={disabled}

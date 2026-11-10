@@ -75,6 +75,25 @@ export function ProviderRow({
   );
 }
 
+ProviderRow.Info = function ProviderInfoRow({
+  type,
+  name,
+  description,
+  onOpen,
+}: {
+  type: ProviderPresetType;
+  name: string;
+  description: string;
+  onOpen: () => void;
+}) {
+  return (
+    <CardButton onClick={onOpen} className="flex w-full items-start gap-3 p-4">
+      <CardIcon provider={type} />
+      <ProviderText name={name} description={description} connected />
+    </CardButton>
+  );
+};
+
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
   return <Card className="h-[76px] animate-pulse" />;
 };

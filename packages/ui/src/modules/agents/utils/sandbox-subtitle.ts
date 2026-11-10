@@ -1,4 +1,8 @@
-import { PROVIDERS, providerTypeForTemplateId } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  PROVIDERS,
+  providerTypeForTemplateId,
+} from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 import {
@@ -52,6 +56,8 @@ function providerLabel(
 ): string | null {
   for (const connectionId of agent.grantedConnectionIds) {
     const templateId = lookup.connectionTemplateIdById.get(connectionId);
+    if (templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
+      return "CurveBender";
     const preset = templateId ? providerTypeForTemplateId(templateId) : null;
     if (preset) return PROVIDERS[preset].displayName;
   }

@@ -18,9 +18,17 @@ export function useHarnessCatalogue(selection: {
   templateId: string | null;
   allowNone: boolean;
   onTemplateIdChange: (templateId: string | null) => void;
+  preferred?: string;
+  preferenceSettled?: boolean;
 }): HarnessCatalogue {
   const { data: templates, isLoading, isError, refetch } = useTemplates();
-  const { templateId, allowNone, onTemplateIdChange } = selection;
+  const {
+    templateId,
+    allowNone,
+    onTemplateIdChange,
+    preferred,
+    preferenceSettled = true,
+  } = selection;
 
   const harnesses = useMemo(
     () => imageCatalogue(templates ?? []).harnesses,
@@ -29,10 +37,21 @@ export function useHarnessCatalogue(selection: {
 
   const catalogueSettled = templates !== undefined;
   useEffect(() => {
-    if (!catalogueSettled) return;
-    const fix = reconcileHarnessSelection(harnesses, templateId, { allowNone });
+    if (!catalogueSettled || !preferenceSettled) return;
+    const fix = reconcileHarnessSelection(harnesses, templateId, {
+      allowNone,
+      preferred,
+    });
     if (fix) onTemplateIdChange(fix.templateId);
-  }, [catalogueSettled, harnesses, templateId, allowNone, onTemplateIdChange]);
+  }, [
+    catalogueSettled,
+    preferenceSettled,
+    harnesses,
+    templateId,
+    allowNone,
+    preferred,
+    onTemplateIdChange,
+  ]);
 
   return { harnesses, isLoading, isError, refetch: () => void refetch() };
 }

@@ -86,6 +86,7 @@ import { VmRuntimeNotice } from "../components/vm-runtime-notice.js";
 import {
   buildCodingAgentSetupInput,
   type CodingAgentSetupDraft,
+  curveBenderPreselection,
   hasPartialRegistryCredential,
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
@@ -195,10 +196,16 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     (templateId: string | null) => update({ templateId }),
     [update],
   );
+  const preselection = curveBenderPreselection(
+    kit,
+    connections.isError ? [] : connections.data,
+  );
   const catalogue = useHarnessCatalogue({
     templateId: form.templateId,
     allowNone: kit ? false : form.customImage.trim().length > 0,
     onTemplateIdChange,
+    preferred: preselection.harnessTemplateId,
+    preferenceSettled: preselection.settled,
   });
 
   const bringsImage = kit?.image !== undefined;
@@ -559,6 +566,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           selected={form.providerRef}
           onSelect={(providerRef) => update({ providerRef })}
           policy={providerPolicy}
+          preferShared={preselection.preferShared}
         />
       )}
 
