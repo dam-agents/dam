@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import {
   PLATFORM_ENVIRONMENTS_SOURCE,
   type PlatformRuleState,
+  type ChildEgressState,
   type EgressPreset,
   type EgressRuleCreateInput,
   type EgressRuleUpdateInput,
@@ -31,6 +32,12 @@ export interface CreateEgressRulesServiceDeps {
     withdraw(agentId: string): Promise<void>;
     restore(agentId: string, ownerSub: string): Promise<EgressRuleRow | null>;
     state(agentId: string): Promise<PlatformRuleState>;
+  };
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's toggle that lets the Agent's sub-agents and Environments have network access of their own. Absent, or `available` false (the owner lacks the Environments feature, or the Agent is a child), the toggle reads unavailable and cannot be switched.
+  childEgress?: {
+    available(agentId: string): Promise<boolean>;
+    isGranted(agentId: string): Promise<boolean>;
+    set(agentId: string, on: boolean, decidedBy: string): Promise<void>;
   };
 }
 
@@ -282,6 +289,40 @@ export function createEgressRulesService(
         detail: { ruleId: row.id, source: PLATFORM_ENVIRONMENTS_SOURCE },
       });
       return toView(row);
+    },
+
+    async childEgress(agentId): Promise<ChildEgressState> {
+      if (
+        !deps.childEgress ||
+        !(await deps.isAgentOwnedBy(agentId, deps.ownerSub)) ||
+        !(await deps.childEgress.available(agentId))
+      )
+        return { state: "unavailable" };
+      return {
+        state: (await deps.childEgress.isGranted(agentId)) ? "on" : "off",
+      };
+    },
+
+    async setChildEgress(agentId, on) {
+      if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
+        logNotOwner(agentId, { surface: "egress-rule.child-egress" });
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+      }
+      if (!deps.childEgress || !(await deps.childEgress.available(agentId)))
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this agent's sub-agents and Environments follow the toggle of the agent that launched them",
+        });
+      await deps.childEgress.set(agentId, on, deps.actor);
+      securityLog("info", "egress_rule.child_egress", {
+        category: "authz-list",
+        actor: deps.ownerSub,
+        actorKind: "user",
+        agentId,
+        decision: on ? "allow" : "deny",
+      });
+      return { state: on ? "on" : "off" };
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {

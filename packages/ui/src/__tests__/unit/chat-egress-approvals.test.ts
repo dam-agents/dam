@@ -122,6 +122,30 @@ describe("approvalDetail", () => {
       ),
     ).toBe("registry.npmjs.org (any path), from its Environment pr-42");
   });
+
+  // TEST_SCENARIO: a driver asks for a child rule to a host it cannot reach itself. The card names the host and the child, and says that allowing it turns on network access of their own for all the driver's children, so the owner knows the answer counts once, not per child; a wildcard request keeps its own wording.
+  it("says what allowing a child's wider rule turns on", () => {
+    const proposal = (host: string, widerThanDriver?: true) =>
+      egress({
+        type: "egress_proposal",
+        agentId: "sub-1",
+        payload: {
+          kind: "egress_proposal",
+          host,
+          method: "*",
+          path: "*",
+          reason: "",
+          forAgentId: "a-1",
+          ...(widerThanDriver && { widerThanDriver }),
+        },
+      });
+    expect(approvalDetail(proposal("pypi.org", true))).toBe(
+      "pypi.org (any path), for its sub-agent sub-1, which it cannot reach itself. Allowing it lets all its sub-agents and Environments have network access of their own.",
+    );
+    expect(approvalDetail(proposal("*.github.com"))).toBe(
+      "Any .github.com host, for its sub-agent sub-1",
+    );
+  });
 });
 
 describe("approvalGroupKey", () => {

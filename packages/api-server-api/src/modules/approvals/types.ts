@@ -62,6 +62,8 @@ export interface EgressProposalPayload {
   reason: string;
   // UNIT_BOUNDARY_DESCRIPTION: the agent that asked for this rule on its child (the child is the row's agent), whose page shows the request; approving writes the rule onto the child alone.
   forAgentId?: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the rule reaches a host the asking agent does not reach itself; approving it also lets the sub-agents and Environments of that agent's launch root have network access of their own from then on.
+  widerThanDriver?: true;
 }
 
 export type ApprovalPayload =

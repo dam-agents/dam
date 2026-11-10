@@ -967,6 +967,13 @@
       "when": 1794297179668,
       "tag": "0137_graduate_interactive_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1794311613259,
+      "tag": "0138_agent_child_egress_grants",
+      "breakpoints": true
     }
   ]
 }

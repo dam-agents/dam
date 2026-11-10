@@ -24,8 +24,9 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
   if (payload.kind === "egress_proposal") {
     if (payload.forAgentId)
       return {
-        title:
-          payload.host === "*"
+        title: payload.widerThanDriver
+          ? `Access to ${payload.host}${payload.port ? `:${payload.port}` : ""}`
+          : payload.host === "*"
             ? "Access to any host"
             : `Access to any ${payload.host.slice(1)} host`,
         subtitle: payload.reason,

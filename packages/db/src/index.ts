@@ -26,6 +26,7 @@ export {
   agentKeys,
   agentEditors,
   agentChatFormPreferences,
+  agentChildEgressGrants,
   agentSessions,
   agentCostReviews,
   agentPublicProfiles,

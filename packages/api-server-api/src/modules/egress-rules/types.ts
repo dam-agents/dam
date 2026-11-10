@@ -64,6 +64,8 @@ export interface EgressRulesService {
   applyPreset(agentId: string, preset: EgressPreset): Promise<void>;
   platformRule(agentId: string): Promise<PlatformRuleState>;
   restorePlatformRule(agentId: string): Promise<EgressRuleView>;
+  childEgress(agentId: string): Promise<ChildEgressState>;
+  setChildEgress(agentId: string, on: boolean): Promise<ChildEgressState>;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether an Agent carries the platform's Environments rule: `active` (listed among its rules), `removed` (its owner removed it, and it can be restored), or `unavailable` (the install serves no Environments, or the Agent is an Environment).
@@ -71,3 +73,7 @@ export type PlatformRuleState =
   | { state: "active"; host: string }
   | { state: "removed"; host: string }
   | { state: "unavailable" };
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent's sub-agents and Environments may have network access of their own, wider than the Agent's own rules: `on` or `off` (the default, where such a rule waits for the owner's approval), or `unavailable` when the owner lacks the Environments feature, or the Agent is itself a child, whose children follow the toggle of the Agent at the root of its launch chain.
+export type ChildEgressState =
+  { state: "on" } | { state: "off" } | { state: "unavailable" };

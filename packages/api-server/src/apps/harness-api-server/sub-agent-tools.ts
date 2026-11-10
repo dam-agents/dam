@@ -6,7 +6,6 @@ import {
   type SessionSubAgentContext,
 } from "agent-runtime-api";
 import {
-  isWildcardEgressRule,
   childEgressRuleSchema,
   formatQualifiedModel,
   INVOCATION_OUTPUT_STREAMS,
@@ -200,7 +199,7 @@ const idleTimeoutShape = z
 // UNIT_BOUNDARY_DESCRIPTION: the spawn options that keep a sub-agent or give it egress of its own, offered only to an owner with the Environments feature, which kept sub-agents are part of.
 const keptSpawnInput = {
   egress: spawnShape.egress.describe(
-    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
   ),
   keep: spawnShape.keep.describe(
     "Keep it after its result: it sleeps with its disk instead of being removed, so you can enter it again over ssh sub-<id> or run more work in it, until keepForMs (a day by default, at most as long as an Environment lives). Without keep it is removed once it reports.",
@@ -227,16 +226,19 @@ function subAgentIdleTimeout(
   return { minutes: parsed };
 }
 
-const WILDCARD_EGRESS_NOTE =
-  "a rule to a wildcard host (* or *.example.com) is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
+const OWNER_EGRESS_NOTE =
+  "a rule to a wildcard host (* or *.example.com), or to a host your own rules do not reach while your owner has not let your sub-agents and Environments have network access of their own, is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
 
-const wildcardEgressAsked = (egress: unknown): boolean =>
+const openEgressAllows = (egress: unknown): boolean =>
   typeof egress === "object" &&
   egress !== null &&
   "open" in egress &&
   Array.isArray(egress.open) &&
-  egress.open.some((rule) =>
-    isWildcardEgressRule(rule as { host: string; verdict: string }),
+  egress.open.some(
+    (rule) =>
+      typeof rule === "object" &&
+      rule !== null &&
+      (rule as { verdict?: unknown }).verdict === "allow",
   );
 
 const KEPT_SPAWN_KEYS = Object.keys(
@@ -826,8 +828,8 @@ export function registerSubAgentTools(
                   `set by this session's platform sub-agent settings: ${boundNote.join(", ")} (arguments for these are ignored)`,
                 ]
               : []),
-            ...(wildcardEgressAsked(args.egress)
-              ? [`egress: ${WILDCARD_EGRESS_NOTE}`]
+            ...(openEgressAllows(args.egress)
+              ? [`egress: ${OWNER_EGRESS_NOTE}`]
               : []),
             ...(ignored.length > 0
               ? [
@@ -1125,7 +1127,7 @@ function registerKeptTools(
 
   server.tool(
     "update_subagent_egress",
-    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set: it waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
+    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one allowing a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
     {
       id: z
         .string()
@@ -1147,7 +1149,7 @@ function registerKeptTools(
               rules: rules.length,
               ...(outcome.waiting.length > 0 && {
                 waitingForOwner: outcome.waiting,
-                note: WILDCARD_EGRESS_NOTE,
+                note: OWNER_EGRESS_NOTE,
               }),
             })
           : errorResult(`update_subagent_egress refused: ${outcome.message}`);

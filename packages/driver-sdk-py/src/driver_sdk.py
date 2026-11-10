@@ -366,7 +366,9 @@ def spawn(
     its own model provider, which pass over them; ``"open"`` or
     ``{"open": [rules]}``, rules this driver sets (``SubAgent.set_egress``)
     with no prompt and anything else denied, except an allow rule to a
-    wildcard host, which waits for the owner's approval; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
+    wildcard host, or to a host the driver's own rules do not reach while the
+    owner has not let its sub-agents and Environments have network access of
+    their own, which waits for the owner's approval; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
     hosts that only the user widens. With ``keep=True`` it outlives its result
     asleep until ``keep_for_ms`` (a day by default), sleeping after
     ``idle_timeout_min`` minutes idle (the install's default otherwise), so it

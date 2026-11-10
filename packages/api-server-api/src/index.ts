@@ -914,6 +914,7 @@ export type {
   EgressRuleUpdateInput,
   EgressRulesService,
   PlatformRuleState,
+  ChildEgressState,
 } from "./modules/egress-rules/types.js";
 export {
   PLATFORM_ENVIRONMENTS_SOURCE,

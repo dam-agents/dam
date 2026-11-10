@@ -70,6 +70,7 @@ import {
   childrenMirroringConnections,
   inheritanceCleanup,
   nearestOwnEgress,
+  childEgressGrants,
   ownEgressAgentIds,
   composeAgentEditors,
   composeAgentsModule,
@@ -336,7 +337,7 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
-  composeWildcardEgressRequests,
+  composeChildEgressRequests,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -2014,7 +2015,8 @@ export async function bootstrap() {
     createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
     async (agentId) =>
       (await egressIdentity?.resolve(agentId))?.agentId ?? null,
-    composeWildcardEgressRequests({
+    (driverId) => childEgressGrants(db).isGrantedFor(driverId),
+    composeChildEgressRequests({
       db,
       ownerOf: resolveAgentOwner,
       nameOf: async (agentId) => {
@@ -2305,6 +2307,10 @@ export async function bootstrap() {
     {
       name: "agent-inheritance",
       ...inheritanceCleanup(db),
+    },
+    {
+      name: "child-egress-grants",
+      ...childEgressGrants(db),
     },
     {
       name: "cost-reviews",

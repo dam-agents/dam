@@ -767,6 +767,15 @@ export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Agents whose owner lets the sub-agents and Environments they launch have network access of their own, wider than the Agent's: one row per Agent with the toggle on, none with it off. A child is bound by the row of the root Agent of its launch chain, never by one of its own. */
+export const agentChildEgressGrants = pgTable("agent_child_egress_grants", {
+  agentId: text("agent_id").primaryKey(),
+  grantedBy: text("granted_by").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentPublicProfiles = pgTable("agent_public_profiles", {
   agentId: text("agent_id").primaryKey(),
   name: text("name").notNull(),

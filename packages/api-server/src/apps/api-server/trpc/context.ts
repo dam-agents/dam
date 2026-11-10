@@ -1,10 +1,12 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf } from "api-server-api";
 import {
+  childEgressGrants,
   childrenMirroringConnections,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
+  inheritanceOf,
 } from "../../../modules/agents/index.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
@@ -398,6 +400,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       trustedHosts,
       platformAccess,
+      childEgress: {
+        available: async (agentId) =>
+          Boolean((await features.flags()).environments) &&
+          !(await inheritanceOf(db)(agentId)) &&
+          !(await agentsRepo.get(agentId, user.sub))?.spec.environmentOf,
+        isGranted: (agentId) => childEgressGrants(db).isGranted(agentId),
+        set: (agentId, on, decidedBy) =>
+          childEgressGrants(db).set(agentId, on, decidedBy),
+      },
     });
     const { service: approvals } = composeApprovalsService({
       db,
@@ -412,6 +423,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
       wrapperFrameSender,
+      childEgressGrants: childEgressGrants(db),
     });
     const costReviews = composeCostReviewsForOwner({
       db,

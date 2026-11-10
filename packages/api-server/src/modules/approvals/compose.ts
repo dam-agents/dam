@@ -1,7 +1,7 @@
 import {
-  createWildcardEgressRequests,
-  type WildcardEgressRequests,
-} from "./services/wildcard-egress-requests.js";
+  createChildEgressRequests,
+  type ChildEgressRequests,
+} from "./services/child-egress-requests.js";
 import type { Db } from "db";
 import type {
   ApprovalsService,
@@ -58,6 +58,9 @@ interface ComposeApprovalsServiceDeps {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
+  childEgressGrants?: {
+    grantForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  };
 }
 
 export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
@@ -73,6 +76,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     actor: deps.actor,
     actorEmail: deps.actorEmail,
     agentBinding: deps.agentBinding,
+    childEgressGrants: deps.childEgressGrants,
   });
   return { service };
 }
@@ -177,12 +181,12 @@ export function composeEgressProposals(deps: {
   });
 }
 
-export function composeWildcardEgressRequests(deps: {
+export function composeChildEgressRequests(deps: {
   db: Db;
   ownerOf: (agentId: string) => Promise<string | null>;
   nameOf: (agentId: string) => Promise<string | null>;
-}): WildcardEgressRequests {
-  return createWildcardEgressRequests({
+}): ChildEgressRequests {
+  return createChildEgressRequests({
     repo: createApprovalsRepository(deps.db),
     ownerOf: deps.ownerOf,
     nameOf: deps.nameOf,
@@ -194,7 +198,7 @@ export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
 }
 
 export type {
-  WildcardEgressRequests,
+  ChildEgressRequests,
   EgressProposals,
   ApprovalsRelayService,
   ExtAuthzDecision,

@@ -7,6 +7,8 @@ import {
   type ChildInheritance,
 } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
+import { reachesPastDriver } from "../domain/driver-reach.js";
+import type { EgressRuleRow } from "../domain/types.js";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleWriter } from "./egress-rule-writer.js";
 
@@ -19,25 +21,33 @@ export interface ChildEgressSeeder {
   ): Promise<{ waiting: { host: string; id: string }[] }>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule to a wildcard host goes instead of being written: a request its owner decides.
-export interface WildcardEgressPort {
+// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule that is not its launching agent's to give goes instead of being written: a request its owner decides. `wildcard` is an allow rule to a wildcard host; `wider` is one to a host the launching agent does not reach itself.
+export interface OwnerEgressPort {
   request(input: {
     childId: string;
     driverId: string;
     rule: ChildEgressRuleSeed;
+    ask: "wildcard" | "wider";
   }): Promise<{ id: string }>;
-  withdraw(childId: string, keepHosts: ReadonlySet<string>): Promise<void>;
+  withdraw(
+    childId: string,
+    keep: (request: { host: string; port?: number }) => boolean,
+  ): Promise<void>;
 }
 
 const hostOf = (rule: { host: string }): string =>
   rule.host.trim().toLowerCase();
 
-// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule to a wildcard host, which waits for the owner's approval and goes when the launching agent drops it; a scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
+const reachKey = (rule: { host: string; port?: number }): string =>
+  `${hostOf(rule)}:${rule.port ?? ""}`;
+
+// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule the launching agent may not give, which waits for the owner's approval and goes when the launching agent drops it: an allow rule to a wildcard host, always, and one to a host the launching agent's own rules (as they are at that moment) do not reach, unless the owner lets the launching agent's root give its children network access of their own. A scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
 export function createChildEgressSeeder(deps: {
   repo: EgressRulesRepository;
   writer: EgressRuleWriter;
   rulesOwnerOf: (agentId: string) => Promise<string | null>;
-  wildcardEgress: WildcardEgressPort;
+  ownEgressGranted: (driverId: string) => Promise<boolean>;
+  ownerEgress: OwnerEgressPort;
 }): ChildEgressSeeder {
   async function write(
     agentId: string,
@@ -58,16 +68,40 @@ export function createChildEgressSeeder(deps: {
     });
   }
 
+  async function rulesOf(agentId: string): Promise<EgressRuleRow[] | null> {
+    const owner = await deps.rulesOwnerOf(agentId);
+    return owner ? deps.repo.listForAgent(owner) : null;
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: which of the rules a driver sets on an open child wait for the owner, and why; a driver whose own rules cannot be found reaches nothing, so each of its allow rules waits.
+  async function askOf(
+    driverId: string,
+    rules: readonly ChildEgressRuleSeed[],
+  ): Promise<(rule: ChildEgressRuleSeed) => "wildcard" | "wider" | null> {
+    const granted = rules.some((r) => r.verdict === "allow")
+      ? await deps.ownEgressGranted(driverId)
+      : true;
+    const driverRules = granted ? [] : ((await rulesOf(driverId)) ?? []);
+    return (rule) => {
+      if (isWildcardEgressRule(rule)) return "wildcard";
+      if (granted || rule.verdict !== "allow") return null;
+      return reachesPastDriver(rule, driverRules) ? "wider" : null;
+    };
+  }
+
   return {
     async seed(agentId, inheritance) {
       const seed = inheritance.egressSeed;
       if (inheritance.egressFrom === "open" && seed && "rules" in seed) {
-        for (const rule of seed.rules)
-          if (isWildcardEgressRule(rule))
-            await deps.wildcardEgress.request({
+        const askFor = await askOf(inheritance.parentAgentId, seed.rules);
+        for (const rule of seed.rules) {
+          const ask = askFor(rule);
+          if (ask)
+            await deps.ownerEgress.request({
               childId: agentId,
               driverId: inheritance.parentAgentId,
               rule,
+              ask,
             });
           else
             await write(
@@ -76,12 +110,13 @@ export function createChildEgressSeeder(deps: {
               CHILD_DRIVER_SOURCE,
               rule,
             );
+        }
         return;
       }
       if (inheritance.egressFrom !== "scoped" || !seed || !("hosts" in seed))
         return;
-      const owner = await deps.rulesOwnerOf(inheritance.parentAgentId);
-      if (!owner) {
+      const parentRules = await rulesOf(inheritance.parentAgentId);
+      if (!parentRules) {
         getLogger().warn(
           { agentId, parentAgentId: inheritance.parentAgentId },
           "egress: a scoped child got no copy of its parent's rules, whose owner was not found",
@@ -92,7 +127,7 @@ export function createChildEgressSeeder(deps: {
         seed.hosts === "all"
           ? null
           : new Set(seed.hosts.map((h) => h.toLowerCase()));
-      for (const row of await deps.repo.listForAgent(owner)) {
+      for (const row of parentRules) {
         if (named && !named.has(row.host.toLowerCase())) continue;
         await write(
           agentId,
@@ -110,31 +145,40 @@ export function createChildEgressSeeder(deps: {
     },
 
     async setOpenRules(agentId, decidedBy, rules) {
-      const wildcardHosts = new Set(
-        rules.filter(isWildcardEgressRule).map(hostOf),
-      );
+      const askFor = await askOf(decidedBy, rules);
+      const asked = rules
+        .map((rule) => ({ rule, ask: askFor(rule) }))
+        .filter(
+          (r): r is { rule: ChildEgressRuleSeed; ask: "wildcard" | "wider" } =>
+            r.ask !== null,
+        );
+      const askedKeys = new Set(asked.map(({ rule }) => reachKey(rule)));
       const granted = new Set<string>();
       for (const row of await deps.repo.listForAgent(agentId)) {
         if (row.source === CHILD_DRIVER_SOURCE) {
           await deps.repo.revoke(row.id);
           continue;
         }
-        if (!isWildcardEgressRule(row)) continue;
-        if (wildcardHosts.has(hostOf(row))) granted.add(hostOf(row));
+        if (row.source !== "inbox" && !isWildcardEgressRule(row)) continue;
+        if (askedKeys.has(reachKey(row))) granted.add(reachKey(row));
         else await deps.repo.revoke(row.id);
       }
-      await deps.wildcardEgress.withdraw(agentId, wildcardHosts);
+      await deps.ownerEgress.withdraw(agentId, (request) =>
+        askedKeys.has(reachKey(request)),
+      );
       const waiting: { host: string; id: string }[] = [];
       for (const rule of rules) {
-        if (!isWildcardEgressRule(rule)) {
+        const ask = askFor(rule);
+        if (!ask) {
           await write(agentId, decidedBy, CHILD_DRIVER_SOURCE, rule);
           continue;
         }
-        if (granted.has(hostOf(rule))) continue;
-        const { id } = await deps.wildcardEgress.request({
+        if (granted.has(reachKey(rule))) continue;
+        const { id } = await deps.ownerEgress.request({
           childId: agentId,
           driverId: decidedBy,
           rule,
+          ask,
         });
         waiting.push({ host: hostOf(rule), id });
       }

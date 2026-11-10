@@ -4,39 +4,53 @@ import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 import { EGRESS_PROPOSAL_TTL_MS, proposalId } from "./egress-proposals.js";
 
-export interface WildcardEgressRequests {
+// UNIT_BOUNDARY_DESCRIPTION: why a child's rule waits for the owner: it allows a wildcard host, or it reaches a host its driver's own rules do not, and the owner has not let the driver give its children network access of their own.
+export type ChildEgressAsk = "wildcard" | "wider";
+
+export interface ChildEgressRequests {
   request(input: {
     childId: string;
     driverId: string;
     rule: ChildEgressRuleSeed;
+    ask: ChildEgressAsk;
   }): Promise<{ id: string }>;
-  withdraw(childId: string, keepHosts: ReadonlySet<string>): Promise<void>;
+  withdraw(
+    childId: string,
+    keep: (request: { host: string; port?: number }) => boolean,
+  ): Promise<void>;
 }
 
-const anyHostOf = (host: string): string =>
-  host === "*" ? "any host" : `any ${host.slice(1)} host`;
+const reachOf = (rule: ChildEgressRuleSeed, ask: ChildEgressAsk): string => {
+  if (ask === "wildcard")
+    return rule.host === "*" ? "any host" : `any ${rule.host.slice(1)} host`;
+  return rule.port === undefined ? rule.host : `${rule.host}:${rule.port}`;
+};
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a driver asking that its child with open egress
- * reach a wildcard host (any host, or every subdomain of one domain): the
- * rule is never written by the driver; it waits as an egress proposal on the child, shown on the
- * driver's page, and only the owner's verdict writes it onto the child. One
- * open request per child and host; a request the driver drops from the
- * child's rules is withdrawn, and asking again after a verdict asks anew.
+ * reach what is not the driver's to give: a wildcard host (any host, or every
+ * subdomain of one domain), or a host the driver itself does not reach while
+ * its owner has not let its children have network access of their own. The
+ * rule is never written by the driver; it waits as an egress proposal on the
+ * child, shown on the driver's page, and only the owner's verdict writes it
+ * onto the child. One open request per child, host and port; a request the
+ * driver drops from the child's rules is withdrawn, and asking again after a
+ * verdict asks anew. The request carries the rule's method and path, so the
+ * owner's approval writes the rule the driver asked for.
  */
-export function createWildcardEgressRequests(deps: {
+export function createChildEgressRequests(deps: {
   repo: ApprovalsRepository;
   ownerOf: (agentId: string) => Promise<string | null>;
   nameOf: (agentId: string) => Promise<string | null>;
   now?: () => number;
-}): WildcardEgressRequests {
+}): ChildEgressRequests {
   const now = deps.now ?? (() => Date.now());
 
   const pendingOf = (childId: string) =>
     deps.repo.listPendingChildEgressRequests(childId);
 
   return {
-    async request({ childId, driverId, rule }) {
+    async request({ childId, driverId, rule, ask }) {
       const host = rule.host.trim().toLowerCase();
       const open = (await pendingOf(childId)).find(
         (r) =>
@@ -54,10 +68,12 @@ export function createWildcardEgressRequests(deps: {
       const shape = {
         host,
         ...(rule.port !== undefined ? { port: rule.port } : {}),
-        method: "*" as const,
-        path: "*",
+        method: rule.method ?? "*",
+        path: rule.pathPattern ?? "*",
       };
-      const id = `${proposalId(childId, { ...shape, reason: "" })}:${now()}`;
+      const id = `${proposalId(childId, { host, port: rule.port, method: "*", path: "*", reason: "" })}:${now()}`;
+      const child = childName ? `sub-agent ${childName}` : "child";
+      const reach = reachOf({ ...rule, host }, ask);
       await deps.repo.insertPending({
         id,
         type: "egress_proposal",
@@ -67,18 +83,22 @@ export function createWildcardEgressRequests(deps: {
         payload: {
           kind: "egress_proposal",
           ...shape,
-          reason: `${driverName ?? driverId} asks to let its ${childName ? `sub-agent ${childName}` : "child"} reach ${anyHostOf(host)}`,
+          reason:
+            ask === "wildcard"
+              ? `${driverName ?? driverId} asks to let its ${child} reach ${reach}`
+              : `${driverName ?? driverId} asks to let its ${child} reach ${reach}, which it cannot reach itself`,
           forAgentId: driverId,
+          ...(ask === "wider" && { widerThanDriver: true }),
         },
         expiresAt: new Date(now() + EGRESS_PROPOSAL_TTL_MS),
       });
-      securityLog("info", "approval.wildcard_egress_requested", {
+      securityLog("info", "approval.child_egress_requested", {
         category: "approval",
         actor: driverId,
         actorKind: "agent",
         agentId: childId,
         correlationId: id,
-        detail: { host, port: rule.port ?? null },
+        detail: { host, port: rule.port ?? null, ask },
       });
       emit({
         type: EventType.ApprovalRequested,
@@ -90,10 +110,10 @@ export function createWildcardEgressRequests(deps: {
       return { id };
     },
 
-    async withdraw(childId, keepHosts) {
+    async withdraw(childId, keep) {
       for (const row of await pendingOf(childId)) {
         if (row.payload.kind !== "egress_proposal") continue;
-        if (keepHosts.has(row.payload.host)) continue;
+        if (keep({ host: row.payload.host, port: row.payload.port })) continue;
         if (!(await deps.repo.expirePending(row.id))) continue;
         emit({
           type: EventType.ApprovalResolved,

@@ -94,10 +94,12 @@ export function approvalDetail(
       : `${payload.host}${payload.path}`;
   const request =
     payload.method === "*" ? target : `${payload.method} ${target}`;
-  if (payload.kind === "egress_proposal")
-    return payload.forAgentId
-      ? `${anyHostOf(payload.host)}, for its sub-agent ${approval.agentId}`
-      : request;
+  if (payload.kind === "egress_proposal") {
+    if (!payload.forAgentId) return request;
+    return payload.widerThanDriver
+      ? `${request}, for its sub-agent ${approval.agentId}, which it cannot reach itself. Allowing it lets all its sub-agents and Environments have network access of their own.`
+      : `${anyHostOf(payload.host)}, for its sub-agent ${approval.agentId}`;
+  }
   if (payload.viaEnvironment)
     return `${request}, from its Environment ${payload.viaEnvironment}`;
   return payload.forAgentId

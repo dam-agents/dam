@@ -71,6 +71,10 @@ interface CreateApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
+  // UNIT_BOUNDARY_DESCRIPTION: what approving a child's rule that reaches past its driver also does: it turns on the toggle that lets the sub-agents and Environments of the driver's launch root have network access of their own, so the owner agrees once, not per child.
+  childEgressGrants?: {
+    grantForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  };
 }
 
 function matchesBinding(
@@ -409,10 +413,21 @@ async function writeRuleAndResolve(
     ? false
     : await deps.repo.resolveExpired(row.id, rule.verdict, deps.actor);
   if (casWon || expiredFlipped) emitResolved(row, rule.verdict);
+  const askedBy =
+    rule.verdict === "allow" &&
+    row.payload.kind === "egress_proposal" &&
+    row.payload.widerThanDriver
+      ? row.payload.forAgentId
+      : undefined;
+  const grantsChildEgress =
+    askedBy !== undefined && deps.childEgressGrants !== undefined;
+  if (askedBy !== undefined)
+    await deps.childEgressGrants?.grantForRootOf(askedBy, deps.actor);
   auditVerdict(deps, row, rule.verdict, {
     verdict: rule.verdict,
     ...auditRuleFields(written),
     ...ruleFields,
+    ...(grantsChildEgress ? { childEgressGranted: true } : {}),
   });
   return {
     outcome: casWon ? "applied" : "rule_written_expired",
