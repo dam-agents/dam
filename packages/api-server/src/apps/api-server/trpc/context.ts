@@ -164,6 +164,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       editorStanding,
       contextFor: (identity) => contextFor(identity, surface),
     });
+    const { features } = composeFeaturesForOwner({
+      db,
+      owner: user.sub,
+      surface,
+      modes: config.featureModes,
+    });
+    /* UNIT_BOUNDARY_DESCRIPTION: whether this person is offered the Connection that drives the install — the install's mode, and in `experimental` their own switch. It gates their own create and grants of it, never the platform's provisioning: Dambledore is made holding it whatever this says. */
+    const damConnectionOffered = async (): Promise<boolean> => {
+      const mode = config.featureModes.damConnection;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).damConnection);
+    };
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       mirroredChildren: childrenMirroringConnections(db),
@@ -194,6 +207,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         },
         config.brand.name,
       ),
+      damConnectionOffered,
       newAgentProvider: async () => {
         const chosen = await defaultProfile();
         return chosen
@@ -337,12 +351,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const { features } = composeFeaturesForOwner({
-      db,
-      owner: user.sub,
-      surface,
-      modes: config.featureModes,
-    });
     /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
     const assistantOn = async (): Promise<boolean> => {
       const mode = config.featureModes.dambledore;
@@ -364,7 +372,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
       agents,
       gettingStarted,
-      damConnection: () => connections.ensureDamConnection(),
+      damConnection: () => connections.ensureDamConnection({ platform: true }),
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,

@@ -385,7 +385,6 @@ import { damKeyPortFor } from "./modules/connections/domain/dam-connection.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
-import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createFeaturesRepository } from "./modules/features/infrastructure/features-repository.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {

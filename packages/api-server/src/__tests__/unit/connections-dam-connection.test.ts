@@ -133,6 +133,7 @@ function fakeKeys() {
 function harness(
   baseUrl = BASE_URL,
   opts: {
+    offered?: () => Promise<boolean>;
     insert?: (row: Connection) => Promise<void>;
     adoptDamKey?: (input: {
       id: string;
@@ -148,6 +149,7 @@ function harness(
     store,
     brandName: BRAND,
     damKey: damKeyPortFor(keys.keys, keys.directory, BRAND),
+    ...(opts.offered ? { damConnectionOffered: opts.offered } : {}),
     ...(opts.insert ? { insert: opts.insert } : {}),
     adoptDamKey:
       opts.adoptDamKey ??

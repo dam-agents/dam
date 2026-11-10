@@ -133,6 +133,7 @@ export function assistantService(
     enabled?: boolean;
     admitted?: boolean;
     assistantName?: string;
+    damConnection?: () => Promise<string | null>;
     waitMs?: number;
     pollMs?: number;
   } = {},
@@ -154,6 +155,7 @@ export function assistantService(
     enrolled,
     provisioned,
     resetChecklist,
+    damConnection: deps.damConnection ?? (async () => null),
     waitMs: deps.waitMs ?? 200,
     pollMs: deps.pollMs ?? 10,
   });

@@ -46,6 +46,7 @@ vi.mock("../../modules/connections/api/mutations.js", () => ({
     error: null,
     mutateAsync: fake.moveToHost,
   }),
+  useRotateDamConnection: () => ({ isPending: false, mutate: () => {} }),
 }));
 vi.mock(
   "../../modules/connections/hooks/use-template-create-submit.js",

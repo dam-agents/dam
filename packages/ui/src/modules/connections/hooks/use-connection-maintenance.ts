@@ -2,10 +2,10 @@ import type { ConnectionView } from "api-server-api";
 import { useState } from "react";
 
 import { useFeatures } from "../../features/api/queries.js";
-import { useConnectionTemplates } from "../api/queries.js";
 import { useRotateDamConnection } from "../api/mutations.js";
-import { isDamConnection } from "../lib/dam-connection.js";
+import { useConnectionTemplates } from "../api/queries.js";
 import type { RowMaintenanceActions } from "../components/catalog-connection-row.js";
+import { isDamConnection } from "../lib/dam-connection.js";
 import {
   gheSignInOfferedHosts,
   movesBetweenHosts,

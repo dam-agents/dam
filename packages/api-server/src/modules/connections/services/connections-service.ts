@@ -1488,6 +1488,7 @@ export function createConnectionsService(deps: {
   async function applyGrants(
     agentId: string,
     desiredFrom: (current: string[]) => string[],
+    opts: { platform?: boolean } = {},
   ): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
       securityLog("warn", "authz.owner_mismatch", {
@@ -1533,6 +1534,11 @@ export function createConnectionsService(deps: {
       const desiredIds = new Set(deduped);
       const toGrant = deduped.filter((id) => !currentIds.has(id));
       for (const id of toGrant) assertGrantable(ownedById.get(id)!);
+      if (
+        !opts.platform &&
+        toGrant.some((id) => isDamConnection(ownedById.get(id)!.templateId))
+      )
+        await assertDamConnectionOffered("be granted to an agent");
       const toRevoke = current
         .map((c) => c.connectionId)
         .filter((id) => !desiredIds.has(id));
@@ -2359,19 +2365,25 @@ export function createConnectionsService(deps: {
     async setAgentConnections(
       agentId: string,
       connectionIds: string[],
+      opts?: { platform?: boolean },
     ): Promise<void> {
-      await applyGrants(agentId, () => connectionIds);
+      await applyGrants(agentId, () => connectionIds, opts ?? {});
     },
 
     async updateAgentConnections(
       agentId: string,
       change: { grant: string[]; revoke: string[] },
+      opts?: { platform?: boolean },
     ): Promise<void> {
       const revoked = new Set(change.revoke);
-      await applyGrants(agentId, (current) => [
-        ...current.filter((id) => !revoked.has(id)),
-        ...change.grant,
-      ]);
+      await applyGrants(
+        agentId,
+        (current) => [
+          ...current.filter((id) => !revoked.has(id)),
+          ...change.grant,
+        ],
+        opts ?? {},
+      );
     },
 
     async setPreferredConnection(
@@ -2768,9 +2780,12 @@ export function createConnectionsService(deps: {
       return id;
     },
 
-    async ensureDamConnection(): Promise<string | null> {
+    async ensureDamConnection(opts?: {
+      platform?: boolean;
+    }): Promise<string | null> {
       const template = deps.templates.get(DAM_TEMPLATE_ID);
       if (!template || !deps.damKey) return null;
+      if (!opts?.platform) await assertDamConnectionOffered("be created");
       const damKey = deps.damKey;
       return deps.connectionLock(
         `${DAM_TEMPLATE_ID}:${deps.ownerId}`,

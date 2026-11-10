@@ -353,8 +353,8 @@ export interface ConnectionsService {
     platform?: { rememberedInputs: Record<string, string> },
   ): Promise<string>;
 
-  /* UNIT_BOUNDARY_DESCRIPTION: the Connection that lets an Agent drive this install as its owner, one per owner: minted with its key on first use, else the one the owner already holds; null where the install's own URL is not one a gateway can reach and inject on. */
-  ensureDamConnection(): Promise<string | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection that lets an Agent drive this install as its owner, one per owner: minted with its key on first use, else the one the owner already holds; null where the install's own URL is not one a gateway can reach and inject on. A person's own call is refused while the install does not offer them that Connection; the platform's own provisioning carries `platform`. */
+  ensureDamConnection(opts?: { platform?: boolean }): Promise<string | null>;
 
   /* UNIT_BOUNDARY_DESCRIPTION: mints a fresh key into that Connection, on the owner's word, keeping the Connection, its grants and every Agent's env as they are: the old key stops working at once, so this is also how a key the owner revoked in Settings is replaced. */
   rotateDamConnection(id: string): Promise<void>;
@@ -431,11 +431,16 @@ export interface ConnectionsService {
   deleteConnection(id: string): Promise<void>;
 
   getAgentConnections(agentId: string): Promise<AgentConnections>;
-  setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
+  setAgentConnections(
+    agentId: string,
+    connectionIds: string[],
+    opts?: { platform?: boolean },
+  ): Promise<void>;
 
   updateAgentConnections(
     agentId: string,
     change: { grant: string[]; revoke: string[] },
+    opts?: { platform?: boolean },
   ): Promise<void>;
   setPreferredConnection(agentId: string, connectionId: string): Promise<void>;
 }
