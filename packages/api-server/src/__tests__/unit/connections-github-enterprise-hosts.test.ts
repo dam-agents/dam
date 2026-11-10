@@ -370,6 +370,59 @@ describe("a host typed as a URL", () => {
   });
 });
 
+describe("a GitHub Enterprise host with a port", () => {
+  // TEST_SCENARIO: a token on a host that listens on another port must keep that port, or its egress rules address port 443 and every call fails; a sign-in or app installation has no way to carry a port, so it is refused with a message rather than silently dropped.
+  it("keeps a token's port, and refuses one for a sign-in or app", async () => {
+    const pat = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-pat",
+    )!;
+    const token = await buildConnection(
+      pat,
+      {
+        templateId: pat.id,
+        name: "ghe-pat",
+        authKind: "header",
+        host: `https://${NEW}:8443/`,
+        value: "ghp_x",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    const injected = token.contributions.flatMap((c) =>
+      c.kind === "egress-inject" ? [[c.host, c.port]] : [],
+    );
+    expect(injected).toContainEqual([NEW, 8443]);
+    expect(injected).toContainEqual([`api.${NEW}`, 8443]);
+
+    await expect(build(`${NEW}:8443`)).rejects.toThrow(
+      /names a port\. A GitHub Enterprise sign-in or app installation reaches its host on port 443/,
+    );
+    const app = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-app",
+    )!;
+    await expect(
+      buildConnection(
+        app,
+        {
+          templateId: app.id,
+          name: "ghe-app",
+          authKind: "github-app",
+          host: `${NEW}:8443`,
+          appId: "1",
+          installationId: "2",
+          privateKey:
+            "-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----",
+          fullAccess: true,
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      ),
+    ).rejects.toThrow(/names a port/);
+  });
+});
+
 describe("hosts written with a scheme or a port", () => {
   // TEST_SCENARIO: an operator may write a host as a URL or with a port in the chart; it must still match its app and its retirement, or the picker offers a host whose every sign-in fails and a retired host is never refused.
   it("match their app and their retirement by hostname", async () => {

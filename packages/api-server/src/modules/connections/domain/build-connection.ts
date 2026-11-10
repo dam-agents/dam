@@ -80,13 +80,18 @@ export async function buildConnection(
     "host" in input &&
     input.host
   ) {
-    const host = hostnameOf(input.host);
+    const { host, port } = parseClusterEndpoint(input.host.toLowerCase());
     if (!/^[a-z0-9.-]+$/.test(host) || !host.includes(".")) {
       throw new Error(
         `${input.host.trim()} is not a GitHub Enterprise hostname. Enter the host alone, e.g. github.example.com.`,
       );
     }
-    input = { ...input, host };
+    if (port && template.id !== "github-enterprise-pat") {
+      throw new Error(
+        `${host}:${port} names a port. A GitHub Enterprise sign-in or app installation reaches its host on port 443: enter the host alone.`,
+      );
+    }
+    input = { ...input, host: port ? `${host}:${port}` : host };
   }
 
   const inputHost = "host" in input ? input.host : undefined;
