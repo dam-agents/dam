@@ -26,9 +26,9 @@ import {
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
-import { GitHubEnterpriseHostPicker } from "./github-enterprise-host-picker.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
+import { GitHubEnterpriseHostPicker } from "./github-enterprise-host-picker.js";
 import { GithubStepsCallout } from "./github-steps-callout.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
