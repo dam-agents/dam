@@ -31,6 +31,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
+  Its tile and its modal say who publishes it: "By" the brand, with a check mark, for the platform team's kits, or "By" a named user, linked from the modal.
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
 - **Asleep** — an agent hibernated after being idle for the install's idle timeout (5 minutes by default; the UI has no setting for it), shown in the owner's list of agents.

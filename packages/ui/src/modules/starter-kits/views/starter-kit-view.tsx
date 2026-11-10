@@ -52,6 +52,7 @@ import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
 import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
+import { KitPublisher } from "../components/kit-publisher.js";
 import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
@@ -492,6 +493,11 @@ function KitDetail({
           subtitle={kit.description}
           onClose={onClose}
         >
+          {kit.publisher && (
+            <div className="mt-1.5">
+              <KitPublisher publisher={kit.publisher} surface="header" />
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {connectionFamilyTags(kit.connections, templates.data ?? []).map(
               (family) => (
