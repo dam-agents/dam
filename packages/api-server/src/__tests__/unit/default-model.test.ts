@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
-import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
+import {
+  automaticModel,
+  convertedDefaultModel,
+} from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
@@ -81,6 +84,22 @@ describe("a fire on an Agent with no default model", () => {
     await expect(
       resolveFirePair(deps(null), "a", "scheduled", {}),
     ).rejects.toBeInstanceOf(NoDefaultModelError);
+  });
+
+  // TEST_SCENARIO: the saved default names a model on a provider the agent no longer holds, so the fire fails naming that model, which a channel tells apart from an agent with no provider.
+  it("names the saved model whose provider is gone", async () => {
+    await expect(
+      resolveFirePair(
+        deps({
+          harness: "claude-code",
+          provider: "gone",
+          model: "openai/gpt-5",
+        }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).rejects.toMatchObject({ model: "openai/gpt-5" });
   });
 
   // TEST_SCENARIO: the person's view of the default shows it as not set rather than failing, so the UI can ask for one.
@@ -209,6 +228,20 @@ describe("convertedDefaultModel", () => {
       "anthropic/claude-sonnet-5-5",
     );
     expect(convert("default", [])).toBe("anthropic/claude-opus-5-5");
+  });
+});
+
+describe("automaticModel", () => {
+  // TEST_SCENARIO: the platform's preferred model wins across providers, else the first model the first listing provider lists; providers that list nothing pick nothing.
+  it("takes the preferred model, else the first one listed", () => {
+    const empty = { alias: "ibm", listed: [] };
+    const other = { alias: "other", listed: ["foo-2", "foo-1"] };
+    const anthropic = { alias: "anthropic", listed: ["claude-opus-5-5"] };
+    expect(automaticModel([empty, other, anthropic])).toBe(
+      "anthropic/claude-opus-5-5",
+    );
+    expect(automaticModel([empty, other])).toBe("other/foo-2");
+    expect(automaticModel([empty])).toBeNull();
   });
 });
 
@@ -539,13 +572,26 @@ describe("the one-time default conversion", () => {
     ]);
   });
 
-  // TEST_SCENARIO: with one provider and nothing that resolves, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
-  it("keeps the one provider when no model resolves", async () => {
-    const options = {
+  // TEST_SCENARIO: the setting names a model the provider does not list and the preference list names none it lists, so the default takes the automatic model, the first one listed.
+  it("takes the first listed model when nothing else resolves", async () => {
+    const { c, writes, notes } = converter({
       setting: "claude-opus-3",
-      catalog: view("listed", ["claude-opus-4-8"]),
-    };
-    const { c, writes } = converter(options);
+      catalog: view("listed", ["claude-opus-4-8", "claude-opus-4-6"]),
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-4-8",
+      },
+    ]);
+    expect(notes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: with one provider that lists no model for the harness, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
+  it("keeps the one provider when it lists no model", async () => {
+    const { c, writes } = converter({ catalog: view("listed", []) });
     expect(await c.convert("a")).toBe("not-set");
     expect(writes).toEqual([
       { harness: "claude-code", provider: "anth", model: null },
@@ -680,11 +726,25 @@ describe("the one-time default conversion", () => {
 
     const still = converter({
       saved: notSet,
-      setting: "claude-opus-3",
-      catalog: view("listed", ["claude-opus-4-8"]),
+      catalog: view("listed", []),
     });
     expect(await still.c.convert("a")).toBe("not-set");
     expect(still.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a "not set" names a provider the agent no longer holds, so the pin no longer applies and the default converts on a provider the agent holds instead of staying not set for good.
+  it("converts a not set whose provider is gone", async () => {
+    const { c, writes } = converter({
+      saved: { harness: "claude-code", provider: "gone", model: null },
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes).toEqual([
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
+    ]);
   });
 
   // TEST_SCENARIO: a Pi agent on a Bedrock Connection alone was saved "not set" while Pi could not list Bedrock; once its runtime lists the region's inference profiles for Pi, the next conversion keeps the profile its Pi setting names, or else takes the preferred model among the profiles.
@@ -769,7 +829,7 @@ describe("the one-time default conversion", () => {
     expect(await none.c.pendingAfterMove("a")).toBe(false);
   });
 
-  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM is not filled from Anthropic.
+  // TEST_SCENARIO: converting a "not set" again keeps the harness and the provider it names, so the agent's runs never move to another harness or provider: a Codex pair stays unconverted on a Claude Code runtime, and a pair naming IBM, which the agent still holds, is not filled from Anthropic.
   it("keeps the harness and provider of a not set", async () => {
     const codex = converter({
       saved: { harness: "codex", provider: null, model: null },
@@ -777,8 +837,22 @@ describe("the one-time default conversion", () => {
     expect(await codex.c.convert("a")).toBe("not-set");
     expect(codex.writes).toEqual([]);
 
+    const listed = view("listed", ["claude-opus-5-5"]);
     const ibm = converter({
       saved: { harness: "claude-code", provider: "lite", model: null },
+      granted: [IBM, ANTHROPIC],
+      catalog: {
+        ...listed,
+        providers: [
+          {
+            ...listed.providers[0]!,
+            connectionId: "lite",
+            alias: "ibm",
+            models: [],
+          },
+          listed.providers[0]!,
+        ],
+      },
     });
     expect(await ibm.c.convert("a")).toBe("not-set");
     expect(ibm.writes).toEqual([]);

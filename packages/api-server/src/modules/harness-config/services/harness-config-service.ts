@@ -456,6 +456,6 @@ export async function resolveFirePair(
     routed,
   });
   if (requireLeases && routed && pair?.model === null && granted.length > 0)
-    throw new NoDefaultModelError(preferred.model);
+    throw new NoDefaultModelError(remembered?.model ?? undefined);
   return pair;
 }

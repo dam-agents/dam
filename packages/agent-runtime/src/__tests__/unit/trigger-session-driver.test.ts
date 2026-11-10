@@ -187,7 +187,7 @@ describe("createTriggerSessionDriver", () => {
     );
     await expect(
       driver.start({ task: "do it", resumeSessionId: "s0" }),
-    ).rejects.toThrow(/Providers page/);
+    ).rejects.toThrow(/connect a model provider on the agent's Providers page/);
     expect(sent.map((f) => f.method)).not.toContain("session/new");
     expect(sent.map((f) => f.method)).not.toContain("session/prompt");
   });

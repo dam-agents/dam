@@ -113,3 +113,19 @@ export function convertedDefaultModel(input: {
   );
   return unset ? listed : null;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the conversion's last resort, so an Agent whose
+ * providers list a model is never left "not set": the platform's preferred
+ * work model across its providers, else the first model the first of them
+ * lists. Null when no provider lists anything, which leaves the Agent
+ * "not set" until one does.
+ */
+export function automaticModel(
+  providers: readonly ProviderListing[],
+): string | null {
+  const preferred = preferredModelOf("work", providers);
+  if (preferred) return `${preferred.alias}/${preferred.upstreamId}`;
+  const first = providers.find((p) => p.listed.length > 0);
+  return first ? `${first.alias}/${first.listed[0]}` : null;
+}

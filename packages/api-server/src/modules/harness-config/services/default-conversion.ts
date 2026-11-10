@@ -6,6 +6,7 @@ import {
 } from "api-server-api";
 import { harnessFits } from "../../templates/index.js";
 import { convertedDefault } from "../domain/converted-default.js";
+import { automaticModel } from "../domain/default-conversion.js";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
@@ -111,19 +112,20 @@ export function createDefaultConverter(deps: {
     if (saved?.model) return "saved";
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities)) return "old-runtime";
-    /** UNIT_BOUNDARY_DESCRIPTION: a "not set" keeps the harness and the
-     * provider it names, so converting it again never moves the agent's runs
-     * to another harness or provider. */
+    /** UNIT_BOUNDARY_DESCRIPTION: a "not set" keeps the harness it names,
+     * and the provider while the agent still holds it, so converting it again
+     * never moves the agent's runs to another harness or off a provider it
+     * holds. */
     const harness =
       saved?.harness ??
       defaultHarnessOf(capabilities) ??
       (await deps.specHarness(agentId)) ??
       deps.catalog.default;
-    const fitting = (await deps.pairRepo.grantedProviders(agentId)).filter(
-      (p) =>
-        harnessFits(deps.catalog, harness, p.type, p.templateId) &&
-        (!saved?.provider || p.id === saved.provider),
+    const fits = (await deps.pairRepo.grantedProviders(agentId)).filter((p) =>
+      harnessFits(deps.catalog, harness, p.type, p.templateId),
     );
+    const pinned = fits.some((p) => p.id === saved?.provider);
+    const fitting = fits.filter((p) => !pinned || p.id === saved?.provider);
     if (fitting.length === 0)
       return save(agentId, saved, { harness, provider: null, model: null });
     const view = await deps.catalogView(agentId, harness).catch(() => null);
@@ -150,12 +152,14 @@ export function createDefaultConverter(deps: {
       null;
     const needsRan =
       !setting?.trim() || setting.trim().toLowerCase() === "default";
-    const converted = convertedDefault({
-      setting,
-      providers,
-      ran: needsRan ? await modelsRan(agentId) : [],
-      declared: await deps.kitDefaultModel(agentId),
-    });
+    const automatic = automaticModel(providers);
+    const converted =
+      convertedDefault({
+        setting,
+        providers,
+        ran: needsRan ? await modelsRan(agentId) : [],
+        declared: await deps.kitDefaultModel(agentId),
+      }) ?? (automatic ? { model: automatic } : null);
     const model = converted?.model ?? null;
     const alias = model ? parseQualifiedModel(model)?.alias : null;
     return save(

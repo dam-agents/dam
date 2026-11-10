@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-04
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -62,9 +62,10 @@ One substitution is made, where no kit names a model: Haiku on a provider that l
 A kit may name the model its agent needs (`defaultModel`, [starter kits](starter-kits.md#concepts)), and that model is what the conversion saves when a granted provider lists it, under its own name or as the one listed id ending in it; it is answered before any other source, since it is what the agent was created for, and a declared model no provider lists falls through to the setting, so a kit's pin never becomes a call that fails.
 Whatever the certain sources leave open — a tier word no provider lists a model of, a history the listings do not name, or more than one fitting provider, where no provider's own order can say which one the person meant — is answered by the platform's [preferred model list](#the-model-router) across every fitting provider, and the list's order beats the providers' own.
 An id the setting or the history names is not left to the list: it names the same model wherever it is, so it is resolved against each fitting provider in turn, and only a tier word, which names nothing on several, goes to the list.
-Nothing to go on at all saves the default as **not set**; a fitting provider not listed yet is left for a later try.
+Anything still open takes the first model the first fitting provider lists; only providers listing nothing save it as **not set**, and one not listed yet is left for a later try.
+A "not set" keeps to its provider while the agent holds it.
 A default that is not set runs nothing, so each later `hello` or fire converts it again.
-A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider — DeepSeek V4.1 Flash on CurveBender, whose ids carry no tier word at all, and that provider's newest Opus on Anthropic — saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
+A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes what the list prefers on that provider, saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
 Slack Channels and Telegram chats are bound in separate stores, each written by its own binding flow, so the notice reader asks both for the Agents they hold.
@@ -79,7 +80,7 @@ A `session/new` that reaches the ACP relay naming no model, as `dam run`, a scri
 With no chat default model, the frame goes on as sent and the runtime refuses it with the `no-model` reason.
 The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
 A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's default of that kind on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
-A scheduled run with no model, such a task when it names none, an interrupted turn on such a session, or a chat prompt in it is refused until a model is picked.
+A prompt in a session with no model takes its kind's default first, following it or not; with none, it is refused, as is such a task naming no model.
 A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts on the agent's default when the default is on its harness, and otherwise with no model, on the harness's own default.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.

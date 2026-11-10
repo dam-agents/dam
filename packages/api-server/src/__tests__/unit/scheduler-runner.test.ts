@@ -371,7 +371,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(stampedResults[0]?.result).toMatch(/no model provider granted/);
   });
 
-  /** TEST_SCENARIO: The agent has no default model. A retry cannot change
+  /** TEST_SCENARIO: The agent has no model provider to run on. A retry cannot change
    * that, so the first attempt records the reason, queues the next run and
    * ends the job instead of waking the agent again on every retry. */
   it("records a missing default on the first attempt without a retry", async () => {
@@ -388,7 +388,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       ),
     ).resolves.toBeUndefined();
     expect(events).toEqual([]);
-    expect(stampedResults[0]?.result).toMatch(/no default model/);
+    expect(stampedResults[0]?.result).toMatch(/connect a model provider/);
     expect(stampedResults[0]?.nextRun).not.toEqual(
       new Date("2026-06-12T10:30:00Z"),
     );
@@ -436,16 +436,16 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(events).toEqual([]);
   });
 
-  /** TEST_SCENARIO: Run now on an agent with no default model is refused
+  /** TEST_SCENARIO: Run now on an agent with no model provider is refused
    * with the reason, which the schedule also records, not a server error. */
-  it("refuses run now when the agent has no default model", async () => {
+  it("refuses run now when the agent has no model provider", async () => {
     const { runner, stampedFires } = makeDeps({
       firePair: async () => {
         throw new NoDefaultModelError();
       },
     });
     expect(await runner.runNow(SCHEDULE_ID)).toBe("no-default-model");
-    expect(stampedFires[0]).toMatch(/no default model/);
+    expect(stampedFires[0]).toMatch(/connect a model provider/);
   });
 
   /** TEST_SCENARIO: The schedule names a harness, a qualified model and a
