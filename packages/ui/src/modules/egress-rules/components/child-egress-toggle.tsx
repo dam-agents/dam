@@ -17,7 +17,7 @@ export function ChildEgressToggle({
   const on = set.isPending ? set.variables.on : data.state === "on";
   return (
     <ToggleRow
-      className="mb-6"
+      className="mt-5 mb-6"
       title="Sub-agents and Environments may have network access of their own"
       description="Lets the agent give a sub-agent or Environment it creates network rules that reach hosts the agent itself cannot. Off, each such rule waits for your approval on Home. A rule for a wildcard host, such as * or *.example.com, always waits for you."
       checked={on}
