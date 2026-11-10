@@ -94,7 +94,10 @@ describe("a driver's every-path deny", () => {
           deny("github.com", path),
         ]),
       ).toBe(true);
-    for (const blocked of [deny("github.com", "/"), deny("github.com", "*", "POST")])
+    for (const blocked of [
+      deny("github.com", "/"),
+      deny("github.com", "*", "POST"),
+    ])
       expect(
         reachesPastDriver({ host: "github.com" }, [allow("*"), blocked]),
       ).toBe(false);

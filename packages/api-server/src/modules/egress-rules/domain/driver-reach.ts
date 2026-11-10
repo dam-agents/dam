@@ -1,5 +1,5 @@
 import { hostMatchCandidates } from "./host-match.js";
-import { patternCoversEveryPath } from "./path-match.js";
+import { patternCoversEveryPath, ranksBefore } from "./gate-order.js";
 import { rulePortCovers } from "./port-match.js";
 
 interface ReachRule {
@@ -56,12 +56,4 @@ function driverReaches(
     if (allows.length > 0) return true;
   }
   return false;
-}
-
-// The gate's ORDER BY within one host pattern: a named method first, then a named path, then the longer path.
-function ranksBefore(allow: ReachRule, deny: ReachRule): boolean {
-  if (allow.method !== "*") return true;
-  if (allow.pathPattern === "*") return false;
-  if (deny.pathPattern === "*") return true;
-  return allow.pathPattern.length > deny.pathPattern.length;
 }

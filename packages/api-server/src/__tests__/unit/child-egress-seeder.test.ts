@@ -386,14 +386,14 @@ describe("an owner's block on an open child", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the owner refused the driver's ask for any host forever, which writes a block of `*` on the child. The driver cannot ask for any host again, but its allow for a host it reaches itself is still written: the gate ranks a named host before `*`, so the block says "not any host", not "no host".
+  // TEST_SCENARIO: the owner wrote a block of `*` on the child by hand. The driver cannot ask for any host again, but its allow for a host it reaches itself is still written: the gate ranks a named host before `*`, so the block says "not any host", not "no host".
   it("of a wildcard stops that wildcard, not the hosts under it", async () => {
     const { seeder, verdictsOf, requested, block } = setup(
       [rule("agent-root", "github.com")],
       { granted: false },
     );
     await seeder.seed("agent-child", openChild([]));
-    block("agent-child", "*");
+    block("agent-child", "*", { source: "manual" });
     const tried = await seeder.setOpenRules("agent-child", "agent-driver", [
       { host: "*", verdict: "allow" },
       { host: "github.com", verdict: "allow" },
@@ -402,7 +402,7 @@ describe("an owner's block on an open child", () => {
     expect(requested).toEqual([]);
     expect(verdictsOf("agent-child")).toEqual([
       "allow github.com *:driver",
-      "deny * *:inbox",
+      "deny * *:manual",
     ]);
   });
 });
