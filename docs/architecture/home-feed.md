@@ -59,6 +59,7 @@ An open lasts until the Agent's list closes: a sidebar that mounts again, or the
 When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
 When that list's own first read fails, it offers a retry instead of "No sessions yet."
 After View more, the list asks the Agent for further pages while its rows fall short of the next five and the Agent has more, and it stops offering more when a page brings no new Session or the Agent's cursor does not move.
+One click asks for at most five pages, while the button says it is looking; then the button offers Keep looking, so a click never waits without end.
 Opening a Session from Activity leaves its Agent's row as it was, closed or open.
 
 The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
@@ -68,6 +69,8 @@ An Agent's row shows a blue dot, also while it is open and shown, when one of it
 The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
 The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
 The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.
+While the filter is on, the list names it and offers Clear filter; when none of the latest Sessions match, it says so and its button reads Look further.
+The open Session stays in the list even when the filter would hide it, marked as open.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.

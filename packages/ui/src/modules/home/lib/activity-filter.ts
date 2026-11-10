@@ -49,6 +49,23 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
+export function activityFilterSummary(filters: ActivityFilters): string {
+  const types = CHANNEL_TYPES.filter((type) => filters.channelTypes.has(type));
+  const parts = [
+    ...(types.length < CHANNEL_TYPES.length
+      ? [
+          types.length === 0
+            ? "No types"
+            : types.length <= 2
+              ? types.map((type) => CHANNEL_TYPE_LABELS[type]).join(", ")
+              : `${types.length} types`,
+        ]
+      : []),
+    ...(filters.state !== "any" ? [STATE_FILTER_LABELS[filters.state]] : []),
+  ];
+  return parts.join(" · ");
+}
+
 export interface StoredActivityFilters {
   hidden: ChannelType[];
   state: StateFilter;

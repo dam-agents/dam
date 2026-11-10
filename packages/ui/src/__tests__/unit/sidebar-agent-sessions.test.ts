@@ -7,7 +7,10 @@ import {
   sidebarAgentFolded,
   sidebarAgentOpen,
 } from "../../modules/agents/lib/sidebar-agent-order.js";
-import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
+import {
+  activityFilterSummary,
+  defaultActivityFilters,
+} from "../../modules/home/lib/activity-filter.js";
 import {
   matchesActivityFilters,
   toActivitySessions,
@@ -191,6 +194,20 @@ describe("an agent's session window", () => {
 });
 
 describe("the sidebar session filter", () => {
+  it("TEST_SCENARIO: the note beside a filtered list names one or two types, counts more, and adds the status", () => {
+    const base = defaultActivityFilters();
+    expect(
+      activityFilterSummary({ ...base, channelTypes: new Set(["slack"]) }),
+    ).toBe("Slack");
+    expect(
+      activityFilterSummary({
+        channelTypes: new Set(["chat", "slack", "telegram"]),
+        state: "needs-attention",
+      }),
+    ).toBe("3 types · Needs attention");
+    expect(activityFilterSummary({ ...base, state: "unread" })).toBe("Unread");
+  });
+
   it("TEST_SCENARIO: a Session from the Agent's own list, which may carry no schedule id, filters by its channel like an attention record", () => {
     const slack = {
       session: { type: SessionType.ChannelSlack, mode: SessionMode.Chat },

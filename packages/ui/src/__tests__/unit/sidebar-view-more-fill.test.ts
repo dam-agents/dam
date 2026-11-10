@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: With a filter on an Agent, each View more fills the next five rows of matching Sessions: the list loads one page after another while its rows fall short and the Agent has more, and stops at five more rows or at the list's end, where it no longer offers View more.
+// TEST_OVERVIEW: With a filter on an Agent, each View more fills the next five rows of matching Sessions: the list loads one page after another while its rows fall short and the Agent has more, and stops at five more rows or at the list's end, where it no longer offers View more. One click loads at most five pages, saying it is looking, then offers Keep looking. The list names the filter and offers to clear it, and an open Session the filter would hide is marked as open.
 import { createElement } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   list: {} as Record<string, unknown>,
+  setFilter: vi.fn(),
 }));
 
 vi.mock("../../modules/sessions/lib/agent-session-filters.js", async () => {
@@ -17,6 +18,7 @@ vi.mock("../../modules/sessions/lib/agent-session-filters.js", async () => {
       ...defaultActivityFilters(),
       channelTypes: new Set(["chat"]),
     }),
+    setAgentSessionFilter: fake.setFilter,
   };
 });
 
@@ -48,10 +50,19 @@ vi.mock("../../modules/sessions/components/rename-session-dialog.js", () => ({
   RenameSessionDialog: () => null,
 }));
 vi.mock("../../modules/sessions/components/session-row.js", () => ({
-  SessionRow: ({ session }: { session: { sessionId: string } }) =>
+  SessionRow: ({
+    session,
+    outsideFilter,
+  }: {
+    session: { sessionId: string };
+    outsideFilter?: boolean;
+  }) =>
     createElement(
       "div",
-      { "data-session-id": session.sessionId },
+      {
+        "data-session-id": session.sessionId,
+        "data-outside-filter": outsideFilter ? "true" : undefined,
+      },
       createElement("button", { "data-row-main": "" }, session.sessionId),
     ),
 }));
@@ -166,4 +177,72 @@ it("stops at the end of the list and offers no View more", async () => {
   expect(shown()).toHaveLength(7);
   expect(fetchNextPage).toHaveBeenCalledTimes(1);
   expect(viewMore()).toBeNull();
+});
+
+// TEST_SCENARIO: no Session matches page after page (Needs attention on an Agent with few approvals); one click loads five pages while the button says it is looking, then stops and offers Keep looking, which loads five more.
+it("loads at most five pages per click, then offers Keep looking", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const fetchNextPage = vi.fn(async () => {});
+  setList({ sessions: [], hasNextPage: true, fetchNextPage });
+  const render = mount();
+  expect(container.textContent).toContain("None of the latest sessions match.");
+  expect(viewMore()?.textContent).toBe("Look further");
+
+  await act(async () => viewMore()?.click());
+  expect(viewMore()?.textContent).toContain("Looking for more…");
+  for (let page = 1; page < 8; page++) {
+    setList({
+      sessions: [],
+      hasNextPage: true,
+      isFetchingNextPage: true,
+      fetchNextPage,
+    });
+    render();
+    setList({ sessions: [], hasNextPage: true, fetchNextPage });
+    render();
+  }
+  expect(fetchNextPage).toHaveBeenCalledTimes(5);
+  expect(viewMore()?.textContent).toBe("Keep looking");
+
+  await act(async () => viewMore()?.click());
+  expect(fetchNextPage).toHaveBeenCalledTimes(6);
+});
+
+// TEST_SCENARIO: a filter is on; the list names it and Clear filter sets the Agent's filter back to the default.
+it("names the filter and clears it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  setList({ sessions: sessions(2) });
+  mount();
+  expect(
+    container.querySelector("[data-testid='sidebar-agent-filter-note']")
+      ?.textContent,
+  ).toContain("Filtered: Chat");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>(
+        "[data-testid='sidebar-agent-filter-clear']",
+      )
+      ?.click(),
+  );
+  expect(fake.setFilter).toHaveBeenCalledWith(
+    "a-1",
+    expect.objectContaining({ state: "any" }),
+  );
+  expect(fake.setFilter.mock.calls[0]![1].channelTypes.size).toBe(6);
+});
+
+// TEST_SCENARIO: the open Session is a Slack thread, which the Chat filter hides; it stays in the list, marked as outside the filter, while matching rows are not marked.
+it("keeps the open Session and marks it outside the filter", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const slack = { ...session(9), type: "channel_slack", mode: "chat" };
+  setList({
+    sessions: [session(1), slack],
+    rowState: (s: { sessionId: string }) => ({ active: s.sessionId === "s9" }),
+  });
+  mount();
+  expect(shown()).toEqual(["s1", "s9"]);
+  const marked = [
+    ...container.querySelectorAll("[data-outside-filter='true']"),
+  ].map((el) => el.getAttribute("data-session-id"));
+  expect(marked).toEqual(["s9"]);
 });

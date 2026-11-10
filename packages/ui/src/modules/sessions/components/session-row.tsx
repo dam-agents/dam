@@ -68,6 +68,7 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SpendSessionRow;
   conversation?: ReactNode;
+  outsideFilter?: boolean;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -86,6 +87,7 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
+  outsideFilter = false,
   onResume,
   onPrefetch,
   onRename,
@@ -277,6 +279,15 @@ export function SessionRow({
                   {" · "}
                   {conversation}
                 </>
+              )}
+              {outsideFilter && (
+                <span
+                  data-testid="session-outside-filter"
+                  title="Shown because it is open; it does not match the filter"
+                >
+                  {" · "}
+                  open
+                </span>
               )}
             </span>
             {badges.length > 0 && (

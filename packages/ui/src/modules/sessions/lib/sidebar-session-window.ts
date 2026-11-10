@@ -1,5 +1,7 @@
 export const SIDEBAR_SESSION_STEP = 5;
 
+export const SIDEBAR_FILL_PAGES = 5;
+
 function activityTime(at: string | null | undefined): number {
   const time = at ? Date.parse(at) : Number.NaN;
   return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
@@ -47,6 +49,19 @@ export function viewMore({
     more: total > shown || hasNextPage,
     limit: limit + SIDEBAR_SESSION_STEP,
   };
+}
+
+export type FillState = "idle" | "searching" | "paused";
+
+export function fillState({
+  filling,
+  pagesLeft,
+}: {
+  filling: boolean;
+  pagesLeft: number;
+}): FillState {
+  if (!filling) return "idle";
+  return pagesLeft > 0 ? "searching" : "paused";
 }
 
 export function fillsStep({
