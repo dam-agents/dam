@@ -245,15 +245,22 @@ export function useApplyHarnessConfig() {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Try now on the CurveBender offer. An agent holds
- * one `cb` provider, so the shared Connection replaces any own-key CurveBender
+ * UNIT_BOUNDARY_DESCRIPTION: Try now on the CurveBender offer. An agent that
+ * does not carry Pi is refused before anything changes. An agent holds one
+ * `cb` provider, so the shared Connection replaces any own-key CurveBender
  * grant, and every other grant stays. Then the new-chat pair moves to Pi on it
- * with the CurveBender work model. When the server refuses that pair, the
- * grants go back as they were, so the agent's old default keeps its provider.
+ * with the CurveBender work model. When a step fails and the pair was not
+ * saved, the grants go back as they were, so the old default keeps its
+ * provider; a saved pair keeps the grants it runs on.
  */
 export function useTryCurveBender() {
   return useMutation<void, Error, { agentId: string; sharedId: string }>({
     mutationFn: async ({ agentId, sharedId }) => {
+      const status = await api.harnessConfig.status.query({ agentId });
+      if (!status.harnesses?.some((h) => h.name === "pi"))
+        throw new Error(
+          "This agent can't run Pi yet. Start it once, or create a new agent.",
+        );
       const grants = await api.connections.getAgentConnections.query({
         agentId,
       });
@@ -273,12 +280,12 @@ export function useTryCurveBender() {
       const change = granted.has(sharedId)
         ? null
         : { grant: [sharedId], revoke: ownKeys };
-      if (change)
-        await api.connections.updateAgentConnections.mutate({
-          agentId,
-          ...change,
-        });
       try {
+        if (change)
+          await api.connections.updateAgentConnections.mutate({
+            agentId,
+            ...change,
+          });
         await api.harnessConfig.rememberSessionPair.mutate({
           agentId,
           kind: "chat",
@@ -290,7 +297,11 @@ export function useTryCurveBender() {
           ),
         });
       } catch (error) {
-        if (change)
+        const saved = await api.harnessConfig.sessionPair
+          .query({ agentId })
+          .then((pair) => pair?.provider === sharedId)
+          .catch(() => false);
+        if (change && !saved)
           await api.connections.updateAgentConnections.mutate({
             agentId,
             grant: change.revoke,
