@@ -571,7 +571,7 @@ function greetingCopy() {
         text: "Learn how my team writes tickets, then take it over",
       },
     ],
-    placeholder: "Artifact: Make my next PowerPoint deck the way I make them",
+    placeholder: "Message Dammy",
   };
 }
 
@@ -581,9 +581,7 @@ it("opens an unused assistant's chat on its greeting", () => {
   const el = openNewChat();
   expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
   expect(el.textContent).not.toContain("Send a message to begin.");
-  expect(placeholder(el)).toBe(
-    "Artifact: Make my next PowerPoint deck the way I make them",
-  );
+  expect(placeholder(el)).toBe("Message Dammy");
 });
 
 // TEST_SCENARIO: a click on one of its pills puts the labelled text in the composer of this chat and sends nothing, so no turn runs before the person acts.
