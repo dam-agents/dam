@@ -152,7 +152,7 @@ A Connection without a bucket keeps signing the whole host, and the key's upstre
 
 The signed body has to be plain.
 A client that streams an upload as `aws-chunked` — a `STREAMING-` content hash, signed or unsigned, with a trailing checksum — has produced a body the gateway cannot re-sign, so the same guard refuses such a request with a readable 400 saying the egress gateway, not the storage service, refused it, that it re-signs requests and cannot re-sign a streaming upload, and which client setting turns streaming off.
-The profiles the platform writes already carry that setting ([connections](connections.md#app-preset-s3-compatible-storage)), so the refusal reaches only a client that overrode them, as its own message rather than a signature mismatch from upstream.
+The profiles the platform writes already carry that setting ([connections](connection-presets.md#app-preset-s3-compatible-storage)), so the refusal reaches only a client that overrode them, as its own message rather than a signature mismatch from upstream.
 
 Rotation needs no roll: the signing step watches the mounted credentials file, and a key pair rewritten in place by the Connections context — after it has re-proven the new keys against the endpoint — is in use within seconds, as any credential rewritten in place is (**Rotation**, above), with the agent's placeholders untouched.
 Adding or removing the credentials file is a configuration change and rolls the gateway, as an SDS key appearing or vanishing does.
