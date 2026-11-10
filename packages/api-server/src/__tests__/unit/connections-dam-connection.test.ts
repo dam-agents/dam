@@ -17,8 +17,10 @@ import {
   DAM_SERVER_ENV,
   DAM_TOKEN_ENV,
   damKeyPortFor,
+  damSkill,
   damTargetOf,
 } from "../../modules/connections/domain/dam-connection.js";
+import { AGENT_NAME_ENV } from "../../modules/runtime-delivery/services/builtin-contributions.js";
 import { CONNECTION_TOKEN_PLACEHOLDER } from "../../modules/connections/domain/connection-sds.js";
 import {
   newConnectionsStore,
@@ -233,6 +235,20 @@ describe("the DAM connection template", () => {
     expect(String(skill?.kind === "file" && skill.content)).toMatch(
       /^---\nname: dam\ndescription: >\n/,
     );
+  });
+
+  // TEST_SCENARIO: the Slack DM Bridge rule checks that the person is reachable before it offers, connects the agent by the name the platform gives it in its environment, and never offers to read the person's Slack.
+  it("teaches the Slack DM Bridge with the commands and the name it can run", () => {
+    const skill = damSkill("DAM");
+    expect(skill).toContain("## Sending results to their Slack DMs");
+    expect(skill).toContain("dam channel slack-dm status --json");
+    expect(skill).toContain(
+      `dam channel slack-dm connect "$${AGENT_NAME_ENV}" --purpose`,
+    );
+    expect(skill.indexOf("slack-dm status")).toBeLessThan(
+      skill.indexOf("slack-dm connect"),
+    );
+    expect(skill).toContain("You never offer to read their Slack");
   });
 });
 

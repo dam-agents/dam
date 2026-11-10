@@ -100,6 +100,14 @@ The report also announces itself as one domain event, `assistant.first_result_re
 At most once: the event leaves after the transaction commits, and only from the call that marked the result done, so a crash in between loses it and nothing ever repeats it — the seam has no consumer yet, and the epoch is what a later one would dedupe on.
 [Starting over](#starting-it-over) forgets it along with the rest, so a person who starts again reaches their first result again — and that holds for a person the assistant is off for too, since the first result is the checklist's own state rather than the assistant's.
 
+## Sending results to Slack DMs
+
+Right after the first result, the assistant offers once to send that task's results to the person's Slack DMs; this is the **Slack DM Bridge**.
+It is a rule in the `dam` skill, not platform logic: the skill tells the assistant when to offer, in which words, and never twice for one task.
+The assistant offers only when `dam channel slack-dm status` says the person is reachable, so on an install or workspace where email pairing is off or a scope is missing it says nothing about Slack and results stay in the app.
+On a yes, `dam channel slack-dm connect` pairs the person and binds the assistant to their DM ([channels](channels.md)), and the assistant edits the schedule's task so the run delivers there itself: `start_thread` in the DM when it needs the person's input, `post` otherwise.
+It never reads the person's Slack.
+
 ## Starting it over
 
 Experimental features ends with one **Onboarding progress** card, one button and one confirm: it restarts the person's [Getting Started](getting-started.md) checklist and, for a person the feature is on for, gives them a first open in their assistant too.
@@ -119,6 +127,7 @@ The greeting rests on that mark alone, not on how many sessions the assistant ho
 
 ## Boundaries
 
-Its owner's other Agents are not visible to it, it is never proactive, and it holds no special standing: it knows what any Agent knows, with the access any Agent has.
+It holds no special standing: it knows what any Agent knows, with the access any Agent has.
 The one grant provisioning gives it is the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), so it can drive the platform as its owner — a grant the platform makes whatever the flag that offers that Connection to people says.
+It is proactive only through what its owner set up with it: a schedule it created runs on time, and a Slack DM Bridge delivers there.
 Anything it should know later — a team knowledge base, the state of the owner's other Agents, cost and failure explanations, a way to drive the platform itself — arrives as a grant or a capability, without changing provisioning or this page's guarantees.
