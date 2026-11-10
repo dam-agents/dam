@@ -134,6 +134,12 @@ export const connectionsRouter = t.router({
       ctx.connections.createFromParent(input).then((id) => ({ id })),
     ),
 
+  githubAppInstallations: readCredentialsProcedure
+    .input(connectionProbeGitHubUserTokenInputSchema)
+    .query(({ ctx, input }) =>
+      ctx.connections.listGitHubAppInstallations(input),
+    ),
+
   probeGitHubUserTokenForConnection: manageCredentialsProcedure
     .input(connectionProbeGitHubUserTokenInputSchema)
     .mutation(({ ctx, input }) =>

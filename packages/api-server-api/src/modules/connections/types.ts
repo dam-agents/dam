@@ -297,6 +297,20 @@ export interface GitHubUserTokenProbe {
   installationsTruncated?: boolean;
 }
 
+export interface GitHubAppInstallationAccount {
+  login: string;
+  targetId: number;
+  kind: "organization" | "user";
+  repositorySelection: "all" | "selected";
+  avatarUrl?: string;
+  suspended?: true;
+}
+
+export interface GitHubAppInstallations {
+  accounts: GitHubAppInstallationAccount[];
+  truncated?: true;
+}
+
 export interface ProviderBalance {
   unit: "bobcoins" | "usd";
   used: number;
@@ -373,6 +387,11 @@ export interface ConnectionsService {
   probeGitHubUserTokenForConnection(input: {
     connectionId: string;
   }): Promise<GitHubUserTokenProbe>;
+
+  /** UNIT_BOUNDARY_DESCRIPTION: the accounts — organizations and users — a GitHub sign-in's app is installed on, read with the sign-in's own user token; for a connection made from a sign-in, its sign-in's. */
+  listGitHubAppInstallations(input: {
+    connectionId: string;
+  }): Promise<GitHubAppInstallations>;
 
   updateGitHubUserTokenScope(input: {
     id: string;

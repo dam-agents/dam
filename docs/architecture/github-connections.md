@@ -1,6 +1,6 @@
 # GitHub Connections
 
-Last verified: 2026-10-29
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -48,6 +48,7 @@ A sign-in's Connection injects a scoped token GitHub derives from the user token
 A scope GitHub refuses parks that one Connection as expired without costing the sign-in or its siblings anything, and never falls back to a wider token.
 A narrowed token still never does more than the user could.
 An installation's Connection mints its own installation token with the installation's key, and the refresh loop renews it like any minted token; a new key is given to the installation only, proven the same way, and every Connection made from it mints again with it.
+A sign-in lists where its app is installed — each organization or user account, whether the install covers all its repositories, and whether it is suspended — read with its own user token when its row is shown and again when the user comes back to the page, never stored on the Connection, so an install made on GitHub shows up without changing it, and a sign-in whose app is installed nowhere says so.
 Re-authentication and credential rotation act on the parent; removing the parent removes every Connection made from it and delivers to every Agent that held one.
 Connections that predate the split each became a parent plus one Connection that kept its identity, name, grants and Secret, which it now shares with the parent; one never narrowed says full access rather than being narrowed silently, so no Agent lost access.
 

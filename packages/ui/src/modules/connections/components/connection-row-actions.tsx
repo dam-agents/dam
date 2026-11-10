@@ -13,7 +13,6 @@ import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
-import { GithubAppInstallButton } from "./github-app-install-hint.js";
 
 interface Props {
   connection: ConnectionView;
@@ -24,6 +23,9 @@ interface Props {
   deleting?: boolean;
   onNewChild?: () => void;
 }
+
+const ROW_BUTTON =
+  "max-w-full shrink-0 @max-xs:h-auto @max-xs:min-h-8 @max-xs:whitespace-normal @max-xs:py-1 @max-xs:text-left";
 
 function reauthLabelOf(connection: ConnectionView): string {
   if (connection.parentId) return "Re-authenticate sign-in";
@@ -53,13 +55,12 @@ export function ConnectionRowActions({
           : undefined;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
-        <GithubAppInstallButton connection={connection} />
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 @max-md:justify-start gap-y-1.5 empty:hidden">
         {narrow && (
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             onClick={narrow}
             data-testid={`catalog-narrow-${connection.id}`}
           >
@@ -70,7 +71,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             onClick={onNewChild}
             data-testid={`connection-new-child-${connection.id}`}
           >
@@ -82,7 +83,7 @@ export function ConnectionRowActions({
           <Button
             variant="outline"
             size="sm"
-            className="shrink-0"
+            className={ROW_BUTTON}
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}
@@ -185,7 +186,7 @@ export function RowGrantAction({
     <Button
       variant="outline"
       size="sm"
-      className="shrink-0"
+      className={ROW_BUTTON}
       onClick={() => grant.onToggle(true)}
       data-testid={`catalog-add-${rowId}`}
     >

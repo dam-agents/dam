@@ -8,6 +8,7 @@ import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRowActions } from "./connection-row-actions.js";
 import { ConnectionRowDetail } from "./connection-row-detail.js";
 import { FullAccessMark } from "./full-access-mark.js";
+import { GithubAppInstallations } from "./github-app-installations.js";
 
 export interface RowGrantControls {
   granted: boolean;
@@ -60,64 +61,80 @@ export function CatalogConnectionRow({
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
-      className="px-4 py-3"
+      className="@container flex gap-2 px-4 py-2.5"
     >
-      <div className="flex items-center gap-2">
-        <div className="flex min-w-[160px] flex-1 items-center gap-2">
-          {iconSlug && (
-            <ConnectionIcon
-              iconSlug={iconSlug}
-              alt=""
-              size={16}
-              className="shrink-0 text-foreground/80"
-            />
-          )}
-          <p className="max-w-[50%] shrink-0 truncate text-md font-medium text-foreground">
-            {connection.name}
-          </p>
-          <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
-            <span className="truncate">{tag}</span>
-          </Badge>
-          <FullAccessMark connection={connection} />
-          {connection.status !== "active" && (
-            <Badge variant={STATUS_PRESENTATION[connection.status].variant}>
-              {STATUS_PRESENTATION[connection.status].label}
+      {iconSlug && (
+        <ConnectionIcon
+          iconSlug={iconSlug}
+          alt=""
+          size={16}
+          className="mt-1.5 shrink-0 text-foreground/80"
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex min-w-0 flex-[1_1_180px] flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className="min-w-0 max-w-full truncate text-md font-medium text-foreground"
+              title={connection.name}
+            >
+              {connection.name}
+            </span>
+            <Badge
+              variant="muted"
+              className="min-w-0 max-w-full font-normal"
+              title={tag}
+            >
+              <span className="truncate">{tag}</span>
             </Badge>
-          )}
-          {connection.status === "active" &&
-            connection.check?.status === "failed" && (
+            <FullAccessMark connection={connection} />
+            {connection.status !== "active" && (
               <Badge
-                variant="danger"
-                title={connection.check.reason}
-                data-testid={`catalog-connection-check-${connection.id}`}
+                variant={STATUS_PRESENTATION[connection.status].variant}
+                className="shrink-0"
               >
-                Check failed
+                {STATUS_PRESENTATION[connection.status].label}
               </Badge>
             )}
+            {connection.status === "active" &&
+              connection.check?.status === "failed" && (
+                <Badge
+                  variant="danger"
+                  className="shrink-0"
+                  title={connection.check.reason}
+                  data-testid={`catalog-connection-check-${connection.id}`}
+                >
+                  Check failed
+                </Badge>
+              )}
+          </div>
+          <div className="ml-auto flex min-w-0 max-w-full items-center gap-2 @max-md:ml-0">
+            <ConnectionRowActions
+              connection={connection}
+              grant={grant}
+              maintenance={maintenance}
+              onManage={onManage}
+              onDelete={onDelete}
+              deleting={deleting}
+              onNewChild={onNewChild}
+            />
+            {onRemove && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${connection.name} from this agent`}
+                tooltip="Remove from this agent"
+                onClick={onRemove}
+                data-testid={`catalog-remove-${connection.id}`}
+              >
+                <TrashCan size={16} />
+              </Button>
+            )}
+          </div>
         </div>
-        <ConnectionRowActions
-          connection={connection}
-          grant={grant}
-          maintenance={maintenance}
-          onManage={onManage}
-          onDelete={onDelete}
-          deleting={deleting}
-          onNewChild={onNewChild}
-        />
-        {onRemove && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Remove ${connection.name} from this agent`}
-            tooltip="Remove from this agent"
-            onClick={onRemove}
-            data-testid={`catalog-remove-${connection.id}`}
-          >
-            <TrashCan size={16} />
-          </Button>
-        )}
+        <ConnectionRowDetail connection={connection} />
+        <GithubAppInstallations connection={connection} />
       </div>
-      <ConnectionRowDetail connection={connection} indented={!!iconSlug} />
     </div>
   );
 }

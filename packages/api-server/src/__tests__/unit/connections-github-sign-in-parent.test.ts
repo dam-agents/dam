@@ -607,6 +607,39 @@ describe("GitHub sign-in — changing a connection made from it", () => {
   });
 });
 
+describe("GitHub sign-in — where its app is installed", () => {
+  // TEST_SCENARIO: the catalog lists the organizations under the sign-in's row, and a connection made from it shows the same list, so both read GitHub's installations with the sign-in's user token, never with a connection's narrowed one.
+  it("lists the accounts with the sign-in's token, from the sign-in or a connection made from it", async () => {
+    const { svc, github } = makeService();
+    const id = await svc.createFromParent(NARROWED);
+    const before = github.calls.length;
+
+    for (const connectionId of ["conn-signin", id]) {
+      const out = await svc.listGitHubAppInstallations({ connectionId });
+      expect(out.accounts.map((a) => a.login)).toEqual(["acme"]);
+    }
+    expect(
+      github.calls.slice(before).map((c) => [c.url, c.authorization]),
+    ).toEqual([
+      [
+        "https://api.github.com/user/installations?per_page=100&page=1",
+        "Bearer ghu_user",
+      ],
+      [
+        "https://api.github.com/user/installations?per_page=100&page=1",
+        "Bearer ghu_user",
+      ],
+    ]);
+  });
+
+  it("refuses a connection that is not a GitHub sign-in", async () => {
+    const { svc } = makeService();
+    await expect(
+      svc.listGitHubAppInstallations({ connectionId: "missing" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
 describe("GitHub sign-in — removal", () => {
   // TEST_SCENARIO: removing the sign-in removes every connection made from it, with their Secrets, and redelivers to every agent that held one, so no agent keeps a token from a sign-in that is gone.
   it("removes every connection made from it and tells their agents", async () => {
