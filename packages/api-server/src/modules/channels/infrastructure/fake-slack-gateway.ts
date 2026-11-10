@@ -25,6 +25,7 @@ export interface FakeSlackChannel {
   botIsMember: boolean;
   members?: string[];
   isPrivate?: boolean;
+  isGroupDirectMessage?: boolean;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
@@ -392,8 +393,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ? {
             kind: "found",
             isMember: channel.botIsMember,
-            isDirectMessage: false,
-            isGroupDirectMessage: false,
+            isDirectMessage: channel.isGroupDirectMessage ?? false,
+            isGroupDirectMessage: channel.isGroupDirectMessage ?? false,
             name: channel.name,
             directMessageUser: null,
           }
