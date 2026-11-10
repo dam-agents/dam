@@ -1143,7 +1143,7 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
-          {greeting.kind === "greeting" && <AssistantUnlockCelebration />}
+          {greeting.assistantChat && <AssistantUnlockCelebration />}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}

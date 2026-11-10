@@ -16,6 +16,7 @@ import { AssistantGreeting } from "../../modules/assistants/components/assistant
 import {
   greetingCopy,
   greetingShown,
+  isAssistantChat,
   preferredProviderTemplate,
   providerLineFor,
 } from "../../modules/assistants/lib/greeting.js";
@@ -60,6 +61,18 @@ describe("when the greeting is shown", () => {
     expect(greetingShown({ ...ON, used: false })).toBe(true);
     expect(greetingShown({ ...ON, used: true })).toBe(false);
     expect(greetingShown({ ...ON, used: false })).toBe(true);
+  });
+});
+
+describe("which chat the celebration belongs to", () => {
+  // TEST_SCENARIO: the assistant's chat stays the assistant's chat after its first message, so the unlock the platform made keeps playing there while the greeting is gone; any other Agent, and a person the feature is off for, get neither.
+  it("stays the assistant's chat after the greeting is gone", () => {
+    expect(isAssistantChat(ON)).toBe(true);
+    expect(greetingShown({ ...ON, used: true })).toBe(false);
+    expect(isAssistantChat(ON)).toBe(true);
+    expect(isAssistantChat({ ...ON, selectedAgent: "agent-2" })).toBe(false);
+    expect(isAssistantChat({ ...ON, assistantOn: false })).toBe(false);
+    expect(isAssistantChat({ ...ON, assistantId: null })).toBe(false);
   });
 });
 

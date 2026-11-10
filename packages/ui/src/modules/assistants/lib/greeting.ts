@@ -45,6 +45,23 @@ export function greetingShown(input: {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a chat is the assistant's own, which outlives
+ * the greeting: the feature is on for the person and the record names the Agent
+ * this chat belongs to, whatever the record says about its use.
+ */
+export function isAssistantChat(input: {
+  assistantOn: boolean;
+  assistantId: string | null;
+  selectedAgent: string | null;
+}): boolean {
+  return (
+    input.assistantOn &&
+    input.assistantId !== null &&
+    input.selectedAgent === input.assistantId
+  );
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting's words. The opening names the person
  * and the assistant, the provider line names the one the agent runs on only when
  * it is the install's CurveBender (and otherwise says where to change it), and

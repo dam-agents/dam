@@ -75,7 +75,7 @@ The session report lags the Session that just started, so the chat needs the Age
 Until both answers are in, the chat shows neither the greeting nor the ordinary new-chat page — a blank rather than a page that would be taken back a moment later.
 A person the feature is off for, and any other Agent, open on the ordinary new-chat page with the ordinary placeholder.
 
-**What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the ideas it offers, and what to do about them — learn the person's role and work while it does not know them, say what it could do for them, and remember what they share.
+**What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the ideas it offers, and what to do about them — learn how the person works one task at a time, say what it could do for them, and remember what they tell it.
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
