@@ -994,6 +994,7 @@ export async function bootstrap() {
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
+    brandName: config.brand.name,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),

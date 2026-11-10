@@ -20,7 +20,10 @@ import type { Checklist } from "../../modules/getting-started/domain/unlocks.js"
 import type { GettingStartedRepository } from "../../modules/getting-started/infrastructure/getting-started-repository.js";
 import { startUnlockAvatarsSaga } from "../../modules/getting-started/sagas/unlock-avatars.js";
 import { createEnrollment } from "../../modules/getting-started/services/enrollment.js";
-import { recordProvisionedAgent } from "../../modules/getting-started/services/first-agent.js";
+import {
+  recordProvisionedAgent,
+  recordTaskSeen,
+} from "../../modules/getting-started/services/first-agent.js";
 import { createGettingStartedService } from "../../modules/getting-started/services/getting-started-service.js";
 import { createUnlockRecorder } from "../../modules/getting-started/services/unlock-recorder.js";
 
@@ -221,6 +224,45 @@ describe("an Agent the platform made", () => {
     ]);
     expect(progress.unlocks).toHaveLength(1);
     expect(GETTING_STARTED_TASKS).toHaveLength(8);
+  });
+});
+
+describe("a task the platform reports", () => {
+  /** TEST_SCENARIO: the assistant finished a schedule for the person and reports it; the task is recorded done and seen, so the checklist counts it rather than celebrating it — read back from the stored progress, not from the call. */
+  it("records a task the assistant did as done and seen", async () => {
+    const { repo, recorder, service } = setup();
+    await recordTaskSeen({ recorder, repo }, "alice", "create-schedule");
+    const progress = await service("alice").progress();
+    expect(progress.unlocks).toEqual([
+      expect.objectContaining({
+        task: "create-schedule",
+        seen: true,
+      }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: the task was unlocked already — the person set a schedule themselves, so the domain event reached it first and left it unseen — and the report still makes it count, rather than being a no-op that never ticks. */
+  it("marks a task the event already unlocked as seen", async () => {
+    const { repo, recorder, service } = setup();
+    await service("alice").progress();
+    await repo.unlock("alice", "create-schedule", () => ({
+      character: "tower",
+      picked: false,
+    }));
+    const before = await service("alice").progress();
+    expect(before.unlocks).toEqual([
+      expect.objectContaining({ task: "create-schedule", seen: false }),
+    ]);
+
+    await recordTaskSeen({ recorder, repo }, "alice", "create-schedule");
+    const after = await service("alice").progress();
+    expect(after.unlocks).toEqual([
+      expect.objectContaining({
+        task: "create-schedule",
+        character: "tower",
+        seen: true,
+      }),
+    ]);
   });
 });
 

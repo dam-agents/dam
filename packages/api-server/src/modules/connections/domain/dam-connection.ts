@@ -110,6 +110,27 @@ const isAlreadyRevoked = (err: unknown): boolean =>
 export const isDamConnection = (templateId: string) =>
   templateId === DAM_TEMPLATE_ID;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the skill the platform hands every Agent that holds
+ * this Connection, as the install would write it now. A Connection stores the
+ * contributions it was made with, so one made before the skill learned a command
+ * would keep teaching the old one; the runtime state is built from the stored
+ * contributions, and the skill is the platform's own file, so it is read from here
+ * instead — no write, and every install upgrades as its api-server does.
+ */
+export function currentDamSkill(
+  templateId: string,
+  contributions: readonly Contribution[],
+  brandName: string,
+): Contribution[] {
+  if (!isDamConnection(templateId)) return [...contributions];
+  return contributions.map((contribution) =>
+    contribution.kind === "file" && contribution.path === DAM_SKILL_PATH
+      ? { ...contribution, content: damSkill(brandName) }
+      : contribution,
+  );
+}
+
 export function damContributions(
   target: DamTarget,
   brandName: string,

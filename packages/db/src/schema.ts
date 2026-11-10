@@ -1220,6 +1220,10 @@ export const dambledoreProvisioned = pgTable(
     firstResultKind: text("first_result_kind"),
     firstResultRef: text("first_result_ref"),
     firstResultAt: timestamp("first_result_at", { withTimezone: true }),
+    firstResultCompletedAt: timestamp("first_result_completed_at", {
+      withTimezone: true,
+    }),
+    onboardingEpoch: integer("onboarding_epoch").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

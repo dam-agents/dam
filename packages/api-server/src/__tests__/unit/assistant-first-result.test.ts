@@ -110,7 +110,12 @@ describe("the first result", () => {
       legacy: false,
       used: true,
       resetAt: null,
-      firstResult: { kind: "artifact", ref: null, at: new Date() },
+      firstResult: {
+        kind: "artifact",
+        ref: null,
+        at: new Date(),
+        completed: true,
+      },
     });
     const w = assistantService({ rows });
     await w.assistants.recordFirstResult({ kind: "schedule" });
@@ -144,5 +149,98 @@ describe("the first result", () => {
     const again = await w.assistants.recordFirstResult({ kind: "artifact" });
     expect(again).toMatchObject({ kind: "artifact" });
     expect(w.recordTask).toHaveBeenLastCalledWith("create-artifact");
+  });
+});
+
+describe("the first result's side effects", () => {
+  // TEST_SCENARIO: the claim was written and its caller died before the checklist and the announcement, so a later report finishes them — one event, one checklist task, however many calls it took.
+  it("finishes a claim whose caller never completed it", async () => {
+    const w = assistantService();
+    await w.optIn();
+    // UNIT_BOUNDARY_DESCRIPTION: a claim written without its side effects — the state a crashed caller leaves.
+    await w.rows.repo.claimFirstResult(OWNER, "schedule", "agent-dammy/weekly");
+
+    const { recorded } = await withEvents(() =>
+      w.assistants.recordFirstResult({ kind: "artifact", ref: "later" }),
+    );
+    expect(w.recordTask).toHaveBeenCalledTimes(1);
+    expect(w.recordTask).toHaveBeenCalledWith("create-schedule");
+    expect(recorded).toEqual([
+      expect.objectContaining({ kind: "schedule", ref: "agent-dammy/weekly" }),
+    ]);
+    expect(await w.assistants.state()).toMatchObject({
+      firstResult: { kind: "schedule" },
+    });
+  });
+
+  // TEST_SCENARIO: the request path finishes it too, so a claim nobody completed does not wait for another report.
+  it("finishes it on the request path as well", async () => {
+    const w = assistantService();
+    await w.optIn();
+    await w.rows.repo.claimFirstResult(OWNER, "artifact", null);
+    const { recorded } = await withEvents(() => w.ensure());
+    expect(w.recordTask).toHaveBeenCalledWith("create-artifact");
+    expect(recorded).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the checklist write failed behind a completion, so the completion is given back rather than left marked done with nothing behind it, and the next call runs both again.
+  it("gives a failed completion back", async () => {
+    const w = assistantService();
+    await w.optIn();
+    w.recordTask.mockRejectedValueOnce(
+      new Error("the checklist is unreachable"),
+    );
+    await expect(
+      w.assistants.recordFirstResult({ kind: "schedule" }),
+    ).rejects.toThrow("the checklist is unreachable");
+    expect(w.rows.rows.get(OWNER)?.firstResult).toMatchObject({
+      completed: false,
+    });
+
+    await w.assistants.recordFirstResult({ kind: "schedule" });
+    expect(w.recordTask).toHaveBeenCalledTimes(2);
+    expect(w.rows.rows.get(OWNER)?.firstResult).toMatchObject({
+      completed: true,
+    });
+  });
+
+  // TEST_SCENARIO: a reset lands between the claim and its completion, so the result belongs to an onboarding that is over: the completion matches nothing, nothing is announced and no checklist task is counted on the fresh one.
+  it("completes nothing for a claim a reset overtook", async () => {
+    const w = assistantService();
+    await w.optIn();
+    const epoch = w.rows.rows.get(OWNER)!.resetAt;
+    await w.rows.repo.claimFirstResult(OWNER, "schedule", null);
+    // UNIT_BOUNDARY_DESCRIPTION: the reset clears the result and moves the epoch, exactly as its own statement does.
+    await w.rows.repo.resetFirstResult(OWNER);
+    await w.rows.repo.resetUsed(OWNER);
+    expect(w.rows.rows.get(OWNER)!.resetAt).not.toEqual(epoch);
+
+    const { recorded } = await withEvents(() =>
+      w.assistants.recordFirstResult({ kind: "schedule" }),
+    );
+    expect(recorded).toHaveLength(1);
+    expect(w.recordTask).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: the assistant is off for the person, so the onboarding reset restarts the checklist and still forgets the first result — it is the checklist's own state, not the assistant's.
+  it("is cleared by the reset even with the feature off", async () => {
+    const rows = rowStore({
+      owner: OWNER,
+      agentId: "agent-dammy",
+      state: "ready",
+      legacy: false,
+      used: true,
+      resetAt: null,
+      firstResult: {
+        kind: "schedule",
+        ref: null,
+        at: new Date(),
+        completed: true,
+      },
+    });
+    const w = assistantService({ rows, enabled: false });
+    await w.assistants.resetOnboarding();
+    expect(rows.rows.get(OWNER)?.firstResult).toBeNull();
+    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
   });
 });

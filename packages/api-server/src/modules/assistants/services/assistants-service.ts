@@ -223,34 +223,51 @@ export function createAssistantsService(deps: {
         ? "create-artifact"
         : null;
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the side effects behind a first result, run by
+   * exactly one caller: the completion mark is a conditional update for this
+   * result, at the onboarding epoch it was claimed in, so a claim whose caller
+   * died is finished by the next one, a reset that moved the epoch suppresses it,
+   * and the checklist write and the announcement never run twice.
+   */
+  const complete = async (epoch: Date | null): Promise<void> => {
+    const row = await deps.repo.find(deps.owner);
+    const result = row?.firstResult ?? null;
+    if (result === null || result.completed) return;
+    if (!(await deps.repo.completeFirstResult(deps.owner, result.kind, epoch)))
+      return;
+    try {
+      const task = taskOf(result.kind);
+      if (task !== null) await deps.recordTask(task);
+      emit({
+        type: EventType.AssistantFirstResultRecorded,
+        owner: deps.owner,
+        kind: result.kind,
+        ref: result.ref,
+      });
+    } catch (err) {
+      /* UNIT_BOUNDARY_DESCRIPTION: the completion was this caller's only while its side effects run, so a failure hands it back rather than leaving a claim marked done with nothing behind it. */
+      await deps.repo.uncompleteFirstResult(deps.owner, result.kind, epoch);
+      throw err;
+    }
+  };
+
   return {
     assistants: {
       async recordFirstResult(input) {
         const ref = input.ref ?? null;
-        const recorded = await deps.repo.claimFirstResult(
-          deps.owner,
-          input.kind,
-          ref,
-        );
+        /* UNIT_BOUNDARY_DESCRIPTION: the epoch is read before the claim, so the completion can tell a reset that happened in between — the result would belong to an onboarding that is over. */
+        const epoch = (await deps.repo.find(deps.owner))?.resetAt ?? null;
+        await deps.repo.claimFirstResult(deps.owner, input.kind, ref);
+        await complete(epoch);
         const row = await deps.repo.find(deps.owner);
-        const result =
-          row?.firstResult == null
-            ? null
-            : {
-                kind: row.firstResult.kind,
-                ref: row.firstResult.ref,
-                at: row.firstResult.at.toISOString(),
-              };
-        if (!recorded) return result;
-        const task = taskOf(input.kind);
-        if (task !== null) await deps.recordTask(task);
-        emit({
-          type: EventType.AssistantFirstResultRecorded,
-          owner: deps.owner,
-          kind: input.kind,
-          ref,
-        });
-        return result;
+        return row?.firstResult == null
+          ? null
+          : {
+              kind: row.firstResult.kind,
+              ref: row.firstResult.ref,
+              at: row.firstResult.at.toISOString(),
+            };
       },
 
       async state() {
@@ -275,8 +292,9 @@ export function createAssistantsService(deps: {
       },
 
       async resetOnboarding() {
-        // UNIT_BOUNDARY_DESCRIPTION: the one onboarding reset. The checklist starts over for everyone, and a person the feature is on for is a first-timer in their assistant too — one they deleted is made again when nothing of theirs carries the name, one they still have is reused with its use forgotten. A person it is off for gets the checklist alone, and nothing of the assistant's is touched or refused.
+        // UNIT_BOUNDARY_DESCRIPTION: the one onboarding reset. The checklist starts over for everyone, and a person the feature is on for is a first-timer in their assistant too — one they deleted is made again when nothing of theirs carries the name, one they still have is reused with its use forgotten. A person it is off for gets the checklist alone, and nothing of the assistant's is touched or refused — the first result aside, which is the checklist's own state and goes with it either way.
         await deps.resetChecklist();
+        await deps.repo.resetFirstResult(deps.owner);
         if (!(await deps.enabled())) return;
         /* UNIT_BOUNDARY_DESCRIPTION: an Agent the reset has to make is recorded by the create itself, before its record reads ready; one the reset reuses is recorded here, since nothing created it this time. */
         const { agent, made } = await settle(waitMs);
@@ -289,6 +307,8 @@ export function createAssistantsService(deps: {
       try {
         // UNIT_BOUNDARY_DESCRIPTION: a ready record is what says a pinned-on person was given theirs, so a Dambledore they delete is not made again by a request — such an install has no switch, and the reset is their way to ask again. A record still `creating` is a create that never finished, which this request finishes.
         const row = await deps.repo.find(deps.owner);
+        /* UNIT_BOUNDARY_DESCRIPTION: a claim whose caller died before its side effects lands here, finished at the epoch the record still holds — a reset would have cleared the result rather than moved it. */
+        await complete(row?.resetAt ?? null);
         if (row?.state === "ready") return;
         await provision(0);
       } catch (err) {

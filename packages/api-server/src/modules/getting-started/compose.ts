@@ -49,7 +49,8 @@ export function composeGettingStartedModule(deps: {
     ensureEnrolled: (owner) => enrollment.ensure(owner),
     recordProvisionedAgent: (owner, agent) =>
       recordProvisionedAgent({ recorder }, owner, agent),
-    recordTaskSeen: (owner, task) => recordTaskSeen({ recorder }, owner, task),
+    recordTaskSeen: (owner, task) =>
+      recordTaskSeen({ recorder, repo }, owner, task),
     start() {
       sub ??= startUnlockAvatarsSaga(recorder);
     },

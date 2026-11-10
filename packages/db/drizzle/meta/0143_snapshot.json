@@ -1,5 +1,5 @@
 {
-  "id": "53eeb2f8-a7c0-4735-83a0-341a3d7bc56a",
+  "id": "92697406-9f0d-458d-8a9f-9a4f470d69b0",
   "prevId": "330cac43-37f4-4a55-988b-6d318a7053c7",
   "version": "7",
   "dialect": "postgresql",
@@ -2515,6 +2515,19 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "first_result_completed_at": {
+          "name": "first_result_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "onboarding_epoch": {
+          "name": "onboarding_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

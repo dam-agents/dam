@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 

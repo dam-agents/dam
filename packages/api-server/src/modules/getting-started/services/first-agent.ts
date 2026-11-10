@@ -1,6 +1,7 @@
 import type { GettingStartedTask } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 
+import type { GettingStartedRepository } from "../infrastructure/getting-started-repository.js";
 import type { UnlockRecorder } from "./unlock-recorder.js";
 
 /**
@@ -27,11 +28,15 @@ export async function recordProvisionedAgent(
  * artifact — is recorded done and **seen**: the platform did it on their behalf, so
  * the checklist counts it rather than celebrating it. A task the checklist has no
  * item for is not reported here at all.
+ * A row that is already unlocked — the domain event reached it first, as a schedule
+ * the person set themselves does — is left unseen by the recorder, so the mark is
+ * written here too, or the task would never tick.
  */
 export async function recordTaskSeen(
-  deps: { recorder: UnlockRecorder },
+  deps: { recorder: UnlockRecorder; repo: GettingStartedRepository },
   owner: string,
   task: GettingStartedTask,
 ): Promise<void> {
   await deps.recorder.record(owner, task);
+  await deps.repo.markSeen(owner, task);
 }

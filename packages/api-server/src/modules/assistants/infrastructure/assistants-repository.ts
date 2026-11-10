@@ -16,6 +16,8 @@ export interface AssistantRow {
     kind: FirstResultKind;
     ref: string | null;
     at: Date;
+    /* UNIT_BOUNDARY_DESCRIPTION: whether the checklist write and the announcement behind the claim have run — a claim that never completed is finished by the next caller. */
+    completed: boolean;
   } | null;
 }
 
@@ -46,7 +48,27 @@ export interface AssistantsRepository {
     kind: FirstResultKind,
     ref: string | null,
   ): Promise<boolean>;
-  /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. The first result goes with it, since onboarding starting over has no result yet. */
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the claim's other half — one conditional statement
+   * that settles which caller runs the side effects: it sets the completion mark
+   * only for the result recorded here, at the onboarding epoch it was recorded in,
+   * and only while it is uncompleted. A reset that moved the epoch, or a later
+   * claim that replaced the result, makes it match nothing.
+   */
+  completeFirstResult(
+    owner: string,
+    kind: FirstResultKind,
+    epoch: Date | null,
+  ): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: gives a completion back when the side effects behind it failed, so the next caller runs them rather than the claim being marked done with nothing behind it. */
+  uncompleteFirstResult(
+    owner: string,
+    kind: FirstResultKind,
+    epoch: Date | null,
+  ): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: forgets the first result — the onboarding reset's own, whether or not the feature is on for the person. */
+  resetFirstResult(owner: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
   resetUsed(owner: string): Promise<void>;
 }
 
@@ -60,6 +82,7 @@ const COLUMNS = {
   firstResultKind: dambledoreProvisioned.firstResultKind,
   firstResultRef: dambledoreProvisioned.firstResultRef,
   firstResultAt: dambledoreProvisioned.firstResultAt,
+  firstResultCompletedAt: dambledoreProvisioned.firstResultCompletedAt,
 };
 
 const isFirstResultKind = (value: string): value is FirstResultKind =>
@@ -94,6 +117,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
                 kind: row.firstResultKind,
                 ref: row.firstResultRef,
                 at: row.firstResultAt,
+                completed: row.firstResultCompletedAt !== null,
               }
             : null,
       };
@@ -180,6 +204,51 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         )
         .returning({ owner: dambledoreProvisioned.owner });
       return claimed.length > 0;
+    },
+
+    async completeFirstResult(owner, kind, epoch) {
+      const completed = await db
+        .update(dambledoreProvisioned)
+        .set({ firstResultCompletedAt: sql`now()` })
+        .where(
+          and(
+            eq(dambledoreProvisioned.owner, owner),
+            eq(dambledoreProvisioned.firstResultKind, kind),
+            isNull(dambledoreProvisioned.firstResultCompletedAt),
+            epoch === null
+              ? isNull(dambledoreProvisioned.resetAt)
+              : eq(dambledoreProvisioned.resetAt, epoch),
+          ),
+        )
+        .returning({ owner: dambledoreProvisioned.owner });
+      return completed.length > 0;
+    },
+
+    async uncompleteFirstResult(owner, kind, epoch) {
+      await db
+        .update(dambledoreProvisioned)
+        .set({ firstResultCompletedAt: null })
+        .where(
+          and(
+            eq(dambledoreProvisioned.owner, owner),
+            eq(dambledoreProvisioned.firstResultKind, kind),
+            epoch === null
+              ? isNull(dambledoreProvisioned.resetAt)
+              : eq(dambledoreProvisioned.resetAt, epoch),
+          ),
+        );
+    },
+
+    async resetFirstResult(owner) {
+      await db
+        .update(dambledoreProvisioned)
+        .set({
+          firstResultKind: null,
+          firstResultRef: null,
+          firstResultAt: null,
+          firstResultCompletedAt: null,
+        })
+        .where(eq(dambledoreProvisioned.owner, owner));
     },
 
     async resetUsed(owner) {

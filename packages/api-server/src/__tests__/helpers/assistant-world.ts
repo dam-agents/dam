@@ -51,9 +51,38 @@ export function rowStore(initial?: AssistantRow) {
       if (row === undefined || row.firstResult !== null) return false;
       rows.set(owner, {
         ...row,
-        firstResult: { kind, ref, at: new Date() },
+        firstResult: { kind, ref, at: new Date(), completed: false },
       });
       return true;
+    },
+    completeFirstResult: async (owner, kind, epoch) => {
+      const row = rows.get(owner);
+      const result = row?.firstResult ?? null;
+      if (row === undefined || result === null) return false;
+      if (result.kind !== kind || result.completed) return false;
+      if ((row.resetAt?.getTime() ?? null) !== (epoch?.getTime() ?? null))
+        return false;
+      rows.set(owner, {
+        ...row,
+        firstResult: { ...result, completed: true },
+      });
+      return true;
+    },
+    uncompleteFirstResult: async (owner, kind, epoch) => {
+      const row = rows.get(owner);
+      const result = row?.firstResult ?? null;
+      if (row === undefined || result === null) return;
+      if (result.kind !== kind) return;
+      if ((row.resetAt?.getTime() ?? null) !== (epoch?.getTime() ?? null))
+        return;
+      rows.set(owner, {
+        ...row,
+        firstResult: { ...result, completed: false },
+      });
+    },
+    resetFirstResult: async (owner) => {
+      const row = rows.get(owner);
+      if (row) rows.set(owner, { ...row, firstResult: null });
     },
     usageOf: async (agentId) => {
       for (const row of rows.values())

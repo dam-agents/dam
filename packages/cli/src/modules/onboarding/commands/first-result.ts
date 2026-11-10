@@ -4,6 +4,7 @@ import { firstResultKindSchema } from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { printable } from "../../shared/printable.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { OnboardingService } from "../services/onboarding-service.js";
@@ -54,7 +55,7 @@ export function buildFirstResultCommand(deps: {
         return writeStdoutAndExit(
           first === null
             ? "Nothing recorded: this person has no onboarding to record a first result on.\n"
-            : `First result recorded: ${first.kind}${first.ref ? ` (${first.ref})` : ""}, ${first.at}.\n`,
+            : `First result recorded: ${first.kind}${first.ref ? ` (${printable(first.ref)})` : ""}, ${first.at}.\n`,
           EXIT_SUCCESS,
         );
       },
