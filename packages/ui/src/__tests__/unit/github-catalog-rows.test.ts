@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: the connection catalog's GitHub section reads at a glance. A provider card lists its connections as flat rows, a sign-in followed by the connections made from it, with no card nested in a card. In each row the icon has a column of its own, the name and its badges sit in one block and the actions in another that wraps below it when the row is narrow, so a button never covers a badge or the name and nothing is hidden. Under a GitHub sign-in the row lists the accounts its app is installed on — avatars and a count that opens the list, a badge only on a suspended one — or says in one line, with the install link, that the app is installed nowhere yet; the create form says the same two steps in the same words.
+// TEST_OVERVIEW: the connection catalog's GitHub section reads at a glance. A provider card lists its connections as flat rows, a sign-in followed by the connections made from it, with no card nested in a card. In each row the icon has a column of its own, the name and its badges sit in one block and the actions in another that wraps below it when the row is narrow, so a button never covers a badge or the name and nothing is hidden. Every row keeps its ⋮ menu at the top right, on the name's line. Under a GitHub sign-in the row lists the accounts its app is installed on — avatars and a count that opens the list, the summary counting a suspended one and the list flagging it — or says in one line, with the install link, that the app is installed nowhere yet; the create form says the same two steps in the same words.
 import type {
   ConnectionTemplateView,
   ConnectionView,
@@ -18,8 +18,10 @@ const fake = vi.hoisted(() => ({
   } as {
     isPending: boolean;
     isError: boolean;
+    isFetching?: boolean;
     error: Error | null;
     data: GitHubAppInstallations | undefined;
+    refetch?: () => Promise<unknown>;
   },
   asked: [] as { connectionId: string; enabled: boolean }[],
 }));
@@ -125,14 +127,15 @@ function render(connections: ConnectionView[]) {
 const RENDER_TIMEOUT = { timeout: 30_000 };
 
 describe("a GitHub connection row", RENDER_TIMEOUT, () => {
-  // TEST_SCENARIO: a connection made from a sign-in shows Full access, Expired, Narrow access, Re-authenticate sign-in and Add to agent at once — the row that overlapped. The badges stay in the name's block and every button in the actions block, which may wrap onto its own line, so the two never share space.
+  // TEST_SCENARIO: a connection made from a sign-in shows Full access, Expired, Narrow access, Re-authenticate sign-in and Add to agent at once — the row that overlapped. The badges stay in the name's block and every button in the actions block, which may wrap onto its own line, so the two never share space; both blocks sit on the name's line, not in the middle of a taller row.
   it("keeps the badges with the name and the buttons in their own block", () => {
     render([SIGN_IN, CHILD]);
     const row = byTestId(`catalog-connection-${CHILD.id}`)!;
-    const [line] = row.lastElementChild!.children;
+    const [line] = row.children[1]!.children;
     const [nameBlock, actionsBlock] = line!.children;
 
     expect(line!.className).toContain("flex-wrap");
+    expect(line!.className).toContain("items-start");
     expect(nameBlock!.textContent).toContain(CHILD.name);
     expect(nameBlock!.textContent).toContain("Full access");
     expect(nameBlock!.textContent).toContain("Expired");
@@ -141,7 +144,6 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
       `catalog-narrow-${CHILD.id}`,
       `catalog-fix-${CHILD.id}`,
       `catalog-add-${CHILD.id}`,
-      `catalog-menu-${CHILD.id}`,
     ])
       expect(actionsBlock!.contains(byTestId(id))).toBe(true);
     expect(byTestId(`catalog-fix-${CHILD.id}`)!.textContent).toBe(
@@ -153,9 +155,9 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
   it("keeps the icon out of the column the name, badges and detail wrap in", () => {
     render([SIGN_IN, CHILD]);
     const row = byTestId(`catalog-connection-${CHILD.id}`)!;
-    const column = row.lastElementChild!;
+    const column = row.children[1]!;
 
-    expect(row.children).toHaveLength(2);
+    expect(row.children).toHaveLength(3);
     expect(row.firstElementChild!.textContent).toBe("");
     expect(column.firstElementChild!.textContent).toContain(CHILD.name);
     expect(
@@ -181,6 +183,39 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
     expect(row.textContent!.match(/Full access/g)).toHaveLength(1);
   });
 
+  // TEST_SCENARIO: an expired connection with full access shows one red badge that says both, not two red badges side by side.
+  it("merges Full access and Expired into one badge", () => {
+    render([SIGN_IN, CHILD]);
+    const row = byTestId(`catalog-connection-${CHILD.id}`)!;
+
+    expect(byTestId(`connection-full-access-${CHILD.id}`)!.textContent).toBe(
+      "Full access · Expired",
+    );
+    expect(row.querySelectorAll(".bg-danger-light")).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the ⋮ menu sits in the same place on every row, the sign-in's and its connections': last in the row, in a column of its own at the top right, on the name's line.
+  it("puts the menu at the top right of every row", () => {
+    render([SIGN_IN, CHILD]);
+
+    for (const id of [SIGN_IN.id, CHILD.id]) {
+      const row = byTestId(`catalog-connection-${id}`)!;
+      const menuColumn = row.lastElementChild!;
+      expect(row.className).toContain("items-start");
+      expect(menuColumn.firstElementChild).toBe(byTestId(`catalog-menu-${id}`));
+      expect(menuColumn.className).toContain("h-8");
+    }
+  });
+
+  // TEST_SCENARIO: the detail line wraps instead of cutting its sentence, so a narrow row still says what Full access reaches.
+  it("wraps the detail line rather than cutting it", () => {
+    render([SIGN_IN, CHILD]);
+    const detail = byTestId(`catalog-connection-account-${CHILD.id}`)!;
+
+    expect(detail.className).not.toContain("truncate");
+    expect(detail.className).toContain("break-words");
+  });
+
   it("lists the sign-in and its connections as flat rows, not cards in a card", () => {
     render([SIGN_IN, CHILD]);
     const card = byTestId("catalog-provider-github")!;
@@ -191,6 +226,15 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
     expect(
       byTestId(`connection-children-${SIGN_IN.id}`)!.textContent,
     ).toContain(CHILD.name);
+  });
+
+  // TEST_SCENARIO: a light rule above the connections made from a sign-in ends the sign-in's own block, its account list included, so the list does not run into them.
+  it("separates the sign-in's block from its connections", () => {
+    render([SIGN_IN, CHILD]);
+
+    expect(byTestId(`connection-children-${SIGN_IN.id}`)!.className).toContain(
+      "border-t",
+    );
   });
 });
 
@@ -233,6 +277,70 @@ describe("where a sign-in's app is installed", RENDER_TIMEOUT, () => {
     expect(
       byTestId(`github-installations-${SIGN_IN.id}-account-beta`)!.textContent,
     ).toBe("betaSelected repositoriesSuspended");
+  });
+
+  // TEST_SCENARIO: a suspended installation is the one that makes an agent fail, so the closed summary already counts it, in warning text; with none suspended the summary says only the count.
+  it("counts the suspended accounts in the closed summary", () => {
+    fake.installations.data = {
+      accounts: [
+        {
+          login: "acme",
+          targetId: 1,
+          kind: "organization",
+          repositorySelection: "all",
+        },
+        {
+          login: "beta",
+          targetId: 2,
+          kind: "organization",
+          repositorySelection: "selected",
+          suspended: true,
+        },
+      ],
+    };
+    render([SIGN_IN]);
+    const toggle = byTestId(`github-installations-${SIGN_IN.id}-toggle`)!;
+    const suspended = byTestId(`github-installations-${SIGN_IN.id}-suspended`)!;
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toBe("Installed on 2 accounts · 1 suspended");
+    expect(suspended.className).toContain("text-warning-fg");
+
+    fake.installations.data = {
+      accounts: [fake.installations.data.accounts[0]!],
+    };
+    render([SIGN_IN]);
+
+    expect(
+      byTestId(`github-installations-${SIGN_IN.id}-toggle`)!.textContent,
+    ).toBe("Installed on 1 account");
+    expect(byTestId(`github-installations-${SIGN_IN.id}-suspended`)).toBeNull();
+  });
+
+  // TEST_SCENARIO: the link to install on another account is not a second control on the toggle's line; it ends the opened list.
+  it("offers another account's install at the end of the opened list", () => {
+    fake.installations.data = {
+      accounts: [
+        {
+          login: "acme",
+          targetId: 1,
+          kind: "organization",
+          repositorySelection: "all",
+        },
+      ],
+    };
+    render([SIGN_IN]);
+    const install = `github-installations-${SIGN_IN.id}-install`;
+
+    expect(byTestId(install)).toBeNull();
+
+    act(() => byTestId(`github-installations-${SIGN_IN.id}-toggle`)!.click());
+    const list = byTestId(`github-installations-${SIGN_IN.id}`)!.querySelector(
+      "ul",
+    )!;
+
+    expect(list.lastElementChild!.contains(byTestId(install))).toBe(true);
+    expect(byTestId(install)!.textContent).toBe("Install on another account");
   });
 
   // TEST_SCENARIO: the avatars stop at five and a +N chip counts the rest, so they add up to the count beside them.
@@ -280,17 +388,59 @@ describe("where a sign-in's app is installed", RENDER_TIMEOUT, () => {
     );
   });
 
-  it("says when the check failed rather than hiding the line", () => {
+  // TEST_SCENARIO: a list GitHub could not answer says so in warning colour, and offers Try again first — it reads the list again — with the install link after it, since installing does not fix a failed read.
+  it("offers Try again first when the check failed", () => {
+    const refetch = vi.fn(() => Promise.resolve());
     fake.installations = {
       isPending: false,
       isError: true,
+      isFetching: false,
       error: new Error("401"),
       data: undefined,
+      refetch,
     };
     render([SIGN_IN, CHILD]);
+    const line = byTestId(`github-installations-${SIGN_IN.id}`)!;
+    const retry = byTestId(`github-installations-${SIGN_IN.id}-retry`)!;
 
-    expect(byTestId(`github-installations-${SIGN_IN.id}`)!.textContent).toBe(
-      "Couldn't check where the app is installed. Install the app",
+    expect(line.textContent).toBe(
+      "Couldn't check where the app is installed. Try again or install the app",
+    );
+    expect(line.querySelector(".text-warning")).not.toBeNull();
+    expect(
+      retry.compareDocumentPosition(
+        byTestId(`github-installations-${SIGN_IN.id}-install`)!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    act(() => retry.click());
+
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  // TEST_SCENARIO: the warning colour belongs to the failed read; the empty state is no error and shows none.
+  it("keeps the warning colour off the empty state", () => {
+    render([SIGN_IN]);
+
+    expect(
+      byTestId(`github-installations-${SIGN_IN.id}`)!.querySelector(
+        ".text-warning",
+      ),
+    ).toBeNull();
+  });
+
+  // TEST_SCENARIO: the loading line keeps the height of the avatar row that replaces it, so the row does not jump.
+  it("reserves the avatar row's height while loading", () => {
+    fake.installations = {
+      isPending: true,
+      isError: false,
+      error: null,
+      data: undefined,
+    };
+    render([SIGN_IN]);
+
+    expect(byTestId(`github-installations-${SIGN_IN.id}`)!.className).toContain(
+      "min-h-5",
     );
   });
 

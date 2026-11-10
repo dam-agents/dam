@@ -31,7 +31,7 @@ type InstallationsConnection = Pick<
 const LINE =
   "mt-1 flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground";
 
-// UNIT_BOUNDARY_DESCRIPTION: the accounts a GitHub sign-in's app is installed on, under the sign-in's row: their avatars and a count that opens the list, each flagged only when suspended, or one plain line with the install link while the app is installed nowhere, so the user sees whether the account they need is covered before an agent fails on it.
+// UNIT_BOUNDARY_DESCRIPTION: the accounts a GitHub sign-in's app is installed on, under the sign-in's row: their avatars and a count that opens the list, a suspended one counted in the summary and flagged in the list, the install link for another account at the list's end; one plain line with the install link while the app is installed nowhere, and a Try again before the install link when the list cannot be read, so the user sees whether the account they need is covered before an agent fails on it.
 export function GithubAppInstallations({
   connection,
 }: {
@@ -49,13 +49,13 @@ export function GithubAppInstallations({
   const testId = `github-installations-${connection.id}`;
   if (installations.isPending)
     return (
-      <p className={LINE} data-testid={testId}>
+      <p className={cn(LINE, "min-h-5")} data-testid={testId}>
         Checking where the app is installed…
       </p>
     );
   if (installations.isError)
     return (
-      <p className={LINE} data-testid={testId}>
+      <p className={cn(LINE, "min-h-5")} data-testid={testId}>
         <WarningAlt
           size={12}
           aria-hidden
@@ -63,8 +63,18 @@ export function GithubAppInstallations({
         />
         <span className="min-w-0">
           Couldn&apos;t check where the app is installed.{" "}
+          <button
+            type="button"
+            disabled={installations.isFetching}
+            onClick={() => void installations.refetch()}
+            data-testid={`${testId}-retry`}
+            className="font-medium text-accent underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            Try again
+          </button>{" "}
+          or{" "}
           <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
-            Install the app
+            install the app
           </GithubAppInstallLink>
         </span>
       </p>
@@ -84,34 +94,39 @@ export function GithubAppInstallations({
       </p>
     );
   const hidden = accounts.length - AVATARS_SHOWN;
+  const suspended = accounts.filter((account) => account.suspended).length;
   return (
     <div className="mt-1 text-xs" data-testid={testId}>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <DisclosureToggle
-          open={open}
-          onToggle={() => setOpen(!open)}
-          chevronSize={12}
-          testId={`${testId}-toggle`}
-          className="min-w-0 max-w-full flex-wrap gap-1.5 text-muted-foreground hover:text-foreground"
-        >
-          <span className="flex shrink-0 items-center gap-0.5">
-            {accounts.slice(0, AVATARS_SHOWN).map((account) => (
-              <AccountAvatar key={account.targetId} account={account} />
-            ))}
-            {hidden > 0 && (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[4px] bg-muted px-1 text-[10px] font-medium text-muted-foreground">
-                +{hidden}
-              </span>
-            )}
-          </span>
-          <span className="min-w-0">
-            Installed on {installationsCountLabel(installations.data)}
-          </span>
-        </DisclosureToggle>
-        <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
-          Install on another account
-        </GithubAppInstallLink>
-      </div>
+      <DisclosureToggle
+        open={open}
+        onToggle={() => setOpen(!open)}
+        chevronSize={12}
+        testId={`${testId}-toggle`}
+        className="min-h-5 min-w-0 max-w-full flex-wrap gap-1.5 text-muted-foreground hover:text-foreground"
+      >
+        <span className="flex shrink-0 items-center gap-0.5">
+          {accounts.slice(0, AVATARS_SHOWN).map((account) => (
+            <AccountAvatar key={account.targetId} account={account} />
+          ))}
+          {hidden > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-[4px] bg-muted px-1 text-[10px] font-medium text-muted-foreground">
+              +{hidden}
+            </span>
+          )}
+        </span>
+        <span className="min-w-0">
+          Installed on {installationsCountLabel(installations.data)}
+          {suspended > 0 && (
+            <span
+              className="font-medium text-warning-fg"
+              data-testid={`${testId}-suspended`}
+            >
+              {" "}
+              · {suspended} suspended
+            </span>
+          )}
+        </span>
+      </DisclosureToggle>
       {open && (
         <ul className="mt-1.5 flex flex-col gap-1.5 pl-5">
           {accounts.map((account) => (
@@ -144,6 +159,11 @@ export function GithubAppInstallations({
               And more GitHub does not list here.
             </li>
           )}
+          <li className="flex min-h-5 items-center">
+            <GithubAppInstallLink url={installUrl} testId={`${testId}-install`}>
+              Install on another account
+            </GithubAppInstallLink>
+          </li>
         </ul>
       )}
     </div>
