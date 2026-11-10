@@ -26,7 +26,7 @@ AI teammates that work with you in Slack.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" /></a>
-  <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam" /></a>
+  <a href="https://github.com/dam-agents/dam/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dam-agents/dam?color=blue" /></a>
 </p>
 
 ---
