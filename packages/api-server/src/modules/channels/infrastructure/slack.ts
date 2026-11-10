@@ -62,6 +62,7 @@ import type {
   AddressedWorker,
   AttachmentQuery,
   ChannelAttachment,
+  ChannelCard,
   ChannelHistoryQuery,
   ChannelReaction,
   ChannelReply,
@@ -167,6 +168,11 @@ import {
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
+import {
+  slackCardBlocks,
+  slackCardText,
+  slackRefusedBlocks,
+} from "./slack-card-blocks.js";
 import {
   mentionCommandVerb,
   parseMentionCommand,
@@ -2552,11 +2558,59 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   function fileShareBlocks(
     markdown: string,
     footerBlock: SlackBlock,
+    card?: ChannelCard,
   ): SlackBlock[] | null {
-    const sections = markdownToSections(markdown);
-    return sections.length < SLACK_MAX_BLOCKS
-      ? [...sections, footerBlock]
+    const body = [
+      ...markdownToSections(markdown),
+      ...(card ? slackCardBlocks(card) : []),
+    ];
+    return body.length < SLACK_MAX_BLOCKS ? [...body, footerBlock] : null;
+  }
+
+  function agentPost(
+    text: string,
+    card: ChannelCard | undefined,
+    footer: AgentFooter,
+    sign: (text: string, bold: "*" | "**") => string,
+  ): { text: string; blocks: SlackBlock[]; asText: SlackBlock[] | null } {
+    const withCard = (cardText: string) =>
+      [text, cardText].filter((part) => part.trim()).join("\n\n");
+    return {
+      text: sign(card ? withCard(slackCardText(card)) : text, "*"),
+      blocks: renderAssistantBlocks(footer, sign(text, "**"), card),
+      asText: card
+        ? renderAssistantBlocks(footer, sign(withCard(card.text), "**"))
+        : null,
+    };
+  }
+
+  function replyTextOf(text: string, card: ChannelCard | undefined): string {
+    return [text, card?.text ?? ""].filter((part) => part.trim()).join("\n\n");
+  }
+
+  function tooManyBlocks(blocks: SlackBlock[]): { error: string } | null {
+    return blocks.length > SLACK_MAX_BLOCKS
+      ? {
+          error: `With its card the message is ${blocks.length} Slack blocks long, and Slack takes at most ${SLACK_MAX_BLOCKS}. Shorten the card, or move part of it to a second message.`,
+        }
       : null;
+  }
+
+  async function postAgentMessage(
+    gw: SlackGateway,
+    message: SlackPostMessage,
+    asText: SlackBlock[] | null,
+  ): Promise<{ ts: string } | null> {
+    try {
+      return await gw.postMessage(message);
+    } catch (err) {
+      if (!asText || !slackRefusedBlocks(err)) throw err;
+      getLogger().warn(
+        { channelId: message.channel, err: formatError(err) },
+        "slack.card.refused: posting the card as text",
+      );
+      return gw.postMessage({ ...message, blocks: asText });
+    }
   }
 
   async function stageFile(
@@ -2926,19 +2980,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       instanceName,
       (ref) => ref.channel === turn.channel && ref.threadTs === turn.threadTs,
     );
+    const post = agentPost(args.text, args.card, footer, sign);
+    const crowded = tooManyBlocks(post.blocks);
+    if (crowded) return crowded;
+    const message = {
+      channel: turn.channel,
+      user: whisper.whisperer,
+      teamId: turn.teamId,
+      text: post.text,
+      blocks: post.blocks,
+      ...persona,
+    };
     try {
-      await gw.postEphemeral({
-        channel: turn.channel,
-        user: whisper.whisperer,
-        teamId: turn.teamId,
-        text: sign(args.text, "*"),
-        blocks: renderAssistantBlocks(footer, sign(args.text, "**")),
-        ...persona,
-      });
+      try {
+        await gw.postEphemeral(message);
+      } catch (err) {
+        if (!post.asText || !slackRefusedBlocks(err)) throw err;
+        await gw.postEphemeral({ ...message, blocks: post.asText });
+      }
     } catch (err) {
       return { error: formatError(err) };
     }
-    noteEngaged(engaged, { messaged: true, replyText: args.text });
+    noteEngaged(engaged, {
+      messaged: true,
+      replyText: replyTextOf(args.text, args.card),
+    });
     return { ok: true as const };
   }
 
@@ -7298,10 +7364,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "slack bot not running" };
       }
 
-      const { conversationId, attachment, unfurlLinks, unfurlMedia } =
+      const { conversationId, attachment, card, unfurlLinks, unfurlMedia } =
         options ?? {};
-      if (!text && !attachment) {
-        return { error: "nothing to send — pass text or an attachment" };
+      if (!text && !card && !attachment) {
+        return {
+          error: "nothing to send — pass text, a card or an attachment",
+        };
       }
       const target = await resolveOutboundTarget(
         gw,
@@ -7326,10 +7394,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         (ref) => ref.channel === target.id,
       );
 
+      const post = agentPost(text, card, footer, sign);
+      const crowded = tooManyBlocks(post.blocks);
+      if (crowded) return crowded;
+
       try {
         let attachmentError: string | null = null;
         let ts: string | undefined;
-        if (text) {
+        if (text || card) {
           ({ uploadError: attachmentError, ts } = await postWithAttachment(
             gw,
             target,
@@ -7337,19 +7409,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             undefined,
             persona,
             (fileIds) =>
-              gw.postMessage({
-                channel: target.id,
-                teamId: target.teamId,
-                text: sign(text, "*"),
-                ...persona,
-                blocks: renderAssistantBlocks(footer, sign(text, "**")),
-                metadata: agentPostMetadata(fileIds),
-                ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
-                ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
-              }),
+              postAgentMessage(
+                gw,
+                {
+                  channel: target.id,
+                  teamId: target.teamId,
+                  text: post.text,
+                  ...persona,
+                  blocks: post.blocks,
+                  metadata: agentPostMetadata(fileIds),
+                  ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
+                  ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
+                },
+                post.asText,
+              ),
             unfurlLinks === false || unfurlMedia === false
               ? null
-              : fileShareBlocks(sign(text, "**"), contextBlock),
+              : fileShareBlocks(sign(text, "**"), contextBlock, card),
           ));
         } else if (attachment) {
           try {
@@ -7365,9 +7441,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return { error: formatError(err) };
           }
         }
+        const replyText = replyTextOf(text, card);
         noteEngaged(engaged, {
           messaged: true,
-          ...(text ? { replyText: text } : {}),
+          ...(replyText ? { replyText } : {}),
         });
         return {
           ok: true as const,
@@ -7590,10 +7667,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
-      const attachmentOnly = args.text.trim() ? undefined : args.attachment;
-      if (!args.text.trim() && !attachmentOnly)
+      const hasBody = args.text.trim() !== "" || args.card !== undefined;
+      const attachmentOnly = hasBody ? undefined : args.attachment;
+      if (!hasBody && !attachmentOnly)
         return {
-          error: "nothing to send — reply needs text or an attachment",
+          error: "nothing to send — reply needs text, a card or an attachment",
         };
       if (attachmentOnly && args.alsoSendToChannel)
         return {
@@ -7668,6 +7746,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         noteEngaged(engaged, { messaged: true });
         return { ok: true as const, conversationId: target.id };
       }
+      const post = agentPost(args.text, args.card, footer, sign);
+      const crowded = tooManyBlocks(post.blocks);
+      if (crowded) return crowded;
       try {
         const { uploadError, ts } = await postWithAttachment(
           gw,
@@ -7676,29 +7757,40 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           threadTs,
           persona,
           (fileIds) =>
-            gw.postMessage({
-              channel: target.id,
-              teamId: target.teamId,
-              threadTs,
-              text: sign(args.text, "*"),
-              ...persona,
-              blocks: renderAssistantBlocks(footer, sign(args.text, "**")),
-              metadata: agentPostMetadata(fileIds),
-              ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
-              ...(args.unfurlLinks !== undefined
-                ? { unfurlLinks: args.unfurlLinks }
-                : {}),
-              ...(args.unfurlMedia !== undefined
-                ? { unfurlMedia: args.unfurlMedia }
-                : {}),
-            }),
+            postAgentMessage(
+              gw,
+              {
+                channel: target.id,
+                teamId: target.teamId,
+                threadTs,
+                text: post.text,
+                ...persona,
+                blocks: post.blocks,
+                metadata: agentPostMetadata(fileIds),
+                ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
+                ...(args.unfurlLinks !== undefined
+                  ? { unfurlLinks: args.unfurlLinks }
+                  : {}),
+                ...(args.unfurlMedia !== undefined
+                  ? { unfurlMedia: args.unfurlMedia }
+                  : {}),
+              },
+              post.asText,
+            ),
           args.alsoSendToChannel ||
             args.unfurlLinks === false ||
             args.unfurlMedia === false
             ? null
-            : fileShareBlocks(sign(args.text, "**"), agentContextBlock(footer)),
+            : fileShareBlocks(
+                sign(args.text, "**"),
+                agentContextBlock(footer),
+                args.card,
+              ),
         );
-        noteEngaged(engaged, { messaged: true, replyText: args.text });
+        noteEngaged(engaged, {
+          messaged: true,
+          replyText: replyTextOf(args.text, args.card),
+        });
         return {
           ok: true as const,
           conversationId: target.id,
@@ -8171,6 +8263,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "nothing to send — start_thread needs text" };
       const posted = await worker.postMessage(instanceName, start.text, {
         conversationId: start.conversationId,
+        ...(start.card ? { card: start.card } : {}),
       });
       if ("error" in posted) return posted;
       if (posted.conversationId === undefined || posted.ts === undefined)

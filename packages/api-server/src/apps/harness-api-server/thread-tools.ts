@@ -8,9 +8,13 @@ import type {
   ThreadLeave,
   ThreadStart,
 } from "../../modules/channels/services/channel-manager.js";
+import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
 
 export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
+  cardOf(
+    tree: Record<string, unknown> | undefined,
+  ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
     start: ThreadStart,
@@ -59,15 +63,24 @@ export function registerThreadTools(
         .describe(
           "The opening message, in standard Markdown. Say who should answer, and tag them when they should be notified.",
         ),
+      card: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "Optional card shown under the opening message. Call describe_card_components for its components.",
+        ),
     },
-    ({ channel, chatId, text }) =>
+    ({ channel, chatId, text, card: tree }) =>
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
+        const built = await ports.cardOf(tree);
+        if ("error" in built) return errorResult(built.error);
         const result = await ports.startThread(channel, {
           sessionId,
           conversationId: chatId,
           text,
+          ...(built.card ? { card: built.card } : {}),
         });
         ports.audit("start", result);
         if ("error" in result) return errorResult(result.error);

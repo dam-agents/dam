@@ -20,6 +20,7 @@ async function harness(over: Partial<ThreadToolPorts> = {}) {
   const server = new McpServer({ name: "test", version: "1.0.0" });
   registerThreadTools(server, {
     callerSessionId: async () => "s-web",
+    cardOf: async () => ({}),
     startThread: async (channel, start) => {
       starts.push({ channel, start });
       return {
@@ -90,6 +91,43 @@ describe("start_thread", () => {
       replies: expect.stringContaining("end your turn"),
     });
     expect(h.audits).toEqual(["start:success"]);
+  });
+
+  it("opens the thread with the card the platform built", async () => {
+    const card = {
+      card: { type: "card" as const, title: "Regions", children: [] },
+      text: "**Regions**",
+    };
+    const h = await harness({ cardOf: async () => ({ card }) });
+
+    await h.call("start_thread", {
+      channel: "slack",
+      chatId: "C-OTHER",
+      text: "Which region?",
+      card: { type: "Card", props: { title: "Regions" } },
+    });
+
+    expect(h.starts[0]?.start.card).toEqual(card);
+  });
+
+  // TEST_SCENARIO: a card the platform refuses must not leave a thread behind with only half of what the agent meant to ask.
+  it("starts no thread when the card is refused", async () => {
+    const h = await harness({
+      cardOf: async () => ({
+        error: "The card was not sent: root must be a Card.",
+      }),
+    });
+
+    const res = await h.call("start_thread", {
+      channel: "slack",
+      chatId: "C-OTHER",
+      text: "Which region?",
+      card: { type: "Text", props: { content: "x" } },
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("root must be a Card");
+    expect(h.starts).toEqual([]);
   });
 
   // TEST_SCENARIO: a call the platform cannot tie to a Session owns nothing, and points at post instead.

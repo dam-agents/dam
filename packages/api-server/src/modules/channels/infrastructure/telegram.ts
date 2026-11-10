@@ -13,6 +13,8 @@ import {
   type Adapter,
   type LogLevel,
   type CardElement,
+  type FileUpload,
+  type PostableCard,
   type Thread,
   type StateAdapter,
 } from "chat";
@@ -240,10 +242,40 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
   }
 }
 
+export function telegramPayload(
+  text: string,
+  options?: Pick<PostMessageOptions, "attachment" | "card">,
+): string | PostableCard | { markdown: string; files: FileUpload[] } {
+  const { attachment, card } = options ?? {};
+  const files: FileUpload[] | undefined = attachment
+    ? [
+        {
+          data: attachment.data,
+          filename: attachment.filename,
+          ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {}),
+        },
+      ]
+    : undefined;
+  if (card)
+    return {
+      card: {
+        ...card.card,
+        children: [
+          ...(text.trim() ? [{ type: "text" as const, content: text }] : []),
+          ...card.card.children,
+        ],
+      },
+      ...(files ? { files } : {}),
+    };
+  return files ? { markdown: text, files } : text;
+}
+
 export interface ThreadLike {
   id: string;
   isDM: boolean;
-  post(message: string | CardElement | { markdown: string }): Promise<unknown>;
+  post(
+    message: string | CardElement | PostableCard | { markdown: string },
+  ): Promise<unknown>;
 }
 
 export interface TelegramInboundMessage {
@@ -1084,21 +1116,8 @@ export function createTelegramWorker(deps: {
     ) {
       if (!bot) return { error: "telegram bot is not running" };
 
-      const { conversationId, attachment } = options ?? {};
-      const payload = attachment
-        ? {
-            markdown: text,
-            files: [
-              {
-                data: attachment.data,
-                filename: attachment.filename,
-                ...(attachment.mimeType
-                  ? { mimeType: attachment.mimeType }
-                  : {}),
-              },
-            ],
-          }
-        : text;
+      const { conversationId } = options ?? {};
+      const payload = telegramPayload(text, options);
 
       if (conversationId) {
         const binding = await deps.conversations.findAgentByConversation(

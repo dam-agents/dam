@@ -1,3 +1,4 @@
+import type { CardElement } from "chat";
 import { z } from "zod";
 import { ChannelType } from "api-server-api";
 
@@ -8,9 +9,15 @@ export interface ChannelAttachment {
   title?: string;
 }
 
+export interface ChannelCard {
+  card: CardElement;
+  text: string;
+}
+
 export interface PostMessageOptions {
   conversationId?: string;
   attachment?: ChannelAttachment;
+  card?: ChannelCard;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
 }
@@ -21,6 +28,7 @@ export interface ChannelReply {
   conversationId?: string;
   alsoSendToChannel?: boolean;
   attachment?: ChannelAttachment;
+  card?: ChannelCard;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
 }
@@ -143,6 +151,7 @@ export interface ThreadStart {
   sessionId: string;
   conversationId: string;
   text: string;
+  card?: ChannelCard;
 }
 
 export const startedThreadSchema = z.object({
