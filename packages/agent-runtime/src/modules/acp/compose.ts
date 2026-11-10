@@ -28,7 +28,10 @@ import {
   createPlatformMcpEntryStore,
   type PlatformMcpEntryStore,
 } from "./infrastructure/platform-mcp-entry-store.js";
-import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
+import {
+  createUndeliveredPromptStore,
+  type UndeliveredPromptStore,
+} from "./infrastructure/undelivered-prompt-store.js";
 import { createContinuedFromStore } from "./infrastructure/continued-from-store.js";
 import {
   createActiveTurnStore,
@@ -303,6 +306,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: RuntimeSessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  undeliveredPrompts: UndeliveredPromptStore;
   subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
   warmHistory: () => void;
@@ -595,6 +599,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    undeliveredPrompts,
     subAgentSessions,
     platformMcpEntry,
     warmHistory: () => {

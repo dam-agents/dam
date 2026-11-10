@@ -730,6 +730,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     historyProvider: deps.historyProvider,
     onProviderServed(sessionId) {
       harnessColdSessions.add(sessionId);
+      deps.sessionMetadata?.markStored(sessionId);
     },
     harnessLoadOrphaned(sessionId) {
       return orphanedHarnessLoads.has(sessionId);
@@ -2329,6 +2330,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           } else if (mapping.method === "session/load") {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
+          if (
+            (mapping.method === "session/load" ||
+              mapping.method === "session/resume") &&
+            (frame as { error?: unknown }).error === undefined
+          )
+            deps.sessionMetadata?.markStored(mapping.attachSessionId);
           if (
             !mapping.rehydrate &&
             (mapping.method === "session/load" ||
