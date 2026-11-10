@@ -980,14 +980,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a harness may refuse a model name it has not
-   * listed yet (Claude Code lists the router's catalog lazily), so a critical
-   * setting is sent once more after a short wait; a second refusal answers
+   * listed yet (Claude Code lists the router's catalog lazily, and loading it
+   * can take longer than one short wait), so a critical setting is sent again
+   * after each of a few growing waits; a refusal after the last one answers
    * the queued prompts with the harness's own reason rather than running
    * them on a substitute. The refused value is forgotten, so the next prompt
    * asks again until the model changes.
    */
   const criticalRetries = new Map<string, number>();
-  const CRITICAL_RETRY_MS = 2_000;
+  const CRITICAL_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000];
   function retryCriticalSetting(
     sessionId: string,
     mapping: OutboundMapping,
@@ -996,7 +997,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): boolean {
     const key = `${sessionId}:${mapping.method}`;
     const tried = criticalRetries.get(key) ?? 0;
-    if (tried < 1) {
+    const delay = CRITICAL_RETRY_DELAYS_MS[tried];
+    if (delay !== undefined) {
       criticalRetries.set(key, tried + 1);
       const timer = setTimeout(() => {
         const applied = appliedSettings.get(sessionId);
@@ -1004,7 +1006,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (k.startsWith(mapping.method)) applied?.delete(k);
         syncSettings(sessionId, true);
         promptScheduler.onSettingResponse(sessionId, outboundId);
-      }, CRITICAL_RETRY_MS);
+      }, delay);
       timer.unref?.();
       return true;
     }

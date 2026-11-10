@@ -61,6 +61,7 @@ import {
 const IDLE_CHECK_MS = 10_000;
 const LEASE_IDLE_MS = 60_000;
 const ENV_WAIT_MS = 15_000;
+const CRITICAL_RETRY_WAITS_MS = [2_000, 4_000, 8_000, 16_000] as const;
 
 const SESSION_SETTINGS: Record<string, "process" | "session"> = {
   mode: "session",
@@ -1165,11 +1166,12 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harnessCount("claude-code")).toBe(1);
   });
 
-  /** TEST_SCENARIO: The harness refuses the session's model twice (Claude
-   * Code could not confirm it with the API), so the session's queued prompt
-   * is answered with the harness's own reason rather than run on whatever
-   * the harness would substitute; the next prompt, with the model unchanged,
-   * asks again and is refused again instead of running on the default. */
+  /** TEST_SCENARIO: The harness keeps refusing the session's model (Claude
+   * Code could not confirm it with the API) through every retry, so the
+   * session's queued prompt is answered with the harness's own reason rather
+   * than run on whatever the harness would substitute; the next prompt, with
+   * the model unchanged, asks again and is refused again instead of running
+   * on the default. */
   it("refuses the prompt when the harness will not take the session's model", () => {
     vi.useFakeTimers();
     const world = createLeaseWorld({ providers: ["conn-a"] });
@@ -1184,11 +1186,18 @@ describe("acp-runtime: one harness process per harness", () => {
         message: "Internal error",
         data: { details: 'Couldn\'t confirm model "ibm/unknown-model"' },
       });
-    refuse();
+    const refuseThroughRetries = () => {
+      for (const wait of CRITICAL_RETRY_WAITS_MS) {
+        refuse();
+        vi.advanceTimersByTime(wait);
+      }
+      refuse();
+    };
     client.send(frames.prompt(2, "s", "go"));
-    vi.advanceTimersByTime(2_500);
-    expect(modelFrames(harness, "s")).toHaveLength(2);
-    refuse();
+    refuseThroughRetries();
+    expect(modelFrames(harness, "s")).toHaveLength(
+      CRITICAL_RETRY_WAITS_MS.length + 1,
+    );
     expect(client.reply(2)?.error).toMatchObject({
       message: expect.stringContaining(
         "refused the session's model: Couldn't confirm model \"ibm/unknown-model\"",
@@ -1197,14 +1206,44 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(promptTextsOf(harness)).toEqual([]);
 
     client.send(frames.prompt(3, "s", "again"));
-    expect(modelFrames(harness, "s")).toHaveLength(3);
-    refuse();
-    vi.advanceTimersByTime(2_500);
-    refuse();
+    expect(modelFrames(harness, "s")).toHaveLength(
+      CRITICAL_RETRY_WAITS_MS.length + 2,
+    );
+    refuseThroughRetries();
     expect(client.reply(3)?.error).toMatchObject({
       message: expect.stringContaining("refused the session's model"),
     });
     expect(promptTextsOf(harness)).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: Claude Code lists the router's catalog lazily, and the
+   * catalog takes longer than the first retry's wait to load: the harness
+   * refuses the session's model twice, takes it on the third ask, and the
+   * prompt queued behind it runs on that model instead of failing. */
+  it("runs the prompt once the harness takes the model on a later retry", () => {
+    vi.useFakeTimers();
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code", "s", 1, {
+      model: "claude/ibm/aws/claude-opus-5-5",
+    });
+    const harness = world.harness("claude-code");
+    const refuse = () =>
+      harness.refuseTo("session/set_config_option", {
+        code: -32603,
+        message: "Internal error",
+        data: { details: "Model 'claude/ibm/aws/claude-opus-5-5' not found" },
+      });
+    client.send(frames.prompt(2, "s", "go"));
+    refuse();
+    vi.advanceTimersByTime(CRITICAL_RETRY_WAITS_MS[0]);
+    refuse();
+    vi.advanceTimersByTime(CRITICAL_RETRY_WAITS_MS[1]);
+    expect(modelFrames(harness, "s")).toHaveLength(3);
+    expect(client.reply(2)).toBeUndefined();
+
+    harness.replyTo("session/set_config_option", {});
+    expect(promptTextsOf(harness)).toEqual(["go"]);
   });
 
   /** TEST_SCENARIO: A mode picked during a turn belongs to the session's next
