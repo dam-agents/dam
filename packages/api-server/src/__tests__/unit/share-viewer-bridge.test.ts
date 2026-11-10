@@ -11,6 +11,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ARTIFACT_TITLE_MAX_LENGTH } from "api-server-api";
+
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { AcpSessionLoadError } from "../../core/acp-client.js";
 import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
@@ -754,6 +756,18 @@ describe("viewer session titles", () => {
     expect(long).toHaveLength(200);
     expect(long.startsWith("a@b.c · ")).toBe(true);
     expect(long.endsWith("…")).toBe(true);
+  });
+
+  it("keeps the conversation whole when the longest title is shortened", () => {
+    const title = "x".repeat(ARTIFACT_TITLE_MAX_LENGTH);
+    const key = "k".repeat(64);
+    for (const shortened of [
+      viewerSessionTitle("a@b.c", title, key),
+      ownerSessionTitle(title, key),
+    ]) {
+      expect(shortened).toHaveLength(200);
+      expect(shortened.endsWith(`… · ${key}`)).toBe(true);
+    }
   });
 });
 

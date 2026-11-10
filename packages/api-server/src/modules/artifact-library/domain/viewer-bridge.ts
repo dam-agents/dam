@@ -93,14 +93,11 @@ export function viewerSessionKey(
     : `artifact-conversation:${artifactId}:${conversation}:${viewerSub}`;
 }
 
-function sessionTitle(full: string): string {
-  return full.length <= SESSION_TITLE_MAX_LENGTH
-    ? full
-    : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
-}
-
-function withConversation(full: string, conversation?: string): string {
-  return conversation === undefined ? full : `${full} · ${conversation}`;
+function sessionTitle(base: string, conversation?: string): string {
+  const suffix = conversation === undefined ? "" : ` · ${conversation}`;
+  const room = SESSION_TITLE_MAX_LENGTH - suffix.length;
+  const head = base.length <= room ? base : `${base.slice(0, room - 1)}…`;
+  return `${head}${suffix}`;
 }
 
 export function viewerSessionTitle(
@@ -108,7 +105,7 @@ export function viewerSessionTitle(
   title: string,
   conversation?: string,
 ): string {
-  return sessionTitle(withConversation(`${viewer} · ${title}`, conversation));
+  return sessionTitle(`${viewer} · ${title}`, conversation);
 }
 
 /**
@@ -119,7 +116,7 @@ export function ownerSessionTitle(
   title: string,
   conversation?: string,
 ): string {
-  return sessionTitle(withConversation(title, conversation));
+  return sessionTitle(title, conversation);
 }
 
 export function viewerPromptText(input: {
