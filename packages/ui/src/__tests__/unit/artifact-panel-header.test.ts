@@ -42,9 +42,6 @@ vi.mock("../../modules/artifacts/api/mutations.js", () => ({
   useSendArtifactPrompt: () => ({ mutateAsync: vi.fn() }),
   useCallAgentApi: () => ({ mutateAsync: vi.fn() }),
 }));
-vi.mock("../../modules/features/api/queries.js", () => ({
-  useFeatures: () => ({ data: {} }),
-}));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentsList: () =>
     fake.agentListed ? [{ id: "agent-1", name: "Jeeves" }] : [],
