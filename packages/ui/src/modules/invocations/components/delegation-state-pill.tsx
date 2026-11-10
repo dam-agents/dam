@@ -1,4 +1,4 @@
-import { Checkmark } from "@carbon/icons-react";
+import { Checkmark, StopFilledAlt } from "@carbon/icons-react";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
@@ -12,6 +12,7 @@ const pill: Record<
   waiting: { variant: "warning", label: "Waiting for room" },
   done: { variant: "accent", label: "Done" },
   failed: { variant: "danger", label: "Failed" },
+  stopped: { variant: "muted", label: "Stopped" },
 };
 
 interface Props {
@@ -23,6 +24,7 @@ export function DelegationStatePill({ state }: Props) {
   return (
     <Badge variant={variant} size="sm" className="shrink-0 gap-1">
       {state === "done" && <Checkmark size={11} aria-hidden />}
+      {state === "stopped" && <StopFilledAlt size={9} aria-hidden />}
       {label}
     </Badge>
   );

@@ -6,6 +6,7 @@ import {
 } from "api-server-api";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { DisclosureChevron } from "@/components/ui/disclosure";
@@ -24,6 +25,8 @@ import {
   delegationState,
   type DelegationTarget,
   delegationWaitReason,
+  runningSubAgents,
+  stoppedLine,
 } from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
@@ -45,6 +48,8 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   const state = delegationState(node, target);
   const waitReason = delegationWaitReason(node, target);
   const failed = state === "failed";
+  const ownRunning = node.status === "running";
+  const working = ownRunning ? 0 : runningSubAgents(node);
   const turn = turns?.[node.id];
   const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
   const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
@@ -78,11 +83,22 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
               failed ? "text-danger" : "text-muted-foreground",
             )}
           >
-            {failed && node.errorReason
-              ? node.errorReason
-              : (waitReason ?? subtitle(node))}
+            {node.stopped
+              ? stoppedLine(node.stopped)
+              : failed && node.errorReason
+                ? node.errorReason
+                : (waitReason ?? subtitle(node))}
           </span>
         </span>
+        {working > 0 && (
+          <Badge
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-success text-green-700 dark:text-success"
+          >
+            {working} sub-agent{working === 1 ? "" : "s"} working
+          </Badge>
+        )}
         <DelegationStatePill state={state} />
       </button>
 
@@ -123,8 +139,12 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
             {node.script === null && (
               <OpenConversation node={node} driverAgentId={driverAgentId} />
             )}
-            {node.status === "running" && (
-              <StopDelegation node={node} driverAgentId={driverAgentId} />
+            {(ownRunning || working > 0) && (
+              <StopDelegation
+                node={node}
+                driverAgentId={driverAgentId}
+                working={ownRunning ? null : working}
+              />
             )}
           </div>
           {node.children.map((child) => (
@@ -142,30 +162,42 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the stop of a card: with a run of its own going, the agent and everything it started; with none, `working` counts the sub-agents it started that still run, and only they stop.
 function StopDelegation({
   node,
   driverAgentId,
+  working,
 }: {
   node: DelegationNode;
   driverAgentId: string;
+  working: number | null;
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const stop = useStopDelegation();
+  const subAgents = `${working} sub-agent${working === 1 ? "" : "s"}`;
   return (
     <Button
       variant="destructive"
       size="xs"
       disabled={stop.isPending}
       onClick={async () => {
-        const ok = await showConfirm(
-          "Its work ends, and so does the work of every agent it started. A kept agent keeps its files and its conversation; any other is removed, with every agent below it. The driver gets a failed result.",
-          "Stop this temporary agent?",
-          { kind: "destructive", confirmLabel: "Stop agent" },
-        );
+        const ok =
+          working === null
+            ? await showConfirm(
+                "Its work ends, and so does the work of every sub-agent it started. A kept agent keeps its files and its conversation; any other is removed, with every sub-agent it started. The driver gets a failed result.",
+                "Stop this temporary agent?",
+                { kind: "destructive", confirmLabel: "Stop agent" },
+              )
+            : await showConfirm(
+                "It runs nothing itself. The work of the sub-agents it started ends; a kept one keeps its files and its conversation, any other is removed.",
+                `Stop ${subAgents}?`,
+                { kind: "destructive", confirmLabel: `Stop ${subAgents}` },
+              );
         if (ok) stop.mutate({ driverAgentId, id: node.id });
       }}
     >
-      <StopFilledAlt size={14} /> Stop
+      <StopFilledAlt size={14} />{" "}
+      {working === null ? "Stop" : `Stop ${subAgents}`}
     </Button>
   );
 }
