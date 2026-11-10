@@ -107,6 +107,62 @@ function fakeBlobs() {
   };
 }
 
+describe("a send Slack refused, across replicas", () => {
+  // TEST_SCENARIO: the leader's worker reports Slack's refusal, the reply schema carries it, and a reply nobody received stays a plain error.
+  it("carries the refusal across, and keeps a lost reply plain", async () => {
+    const bus = fakeBus();
+    const leaderWorker = fakeSlackWorker();
+    vi.mocked(leaderWorker.postMessage).mockResolvedValueOnce({
+      error: "An API error occurred: missing_scope",
+      refused: "missing_scope",
+    });
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+    expect(
+      await follower.postMessage("agent-1", ChannelType.Slack, "hello"),
+    ).toEqual({
+      error: "An API error occurred: missing_scope",
+      refused: "missing_scope",
+    });
+
+    // TEST_SCENARIO: a leader that never answers — the caller's own failure is not a refusal.
+    const orphan = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus: fakeBus(),
+        service: "channels",
+        timeoutMs: 5,
+      }),
+      isLeader: () => false,
+    });
+    const lost = await orphan.postMessage(
+      "agent-1",
+      ChannelType.Slack,
+      "hello",
+    );
+    expect(lost).toHaveProperty("error");
+    expect("refused" in lost).toBe(false);
+
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+});
+
 describe("channel attachments across replicas", () => {
   it("delivers the bytes intact to the leader's worker", async () => {
     const bus = fakeBus();

@@ -381,9 +381,18 @@ function harness(opts: HarnessOptions = {}) {
     announceEmailLink: (slackUserId, sub) => {
       announced.push(`${slackUserId}|${sub}`);
     },
-    postHello: async (_agentId, _channelId, text) => {
+    postHello: (_agentId, _channelId, text) => {
       hellos.push(text);
-      return failures.hello;
+      return greetingOutcome(async () => {
+        if (failures.hello === "refused")
+          return {
+            error: "An API error occurred: missing_scope",
+            refused: "missing_scope",
+          };
+        if (failures.hello === "unknown")
+          return { error: "slack did not answer" };
+        return { ok: true as const };
+      });
     },
     brandShort: "dam",
   };
@@ -673,11 +682,17 @@ describe("slack dm bridge connect", () => {
 });
 
 describe("the greeting", () => {
-  // TEST_SCENARIO: Slack refusing the greeting is a refusal — nothing was posted — while a call nobody saw the answer to stays unknown.
-  it("reads a returned error as refused and a thrown call as unknown", async () => {
+  // TEST_SCENARIO: only Slack's own refusal is a refusal — nothing was posted — while a plain error, a lost answer or a throw stays unknown.
+  it("reads Slack's refusal as refused and every lost answer as unknown", async () => {
     expect(
-      await greetingOutcome(async () => ({ error: "missing_scope" })),
+      await greetingOutcome(async () => ({
+        error: "An API error occurred: missing_scope",
+        refused: "missing_scope",
+      })),
     ).toBe("refused");
+    expect(
+      await greetingOutcome(async () => ({ error: "no channel connected" })),
+    ).toBe("unknown");
     expect(await greetingOutcome(async () => ({ ok: true as const }))).toBe(
       "sent",
     );

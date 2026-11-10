@@ -8071,7 +8071,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(attachmentError ? { attachmentError } : {}),
         };
       } catch (err) {
-        return { error: formatError(err) };
+        /* UNIT_BOUNDARY_DESCRIPTION: Slack refusing the call carries its error
+         * code, and that is the one answer that proves nothing was posted. Any
+         * other failure — a dropped socket, a timeout, an answer nobody saw —
+         * stays a plain error, so a caller that must not repeat a message can
+         * tell the two apart. */
+        const data = (err as { data?: { error?: unknown } } | null)?.data;
+        const refusal = typeof data?.error === "string" ? data.error : null;
+        return refusal
+          ? { error: formatError(err), refused: refusal }
+          : { error: formatError(err) };
       }
     },
 

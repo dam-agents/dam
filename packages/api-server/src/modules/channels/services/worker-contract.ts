@@ -46,7 +46,11 @@ export const sendResultSchema = z.union([
     conversationId: z.string().optional(),
     ts: z.string().optional(),
   }),
-  z.object({ error: z.string() }),
+  /* UNIT_BOUNDARY_DESCRIPTION: a refused send carries Slack's own error code,
+   *  which is the only evidence that nothing was posted. A plain `error` is a
+   *  call whose answer nobody saw — a throw, a timeout, a lost RPC reply — and a
+   *  caller that must not repeat a message reads the two differently. */
+  z.object({ error: z.string(), refused: z.string().optional() }),
 ]);
 export type ChannelSendResult = z.infer<typeof sendResultSchema>;
 

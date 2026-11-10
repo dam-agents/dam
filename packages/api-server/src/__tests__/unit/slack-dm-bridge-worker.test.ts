@@ -331,6 +331,44 @@ describe("every path into and out of a revoked DM", () => {
   });
 });
 
+describe("a send Slack refused", () => {
+  // TEST_SCENARIO: Slack refusing the call carries its error code back, which is the one answer that proves nothing was posted.
+  it("reports Slack's refusal and nothing else as refused", async () => {
+    const h = slackWorkerHarness({
+      boundChannelId: CHANNEL,
+      linkedSub: SLACK_HARNESS_OWNER,
+      linkedSlackUsers: [OWNER_USER],
+    });
+    await h.worker.connect();
+    const realPost = h.gw.postMessage;
+    h.gw.postMessage = async () => {
+      throw Object.assign(new Error("An API error occurred: missing_scope"), {
+        data: { error: "missing_scope" },
+      });
+    };
+    expect(
+      await h.worker.postMessage("agent-1", "hello", {
+        conversationId: CHANNEL,
+      }),
+    ).toMatchObject({ refused: "missing_scope" });
+    const second = await h.worker.postMessage("agent-1", "hello again", {
+      conversationId: CHANNEL,
+    });
+    expect("error" in second && second.error).toContain("missing_scope");
+
+    // TEST_SCENARIO: a call nobody saw the answer to has no refusal to report.
+    h.gw.postMessage = async () => {
+      throw new Error("socket closed");
+    };
+    const lost = await h.worker.postMessage("agent-1", "hello", {
+      conversationId: CHANNEL,
+    });
+    expect(lost).toEqual({ error: expect.stringContaining("socket closed") });
+    expect("refused" in lost).toBe(false);
+    h.gw.postMessage = realPost;
+  });
+});
+
 describe("an ordinary bind into a released DM", () => {
   // TEST_SCENARIO: the binding succeeds and the Bridge stays closed, so the platform tells the person in that DM why it stays quiet.
   it("tells the person the DM stays closed", async () => {

@@ -365,10 +365,12 @@ export function createSlackDmRevoker(deps: SlackDmRevokeDeps): SlackDmRevoker {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: What a greeting's send actually was. Slack
- * refusing it is a `refused` — nothing was posted, so its claim may be given
- * back and the next connect greets straight away. Only a call that never
- * answered is `unknown`, because a message may exist that nobody saw.
+ * UNIT_BOUNDARY_DESCRIPTION: What a greeting's send actually was. Only a result
+ * that carries Slack's own refusal is a `refused` — nothing was posted, so its
+ * claim may be given back and the next connect greets straight away. A plain
+ * error is a call whose answer nobody saw — a throw, a timeout, a lost reply —
+ * and stays `unknown`, because a message may exist that nobody saw and a second
+ * greeting is worse than a late one.
  */
 export async function greetingOutcome(
   send: () => Promise<unknown>,
@@ -379,8 +381,11 @@ export async function greetingOutcome(
   } catch {
     return "unknown";
   }
-  if (result !== null && typeof result === "object" && "error" in result)
-    return "refused";
+  if (result !== null && typeof result === "object") {
+    if ("refused" in result && typeof result.refused === "string")
+      return "refused";
+    if ("error" in result) return "unknown";
+  }
   return "sent";
 }
 
