@@ -18,7 +18,7 @@ const LOADED = {
   listLoaded: true,
   stateLoaded: true,
 };
-const UNUSED = { assistantId: ASSISTANT, used: false };
+const UNUSED = { recordReady: true, assistantId: ASSISTANT, used: false };
 
 describe("landing in the assistant's chat", () => {
   // TEST_SCENARIO: on Home, once every answer is in and the assistant is unused, its chat opens — including while it is asleep.
@@ -35,6 +35,7 @@ describe("landing in the assistant's chat", () => {
       landingAssistantId({
         ...LOADED,
         stateLoaded: false,
+        recordReady: false,
         assistantId: null,
         used: undefined,
       }),
@@ -55,13 +56,37 @@ describe("landing in the assistant's chat", () => {
     });
   });
 
+  // TEST_SCENARIO: the platform makes the assistant behind the request, so the record arrives empty and then `creating` while the Agent is still being made: nothing is decided and the one-shot is kept, and the landing happens once the record turns ready and the agent list carries it — a person never dropped on Home by a create that was still running.
+  it("keeps the one-shot while the platform is still making the assistant", () => {
+    expect(
+      landingAssistantId({
+        ...LOADED,
+        recordReady: false,
+        assistantId: null,
+        used: false,
+      }),
+    ).toEqual({ decide: false });
+    expect(
+      landingAssistantId({
+        ...LOADED,
+        recordReady: false,
+        assistantId: null,
+        used: undefined,
+      }),
+    ).toEqual({ decide: false });
+    expect(landingAssistantId({ ...LOADED, ...UNUSED })).toEqual({
+      decide: true,
+      landIn: ASSISTANT,
+    });
+  });
+
   // TEST_SCENARIO: a used assistant, a record whose Agent is not in the list — the person deleted it — nobody's assistant, the feature off for them and any other route all leave the route alone.
   it("stays where the route asked when there is nothing to land in", () => {
     for (const input of [
-      { assistantId: ASSISTANT, used: true },
-      { assistantId: null, used: false },
-      { assistantId: ASSISTANT, used: undefined },
-      { assistantOn: false, assistantId: ASSISTANT, used: false },
+      { ...UNUSED, used: true },
+      { ...UNUSED, assistantId: null },
+      { ...UNUSED, used: undefined },
+      { ...UNUSED, assistantOn: false, assistantId: null },
     ])
       expect(landingAssistantId({ ...LOADED, ...input })).toEqual({
         decide: true,

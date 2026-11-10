@@ -13,8 +13,11 @@ import {
   getLogger,
   type LogLevel,
 } from "../../core/logger.js";
+import {
+  parseInfraAgent,
+  type InfraAgent,
+} from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
-import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -129,16 +132,17 @@ function setup(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,
   });
-  // TEST_OVERVIEW: the store refuses a duplicate id, so a retry resumes, not a second Agent.
-  const persistedIds = new Set<string>();
+  // TEST_OVERVIEW: the store refuses a duplicate id and lists what it holds, so a retry resumes the Agent it already has under the same name rather than making a second one.
+  const persisted = new Map<string, InfraAgent>();
   const persist = vi.fn(
     async (spec: Record<string, unknown>, owner: string, id: string) => {
-      if (persistedIds.has(id)) throw new Error(`${id} already exists`);
-      persistedIds.add(id);
-      return parseInfraAgent({
+      if (persisted.has(id)) throw new Error(`${id} already exists`);
+      const agent = parseInfraAgent({
         metadata: { name: id, labels: { "agent-platform.ai/owner": owner } },
         spec,
       });
+      persisted.set(id, agent);
+      return agent;
     },
   );
   const writeRegistry = vi.fn(async () => {});
@@ -166,18 +170,9 @@ function setup(
     owner: "owner-1",
     actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
-      list: async () => [],
+      list: async () => [...persisted.values()],
       create: persist,
-      get: async (id: string, owner: string) =>
-        persistedIds.has(id)
-          ? parseInfraAgent({
-              metadata: {
-                name: id,
-                labels: { "agent-platform.ai/owner": owner },
-              },
-              spec: {},
-            })
-          : null,
+      get: async (id: string) => persisted.get(id) ?? null,
     }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
@@ -429,6 +424,7 @@ describe("the default profile a new agent starts on", () => {
     });
     await agents.create({
       ...byTemplate,
+      name: "test-agent-environment",
       providerConnectionId: provider.id,
       environmentOf: "agent-root",
     });

@@ -6,6 +6,7 @@ import {
   type GreetingCopy,
   greetingCopy,
   greetingShown,
+  preferredProviderTemplate,
   providerLineFor,
 } from "../lib/greeting.js";
 
@@ -55,21 +56,4 @@ export function useAssistantGreeting(
   }
   const waiting = assistantOn && agentId !== null && state.isPending;
   return waiting ? LOADING : NONE;
-}
-
-/* UNIT_BOUNDARY_DESCRIPTION: the template of the provider Connection the Agent runs on — the one the person marked preferred, else the first — so the greeting names the provider it actually has rather than one it does not. */
-function preferredProviderTemplate(
-  data:
-    | {
-        connections: readonly {
-          preferred: boolean;
-          connection?: { templateId: string };
-        }[];
-      }
-    | undefined,
-): string | undefined {
-  if (!data) return undefined;
-  const providers = data.connections.filter((c) => c.connection !== undefined);
-  const chosen = providers.find((c) => c.preferred) ?? providers[0];
-  return chosen?.connection?.templateId;
 }

@@ -14,9 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markAssistantUsed } from "../../modules/assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../modules/assistants/components/assistant-greeting.js";
 import {
-  GREETING_PLACEHOLDER,
   greetingCopy,
   greetingShown,
+  preferredProviderTemplate,
   providerLineFor,
 } from "../../modules/assistants/lib/greeting.js";
 import { draftKey } from "../../modules/sessions/lib/draft-key.js";
@@ -95,7 +95,18 @@ describe("what the greeting says", () => {
     expect(copy.learn).toContain("I learn how you work, one task at a time");
     expect(
       assistantIdeas("DAM").map((idea) => `${idea.label}: ${idea.text}`),
-    ).toContain(GREETING_PLACEHOLDER);
+    ).not.toContain(copy.placeholder);
+  });
+
+  // TEST_SCENARIO: the composer under the greeting hints a message to the assistant by name, as the design does, never one of the ideas whose pill already says it.
+  it("hints a message to the assistant by name", () => {
+    expect(copy.placeholder).toBe("Message Dammy");
+  });
+
+  // TEST_SCENARIO: the sentence beside the provider names where to change it, once, in the design's words.
+  it("points at Agent settings in the design's words", () => {
+    expect(copy.settingsPrefix).toBe("You can switch providers anytime in");
+    expect(copy.settingsLink).toBe("Agent settings");
   });
 
   // TEST_SCENARIO: the provider line names CurveBender only when that is the provider the Agent runs on, and otherwise points at where it changes without naming one.
@@ -107,12 +118,42 @@ describe("what the greeting says", () => {
       brandName: "DAM",
       provider: "other",
     });
-    expect(other.provider).toBe("You can switch providers anytime.");
+    expect(other.provider).toBe("");
     expect(other.provider).not.toContain("CurveBender");
     expect(providerLineFor("curve-bender-deployment")).toBe("curve-bender");
     expect(providerLineFor("curve-bender")).toBe("curve-bender");
     expect(providerLineFor("anthropic")).toBe("other");
     expect(providerLineFor(undefined)).toBeNull();
+  });
+
+  // TEST_SCENARIO: the Agent holds an app Connection too, listed before its provider: only the provider Connections decide the line, in the order the person set — preferred first, else the first — so a GitHub grant never hides the provider, nor speaks for it.
+  it("reads the provider from provider Connections alone", () => {
+    const grant = (
+      templateId: string,
+      preferred = false,
+    ): { preferred: boolean; connection: { templateId: string } } => ({
+      preferred,
+      connection: { templateId },
+    });
+    expect(
+      preferredProviderTemplate({
+        connections: [grant("github"), grant("anthropic", true)],
+      }),
+    ).toBe("anthropic");
+    expect(
+      preferredProviderTemplate({
+        connections: [grant("github"), grant("curve-bender")],
+      }),
+    ).toBe("curve-bender");
+    expect(
+      preferredProviderTemplate({ connections: [grant("github")] }),
+    ).toBeUndefined();
+    expect(
+      preferredProviderTemplate({
+        connections: [{ preferred: true }],
+      }),
+    ).toBeUndefined();
+    expect(preferredProviderTemplate(undefined)).toBeUndefined();
   });
 });
 
@@ -120,7 +161,12 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: the first Session of the chat appears before the api-server has learned of it, so the cached record learns it here — and the greeting's own gate then stays shut for a New chat in the same page load.
   it("closes the gate the moment a session exists", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false, resetAt: null };
+    const row = {
+      agentId: ASSISTANT,
+      used: false,
+      resetAt: null,
+      ready: true,
+    };
     queryClient.setQueryData(key, row);
     markAssistantUsed(ASSISTANT);
     expect(queryClient.getQueryData(key)).toEqual({ ...row, used: true });
@@ -135,7 +181,12 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: a session on another Agent is not the assistant's, so a record that does not name it is left alone.
   it("leaves a record that names another agent alone", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false, resetAt: null };
+    const row = {
+      agentId: ASSISTANT,
+      used: false,
+      resetAt: null,
+      ready: true,
+    };
     queryClient.setQueryData(key, row);
     markAssistantUsed("agent-2");
     expect(queryClient.getQueryData(key)).toEqual(row);

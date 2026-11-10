@@ -9,6 +9,8 @@ export interface AssistantState {
   agentId: string;
   used: boolean;
   resetAt: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the platform finished making this Agent. A record the platform wrote and has not settled is a create still running behind the request that started it, which the client waits out rather than reading as an assistant it does not have. */
+  ready: boolean;
 }
 
 export interface AssistantsService {

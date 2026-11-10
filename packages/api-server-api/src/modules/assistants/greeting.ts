@@ -43,10 +43,8 @@ export const ASSISTANT_SETTINGS_LINK = "Agent settings";
 export const ASSISTANT_PROVIDER_LINE =
   "You're set up with CurveBender, IBM-hosted open-source models.";
 
-export const ASSISTANT_PROVIDER_NEUTRAL_LINE =
-  "You can switch providers anytime.";
-
-export const ASSISTANT_SETTINGS_SENTENCE = "You can change that in";
+export const ASSISTANT_SETTINGS_SENTENCE =
+  "You can switch providers anytime in";
 
 export interface AssistantNames {
   assistantName: string;

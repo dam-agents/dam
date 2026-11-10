@@ -134,16 +134,11 @@ export function createAssistantsService(deps: {
     return row?.state === "creating" ? makeAgent(row) : null;
   };
 
-  /* UNIT_BOUNDARY_DESCRIPTION: makes the Agent the record already names, and finishes one an earlier attempt left half-made. A row still `creating` says the create never reported success, so it is asked for again even when its Agent is already there: the create resumes that Agent rather than failing on it, and every step it repeats — the instructions, the grants, the Connection — is written to be written again. The bookkeeping comes before the row is marked ready, so a checklist or unlock that failed is retried with it. */
+  /* UNIT_BOUNDARY_DESCRIPTION: makes the Agent the record already names, and finishes one an earlier attempt left half-made. A row still `creating` says the create never reported success, so it is asked for again even when its Agent is already there: the create resumes that Agent rather than failing on it, and every step it repeats — the instructions, the grants, the Connection — is written to be written again. Only a create that returned finishes the record: one that failed leaves it `creating`, so the steps it never reached run on the next request instead of being skipped as if they had. The bookkeeping comes before the record is marked ready, so a checklist or unlock that failed is retried with it. */
   const makeAgent = async (row: AssistantRow): Promise<InfraAgent | null> => {
     let agent = await deps.agentOf(row.agentId);
     if (agent === null || row.state !== "ready") {
-      try {
-        await create(row.agentId);
-      } catch (err) {
-        const joined = await deps.agentOf(row.agentId);
-        if (joined === null) throw err;
-      }
+      await create(row.agentId);
       agent = await deps.agentOf(row.agentId);
     }
     if (agent === null) return null;
@@ -219,6 +214,7 @@ export function createAssistantsService(deps: {
               agentId: row.agentId,
               used: row.used,
               resetAt: row.resetAt?.toISOString() ?? null,
+              ready: row.state === "ready",
             };
       },
 

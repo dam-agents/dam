@@ -40,6 +40,7 @@ export function useLandInAssistantChat(): void {
       assistantOn: gate.on,
       listLoaded: agents.isSuccess,
       stateLoaded: stateKnown,
+      recordReady: state?.ready === true,
       assistantId: listed ? (state?.agentId ?? null) : null,
       used: state?.used,
     });

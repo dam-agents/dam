@@ -38,7 +38,9 @@ export function AssistantGreeting({
       </SpeakerRow>
       <div className="flex flex-col gap-4 text-sm text-foreground">
         <p>
-          {greeting.opening} {greeting.provider} {greeting.settingsPrefix}{" "}
+          {greeting.opening}
+          {greeting.provider ? ` ${greeting.provider}` : ""}{" "}
+          {greeting.settingsPrefix}{" "}
           <Button
             variant="link"
             size="inline"
@@ -63,7 +65,7 @@ export function AssistantGreeting({
               });
               onPicked();
             }}
-            className="h-auto max-w-full whitespace-normal text-left"
+            className="h-10 max-w-full rounded-full px-5 whitespace-normal text-left"
           >
             <span className="shrink-0 font-semibold">{idea.label}:</span>{" "}
             {idea.text}

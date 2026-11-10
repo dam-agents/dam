@@ -1478,7 +1478,8 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
-      await assertNameFree(input.name, owner);
+      /* UNIT_BOUNDARY_DESCRIPTION: the id a caller names is its own — a platform resume of an Agent an earlier attempt already wrote — so that Agent's own name is not evidence the name is taken. */
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {

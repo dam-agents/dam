@@ -3,8 +3,23 @@
 // TEST_OVERVIEW: it unseen, so the chat the person lands in meets them with it; the
 // TEST_OVERVIEW: Get started panel keeps every other unlock, and a seen one is not
 // TEST_OVERVIEW: played again.
+// @vitest-environment happy-dom
 import type { AvatarUnlock, GettingStartedProgress } from "api-server-api";
-import { describe, expect, it, vi } from "vitest";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const fake = vi.hoisted(() => ({
+  progress: { unlocks: [], dismissed: false } as GettingStartedProgress,
+  seen: vi.fn(),
+}));
+
+vi.mock("../../modules/getting-started/api/queries.js", () => ({
+  useGettingStarted: () => ({ data: fake.progress }),
+}));
+vi.mock("../../modules/getting-started/api/mutations.js", () => ({
+  useMarkUnlockSeen: () => ({ mutate: fake.seen }),
+}));
 
 vi.mock("../../auth.js", () => ({
   getUser: () => ({ profile: { sub: "owner-1" } }),
@@ -12,6 +27,8 @@ vi.mock("../../auth.js", () => ({
 
 const { assistantUnlockToCelebrate } =
   await import("../../modules/assistants/lib/assistant-unlock.js");
+const { AssistantUnlockCelebration } =
+  await import("../../modules/assistants/components/assistant-unlock-celebration.js");
 
 const unlock = (
   task: AvatarUnlock["task"],
@@ -59,5 +76,39 @@ describe("the celebration in the assistant's chat", () => {
       ),
     ).toBeNull();
     expect(assistantUnlockToCelebrate(undefined)).toBeNull();
+  });
+});
+
+describe("the celebration the first chat mounts", () => {
+  let root: Root | undefined;
+  let container: HTMLElement | undefined;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root?.unmount());
+    container?.remove();
+    fake.progress = { unlocks: [], dismissed: false };
+    fake.seen.mockClear();
+  });
+
+  // TEST_SCENARIO: the reset leaves its create task unseen, so the chat the person lands in mounts the celebration and names it — the same words the design draws beside the composer.
+  it("plays what a reset left unseen", () => {
+    fake.progress = progress([unlock("create-agent", "tower", false)]);
+    act(() => root!.render(createElement(AssistantUnlockCelebration)));
+    expect(
+      container!.textContent?.includes("You unlocked your first agent avatar!"),
+    ).toBe(true);
+  });
+
+  // TEST_SCENARIO: nothing unseen means nothing to play, so a second landing is quiet and the chat keeps its ordinary page.
+  it("plays nothing once the task is seen", () => {
+    fake.progress = progress([unlock("create-agent", "tower", true)]);
+    act(() => root!.render(createElement(AssistantUnlockCelebration)));
+    expect(container!.querySelector("[data-testid]")).toBeNull();
   });
 });

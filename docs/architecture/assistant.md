@@ -25,10 +25,13 @@ Where the switch is the ask, **the switch is the trigger**: turning the feature 
 Deleting the platform's Agent and turning the feature off and on again gives them a new one; renaming it does not, since the record still names it and it is still theirs.
 An install that pins the feature `on` has no switch to offer, so it gives each person theirs at their first authenticated request the install admits — the same moment the [Getting Started](getting-started.md) checklist first meets them — and again after they accept the Terms of Use, since neither makes a new request context.
 A person who has not accepted the Terms of Use, or whose acceptance a closed sign-up refuses, gets nothing.
-No batch job provisions dormant accounts: an install of any age gives each person theirs the next time they sign in.
 A request made with an API key or with an Agent's own credentials is not a person arriving, so it creates nothing.
 
+No batch job provisions dormant accounts: an install of any age gives each person theirs the next time they sign in.
+
 A tiny per-owner **record** is what makes that request-time create happen once: it names the Agent the platform made, and it is what says the person was already given one, so an install that pins the feature on never undoes a delete on the next page load.
+Its cost is deliberate: an install pinned `off` reads nothing at all, and one that offers the feature pays the flags and one primary-key read of the record on every authenticated request, for a person who never wanted an assistant as much as for one who did.
+The ceiling is that read per request; the upgrade path is a per-replica cache of the settled answer, dropped on the owner's own writes.
 The record is written *before* the Agent exists, settled by its primary key, and its compare-and-set on the Agent it names settles a later create — so concurrent callers of any of the three doors make one Agent between them, and a caller that loses the claim waits for the winner's Agent rather than making a second.
 Once the Agent is there, the record is marked ready, and a write that names a different Agent also starts the onboarding over on it.
 A claim nobody finished is a create that died: the next request finishes it, asking the store for the same Agent, and a reset waits a bounded while for one that is still alive before finishing it.
@@ -40,6 +43,7 @@ Its `~/AGENTS.md` is written at that create, in place of the template every othe
 **Ordering with the checklist.** The checklist decides once, at first meeting, whether a person used the platform before the checklist existed (`Create` in [getting-started](getting-started.md)).
 That decision reads the Agents a person already owns, so provisioning enrols them *before* it creates the assistant; the assistant is then what makes their first checklist task done rather than evidence they were here before.
 That task's avatar is recorded unlocked and unseen, since the person did not make this Agent by hand: the first chat plays its celebration, and marking it seen from there is what finishes the task, so nothing celebrates an Agent nobody made.
+An owner whose avatars are all seen has no avatar left to unlock, so nothing celebrates — the design's unlock is the first avatar, not this one.
 
 ## What its owner may do
 

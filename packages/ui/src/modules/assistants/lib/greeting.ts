@@ -1,16 +1,15 @@
 import {
-  ASSISTANT_IDEAS,
   ASSISTANT_LEARN_LINE,
   ASSISTANT_PROVIDER_LINE,
-  ASSISTANT_PROVIDER_NEUTRAL_LINE,
   ASSISTANT_SETTINGS_LINK,
   ASSISTANT_SETTINGS_SENTENCE,
   assistantGreetingOpening,
   type AssistantIdea,
   assistantIdeas,
+  providerTypeForTemplateId,
 } from "api-server-api";
 
-export const GREETING_PLACEHOLDER = `${ASSISTANT_IDEAS[0]!.label}: ${ASSISTANT_IDEAS[0]!.text}`;
+/* UNIT_BOUNDARY_DESCRIPTION: the composer under the greeting hints what the box takes — a message to this assistant by name, as the design does — rather than the first idea's text, which belongs on the pill. */
 
 export interface GreetingCopy {
   assistantName: string;
@@ -61,15 +60,13 @@ export function greetingCopy(input: {
   return {
     assistantName: input.assistantName,
     opening: assistantGreetingOpening(input),
-    provider:
-      input.provider === "curve-bender"
-        ? ASSISTANT_PROVIDER_LINE
-        : ASSISTANT_PROVIDER_NEUTRAL_LINE,
+    /* UNIT_BOUNDARY_DESCRIPTION: no provider sentence at all until the Agent's own Connection says CurveBender, so the line about switching stands alone rather than being said twice. */
+    provider: input.provider === "curve-bender" ? ASSISTANT_PROVIDER_LINE : "",
     learn: ASSISTANT_LEARN_LINE,
     settingsPrefix: ASSISTANT_SETTINGS_SENTENCE,
     settingsLink: ASSISTANT_SETTINGS_LINK,
     ideas: assistantIdeas(input.brandName),
-    placeholder: GREETING_PLACEHOLDER,
+    placeholder: `Message ${input.assistantName}`,
   };
 }
 
@@ -82,4 +79,25 @@ export function providerLineFor(
     templateId === "curve-bender-deployment"
     ? "curve-bender"
     : "other";
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the template of the provider Connection the Agent runs on — of the Connections on provider templates only, the one the person marked preferred and otherwise the first in that order — so the greeting names the provider it actually has, never an app Connection that happens to be listed before it. */
+export function preferredProviderTemplate(
+  data:
+    | {
+        connections: readonly {
+          preferred: boolean;
+          connection?: { templateId: string };
+        }[];
+      }
+    | undefined,
+): string | undefined {
+  if (!data) return undefined;
+  const providers = data.connections.filter(
+    (c) =>
+      c.connection !== undefined &&
+      providerTypeForTemplateId(c.connection.templateId) !== null,
+  );
+  const chosen = providers.find((c) => c.preferred) ?? providers[0];
+  return chosen?.connection?.templateId;
 }

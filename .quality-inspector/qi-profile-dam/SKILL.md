@@ -52,10 +52,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
   An assistant that has never sent anything opens its chat with a **greeting** in its own voice — the person's first name, its name and the install's brand, e.g. *Hi Jenna!
   I'm Dammy, your personal DAM agent.*, the model provider it is set up with and where to change it — and under it five labelled **ideas**: *Artifact:*, *Schedule:*, *Knowledge base:*, *Skill:* and *DAM:*.
   A click on an idea fills the message box and sends nothing; the box itself hints the first while it is empty.
-  The avatar the platform's own Agent unlocks plays its celebration on that first landing, beside the message box.
+  The avatar the platform's own Agent unlocks plays its celebration on that first landing, beside the message box; an account whose avatars are all seen has none left to unlock, so it plays nothing.
   A person whose assistant has never been used lands in its chat instead of Home, whatever it is called; the greeting is gone once it has had a conversation, so a New chat opens on the ordinary new-chat page.
   Experimental features ends with one **Onboarding progress** card — *Restarts your onboarding.
-  Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done (its avatar stays unlocked, as a first-timer's is).
+  Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done once its celebration has been dismissed — wait for it and click *Nice* before asserting the checklist, since until then the task is unlocked but unseen.
   For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dammy the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
   For an account it is off for the card does the checklist alone and leaves the account where it is.
 

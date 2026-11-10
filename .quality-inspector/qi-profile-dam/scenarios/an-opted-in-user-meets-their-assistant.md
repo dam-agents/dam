@@ -70,7 +70,9 @@ When the owner clicks *Reset onboarding progress* on the *Onboarding progress* c
 Then one confirm asks first, saying that every avatar locks again, that agents keep theirs and that nothing in the account is deleted
 When they confirm
 Then the app goes to its entry route and lands them in Dammy's chat, which opens on the greeting again
-And the Get started checklist counts one task of eight — Create your first agent — as done, its avatar unlocked and seen
+And the avatar-unlock celebration plays beside the composer again, as it did at the first open
+When they click its *Nice*, and only then
+Then the Get started checklist counts one task of eight — Create your first agent — as done, its avatar unlocked and seen
 And the assistant's earlier conversations are still in the sidebar
 
 ## AC-7 — the same card gives Dammy back when the account has none
