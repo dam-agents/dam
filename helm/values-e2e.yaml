@@ -6,6 +6,14 @@
 e2e:
   enabled: true
 
+# The assistant is pinned off for the whole suite. It is on for everyone by
+# default, so without this every lane's first sign-in would create a Dammy and
+# land the user in its chat, where the provider notice covers the page the
+# specs click on. A spec that needs the assistant needs a lane of its own, not
+# a switch: the mode decides for every user, whatever they stored.
+features:
+  dambledore: "off"
+
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
 # enabled template is rendered, and cluster:install then imports its

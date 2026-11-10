@@ -18,7 +18,13 @@ const LOADED = {
   listLoaded: true,
   stateLoaded: true,
 };
-const UNUSED = { recordReady: true, assistantId: ASSISTANT, used: false };
+const UNUSED = {
+  recordReady: true,
+  assistantId: ASSISTANT,
+  used: false,
+  ownsOtherAgents: false,
+  afterReset: false,
+};
 
 describe("landing in the assistant's chat", () => {
   // TEST_SCENARIO: on Home, once every answer is in and the assistant is unused, its chat opens — including while it is asleep.
@@ -38,6 +44,8 @@ describe("landing in the assistant's chat", () => {
         recordReady: false,
         assistantId: null,
         used: undefined,
+        ownsOtherAgents: false,
+        afterReset: false,
       }),
     ).toEqual({ decide: false });
   });
@@ -64,6 +72,8 @@ describe("landing in the assistant's chat", () => {
         recordReady: false,
         assistantId: null,
         used: false,
+        ownsOtherAgents: false,
+        afterReset: false,
       }),
     ).toEqual({ decide: false });
     expect(
@@ -72,6 +82,8 @@ describe("landing in the assistant's chat", () => {
         recordReady: false,
         assistantId: null,
         used: undefined,
+        ownsOtherAgents: false,
+        afterReset: false,
       }),
     ).toEqual({ decide: false });
     expect(landingAssistantId({ ...LOADED, ...UNUSED })).toEqual({
@@ -96,5 +108,28 @@ describe("landing in the assistant's chat", () => {
       decide: true,
       landIn: null,
     });
+  });
+
+  // TEST_SCENARIO: the assistant's chat is the first open, not a redirect for an account that has Agents of its own: an existing owner gets the assistant in the list and keeps their landing, while a person whose only Agent is the assistant lands in it.
+  it("lands only a person who owns nothing else", () => {
+    expect(landingAssistantId({ ...LOADED, ...UNUSED })).toEqual({
+      decide: true,
+      landIn: ASSISTANT,
+    });
+    expect(
+      landingAssistantId({ ...LOADED, ...UNUSED, ownsOtherAgents: true }),
+    ).toEqual({ decide: true, landIn: null });
+  });
+
+  // TEST_SCENARIO: the onboarding reset is the one ask that lands a person in the assistant's chat whatever else they own, since it is the reset that promised a first open.
+  it("lands them after the reset, whatever else they own", () => {
+    expect(
+      landingAssistantId({
+        ...LOADED,
+        ...UNUSED,
+        ownsOtherAgents: true,
+        afterReset: true,
+      }),
+    ).toEqual({ decide: true, landIn: ASSISTANT });
   });
 });
