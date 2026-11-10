@@ -110,6 +110,24 @@ describe("the Artifacts page with an artifact's address", () => {
     ]);
   });
 
+  // TEST_SCENARIO: the address stops naming an artifact and later names it again — two different route entries — so the second arrival opens it, while the close that happened in between is still the owner's choice.
+  it("reopens an artifact the address names again after leaving the page", async () => {
+    store.artifactId = "a-1";
+    await render();
+    store.dock = null;
+    await render();
+
+    store.artifactId = null;
+    await render();
+    store.artifactId = "a-1";
+    await render();
+
+    expect(store.setDock.mock.calls).toEqual([
+      [{ kind: "artifact", id: "a-1" }, undefined],
+      [{ kind: "artifact", id: "a-1" }, undefined],
+    ]);
+  });
+
   it("opens nothing for the library itself", async () => {
     await render();
 

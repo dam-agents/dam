@@ -29,8 +29,11 @@ export function ArtifactsView() {
   const openArtifact = useOpenArtifact();
   const opened = useRef<string | null>(null);
   useEffect(() => {
-    if (routedArtifactId === null || opened.current === routedArtifactId)
+    if (routedArtifactId === null) {
+      opened.current = null;
       return;
+    }
+    if (opened.current === routedArtifactId) return;
     opened.current = routedArtifactId;
     void openArtifact(routedArtifactId);
   }, [routedArtifactId, openArtifact]);
