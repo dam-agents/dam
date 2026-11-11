@@ -51,7 +51,19 @@ describe("agentHoldFailure", () => {
     const e = await closedWith(1011, "agent not ready: gateway-not-ready");
     const held = agentHoldFailure(e);
     expect(held).toEqual({ cause: "gateway-not-ready" });
-    expect(agentHoldFailureCopy(held!)).toContain("gateway");
+    expect(agentHoldFailureCopy(held!)).toEqual({
+      cause: expect.stringContaining("gateway"),
+      ownInstruction: false,
+    });
+  });
+
+  // TEST_SCENARIO: a full budget is not cured by retrying, so its sentence says what to do and where, and the card adds no generic "retry" beside it.
+  it("gives a full budget its own instruction", async () => {
+    const copy = agentHoldFailureCopy(
+      agentHoldFailure(await closedWith(1011, "agent not ready: over-budget"))!,
+    );
+    expect(copy.ownInstruction).toBe(true);
+    expect(copy.cause).toContain("disable it on its page");
   });
 
   it("reads an agent the relay could not reach at all", async () => {
@@ -85,9 +97,11 @@ describe("sessionOpenWaitLabel", () => {
     expect(sessionOpenWaitLabel("hibernating")).toBe("Waking the agent…");
   });
 
-  it("names the start while the agent comes up", () => {
-    expect(sessionOpenWaitLabel("starting")).toBe(
-      "Waiting for the agent to start…",
+  // TEST_SCENARIO: waking a sleeping agent and one still starting are the same wait to the reader, and a message sent meanwhile reads "Waking the agent" too, so the open says the same.
+  it("says the same while the agent comes up", () => {
+    expect(sessionOpenWaitLabel("starting")).toBe("Waking the agent…");
+    expect(sessionOpenWaitLabel("preparing_workspace")).toBe(
+      "Waking the agent…",
     );
   });
 

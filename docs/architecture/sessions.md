@@ -76,7 +76,8 @@ Resume is the better fit: the log already holds the history, so a harness that s
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log; the UI also reads its newest tail as data, a window of the provider's when the log is cold, and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
-While the open waits, the chat says what it waits for — waking a sleeping Agent, or one still starting — and a hold that ends without the Agent shows its cause with Retry, apart from a Session that would not load.
+While the open waits for an Agent that sleeps or is still starting, the chat says it is waking the Agent, as it does for a message sent then; "Reconnecting" stays for a running Agent whose connection dropped.
+A hold that ends without the Agent replaces the wait with a card: its cause and Retry, apart from a Session that would not load; a cause that says what to do, such as a full budget, carries no generic retry advice beside it.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
 An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id.
 It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
