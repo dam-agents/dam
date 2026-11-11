@@ -21,8 +21,6 @@ vi.mock("../../store.js", () => ({
       setOpenArtifactEdit: vi.fn(),
       setOpenArtifactDirty: vi.fn(),
       confirmDockDiscard: async () => true,
-      artifactFullPage: false,
-      setArtifactFullPage: vi.fn(),
     }),
 }));
 vi.mock("../../modules/sessions/components/side-panel-close-button.js", () => ({
@@ -55,6 +53,9 @@ vi.mock("../../modules/artifacts/hooks/use-artifact-editor.js", () => ({
 }));
 vi.mock("../../modules/artifacts/hooks/use-artifact-session-prompt.js", () => ({
   useArtifactSessionPrompt: () => undefined,
+}));
+vi.mock("../../modules/artifacts/hooks/use-confirm-delete-artifact.js", () => ({
+  useConfirmDeleteArtifact: () => vi.fn(),
 }));
 vi.mock("../../modules/artifacts/hooks/use-start-artifact-session.js", () => ({
   useStartArtifactSession: () => ({ available: false, start: vi.fn() }),

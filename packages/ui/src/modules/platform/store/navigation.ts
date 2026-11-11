@@ -18,6 +18,7 @@ export interface NavigationSlice {
   view: View;
   agentId: string | null;
   artifactId: string | null;
+  pageArtifactId: string | null;
   settingsTab: SettingsTab;
   settingsProfileId: string | null;
   usagePeriod: string | null;

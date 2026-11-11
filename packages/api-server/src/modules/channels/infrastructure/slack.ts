@@ -1918,6 +1918,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
    * An edit in that time replaces the text here, and the queue takes it. */
   const readAlongArrivals = new Map<string, { text: string }>();
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the messages handed to the Agents that read
+   * along, with the text they were handed and the Agent whose thread holds
+   * them, if any. A person's edit to one of them, once it no longer waits,
+   * starts an ambient round as a new read-along message would; the text kept
+   * here tells a real change from the same edit reported twice. */
+  const readAlongMessages = createTtlMap<
+    string,
+    { text: string; ownedBy?: string }
+  >({ ttlMs: MESSAGE_EDIT_TTL_MS });
+
   function messageKey(channel: string, ts: string): string {
     return `${channel} ${ts}`;
   }
@@ -7885,11 +7895,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             eventTs: last.eventTs,
             hasThread: inThread,
             title: sessionTitleOf(shown[0]!.text),
-            messages: shown.map(({ text, speaker, eventTs, slackUserId }) => ({
-              text: `${speaker}: ${text}`,
-              eventTs,
-              slackUserId,
-            })),
+            messages: shown.map(
+              ({ text, speaker, eventTs, slackUserId, edited }) => ({
+                text: `${speaker}: ${
+                  edited ? editedMessageText(eventTs, text, "decline") : text
+                }`,
+                eventTs,
+                slackUserId,
+              }),
+            ),
             images: shown.flatMap((m) => m.images),
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
@@ -8027,6 +8041,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     })();
     const { images, files, failures, release, speaker } = fetched;
     const withheldNote = renderWithheldNote(failures);
+    const ownedBy = owned.owner ?? undefined;
 
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text: arrival.text + withheldNote,
@@ -8038,7 +8053,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       images,
       files,
       release,
-      ...(owned.owner !== null && { ownedBy: owned.owner }),
+      ...(ownedBy !== undefined && { ownedBy }),
+    });
+    readAlongMessages.set(arrivalKey, {
+      text: arrival.text,
+      ...(ownedBy !== undefined && { ownedBy }),
     });
   }
 
@@ -8155,13 +8174,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
    * UNIT_BOUNDARY_DESCRIPTION: what an edit to a Slack message does. Wherever
    * the message still waits — being fetched, or in a queue — the edit only
    * replaces its text, whoever made it, so the Agent reads the message once,
-   * as it reads now. Past that, only a person's edit can start a turn, and
-   * only for a message an Agent was sent: a mention, a direct message, or a
-   * message in a thread one of its Sessions started. An edit that first tags
-   * the bot is also a mention sent at that moment, for every Agent not sent
-   * the message before. Every edit is kept as well, for the next turn of each
-   * Session that holds the earlier text, so an Agent that updates its own
-   * post often cannot make others answer each update.
+   * as it reads now. Past that, only a person's edit can start a turn: for a
+   * message an Agent was sent — a mention, a direct message, or a message in
+   * a thread one of its Sessions started — it follows the message to that
+   * Agent, and for a message Agents read along it starts an ambient round,
+   * as a new read-along message would, marked as an edit. An edit that first
+   * tags the bot is instead a mention sent at that moment, for every Agent
+   * not sent the message before. Every edit is kept as well, for the next
+   * turn of each Session that holds the earlier text, so an Agent that
+   * updates its own post often cannot make others answer each update.
    */
   async function handleMessageEdited(signedEvent: SlackMessageEditedEvent) {
     if (!gateway) return;
@@ -8178,7 +8199,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : null;
     const readAlong = readAlongArrivals.get(messageKey(channel, ts));
     if (readAlong) readAlong.text = event.text;
-    ambientQueues.get(ambientQueueKey(channel, threadTs))?.replace(retext);
+    const readAlongWaits =
+      readAlong !== undefined ||
+      (ambientQueues.get(ambientQueueKey(channel, threadTs))?.replace(retext) ??
+        false);
+    const readAlongRead = readAlongMessages.get(messageKey(channel, ts));
+    const readAlongBehind =
+      readAlongRead !== undefined && readAlongRead.text !== event.text;
+    if (readAlongRead) readAlongRead.text = event.text;
     messageEdits.note(channel, {
       ts,
       threadTs,
@@ -8235,6 +8263,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       edited: true,
     };
     const ownedKnown = held().some((reception) => reception.road === "owned");
+    if (readAlongBehind && !readAlongWaits && !event.mentionAdded)
+      enqueueAmbient(channel, threadTs, {
+        ...revision,
+        ...(readAlongRead.ownedBy !== undefined && {
+          ownedBy: readAlongRead.ownedBy,
+        }),
+      });
     await Promise.all([
       ...delivered.map((reception) =>
         match(reception)

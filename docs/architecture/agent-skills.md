@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-10-26
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -151,3 +151,4 @@ The same path lets `git clone` of a private repo work without any credential bei
   A compromised machine cannot exfiltrate that token because it is never mounted there — only the gateway pod — and the machine's egress allowlist admits no route to GitHub other than through that gateway.
 - **Publish is REST-only.** No `git push` on the publish path.
   `git` is used only for cloning non-GitHub sources during install and scan, and that path also routes through the gateway pod's credential injector.
+  That `git` runs with the agent's runtime env, as a workspace seed does ([runtime-delivery](runtime-delivery.md)), so it carries the Connection placeholder that makes the gateway inject a credential on an agent that requires addresses.

@@ -24,6 +24,7 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 export type Route =
   | { view: "home" }
   | { view: "artifacts"; artifactId?: string }
+  | { view: "artifact"; artifactId: string }
   | { view: "starter-kits" }
   | { view: "chat"; agent: string; session?: string }
   | {
@@ -97,6 +98,12 @@ export function parseRoute(path: string, search = ""): Route {
   }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
   if (path === "/artifacts") return { view: "artifacts" };
+  const artifactPageMatch = path.match(/^\/artifacts\/([^/]+)\/view\/?$/);
+  if (artifactPageMatch)
+    return {
+      view: "artifact",
+      artifactId: decodeSegment(artifactPageMatch[1]!),
+    };
   const artifactMatch = path.match(/^\/artifacts\/([^/]+)\/?$/);
   if (artifactMatch)
     return { view: "artifacts", artifactId: decodeSegment(artifactMatch[1]!) };
@@ -163,6 +170,8 @@ export function routeToPath(route: Route): string {
       return route.artifactId
         ? `/artifacts/${encodeURIComponent(route.artifactId)}`
         : "/artifacts";
+    case "artifact":
+      return `/artifacts/${encodeURIComponent(route.artifactId)}/view`;
     case "starter-kits":
       return "/starter-kits";
     case "chat": {
@@ -215,6 +224,7 @@ export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
   artifactId: string | null;
+  pageArtifactId: string | null;
   settingsTab: SettingsTab;
   settingsProfileId: string | null;
   usagePeriod: string | null;
@@ -226,6 +236,7 @@ export function routeToNavigationState(route: Route): {
     view: route.view,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
     artifactId: route.view === "artifacts" ? (route.artifactId ?? null) : null,
+    pageArtifactId: route.view === "artifact" ? route.artifactId : null,
     starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
     starterKitId: route.view === "starter-kit" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
