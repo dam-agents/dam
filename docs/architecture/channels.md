@@ -31,7 +31,6 @@ The binding key is the conversation id in every case, so DMs and group DMs reuse
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
 So a conversation carries at most one **default Agent** — the first connected, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
-A mention that is a command runs it instead (**Commands by mention**, below).
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
@@ -284,11 +283,8 @@ The differences are transport, identity model, and where the bot token comes fro
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
-- **Commands by mention.** Every command except `whisper` and `delete` also runs as `@bot <command>`, for people who never use slash commands.
-  A mention is a command only when its words parse as one, such as `@bot ambient <agent> on`; any other, such as `@bot who owns this?`, is a message to the default Agent.
-  A bare `@bot` runs `who`, a command word wins over a same-named Agent, and the reply is ephemeral.
-  Only a person's mention runs a command, so one Agent can never disconnect another.
-  `whisper` has none, as the mention shows its text to everyone; `@bot delete` only points to `/platform delete`, whose dialog Slack opens only from a slash command.
+- **Command look-alikes.** Commands run only from `/platform`; every mention reaches an Agent, `@bot whisper …` included, which opens no whisper.
+  A person whose mention reads as a valid command also gets an ephemeral tip naming the `/platform` form; a mention opening with an Agent's name, and an Agent's or app's post, get none.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
   Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.
