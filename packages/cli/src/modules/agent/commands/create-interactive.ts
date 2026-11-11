@@ -15,6 +15,7 @@ import {
   agentCreateInputSchema,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   isStartRefusal,
+  OPENAI_CHATGPT_TEMPLATE_ID,
   type ConnectionTemplateView,
   type ConnectionView,
   PROVIDER_PRESET_TYPES,
@@ -276,6 +277,11 @@ async function runCreate(
       const lines = [
         `✓ Agent created: ${name}`,
         `✓ Provider: ${provider.name} (${provider.type})`,
+        ...(provider.type === "chatgpt"
+          ? [
+              "→ Sign in on this agent’s Providers page, or run codex-chatgpt login --device-auth over SSH.",
+            ]
+          : []),
         ...(githubPat ? [`✓ GitHub: ${githubPat.name}`] : []),
         `→ Next: dam chat ${name}`,
       ];
@@ -471,6 +477,24 @@ async function addOrReplaceProvider(
 
     const existingOfType = personalProviderConn(existingConns, type);
 
+    if (type === "chatgpt") {
+      if (existingOfType)
+        return {
+          routing: { id: existingOfType.id },
+          name: existingOfType.name,
+          type,
+        };
+      const created = await createConnectionWithRename(trpc, cleanup, {
+        templateId: OPENAI_CHATGPT_TEMPLATE_ID,
+        name: OPENAI_CHATGPT_TEMPLATE_ID,
+        authKind: "none",
+        nameExample: "my-chatgpt",
+      });
+      if (created)
+        return { routing: { id: created.id }, name: created.name, type };
+      continue;
+    }
+
     if (existingOfType) {
       const replace = await confirm({
         message: `A ${PROVIDERS[type].displayName} connection already exists. Replace its credential?`,
@@ -586,10 +610,9 @@ async function createConnectionWithRename(
   params: {
     templateId: string;
     name: string;
-    value: string;
     nameExample: string;
     configInputs?: Record<string, string>;
-  },
+  } & ({ authKind?: "header"; value: string } | { authKind: "none" }),
 ): Promise<{ id: string; name: string } | null> {
   let name = params.name;
   const hasConfig =
@@ -599,8 +622,9 @@ async function createConnectionWithRename(
       const created = await trpc.connections.create.mutate({
         templateId: params.templateId,
         name,
-        authKind: "header",
-        value: params.value,
+        ...(params.authKind === "none"
+          ? { authKind: "none" as const }
+          : { authKind: "header" as const, value: params.value }),
         ...(hasConfig ? { configInputs: params.configInputs } : {}),
       });
       cleanup.newConnectionIds.push(created.id);

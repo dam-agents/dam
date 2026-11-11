@@ -3,6 +3,7 @@
 Last verified: 2026-11-11
 
 An owner can enable a ChatGPT subscription Connection and grant it to an agent alongside other provider Connections.
+The interactive CLI creates or reuses this secret-free Connection without an API-key prompt, then directs the owner to sign in on the agent.
 Subscription models use the `chatgpt` provider alias, while API models use `openai`, so replacing Connections cannot silently change a saved model's billing path.
 The Connection configures Codex's native mode and permits its authentication and inference hosts; it stores no subscription token in the platform.
 The owner authorizes the agent with its Providers page’s device-sign-in action or over SSH, and Codex stores, refreshes and removes its login in the persistent home.
