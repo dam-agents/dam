@@ -20,6 +20,19 @@ const ACTIVITY_INTERVAL_MS = 30_000;
 
 export type AgentTrpcRelay = WakeGatedRelay;
 
+const HISTORY_PATH = "sessions.history";
+
+function historyRead(frame: unknown): string | null {
+  if (typeof frame !== "object" || frame === null) return null;
+  const { method, params } = frame as {
+    method?: unknown;
+    params?: { path?: unknown };
+  };
+  return method === "query" && params?.path === HISTORY_PATH
+    ? HISTORY_PATH
+    : null;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the tRPC client's keep-alive ping. While the relay holds a socket for a waking agent it answers the ping itself, so the client does not drop and redial a socket that is only waiting.
 const KEEPALIVE_PING = "PING";
 const KEEPALIVE_PONG = "PONG";
@@ -46,6 +59,7 @@ export function createAgentTrpcRelay(
   };
 
   return createWakeGatedRelay({
+    name: "trpc",
     repo,
     upstreamBase,
     upstreamPath: () => "/api/trpc-ws",
@@ -84,6 +98,7 @@ export function createAgentTrpcRelay(
       tick: (id) => void bumpActivity(id),
     },
     onWoken: (id) => stamper.stamp(id),
+    watchedRequest: historyRead,
     closeOnWakeFailure: (err) =>
       isAgentWakeTimeoutError(err)
         ? `agent not ready: ${err.failure.kind}`

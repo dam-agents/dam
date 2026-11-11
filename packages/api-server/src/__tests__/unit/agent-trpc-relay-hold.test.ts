@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready, or, on a wake from hibernation, once the agent answers its health check while its gateway is ready. A running agent that is not Ready waits for Ready. A wake that fails closes the socket with the wake's cause. On shutdown it closes every socket with 1001, as the other relays do.
+// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready, or once the agent answers its health check while its gateway is ready: on a wake from hibernation, and on a running agent whose readiness went down for its current spec while no restart, stop or roll is under way. An agent that restarts, or whose spec changed, waits for Ready. A wake that fails closes the socket with the wake's cause. On shutdown it closes every socket with 1001, as the other relays do.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
@@ -208,6 +208,79 @@ describe("agent tRPC relay during a wake", () => {
     const h = await harness({ ready: false, gatewayPodReady: true });
     h.upstream.state.healthy = true;
     h.ws.send("first");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(h.upstream.received).toEqual([]);
+    h.wake.resolve();
+    await until(() => h.upstream.received.includes("first"));
+  });
+
+  // TEST_SCENARIO: the controller briefly cannot reach a running agent's runner, or the runner misses one probe under load, and takes Ready down for the agent's current spec while the guest keeps answering. The hold trusts that answer instead of waiting minutes for Ready.
+  it("forwards on a running agent's answer while its readiness is down for its current spec", async () => {
+    const h = await harness({
+      ready: false,
+      hibernated: false,
+      gatewayPodReady: true,
+      machineNotReadyReason: "MachineNotReady",
+      machineReadinessCurrent: true,
+    });
+    h.ws.send("first");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(h.upstream.received).toEqual([]);
+    h.upstream.state.healthy = true;
+    await until(() => h.upstream.received.includes("first"));
+  });
+
+  // TEST_SCENARIO: the controller publishes a machine the runner replaces as MachineRestarting, and readiness written for an older spec means a roll may be under way. Either way the old guest can still answer, so the hold waits for Ready.
+  it.each([
+    {
+      machineNotReadyReason: "MachineRestarting",
+      machineReadinessCurrent: true,
+    },
+    {
+      machineNotReadyReason: "MachineNotReady",
+      machineReadinessCurrent: false,
+    },
+    {
+      machineNotReadyReason: "MachineNotReady",
+      machineReadinessCurrent: true,
+      stopRequested: true,
+    },
+  ])(
+    "waits for Ready on a running agent replacing its machine: %o",
+    async (state) => {
+      const h = await harness({
+        ready: false,
+        hibernated: false,
+        gatewayPodReady: true,
+        ...state,
+      });
+      h.upstream.state.healthy = true;
+      h.ws.send("first");
+      await new Promise((r) => setTimeout(r, 400));
+      expect(h.upstream.received).toEqual([]);
+      h.wake.resolve();
+      await until(() => h.upstream.received.includes("first"));
+    },
+  );
+
+  // TEST_SCENARIO: a restart that begins while a hold polls a running agent ends the trust in its answers: the old guest answers until the runner stops it, so from then on the hold waits for Ready.
+  it("stops trusting the answer once a restart begins during the hold", async () => {
+    const agent: Partial<InfraAgent> = {
+      ready: false,
+      hibernated: false,
+      gatewayPodReady: false,
+      machineNotReadyReason: "MachineNotReady",
+      machineReadinessCurrent: true,
+    };
+    const h = await harness(agent);
+    h.ws.send("first");
+    agent.machineNotReadyReason = "MachineRestarting";
+    await new Promise((r) => setTimeout(r, 250));
+    Object.assign(agent, {
+      gatewayPodReady: true,
+      machineNotReadyReason: "MachineNotReady",
+    });
+    h.upstream.state.healthy = true;
     await new Promise((r) => setTimeout(r, 400));
     expect(h.upstream.received).toEqual([]);
     h.wake.resolve();

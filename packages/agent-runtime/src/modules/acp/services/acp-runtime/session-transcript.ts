@@ -18,6 +18,7 @@ interface SessionLog {
   nextSeq: number;
   totalBytes: number;
   truncated: boolean;
+  before: string | null;
   metadata: CachedMetadata;
 }
 
@@ -56,13 +57,26 @@ export interface SessionTranscript {
     opts?: { replayFor?: string },
   ): PageReplay;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
+  continuesBefore(sessionId: string, before: string): void;
+  historyStart(sessionId: string): string | null;
+  historyBefore(sessionId: string, cursor: string): string | null;
+  historyCursor(sessionId: string, before: string): string | null;
+  replayLines(
+    channel: ClientChannel,
+    lines: readonly string[],
+    opts?: { replayFor?: string },
+  ): void;
   cacheMetadata(
     sessionId: string,
     result: unknown,
     opts?: { synthetic?: boolean },
   ): void;
   metadataOf(sessionId: string): CachedMetadata;
-  lines(sessionId: string): { frames: string[]; truncated: boolean };
+  lines(sessionId: string): {
+    frames: string[];
+    truncated: boolean;
+    partial: boolean;
+  };
   forget(sessionId: string): void;
   sessionCount(): number;
   dropChannel(channel: ClientChannel): void;
@@ -77,6 +91,14 @@ export interface SessionTranscriptDeps {
 
 function encodePageCursor(generation: string, seq: number): string {
   return Buffer.from(`${generation}:${seq}`, "utf8").toString("base64url");
+}
+
+const HISTORY_MARK = ":history:";
+
+function encodeHistoryCursor(generation: string, before: string): string {
+  return Buffer.from(`${generation}${HISTORY_MARK}${before}`, "utf8").toString(
+    "base64url",
+  );
 }
 
 function decodePageCursor(
@@ -154,7 +176,11 @@ function withPlatformMeta(
  * log holds, clipped only by eviction. replayPage serves older ranges on
  * demand without moving any cursor; the cursor embeds the log generation, so
  * a cursor minted before this log was (re)built is refused rather than
- * silently paging from a renumbered position. When a replay carries a
+ * silently paging from a renumbered position. A log filled from the newest
+ * part of the harness's own history continues before its first entry in
+ * that history: the cut that reaches the log's start carries a history
+ * cursor instead, which the caller pages from the history provider, until an
+ * eviction drops the log's start and with it the continuity. When a replay carries a
  * replayFor token, every replayed frame is stamped with it, letting the
  * requesting client tell its replay apart from live fan-out on the same
  * connection. Every live entry is stamped with the wall-clock time it was
@@ -176,6 +202,7 @@ export function createSessionTranscript(
         nextSeq: 1,
         totalBytes: 0,
         truncated: false,
+        before: null,
         metadata: { cached: false },
       };
       sessionLogs.set(sessionId, log);
@@ -207,8 +234,18 @@ export function createSessionTranscript(
       const evicted = log.entries.shift()!;
       log.totalBytes -= evicted.bytes;
       log.truncated = true;
+      log.before = null;
     }
     return seq;
+  }
+
+  function olderThanLog(log: SessionLog): ReplayClip {
+    return log.before === null
+      ? { clipped: log.truncated }
+      : {
+          clipped: true,
+          older: encodeHistoryCursor(log.generation, log.before),
+        };
   }
 
   function cursorFor(channel: ClientChannel, sessionId: string): number {
@@ -297,7 +334,7 @@ export function createSessionTranscript(
           older: encodePageCursor(log.generation, pending[0]!.seq),
         };
       }
-      return { clipped: log.truncated };
+      return olderThanLog(log);
     },
 
     replayPage(channel, sessionId, cursor, opts) {
@@ -309,8 +346,7 @@ export function createSessionTranscript(
       const older = log.entries.filter((entry) => entry.seq < decoded.seq);
       const page = older.slice(tailStart(older, deps.replayTailEvents));
       const first = page[0];
-      if (first === undefined)
-        return { ok: true, clip: { clipped: log.truncated } };
+      if (first === undefined) return { ok: true, clip: olderThanLog(log) };
       for (const entry of page) {
         if (!channel.isOpen()) break;
         channel.send(
@@ -328,7 +364,42 @@ export function createSessionTranscript(
           },
         };
       }
-      return { ok: true, clip: { clipped: log.truncated } };
+      return { ok: true, clip: olderThanLog(log) };
+    },
+
+    continuesBefore(sessionId, before) {
+      const log = sessionLogs.get(sessionId);
+      if (log && !log.truncated) log.before = before;
+    },
+
+    historyStart(sessionId) {
+      return sessionLogs.get(sessionId)?.before ?? null;
+    },
+
+    historyBefore(sessionId, cursor) {
+      const log = sessionLogs.get(sessionId);
+      if (!log) return null;
+      const text = Buffer.from(cursor, "base64url").toString("utf8");
+      const prefix = `${log.generation}${HISTORY_MARK}`;
+      return text.startsWith(prefix) && text.length > prefix.length
+        ? text.slice(prefix.length)
+        : null;
+    },
+
+    historyCursor(sessionId, before) {
+      const log = sessionLogs.get(sessionId);
+      return log ? encodeHistoryCursor(log.generation, before) : null;
+    },
+
+    replayLines(channel, lines, opts) {
+      for (const line of lines) {
+        if (!channel.isOpen()) break;
+        channel.send(
+          withPlatformMeta(rewriteAuthError(line), {
+            replayFor: opts?.replayFor,
+          }),
+        );
+      }
     },
 
     advanceToTail(channel, sessionId) {
@@ -348,10 +419,11 @@ export function createSessionTranscript(
 
     lines(sessionId) {
       const log = sessionLogs.get(sessionId);
-      if (!log) return { frames: [], truncated: false };
+      if (!log) return { frames: [], truncated: false, partial: false };
       return {
         frames: log.entries.map((entry) => entry.line),
         truncated: log.truncated,
+        partial: log.before !== null,
       };
     },
 

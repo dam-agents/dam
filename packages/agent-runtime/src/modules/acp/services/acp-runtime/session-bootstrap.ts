@@ -88,6 +88,7 @@ export interface SessionBootstrapDeps {
   loadTimeoutMs: number;
   log(msg: string): void;
   historyProvider?: HistoryProvider;
+  historyPageFrames: number;
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
@@ -142,7 +143,13 @@ export interface SessionBootstrapDeps {
  * process at all, the response is synthesized with placeholder metadata, and
  * the session is reported provider-served so the runtime knows the harness
  * itself has not loaded it yet. Any provider failure falls back to the
- * harness load.
+ * harness load. A fill that starts for a tail load asks a provider that reads
+ * windows for the newest part of the history alone, so a cold open does not
+ * read what it does not show; its log then continues before its first entry
+ * in that history, and a page past the log's start is read from the provider.
+ * A fill for anything else — a whole load, the runtime's own fill — reads the
+ * whole history, as one that keeps the conversation must, and a whole load
+ * of a log filled that way first replays the history before it.
  * fill runs the same cold fill for the runtime itself, with no client
  * waiting: it reports whether the transcript now holds the session.
  */
@@ -215,6 +222,7 @@ export function createSessionBootstrap(
     sessionId: string,
     tail: boolean,
     loadToken?: string,
+    olderSent = false,
   ): void {
     const metadata = deps.transcript.metadataOf(sessionId);
     if (!metadata.cached) {
@@ -229,6 +237,7 @@ export function createSessionBootstrap(
           tail,
           replayFor: loadToken,
         });
+        if (olderSent) clip = { clipped: false };
         deps.engage(channel, sessionId);
       })
       .with("resume", () => {
@@ -299,11 +308,16 @@ export function createSessionBootstrap(
     deps.sendToAgent(rewriteCwd(loadFrame, deps.workingDir));
   }
 
-  function serveFromProvider(sessionId: string, lines: string[]): void {
+  function serveFromProvider(
+    sessionId: string,
+    lines: string[],
+    older: string | null = null,
+  ): void {
     const boot = bootstrapBySession.get(sessionId);
     if (!boot) return;
     const served = boot.adjustLines ? boot.adjustLines(lines) : lines;
     for (const line of served) deps.transcript.appendReplay(sessionId, line);
+    if (older !== null) deps.transcript.continuesBefore(sessionId, older);
     deps.transcript.cacheMetadata(
       sessionId,
       { sessionId, modes: null, configOptions: null },
@@ -381,13 +395,129 @@ export function createSessionBootstrap(
       startHarnessLoad(sessionId, state);
       return;
     }
-    void provider.fetch(sessionId).then((lines) => {
-      if (bootstrapBySession.get(sessionId) !== state) return;
-      if (lines === null) {
-        startHarnessLoad(sessionId, state);
+    const whole = () =>
+      provider.fetch(sessionId).then((lines) => {
+        if (bootstrapBySession.get(sessionId) !== state) return;
+        if (lines === null) {
+          startHarnessLoad(sessionId, state);
+          return;
+        }
+        serveFromProvider(sessionId, lines);
+      });
+    const window = provider.window?.bind(provider);
+    if (
+      !window ||
+      waiter?.kind !== "load" ||
+      !waiter.tail ||
+      fill !== undefined ||
+      adjustLines !== undefined
+    ) {
+      void whole();
+      return;
+    }
+    void window(sessionId, { frames: deps.historyPageFrames }).then(
+      (newest) => {
+        if (bootstrapBySession.get(sessionId) !== state) return;
+        if (newest === null || !tailAlone(state)) {
+          void whole();
+          return;
+        }
+        serveFromProvider(sessionId, newest.lines, newest.older);
+      },
+    );
+  }
+
+  function tailAlone(state: BootstrapState): boolean {
+    return (
+      state.fills.length === 0 &&
+      state.adjustLines === undefined &&
+      state.waiters.every((w) => w.kind === "resume" || w.tail)
+    );
+  }
+
+  function loadWithOlder(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    before: string,
+    loadToken: string | undefined,
+  ): void {
+    void deps.historyProvider!.window!(sessionId, {
+      frames: Number.MAX_SAFE_INTEGER,
+      before,
+    }).then((older) => {
+      if (!channel.isOpen()) return;
+      if (older !== null)
+        deps.transcript.replayLines(channel, older.lines, {
+          replayFor: loadToken,
+        });
+      respondFromLog(
+        "load",
+        channel,
+        originalId,
+        sessionId,
+        false,
+        loadToken,
+        older !== null,
+      );
+    });
+  }
+
+  function pageFromHistory(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    metadata: unknown,
+    before: string,
+    loadToken: string | undefined,
+  ): void {
+    void deps.historyProvider!.window!(sessionId, {
+      frames: deps.historyPageFrames,
+      before,
+    }).then((page) => {
+      if (!channel.isOpen()) return;
+      if (page === null) {
+        channel.send(expiredPage(originalId));
         return;
       }
-      serveFromProvider(sessionId, lines);
+      deps.transcript.replayLines(channel, page.lines, {
+        replayFor: loadToken,
+      });
+      const older =
+        page.older === null
+          ? null
+          : deps.transcript.historyCursor(sessionId, page.older);
+      channel.send(
+        rewriteAuthError(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: originalId,
+            result: withReplayMeta(
+              metadata,
+              older === null ? { clipped: false } : { clipped: true, older },
+              null,
+              [],
+              [],
+              [],
+              [],
+              null,
+              NO_ATTRIBUTION,
+              deps.capabilities(),
+            ),
+          }),
+        ),
+      );
+    });
+  }
+
+  function expiredPage(originalId: JsonRpcId): string {
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      id: originalId,
+      error: {
+        code: -32602,
+        message: "replay window expired; load the session again",
+      },
     });
   }
 
@@ -403,6 +533,15 @@ export function createSessionBootstrap(
 
     requestLoad(channel, originalId, sessionId, opts) {
       const tail = opts?.tail ?? false;
+      const before = tail ? null : deps.transcript.historyStart(sessionId);
+      if (
+        before !== null &&
+        deps.historyProvider?.window &&
+        deps.transcript.metadataOf(sessionId).cached
+      ) {
+        loadWithOlder(channel, originalId, sessionId, before, opts?.loadToken);
+        return;
+      }
       if (deps.transcript.metadataOf(sessionId).cached) {
         respondFromLog(
           "load",
@@ -425,6 +564,20 @@ export function createSessionBootstrap(
 
     requestPage(channel, originalId, sessionId, cursor, opts) {
       const metadata = deps.transcript.metadataOf(sessionId);
+      const before = metadata.cached
+        ? deps.transcript.historyBefore(sessionId, cursor)
+        : null;
+      if (metadata.cached && before !== null && deps.historyProvider?.window) {
+        pageFromHistory(
+          channel,
+          originalId,
+          sessionId,
+          metadata.value,
+          before,
+          opts?.loadToken,
+        );
+        return;
+      }
       if (metadata.cached) {
         const page = deps.transcript.replayPage(channel, sessionId, cursor, {
           replayFor: opts?.loadToken,
@@ -450,15 +603,7 @@ export function createSessionBootstrap(
           return;
         }
       }
-      const error = JSON.stringify({
-        jsonrpc: "2.0",
-        id: originalId,
-        error: {
-          code: -32602,
-          message: "replay window expired; load the session again",
-        },
-      });
-      if (channel.isOpen()) channel.send(error);
+      if (channel.isOpen()) channel.send(expiredPage(originalId));
     },
 
     fill(sessionId, done, adjustLines) {

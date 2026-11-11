@@ -64,6 +64,7 @@ export interface PendingRewrite {
 export interface SessionError {
   sessionId: string;
   kind: SessionFailureKind;
+  agentCause?: string;
 }
 
 export interface SessionAttribution {

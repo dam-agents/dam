@@ -177,7 +177,11 @@ export interface AcpRuntime {
   hasSessionWork(sessionId: string): boolean;
   toolCallsOpen(sessionId: string): boolean;
   harnessBusy(sessionId: string): boolean;
-  sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
+  sessionFrames(sessionId: string): {
+    frames: string[];
+    truncated: boolean;
+    partial: boolean;
+  };
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
   releaseSession(sessionId: string): void;
@@ -732,6 +736,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(msg);
     },
     historyProvider: deps.historyProvider,
+    historyPageFrames: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     onProviderServed(sessionId) {
       harnessColdSessions.add(sessionId);
       deps.sessionMetadata?.markStored(sessionId);

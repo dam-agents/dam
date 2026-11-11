@@ -5,7 +5,8 @@ import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
-import { readyOrAnswering } from "./ready-or-answering.js";
+import { holdStartOf, readyOrAnswering } from "./ready-or-answering.js";
+import { createRequestSpans, startHoldSpan } from "./relay-spans.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import {
   acpNativeRowId,
@@ -61,6 +62,14 @@ export function sanitizeCloseCode(code: number): number {
     return code;
   if (code >= 3000 && code <= 4999) return code;
   return 1011;
+}
+
+function sessionLoad(frame: unknown): string | null {
+  if (typeof frame !== "object" || frame === null) return null;
+  const method = (frame as { method?: unknown }).method;
+  return method === "session/load" || method === "session/resume"
+    ? method
+    : null;
 }
 
 function connectUpstream(url: string): Promise<WebSocket> {
@@ -223,9 +232,16 @@ export function createAcpRelay(
       });
 
       let clientGone = false;
+      const hold = startHoldSpan("acp", holdStartOf(repo.peekCached(agentId)));
+      const requests = createRequestSpans("acp", sessionLoad, () =>
+        hold.link(),
+      );
+      const heldSince = Date.now();
       client.once("close", () => {
         clientGone = true;
         pending.length = 0;
+        hold.end("gone");
+        requests.close();
       });
 
       const upstreamQuery = new URLSearchParams();
@@ -247,17 +263,21 @@ export function createAcpRelay(
         .then(async () => {
           if (passive) {
             if (!(await repo.isReady(agentId))) {
+              hold.end("refused");
               client.close(1011, "agent not ready");
               throw new Error("agent not ready");
             }
+            hold.end("ready");
             return;
           }
-          await readyOrAnswering(
-            repo,
-            agentId,
-            repo.ensureReady(agentId),
-            `http://${agentServiceAddress(agentId, namespace)}/healthz`,
-            () => clientGone,
+          hold.end(
+            await readyOrAnswering(
+              repo,
+              agentId,
+              repo.ensureReady(agentId),
+              `http://${agentServiceAddress(agentId, namespace)}/healthz`,
+              () => clientGone,
+            ),
           );
         })
         .then(() => connectUpstream(upstreamUrl))
@@ -269,12 +289,18 @@ export function createAcpRelay(
           actor.attached();
 
           let held: Promise<void> | null = null;
+          let queuedMs = Date.now() - heldSince;
           const send = (
             data: Buffer | ArrayBuffer | Buffer[] | string,
             isBinary: boolean,
           ) => {
-            if (upstream.readyState === WebSocket.OPEN)
-              upstream.send(data, { binary: isBinary });
+            if (upstream.readyState !== WebSocket.OPEN) return;
+            upstream.send(data, { binary: isBinary });
+            if (
+              !isBinary &&
+              (typeof data === "string" || Buffer.isBuffer(data))
+            )
+              requests.sent(data, queuedMs);
           };
           const forward = (
             data: Buffer | ArrayBuffer | Buffer[] | string,
@@ -327,6 +353,7 @@ export function createAcpRelay(
             );
           }
           pending.length = 0;
+          queuedMs = 0;
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
@@ -355,6 +382,7 @@ export function createAcpRelay(
               return;
             }
 
+            requests.answered(data as Buffer);
             const parsed = tryParse(data);
             client.send(data, { binary: false });
             if (
@@ -389,6 +417,7 @@ export function createAcpRelay(
           });
         })
         .catch((err: unknown) => {
+          hold.end("failed", err);
           if (client.readyState !== WebSocket.OPEN) return;
           try {
             const reason = isAgentWakeTimeoutError(err)

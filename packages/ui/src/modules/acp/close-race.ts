@@ -19,6 +19,10 @@ export function connectionCloseReason(e: unknown): string | null {
   return e instanceof ConnectionClosedError ? e.closeReason : null;
 }
 
+export function connectionCloseCode(e: unknown): number | null {
+  return e instanceof ConnectionClosedError ? e.closeCode : null;
+}
+
 export function isConnectionClosed(e: unknown): boolean {
   return e instanceof ConnectionClosedError;
 }

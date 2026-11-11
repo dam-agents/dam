@@ -187,3 +187,41 @@ describe("worker history provider", () => {
     expect(await provider.fetch("sess-a")).toBeNull();
   });
 });
+
+describe("worker history provider windows", () => {
+  /**
+   * TEST_SCENARIO: the module is asked for one window of the conversation,
+   * and answers its lines with the cursor of the part before it; a module
+   * that answers a window with an array has given the whole conversation.
+   */
+  it("passes the ask to the module and reads its window back", async () => {
+    const source = `
+      export function loadHistory(input) {
+        const line = ${JSON.stringify(frameLine("SID", "T"))}.replace('"SID"', JSON.stringify(input.sessionId ?? input));
+        if (typeof input === "string") return [line];
+        return { lines: [line.replace('"T"', JSON.stringify(input.frames + ":" + (input.before ?? "-")))], older: "c1" };
+      }
+    `;
+    const provider = createWorkerHistoryProvider({
+      modulePath: dataModule(source),
+      log: () => {},
+    });
+    const window = await provider.window!("sess-a", {
+      frames: 5,
+      before: "c0",
+    });
+    expect(window?.older).toBe("c1");
+    expect(window?.lines[0]).toContain("5:c0");
+
+    const whole = createWorkerHistoryProvider({
+      modulePath: dataModule(
+        `export function loadHistory(input) { return [${JSON.stringify(frameLine("SID", "all"))}.replace('"SID"', JSON.stringify(input.sessionId))]; }`,
+      ),
+      log: () => {},
+    });
+    expect(await whole.window!("sess-b", { frames: 5 })).toEqual({
+      lines: [expect.stringContaining("all")],
+      older: null,
+    });
+  });
+});

@@ -79,6 +79,7 @@ export function createTerminalRelay(
   });
 
   const relay = createWakeGatedRelay({
+    name: "terminal",
     repo,
     upstreamBase,
     ensureReady: (agentId, req) =>
