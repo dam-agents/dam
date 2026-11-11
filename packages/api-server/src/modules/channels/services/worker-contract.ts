@@ -16,6 +16,11 @@ export interface ChannelCard {
 
 export interface PostMessageOptions {
   conversationId?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: set when an Agent made the post with one of
+   *  its own tools. The platform also posts in an Agent's name — a greeting,
+   *  an alert to its owner — and only a post the Agent made itself is one it
+   *  may change later. */
+  byAgent?: boolean;
   attachment?: ChannelAttachment;
   card?: ChannelCard;
   unfurlLinks?: boolean;
@@ -31,6 +36,19 @@ export interface ChannelReply {
   card?: ChannelCard;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An Agent's change to a post it made earlier. It
+ * names the post by the conversation and the message reference the posting
+ * tool returned, and carries the whole new text and card: the post shows
+ * exactly what the edit holds, never a merge with what it showed before.
+ */
+export interface PostEdit {
+  conversationId: string;
+  messageId: string;
+  text: string;
+  card?: ChannelCard;
 }
 
 export interface ChannelReaction {
@@ -232,6 +250,7 @@ export interface ChannelWorker {
 
 export interface AddressedWorker {
   reply(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
+  editPost(instanceName: string, edit: PostEdit): Promise<ChannelSendResult>;
   react(
     instanceName: string,
     reaction: ChannelReaction,

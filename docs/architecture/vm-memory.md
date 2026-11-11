@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-11-06
+Last verified: 2026-11-11
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for their agents, which have no size of their own.
@@ -137,6 +137,11 @@ Such a start is held under the unreadable-grant rule above rather than reclaimed
 The grace is recorded on every reconcile, from the sizing read taken after the ensure, and a reconcile that finds the ask no longer stepped clears it.
 Recording it only where a reclaim reads it would leave a grace the node's grant ended behind, and a later start that needs the same request of the same pod would inherit it and free an idle machine at once.
 A demand that no longer steps down ends the wait at once.
+The grace of an ask is not the only bound: a start also gets room once it has waited a grace in all, counted from the first pass that found it waiting.
+Each changed ask starts its own grace, so a start whose demand moves during its wake — an idle machine's use drifting a step, another start admitted — would otherwise outlive every grace without one of them running out, and a wake would time out on a start nothing was freeing room for.
+A pass that finds the start no longer waiting ends its clock, so the next start of the same agent waits its own grace.
+The room a waiting start frees is measured against the larger of two counts of what the machines hold: the controller's, and the committed figure the runner's usage read reports.
+The runner refuses the start against its own count, which counts a booting or warming machine at its warm-up floor, and the controller's reading of a machine is up to a memory pass old; a reclaim from the lower count would read no need and free nothing, while the runner keeps refusing.
 Room to free is counted from the machines the runner holds or is about to hold, never from the owner's other starts waiting for the node: a waiting start holds nothing, so counting it would ask a reclaim for room no idle agent can give and neither start would ever be admitted, and a waiting agent is never itself the agent a reclaim hibernates.
 **A restart is not an admission.** A machine the runner already counts as running is restarted against the pool limit alone, never the grant: its boot replaces memory it already holds, and the request the ceiling comes from is sized from the use it holds while idle, below the warm-up floor it boots at, so capping that restart would refuse a revision roll, an image or env change, a CA rotation and a guest gone quiet for good — and no retry would ever grow the request the machine's own use cannot raise.
 The trade-off is that a restart wave — a roll, or a CA rotation across an install — can pass the node's grant until the request rises and the node enacts it, which is the behaviour every start had before this ceiling; the runner's own warm-up counting still holds the wave to the pool limit.

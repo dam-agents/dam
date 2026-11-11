@@ -190,6 +190,15 @@ export interface SlackPostMessage {
   metadata?: SlackMessageMetadata;
 }
 
+export interface SlackUpdateMessage {
+  channel: string;
+  ts: string;
+  text: string;
+  blocks: SlackBlock[];
+  metadata: SlackMessageMetadata;
+  teamId: SlackWorkspace;
+}
+
 export interface SlackPostEphemeral {
   channel: string;
   user: string;
@@ -319,6 +328,11 @@ export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: replace the text, blocks and metadata of a
+   *  message this bot posted. Slack keeps the message's send time, its
+   *  thread, and its sender name and icon; a refusal is thrown with Slack's
+   *  own error code. */
+  updateMessage(args: SlackUpdateMessage): Promise<void>;
   deleteMessage(
     channel: string,
     ts: string,

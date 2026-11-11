@@ -832,6 +832,13 @@ func expireTheStepDownGrace(t *testing.T, r *AgentReconciler, agent *apiv1.Agent
 // UNIT_BOUNDARY_DESCRIPTION: one idle machine up and holding memory, two starts waiting for the node, and a runner pod the node has granted 2560 MiB of, which holds the two machines that wait but not the one more a start needs. `stepped` puts the reduced ask in the pod, as a step-down the node has already been given and refused; without it the pod carries the whole demand, as a step-down the node has not been given yet. Both figures come from the production sizing, so the fixture cannot drift from it.
 func deferredResizeWithWaits(t *testing.T, stepped bool) (context.Context, *AgentReconciler, *apiv1.Agent) {
 	t.Helper()
+	ctx, r, _, agent := deferredResizeOnNode(t, stepped)
+	return ctx, r, agent
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the same state as deferredResizeWithWaits, with the fake runner it answers from, so a test can set what that runner reports.
+func deferredResizeOnNode(t *testing.T, stepped bool) (context.Context, *AgentReconciler, *fakeNode, *apiv1.Agent) {
+	t.Helper()
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -876,5 +883,5 @@ func deferredResizeWithWaits(t *testing.T, stepped bool) (context.Context, *Agen
 	require.NoError(t, err)
 	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	return ctx, r, agent
+	return ctx, r, node, agent
 }
