@@ -77,6 +77,7 @@ vi.mock("../../modules/sessions/api/queries.js", () => ({
     refetch: vi.fn(),
   }),
   useProvisionalSessions: () => undefined,
+  useAgentSession: () => ({ data: undefined }),
 }));
 
 const { useAgentSessionList } =
