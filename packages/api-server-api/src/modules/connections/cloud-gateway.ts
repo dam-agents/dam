@@ -29,10 +29,16 @@ export interface CloudGatewayEndpoint {
 export function parseCloudGatewayEndpoint(
   value: string,
 ): CloudGatewayEndpoint | null {
-  const url = value.trim().replace(/\/+$/, "");
+  const url = trimTrailingSlashes(value.trim());
   const match = ENDPOINT_RE.exec(url);
   if (!match) return null;
   return { url, host: match[1]!, path: match[2]! };
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end--;
+  return value.slice(0, end);
 }
 
 export function cloudGatewayEnvMappings(): EnvMapping[] {

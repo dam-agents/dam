@@ -92,6 +92,15 @@ describe("IBM Cloud Gateway endpoint", () => {
   ])("refuses %s", (endpoint) => {
     expect(parseCloudGatewayEndpoint(endpoint)).toBeNull();
   });
+
+  // TEST_SCENARIO: a pasted value is untrusted, so a long run of slashes that does not end the value is refused in linear time, not after a quadratic trim.
+  it("refuses a long run of slashes quickly", () => {
+    const endpoint = `${ENDPOINT}${"/".repeat(20_000)}x`;
+    const started = performance.now();
+
+    expect(parseCloudGatewayEndpoint(endpoint)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(100);
+  });
 });
 
 describe("IBM Cloud Gateway connection template", () => {
