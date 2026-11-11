@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "@ibm/bob": "2.0.9"
+    "@ibm/bob": "2.1.0"
   }
 }
