@@ -130,6 +130,12 @@ func (c *IdleChecker) checkInterval() time.Duration {
 	return min(max(timeout/idleSweepsPerTimeout, minIdleCheckInterval), maxIdleCheckInterval)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent's definition asks for the vm backend at all. Only a custom resource can ask for another one, and the controller refuses such an Agent before it reconciles it, so a sweep leaves it out of the fleet it stops: it has no machine to put to sleep and no pair this release owns.
+func isVMAgent(agent *unstructured.Unstructured) bool {
+	backend, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
+	return backend == "vm"
+}
+
 func (c *IdleChecker) check(ctx context.Context) {
 	ctx, finish := telemetry.StartPass(ctx, "idle check")
 	var passErr error
@@ -155,6 +161,9 @@ func (c *IdleChecker) check(ctx context.Context) {
 	for i := range agents {
 		agent := &agents[i]
 		name := agent.GetName()
+		if c.backend.SpecWritable() && !isVMAgent(agent) {
+			continue
+		}
 		effective := effectiveIdleTimeout(hibernationOverride(agent), c.config.AgentBase)
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
@@ -168,6 +177,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		if !atZero[name] && vmStartHolds(agent, effective, now) {
+			continue
+		}
+
+		if ready, _, _ := vmStartConditions(agent); parkedTargetWaits(agent.GetAnnotations(), fmt.Sprint(ready["reason"])) {
 			continue
 		}
 

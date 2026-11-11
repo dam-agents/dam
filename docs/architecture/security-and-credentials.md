@@ -128,8 +128,10 @@ A key carries the owner's `sub`, a subset of permission scopes, and an optional 
 The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
 Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 
-A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
-The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
+A key outlives its sign-in: the api-server asks the identity provider whether its owner still may act, keeps a yes a minute, and refuses an unanswered directory as unavailable (503, retryable).
+
+A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once it is revoked or expired.
+That re-check is a poll, since a revoke can land on another replica; its interval bounds how long a revoked key keeps a stream.
 
 **Platform operators** run the install for all its users.
 The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
@@ -262,9 +264,9 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
+Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
 A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — L7 promotion, per-host chains, injection steps, request signing, path rewriting, addressing between Connections, and how a bad Secret degrades rather than wedges the gateway — live on [credential-gateway](credential-gateway.md).
+The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades — are on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
@@ -330,7 +332,7 @@ Both signals are read across api-server replicas (the replica relaying a turn is
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
 **Egress Aliasing.** An Invocation target without detached egress has no egress identity: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
-**Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens it (an open child's wildcard allow rule, a scoped child's new host).
+**Detached egress.** A driver may instead launch a child with egress of its own, open or scoped ([invocations](invocations.md#spawning)); the gate decides under the nearest such child up the chain, the caller first; only the owner widens a child past what its driver may give it.
 The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by an aliased target's traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.

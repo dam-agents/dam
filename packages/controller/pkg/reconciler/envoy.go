@@ -123,6 +123,8 @@ type envoyHostChain struct {
 	Upgrades        bool
 	UpstreamCAFile  string
 	PathRewrites    []envoyPathRewrite
+	// UNIT_BOUNDARY_DESCRIPTION: set on the chain that carries the install's own key: its upstream is the api-server's public Service inside the cluster, pinned by name and port, so the Agent's Host and SNI can never send that key anywhere else.
+	InCluster bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
 	AgentKey *envoyCredential
 }
@@ -161,6 +163,9 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	}
 	return out
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: the template of the Connection that drives this install as its owner. Its credential is injected on the install's own host, which no other Connection may name (the api-server refuses one), but a Secret written before that rule, or by another path, could still share the host: a chain carrying this credential therefore takes its upstream port and its upstream CA from this credential alone, never from a peer, so the install's key is only ever sent to the address the install published. */
+const damConnectionTemplate = "dam"
 
 var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "curve-bender-cloud-gateway", "bob", "bedrock"}
 
@@ -223,8 +228,12 @@ func (c envoyHostChain) PathScopedCredentials() bool {
 }
 
 func (c envoyHostChain) PathScopes() []string {
-	seen := map[string]bool{"/": true}
-	scopes := []string{"/"}
+	seen := map[string]bool{}
+	scopes := []string{}
+	if !c.InCluster {
+		seen["/"] = true
+		scopes = append(scopes, "/")
+	}
 	for _, cred := range c.Credentials {
 		s := injectionScope(cred.PathPattern)
 		if seen[s] {
@@ -273,7 +282,7 @@ func (c envoyHostChain) RefusesUnaddressedAt(scope string) bool {
 func (c envoyHostChain) ScopesOf(connectionID string) []string {
 	seen := map[string]bool{}
 	var out []string
-	if c.Signs(connectionID) {
+	if c.Signs(connectionID) && !c.InCluster {
 		seen["/"] = true
 		out = append(out, "/")
 	}
@@ -687,6 +696,7 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 	return entries
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the install's own Service carries one credential and no other. The api-server refuses a second Connection naming that host, but a Secret written before that rule — or by an operator — could still be mounted here, and a peer's host-wide scope or path rewrite would widen the chain past the API paths or add a credential to it. Such a peer is dropped and reported rather than merged. */
 func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
 	type headerOwner struct{ connectionID, secretName string }
 	type bucket struct {
@@ -696,6 +706,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		credentials     []envoyCredential
 		signers         []envoySigner
 		opts            chainOpts
+		damOpts         *chainOpts
 		first           string
 	}
 	byHost := map[string]*bucket{}
@@ -777,6 +788,10 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			return b
 		}
 		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
+		if cred.TemplateID == damConnectionTemplate {
+			own := opts
+			b.damOpts = &own
+		}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)
@@ -829,17 +844,47 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 				"host", host, "secret", b.first)
 			continue
 		}
+		port, caFile := b.opts.port, b.opts.caFile
+		inCluster := b.damOpts != nil
+		credentials, signers, rewrites := b.credentials, b.signers, b.opts.pathRewrites
+		if b.damOpts != nil {
+			if port != b.damOpts.port || caFile != b.damOpts.caFile {
+				slog.Warn("a peer Connection tried to move the chain that carries the install's own key; keeping the address its Connection published",
+					"host", host, "keptPort", b.damOpts.port, "skippedPort", port,
+					"keptCA", b.damOpts.caFile, "skippedCA", caFile)
+			}
+			port, caFile = b.damOpts.port, b.damOpts.caFile
+			kept := make([]envoyCredential, 0, 1)
+			for _, cred := range b.credentials {
+				if cred.TemplateID == damConnectionTemplate {
+					kept = append(kept, cred)
+					continue
+				}
+				slog.Warn("a peer Connection claims the install's own Service; the chain carries only the install's key, so the peer is dropped",
+					"host", host, "secret", cred.SecretName, "template", cred.TemplateID)
+			}
+			for _, signer := range b.signers {
+				slog.Warn("a peer Connection signs requests to the install's own Service; dropped",
+					"host", host, "secret", signer.SecretName, "template", signer.TemplateID)
+			}
+			if len(b.opts.pathRewrites) > 0 {
+				slog.Warn("a peer Connection rewrites paths on the install's own Service; dropped",
+					"host", host, "rewrites", len(b.opts.pathRewrites))
+			}
+			credentials, signers, rewrites = kept, nil, nil
+		}
 		chains = append(chains, envoyHostChain{
 			ChainID:         "chain_" + b.first + "_" + shortHash(host),
 			UpstreamCluster: "upstream_" + b.first + "_" + shortHash(host),
 			Host:            host,
-			Credentials:     b.credentials,
-			Signers:         b.signers,
+			Credentials:     credentials,
+			Signers:         signers,
 			HTTP2:           b.opts.http2,
-			UpstreamPort:    b.opts.port,
+			UpstreamPort:    port,
 			Upgrades:        b.opts.upgrades,
-			UpstreamCAFile:  b.opts.caFile,
-			PathRewrites:    b.opts.pathRewrites,
+			UpstreamCAFile:  caFile,
+			PathRewrites:    rewrites,
+			InCluster:       inCluster,
 		})
 	}
 	if keyChain != nil {
@@ -950,7 +995,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *confi
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
-	data[machineDNSCorefileKey] = machineDNSCorefile
+	data[machineDNSCorefileKey] = machineDNSCorefile(cfg)
 	if data[envoyLeafSDSKey], err = renderLeafSDS(""); err != nil {
 		return nil, err
 	}

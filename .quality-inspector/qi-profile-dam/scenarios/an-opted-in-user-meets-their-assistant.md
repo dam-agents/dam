@@ -4,27 +4,46 @@
 
 Given a fresh platform and the owner signed in, with Settings → Experimental features open
 When they look at the rows
-Then the last row is labelled *Dambledore* and described as *Smart assistant that can control DAM for you*
-When they switch it on and open their agent list
-Then Dambledore is there as an ordinary agent, with its own avatar
+Then the second-to-last row is labelled *DAM connection* and described as *Let your agents act as you on DAM through a connection.
+Turning this off leaves the connections you already made working.*
+And the last row is labelled *Dammy* and described as *Smart assistant that can control DAM for you*
+When they switch the assistant's row on and open their agent list
+Then Dammy is there as an ordinary agent, with its own avatar
+And it holds the *DAM connection*, which its Connections page lists as *Acts as you on DAM*
+
+## AC-1b — the connection's own switch offers it to the account's agents
+
+Given that account with Settings → Experimental features open
+When they switch *DAM connection* on and open an agent's Connections page
+Then *Add connection* offers *DAM connection*, whose pane has no field to fill and one button, *Create connection*
+When they click it
+Then the agent's Connections page lists *DAM connection*, flagged *Acts as you on DAM*, and the API keys settings show a key named *DAM connection*
+When they switch *DAM connection* off again and reload that page
+Then the connection and its grant are still there, and *Remove from this agent* and *Rotate key* still work
+And a second grant offers the connection to no other agent: *Add connection* no longer offers *DAM connection*
 
 ## AC-2 — the assistant's first chat opens on its greeting
 
 Given that account, whose assistant has never been used
 When the owner signs in again
-Then they land in Dambledore's chat rather than on Home
+Then they land in Dammy's chat rather than on Home
 And the chat opens with a message from the assistant, its avatar and name above it, reading *Hi <the owner's first name>!
-I'm Dambledore, your new personal DAM agent!*
-And below that message stands *The more I know about you, the more I can help.
-Tell me a bit about your role and what you're working on, and I'll make some suggestions!*
-And under the message sit the first tasks *Explain what you can do*, *Draft a weekly status template*, *Summarize a long text I paste* and *Remember I like answers short and technical*
-And the empty message box hints *Remember I like answers short and technical*
+I'm Dammy, your personal DAM agent.
+You're set up with CurveBender, IBM-hosted open-source models.
+You can switch providers anytime in Agent settings.*, with *Agent settings* a link
+And below that message stands *I learn how you work, one task at a time.
+Pick one to try, or ask me anything.*
+And under the message sit five full-round pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* Ask me a question about DAM
+And the message box under them hints *Message Dammy*, not one of the ideas
+And the avatar-unlock celebration plays beside the composer, reading *You unlocked your first agent avatar!*
+It's now your new agent's avatar.
+Finish the checklist to unlock more.\*, with a *Nice* button
 
-## AC-3 — a first task fills the message box and sends nothing
+## AC-3 — a pill fills the message box and sends nothing
 
 Given that greeting
-When the owner clicks *Explain what you can do*
-Then the message box holds that text, and nothing was sent
+When the owner clicks the *Artifact:* pill
+Then the message box holds *Artifact: Make my next PowerPoint deck the way I make them*, and nothing was sent
 And the greeting is still on screen
 
 ## AC-4 — the greeting does not come back once the assistant was used
@@ -32,14 +51,14 @@ And the greeting is still on screen
 Given that greeting, with its text in the message box
 When the owner sends it and the assistant replies
 Then the conversation is listed in the sidebar
-When they open a new chat on Dambledore
+When they open a new chat on Dammy
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
 And the message box hints *Message…*
 And no greeting and no first tasks are shown
 
 ## AC-5 — the assistant is an ordinary agent
 
-Given Dambledore in the owner's list
+Given Dammy in the owner's list
 When the owner opens its Manage section
 Then Disable and Delete are offered as they are on any other agent, and its name can be edited from its identity
 When they rename it and open Settings → Experimental features
@@ -51,57 +70,98 @@ Given that account with the assistant used, and the Switch on
 When the owner clicks *Reset onboarding progress* on the *Onboarding progress* card at the bottom of Experimental features
 Then one confirm asks first, saying that every avatar locks again, that agents keep theirs and that nothing in the account is deleted
 When they confirm
-Then the app goes to its entry route and lands them in Dambledore's chat, which opens on the greeting again
-And the Get started checklist counts one task of eight — Create your first agent — as done, its avatar unlocked and seen
+Then the app goes to its entry route and lands them in Dammy's chat, which opens on the greeting again
+And the avatar-unlock celebration plays beside the composer again, as it did at the first open
+When they click its *Nice*, and only then
+Then the Get started checklist counts one task of eight — Create your first agent — as done, its avatar unlocked and seen
 And the assistant's earlier conversations are still in the sidebar
 
-## AC-7 — the same card gives Dambledore back when the account has none
+## AC-7 — the same card gives Dammy back when the account has none
 
-Given that account, whose Dambledore the owner has deleted
+Given that account, whose Dammy the owner has deleted
 When they confirm the *Onboarding progress* card's reset
-Then a new agent named Dambledore is in their agent list, unused, and its chat opens on the greeting
+Then a new agent named Dammy is in their agent list, unused, and its chat opens on the greeting
 
 ## AC-8 — the same card reuses the agent the platform made, renamed or not
 
-Given that account, where the owner renamed Dambledore to *Research helper* and used it
+Given that account, where the owner renamed Dammy to *Research helper* and used it
 When they confirm the *Onboarding progress* card's reset
 Then no new agent is made, and the account lands in *Research helper*, which opens on the greeting
-When instead they rename it away and make an agent of their own called *Dambledore*, then confirm the card's reset
+When instead they rename it away and make an agent of their own called *Dammy*, then confirm the card's reset
 Then no new agent is made either, and the account does not land in the one they made: it is theirs, not the assistant's
 
-## AC-9 — an account that never opts in sees nothing of it
+## AC-9 — a new account meets Dammy without opting in
 
-Given the same install, and an account that has not turned the assistant on
-When the owner signs in
-Then no greeting, no first tasks and no assistant agent appear
-And they land on Home as usual
-And the message box of any agent they open hints *Message…* as it always did
+Given the same install, and an account that has never opened Experimental features
+When the owner signs in for the first time
+Then Dammy is already in their agent list and their first landing is its chat, which opens on the greeting
+And the celebration beside the composer plays before they have switched anything on
+And Experimental features shows the assistant's row already on
+And opting it out is the switch AC-10 describes
 
 ## AC-10 — turning the switch off deletes nothing
 
 Given that account with the assistant switched on and used
 When they switch the assistant's row off
-Then no confirm appears, and Dambledore is still in their agent list with its conversations
+Then no confirm appears, and Dammy is still in their agent list with its conversations
 And no greeting and no landing are shown until they switch it back on
-And the *Onboarding progress* card's reset still restarts the checklist, leaving Dambledore and its use where they are
+And the *Onboarding progress* card's reset still restarts the checklist, leaving Dammy and its use where they are
 
 ## AC-11 — the switch makes one only when the name is free, and keeps the one it made
 
 Given an account with no agent under the assistant's name, and Settings → Experimental features open
 When the owner switches the assistant's row on
-Then Dambledore appears in their agent list
-When they switch it off, delete Dambledore, and switch it on again
-Then a new Dambledore appears, unused
-When instead they rename Dambledore to *Research helper* and switch the row off and on again
+Then Dammy appears in their agent list
+When they switch it off, delete Dammy, and switch it on again
+Then a new Dammy appears, unused
+When instead they rename Dammy to *Research helper* and switch the row off and on again
 Then no new agent appears: *Research helper* is still the assistant
 And its chat greets them for as long as it has never been used
-And no agent is ever named *Dambledore 2*
+And no agent is ever named *Dammy 2*
 
 ## AC-12 — an agent the owner made under the name is never the assistant
 
-Given an account that made an agent of their own called *Dambledore* before turning the feature on
+Given an account that made an agent of their own called *Dammy* before turning the feature on
 When they switch the assistant's row on
-Then no second agent appears for that name, and their own Dambledore opens on the ordinary new-chat page with no greeting
+Then no second agent appears for that name, and their own Dammy opens on the ordinary new-chat page with no greeting
 And their next sign-in lands on Home rather than in that chat
-When they delete or rename their own Dambledore and switch the row off and on again
-Then the platform's Dambledore appears, unused, and greets them
+When they delete or rename their own Dammy and switch the row off and on again
+Then the platform's Dammy appears, unused, and greets them
+
+## AC-13 — the CurveBender notice keeps off the assistant's chat, and off the accounts it was made for
+
+Given an install that provides the shared CurveBender, and that account, which was onboarded with the assistant
+When the owner is in Dammy's chat, on a new chat
+Then no CurveBender notice is shown above the composer
+And the greeting opens that chat, because the assistant has never been used
+And no chat of theirs on any agent shows the notice either, because their first agent was Dammy
+When they send a message there and open a new chat on Dammy again
+Then that chat opens on the ordinary new-chat page, and still shows no CurveBender notice
+When an account that had agents before Dammy opens a new chat on one of them
+Then the CurveBender notice is shown there as it always was, on that agent's new chat
+When that account opens a new chat on its own Dammy
+Then no CurveBender notice is shown there at all; only the greeting, while it is unused
+When it deletes and recreates Dammy, or resets its onboarding
+Then its new chats on other agents still show the notice, because the account was judged once and that does not change
+
+## AC-14 — the assistant marks the person's first result, and onboarding is done
+
+Given that account in Dammy's chat, with the Get started checklist showing *Create your first agent* done
+When the owner asks Dammy for a weekly status schedule, it sets one, and Dammy reports it as its first result
+Then the Get started checklist counts *Schedule a recurring task* as done, without a celebration
+And what the onboarding recorded is that schedule, and when it was reached
+When the owner then asks for an artifact and Dammy reports that too
+Then nothing about the recorded first result changes: it is still the schedule, and it is still counted once
+When the owner asks Dammy to save something as a knowledge base, and it reports that as well
+Then nothing changes either, since a knowledge base is not the first result any more
+When the owner restarts their onboarding from the Onboarding progress card
+Then the recorded first result is gone, and a later one is recorded as if it were the first
+
+## AC-15 — a starter idea reaches a result in at most three questions
+
+Given that account's greeting, on an install that provides the shared CurveBender
+When the owner clicks the *Artifact:* pill and sends it
+Then Dammy asks for a small sample of their own decks to upload or paste, and never asks them to connect a tool, an account or a provider
+When they upload one and answer what Dammy asks
+Then Dammy shows what it learned and asks whether it got it right
+And it makes the deck after at most three questions in all, counting the ask for the sample and that check

@@ -217,6 +217,7 @@ function makeRepo(initial: Connection[]) {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, contributions });
     },
+    adoptDamKey: async () => {},
     mergeInputs: async (id, inputs) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });
@@ -271,6 +272,7 @@ function makeService(initial: Connection[] = [signIn()]) {
   const github = makeGitHub();
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

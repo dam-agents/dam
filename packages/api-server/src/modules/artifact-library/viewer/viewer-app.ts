@@ -219,6 +219,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         caller.artifact,
         caller.session,
         input.data.prompt,
+        input.data.conversation,
       ),
     );
   });

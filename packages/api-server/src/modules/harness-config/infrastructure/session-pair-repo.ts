@@ -110,6 +110,8 @@ export function createSessionPairRepo(
     );
     return {
       chat: plain(chat.refused ? null : chat.pair),
+      /* UNIT_BOUNDARY_DESCRIPTION: the pair the chat default's profile names, kept while that profile cannot run, so a run falls back on the profile's own harness and provider rather than the agent's default harness. */
+      chatProfilePair: plain(chat.refused ? (chat.pair ?? null) : null),
       channel: plain(parsePair(row?.channel)),
       scheduled: plain(parsePair(row?.scheduled)),
       chatProfileId,

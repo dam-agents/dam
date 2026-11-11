@@ -16,7 +16,11 @@ import {
 import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { getLogger } from "../../../core/logger.js";
 import type { AgentChangeSubscription } from "./agent-state-cache.js";
-import { DISABLED_KEY, STOP_REQUESTED_KEY } from "./labels.js";
+import {
+  DISABLED_KEY,
+  READY_REASON_HIBERNATED,
+  STOP_REQUESTED_KEY,
+} from "./labels.js";
 
 export interface AgentWakeOptions {
   onWaking?: () => void;
@@ -178,6 +182,9 @@ export function createAgentWake(deps: {
           return;
         }
         const failure = classifyWakeFailure(infra);
+        const gatewayLeftFromSleep =
+          !infra?.hibernated &&
+          infra?.gatewayPodNotReadyReason === READY_REASON_HIBERNATED;
         getLogger().warn(
           {
             agentId: id,
@@ -185,8 +192,10 @@ export function createAgentWake(deps: {
             cause: wakeFailureReasonToken(failure),
             hibernated: infra?.hibernated,
             machineNotReadyReason: infra?.machineNotReadyReason,
-            gatewayPodReady: infra?.gatewayPodReady,
-            gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
+            ...(!gatewayLeftFromSleep && {
+              gatewayPodReady: infra?.gatewayPodReady,
+              gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
+            }),
             reconciledReason: infra?.reconciledReason,
             podTerminationReason: infra?.podTerminationReason,
           },

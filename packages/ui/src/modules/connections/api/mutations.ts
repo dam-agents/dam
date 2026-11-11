@@ -74,6 +74,17 @@ export function useCreateConnection() {
   });
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the person's own create of the Connection that drives this install: the api-server mints its key, so there is no form and no secret to type, and it answers with the Connection they hold — the one it makes, or the one already there. */
+export function useCreateDamConnection() {
+  return useMutation({
+    ...trpc.connections.createDam.mutationOptions(),
+    meta: {
+      invalidates: [trpc.connections.list.queryKey()],
+      errorToast: "Couldn't create the connection",
+    },
+  });
+}
+
 export function useUpdateConnection(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.update.mutationOptions(),
@@ -100,6 +111,20 @@ export function useDeleteConnection() {
         trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't delete connection",
+    },
+  });
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: mints a fresh key into the Connection that drives this install, for an owner whose key was revoked or is being replaced; the Connection, its grants and every Agent's env stay as they are. */
+export function useRotateDamConnection() {
+  return useMutation({
+    ...trpc.connections.rotateDam.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      errorToast: "Couldn't rotate the key",
     },
   });
 }

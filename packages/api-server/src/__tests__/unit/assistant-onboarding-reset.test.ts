@@ -8,8 +8,15 @@
 // TEST_OVERVIEW: holds is waited for rather than raced. It is one reset for
 // TEST_OVERVIEW: everyone: the checklist always, the assistant only when the feature
 // TEST_OVERVIEW: is on for them, and never a refusal.
-import { describe, expect, it } from "vitest";
+import { avatarCharacter } from "api-server-api/avatar/svg";
+import { describe, expect, it, vi } from "vitest";
 
+import { toProgress } from "../../modules/getting-started/domain/unlocks.js";
+import type { Checklist } from "../../modules/getting-started/domain/unlocks.js";
+import type { GettingStartedRepository } from "../../modules/getting-started/infrastructure/getting-started-repository.js";
+import { createEnrollment } from "../../modules/getting-started/services/enrollment.js";
+import { recordProvisionedAgent } from "../../modules/getting-started/services/first-agent.js";
+import { createUnlockRecorder } from "../../modules/getting-started/services/unlock-recorder.js";
 import {
   agentStore,
   assistantService,
@@ -18,10 +25,117 @@ import {
   rowStore,
 } from "../helpers/assistant-world.js";
 
+/** UNIT_BOUNDARY_DESCRIPTION: the checklist's store as the database behaves — a task unlocks once, the character it was created with is the one it records, and a reset deletes every row. */
+function checklistRepo(): GettingStartedRepository & {
+  checklists: Map<string, Checklist>;
+} {
+  const checklists = new Map<string, Checklist>();
+  let clock = 0;
+  const tick = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
+  return {
+    checklists,
+    async find(owner) {
+      return checklists.get(owner) ?? null;
+    },
+    async enroll(owner, unlocked) {
+      if (checklists.has(owner)) return;
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: unlocked.map((u) => ({
+          ...u,
+          unlockedAt: tick(),
+          seenAt: tick(),
+          pickedAt: tick(),
+        })),
+      });
+    },
+    async unlock(owner, task, choose) {
+      const c = checklists.get(owner)!;
+      if (c.unlocks.some((u) => u.task === task)) return null;
+      const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
+      if (!chosen) return null;
+      const unlock = {
+        task,
+        character: chosen.character,
+        unlockedAt: tick(),
+        seenAt: null,
+        pickedAt: chosen.picked ? tick() : null,
+      };
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: [...c.unlocks, unlock],
+      });
+      return unlock;
+    },
+    /* UNIT_BOUNDARY_DESCRIPTION: the transaction-scoped variants the assistant's first result uses; the memory store has one transaction, so they perform the same writes. */
+    async unlockIn(_tx, owner, task, choose, opts) {
+      const c = checklists.get(owner);
+      if (c === undefined) return null;
+      if (c.unlocks.some((u) => u.task === task)) return null;
+      const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
+      if (!chosen) return null;
+      const unlock = {
+        task,
+        character: chosen.character,
+        unlockedAt: tick(),
+        seenAt: opts?.seen ? tick() : null,
+        pickedAt: chosen.picked ? tick() : null,
+      };
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: [...c.unlocks, unlock],
+      });
+      return unlock;
+    },
+    async markSeenIn(_tx, owner, task) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.task === task ? { ...u, seenAt: u.seenAt ?? tick() } : u,
+        ),
+      });
+    },
+    async resetIn(_tx, owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
+    async markSeen(owner, task) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.task === task ? { ...u, seenAt: u.seenAt ?? tick() } : u,
+        ),
+      });
+    },
+    async markPicked(owner, character) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.character === character
+            ? { ...u, pickedAt: u.pickedAt ?? tick() }
+            : u,
+        ),
+      });
+    },
+    async setDismissed(owner, dismissed) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, { ...c, dismissedAt: dismissed ? tick() : null });
+    },
+    async reset(owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
+  };
+}
+
 const readyRow = (agentId: string, used = true) => ({
   owner: OWNER,
   agentId,
   state: "ready" as const,
+  legacy: false,
+  firstResult: null,
+  epoch: 0,
   used,
   resetAt: null,
 });
@@ -42,12 +156,37 @@ describe("resetting a person's onboarding", () => {
     const state = await w.assistants.state();
     expect(state).toMatchObject({ agentId: id, used: false });
     expect(state?.resetAt).toEqual(expect.any(String));
-    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
+    expect(w.resetChecklistIn).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(2);
     expect(agents.create).toHaveBeenCalledTimes(1);
   });
 
   // TEST_SCENARIO: the person deleted theirs, so the reset makes a new ordinary Agent, points the record at it, unused: the next landing greets them in its chat.
+  // TEST_SCENARIO: the Agent a reset makes is one the platform creates, so it carries the owner's Connection; the reset is a door like the switch and the pinned-on request.
+  it("gives the Connection to the Agent it makes", async () => {
+    const agents = agentStore();
+    const w = assistantService({
+      agents,
+      damConnection: async () => "conn-dam",
+    });
+    await w.assistants.resetOnboarding();
+    expect(agents.create).toHaveBeenCalledTimes(1);
+    expect(agents.create.mock.calls[0]![0]).toMatchObject({
+      connectionIds: ["conn-dam"],
+      platformGrants: true,
+    });
+  });
+
+  // TEST_SCENARIO: the reset finds an Agent the person made under the name, so nothing is created and the Connection is never granted at all.
+  it("gives the Connection to nothing it does not create", async () => {
+    const agents = agentStore([NAME]);
+    const damConnection = vi.fn(async () => "conn-dam");
+    const w = assistantService({ agents, damConnection });
+    await w.assistants.resetOnboarding();
+    expect(agents.create).not.toHaveBeenCalled();
+    expect(damConnection).not.toHaveBeenCalled();
+  });
+
   it("makes the assistant again when the person deleted theirs", async () => {
     const w = assistantService();
     await w.optIn();
@@ -117,8 +256,11 @@ describe("resetting a person's onboarding", () => {
       owner: OWNER,
       agentId: "agent-dead",
       state: "creating",
+      legacy: false,
       used: false,
       resetAt: null,
+      firstResult: null,
+      epoch: 0,
     });
     const w = assistantService({ rows, waitMs: 0 });
     await w.assistants.resetOnboarding();
@@ -148,8 +290,11 @@ describe("resetting a person's onboarding", () => {
       owner: "bob",
       agentId: "agent-b",
       state: "ready",
+      legacy: false,
       used: true,
       resetAt: null,
+      firstResult: null,
+      epoch: 0,
     });
     const agents = agentStore();
     // UNIT_BOUNDARY_DESCRIPTION: the caller's own assistant is the Agent their record names, renamed.
@@ -170,7 +315,7 @@ describe("resetting a person's onboarding", () => {
     const rows = rowStore(readyRow("agent-a"));
     const w = assistantService({ rows, agents: agentStore(), enabled: false });
     await w.assistants.resetOnboarding();
-    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
+    expect(w.resetChecklistIn).toHaveBeenCalledTimes(1);
     expect(w.agents.create).not.toHaveBeenCalled();
     expect(rows.rows.get(OWNER)).toMatchObject({
       agentId: "agent-a",
@@ -178,5 +323,44 @@ describe("resetting a person's onboarding", () => {
       resetAt: null,
     });
     expect(w.provisioned).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: what the reset leaves for the first chat to play — the assistant's create task recorded again, on the Agent's own character and left unseen, which is the row the celebration renders and the one the checklist counts only once the person has seen it.
+  it("leaves its create task unseen, for the first chat to celebrate", async () => {
+    const repo = checklistRepo();
+    const recorder = createUnlockRecorder({
+      repo,
+      enrollment: createEnrollment({
+        repo,
+        ownedAgentIds: async () => [],
+      }),
+      random: () => 0,
+    });
+    const agents = agentStore();
+    const w = assistantService({
+      agents,
+      provisioned: (agent) =>
+        recordProvisionedAgent({ recorder }, OWNER, {
+          agentId: agent.id,
+          character: avatarCharacter(
+            (
+              agents.live.get(agent.id) as
+                { spec?: { avatar?: string } } | undefined
+            )?.spec?.avatar,
+            OWNER,
+            NAME,
+          ),
+        }),
+    });
+    await w.ensure();
+    await w.assistants.resetOnboarding();
+
+    const progress = toProgress((await repo.find(OWNER))!);
+    expect(progress.unlocks).toHaveLength(1);
+    expect(progress.unlocks[0]).toMatchObject({
+      task: "create-agent",
+      seen: false,
+      fresh: false,
+    });
   });
 });

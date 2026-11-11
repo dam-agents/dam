@@ -12,6 +12,9 @@ import { createTelegramWorker } from "../../modules/channels/infrastructure/tele
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import { createMemoryState } from "./chat-state.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
+import { artifactLinks, type StubArtifact } from "./artifact-links.js";
+
+export type { StubArtifact };
 
 const BOT: TelegramUser = {
   id: 4242,
@@ -41,6 +44,9 @@ export function telegramWorkerHarness(
     ambient?: boolean;
     groupPrivacy?: { on: boolean };
     channelPair?: ChannelPair;
+    artifacts?: StubArtifact[];
+    ownerOf?: (agentId: string) => Promise<string | null>;
+    boundAgent?: () => string;
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];
@@ -50,6 +56,7 @@ export function telegramWorkerHarness(
     opts: SendPromptOpts;
   }> = [];
   const posts: string[] = [];
+  const edits: Array<{ messageId: number; text: string }> = [];
   let nextId = 1;
 
   async function botApi(
@@ -73,7 +80,36 @@ export function telegramWorkerHarness(
       return okJson({ status: isBot ? "member" : "administrator" });
     }
     if (method === "sendMessage" && typeof init?.body === "string") {
-      posts.push((JSON.parse(init.body) as { text?: string }).text ?? "");
+      const body = JSON.parse(init.body) as {
+        text?: string;
+        chat_id?: number | string;
+      };
+      posts.push(body.text ?? "");
+      return okJson({
+        message_id: (nextId += 1),
+        date: 0,
+        text: body.text ?? "",
+        chat: { id: Number(body.chat_id), type: "private" },
+        from: BOT,
+      });
+    }
+    if (method === "editMessageText" && typeof init?.body === "string") {
+      const body = JSON.parse(init.body) as {
+        text?: string;
+        message_id?: number;
+        chat_id?: number | string;
+      };
+      edits.push({
+        messageId: Number(body.message_id),
+        text: body.text ?? "",
+      });
+      return okJson({
+        message_id: Number(body.message_id),
+        date: 0,
+        text: body.text ?? "",
+        chat: { id: Number(body.chat_id), type: "private" },
+        from: BOT,
+      });
     }
     return okJson({ ...BOT, message_id: (nextId += 1), date: 0 });
   }
@@ -105,7 +141,7 @@ export function telegramWorkerHarness(
     agents: () => ({ ensureReady: async () => {} }) as unknown as AgentsService,
     conversations: {
       findAgentByConversation: async () => ({
-        agentId: "agent-1",
+        agentId: opts.boundAgent?.() ?? "agent-1",
         authorizedBy: "kc|owner-1",
         ambient: opts.ambient ?? false,
       }),
@@ -124,9 +160,10 @@ export function telegramWorkerHarness(
     },
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => true,
-    ownerOf: async () => "kc|owner-1",
+    ownerOf: opts.ownerOf ?? (async () => "kc|owner-1"),
     ownerDisplayName: async () => null,
     uiBaseUrl: "https://app.example",
+    linkArtifacts: artifactLinks(opts.artifacts ?? []),
     brandName: "Platform",
     emit: () => {},
     attendance: stubTurnAttendance(),
@@ -180,5 +217,5 @@ export function telegramWorkerHarness(
     });
   }
 
-  return { worker, botApi, prompts, posts, sendDirect, sendGroup };
+  return { worker, botApi, prompts, posts, edits, sendDirect, sendGroup };
 }

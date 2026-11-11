@@ -1,22 +1,14 @@
+import { isUnseenActivity } from "agent-runtime-api";
 import type { AttentionItem } from "api-server-api";
 
 import type { SessionView } from "../../../types.js";
-
-function laterThanSeen(
-  activityAt: string | null | undefined,
-  seenAt: string | null | undefined,
-): boolean {
-  if (!activityAt) return false;
-  if (!seenAt) return true;
-  return Date.parse(activityAt) > Date.parse(seenAt);
-}
 
 export function isUnreadSession(
   session: SessionView,
   options?: { open?: boolean },
 ): boolean {
   if (options?.open) return false;
-  return laterThanSeen(session.updatedAt, session.seenAt);
+  return isUnseenActivity(session.updatedAt, session.seenAt);
 }
 
 const FEED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -30,5 +22,5 @@ export function isFeedableAttention(
 }
 
 export function isUnreadAttention(session: AttentionItem): boolean {
-  return laterThanSeen(session.activityAt, session.seenAt);
+  return isUnseenActivity(session.activityAt, session.seenAt);
 }

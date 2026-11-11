@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -99,6 +99,11 @@ Postgres carries application state the api-server owns end-to-end — anything t
   `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its hash.
   `telegram_conversations` records the chat→Agent binding for Telegram, one row per chat, plus its ambient flag and its owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
   `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel; a second workspace leaves it untouched, since inside one enterprise organization a user id already identifies one person and re-keying it would make anyone who linked in one workspace link again in the next.
+  It carries the `source` of the link — `oauth` for a Keycloak sign-in, `email` for the DM Bridge's mailbox pairing — which decides what may happen to the row: a pairing inserts only and never moves an owner or a workspace, a sign-in promotes an `email` row to `oauth`, and a revoke deletes only an `email` one ([slack-dm-bridge](slack-dm-bridge.md)).
+  `slack_dm_bridges` is the DM Bridge's record of what it settled, keyed by Agent, workspace and DM: the owner, the person, the state (`active`, `revoking`, `revoked`), the generation each connect opens and a revoke is tied to, and the greeting's claim — with the token that owns it — and recorded post.
+  Every write to a Slack person's link or record takes one transaction-scoped advisory lock on the workspace and that person before any row lock, which is what serializes a connect, a sign-in, a revoke and a greeting even when the identity row does not exist yet.
+  It outlives the link and the binding it created, so a revoke named by it finishes after a logout or a half-failed cleanup, and its state is what stops turns and delivery into that DM ([slack-dm-bridge](slack-dm-bridge.md)).
+  `slack_installs` also records the Slack organization the install handshake reported — an id, or the empty string for a workspace that stands alone — and `null` when nothing recorded one, which is a token imported from Helm or an install older than the column; anything that pairs a person to a workspace compares it with the organization Slack reports for that person and refuses when either side is unknown.
   `slack_installs` is one row per workspace that completed the install handshake or whose Helm bot token was imported, holding the workspace's name, who connected it, and whether its credential still works — the bot token itself lives in a Kubernetes Secret the row points at, so no credential is stored here ([channels](channels.md)).
   That Secret is platform-owned rather than per-Agent: the api-server reads it, and no agent gateway is ever handed it, so it sits outside the per-`(owner, connection)` credential classes on [security-and-credentials](security-and-credentials.md).
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use.
@@ -134,6 +139,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
 - **delegation records** — one row per Invocation and one per run of it (`invocation_runs`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
 - **child inheritance** — one row per sub-agent or Environment an agent launched (`agent_inheritance`): which of its parent's connections it holds and whose egress rules decide its requests, chosen at launch and kept for the child's life ([invocations](invocations.md#spawning)).
+- **child egress grants** — one row per root Agent whose owner let its sub-agents and Environments have network access of their own (`agent_child_egress_grants`), with who turned it on and when; no row is off ([invocations](invocations.md#spawning)).
 - **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; the owner's daily limits; and each user's Spend Ceiling that a platform operator set, with who set it and when.
   Redis caches the day totals.
   Owned by [spend-limits](spend-limits.md#ledger).

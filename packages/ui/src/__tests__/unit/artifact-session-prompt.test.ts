@@ -34,7 +34,8 @@ describe("artifact session prompt", () => {
   const openSession = vi.fn();
 
   function mount(artifactId: string | undefined) {
-    let send: ((prompt: string) => Promise<void>) | undefined;
+    let send:
+      ((prompt: string, conversation?: string) => Promise<void>) | undefined;
     function Host() {
       send = useArtifactSessionPrompt(artifactId);
       return null;
@@ -75,6 +76,23 @@ describe("artifact session prompt", () => {
     expect(toast.action?.label).toBe("Open session");
     toast.action!.onClick();
     expect(openSession).toHaveBeenCalledExactlyOnceWith("agent-1", "session-1");
+  });
+
+  // TEST_SCENARIO: The page names its conversation. The request carries it, so the server keeps that conversation in a Session of its own.
+  it("sends the page's conversation with the prompt", async () => {
+    mutateAsync.mockResolvedValue({
+      ok: true,
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+
+    await mount("page")!("Refresh", "thread-7");
+
+    expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({
+      artifactId: "page",
+      prompt: "Refresh",
+      conversation: "thread-7",
+    });
   });
 
   // TEST_SCENARIO: The agent took the prompt but named no session in time. The toast still says where it went, without a button that opens nothing.
