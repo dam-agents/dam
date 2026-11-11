@@ -86,3 +86,19 @@ describe("freshPty", () => {
     expect(freshPty().reset(false)).toBe(false);
   });
 });
+
+// TEST_SCENARIO: Only a deliberate native login terminal carries the fixed action. Reconnecting preserves that action without accepting command text.
+it("names the allowlisted device-login action in its terminal URL", () => {
+  const url = new URL(
+    terminalSocketUrl({
+      ...base,
+      reset: false,
+      wakes: false,
+      lease: { harness: "codex" },
+      nativeLogin: true,
+    }),
+  );
+  expect(url.searchParams.get("action")).toBe("chatgpt-login");
+  expect(url.searchParams.get("harness")).toBe("codex");
+  expect(url.searchParams.has("command")).toBe(false);
+});

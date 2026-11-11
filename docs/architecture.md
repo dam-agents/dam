@@ -55,9 +55,10 @@ flowchart LR
 
 The cluster boundary is the trust boundary.
 Every agent is a microVM on its owner's VM runner pod.
-Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through its gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only.
-The machine's egress allowlist names only its gateway, and the runner's NetworkPolicy admits no other destination, so credential injection is enforced below the agent — not by the agent honoring its proxy settings.
-The machine has no service-account credentials and no upstream tokens of its own.
+Browsers and Slack users reach the api-server; agents send outbound traffic through their credential gateways.
+Machine and runner network rules enforce gateway-only egress below the guest.
+The gateway holds platform-managed credentials and Envoy adds them to outbound requests; the agent has no service-account credentials.
+Owners can put a subscription login on the agent through [native Codex login](architecture/native-codex-login.md).
 
 ## Subsystems
 

@@ -163,3 +163,16 @@ describe("acp-runtime: everyone is disconnected at once", () => {
     expect(world.harness().killed()).toBe(true);
   });
 });
+
+// TEST_SCENARIO: When native-login preflight stops a harness during initialize, pending callers receive the safe sign-in cause before their sockets close.
+it("preserves the native sign-in cause for pending initialization", async () => {
+  const world = createWorld();
+  const client = world.connect();
+  client.send(frames.initialize(1));
+  world.harness().exit("ChatGPT sign-in is required on this agent.");
+  await flushMicrotasks();
+  expect(JSON.stringify(client.reply(1))).toContain(
+    "ChatGPT sign-in is required on this agent.",
+  );
+  expect(client.closes).toEqual([{ code: 1011, reason: "agent exited" }]);
+});

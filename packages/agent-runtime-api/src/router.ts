@@ -11,7 +11,10 @@ import { runtimeRouter } from "./modules/runtime/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { processesRouter } from "./modules/processes/router.js";
 
+import { nativeLoginRouter } from "./modules/native-login/router.js";
+
 export const appRouter = t.router({
+  nativeLogin: nativeLoginRouter,
   artifactApi: artifactApiRouter,
   browser: browserRouter,
   changes: changesRouter,

@@ -179,11 +179,15 @@ export function runSubagentSettings(
   settings: Record<string, string> | undefined,
 ): Record<string, string> {
   const [primary, platform] = splitSubagent(settings);
+  const template = catalog?.providers.find(
+    (provider) => provider.connectionId === pair.provider,
+  )?.template;
   return effectiveSubagentSettings(
     capability,
     primary ?? {},
     platform,
     runsNativelyIn(catalog, pair),
+    capability?.nativeTemplates?.includes(template ?? "") ?? false,
   );
 }
 

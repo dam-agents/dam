@@ -1,3 +1,8 @@
+import {
+  createNativeLoginService,
+  nativeLoginCommand,
+} from "./modules/native-login/index.js";
+import { runOnce } from "./core/run-once.js";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
@@ -46,6 +51,7 @@ import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
   modelCatalogCachePath,
+  selectNativeConnection,
   servesHarness,
   VENDORED_PRICE_TABLE,
   watchHarnessCatalog,
@@ -116,11 +122,7 @@ import {
   PROVIDER_REMOVED_REASON,
   type SessionChoice,
 } from "./modules/acp/services/lease-router.js";
-import {
-  aliasForTemplateId,
-  HARNESS_HOME_PROVIDERS,
-  parseQualifiedModel,
-} from "api-server-api";
+import { aliasForTemplateId, parseQualifiedModel } from "api-server-api";
 import {
   PROVIDER_DIALECTS,
   renderName,
@@ -458,23 +460,12 @@ const nativeConnectionOf = (
   harness: string,
   model: string | null,
 ): string | null => {
-  const templates = harnessManifests[harness]?.modelRouter?.native?.templates;
-  if (!templates) return null;
-  const native = (alias: string) =>
-    envStore
-      .state()
-      .providers.find(
-        (l) =>
-          l.template !== undefined &&
-          templates.includes(l.template) &&
-          aliasForTemplateId(l.template) === alias,
-      )?.id ?? null;
-  if (model) {
-    const alias = parseQualifiedModel(model)?.alias;
-    return alias ? native(alias) : null;
-  }
-  const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
-  return home ? native(home) : null;
+  return selectNativeConnection({
+    harness,
+    model,
+    templates: harnessManifests[harness]?.modelRouter?.native?.templates,
+    providers: envStore.state().providers,
+  });
 };
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
@@ -836,7 +827,14 @@ const CORS = {
 
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
+const nativeLogin = createNativeLoginService({
+  run: runOnce,
+  env: () =>
+    leaseSpawnEnv(envStore, { harness: "codex", provider: null, model: null }),
+});
+
 const createTrpcContext = (): AgentRuntimeContext => ({
+  nativeLogin,
   artifactApi,
   browser: browser.preview,
   changes,
@@ -1047,7 +1045,11 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean; lease: { harness?: string; model?: string } },
+  opts: {
+    reset: boolean;
+    lease: { harness?: string; model?: string };
+    action?: string;
+  },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -1115,6 +1117,21 @@ function attachPty(
         ws.close(1008, lease);
         return;
       }
+      const command =
+        opts.action === undefined
+          ? (["/usr/local/bin/harness-terminal", []] as const)
+          : nativeLoginCommand({
+              action: opts.action,
+              harness: lease.harness,
+              chatgptGranted: grantedAliases().includes("chatgpt"),
+            });
+      if (command === null) {
+        ws.close(
+          1008,
+          "ChatGPT sign-in requires its provider and Codex on this agent",
+        );
+        return;
+      }
       const headless = new HeadlessTerminal({
         cols,
         rows,
@@ -1124,8 +1141,8 @@ function attachPty(
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
-      browser.start();
-      const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
+      if (opts.action !== "chatgpt-login") browser.start();
+      const pty = nodePty.spawn(command[0], [...command[1]], {
         name: "xterm-256color",
         cols,
         rows,
@@ -1145,7 +1162,7 @@ function attachPty(
                 !k.startsWith("npm_lifecycle_"),
             ),
           ) as Record<string, string>),
-          ...terminalModelEnv(lease),
+          ...(opts.action === "chatgpt-login" ? {} : terminalModelEnv(lease)),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           ...gitTraceEnv(gitTraceDir, sessionEnvVars),
@@ -1452,7 +1469,11 @@ server.on("upgrade", (req, socket, head) => {
       ...(leaseParam("model") !== undefined && { model: leaseParam("model") }),
     };
     termWss.handleUpgrade(req, socket, head, (ws) =>
-      attachPty(sessionId, ws, { reset, lease }),
+      attachPty(sessionId, ws, {
+        reset,
+        lease,
+        action: url.searchParams.get("action") ?? undefined,
+      }),
     );
   } else if (url.pathname === "/api/browser/display") {
     browser.start();

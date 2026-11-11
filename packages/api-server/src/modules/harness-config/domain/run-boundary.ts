@@ -3,12 +3,7 @@ import type {
   OwnerModelCatalogView,
   SessionPair,
 } from "api-server-api";
-import { effectiveSubagentSettings } from "agent-runtime-api";
-import {
-  harnessCapabilityOf,
-  runsNativelyIn,
-  splitSubagent,
-} from "./session-pair.js";
+import { harnessCapabilityOf, runSubagentSettings } from "./session-pair.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: what a run asks its agent for, as the resolver that answers it: the pair of a kind, its own harness, provider or model where the caller names them (D193B). */
 export type ResolvePair = (
@@ -77,12 +72,11 @@ export function createRunBoundary(deps: {
       pair: Pick<SessionPair, "harness" | "provider" | "model">,
       given: Record<string, string> | undefined,
     ): Record<string, string> | undefined => {
-      const [primary, platform] = splitSubagent(given);
-      const derived = effectiveSubagentSettings(
+      const derived = runSubagentSettings(
         capabilityOf(pair.harness),
-        primary ?? {},
-        platform,
-        runsNativelyIn(inputs.catalog, pair),
+        inputs.catalog,
+        pair,
+        given,
       );
       return Object.keys(derived).length > 0 ? derived : undefined;
     };

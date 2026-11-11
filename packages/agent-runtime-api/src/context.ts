@@ -10,7 +10,10 @@ import type { RuntimeChannelService } from "./modules/runtime/service.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { ProcessesService } from "./modules/processes/types.js";
 
+import type { NativeLoginService } from "./modules/native-login/types.js";
+
 export interface AgentRuntimeContext {
+  nativeLogin: NativeLoginService;
   artifactApi: ArtifactApiService;
   browser: BrowserService;
   changes: ChangesService;

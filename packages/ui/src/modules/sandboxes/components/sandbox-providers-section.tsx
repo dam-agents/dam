@@ -10,6 +10,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import { NativeLoginCard } from "../../providers/components/native-login-card.js";
 import { ProviderSpendRow } from "../../providers/components/provider-spend-row.js";
 import {
   useGrantProvider,
@@ -90,6 +91,12 @@ export function SandboxProvidersSection({
                         ).then((ok) => ok && revoke(p.id))
                   }
                 />
+                {attached && p.type === "chatgpt" && (
+                  <NativeLoginCard
+                    agentId={agentId}
+                    maySignIn={!access || holds(access, "terminal")}
+                  />
+                )}
               </Card>
             );
           })}

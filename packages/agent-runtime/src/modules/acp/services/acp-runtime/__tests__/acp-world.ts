@@ -45,7 +45,7 @@ export interface Harness {
   replyToSession(method: string, sessionId: string, result?: unknown): void;
   emit(frame: object): void;
   pushLine(line: string): void;
-  exit(): void;
+  exit(cause?: string): void;
   killed(): boolean;
 }
 
@@ -53,6 +53,7 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
   const lineHandlers: ((line: string) => void)[] = [];
   const sent: Frame[] = [];
   let killed = false;
+  let exitCause: string | null = null;
   let resolveExit: () => void = () => {};
   const exited = new Promise<void>((resolve) => {
     resolveExit = resolve;
@@ -71,7 +72,7 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
       resolveExit();
     },
     exited,
-    exitCause: () => null,
+    exitCause: () => exitCause,
   };
 
   const received = (method?: string): Frame[] =>
@@ -118,7 +119,10 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
     pushLine(line) {
       for (const handler of lineHandlers) handler(line);
     },
-    exit: () => resolveExit(),
+    exit: (cause) => {
+      exitCause = cause ?? null;
+      resolveExit();
+    },
     killed: () => killed,
   };
 

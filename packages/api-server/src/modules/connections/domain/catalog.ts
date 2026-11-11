@@ -11,6 +11,7 @@ import {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
+  OPENAI_CHATGPT_TEMPLATE_ID,
   BOB_CHAT_MODES,
   IBM_LITELLM_HOST,
   CURVE_BENDER_HOST,
@@ -208,6 +209,23 @@ const OPENAI: HeaderConnectionTemplate = {
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
     },
+  ],
+};
+
+const OPENAI_CHATGPT: NoneConnectionTemplate = {
+  id: OPENAI_CHATGPT_TEMPLATE_ID,
+  name: "ChatGPT subscription",
+  category: "app",
+  isCustom: false,
+  description:
+    "Codex uses a ChatGPT login stored on each agent. Sign in from the agent’s Providers page or over SSH; no API key is needed.",
+  iconSlug: "openai",
+  authKind: "none",
+  contributions: [
+    { kind: "env", name: "PLATFORM_CODEX_AUTH_MODE", placeholder: "chatgpt" },
+    { kind: "egress-allow", host: "auth.openai.com" },
+    { kind: "egress-allow", host: "chatgpt.com" },
+    { kind: "egress-allow", host: "api.openai.com" },
   ],
 };
 
@@ -1074,6 +1092,7 @@ export function buildCatalog(
     ANTHROPIC,
     ANTHROPIC_OAUTH,
     OPENAI,
+    OPENAI_CHATGPT,
     IBM_LITELLM,
     CURVE_BENDER,
     BOB,

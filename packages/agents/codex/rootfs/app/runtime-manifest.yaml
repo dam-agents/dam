@@ -10,6 +10,9 @@ manifestVersion: 1
 # so the router stamps a one-line template on every entry it serves.
 modelRouter:
   dialects: [openai-responses]
+  native:
+    templates: [openai-chatgpt]
+    models: [gpt-6.1-sol, gpt-6-astra, gpt-6-luna]
   sessionModel: { configOption: model }
   # Codex refuses to list models or start a turn without a key, so the
   # runtime sets the router's placeholder; the router drops it.
@@ -78,6 +81,7 @@ drivers:
           choices: []
         # No fixed choices: the picker offers the catalog.
         - id: subagentModel
+          requiresRouter: true
           name: Subagent model
           description: Model Codex's subagents run on
           category: model
@@ -102,6 +106,7 @@ drivers:
         # The router writes it over the reasoning effort of each call on a
         # subagent thread, and only where Codex sent one.
         - id: subagentEffort
+          requiresRouter: true
           name: Subagent effort
           description: Reasoning effort of Codex's subagents
           category: thought_level

@@ -82,6 +82,10 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     type: "openai",
     description: "GPT models straight from the source",
   },
+  {
+    type: "chatgpt",
+    description: "Sign in separately on each agent",
+  },
 ];
 
 export function providerDescription(

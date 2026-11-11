@@ -6,6 +6,7 @@ export {
 } from "./services/model-catalog.js";
 export { watchHarnessCatalog } from "./services/harness-catalog-watch.js";
 export { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
+export { selectNativeConnection } from "./domain/native-selection.js";
 export {
   ANTHROPIC_OAUTH_BETA,
   ANTHROPIC_OAUTH_TEMPLATE,

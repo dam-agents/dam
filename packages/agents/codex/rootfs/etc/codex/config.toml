@@ -7,7 +7,6 @@ cli_auth_credentials_store = "file"
 # on every model overflows the catalog response Codex accepts); this file
 # wins over any template.
 model_instructions_file = "/etc/codex/model-instructions.md"
-forced_login_method = "api"
 # CLI rides the image pin; the startup upgrade nag would only hit the egress chain
 check_for_update_on_startup = false
 
@@ -20,6 +19,7 @@ check_for_update_on_startup = false
 name = "Platform model router"
 base_url = "http://127.0.0.1:24180/v1"
 env_key = "OPENAI_API_KEY"
+requires_openai_auth = false
 wire_api = "responses"
 model_catalog_url = "http://127.0.0.1:24180/codex/models"
 http_headers = { "X-Platform-Harness" = "codex" }

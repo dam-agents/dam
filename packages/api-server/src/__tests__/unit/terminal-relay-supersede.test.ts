@@ -336,3 +336,46 @@ describe("terminal relay connect failure", () => {
     });
   });
 });
+
+// TEST_SCENARIO: The device-login action reaches the runtime unchanged through the existing owner terminal relay; no command text is forwarded.
+it("forwards the fixed native login action and Codex lease", async () => {
+  const agent = createServer();
+  servers.push(agent);
+  const wss = new WebSocketServer({ server: agent });
+  const received = new Promise<string>((resolve) =>
+    wss.once("connection", (_ws, req) => resolve(req.url ?? "")),
+  );
+  await new Promise<void>((resolve) => agent.listen(0, "127.0.0.1", resolve));
+  const relay = createTerminalRelay(
+    "ns",
+    { ...repo, ensureReady: async () => {} } as unknown as AgentsRepository,
+    presence,
+    fakeBus(),
+    () => `ws://127.0.0.1:${(agent.address() as { port: number }).port}`,
+  );
+  const server = createServer();
+  servers.push(server);
+  server.on("upgrade", (req, socket, head) =>
+    relay.handleUpgrade(req, socket, head, "agent-1", {
+      sub: "owner",
+      surface: "ui",
+      attached: () => {},
+      editor: null,
+      email: null,
+      opened: () => {},
+    }),
+  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const ws = new WebSocket(
+    `ws://127.0.0.1:${(server.address() as { port: number }).port}/?sessionId=login-1&harness=codex&action=chatgpt-login&command=ignored`,
+  );
+  sockets.push(ws);
+  const target = new URL(await received, "http://runtime.example");
+  expect(target.pathname).toBe("/api/terminal");
+  expect(target.searchParams.get("action")).toBe("chatgpt-login");
+  expect(target.searchParams.get("harness")).toBe("codex");
+  expect(target.searchParams.has("command")).toBe(false);
+  ws.terminate();
+  relay.close();
+  wss.close();
+});

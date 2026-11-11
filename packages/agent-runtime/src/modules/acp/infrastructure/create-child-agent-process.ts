@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import readline from "node:readline";
+import {
+  CHATGPT_LOGIN_REQUIRED_EXIT_CODE,
+  CHATGPT_LOGIN_REQUIRED_MESSAGE,
+} from "api-server-api";
 import type { AgentProcess } from "./agent-process.js";
 
 export interface ChildAgentProcessOptions {
@@ -56,6 +60,12 @@ export function createChildAgentProcess(
 
   const exited = new Promise<void>((resolve) => {
     child.on("exit", (code, signal) => {
+      if (
+        !signal &&
+        code === CHATGPT_LOGIN_REQUIRED_EXIT_CODE &&
+        cleanEnv.PLATFORM_CODEX_AUTH_MODE === "chatgpt"
+      )
+        exitCause = CHATGPT_LOGIN_REQUIRED_MESSAGE;
       exitCause ??= signal ? `killed by ${signal}` : `exit code ${code}`;
       resolve();
     });

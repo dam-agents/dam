@@ -1,13 +1,14 @@
 # Security and credentials
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
 Three rules carry the security model:
 
-1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub, Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the owner's `sub`.
+1. **Platform-managed credentials stay outside agents.** Real upstream tokens (GitHub, Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the owner's `sub`.
    The Envoy proxy in the Agent's gateway pod — a pod of its own by default, its owner's single one where the install turns that on ([owner gateway identity](#owner-gateway-identity)) — injects them into outbound traffic on the wire; nothing is ever mounted into the machine.
+   Explicit [native Codex subscription login](#native-codex-subscription-login) is the exception: Codex stores that account's own login on the agent.
 2. **Identity flows from Keycloak.** Browser users authenticate against Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on every resource the user creates.
    Per-user credential isolation is the `agent-platform.ai/owner` label on the K8s Secret — the controller's selector refuses to mount any other owner's Secret into a given owner's gateway pod.
    An Agent's `secretRef`, whose keys become its environment, is honoured only for a Secret with its owner's label that the platform does not manage.
@@ -167,6 +168,10 @@ An editor's change runs in a context made for the owner and bound to that one Ag
 The controller picks credentials per-Agent by listing K8s Secrets labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent namespace, then mounting the matching set into the paired gateway pod.
 Cross- owner leakage is structurally prevented by the label selector — a missing `agent-platform.ai/owner` label is treated as no owner and never mounted.
 
+## Native Codex subscription login
+
+[Native Codex login](native-codex-login.md) puts an owner's subscription credentials on the agent; everyone permitted to run it shares that account.
+
 ## Credential storage
 
 Each connected service produces one K8s Secret per `(owner, connection)`:
@@ -264,9 +269,8 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
-A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades — are on [credential-gateway](credential-gateway.md).
+The [credential gateway](credential-gateway.md) owns credential injection, addressing and recovery from invalid credentials.
+A credentialed host is pinned to its upstream, so an agent cannot redirect a credentialed request to another destination.
 
 ## HITL ext_authz
 

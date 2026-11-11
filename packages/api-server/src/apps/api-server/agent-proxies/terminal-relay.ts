@@ -72,7 +72,7 @@ export function createTerminalRelay(
       const sessionId = query.get("sessionId") ?? "default";
       const reset = query.get("reset") === "1";
       const lease = new URLSearchParams();
-      for (const name of ["harness", "provider", "model"]) {
+      for (const name of ["harness", "provider", "model", "action"]) {
         const value = query.get(name);
         if (value) lease.set(name, value);
       }

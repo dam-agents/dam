@@ -5,7 +5,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const fake = vi.hoisted(() => ({ navigateToSettings: vi.fn() }));
+const fake = vi.hoisted(() => ({
+  navigateToSettings: vi.fn(),
+  navigateToSandboxHome: vi.fn(),
+  selectedAgent: "agent-1",
+}));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake),
@@ -30,6 +34,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   fake.navigateToSettings.mockClear();
+  fake.navigateToSandboxHome.mockClear();
 });
 
 function render(rawError: string): void {
@@ -83,4 +88,22 @@ it("links the pointer the agent runtime put into the message", () => {
 it("leaves other send errors without a link", () => {
   render("API error: 402 Payment Required");
   expect(container.querySelector("a")).toBeNull();
+});
+
+// TEST_SCENARIO: A native login failure points to this agent’s sign-in action rather than API-key settings.
+it("renders agent-specific ChatGPT sign-in instructions", () => {
+  render("the harness exited (ChatGPT sign-in is required on this agent.)");
+  expect(container.textContent).toContain("Sign in to ChatGPT on this agent.");
+  expect(container.textContent).toContain("Providers page");
+  expect(link().getAttribute("href")).toBe("/sandboxes/agent-1/providers");
+  act(() =>
+    link().dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(fake.navigateToSandboxHome).toHaveBeenCalledWith(
+    "agent-1",
+    "providers",
+  );
+  expect(fake.navigateToSettings).not.toHaveBeenCalled();
 });

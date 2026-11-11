@@ -1,6 +1,11 @@
 import { senderSchema } from "agent-runtime-api";
 import { z } from "zod";
 
+export const CHATGPT_LOGIN_REQUIRED_EXIT_CODE = 77;
+
+export const CHATGPT_LOGIN_REQUIRED_MESSAGE =
+  "ChatGPT sign-in is required on this agent.";
+
 export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";

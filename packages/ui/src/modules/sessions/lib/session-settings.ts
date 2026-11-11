@@ -3,18 +3,25 @@ import type {
   HarnessConfigCurrent,
 } from "agent-runtime-api";
 import {
+  effectiveSubagentSettings,
+  isPlatformSubagentSetting,
   modelConstraintsFor,
   startModeFor,
   SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
-import { parseQualifiedModel } from "api-server-api";
+import { parseQualifiedModel, type SessionPair } from "api-server-api";
 
 import {
   findModel,
   type ModelGroup,
+  sameModel,
   sameSideGroups,
 } from "./catalog-groups.js";
 import { prettyModelLabel } from "./model-families.js";
+import {
+  type ProviderConnectionRef,
+  providerOfModel,
+} from "./session-pair-options.js";
 
 export function sessionSettingOptions(
   capability: HarnessCapability | undefined,
@@ -104,6 +111,8 @@ export function settingsForModel(
       const option = capability?.harnessConfigCatalog?.options.find(
         (o) => o.id === id,
       );
+      if (option?.requiresRouter && findModel(groups, model)?.group.native)
+        return false;
       if (option && isModelOption(option)) {
         const hit = findModel(groups, value);
         return !hit || side.includes(hit.group);
@@ -164,4 +173,47 @@ export function pairSummary(
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the chat picker derives run settings against the model's own Connection, keeping platform subagents separate from router-only settings on native providers. */
+export function settledSessionSettings(
+  next: SessionPair,
+  capability: HarnessCapability | undefined,
+  groups: readonly ModelGroup[],
+  granted: readonly ProviderConnectionRef[],
+): Record<string, string> {
+  const all = next.settings ?? {};
+  const slot = Object.fromEntries(
+    Object.entries(all).filter(([id]) => isPlatformSubagentSetting(id)),
+  );
+  if (Object.keys(slot).length === 0) return all;
+  const primary = Object.fromEntries(
+    Object.entries(all).filter(([id]) => !isPlatformSubagentSetting(id)),
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: the session's effective provider is the model's owner-catalog group; a reported provider is trusted only while its own listing offers that model, since a pinned model keeps the old provider in session metadata. */
+  const offeredBy = (connectionId: string | null | undefined) =>
+    connectionId != null &&
+    (groups
+      .find((g) => g.connectionId === connectionId)
+      ?.models.some((m) => sameModel(m.name, next.model ?? "")) ??
+      false);
+  const supplied = next.provider;
+  /* UNIT_BOUNDARY_DESCRIPTION: an unlisted primary model (the catalog is down or the model is gone) still names its provider by its qualified alias among the agent's Connections; without a match compatibility is unknown, so no native key is derived rather than trusting the stale field. */
+  const sessionProvider = offeredBy(supplied)
+    ? supplied
+    : (findModel(groups, next.model ?? null)?.group.connectionId ??
+      providerOfModel(next.model ?? null, granted)?.id ??
+      null);
+  return effectiveSubagentSettings(
+    capability,
+    primary,
+    slot,
+    (name) =>
+      groups.some(
+        (g) =>
+          g.connectionId === sessionProvider &&
+          g.models.some((m) => sameModel(m.name, name)),
+      ),
+    findModel(groups, next.model)?.group.native ?? false,
+  );
 }

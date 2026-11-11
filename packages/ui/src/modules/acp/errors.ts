@@ -1,5 +1,6 @@
 import {
   AUTH_ERROR_HINT,
+  CHATGPT_LOGIN_REQUIRED_MESSAGE,
   jsonRpcErrorDetails,
   nextUtcMidnight,
   platformUndeliveredMetaSchema,
@@ -70,7 +71,7 @@ interface SendErrorDescription {
   title?: string;
   message: string;
   hint?: string;
-  kind?: "provider-unavailable";
+  kind?: "provider-unavailable" | "native-login-required";
 }
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
@@ -148,6 +149,12 @@ export function describeSendError(
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  if (raw.includes(CHATGPT_LOGIN_REQUIRED_MESSAGE))
+    return {
+      kind: "native-login-required",
+      message: "Sign in to ChatGPT on this agent.",
+      hint: "Open this agent’s Providers page and select Sign in to ChatGPT, then retry your message. If you cannot sign in, ask the agent’s owner.",
+    };
   const spendRefusal = describeSpendRefusal(raw, viewer);
   if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {

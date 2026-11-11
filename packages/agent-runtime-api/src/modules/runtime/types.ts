@@ -501,6 +501,7 @@ export const harnessConfigOptionGroup = z.object({
   default: z.string().min(1).optional(),
   choices: z.array(harnessConfigChoice),
   subagents: z.boolean().optional(),
+  requiresRouter: z.boolean().optional(),
 });
 
 export const harnessConfigCatalog = z.object({

@@ -13,6 +13,7 @@ export function terminalSocketUrl(input: {
   reset: boolean;
   wakes: boolean;
   lease: Record<string, string> | null;
+  nativeLogin?: boolean;
 }): string {
   const query = new URLSearchParams({
     token: input.token,
@@ -20,6 +21,7 @@ export function terminalSocketUrl(input: {
     ...(input.reset && { reset: "1" }),
     ...(!input.wakes && { wake: "0" }),
     ...input.lease,
+    ...(input.nativeLogin && { action: "chatgpt-login" }),
   });
   const scheme = input.location.protocol === "https:" ? "wss:" : "ws:";
   return `${scheme}//${input.location.host}/api/agents/${input.agentId}/terminal?${query.toString()}`;
