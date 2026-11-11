@@ -164,7 +164,7 @@ It cannot close a group the posture opens, because on auto that brings the expir
 Writes to `~/.bob` and commands Bob's own safety check flags stay protected on both postures.
 
 The posture never reaches the file.
-In what Bob writes back, each group whose value is still the one the preload laid over gets the file's own entries back, or none, while every other change Bob saves, a group a person changes in the TUI included, lands as written.
+In what Bob writes back, to the file or to its `settings.json.bak` backup, each group whose value is still the one the preload laid over gets the file's own entries back, or none, while every other change Bob saves, a group a person changes in the TUI included, lands as written.
 A `bob` started by hand, over SSH for example, runs without the preload and reads the file as it is.
 The preload comes after [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs) in `harness-chat`, so it works on the path Bob names whether or not the process has a settings copy of its own.
 `mise run //packages/agents:test:bob-outside-workspace` checks the posture, the write-back and both harness scripts; `mise run //packages/agents:check:bob-outside-workspace` fails when the image pins another Bob than the preload names, so a bump checks the protected rule and the group list again.

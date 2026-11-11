@@ -7,9 +7,10 @@
  * opens the groups the process's approvals call for in what Bob reads out of
  * $HOME/.bob/settings/settings.json: every group under --auto-approve, read and
  * execute otherwise. A group the file itself opens stays open. In what Bob
- * writes to that file, each group whose value is still the one this preload
- * laid over gets the file's own entries back, so the owner's file never
- * carries the posture, and every other change Bob saves is kept. A file it
+ * writes to that file or to its settings.json.bak backup, each group whose
+ * value is still the one this preload laid over gets the file's own entries
+ * back, so neither file ever carries the posture, and every other change Bob
+ * saves is kept. A file it
  * cannot parse passes through unchanged, said once on stderr. Bob 2.1.0
  * reads and writes the file through node:fs by that path;
  * check:bob-outside-workspace ties BOB_VERSION to the image pin. */
@@ -34,7 +35,9 @@ const GROUPS = [
 ];
 const OPEN_ON_ASK = ["read", "execute"];
 const target = join(process.env.HOME ?? "", ".bob", "settings", "settings.json");
+const backup = `${target}.bak`;
 const isTarget = (p) => pathOf(p) === target;
+const isWritten = (p) => isTarget(p) || pathOf(p) === backup;
 const opened = process.argv.includes("--auto-approve") ? GROUPS : OPEN_ON_ASK;
 
 const original = {
@@ -117,17 +120,14 @@ const withoutPosture = (data) => {
       return likeInput(JSON.stringify(doc, null, 2), data);
     }
     const written = optionsOf(doc);
-    const kept = written.filter((entry) => {
-      if (!isObject(entry) || !GROUPS.includes(entry.groupId)) return true;
+    const options = written.flatMap((entry) => {
+      if (!isObject(entry) || !GROUPS.includes(entry.groupId)) return [entry];
       const own = entriesOf(onDisk, entry.groupId);
-      return entry.enableOutsideWorkspace !== isOpen(own, entry.groupId);
+      const laidOverOne =
+        entriesOf(written, entry.groupId).length === 1 &&
+        entry.enableOutsideWorkspace === isOpen(own, entry.groupId);
+      return laidOverOne ? own : [entry];
     });
-    const keptGroups = new Set(kept.map((entry) => entry?.groupId));
-    const restored = GROUPS.filter((groupId) => !keptGroups.has(groupId)).flatMap(
-      (groupId) =>
-        entriesOf(written, groupId).length > 0 ? entriesOf(onDisk, groupId) : [],
-    );
-    const options = [...kept, ...restored];
     if (options.length > 0) doc.approval.permissionOptions = options;
     else delete doc.approval.permissionOptions;
     return likeInput(JSON.stringify(doc, null, 2), data);
@@ -157,7 +157,7 @@ fs.writeFileSync = function (p, data, ...rest) {
   return original.writeFileSync.call(
     this,
     p,
-    isTarget(p) ? withoutPosture(data) : data,
+    isWritten(p) ? withoutPosture(data) : data,
     ...rest,
   );
 };
@@ -165,7 +165,7 @@ fs.writeFile = function (p, data, ...rest) {
   return original.writeFile.call(
     this,
     p,
-    isTarget(p) ? withoutPosture(data) : data,
+    isWritten(p) ? withoutPosture(data) : data,
     ...rest,
   );
 };
@@ -173,7 +173,7 @@ fs.promises.writeFile = function (p, data, ...rest) {
   return original.writeFileP.call(
     this,
     p,
-    isTarget(p) ? withoutPosture(data) : data,
+    isWritten(p) ? withoutPosture(data) : data,
     ...rest,
   );
 };
@@ -186,7 +186,7 @@ const restoreInSource = (from) => {
   } catch {}
 };
 wrapMoves((from, to) => {
-  if (isTarget(to)) restoreInSource(from);
+  if (isWritten(to) && !isTarget(from)) restoreInSource(from);
   return [from, to];
 });
 syncBuiltinESMExports();

@@ -37,6 +37,13 @@ writeFileSync(
 const p = ${JSON.stringify(settings)};
 const doc = JSON.parse(fs.readFileSync(p, "utf8"));
 console.log(JSON.stringify(doc.approval.permissionOptions));
+const backup = process.env.BACKUP;
+if (backup === "write") fs.writeFileSync(p + ".bak", JSON.stringify(doc));
+if (backup === "move") {
+  fs.writeFileSync(p + ".bak.tmp", JSON.stringify(doc));
+  fs.renameSync(p + ".bak.tmp", p + ".bak");
+}
+if (backup === "copy") fs.copyFileSync(p, p + ".bak");
 const change = process.env.CHANGE;
 if (change) {
   new Function("doc", change)(doc);
@@ -45,17 +52,18 @@ if (change) {
 }
 `,
 );
-const run = ({ auto, change, env = {}, preloads = ["bob-outside-workspace.mjs"] }) => {
+const run = ({ auto, change, backup, env = {}, preloads = ["bob-outside-workspace.mjs"] }) => {
   writeFileSync(settings, JSON.stringify(ownerFile));
   const out = execFileSync(
     process.execPath,
     [...preloads.map((name) => `--import=${join(lib, name)}`), bob, ...(auto ? ["--auto-approve"] : [])],
-    { env: { PATH: process.env.PATH, HOME: home, ...(change && { CHANGE: change }), ...env }, encoding: "utf8" },
+    { env: { PATH: process.env.PATH, HOME: home, ...(change && { CHANGE: change }), ...(backup && { BACKUP: backup }), ...env }, encoding: "utf8" },
   );
   const seen = JSON.parse(out);
   return Object.fromEntries(seen.map(({ groupId, enableOutsideWorkspace }) => [groupId, enableOutsideWorkspace]));
 };
 const onDisk = () => JSON.parse(readFileSync(settings, "utf8"));
+const backedUp = () => JSON.parse(readFileSync(`${settings}.bak`, "utf8"));
 
 try {
   // TEST_SCENARIO: under --auto-approve nobody may be there to answer, so Bob reads every group open, even read, which the owner's file closes; the owner's other group passes through.
@@ -68,14 +76,19 @@ try {
   run({ auto: true, change: 'doc.session.model = "tui";' });
   assert.deepEqual(onDisk(), { ...ownerFile, session: { model: "tui" } });
 
+  // TEST_SCENARIO: Bob backs up what it read before a save, by a direct write, by a staged file moved into place, or by copying the file itself; no backup carries the posture, and the copy leaves the file as it was.
+  for (const backup of ["write", "move", "copy"]) {
+    rmSync(`${settings}.bak`, { force: true });
+    run({ auto: true, backup });
+    assert.deepEqual(backedUp(), ownerFile, backup);
+    assert.deepEqual(onDisk(), ownerFile, backup);
+  }
+
   // TEST_SCENARIO: a person opens browser in the TUI on ask; that change is the person's, so it is kept, and the untouched groups go back to the owner's entries.
   run({ auto: false, change: 'doc.approval.permissionOptions.push({ groupId: "browser", enableOutsideWorkspace: true });' });
   assert.deepEqual(onDisk().approval.permissionOptions, [
-    { groupId: "custom", enableOutsideWorkspace: true },
+    ...ownerFile.approval.permissionOptions,
     { groupId: "browser", enableOutsideWorkspace: true },
-    { groupId: "read", enableOutsideWorkspace: false, note: "owner" },
-    { groupId: "edit", enableOutsideWorkspace: false },
-    { groupId: "edit", enableOutsideWorkspace: true },
   ]);
 
   // TEST_SCENARIO: a Bob process with pins of its own reads a settings copy through bob-settings-file.mjs; loaded after it, as harness-chat does, the posture applies to that copy.
