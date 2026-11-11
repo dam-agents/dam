@@ -18,7 +18,9 @@ export interface ModelFamily {
  * word has no tiers, so it reads as one tier of its own. A family with fixed
  * names (Bob's service tiers) lists them in display order, and one whose ids
  * carry a variant tail after the size or version (Nemotron, Granite) says
- * so, and one whose ids carry no version at all (Muse Spark) says that.
+ * so, and one whose ids carry no version at all (Muse Spark) says that. The
+ * tail's parameter count (`230B`) is part of the name, so two sizes of one
+ * version stay apart.
  */
 export const MODEL_FAMILIES: readonly ModelFamily[] = [
   {
@@ -153,9 +155,13 @@ export function parseModelFamily(name: string): ParsedModel | null {
         };
   }
   if (family.variantSuffix) {
+    const paramCount = rest.find((p) => /^\d+b$/.test(p));
+    const paramSize = paramCount && { variant: paramCount.toUpperCase() };
     if (family.sizes.length === 0) {
       const version = versionOf(rest.slice(0, 2));
-      return version === null ? null : { family, size: family.token, version };
+      return version === null
+        ? null
+        : { family, size: family.token, version, ...paramSize };
     }
     for (const size of family.sizes) {
       const at = rest.indexOf(size);
@@ -166,6 +172,7 @@ export function parseModelFamily(name: string): ParsedModel | null {
           family,
           size,
           version: before,
+          ...paramSize,
           ...(buildStamp !== undefined && { buildStamp }),
         };
       const tail = rest.slice(at + 1, at + 3);
@@ -176,9 +183,11 @@ export function parseModelFamily(name: string): ParsedModel | null {
           family,
           size,
           version: after,
+          ...paramSize,
           ...(buildStamp !== undefined && { buildStamp }),
         };
-      if (at === 0 && family.versionless) return { family, size, version: [] };
+      if (at === 0 && family.versionless)
+        return { family, size, version: [], ...paramSize };
     }
     return null;
   }

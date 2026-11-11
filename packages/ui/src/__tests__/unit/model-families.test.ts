@@ -163,7 +163,13 @@ describe("a model id's family, size and version", () => {
       prettyModelLabel("rits/ibm-research/granite-5.0-230b-preview-r261008a"),
       prettyModelLabel("rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4"),
       prettyModelLabel("meta/muse-spark-1.1"),
-    ]).toEqual(["Granite 5.0", "Muse Spark", "Muse Spark 1.1"]);
+      prettyModelLabel("ibm/granite-3.0-8b-instruct"),
+    ]).toEqual([
+      "Granite 5.0 230B",
+      "Muse Spark 816B",
+      "Muse Spark 1.1",
+      "Granite 3.0 8B",
+    ]);
     expect(prettyModelLabel("bob/premium-ide")).toBe("Bob premium-ide");
     expect(prettyModelLabel("azure/gpt-5.5")).toBe("GPT 5.5");
   });
@@ -319,7 +325,7 @@ describe("the menu's family groups", () => {
       families
         .find((f) => f.family.name === "Nemotron")!
         .newest.map((e) => e.label),
-    ).toEqual(["Ultra 3"]);
+    ).toEqual(["Ultra 3 550B"]);
     const bob = families.find((f) => f.family.name === "Bob")!;
     expect(bob.newest.map((e) => e.label)).toEqual([
       "background",
