@@ -345,7 +345,8 @@ async function loadWindow(agent, sdk, { sessionId, frames, before }) {
     let wanted = frames;
     for (;;) {
       await reader.readChunk();
-      if (reader.preserved && cursor === null) return null;
+      if (reader.preserved)
+        return cursor === null ? null : { lines: [], older: null };
       const parent = cursor && reader.located.get(cursor.parentUuid);
       const leaf = cursor
         ? parent && { uuid: cursor.parentUuid, offset: parent.offset }
@@ -396,10 +397,11 @@ async function loadWindow(agent, sdk, { sessionId, frames, before }) {
  * long session costs the same however long its transcript grew. The request
  * records the CLI writes after each model call are skipped unread, since they
  * hold no conversation and most of a long transcript is them. The SDK turns
- * the entries read into messages exactly as it turns the whole file. A part
- * that reaches a compaction which kept a segment of the conversation from
- * before it falls back to the whole read, since that segment can sit anywhere
- * earlier in the file.
+ * the entries read into messages exactly as it turns the whole file. Paging
+ * back ends at a compaction which kept a segment of the conversation from
+ * before it, as the SDK's own read of a long file starts there; a newest part
+ * that reaches such a compaction falls back to the whole read, since the kept
+ * segment can sit anywhere earlier in the file.
  */
 export async function loadHistory(input) {
   const { agent, sdk } = await modulesPromise;

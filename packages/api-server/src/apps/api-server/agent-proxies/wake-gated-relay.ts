@@ -162,7 +162,8 @@ export function createWakeGatedRelay(
 
       let upstream: WebSocket | undefined;
       let clientGone = false;
-      const hold = startHoldSpan(name, holdStartOf(repo.peekCached(agentId)));
+      const start = holdStartOf(repo.peekCached(agentId));
+      const hold = startHoldSpan(name, start);
       const requests = watchedRequest
         ? createRequestSpans(name, watchedRequest, () => hold.link())
         : null;
@@ -208,6 +209,7 @@ export function createWakeGatedRelay(
             ensureReady(agentId, req),
             `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
             () => clientGone,
+            start,
           ),
         );
       } catch (err) {
