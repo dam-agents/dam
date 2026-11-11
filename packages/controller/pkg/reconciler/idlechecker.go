@@ -180,6 +180,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
+		if ready, _, _ := vmStartConditions(agent); parkedTargetWaits(agent.GetAnnotations(), fmt.Sprint(ready["reason"])) {
+			continue
+		}
+
 		if c.busyProbe(ctx, name) {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
