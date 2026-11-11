@@ -5,11 +5,6 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 
-/**
- * What the person typed, as the chat shows it: the blocks the composer adds
- * behind their back (`<a2ui-capabilities>`, form data and actions) are cut,
- * so a prompt that was only such blocks, a form submit, recalls nothing.
- */
 function promptText(message: Message): string {
   return message.parts
     .flatMap((p) =>
@@ -38,6 +33,9 @@ export function promptsNewestFirst(messages: readonly Message[]): string[] {
  * a recalled prompt puts it back there. Up steps back, Down steps forward, and
  * stepping past the newest prompt restores the draft the walk started from.
  * Typing ends the walk, so what the person edits becomes the draft.
+ * A prompt is recalled as the chat shows it: the renderer blocks the composer
+ * adds (`<a2ui-capabilities>`, form data and actions) are cut, so a prompt
+ * that held only such blocks, such as a form submit, is not recalled.
  */
 export function usePromptHistory(apply: (text: string) => void): {
   navigate: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
