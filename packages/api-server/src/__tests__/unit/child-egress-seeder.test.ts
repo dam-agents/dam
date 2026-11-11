@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a child whose egress is its own starts with its rules written as its launching agent's: an open child with the rules the launching agent set, which it can replace, except those that wait for the owner (a wildcard allow, or a host the launching agent does not reach while its owner has not let its children have network access of their own); a scoped child with a copy of the rules its parent's requests are decided under, for the hosts named or all of them, copied once.
+// TEST_OVERVIEW: a child whose egress is its own starts with its rules written as its launching agent's: an open child with the rules the launching agent set, which it can replace, except those that wait for the owner (a wildcard allow, or a rule that lets through a request the launching agent's own rules do not allow while its owner has not let its children have network access of their own); a scoped child with a copy of the rules its parent's requests are decided under, for the hosts named or all of them, copied once.
 import { describe, expect, it } from "vitest";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
@@ -303,6 +303,86 @@ describe("an open child wider than its driver", () => {
     ]);
     expect(covered.waiting).toEqual([]);
     expect(hostsOf("agent-child")).toEqual(["*.example.com:inbox"]);
+  });
+});
+
+describe("what a driver's update leaves on an open child", () => {
+  // TEST_SCENARIO: the child holds the platform's own wildcard rule and a wildcard allow its owner wrote by hand. The driver replaces the child's rules without naming either. Both stay: a driver's update takes back only its own rules and the owner's approvals of what it asked.
+  it("keeps the platform's rule and the owner's hand-written rules", async () => {
+    const { seeder, hostsOf } = setup([
+      rule("agent-root", "github.com"),
+      rule("agent-child", "*.env.localhost", {
+        source: "platform:environments",
+      }),
+      rule("agent-child", "*.internal.example", { source: "manual" }),
+    ]);
+    await seeder.setOpenRules("agent-child", "agent-driver", [
+      { host: "github.com", verdict: "allow" },
+    ]);
+    expect(hostsOf("agent-child")).toEqual([
+      "*.env.localhost:platform:environments",
+      "*.internal.example:manual",
+      "github.com:driver",
+    ]);
+  });
+
+  // TEST_SCENARIO: the owner approved one wider rule. They then turn the switch on and the driver sets its rules again, and later turn it off and the driver sets them once more. The approved rule stays the owner's through both, so it is never asked again, while a rule the driver wrote under the switch waits for the owner once the switch is off.
+  it("keeps the owner's approval through the switch going on and off", async () => {
+    const opts = { granted: false };
+    const { seeder, hostsOf, approve } = setup(
+      [rule("agent-root", "github.com")],
+      opts,
+    );
+    const rules = [
+      { host: "pypi.org", verdict: "allow" as const },
+      { host: "npmjs.org", verdict: "allow" as const },
+    ];
+    await seeder.setOpenRules("agent-child", "agent-driver", rules);
+    approve("agent-child", "pypi.org");
+
+    opts.granted = true;
+    await seeder.setOpenRules("agent-child", "agent-driver", rules);
+    expect(hostsOf("agent-child")).toEqual([
+      "npmjs.org:driver",
+      "pypi.org:inbox",
+    ]);
+
+    opts.granted = false;
+    const off = await seeder.setOpenRules("agent-child", "agent-driver", rules);
+    expect(hostsOf("agent-child")).toEqual(["pypi.org:inbox"]);
+    expect(off.waiting.map((w) => w.host)).toEqual(["npmjs.org"]);
+  });
+
+  // TEST_SCENARIO: the owner limited the driver to GET on one path of a host. The driver gives its child that same rule at once, and a rule for the whole host, or for another method, waits for the owner: the child gets no more of a host than its driver has.
+  it("holds a rule for more of a host than the driver has", async () => {
+    const { seeder, verdictsOf, asks } = setup(
+      [
+        rule("agent-root", "api.github.com", {
+          method: "GET",
+          pathPattern: "/repos/*",
+        }),
+      ],
+      { granted: false },
+    );
+    await seeder.setOpenRules("agent-child", "agent-driver", [
+      {
+        host: "api.github.com",
+        verdict: "allow",
+        method: "GET",
+        pathPattern: "/repos/*",
+      },
+      { host: "api.github.com", verdict: "allow" },
+      {
+        host: "api.github.com",
+        verdict: "allow",
+        method: "POST",
+        pathPattern: "/repos/*",
+      },
+    ]);
+    expect(verdictsOf("agent-child")).toEqual([
+      "allow api.github.com /repos/*:driver",
+    ]);
+    expect(asks).toEqual(["api.github.com:wider", "api.github.com:wider"]);
   });
 });
 

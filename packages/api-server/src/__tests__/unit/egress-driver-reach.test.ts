@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { reachesPastDriver } from "../../modules/egress-rules/domain/driver-reach.js";
 
-// TEST_OVERVIEW: whether a rule a driver sets on its open child reaches a host and port the driver's own rules do not, which is what makes the rule wait for the owner while the owner has not let the driver's children have network access of their own.
-const allow = (host: string, extra: { port?: number; path?: string } = {}) => ({
+// TEST_OVERVIEW: whether a rule a driver sets on its open child lets through a request (a host, port, method and path) the driver's own rules do not allow, which is what makes the rule wait for the owner while the owner has not let the driver's children have network access of their own.
+const allow = (
+  host: string,
+  extra: { port?: number; path?: string; method?: string } = {},
+) => ({
   host,
   ...(extra.port !== undefined && { port: extra.port }),
-  method: "*",
+  method: extra.method ?? "*",
   pathPattern: extra.path ?? "*",
   verdict: "allow",
 });
@@ -39,7 +42,7 @@ describe("reachesPastDriver", () => {
     expect(reachesPastDriver({ host: "pypi.org" }, [allow("*")])).toBe(false);
   });
 
-  // TEST_SCENARIO: a host-wide deny on the driver beats its wider allow, as the most specific rule wins at the gate; a deny of one path leaves the host reachable, since the child reaches only what the driver could reach on another path.
+  // TEST_SCENARIO: a deny on the driver under a more specific host pattern beats its wider allow, as at the gate. A host-wide deny makes every child rule for the host wider. A deny of one path makes a host-wide child rule wider, since it would let that path through, and leaves a child rule for another path within reach.
   it("reads the driver's denies the way the gate does", () => {
     expect(
       reachesPastDriver({ host: "gist.github.com" }, [
@@ -47,20 +50,60 @@ describe("reachesPastDriver", () => {
         deny("gist.github.com"),
       ]),
     ).toBe(true);
+    const adminDenied = [
+      allow("*.github.com"),
+      deny("gist.github.com", "/admin/*"),
+    ];
+    expect(reachesPastDriver({ host: "gist.github.com" }, adminDenied)).toBe(
+      true,
+    );
     expect(
-      reachesPastDriver({ host: "gist.github.com" }, [
-        allow("*.github.com"),
-        deny("gist.github.com", "/admin/*"),
-      ]),
+      reachesPastDriver(
+        { host: "gist.github.com", pathPattern: "/raw/*" },
+        adminDenied,
+      ),
     ).toBe(false);
   });
 
-  // TEST_SCENARIO: a driver that reaches a host on some path reaches the host, so a child's rule for its other paths is not wider.
-  it("compares hosts and ports, not paths", () => {
+  // TEST_SCENARIO: a driver its owner limited to some paths or one method of a host cannot give its child the rest of the host: the child's rule is within reach only when one allow of the driver speaks for every request it lets through.
+  it("compares methods and paths", () => {
+    const readOnly = [
+      allow("api.github.com", { path: "/repos/*", method: "GET" }),
+    ];
+    expect(reachesPastDriver({ host: "api.github.com" }, readOnly)).toBe(true);
     expect(
-      reachesPastDriver({ host: "api.github.com" }, [
-        allow("api.github.com", { path: "/repos/*" }),
-      ]),
+      reachesPastDriver(
+        { host: "api.github.com", method: "POST", pathPattern: "/repos/*" },
+        readOnly,
+      ),
+    ).toBe(true);
+    expect(
+      reachesPastDriver(
+        { host: "api.github.com", method: "GET", pathPattern: "/users/*" },
+        readOnly,
+      ),
+    ).toBe(true);
+    expect(
+      reachesPastDriver(
+        { host: "api.github.com", method: "GET", pathPattern: "/repos/*" },
+        readOnly,
+      ),
+    ).toBe(false);
+    expect(
+      reachesPastDriver(
+        {
+          host: "api.github.com",
+          method: "GET",
+          pathPattern: "/repos/acme/*",
+        },
+        readOnly,
+      ),
+    ).toBe(false);
+    expect(
+      reachesPastDriver(
+        { host: "api.github.com", method: "GET", pathPattern: "/repos/*" },
+        [allow("api.github.com")],
+      ),
     ).toBe(false);
   });
 
@@ -84,35 +127,43 @@ describe("reachesPastDriver", () => {
   });
 });
 
-describe("a driver's every-path deny", () => {
-  // TEST_SCENARIO: the gate matches a path pattern with LIKE, so a deny of `/*` or `**` stops every path as `*` does; a driver with `allow *` and `deny github.com /*` does not reach github.com, so a child's allow for it is wider. A deny of `/` alone, or of one method, does not.
-  it("reads /* and ** as every path, as the gate does", () => {
-    for (const path of ["*", "/*", "**", "%/*"])
-      expect(
-        reachesPastDriver({ host: "github.com" }, [
-          allow("*"),
-          deny("github.com", path),
-        ]),
-      ).toBe(true);
+describe("a driver's deny beside its allow", () => {
+  // TEST_SCENARIO: the gate matches a path pattern with LIKE, so a deny of `/*` or `**` stops every path as `*` does; a driver with `allow *` and any deny on github.com that a host-wide child rule would let through (every path, one path, one method) does not allow all of github.com, so that child rule is wider. A child rule the deny cannot match stays within reach.
+  it("makes a child rule the deny may match wider", () => {
     for (const blocked of [
+      deny("github.com", "*"),
+      deny("github.com", "/*"),
+      deny("github.com", "**"),
+      deny("github.com", "%/*"),
       deny("github.com", "/"),
       deny("github.com", "*", "POST"),
     ])
       expect(
         reachesPastDriver({ host: "github.com" }, [allow("*"), blocked]),
-      ).toBe(false);
-  });
-
-  // TEST_SCENARIO: an allow beside a host-wide deny on the same host reaches where the gate ranks it first: a named path beats a deny of `*`, and a longer named path beats `/*`; a host-wide allow ties with the deny and is read as not reaching.
-  it("lets an allow the gate ranks first beside it reach", () => {
+      ).toBe(true);
     expect(
-      reachesPastDriver({ host: "github.com" }, [
-        allow("github.com", { path: "/repos/*" }),
-        deny("github.com"),
+      reachesPastDriver({ host: "github.com", method: "GET" }, [
+        allow("*"),
+        deny("github.com", "*", "POST"),
       ]),
     ).toBe(false);
+  });
+
+  // TEST_SCENARIO: an allow beside a host-wide deny on the same host gives the child what the gate gives the driver: the named path, where the gate ranks the allow first, and not the rest of the host; a host-wide allow ties with the deny and is read as wider.
+  it("lets a child rule within an allow the gate ranks first through", () => {
+    const reposOnly = [
+      allow("github.com", { path: "/repos/*" }),
+      deny("github.com"),
+    ];
     expect(
-      reachesPastDriver({ host: "github.com" }, [
+      reachesPastDriver(
+        { host: "github.com", pathPattern: "/repos/*" },
+        reposOnly,
+      ),
+    ).toBe(false);
+    expect(reachesPastDriver({ host: "github.com" }, reposOnly)).toBe(true);
+    expect(
+      reachesPastDriver({ host: "github.com", pathPattern: "/repos/*" }, [
         allow("github.com", { path: "/repos/*" }),
         deny("github.com", "/*"),
       ]),

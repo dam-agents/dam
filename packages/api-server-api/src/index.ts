@@ -47,9 +47,10 @@ export {
   type ChildConnections,
   childEgressSchema,
   childEgressRuleSchema,
+  OWNER_EGRESS_NOTE,
+  EGRESS_ANSWERS_NOTE,
   type ChildEgress,
   type ChildEgressRule,
-  type ChildEgressOutcome,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
   MAX_STOP_REASON_CHARS,
@@ -77,6 +78,8 @@ export type {
   SpawnInvocationResponse,
   StopInvocationRequest,
   StopInvocationResponse,
+  SetEgressResponse,
+  EgressWaiting,
   InvocationOutput,
   InvocationOutputBlob,
   InvocationOutputLink,
@@ -962,6 +965,7 @@ export {
   PLATFORM_ENVIRONMENTS_SOURCE,
   CHILD_DRIVER_SOURCE,
   isWildcardEgressRule,
+  wildcardHostReach,
   CHILD_INHERITED_SOURCE,
 } from "./modules/egress-rules/types.js";
 export {

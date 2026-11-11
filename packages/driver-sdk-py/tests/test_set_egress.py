@@ -7,8 +7,8 @@ import driver_sdk as d
 
 def test_set_egress_returns_waiting_and_blocked(stub):
     outcome = {
-        "waiting": [{"host": "pypi.org", "id": "req-1"}],
-        "blocked": [{"host": "evil.example"}],
+        "waitingForOwner": [{"host": "pypi.org", "id": "req-1"}],
+        "blockedByOwner": [{"host": "evil.example"}],
     }
     stub.routes[("POST", "/invocations/sub-1/egress")] = (200, outcome)
     rules = [

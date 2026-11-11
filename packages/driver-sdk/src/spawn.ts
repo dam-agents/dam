@@ -1,11 +1,10 @@
 import type {
   SpawnInvocationRequest,
-  SpawnInvocationResponse,
   InvocationView,
   StopInvocationRequest,
   StopInvocationResponse,
 } from "api-server-api";
-import { req, log, sleep, spawningSessionHeaders } from "./http.js";
+import { req, log, sleep, spawnInvocation } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
 
 export interface ImageInfo {
@@ -175,12 +174,7 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
 
   if (signal?.aborted)
     throw new Stopped(undefined, label ?? "spawn", signal.reason);
-  const { id } = await req<SpawnInvocationResponse>(
-    "POST",
-    "/invocations",
-    body,
-    spawningSessionHeaders(),
-  );
+  const id = await spawnInvocation(body);
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
   opts.onSpawned?.(id);

@@ -138,6 +138,26 @@ def _spawning_session_headers() -> dict[str, str]:
     return headers
 
 
+def _log_egress(outcome: Any, target: str) -> None:
+    """Say which egress rules the platform did not set, so a script that goes
+    on does not find out from a refused connection."""
+    for waiting in (outcome or {}).get("waitingForOwner") or []:
+        _log(
+            f"egress: {waiting['host']} waits for your owner's approval "
+            f"(request {waiting['id']}); {target} cannot reach it until then"
+        )
+    for blocked in (outcome or {}).get("blockedByOwner") or []:
+        _log(
+            f"egress: your owner blocked {blocked['host']} on {target}; "
+            "the rule allowing it was not set"
+        )
+
+
+def _spawned(res: dict[str, Any]) -> str:
+    _log_egress({"waitingForOwner": res.get("egressWaitingForOwner")}, res["id"])
+    return res["id"]
+
+
 def _request(
     method: str,
     path: str,
@@ -402,9 +422,11 @@ def spawn(
     its own model provider, which pass over them; ``"open"`` or
     ``{"open": [rules]}``, rules this driver sets (``SubAgent.set_egress``)
     with no prompt and anything else denied, except an allow rule to a
-    wildcard host, or to a host the driver's own rules do not reach while the
-    owner has not let its sub-agents and Environments have network access of
-    their own, which waits for the owner's approval; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
+    wildcard host, or one that lets through a request the driver's own rules
+    do not allow (its host, port, method or path) while the owner has not let
+    its sub-agents and Environments have network access of their own: such a
+    rule is not set, waits for the owner's approval, and is logged at the
+    spawn; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
     hosts that only the user widens. With ``keep=True`` it outlives its result
     asleep until ``keep_for_ms`` (a day by default), sleeping after
     ``idle_timeout_min`` minutes idle (the install's default otherwise), so it
@@ -466,9 +488,9 @@ def spawn(
 
     if cancel is not None and cancel.is_set():
         raise Stopped(None, name)
-    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
-        "id"
-    ]
+    invocation_id = _spawned(
+        _request("POST", "/invocations", body, _spawning_session_headers())
+    )
     _log(f"spawned {name} ({invocation_id})")
     if on_spawned is not None:
         on_spawned(invocation_id)
@@ -601,22 +623,17 @@ class SubAgent:
     def set_egress(self, rules: list[dict[str, Any]]) -> dict[str, Any]:
         """Replace the rules of a sub-agent spawned with ``egress="open"``.
 
-        Returns ``{"waiting": [...], "blocked": [...]}``: the rules it may not
-        give itself. ``waiting`` names each host waiting for the owner's
-        approval, with the ``id`` of its request; ``blocked`` each host whose
-        allow rule was not set because the owner blocked it on the sub-agent,
-        which only the owner can lift."""
+        Returns ``{"waitingForOwner": [{"host", "id"}], "blockedByOwner":
+        [{"host"}]}``: the rules that were not set. One waits for your
+        owner's approval, the other names a host your owner blocked on the
+        sub-agent. Both are logged, and the sub-agent cannot reach those
+        hosts."""
         outcome = _request("POST", f"/invocations/{self.id}/egress", {"rules": rules})
-        waiting = [w["host"] for w in outcome.get("waiting", [])]
-        blocked = [b["host"] for b in outcome.get("blocked", [])]
-        if waiting:
-            _log(
-                f"{self._name} ({self.id}): waiting for the owner: {', '.join(waiting)}"
-            )
-        if blocked:
-            _log(
-                f"{self._name} ({self.id}): blocked by the owner, not set: {', '.join(blocked)}"
-            )
+        outcome = {
+            "waitingForOwner": (outcome or {}).get("waitingForOwner") or [],
+            "blockedByOwner": (outcome or {}).get("blockedByOwner") or [],
+        }
+        _log_egress(outcome, self.id)
         return outcome
 
 
@@ -657,9 +674,9 @@ def spawn_slate(
         ttl_ms=ttl_ms,
         label=label,
     )
-    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
-        "id"
-    ]
+    invocation_id = _spawned(
+        _request("POST", "/invocations", body, _spawning_session_headers())
+    )
     name = label or harness or image or invocation_id
     _log(f"spawned clean slate {name} ({invocation_id})")
     return SubAgent(invocation_id, name)
@@ -818,9 +835,9 @@ def spawn_script(
 
     if cancel is not None and cancel.is_set():
         raise Stopped(None, name)
-    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
-        "id"
-    ]
+    invocation_id = _spawned(
+        _request("POST", "/invocations", body, _spawning_session_headers())
+    )
     _log(f"spawned {name} ({invocation_id})")
     if on_spawned is not None:
         on_spawned(invocation_id)

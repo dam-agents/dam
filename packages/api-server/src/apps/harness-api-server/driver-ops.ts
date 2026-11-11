@@ -50,8 +50,14 @@ export type ScriptSpawnRequest = z.infer<
 >;
 type SpawnTargetRequest = Omit<ScriptSpawnRequest, "script">;
 
+// UNIT_BOUNDARY_DESCRIPTION: a rule of a child's open egress that its driver could not set itself and that waits for the owner's verdict: the host, and the request's id, which egress_proposal reads the status of.
+export interface EgressWaiting {
+  host: string;
+  id: string;
+}
+
 export type SpawnOutcome =
-  | { ok: true; id: string }
+  | { ok: true; id: string; egressWaiting: EgressWaiting[] }
   | {
       ok: false;
       kind: "invalid" | "forbidden" | "conflict" | "spend_limit_reached";
@@ -82,6 +88,7 @@ export interface DriverOpsDeps {
       blocked: { host: string }[];
     }>;
   };
+  childEgressWaiting?: (childId: string) => Promise<EgressWaiting[]>;
   inheritanceOf?: (agentId: string) => Promise<{
     parentAgentId: string;
     egressFrom: "parent" | "open" | "scoped";
@@ -310,7 +317,20 @@ function driverOps(
     throw err;
   };
 
+  const egressWaiting = async (childId: string): Promise<EgressWaiting[]> =>
+    (await deps.childEgressWaiting?.(childId)) ?? [];
+
+  const spawned = async (
+    id: string,
+  ): Promise<Extract<SpawnOutcome, { ok: true }>> => ({
+    ok: true,
+    id,
+    egressWaiting: await egressWaiting(id),
+  });
+
   return {
+    egressWaiting,
+
     async spawn(
       body: SpawnRequest,
       from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
@@ -342,7 +362,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -371,7 +391,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -403,7 +423,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }

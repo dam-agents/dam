@@ -55,7 +55,7 @@ it("answers the rules that wait and those the owner blocked", async () => {
 
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({
-    waiting: [{ host: "pypi.org", id: "req-1" }],
-    blocked: [{ host: "evil.example" }],
+    waitingForOwner: [{ host: "pypi.org", id: "req-1" }],
+    blockedByOwner: [{ host: "evil.example" }],
   });
 });

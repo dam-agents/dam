@@ -1,10 +1,10 @@
-import type { ChildEgressRuleSeed } from "api-server-api";
+import { wildcardHostReach, type ChildEgressRuleSeed } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 import { EGRESS_PROPOSAL_TTL_MS, proposalId } from "./egress-proposals.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: why a child's rule waits for the owner: it allows a wildcard host, or it reaches a host its driver's own rules do not, and the owner has not let the driver give its children network access of their own.
+// UNIT_BOUNDARY_DESCRIPTION: why a child's rule waits for the owner: it allows a wildcard host, or it lets through a request its driver's own rules do not allow, and the owner has not let the driver give its children network access of their own.
 export type ChildEgressAsk = "wildcard" | "wider";
 
 export interface ChildEgressRequests {
@@ -26,16 +26,25 @@ export interface ChildEgressRequests {
 }
 
 const reachOf = (rule: ChildEgressRuleSeed, ask: ChildEgressAsk): string => {
-  if (ask === "wildcard")
-    return rule.host === "*" ? "any host" : `any ${rule.host.slice(1)} host`;
-  return rule.port === undefined ? rule.host : `${rule.host}:${rule.port}`;
+  if (ask === "wildcard") {
+    const reach = wildcardHostReach(rule.host);
+    return rule.host === "*"
+      ? reach
+      : `${reach} (such as api.${rule.host.slice(2)})`;
+  }
+  const target =
+    rule.port === undefined ? rule.host : `${rule.host}:${rule.port}`;
+  const path = rule.pathPattern ?? "*";
+  const method = rule.method ?? "*";
+  const request = path === "*" ? target : `${target}${path}`;
+  return method === "*" ? request : `${method} ${request}`;
 };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a driver asking that its child with open egress
  * reach what is not the driver's to give: a wildcard host (any host, or every
- * subdomain of one domain), or a host the driver itself does not reach while
- * its owner has not let its children have network access of their own. The
+ * subdomain of one domain), or a request the driver's own rules do not allow
+ * while its owner has not let its children have network access of their own. The
  * rule is never written by the driver; it waits as an egress proposal on the
  * child, shown on the driver's page, and only the owner's verdict writes it
  * onto the child. One open request per child, host, port, method and path, so
@@ -48,6 +57,7 @@ export function createChildEgressRequests(deps: {
   repo: ApprovalsRepository;
   ownerOf: (agentId: string) => Promise<string | null>;
   nameOf: (agentId: string) => Promise<string | null>;
+  isEnvironment: (agentId: string) => Promise<boolean>;
   now?: () => number;
 }): ChildEgressRequests {
   const now = deps.now ?? (() => Date.now());
@@ -75,13 +85,16 @@ export function createChildEgressRequests(deps: {
       if (open) return { id: open.id };
       const ownerSub = await deps.ownerOf(childId);
       if (!ownerSub) throw new Error(`no owner found for ${childId}`);
-      const [driverName, childName] = await Promise.all([
+      const [driverName, childName, environment] = await Promise.all([
         deps.nameOf(driverId),
         deps.nameOf(childId),
+        deps.isEnvironment(childId),
       ]);
       const id = `${proposalId(childId, shape)}:${now()}`;
-      const child = childName ? `sub-agent ${childName}` : "child";
+      const kind = environment ? "Environment" : "sub-agent";
+      const child = childName ? `${kind} ${childName}` : kind;
       const reach = reachOf({ ...rule, host }, ask);
+      const driver = driverName ?? driverId;
       await deps.repo.insertPending({
         id,
         type: "egress_proposal",
@@ -93,9 +106,12 @@ export function createChildEgressRequests(deps: {
           ...shape,
           reason:
             ask === "wildcard"
-              ? `${driverName ?? driverId} asks to let its ${child} reach ${reach}`
-              : `${driverName ?? driverId} asks to let its ${child} reach ${reach}, which it cannot reach itself`,
+              ? `${driver} wants its ${child} to reach ${reach}.`
+              : `${driver} wants its ${child} to reach ${reach}. ${driver}'s own network rules do not allow this.`,
           forAgentId: driverId,
+          ...(driverName && { forAgentName: driverName }),
+          forChild: environment ? "environment" : "sub-agent",
+          ...(childName && { forChildName: childName }),
           ...(ask === "wider" && { widerThanDriver: true }),
         },
         expiresAt: new Date(now() + EGRESS_PROPOSAL_TTL_MS),

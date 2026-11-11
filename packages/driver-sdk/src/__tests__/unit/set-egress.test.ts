@@ -13,8 +13,8 @@ afterEach(() => {
 // TEST_SCENARIO: the platform names one rule waiting and one blocked; setEgress posts the rules and returns both lists as the platform sent them.
 it("returns the rules that wait for the owner and those the owner blocked", async () => {
   const outcome = {
-    waiting: [{ host: "pypi.org", id: "req-1" }],
-    blocked: [{ host: "evil.example" }],
+    waitingForOwner: [{ host: "pypi.org", id: "req-1" }],
+    blockedByOwner: [{ host: "evil.example" }],
   };
   const sent: { url: string; body: unknown }[] = [];
   vi.stubGlobal(

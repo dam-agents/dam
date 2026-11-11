@@ -39,6 +39,8 @@ export function composeEgressRulesModule(
   };
 }
 
+export { ruleSpeaksFor } from "./domain/rule-speaks-for.js";
+
 export function createEgressRuleMatchAdapter(db: Db) {
   const repo = createEgressRulesRepository(db);
   return {

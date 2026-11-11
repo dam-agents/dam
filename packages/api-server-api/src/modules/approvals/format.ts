@@ -1,3 +1,4 @@
+import { wildcardHostReach } from "../egress-rules/types.js";
 import { formatSpendAmount } from "../spend/format.js";
 import type {
   AcpPermissionOption,
@@ -26,9 +27,7 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       return {
         title: payload.widerThanDriver
           ? `Access to ${payload.host}${payload.port ? `:${payload.port}` : ""}`
-          : payload.host === "*"
-            ? "Access to any host"
-            : `Access to any ${payload.host.slice(1)} host`,
+          : `Access to ${wildcardHostReach(payload.host)}`,
         subtitle: payload.reason,
       };
     return {

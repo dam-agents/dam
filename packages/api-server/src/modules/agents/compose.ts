@@ -481,7 +481,7 @@ const MAX_INHERITANCE_DEPTH = 16;
 export function childEgressGrants(db: Db): {
   isGrantedFor(driverId: string): Promise<boolean>;
   isGranted(agentId: string): Promise<boolean>;
-  grantForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  rootOf(agentId: string): Promise<string | null>;
   set(agentId: string, on: boolean, decidedBy: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
   cleanup(agentId: string): Promise<void>;
@@ -503,10 +503,7 @@ export function childEgressGrants(db: Db): {
       return root !== null && (await grants.isGranted(root));
     },
     isGranted: (agentId) => grants.isGranted(agentId),
-    async grantForRootOf(driverId, decidedBy) {
-      const root = await rootOf(driverId);
-      if (root) await grants.set(root, true, decidedBy);
-    },
+    rootOf,
     set: (agentId, on, decidedBy) => grants.set(agentId, on, decidedBy),
     listAgentIds: () => grants.listAgentIds(),
     cleanup: (agentId) => grants.deleteForAgent(agentId),

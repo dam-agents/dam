@@ -43,12 +43,6 @@ export const childEgressRuleSchema = z.object({
 });
 export type ChildEgressRule = z.infer<typeof childEgressRuleSchema>;
 
-// UNIT_BOUNDARY_DESCRIPTION: what replacing an open child's rules did with those the driver may not give itself: `waiting`, each rule that waits for the owner's approval with the id of its request; `blocked`, each allow rule not set because the owner blocked it on the child, which only the owner can lift.
-export interface ChildEgressOutcome {
-  waiting: { host: string; id: string }[];
-  blocked: { host: string }[];
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: whose egress rules decide a child's requests: `parent`, the root's, live; `open` (or `{ open: rules }`), rules of its own that the launching agent sets, with no prompt to the user and a host outside them denied; or `{ scoped: hosts }`, its own rules copied once from the parent's for those hosts (or all of them), widened only by the user's approval.
 export const childEgressSchema = z.union([
   z.literal("parent"),
@@ -127,9 +121,25 @@ export const spawnScriptInvocationRequestSchema = refineSpawnTarget(
   }),
 );
 
-export const spawnInvocationResponseSchema = z.object({
+// UNIT_BOUNDARY_DESCRIPTION: a rule of a child's open egress that its driver could not set itself, waiting for the owner's verdict: the host, and the id of the request the owner answers.
+export const egressWaitingSchema = z.object({
+  host: z.string().min(1),
   id: z.string().min(1),
 });
+
+export const spawnInvocationResponseSchema = z.object({
+  id: z.string().min(1),
+  egressWaitingForOwner: z.array(egressWaitingSchema).optional(),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: what replacing an open child's egress rules did not set: the rules that wait for the owner's approval, and the hosts the owner blocked on the child.
+export const setEgressResponseSchema = z.object({
+  waitingForOwner: z.array(egressWaitingSchema),
+  blockedByOwner: z.array(z.object({ host: z.string().min(1) })),
+});
+
+export const OWNER_EGRESS_NOTE =
+  "these rules were not set: each is your owner's to approve, and waits for their verdict (egress_proposal status with its id). Until then only your other rules apply, and a request to these hosts is denied. A rule waits when it allows a wildcard host (* or *.example.com), or lets through a request your own rules do not allow while your owner has not let your sub-agents and Environments have network access of their own";
 
 export const INVOCATION_OUTPUT_STREAMS = ["stdout", "stderr"] as const;
 
@@ -156,7 +166,17 @@ export const invocationViewSchema = z.object({
   exitCode: z.number().int().optional(),
   output: invocationOutputSchema.optional(),
   waiting: z.string().optional(),
+  egress: z
+    .object({
+      allowed: z.array(z.string()),
+      declined: z.array(z.string()),
+      note: z.string(),
+    })
+    .optional(),
 });
+
+export const EGRESS_ANSWERS_NOTE =
+  "your owner answered the network rules you set for it that had to wait. It reaches only what its rules allow: a request to any other host, a declined one included, is refused by closing the connection, with no response and no refusal header, so such a failure is the rule and not a network fault";
 
 export const invocationOutputLinkSchema = invocationOutputBlobSchema.extend({
   url: z.string().min(1),

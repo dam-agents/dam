@@ -25,7 +25,7 @@ export interface ChildEgressSeeder {
   }>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule that is not its launching agent's to give goes instead of being written: a request its owner decides. `wildcard` is an allow rule to a wildcard host; `wider` is one to a host the launching agent does not reach itself.
+// UNIT_BOUNDARY_DESCRIPTION: where an open child's rule that is not its launching agent's to give goes instead of being written: a request its owner decides. `wildcard` is an allow rule to a wildcard host; `wider` is one that lets through a request the launching agent's own rules do not allow.
 export interface OwnerEgressPort {
   request(input: {
     childId: string;
@@ -74,15 +74,14 @@ const covers = (row: EgressRuleRow, asked: ChildEgressRequestShape): boolean =>
   (row.method === "*" || row.method === asked.method) &&
   (row.pathPattern === "*" || row.pathPattern === asked.path);
 
-// UNIT_BOUNDARY_DESCRIPTION: which of an open child's rules a driver's new rules replace besides its own: the owner's approvals of what a driver asked, an allow from the inbox, and any wildcard allow, each kept while the driver still asks for it. A block, a deny on the child that the driver did not write (the owner's, from the inbox or by hand), is the owner's alone: no driver revokes it, and a driver's allow it would lose to at the gate is neither written nor asked of the owner again, only reported back as blocked.
+// UNIT_BOUNDARY_DESCRIPTION: which of an open child's rules a driver's new rules replace besides its own: only the owner's approvals of what a driver asked (an allow from the inbox), each kept as the owner's rule while the driver's rules still name what it gives, and revoked once they drop it. Every other rule on the child stays whatever the driver sets: the platform's own, one the owner wrote by hand, and a block, a deny on the child that the driver did not write (the owner's, from the inbox or by hand). A block is the owner's alone: a driver's allow it would lose to at the gate is neither written nor asked of the owner again, only reported back as blocked.
 const isOwnerBlock = (row: EgressRuleRow): boolean =>
   row.verdict !== "allow" && row.source !== CHILD_DRIVER_SOURCE;
 
-const answersADriverAsk = (row: EgressRuleRow): boolean =>
-  row.verdict === "allow" &&
-  (row.source === "inbox" || isWildcardEgressRule(row));
+const isOwnerApproval = (row: EgressRuleRow): boolean =>
+  row.verdict === "allow" && row.source === "inbox";
 
-// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule the launching agent may not give, which waits for the owner's approval and goes when the launching agent drops it, while a block the owner set on the child stays whatever the launching agent sets: an allow rule to a wildcard host, always, and one to a host the launching agent's own rules (as they are at that moment) do not reach, unless the owner lets the launching agent's root give its children network access of their own. A scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
+// UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written as its launching agent's: an open child's are the ones the launching agent set, and can be replaced by it, except a rule the launching agent may not give, which waits for the owner's approval and goes when the launching agent drops it, while a block the owner set on the child stays whatever the launching agent sets: an allow rule to a wildcard host, always, and one that lets through a request the launching agent's own rules (as they are at that moment) do not allow, unless the owner lets the launching agent's root give its children network access of their own. A scoped child's are a copy, made once at launch, of the rules its parent's requests are decided under (the parent's root's, or the parent's own when it is itself detached) for the hosts named, or all of them. Nothing here follows the parent afterwards.
 export function createChildEgressSeeder(deps: {
   repo: EgressRulesRepository;
   writer: EgressRuleWriter;
@@ -203,39 +202,36 @@ export function createChildEgressSeeder(deps: {
         );
       const settable = rules.filter((rule) => !blockedByOwner(rule));
       const askFor = await askOf(decidedBy, settable);
-      const asked = settable
-        .map((rule) => ({ rule, ask: askFor(rule) }))
-        .filter(
-          (r): r is { rule: ChildEgressRuleSeed; ask: "wildcard" | "wider" } =>
-            r.ask !== null,
-        );
-      const askedShapes = asked.map(({ rule }) => shapeOf(rule));
-      const kept: EgressRuleRow[] = [];
+      const named = settable
+        .filter((rule) => rule.verdict === "allow")
+        .map(shapeOf);
+      const standing: EgressRuleRow[] = [];
       for (const row of current) {
         if (row.source === CHILD_DRIVER_SOURCE) {
           await deps.repo.revoke(row.id);
           continue;
         }
-        if (!answersADriverAsk(row)) continue;
-        if (askedShapes.some((shape) => covers(row, shape))) kept.push(row);
+        if (!isOwnerApproval(row) || named.some((shape) => covers(row, shape)))
+          standing.push(row);
         else await deps.repo.revoke(row.id);
       }
-      const granted = (rule: ChildEgressRuleSeed): boolean =>
-        kept.some((row) => covers(row, shapeOf(rule)));
-      const stillAsked = asked
-        .filter(({ rule }) => !granted(rule))
-        .map(({ rule }) => shapeOf(rule));
+      const given = (rule: ChildEgressRuleSeed): boolean =>
+        rule.verdict === "allow" &&
+        standing.some((row) => covers(row, shapeOf(rule)));
+      const stillAsked = settable
+        .filter((rule) => !given(rule) && askFor(rule) !== null)
+        .map(shapeOf);
       await deps.ownerEgress.withdraw(agentId, (request) =>
         stillAsked.some((shape) => sameRequest(request, shape)),
       );
       const waiting: { host: string; id: string }[] = [];
       for (const rule of settable) {
+        if (given(rule)) continue;
         const ask = askFor(rule);
         if (!ask) {
           await write(agentId, decidedBy, CHILD_DRIVER_SOURCE, rule);
           continue;
         }
-        if (granted(rule)) continue;
         const { id } = await deps.ownerEgress.request({
           childId: agentId,
           driverId: decidedBy,

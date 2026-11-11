@@ -1810,7 +1810,10 @@ export function createMcpSession(
     registerEgressProposalTool(server, { proposals: deps.egressProposals });
 
   if (deps.environments)
-    registerEnvironmentTools(server, { environments: deps.environments });
+    registerEnvironmentTools(server, {
+      environments: deps.environments,
+      egressWaiting: (id) => deps.driverOps.egressWaiting(id),
+    });
 
   if (deps.satellites)
     registerSatelliteTools(server, {

@@ -33,6 +33,14 @@ export function isWildcardEgressRule(rule: {
   return rule.verdict === "allow" && rule.host.trim().startsWith("*");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what a wildcard host reaches, in words a person who has never written a rule reads the same way everywhere it is shown: `*` is any host, and `*.example.net` is every subdomain of example.net.
+export function wildcardHostReach(host: string): string {
+  const pattern = host.trim();
+  return pattern === "*"
+    ? "any host"
+    : `every subdomain of ${pattern.replace(/^\*\./, "")}`;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the source of the one rule the platform itself adds to every Agent on an install that serves Environments: the environments domain, allowed, with the Agent's key sent to the Environment gate. Shown to its owner as a rule of its own, which they can remove and restore, never edit.
 export const PLATFORM_ENVIRONMENTS_SOURCE = "platform:environments";
 

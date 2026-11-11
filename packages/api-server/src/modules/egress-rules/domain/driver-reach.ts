@@ -1,5 +1,9 @@
 import { hostMatchCandidates } from "./host-match.js";
-import { patternCoversEveryPath, ranksBefore } from "./gate-order.js";
+import {
+  coversEveryRequestOf,
+  mayMatchOneRequest,
+  ranksBefore,
+} from "./gate-order.js";
 import { rulePortCovers } from "./port-match.js";
 
 interface ReachRule {
@@ -10,17 +14,28 @@ interface ReachRule {
   verdict: string;
 }
 
+interface AskedRule {
+  host: string;
+  port?: number;
+  method?: string;
+  pathPattern?: string;
+}
+
 const DEFAULT_PORTS = [
   { port: 443, tls: true },
   { port: 80, tls: false },
 ] as const;
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a child's allow rule reaches past its driver: it is wider when one host and port it lets through is one the driver's own rules do not reach. Hosts and ports are compared, never methods or paths, so a driver that reaches some path of a host reaches the host. For each port the host patterns are read most specific first, as at the gate (the host, then its `*.parent`, then `*`): a deny of every method and path (its path pattern read with the gate's LIKE, so `/*` is one) decides that pattern: an allow there reaches only where the gate ranks it first for some request (a named method, or a named path where the deny's is `*`, or a longer one than the deny's), and a tie is read as not reaching; with no such deny, an allow there reaches, and a deny of only some methods or paths leaves the next pattern to decide. A rule with no port speaks for 443 over TLS and 80 in plain HTTP, so both must be reached.
+// UNIT_BOUNDARY_DESCRIPTION: whether a child's allow rule reaches past its driver: it is wider when it lets through one request (a host, port, method and path) that the driver's own rules do not allow. For each port the driver's host patterns are read most specific first, as at the gate (the host, then its `*.parent`, then `*`). The rule is within the driver's reach when one allow of the driver speaks for every request the rule speaks for, and no deny of the driver may take one of those requests first: a deny under a more specific host pattern, or one under the same pattern that the gate does not rank after the allow. A doubt is read as wider, so the owner is asked. A rule with no port speaks for 443 over TLS and 80 in plain HTTP, so both must be within reach.
 export function reachesPastDriver(
-  rule: { host: string; port?: number },
+  rule: AskedRule,
   driverRules: readonly ReachRule[],
 ): boolean {
-  const host = rule.host.trim().toLowerCase();
+  const asked = {
+    host: rule.host.trim().toLowerCase(),
+    method: rule.method ?? "*",
+    pathPattern: rule.pathPattern ?? "*",
+  };
   const ports =
     rule.port === undefined
       ? DEFAULT_PORTS
@@ -29,31 +44,34 @@ export function reachesPastDriver(
           { port: rule.port, tls: false },
         ];
   return ports.some(
-    ({ port, tls }) => !driverReaches(host, port, tls, driverRules),
+    ({ port, tls }) => !driverAllows(asked, port, tls, driverRules),
   );
 }
 
-function driverReaches(
-  host: string,
+function driverAllows(
+  asked: { host: string; method: string; pathPattern: string },
   port: number,
   tls: boolean,
   driverRules: readonly ReachRule[],
 ): boolean {
-  for (const pattern of hostMatchCandidates(host)) {
+  const deniesAbove: ReachRule[] = [];
+  for (const pattern of hostMatchCandidates(asked.host)) {
     const speaking = driverRules.filter(
       (r) =>
         r.host.toLowerCase() === pattern && rulePortCovers(r.port, port, tls),
     );
-    const allows = speaking.filter((r) => r.verdict === "allow");
-    const blocks = speaking.filter(
-      (r) =>
-        r.verdict !== "allow" &&
-        r.method === "*" &&
-        patternCoversEveryPath(r.pathPattern),
+    const denies = speaking.filter(
+      (r) => r.verdict !== "allow" && mayMatchOneRequest(r, asked),
     );
-    if (blocks.length > 0)
-      return allows.some((a) => blocks.every((d) => ranksBefore(a, d)));
-    if (allows.length > 0) return true;
+    const within = speaking.some(
+      (allow) =>
+        allow.verdict === "allow" &&
+        coversEveryRequestOf(allow, asked) &&
+        deniesAbove.length === 0 &&
+        denies.every((deny) => ranksBefore(allow, deny)),
+    );
+    if (within) return true;
+    deniesAbove.push(...denies);
   }
   return false;
 }

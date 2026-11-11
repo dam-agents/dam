@@ -3,7 +3,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { useSetChildEgress } from "../api/mutations.js";
 import { useChildEgress } from "../api/queries.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's switch that lets the agent give its sub-agents and Environments network access of their own, wider than its own rules. Off, such a rule waits for the owner's approval on Home, and approving it turns the switch on. Hidden where it is not offered: without the Environments feature, and on an agent that is itself a sub-agent or an Environment.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's switch that lets the agent give its sub-agents and Environments network access of their own, wider than its own rules. Off, such a rule waits for the owner's approval on Home, and approving it writes that one rule. Turning the switch on also writes every rule that waits for it. Hidden where it is not offered: without the Environments feature, and on an agent that is itself a sub-agent or an Environment.
 export function ChildEgressToggle({
   agentId,
   disabled = false,

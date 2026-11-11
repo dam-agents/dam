@@ -23,7 +23,9 @@ function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
     agentId: row.agentId,
     ownerSub: row.ownerSub,
     resolution: verdict,
-    ...(row.payload.kind === "ext_authz" && row.payload.forAgentId
+    ...((row.payload.kind === "ext_authz" ||
+      row.payload.kind === "egress_proposal") &&
+    row.payload.forAgentId
       ? { forAgentId: row.payload.forAgentId }
       : {}),
   });
@@ -71,10 +73,40 @@ interface CreateApprovalsServiceDeps {
   actor: string;
   actorEmail: string | null;
   agentBinding: readonly string[] | "*";
-  // UNIT_BOUNDARY_DESCRIPTION: what approving a child's rule that reaches past its driver also does: it turns on the toggle that lets the sub-agents and Environments of the driver's launch root have network access of their own, so the owner agrees once, not per child.
-  childEgressGrants?: {
-    grantForRootOf(driverId: string, decidedBy: string): Promise<void>;
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's switch that lets the sub-agents and Environments of a driver's launch root have network access of their own. A verdict on one request never turns it on; only the owner's explicit choice does, on the request (approveForChildren) or on the Agent's Network access page. Turning it on also writes every rule of that root's children that waits for it.
+  // UNIT_BOUNDARY_DESCRIPTION: told each answer the owner gives to a rule a driver set on its child, so the answer can be kept where the driver reads it after a one-off child is removed.
+  childEgressAnswered?: ChildEgressAnswered;
+  childEgressSwitch?: {
+    turnOnForRootOf(driverId: string, decidedBy: string): Promise<void>;
   };
+}
+
+export type ChildEgressAnswered = (
+  childId: string,
+  answer: {
+    host: string;
+    port?: number;
+    method: string;
+    path: string;
+    verdict: "allow" | "deny";
+  },
+) => Promise<void>;
+
+async function tellChildEgressAnswer(
+  deps: Pick<CreateApprovalsServiceDeps, "childEgressAnswered">,
+  row: PendingApprovalRow,
+  verdict: "allow" | "deny",
+  written?: { method: string; pathPattern: string },
+): Promise<void> {
+  if (row.payload.kind !== "egress_proposal" || !row.payload.forAgentId) return;
+  const { host, port, method, path } = row.payload;
+  await deps.childEgressAnswered?.(row.agentId, {
+    host,
+    ...(port !== undefined ? { port } : {}),
+    method: written?.method ?? method,
+    path: written?.pathPattern ?? path,
+    verdict,
+  });
 }
 
 function matchesBinding(
@@ -265,6 +297,35 @@ export function createApprovalsService(
       return resolveAndDeliverAcpNative(deps, row, "allow");
     },
 
+    async approveForChildren(id) {
+      const row = await loadOwned(deps, id);
+      if (
+        !row ||
+        row.status === "resolved" ||
+        row.payload.kind !== "egress_proposal" ||
+        !row.payload.widerThanDriver ||
+        !row.payload.forAgentId ||
+        !deps.childEgressSwitch
+      )
+        return NOT_ACTIONABLE;
+      if (deps.agentBinding !== "*") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "letting an agent's sub-agents and Environments have network access of their own changes the agent at the root of the launch chain, so it requires an unrestricted (wildcard) principal; agent-bound API keys are refused.",
+        });
+      }
+      const { host, port, method, path, forAgentId } = row.payload;
+      const outcome = await writeRuleAndResolve(
+        deps,
+        row,
+        { host, port, method, pathPattern: path, verdict: "allow" },
+        { host, method, pathPattern: path, childEgressGranted: true },
+      );
+      await deps.childEgressSwitch.turnOnForRootOf(forAgentId, deps.actor);
+      return outcome;
+    },
+
     async denyForever(id) {
       const row = await loadOwned(deps, id);
       if (row?.type === "spend_limit") refuseSpendDeny();
@@ -326,6 +387,7 @@ async function declineProposal(
     markDelivered: true,
   });
   if (casWon) emitResolved(row, "deny");
+  if (casWon) await tellChildEgressAnswer(deps, row, "deny");
   auditVerdict(deps, row, "deny", { verdict: "deny", ruleWritten: false });
   return casWon
     ? { outcome: "applied", type: row.type, rule: null }
@@ -413,21 +475,11 @@ async function writeRuleAndResolve(
     ? false
     : await deps.repo.resolveExpired(row.id, rule.verdict, deps.actor);
   if (casWon || expiredFlipped) emitResolved(row, rule.verdict);
-  const askedBy =
-    rule.verdict === "allow" &&
-    row.payload.kind === "egress_proposal" &&
-    row.payload.widerThanDriver
-      ? row.payload.forAgentId
-      : undefined;
-  const grantsChildEgress =
-    askedBy !== undefined && deps.childEgressGrants !== undefined;
-  if (askedBy !== undefined)
-    await deps.childEgressGrants?.grantForRootOf(askedBy, deps.actor);
+  await tellChildEgressAnswer(deps, row, rule.verdict, rule);
   auditVerdict(deps, row, rule.verdict, {
     verdict: rule.verdict,
     ...auditRuleFields(written),
     ...ruleFields,
-    ...(grantsChildEgress ? { childEgressGranted: true } : {}),
   });
   return {
     outcome: casWon ? "applied" : "rule_written_expired",

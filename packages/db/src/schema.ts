@@ -1429,6 +1429,16 @@ export const invocations = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     /* UNIT_BOUNDARY_DESCRIPTION: until when a kept target outlives its result, asleep with its disk; null for a target reaped after its result, as every target was before keep. Wall-clock, set at spawn and moved only by its driver. */
     keepUntil: timestamp("keep_until", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the owner answered the network rules the driver set on this target that had to wait for them, one entry per answered rule. Kept on the target so its driver can read the answers with a result after a one-off target, and its requests with it, is removed; null when no rule waited. */
+    egressAnswers: jsonb("egress_answers").$type<
+      {
+        host: string;
+        port?: number;
+        method: string;
+        path: string;
+        verdict: "allow" | "deny";
+      }[]
+    >(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")
       .notNull()

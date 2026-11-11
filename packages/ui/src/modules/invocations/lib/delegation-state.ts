@@ -4,7 +4,7 @@ import type { AgentView } from "../../../types.js";
 import { VM_MEMORY_FULL } from "../../agents/lib/overlay-copy.js";
 
 export type DelegationDisplayState =
-  "working" | "waiting" | "done" | "failed" | "stopped";
+  "working" | "waiting" | "waiting-for-owner" | "done" | "failed" | "stopped";
 
 export type DelegationTarget = Pick<
   AgentView,
@@ -15,11 +15,19 @@ export function delegationWaitReason(
   node: DelegationNode,
   target: DelegationTarget | undefined,
 ): string | null {
-  if (node.status !== "running" || node.started || !target) return null;
+  if (node.status !== "running" || node.started) return null;
+  if (node.waitingForOwner) return WAITS_FOR_OWNER;
+  if (!target) return null;
   if (target.state === "over_budget")
     return target.overBudgetMessage ?? VM_MEMORY_FULL;
   return target.startWaitMessage ?? null;
 }
+
+export const WAITS_FOR_OWNER =
+  "Not started yet: it waits for your answer on its network access. See Approvals on Home.";
+
+const isWorking = (node: DelegationNode): boolean =>
+  node.status === "running" && !(node.waitingForOwner && !node.started);
 
 export function delegationState(
   node: DelegationNode,
@@ -28,6 +36,7 @@ export function delegationState(
   if (node.status === "done") return "done";
   if (node.status === "failed") return node.stopped ? "stopped" : "failed";
   if (node.status === "idle") return "waiting";
+  if (!isWorking(node)) return "waiting-for-owner";
   return delegationWaitReason(node, target) !== null ? "waiting" : "working";
 }
 
@@ -37,8 +46,7 @@ export function flattenIds(nodes: readonly DelegationNode[]): string[] {
 
 export function runningSubAgents(node: DelegationNode): number {
   return node.children.reduce(
-    (n, child) =>
-      n + (child.status === "running" ? 1 : 0) + runningSubAgents(child),
+    (n, child) => n + (isWorking(child) ? 1 : 0) + runningSubAgents(child),
     0,
   );
 }
@@ -91,7 +99,13 @@ export function countByStatus(
 ): DelegationCounts {
   const counts = { idle: 0, running: 0, done: 0, failed: 0, stopped: 0 };
   for (const node of nodes) {
-    counts[node.stopped ? "stopped" : node.status] += 1;
+    counts[
+      node.stopped
+        ? "stopped"
+        : node.status === "running" && !isWorking(node)
+          ? "idle"
+          : node.status
+    ] += 1;
     const nested = countByStatus(node.children);
     counts.idle += nested.idle;
     counts.running += nested.running;

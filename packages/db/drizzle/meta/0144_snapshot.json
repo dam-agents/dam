@@ -1,5 +1,5 @@
 {
-  "id": "a69696c2-48cb-4374-87e4-64d04124b429",
+  "id": "48c1c00b-f048-494d-8153-17072e3f6d8d",
   "prevId": "92697406-9f0d-458d-8a9f-9a4f470d69b0",
   "version": "7",
   "dialect": "postgresql",
@@ -3632,6 +3632,12 @@
         "keep_until": {
           "name": "keep_until",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "egress_answers": {
+          "name": "egress_answers",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

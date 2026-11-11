@@ -123,28 +123,41 @@ describe("approvalDetail", () => {
     ).toBe("registry.npmjs.org (any path), from its Environment pr-42");
   });
 
-  // TEST_SCENARIO: a driver asks for a child rule to a host it cannot reach itself. The card names the host and the child, and says that allowing it turns on network access of their own for all the driver's children, so the owner knows the answer counts once, not per child; a wildcard request keeps its own wording.
-  it("says what allowing a child's wider rule turns on", () => {
-    const proposal = (host: string, widerThanDriver?: true) =>
+  // TEST_SCENARIO: a driver asks for a rule on its sub-agent or Environment. The card's request line names only what would be reached, in words that read the same for every kind: the host, with its method and path when the rule names them, or what a wildcard covers. The sentence under it, from the server, says who asks and for which child.
+  it("names what a child's rule would reach", () => {
+    const proposal = (
+      host: string,
+      extra: { widerThanDriver?: true; method?: string; path?: string } = {},
+    ) =>
       egress({
         type: "egress_proposal",
         agentId: "sub-1",
         payload: {
           kind: "egress_proposal",
           host,
-          method: "*",
-          path: "*",
+          method: extra.method ?? "*",
+          path: extra.path ?? "*",
           reason: "",
           forAgentId: "a-1",
-          ...(widerThanDriver && { widerThanDriver }),
+          ...(extra.widerThanDriver && { widerThanDriver: true }),
         },
       });
-    expect(approvalDetail(proposal("pypi.org", true))).toBe(
-      "pypi.org (any path), for its sub-agent sub-1, which it cannot reach itself. Allowing it lets all its sub-agents and Environments have network access of their own.",
-    );
+    expect(
+      approvalDetail(proposal("pypi.org", { widerThanDriver: true })),
+    ).toBe("pypi.org");
+    expect(
+      approvalDetail(
+        proposal("pypi.org", {
+          widerThanDriver: true,
+          method: "GET",
+          path: "/simple/*",
+        }),
+      ),
+    ).toBe("GET pypi.org/simple/*");
     expect(approvalDetail(proposal("*.github.com"))).toBe(
-      "Any .github.com host, for its sub-agent sub-1",
+      "Every subdomain of github.com",
     );
+    expect(approvalDetail(proposal("*"))).toBe("Any host");
   });
 });
 

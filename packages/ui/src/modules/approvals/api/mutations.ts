@@ -4,7 +4,7 @@ import { trpc } from "../../../trpc.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { approvalsKeys } from "./queries.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: a verdict can write a network rule, and approving a sub-agent's rule that reaches past its driver also turns on the driver's switch for its children's network access, so the agent's rules and that switch are read again too, not left at their cached value.
+// UNIT_BOUNDARY_DESCRIPTION: a verdict can write a network rule, and approving a rule for all of an agent's sub-agents and Environments also turns on that agent's switch for their network access, so the agent's rules and that switch are read again too, not left at their cached value.
 const AFTER_VERDICT = [approvalsKeys.all, egressRulesKeys.all];
 
 export function useApproveOnce() {
@@ -33,6 +33,16 @@ export function useApproveHost() {
     meta: {
       invalidates: AFTER_VERDICT,
       errorToast: "Couldn't allow host",
+    },
+  });
+}
+
+export function useApproveForChildren() {
+  return useMutation({
+    ...trpc.approvals.approveForChildren.mutationOptions(),
+    meta: {
+      invalidates: AFTER_VERDICT,
+      errorToast: "Couldn't allow",
     },
   });
 }

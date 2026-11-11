@@ -7,6 +7,7 @@ import { useFeed } from "../api/queries.js";
 import {
   ALL_AGENTS_SUBJECT,
   approvalHeadline,
+  approvalSubjectName,
   countsAllAgents,
 } from "../lib/approval-copy.js";
 import { approvalToastChanges } from "../lib/approval-toasts.js";
@@ -67,7 +68,8 @@ export function useApprovalToasts(): void {
         item.id,
         countsAllAgents(item.approval)
           ? ALL_AGENTS_SUBJECT
-          : (names.get(item.agentId) ?? "An agent"),
+          : (approvalSubjectName(item.approval, (id) => names.get(id)) ??
+              "An agent"),
         approvalHeadline(item.approval),
         () => openSidePanel("approvals"),
       );

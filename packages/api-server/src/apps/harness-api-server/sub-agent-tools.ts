@@ -7,6 +7,8 @@ import {
 } from "agent-runtime-api";
 import {
   childEgressRuleSchema,
+  type InvocationView,
+  OWNER_EGRESS_NOTE,
   formatQualifiedModel,
   INVOCATION_OUTPUT_STREAMS,
   type InvocationOutput,
@@ -200,7 +202,7 @@ const idleTimeoutShape = z
 // UNIT_BOUNDARY_DESCRIPTION: the spawn options that keep a sub-agent or give it egress of its own, offered only to an owner with the Environments feature, which kept sub-agents are part of.
 const keptSpawnInput = {
   egress: spawnShape.egress.describe(
-    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a rule that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval, and the answer names them; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
   ),
   keep: spawnShape.keep.describe(
     "Keep it after its result: it sleeps with its disk instead of being removed, so you can enter it again over ssh sub-<id> or run more work in it, until keepForMs (a day by default, at most as long as an Environment lives). Without keep it is removed once it reports.",
@@ -227,23 +229,8 @@ function subAgentIdleTimeout(
   return { minutes: parsed };
 }
 
-const OWNER_EGRESS_NOTE =
-  "a rule to a wildcard host (* or *.example.com), or to a host your own rules do not reach while your owner has not let your sub-agents and Environments have network access of their own, is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
-
 const OWNER_BLOCK_NOTE =
   "your owner blocked these on the sub-agent, and a block is theirs alone: the rules allowing them were not set, and only the owner can lift the block";
-
-const openEgressAllows = (egress: unknown): boolean =>
-  typeof egress === "object" &&
-  egress !== null &&
-  "open" in egress &&
-  Array.isArray(egress.open) &&
-  egress.open.some(
-    (rule) =>
-      typeof rule === "object" &&
-      rule !== null &&
-      (rule as { verdict?: unknown }).verdict === "allow",
-  );
 
 const KEPT_STOP_SENTENCE =
   " A sub-agent you spawned with keep keeps its conversation and only stops running; stopping it takes a reason.";
@@ -327,18 +314,22 @@ interface RunOf {
   session?: string;
 }
 
+type EgressAnswersView = NonNullable<InvocationView["egress"]>;
+
 type Settled =
   | ({
       id: string;
       status: "done";
       result: unknown;
       script?: ScriptEnd;
+      egress?: EgressAnswersView;
     } & RunOf)
   | ({
       id: string;
       status: "failed";
       reason: string | undefined;
       script?: ScriptEnd;
+      egress?: EgressAnswersView;
     } & RunOf)
   | ({ id: string; status: "running"; waiting?: string } & RunOf)
   | { id: string; status: "idle" }
@@ -364,14 +355,23 @@ async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
         ...(view.run && { run: view.run }),
         ...(view.session && { session: view.session }),
       };
+      const egress = view.egress ? { egress: view.egress } : {};
       if (view.status === "done")
-        return { id, status: "done", result: view.result, ...script, ...runOf };
+        return {
+          id,
+          status: "done",
+          result: view.result,
+          ...script,
+          ...egress,
+          ...runOf,
+        };
       if (view.status === "failed")
         return {
           id,
           status: "failed",
           reason: view.errorReason,
           ...script,
+          ...egress,
           ...runOf,
         };
       if (view.status === "idle") return { id, status: "idle" };
@@ -448,9 +448,12 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
     done: ended.flatMap((s) =>
       s.status === "done"
         ? [
-            s.report
-              ? { id: s.id, ...runFieldsOf(s), ...s.report }
-              : { id: s.id, ...runFieldsOf(s), result: s.result },
+            {
+              id: s.id,
+              ...runFieldsOf(s),
+              ...(s.report ?? { result: s.result }),
+              ...(s.egress && { egress: s.egress }),
+            },
           ]
         : [],
     ),
@@ -462,6 +465,7 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
               ...runFieldsOf(s),
               reason: s.reason ?? null,
               ...s.report,
+              ...(s.egress && { egress: s.egress }),
             },
           ]
         : [],
@@ -838,8 +842,12 @@ export function registerSubAgentTools(
                   `set by this session's platform sub-agent settings: ${boundNote.join(", ")} (arguments for these are ignored)`,
                 ]
               : []),
-            ...(openEgressAllows(args.egress)
-              ? [`egress: ${OWNER_EGRESS_NOTE}`]
+            ...(outcome.egressWaiting.length > 0
+              ? [
+                  `egress waiting for your owner: ${JSON.stringify(outcome.egressWaiting)}`,
+                  `egress: ${OWNER_EGRESS_NOTE}`,
+                  "A sub-agent that is not kept starts its work only once your owner has answered them; await_subagents shows it as waiting to start.",
+                ]
               : []),
             ...(ignored.length > 0
               ? [
@@ -1155,7 +1163,7 @@ function registerKeptTools(
 
   server.tool(
     "update_subagent_egress",
-    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one allowing a host your own rules do not reach unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. A rule allowing what your owner blocked on it is not set, and the answer names that too. Refused for one that follows your egress or has scoped egress, which only the user widens.',
+    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. A rule allowing what your owner blocked on it is not set, and the answer names that too. Refused for one that follows your egress or has scoped egress, which only the user widens.',
     {
       id: z
         .string()

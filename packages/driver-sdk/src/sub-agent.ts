@@ -1,10 +1,9 @@
 import type {
-  ChildEgressOutcome,
   ChildEgressRule,
-  SpawnInvocationResponse,
+  SetEgressResponse,
   SpawnScriptInvocationRequest,
 } from "api-server-api";
-import { log, req, spawningSessionHeaders } from "./http.js";
+import { log, logEgress, req, spawnInvocation } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
 import { ScriptFailed, ScriptOutput } from "./script.js";
 import {
@@ -118,21 +117,18 @@ export class SubAgent {
     await req("POST", `/invocations/${encodeURIComponent(this.id)}/wake`, {});
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: replaces the rules of a sub-agent spawned with egress "open", and says which of them it may not give itself: those waiting for the owner's approval, and those the owner blocked on it.
-  async setEgress(rules: ChildEgressRule[]): Promise<ChildEgressOutcome> {
-    const outcome = await req<ChildEgressOutcome>(
+  // UNIT_BOUNDARY_DESCRIPTION: replaces the rules of a sub-agent spawned with open egress, and answers with the rules that were not set: the ones that wait for the owner's approval, and the hosts the owner blocked on it. Both are logged, since the sub-agent cannot reach those hosts.
+  async setEgress(rules: ChildEgressRule[]): Promise<SetEgressResponse> {
+    const answer = await req<SetEgressResponse | undefined>(
       "POST",
       `/invocations/${encodeURIComponent(this.id)}/egress`,
       { rules },
     );
-    if (outcome.waiting.length > 0)
-      log(
-        `${this.tag} (${this.id}): waiting for the owner: ${outcome.waiting.map((w) => w.host).join(", ")}`,
-      );
-    if (outcome.blocked.length > 0)
-      log(
-        `${this.tag} (${this.id}): blocked by the owner, not set: ${outcome.blocked.map((b) => b.host).join(", ")}`,
-      );
+    const outcome = {
+      waitingForOwner: answer?.waitingForOwner ?? [],
+      blockedByOwner: answer?.blockedByOwner ?? [],
+    };
+    logEgress(outcome, this.id);
     return outcome;
   }
 
@@ -177,12 +173,7 @@ export async function spawnSlate(opts: SpawnSlateOptions): Promise<SubAgent> {
     ...(resources ? { resources } : {}),
     ...(skills ? { skills } : {}),
   };
-  const { id } = await req<SpawnInvocationResponse>(
-    "POST",
-    "/invocations",
-    body,
-    spawningSessionHeaders(),
-  );
+  const id = await spawnInvocation(body);
   const tag = label ?? harness ?? image ?? id;
   log(`spawned clean slate ${tag} -> ${id}`);
   opts.onSpawned?.(id);

@@ -1,4 +1,8 @@
 import process from "node:process";
+import type {
+  SetEgressResponse,
+  SpawnInvocationResponse,
+} from "api-server-api";
 
 const mcpUrl = process.env.PLATFORM_MCP_URL;
 if (!mcpUrl) {
@@ -77,6 +81,32 @@ export async function req<T>(
 
 export function log(msg: string): void {
   process.stderr.write(`[invoke] ${msg}\n`);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: says which egress rules the platform did not set on a sub-agent, so a script that goes on does not find out from a refused connection: a rule that waits for the owner's approval, and a host the owner blocked.
+export function logEgress(
+  outcome: Partial<SetEgressResponse>,
+  target: string,
+): void {
+  for (const { host, id } of outcome.waitingForOwner ?? [])
+    log(
+      `egress: ${host} waits for your owner's approval (request ${id}); ${target} cannot reach it until then`,
+    );
+  for (const { host } of outcome.blockedByOwner ?? [])
+    log(
+      `egress: your owner blocked ${host} on ${target}; the rule allowing it was not set`,
+    );
+}
+
+export async function spawnInvocation(body: unknown): Promise<string> {
+  const { id, egressWaitingForOwner } = await req<SpawnInvocationResponse>(
+    "POST",
+    "/invocations",
+    body,
+    spawningSessionHeaders(),
+  );
+  logEgress({ waitingForOwner: egressWaitingForOwner }, id);
+  return id;
 }
 
 export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
