@@ -423,6 +423,7 @@ export const starterKitCatalogEntries = pgTable(
     source: text("source").notNull(),
     kit: jsonb("kit").notNull(),
     bundledSkills: jsonb("bundled_skills"),
+    publisher: jsonb("publisher"),
     refreshedAt: timestamp("refreshed_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

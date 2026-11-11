@@ -163,5 +163,6 @@ kits:
   # - ref: v1.0.0      # optional; unpinned means the refresh job follows the default branch
 ```
 
+An entry for a kit the platform team does not publish names who does, with `publisher: { name: <name>, url: <https page> }` (`url` optional); the tile and kit modal show it, and an entry naming no one reads as the team's kit.
 The refresh job periodically re-reads every catalog and resolves each entry to a commit, so a new entry reaches the install without a redeploy, and an unpinned catalog still yields exact, immutable kits.
 The operator picks the catalog; the install's `starterKits.catalogs` names them (`curated` by default).

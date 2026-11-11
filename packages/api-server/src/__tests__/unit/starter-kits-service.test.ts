@@ -306,6 +306,7 @@ const LOADED: LoadedKit = {
   version: "abc123",
   source: "/catalog",
   skillsInKit: [],
+  publisher: { kind: "team" },
 };
 
 const GITHUB = { id: "github", title: "GitHub" };
@@ -1348,6 +1349,30 @@ describe("starter kits: startup items", () => {
   });
 });
 
+describe("starter kits: who publishes a kit", () => {
+  const USER_KIT: LoadedKit = {
+    ...LOADED,
+    catalog: "curated",
+    publisher: {
+      kind: "user",
+      name: "Adi Digidh",
+      url: "https://github.com/adigidh",
+    },
+  };
+
+  // TEST_SCENARIO: the catalog and the kit modal tell the team's kit from a user's by the publisher on the kit view, so the list and the single read both carry what the catalog entry resolved to.
+  it("says who publishes a catalog kit when it is listed and when it is read", async () => {
+    const team = makeHarness(LOADED).service;
+    expect((await team.list()).map((k) => k.publisher)).toEqual([
+      { kind: "team" },
+    ]);
+    const user = makeHarness(USER_KIT).service;
+    expect((await user.get("curated", "code-reviewer"))?.publisher).toEqual(
+      USER_KIT.publisher,
+    );
+  });
+});
+
 describe("starter kits: a kit from a link", () => {
   const URL = "https://github.com/acme/shared-kit";
   const COMMIT = "c".repeat(40);
@@ -1390,6 +1415,7 @@ describe("starter kits: a kit from a link", () => {
       version: COMMIT,
       link: { url: URL },
     });
+    expect(view.publisher).toBeUndefined();
     expect(view.schedules.map((s) => s.name)).toEqual(["review", "benchmark"]);
     expect(calls.created).toEqual([]);
   });

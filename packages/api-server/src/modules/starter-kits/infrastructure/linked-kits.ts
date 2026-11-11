@@ -11,7 +11,7 @@ import {
 import { createGitHosts } from "./git-hosts.js";
 import type { ResolvedKitRow } from "./resolved-catalog-repository.js";
 
-export type LinkedKit = Omit<ResolvedKitRow, "kitId"> & {
+export type LinkedKit = Omit<ResolvedKitRow, "kitId" | "publisher"> & {
   link: { url: string };
 };
 
@@ -54,6 +54,7 @@ export function createLinkedKits(
         .resolve(
           {
             name: LINKED_KIT_CATALOG,
+            builtin: false,
             source: NO_CATALOG_FILES,
             gitUrl: repo.gitUrl,
             ...(commit ? { ref: commit } : {}),

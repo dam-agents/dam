@@ -16,6 +16,7 @@ import {
   sortKits,
 } from "../lib/catalog-cards.js";
 import { KitCategoryTag } from "./kit-category-tag.js";
+import { KitPublisher } from "./kit-publisher.js";
 
 type Filter = StarterKitView["category"] | "all";
 
@@ -69,6 +70,9 @@ export function KitCard({
           </h3>
           <KitCategoryTag category={kit.category} />
         </div>
+        {kit.publisher && (
+          <KitPublisher publisher={kit.publisher} surface="tile" />
+        )}
         <p className="flex-1 text-sm text-muted-foreground">
           {kit.tagline ?? kit.description}
         </p>

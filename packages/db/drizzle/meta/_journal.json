@@ -1023,6 +1023,13 @@
       "when": 1794404739934,
       "tag": "0145_agent_child_egress_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1794427749636,
+      "tag": "0146_starter_kit_publisher",
+      "breakpoints": true
     }
   ]
 }

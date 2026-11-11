@@ -784,6 +784,7 @@ export async function bootstrap() {
       return [
         {
           name: c.name,
+          builtin: c.kind === "path",
           ...located,
           entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
         },

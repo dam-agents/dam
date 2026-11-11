@@ -193,11 +193,20 @@ export const onboardingStepSchema = z.object({
   done: z.boolean(),
 });
 
+export const starterKitEntryPublisherSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  url: z
+    .url({ protocol: /^https$/ })
+    .meta({ pattern: "^https://" })
+    .optional(),
+});
+
 export const starterKitCatalogEntrySchema = z.object({
   id: starterKitIdSchema.optional(),
   path: z.string().min(1).default("."),
   url: z.url().optional(),
   ref: z.string().min(1).optional(),
+  publisher: starterKitEntryPublisherSchema.optional(),
 });
 
 export const starterKitCatalogSchema = z.object({
