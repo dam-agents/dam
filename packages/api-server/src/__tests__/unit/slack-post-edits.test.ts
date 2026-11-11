@@ -284,7 +284,62 @@ describe("an agent changes its own Slack post", () => {
   });
 
   /**
-   * TEST_SCENARIO: Fixing the caption of a post with a file leaves the file
+   * TEST_SCENARIO: A post sent with previews off carries its file as a
+   * separate message, named in the post's metadata. Replacing the file
+   * retires that one too, so the old chart does not stay beside the new.
+   */
+  it("retires a file posted apart when the edit replaces it", async () => {
+    const h = harness();
+    await h.worker.connect();
+    h.gw.setMessage(
+      BOUND,
+      agentPost(OWN, "agent-1", {
+        metadata: agentPostMetadata(["F-APART"], true),
+      }),
+    );
+    const deleted: string[] = [];
+    h.gw.deleteFile = async (fileId) => {
+      deleted.push(fileId);
+    };
+
+    const result = await h.worker.editPost("agent-1", {
+      ...edit(OWN, "chart v2"),
+      attachment: { filename: "chart-v2.png", data: Buffer.from("v2") },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(deleted).toEqual(["F-APART"]);
+    expect(h.gw.readUpdates()[0]?.metadata.payload["files"]).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Slack can apply an edit and lose its answer. The new file
+   * may then already show on the post, so it is not deleted, and neither is
+   * the old one.
+   */
+  it("keeps every file when Slack's answer to the edit is lost", async () => {
+    const h = harness();
+    await h.worker.connect();
+    h.gw.setMessage(BOUND, agentPost(OWN, "agent-1", { fileIds: ["F1"] }));
+    h.gw.updateMessage = async () => {
+      throw new Error("socket hang up");
+    };
+    const deleted: string[] = [];
+    h.gw.deleteFile = async (fileId) => {
+      deleted.push(fileId);
+    };
+
+    const result = await h.worker.editPost("agent-1", {
+      ...edit(OWN, "chart v2"),
+      attachment: { filename: "chart-v2.png", data: Buffer.from("v2") },
+    });
+
+    expect(result).toMatchObject({ error: expect.stringContaining("hang up") });
+    expect(deleted).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Removing the caption of a post with a file leaves the file
    * as it is: the edit names no files, so Slack keeps them.
    */
   it("keeps the file of a post when only its text changes", async () => {
@@ -292,7 +347,7 @@ describe("an agent changes its own Slack post", () => {
     await h.worker.connect();
     h.gw.setMessage(BOUND, agentPost(OWN, "agent-1", { fileIds: ["F1"] }));
 
-    const result = await h.worker.editPost("agent-1", edit(OWN));
+    const result = await h.worker.editPost("agent-1", edit(OWN, ""));
 
     expect(result).toMatchObject({ ok: true });
     expect(h.gw.readUpdates()).toEqual([

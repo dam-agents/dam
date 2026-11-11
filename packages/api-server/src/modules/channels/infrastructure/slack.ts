@@ -3039,6 +3039,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { fileId };
   }
 
+  function slackRefusalCode(err: unknown): string | null {
+    const data = (err as { data?: { error?: unknown } } | null)?.data;
+    return typeof data?.error === "string" ? data.error : null;
+  }
+
   async function dropFiles(
     gw: SlackGateway,
     teamId: SlackWorkspace,
@@ -9179,12 +9184,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
-      if (
-        edit.text.trim() === "" &&
-        edit.card === undefined &&
-        edit.attachment === undefined
-      )
-        return { error: EMPTY_POST_EDIT };
 
       const turnChannel = findTurnRef(
         instanceName,
@@ -9212,6 +9211,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: tooManyPostEdits(waiting.retryAfterMs) };
       const found = await readOwnPost(gw, instanceName, target, edit.messageId);
       if ("error" in found) return found;
+      const ownFiles = found.post.fileIds ?? [];
+      if (
+        edit.text.trim() === "" &&
+        edit.card === undefined &&
+        edit.attachment === undefined &&
+        ownFiles.length === 0
+      )
+        return { error: EMPTY_POST_EDIT };
       const written = closingBlock(found.post);
       const linked = await linkForTarget(gw, instanceName, target, {
         text: edit.text,
@@ -9247,22 +9254,30 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           teamId: target.teamId,
           text,
           blocks,
-          metadata: agentPostMetadata(filesPostedApart(found.post), true),
+          metadata: agentPostMetadata(
+            replacement ? [] : filesPostedApart(found.post),
+            true,
+          ),
           ...(replacement ? { fileIds: [replacement.fileId] } : {}),
         });
       try {
-        await (fileOnly && edit.attachment
-          ? update([agentContextBlock(footer)], edit.attachment.filename)
+        await (fileOnly
+          ? update(
+              [agentContextBlock(footer)],
+              edit.attachment?.filename ??
+                found.post.attachments?.[0]?.name ??
+                "file",
+            )
           : sendAgentPost(target.id, post, (blocks) =>
               update(blocks, post.text),
             ));
       } catch (err) {
-        if (replacement)
+        if (replacement && slackRefusalCode(err) !== null)
           await dropFiles(gw, target.teamId, [replacement.fileId]);
         return { error: formatError(err) };
       }
       if (replacement)
-        await dropFiles(gw, target.teamId, found.post.fileIds ?? []);
+        await dropFiles(gw, target.teamId, deletePostFileIds(found.post));
       const threadTs = found.post.threadTs ?? found.post.ts;
       noteEngagedTurn(
         instanceName,
