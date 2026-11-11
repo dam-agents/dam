@@ -3,6 +3,7 @@ import {
   CONFIGURE_SESSION_METHOD,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
+  type SessionDefaultsEventPayload,
 } from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
@@ -617,6 +618,117 @@ describe("acp-runtime: one harness process per harness", () => {
       data: { platform: { reason: PROVIDER_REMOVED_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
+  /** TEST_SCENARIO: A session opened before a new agent's runtime has its
+   * state, as when a create publishes Ready before the runtime's first
+   * applyState, is not refused as no-model: it waits for that state, and once
+   * the agent's converted chat default is here it opens on its kind's default
+   * model, settings and follow marker, so its first prompt runs. The all-null
+   * defaults a hello publishes before the conversion are not that state. An
+   * agent whose converted default carries no model for the harness is still
+   * refused at once. */
+  it("opens a session held for the agent's first state on its default", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+      settings: { mode: "acceptEdits" },
+    };
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
+    expect(client.reply(1)?.error).toBeUndefined();
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
+    expect(world.metadata.store.get("s-1")?.meta).toMatchObject({
+      model: chat.model,
+      settings: chat.settings,
+      follows: "chat",
+    });
+    const harness = world.harness("claude-code");
+    client.send(frames.prompt(2, "s-1", "hi"));
+    harness.replyToSession("session/set_config_option", "s-1", {});
+    harness.replyToSession("session/set_mode", "s-1", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+
+    const settled = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      sessionDefaults: {
+        get: () => ({
+          chat: { harness: "claude-code", provider: null, model: null },
+          channel: null,
+          scheduled: null,
+        }),
+        revision: () => 1,
+        set: () => {},
+      },
+    });
+    const other = settled.connect();
+    other.send(newSessionOn(2, {}));
+    expect(other.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+  });
+
+  /** TEST_SCENARIO: A prompt that reaches a model-less session while the
+   * runtime still has no state is held rather than refused, and once the
+   * agent's converted chat default lands it runs on that kind's model. */
+  it("holds a prompt with no model until the agent's defaults land", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+    };
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    world.metadata.store.set("old", { type: "regular" });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old", "hi"));
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+    expect(world.metadata.store.get("old")?.meta.model).toBe(chat.model);
   });
 
   /** TEST_SCENARIO: On a harness that reaches its models through the Model
