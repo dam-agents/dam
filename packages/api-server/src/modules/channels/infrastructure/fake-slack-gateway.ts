@@ -234,6 +234,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const emailLookups: string[] = [];
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
+  const fileShares = new Map<string, { channel: string; ts: string }>();
   let nextFileId = 1;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
@@ -302,6 +303,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         text: args.text,
         blocks: args.blocks,
         metadata: args.metadata,
+        ...(args.fileIds ? { fileIds: args.fileIds } : {}),
         edited: true,
       });
     },
@@ -376,16 +378,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       };
     },
 
-    async uploadFile(args) {
-      outbound.push({
-        kind: "upload",
-        teamId: args.teamId,
-        channelId: args.channelId,
-        filename: args.filename,
-        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
-      });
-    },
-
     async reserveFile(args) {
       const fileId = `F${nextFileId++}-${args.filename}`;
       stagedFiles.set(fileId, args.filename);
@@ -395,7 +387,18 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async sendFileBytes() {},
 
     async shareFile(args) {
+      if (!args.channelId) return;
       const text = renderSlackPostText({ blocks: args.blocks });
+      const ts = `${Math.floor(Date.now() / 1000)}.${nextPostTs++}`;
+      fileShares.set(args.fileId, { channel: args.channelId, ts });
+      messagesByRef.set(`${args.channelId}:${ts}`, {
+        ts,
+        text: text ?? "",
+        ...(botUserId ? { user: botUserId } : {}),
+        ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        fileIds: [args.fileId],
+      });
       outbound.push({
         kind: "upload",
         teamId: args.teamId,
@@ -404,6 +407,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
         ...(text ? { text } : {}),
       });
+    },
+
+    async fileShareTs(fileId, channelId) {
+      const share = fileShares.get(fileId);
+      return share?.channel === channelId ? share.ts : null;
     },
 
     async downloadFile(urlPrivate, maxBytes) {

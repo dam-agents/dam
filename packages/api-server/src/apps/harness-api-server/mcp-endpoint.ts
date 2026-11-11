@@ -550,7 +550,7 @@ export function createMcpSession(
   };
 
   const POST_DESCRIPTION =
-    "Post a NEW top-level message to a connected channel (slack or telegram) — a one-way announcement or cross-post. On Slack, replies under the post are not followed: they do not come back to this session, so to ask something and get the answer here use start_thread instead, and to answer a message you are handling use reply. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on; the chat's next message goes to that chat's own session, which is this session only when it is that chat's session. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. The result names the posted message's chatId and ts: edit_post takes them to change the post later, and on Slack react takes them as chatId and messageTs. A message with an attachment comes back without a ts on Telegram, and may on Slack, when Slack posts it as a file share. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.";
+    "Post a NEW top-level message to a connected channel (slack or telegram) — a one-way announcement or cross-post. On Slack, replies under the post are not followed: they do not come back to this session, so to ask something and get the answer here use start_thread instead, and to answer a message you are handling use reply. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on; the chat's next message goes to that chat's own session, which is this session only when it is that chat's session. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. The result names the posted message's chatId and ts: edit_post takes them to change the post later, also to replace its file, and on Slack react takes them as chatId and messageTs. A message with an attachment comes back without a ts on Telegram, and rarely on Slack, when Slack is slow to record the file's message. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.";
 
   server.tool("post", POST_DESCRIPTION, postInput, postMessage);
 
@@ -883,7 +883,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs, or to edit_post to change the reply later. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment may come back without one, when Slack posts it as a file share. It also answers in a thread you started with start_thread: pass that thread's chatId and threadTs. Use post instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs, or to edit_post to change the reply later. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment rarely comes back without one, when Slack is slow to record the file's message. It also answers in a thread you started with start_thread: pass that thread's chatId and threadTs. Use post instead for a new top-level or cross-channel post.`,
     {
       text: z
         .string()
@@ -1039,7 +1039,7 @@ export function createMcpSession(
 
   server.tool(
     "edit_post",
-    "Change a post you made earlier, in place: keep one post up to date while a long task runs, or fix a mistake in a post you already sent, instead of posting again. Pass the chatId and ts that reply, post or start_thread returned for the post (for a thread you started, its threadTs is the ts), and the whole new text and card: the post then shows exactly what you pass, so repeat what should stay. You can change only your own posts, never another agent's or a person's, and not a post that carries a file or a private answer to a whisper. An edit notifies no one, so when people must see the final state, also reply. Edits are limited to a few a minute; one refused for coming too fast says how long to wait.",
+    "Change a post you made earlier, in place: keep one post up to date while a long task runs, or fix a mistake in a post you already sent, instead of posting again. Pass the chatId and ts that reply, post or start_thread returned for the post (for a thread you started, its threadTs is the ts), and the whole new text and card: the post then shows exactly what you pass, so repeat what should stay. A post that carries a file keeps it unless you pass attachment: on Slack that file then replaces the post's file, for example an updated chart in place of the old one. You can change only your own posts, never another agent's or a person's, and not a private answer to a whisper. An edit notifies no one, so when people must see the final state, also reply. Edits are limited to a few a minute; one refused for coming too fast says how long to wait.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       chatId: z
@@ -1049,19 +1049,25 @@ export function createMcpSession(
       text: z
         .string()
         .describe(
-          "The whole new text of the post. On Slack, use standard Markdown, not mrkdwn. Leave it empty to show a card alone.",
+          "The whole new text of the post. On Slack, use standard Markdown, not mrkdwn. Leave it empty to show a card alone, or the file alone.",
         ),
       card: cardInput,
+      attachment: attachmentInput.describe(
+        "Slack only: a file that replaces the file the post carries, or adds one to a post without a file. Same shape as in post. Omit it to keep the post's file.",
+      ),
     },
-    async ({ channel, chatId, ts, text, card: tree }) => {
+    async ({ channel, chatId, ts, text, card: tree, attachment }) => {
       const built = await cardOf(tree);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
+      const loaded = attachment ? await loadAttachment(attachment) : null;
+      if (loaded && "error" in loaded) return errorResult(loaded.error);
       const result = await deps.channelManager.editPost(agentId, channel, {
         conversationId: chatId,
         messageId: ts,
         text,
         ...(card ? { card } : {}),
+        ...(loaded ? { attachment: loaded.resolved } : {}),
       });
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
@@ -1073,6 +1079,7 @@ export function createMcpSession(
           messageTs: ts,
           textLength: text.length,
           hasCard: card !== undefined,
+          ...(loaded ? { attachment: loaded.audit } : {}),
           ...("error" in result ? { error: result.error } : {}),
         },
       });

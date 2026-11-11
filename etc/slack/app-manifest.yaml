@@ -90,8 +90,9 @@ oauth_config:
       - app_mentions:read
       # Attachments: url_private downloads inbound; outbound uploads
       # (files.getUploadURLExternal, then the bytes, then
-      # files.completeUploadExternal; or files.uploadV2), and deleting them
-      # with their post (files.delete).
+      # files.completeUploadExternal), reading a share's message back
+      # (files.info), and deleting files with their post or when an edit
+      # replaces them (files.delete).
       - files:read
       - files:write
       # Channel history backs context injection on new sessions, the

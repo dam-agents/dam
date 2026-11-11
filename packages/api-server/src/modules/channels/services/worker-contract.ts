@@ -49,6 +49,7 @@ export interface PostEdit {
   messageId: string;
   text: string;
   card?: ChannelCard;
+  attachment?: ChannelAttachment;
 }
 
 export interface ChannelReaction {

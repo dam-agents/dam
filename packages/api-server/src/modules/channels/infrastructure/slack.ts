@@ -217,6 +217,7 @@ import {
   DELETE_POST_CONFIRM,
   agentPostMetadata,
   deletePostFileIds,
+  filesPostedApart,
   madeByAgent,
   deletePostModal,
   parseAgentPostLink,
@@ -1411,6 +1412,10 @@ const CONVERSATION_LABEL_TTL_MS = 5 * 60_000;
 const PENDING_POST_DELETE_TTL_MS = 15 * 60_000;
 
 const SLACK_MAX_BLOCKS = 50;
+
+const FILE_SHARE_TS_ATTEMPTS = 10;
+
+const FILE_SHARE_TS_POLL_MS = 300;
 
 const userLookupSemaphore = createSemaphore(5);
 
@@ -2897,13 +2902,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
   }
 
-  function fileShareBlocks(
+  function fileShareOf(
+    post: AgentPost,
     markdown: string,
     footerBlock: SlackBlock,
-    cardBlocks: SlackBlock[] = [],
-  ): SlackBlock[] | null {
-    const body = [...markdownToSections(markdown), ...cardBlocks];
-    return body.length < SLACK_MAX_BLOCKS ? [...body, footerBlock] : null;
+    byAgent: boolean,
+  ): FileShare | null {
+    const body = [...markdownToSections(markdown), ...(post.cardBlocks ?? [])];
+    return body.length < SLACK_MAX_BLOCKS
+      ? { blocks: [...body, footerBlock], text: post.text, byAgent }
+      : null;
   }
 
   type AgentPost = {
@@ -3002,6 +3010,134 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { reserved, bytesSent };
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a file that replaces another in an edited post
+   * is uploaded without a channel, so no message shows it until the edit
+   * attaches it; Slack refuses to attach a file whose upload was not
+   * completed.
+   */
+  async function uploadUnshared(
+    gw: SlackGateway,
+    teamId: SlackWorkspace,
+    attachment: ChannelAttachment,
+  ): Promise<{ fileId: string } | { error: string }> {
+    const staged = await stageFile(gw, teamId, attachment);
+    if ("error" in staged) return staged;
+    const bytesError = await staged.bytesSent;
+    if (bytesError !== null) return { error: bytesError };
+    const { fileId } = staged.reserved;
+    try {
+      await gw.shareFile({
+        fileId,
+        filename: attachment.filename,
+        ...(attachment.title !== undefined ? { title: attachment.title } : {}),
+        teamId,
+      });
+    } catch (err) {
+      return { error: formatError(err) };
+    }
+    return { fileId };
+  }
+
+  function slackRefusalCode(err: unknown): string | null {
+    const data = (err as { data?: { error?: unknown } } | null)?.data;
+    return typeof data?.error === "string" ? data.error : null;
+  }
+
+  async function dropFiles(
+    gw: SlackGateway,
+    teamId: SlackWorkspace,
+    fileIds: string[],
+  ): Promise<void> {
+    for (const fileId of fileIds)
+      await gw
+        .deleteFile(fileId, teamId)
+        .catch((err: unknown) =>
+          getLogger().warn(
+            { fileId, err: formatError(err) },
+            "slack.post_edit.file_left: a replaced file stays in the workspace",
+          ),
+        );
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: Slack shares a file without naming the message
+   * it made, so its send time is read back from the file once Slack has
+   * recorded the share. Sharing cannot carry metadata either, so a post an
+   * Agent made with its own tool gets its mark by an edit right after.
+   */
+  async function sharedPostTs(
+    gw: SlackGateway,
+    target: { id: string; teamId: SlackWorkspace },
+    fileId: string,
+    share: FileShare,
+  ): Promise<string | undefined> {
+    let ts: string | null = null;
+    for (let attempt = 1; attempt <= FILE_SHARE_TS_ATTEMPTS; attempt++) {
+      ts = await gw
+        .fileShareTs(fileId, target.id, target.teamId)
+        .catch(() => null);
+      if (ts || attempt === FILE_SHARE_TS_ATTEMPTS) break;
+      await sleep(FILE_SHARE_TS_POLL_MS);
+    }
+    if (!ts) {
+      getLogger().warn(
+        { channelId: target.id, fileId },
+        "slack.file_post.ts_unknown: Slack named no message for the share",
+      );
+      return undefined;
+    }
+    if (!share.byAgent) return ts;
+    await gw
+      .updateMessage({
+        channel: target.id,
+        ts,
+        teamId: target.teamId,
+        text: share.text,
+        blocks: share.blocks,
+        metadata: agentPostMetadata([], true),
+      })
+      .catch((err: unknown) =>
+        getLogger().warn(
+          { channelId: target.id, ts, err: formatError(err) },
+          "slack.file_post.mark_failed: the post cannot be edited later",
+        ),
+      );
+    return ts;
+  }
+
+  type FileShare = { blocks: SlackBlock[]; text: string; byAgent: boolean };
+
+  async function shareStagedFile(
+    gw: SlackGateway,
+    target: { id: string; teamId: SlackWorkspace },
+    attachment: ChannelAttachment,
+    threadTs: string | undefined,
+    persona: Pick<SlackPostMessage, "username" | "iconUrl">,
+    share: FileShare,
+  ): Promise<{ ts?: string } | { error: string }> {
+    const staged = await stageFile(gw, target.teamId, attachment);
+    if ("error" in staged) return staged;
+    const bytesError = await staged.bytesSent;
+    if (bytesError !== null) return { error: bytesError };
+    try {
+      await gw.shareFile({
+        fileId: staged.reserved.fileId,
+        filename: attachment.filename,
+        ...(attachment.title !== undefined ? { title: attachment.title } : {}),
+        ...persona,
+        channelId: target.id,
+        ...(threadTs ? { threadTs } : {}),
+        blocks: share.blocks,
+        teamId: target.teamId,
+      });
+    } catch (err) {
+      return { error: formatError(err) };
+    }
+    const ts = await sharedPostTs(gw, target, staged.reserved.fileId, share);
+    return ts ? { ts } : {};
+  }
+
   async function postWithAttachment(
     gw: SlackGateway,
     target: { id: string; teamId: SlackWorkspace },
@@ -3009,35 +3145,24 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     threadTs: string | undefined,
     persona: Pick<SlackPostMessage, "username" | "iconUrl">,
     post: (fileIds: string[]) => Promise<{ ts: string } | null>,
-    fileBlocks: SlackBlock[] | null,
+    fileShare: FileShare | null,
   ): Promise<{ uploadError: string | null; ts?: string }> {
     const posted = async (fileIds: string[]) => {
       const message = await post(fileIds);
       return message ? { ts: message.ts } : {};
     };
     if (!attachment) return { uploadError: null, ...(await posted([])) };
-    const share = (fileId: string, blocks?: SlackBlock[]) =>
-      gw.shareFile({
-        fileId,
-        filename: attachment.filename,
-        ...(attachment.title !== undefined ? { title: attachment.title } : {}),
-        ...persona,
-        channelId: target.id,
-        ...(threadTs ? { threadTs } : {}),
-        ...(blocks ? { blocks } : {}),
-        teamId: target.teamId,
-      });
-    if (fileBlocks) {
-      const staged = await stageFile(gw, target.teamId, attachment);
-      const failure =
-        "error" in staged
-          ? staged.error
-          : ((await staged.bytesSent) ??
-            (await share(staged.reserved.fileId, fileBlocks).then(
-              () => null,
-              (err: unknown) => formatError(err),
-            )));
-      if (failure === null) return { uploadError: null };
+    if (fileShare) {
+      const shared = await shareStagedFile(
+        gw,
+        target,
+        attachment,
+        threadTs,
+        persona,
+        fileShare,
+      );
+      if (!("error" in shared)) return { uploadError: null, ...shared };
+      const failure = shared.error;
       getLogger().warn(
         { channelId: target.id, err: failure },
         "slack.file_post.failed: posting the text and the file apart",
@@ -3050,7 +3175,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const bytesError = await staged.bytesSent;
     if (bytesError !== null) return { uploadError: bytesError, ...message };
     try {
-      await share(staged.reserved.fileId);
+      await gw.shareFile({
+        fileId: staged.reserved.fileId,
+        filename: attachment.filename,
+        ...(attachment.title !== undefined ? { title: attachment.title } : {}),
+        ...persona,
+        channelId: target.id,
+        ...(threadTs ? { threadTs } : {}),
+        teamId: target.teamId,
+      });
       return { uploadError: null, ...message };
     } catch (err) {
       return { uploadError: formatError(err), ...message };
@@ -3066,8 +3199,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
    * can show a link to another Agent's page earlier in the post. The platform
    * also posts in an Agent's name, with its footer, so the post must carry
    * the mark of an Agent's own tool as well. A post by another Agent, a
-   * platform notice, a person's message and a post that carries a file are
-   * each refused with their own reason. A reply is read through its own send
+   * platform notice and a person's message are each refused with their own
+   * reason. A reply is read through its own send
    * time as a thread, which Slack answers with that one message, and a
    * top-level post through the channel; a read Slack refuses counts as no
    * post found.
@@ -3104,12 +3237,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         error:
           "That message is not one of your posts. You can change only a " +
           "post you made with reply, post or start_thread.",
-      };
-    if (deletePostFileIds(post).length > 0)
-      return {
-        error:
-          "A post that carries a file cannot be changed yet. Say what " +
-          "changed in a new message instead.",
       };
     return { post };
   }
@@ -8631,25 +8758,28 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               ),
             unfurlLinks === false || unfurlMedia === false
               ? null
-              : fileShareBlocks(
+              : fileShareOf(
+                  post,
                   sign(linked.text, "**"),
                   contextBlock,
-                  post.cardBlocks,
+                  options?.byAgent === true,
                 ),
           ));
         } else if (attachment) {
-          try {
-            await gw.uploadFile({
-              channelId: target.id,
-              teamId: target.teamId,
-              file: attachment.data,
-              filename: attachment.filename,
-              title: attachment.title,
+          const shared = await shareStagedFile(
+            gw,
+            target,
+            attachment,
+            undefined,
+            persona,
+            {
               blocks: [contextBlock],
-            });
-          } catch (err) {
-            return { error: formatError(err) };
-          }
+              text: attachment.filename,
+              byAgent: options?.byAgent === true,
+            },
+          );
+          if ("error" in shared) return shared;
+          ts = shared.ts;
         }
         noteEngaged(engaged, {
           messaged: true,
@@ -8968,21 +9098,28 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         (ref) => ref.threadTs === threadTs && ref.channel === target.id,
       );
       if (attachmentOnly) {
-        try {
-          await gw.uploadFile({
-            channelId: target.id,
-            teamId: target.teamId,
-            threadTs,
-            file: attachmentOnly.data,
-            filename: attachmentOnly.filename,
-            title: attachmentOnly.title,
+        const shared = await shareStagedFile(
+          gw,
+          target,
+          attachmentOnly,
+          threadTs,
+          persona,
+          {
             blocks: [agentContextBlock(footer)],
-          });
-        } catch (err) {
-          return { error: formatError(err) };
-        }
-        noteEngaged(engaged, { messaged: true });
-        return { ok: true as const, conversationId: target.id };
+            text: attachmentOnly.filename,
+            byAgent: true,
+          },
+        );
+        if ("error" in shared) return shared;
+        noteEngaged(engaged, {
+          messaged: true,
+          ...(shared.ts !== undefined ? { replyTs: shared.ts } : {}),
+        });
+        return {
+          ok: true as const,
+          conversationId: target.id,
+          ...(shared.ts !== undefined ? { ts: shared.ts } : {}),
+        };
       }
       const post = agentPost(linked.text, linked.card, footer, sign);
       const refused = postRefusal(post);
@@ -9017,10 +9154,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             args.unfurlLinks === false ||
             args.unfurlMedia === false
             ? null
-            : fileShareBlocks(
+            : fileShareOf(
+                post,
                 sign(linked.text, "**"),
                 agentContextBlock(footer),
-                post.cardBlocks,
+                true,
               ),
         );
         noteEngaged(engaged, {
@@ -9046,8 +9184,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
-      if (edit.text.trim() === "" && edit.card === undefined)
-        return { error: EMPTY_POST_EDIT };
 
       const turnChannel = findTurnRef(
         instanceName,
@@ -9075,6 +9211,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: tooManyPostEdits(waiting.retryAfterMs) };
       const found = await readOwnPost(gw, instanceName, target, edit.messageId);
       if ("error" in found) return found;
+      const ownFiles = found.post.fileIds ?? [];
+      if (
+        edit.text.trim() === "" &&
+        edit.card === undefined &&
+        edit.attachment === undefined &&
+        ownFiles.length === 0
+      )
+        return { error: EMPTY_POST_EDIT };
       const written = closingBlock(found.post);
       const linked = await linkForTarget(gw, instanceName, target, {
         text: edit.text,
@@ -9090,31 +9234,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ),
         agentPersona(gw, instanceName, target),
       ]);
-      const post = agentPost(
-        linked.text,
-        linked.card,
-        { ...base, emoji },
-        sign,
-      );
+      const footer = { ...base, emoji };
+      const post = agentPost(linked.text, linked.card, footer, sign);
       const refused = postRefusal(post);
       if (refused) return refused;
       const admission = postEdits.admit(target.teamId, instanceName);
       if (!admission.admitted)
         return { error: tooManyPostEdits(admission.retryAfterMs) };
+      const replacement = edit.attachment
+        ? await uploadUnshared(gw, target.teamId, edit.attachment)
+        : null;
+      if (replacement && "error" in replacement)
+        return { error: `The new file was not uploaded: ${replacement.error}` };
+      const fileOnly = !linked.text.trim() && !linked.card;
+      const update = (blocks: SlackBlock[], text: string) =>
+        gw.updateMessage({
+          channel: target.id,
+          ts: edit.messageId,
+          teamId: target.teamId,
+          text,
+          blocks,
+          metadata: agentPostMetadata(
+            replacement ? [] : filesPostedApart(found.post),
+            true,
+          ),
+          ...(replacement ? { fileIds: [replacement.fileId] } : {}),
+        });
       try {
-        await sendAgentPost(target.id, post, (blocks) =>
-          gw.updateMessage({
-            channel: target.id,
-            ts: edit.messageId,
-            teamId: target.teamId,
-            text: post.text,
-            blocks,
-            metadata: agentPostMetadata([], true),
-          }),
-        );
+        await (fileOnly
+          ? update(
+              [agentContextBlock(footer)],
+              edit.attachment?.filename ??
+                found.post.attachments?.[0]?.name ??
+                "file",
+            )
+          : sendAgentPost(target.id, post, (blocks) =>
+              update(blocks, post.text),
+            ));
       } catch (err) {
+        if (replacement && slackRefusalCode(err) !== null)
+          await dropFiles(gw, target.teamId, [replacement.fileId]);
         return { error: formatError(err) };
       }
+      if (replacement)
+        await dropFiles(gw, target.teamId, deletePostFileIds(found.post));
       const threadTs = found.post.threadTs ?? found.post.ts;
       noteEngagedTurn(
         instanceName,
