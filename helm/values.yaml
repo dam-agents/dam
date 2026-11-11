@@ -838,7 +838,7 @@ postgres:
     timeoutSeconds: 10
     failureThreshold: 6
   # -- Timing of the `pg_isready` check that holds the two checks around it off
-  # until Postgres answers on TCP: after initdb on a first boot, after recovery
+  # until Postgres first answers: after initdb on a first boot, after recovery
   # when the last run was killed. On a loaded CI runner Postgres was still
   # answering nothing 108 seconds in, and liveness's 90-second budget killed it
   # inside initdb; the recovery that kill left took minutes more. Five minutes

@@ -218,7 +218,7 @@ const OPENAI_CHATGPT: NoneConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Codex uses a ChatGPT login stored on each agent. Authorize the agent over SSH; no API key is needed.",
+    "Codex uses a ChatGPT login stored on each agent. Sign in from the agent’s Providers page or over SSH; no API key is needed.",
   iconSlug: "openai",
   authKind: "none",
   contributions: [

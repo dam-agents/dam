@@ -1,6 +1,6 @@
 # Native Codex subscription login
 
-Last verified: 2026-11-08
+Last verified: 2026-11-11
 
 An owner can enable a ChatGPT subscription Connection and grant it to an agent alongside other provider Connections.
 Subscription models use the `chatgpt` provider alias, while API models use `openai`, so replacing Connections cannot silently change a saved model's billing path.
@@ -20,4 +20,3 @@ The provider being configured is not proof that an agent is signed in or entitle
 Detaching or deleting the Connection removes managed selection, not the native login: the owner logs out on the agent to remove its cached credentials.
 Reauthorizing an expired login, changing accounts or logging out requires an agent restart because existing Codex processes cache their account.
 The OpenAI API-key mode never requires or clears that native login.
-

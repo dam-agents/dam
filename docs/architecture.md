@@ -55,10 +55,10 @@ flowchart LR
 
 The cluster boundary is the trust boundary.
 Every agent is a microVM on its owner's VM runner pod.
-Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through its gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only.
-The machine's egress allowlist names only its gateway, and the runner's NetworkPolicy admits no other destination, so credential injection is enforced below the agent — not by the agent honoring its proxy settings.
-The machine has no service-account credentials; platform-managed upstream tokens stay gateway-side.
-An owner who enables native Codex subscription login places that account's tokens on the agent itself ([native Codex login](architecture/native-codex-login.md)).
+Browsers and Slack users reach the api-server; agents send outbound traffic through their credential gateways.
+Machine and runner network rules enforce gateway-only egress below the guest.
+The gateway holds platform-managed credentials and Envoy adds them to outbound requests; the agent has no service-account credentials.
+Owners can put a subscription login on the agent through [native Codex login](architecture/native-codex-login.md).
 
 ## Subsystems
 
@@ -71,7 +71,6 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [budgets](architecture/budgets.md) — per-user pool of memory, CPU and storage on the owner's VM runner, enforced when a machine starts; UserBudget CRs for privileged users.
 - [persistence](architecture/persistence.md) — the storage substrates (Postgres, the owner's runner claim); [vm storage](architecture/vm-storage.md) — a machine's one disk and the owner's claim under it; what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
-- [native Codex login](architecture/native-codex-login.md) — per-agent ChatGPT sign-in, its status and owner-only device authorization; Codex owns the credentials.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [channel-cards](architecture/channel-cards.md) — structured cards in agents' Slack and Telegram posts: the catalog, the check, native rendering and the text form.

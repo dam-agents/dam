@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -170,9 +170,7 @@ Cross- owner leakage is structurally prevented by the label selector — a missi
 
 ## Native Codex subscription login
 
-Native Codex subscription credentials live in the agent's persistent home, where its harness and tools can read them.
-Everyone allowed to run work on that agent, including through a channel binding, uses the same subscription.
-The [native Codex login subsystem](native-codex-login.md) owns its provider selection, per-agent status and owner-authorized device flow; Codex owns the account's credential storage and refresh.
+[Native Codex login](native-codex-login.md) puts an owner's subscription credentials on the agent; everyone permitted to run it shares that account.
 
 ## Credential storage
 
@@ -271,9 +269,8 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Platform-managed upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — in a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
-A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
-The mechanics — chains, injection and signing, addressing, and how a bad Secret degrades — are on [credential-gateway](credential-gateway.md).
+The [credential gateway](credential-gateway.md) owns credential injection, addressing and recovery from invalid credentials.
+A credentialed host is pinned to its upstream, so an agent cannot redirect a credentialed request to another destination.
 
 ## HITL ext_authz
 
