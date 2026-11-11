@@ -226,6 +226,7 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
     skillPaths: readSidePaths,
     pristineSkillPaths,
     githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
+    spawnEnv: () => mergedSpawnEnv(envStore),
     ...(config.PLATFORM_IMAGE_SKILL_RECONCILE
       ? {
           reconcile: {
