@@ -1994,6 +1994,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ttlMs: BOT_MENTION_SEEN_TTL_MS,
   });
 
+  const commandTipsSent = createTtlMap<string, true>({
+    ttlMs: BOT_MENTION_SEEN_TTL_MS,
+  });
+
   function firstBotMentionSighting(channel: string, ts: string): boolean {
     const key = `${channel} ${ts}`;
     if (botMentionsSeen.get(key) !== undefined) return false;
@@ -6709,7 +6713,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             (app) => app.name || app.botId,
           ),
       );
-      if (!verb) return;
+      const key = `${event.channel} ${event.ts}`;
+      if (!verb || commandTipsSent.get(key) !== undefined) return;
+      commandTipsSent.set(key, true);
       getLogger().info(
         { channelId: event.channel, command: verb },
         "slack.mention.command_tip",

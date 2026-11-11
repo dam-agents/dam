@@ -966,10 +966,12 @@ describe("mentions that read as commands", () => {
   /**
    * TEST_SCENARIO: a person who types "@bot whisper ..." expects privacy, but
    * the channel already sees the text. The Agent still gets it as a normal
-   * message, and only the person is told to use the slash form.
+   * message, and only the person is told to use the slash form, once even
+   * when Slack reports the same message twice (an edit that adds the mention).
    */
-  it("passes a whisper mention to the agent and tips the person privately", async () => {
+  it("passes a whisper mention to the agent and tips the person privately once", async () => {
     const h = harness(both());
+    await h.mention("<@U-BOT> whisper the build key is rotated");
     await h.mention("<@U-BOT> whisper the build key is rotated");
     expect(h.promptsFor(SCRIBE)[0]).toContain("the build key is rotated");
     const ephemerals = h.gw
@@ -999,9 +1001,9 @@ describe("mentions that read as commands", () => {
       ...both(),
       { instanceName: "agent-whisper", name: "Whisper" },
     ]);
-    await h.mention("<@U-BOT> default to the safer option");
-    await h.mention("<@U-BOT>");
-    await h.mention("<@U-BOT> Whisper what do you think?");
+    await h.mention("<@U-BOT> default to the safer option", undefined, "1.1");
+    await h.mention("<@U-BOT>", undefined, "2.2");
+    await h.mention("<@U-BOT> Whisper what do you think?", undefined, "3.3");
     expect(
       h.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
     ).toHaveLength(0);
