@@ -232,7 +232,8 @@ export function createAcpRelay(
       });
 
       let clientGone = false;
-      const hold = startHoldSpan("acp", holdStartOf(repo.peekCached(agentId)));
+      const start = holdStartOf(repo.peekCached(agentId));
+      const hold = startHoldSpan("acp", start);
       const requests = createRequestSpans("acp", sessionLoad, () =>
         hold.link(),
       );
@@ -277,6 +278,7 @@ export function createAcpRelay(
               repo.ensureReady(agentId),
               `http://${agentServiceAddress(agentId, namespace)}/healthz`,
               () => clientGone,
+              start,
             ),
           );
         })

@@ -1488,7 +1488,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   agent: {
     title: "The agent isn't ready",
-    body: "The conversation is kept. It opens once the agent is up.",
+    body: "The conversation is kept. Try again once the agent is up.",
   },
   other: {
     title: "Can't open this conversation",
