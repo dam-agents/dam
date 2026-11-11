@@ -23,8 +23,12 @@ The Agent reads the message once, as it reads now, and is told of no change.
 
 ## Who an edit can start a turn for
 
-Past that, an edit starts a turn only when a **person** made it, and only for a message an Agent was **sent**: a mention, a direct message, or a message in a thread one of the Agent's Sessions started.
-Every other edit starts nothing: one by an Agent, one by an app, and one to a message Agents only read along.
+Past that, an edit starts a turn only when a **person** made it.
+
+- **A message an Agent was sent** — a mention, a direct message, or a message in a thread one of the Agent's Sessions started: the edit follows the message to that Agent, as below.
+- **A message Agents read along**: the edit starts an ambient round for the Agents reading the conversation, as a new read-along message would ([channel-turns](channel-turns.md)), so a question added by an edit is not left until someone posts again.
+
+An edit by an Agent or by an app starts nothing, wherever the message is.
 An Agent that keeps one post current by editing it would otherwise cost every reader a turn per update, and two Agents could answer each other's edits in a loop.
 
 ## An edit follows its message
@@ -35,10 +39,15 @@ A person's edit takes that road again, and the queue decides what it becomes.
 - **A turn carrying the message is running.** The edit is steered into that turn, so the one answer can already follow it; where the harness takes no steer it becomes the next turn.
 - **The Agent already answered.** The edit starts a turn of its own on the Session that answered.
 
+An edit to a read-along message runs the same way, in the queue of its conversation that read-along messages use: it waits for a round still running there, then runs as one round for every Agent reading along, apart from the Agent whose thread already carries the message.
+The platform remembers, per read-along message, the text the Agents were handed, so an edit whose text they already have starts no round.
+An edit that first tags the bot is a mention instead (below), and starts no read-along round.
+
 A delivered edit carries only the new text, marked as the text that replaces the message with that send time.
 The earlier text is not repeated, because the Session already holds it.
 The mark tells the Agent to correct what it did from the earlier text, to say what it cannot undo, and how to stay silent when the change needs no answer.
-An edit turn is an addressed turn like a tagged reply in the thread: it shows the working status, and it is nudged when it ends having neither answered nor declined.
+An edit turn to a message an Agent was sent is an addressed turn like a tagged reply in the thread: it shows the working status, and it is nudged when it ends having neither answered nor declined.
+An edit round to a read-along message is an ambient round: the Agent may chime in or stay silent, as with any message it reads along.
 
 The binding is read again when the edit arrives, because the binding is the authorization and an edit can come long after its message: a conversation disconnected in between gets nothing.
 An edit whose text the Agent already has, as when Slack reports one edit twice, starts nothing.
@@ -100,7 +109,7 @@ The limits are counted per chat there, since Telegram has no workspace.
 ## Limits
 
 What the platform remembers about a message, and the edits still owed, is kept in the worker's memory for two days.
-After a restart, or after two days, a person's edit to a mention or a direct message starts no turn, and no Session is listed a change.
+After a restart, or after two days, a person's edit to a mention, a direct message or a read-along message starts no turn, and no Session is listed a change.
 A thread a Session owns is recorded in the database, so an edit there still reaches its Session.
 If Slack reports the edited message as a mention again by then, that mention is the first one known and starts a turn as a new message.
 Nothing stale is left behind either way: a message read from Slack later, in an injected history, a catch-up or a thread read, carries its current text and is marked as edited.
