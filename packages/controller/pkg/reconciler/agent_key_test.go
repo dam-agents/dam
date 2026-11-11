@@ -182,13 +182,13 @@ func TestRenderOwnerGateway_TheAgentKeyIsPerAgent(t *testing.T) {
 	assert.NotContains(t, got.CDS, "environments_gate_agent-b")
 }
 
-// TEST_SCENARIO: on an install that serves Environments the gateway reaches the api-server's public port, where the Environment gate answers; on one that does not, nothing changes.
-func TestGatewayEgressReachesThePublicPortOnlyWithEnvironments(t *testing.T) {
+// TEST_SCENARIO: every gateway reaches the api-server's public port, because the chain of the Connection that drives this install takes its requests there whether or not the install serves Environments; an install that names no port admits none.
+func TestGatewayEgressAlwaysReachesThePublicPort(t *testing.T) {
 	cfg := *testConfig
 	cfg.APIServerPort = 4000
-	assert.NotContains(t, apiServerPorts(&cfg), 4000)
-	cfg.EnvironmentsDomain = "env.example.com"
 	assert.Contains(t, apiServerPorts(&cfg), 4000)
+	cfg.APIServerPort = 0
+	assert.NotContains(t, apiServerPorts(&cfg), 0)
 }
 
 // TEST_SCENARIO: the controller's Secret watch reconciles the agent an Agent Key Secret names when the Secret comes or goes, and no agent for any other Secret.

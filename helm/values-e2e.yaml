@@ -6,6 +6,14 @@
 e2e:
   enabled: true
 
+# The install keeps the chart's `experimental` mode, so the assistant is on by
+# default exactly as in a release. The suite's shared users store the switch
+# off for themselves (01-auth.spec.ts, once they accepted the Terms), which
+# keeps every other lane deterministic, and 16-assistant.spec.ts signs in as its
+# own users, which have stored nothing and so keep the default.
+#
+# Two accounts of its own, so they are fresh on the first run and on every
+# rerun against the same cluster: nothing else signs in as them.
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
 # enabled template is rendered, and cluster:install then imports its
@@ -35,6 +43,15 @@ virtualization:
 # runner's cores are mostly idle while they run. Only the limits rise: the
 # requests stay, so nothing else loses room on the single node.
 keycloak:
+  # Two accounts the assistant spec signs in as; no other spec uses them, so
+  # they hold nothing stored and the assistant stays on by default for them.
+  extraTestUsers:
+    - username: dammy-first
+      password: dammy-e2e
+      firstName: First
+    - username: dammy-owner
+      password: dammy-e2e
+      firstName: Owner
   resources:
     limits:
       cpu: "2"

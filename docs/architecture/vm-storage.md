@@ -1,6 +1,6 @@
 # VM storage
 
-Last verified: 2026-11-09
+Last verified: 2026-11-11
 
 A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
@@ -21,7 +21,7 @@ An image built from the default one elsewhere inherits the default's key unless 
 An image's build changes its key only on a change that breaks an older root; an image declaring none is its own generation.
 The runner names it in the share at every start, and any other key, an extending image's included, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 **Nothing the platform writes at boot lands in the kept root.** A file a boot rewrote there would hide every later image's copy of it, so the boot builds the CA bundle under `/run`, a fresh tmpfs on every boot.
-The entry that maps `agent` to uid 0 for SSH logins is in a layer platform-init builds in memory at every boot, between the image and the upper: the image's `/etc/passwd` with that entry at its end.
+The entry that maps `agent` to uid 0 for SSH logins is in a layer platform-init builds in memory at every boot, between the image and the upper: the image's `/etc/passwd` with that entry at its end, or with its own `agent` entry rewritten to uid and gid 0 and the agent's home, keeping its shell, so sshd finds the session environment the runtime writes there.
 It is an ordinary file of the root, so `useradd` replaces it as on any root, and only then does the upper hold a copy, as with any file the agent writes.
 The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the image's build gives uid 0's entry the agent's `HOME`.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.

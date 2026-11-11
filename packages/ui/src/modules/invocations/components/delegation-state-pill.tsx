@@ -12,6 +12,7 @@ const pill: Record<
 > = {
   working: { variant: "success", label: "Working" },
   waiting: { variant: "warning", label: "Waiting for room" },
+  "waiting-for-owner": { variant: "warning", label: "Waiting for you" },
   done: { variant: "accent", label: "Done" },
   failed: { variant: "danger", label: "Failed" },
   stopped: { variant: "muted", label: "Stopped" },

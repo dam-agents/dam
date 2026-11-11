@@ -1,11 +1,11 @@
 # CLI
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
 The `dam` CLI is a TypeScript Node package, distributed via npm, that users install on their own machine and point at a configured Platform deployment.
-It never runs inside the cluster.
+Users run it on their own machine; an Agent's own image carries the same client, for the install that Agent runs on ([below](#agent-skill)).
 For deployment operations, it reaches the api-server as a thin client: it shares the api-server's contract package directly, so server-side type changes reach the CLI without codegen or manual mirroring, and it calls the tRPC surface over plain HTTP for everything except the interactive `dam chat` session, which opens a WebSocket to the terminal relay.
 Command groups are singular (`agent`, `connection`, `channel`, …) to match `gh`, `git`, and `docker`.
 
@@ -136,6 +136,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md).
   Slack connect binds a channel and sets ambient mode and channel history on or off; a re-connect changes only the modes it names, and the channel listing shows each binding's state of both.
+  `channel slack-dm status|connect|disconnect` is the DM Bridge ([channels](channels.md)): `status` is read-only, sending nothing and binding nothing, and reports whether the owner's Slack account is linked, pairable by verified email, off, or unavailable with the reason; `connect <agent> [--purpose <text>]` binds that Agent to the owner's own 1:1 DM with the bot, as the DM's default only while it has none, and posts one hello naming what the Agent sends and how to undo it; `disconnect <agent>` releases the binding, the threads its sessions owned there, and only an `email` pairing.
   An ambient or channel history connect against a server that doesn't understand it fails loud rather than silently landing without it.
   Telegram binds in-chat (`/bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).
@@ -148,6 +149,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-pool).
 - **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
+- **`onboarding`** — the person's onboarding state, which the assistant itself reports: `first-result <schedule|artifact|knowledgeBase> --ref <what it is>` records the first result once, owned by [assistant.md](assistant.md#the-first-result).
 
 ## Shared conventions
 
@@ -206,6 +208,14 @@ The agent never sees the web UI's warning that a connection is shared with an Ag
 The advisory has the agent check who can steer an Agent before it binds a chat or grants a connection or satellite, choose a connection with an identity of its own over one that acts as the user when others steer the Agent, and tell the user what each change shares.
 The CLI gives the web UI's warning itself as well: a command that binds a shared chat, or grants a connection or satellite to an Agent that editors or shared chats steer, names on stderr who can now use what, with the UI's rule for which chats are shared and model providers left out as there.
 It warns and never asks, since an agent usually drives it, and a read it cannot make says so in a note instead of leaving the warning out unseen.
+
+A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
+Every agent image builds the CLI of its commit and puts `dam` on the PATH, with no configuration of its own.
+The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
+The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
+That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).
+Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — send their credential in a WebSocket's query string rather than in the header the Connection injects, so they are the person's own and fail from inside an Agent; the in-agent skill says so rather than leaving the Agent to guess.
+Version skew is accepted, as for the served skill: an image and a server come from the same build, and the CLI has to work against a newer server anyway.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
 A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.

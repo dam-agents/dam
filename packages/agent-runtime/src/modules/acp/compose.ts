@@ -64,6 +64,8 @@ import {
   type HarnessWork,
 } from "./services/harness-work.js";
 import type { KeepPolicy } from "../processes/index.js";
+import type { ModelCatalog } from "../model-catalog/index.js";
+import { automaticModelOf, modelUsableOn } from "./domain/catalog-model.js";
 import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
@@ -120,6 +122,7 @@ export interface ComposeAcpOptions {
   onPrompt: () => void;
   beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   providerAliases: () => string[];
+  catalog: ModelCatalog;
   aliasOfConnection: (connectionId: string) => string | null;
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
@@ -397,6 +400,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
       ]);
     },
     modelRequired: opts.modelRequired,
+    modelUsable: (harness, model) =>
+      modelUsableOn(opts.catalog, harness, model, opts.providerAliases()),
+    automaticModel: (harness, preferAliases) =>
+      automaticModelOf(
+        opts.catalog,
+        harness,
+        preferAliases,
+        opts.providerAliases(),
+      ),
+    onCatalogChange: (listener) => opts.catalog.onChange(listener),
     envReady: () => opts.envReader.ready(),
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
@@ -552,9 +565,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
   });
   const triggerDriver = createTriggerSessionDriver({
     acpRuntime: runtime,
-    modelRequired: (harness) =>
-      opts.modelRequired(harness ?? opts.defaultHarness),
     modelMissing: (sessionId) => runtime.modelMissing(sessionId),
+    modelReady: (sessionId) => runtime.modelReady(sessionId),
+    log: opts.log,
   });
   reportTurn = createOnceReporter({
     driver: triggerDriver,

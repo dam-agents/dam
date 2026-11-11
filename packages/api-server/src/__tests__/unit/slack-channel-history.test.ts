@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import type { SlackMessage } from "../../modules/channels/infrastructure/slack-gateway.js";
-import { parseMentionCommand } from "../../modules/channels/infrastructure/slack-mention-commands.js";
+import { mentionedCommand } from "../../modules/channels/infrastructure/slack-mention-commands.js";
 import {
   SLACK_HARNESS_OWNER,
   slackWorkerHarness,
@@ -433,11 +433,10 @@ describe("/dam history", () => {
   });
 
   /**
-   * TEST_SCENARIO: "history" is an everyday word, so "@bot history?" must
-   * still reach the Agent as a question; only a switch with on or off is
-   * taken as the command.
+   * TEST_SCENARIO: "history" is an everyday word, so "@bot history?" gets no
+   * slash-command tip; only a switch with on or off reads as the command.
    */
-  it("runs as a mention only with on or off, so a bare history question still reaches the agent", async () => {
+  it("reads a mention as the history command only with on or off", async () => {
     const roster = [
       {
         teamId: "",
@@ -450,19 +449,13 @@ describe("/dam history", () => {
       },
     ];
     const parse = (text: string) =>
-      parseMentionCommand(text, roster, async () => []);
+      mentionedCommand(text, roster, async () => []);
 
     expect(await parse("<@U0BOT> history")).toBeNull();
     expect(await parse("<@U0BOT> history?")).toBeNull();
     expect(await parse("<@U0BOT> history of the release")).toBeNull();
-    expect(await parse("<@U0BOT> history on")).toEqual({
-      kind: "run",
-      text: "history on",
-    });
-    expect(await parse("<@U0BOT> history Helper off")).toEqual({
-      kind: "run",
-      text: "history Helper off",
-    });
+    expect(await parse("<@U0BOT> history on")).toBe("history");
+    expect(await parse("<@U0BOT> history Helper off")).toBe("history");
   });
 
   it("refuses a linked person who neither connected the agent nor owns it", async () => {

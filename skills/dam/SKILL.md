@@ -299,8 +299,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 
-When a run fails because the session has no model, run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
-When it lists none, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
+A run never fails for lack of a saved model: with none saved, or one its provider no longer serves, it takes a model from the agent's providers.
+When a run fails because the agent has no model provider that serves it, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Name and avatar
 
@@ -433,10 +433,16 @@ Show the user what the request is and act only on their answer (hard rule 4).
 dam channel available
 dam channel list my-agent
 dam channel slack connect my-agent --channel-id C0123ABCD
+dam channel slack-dm status
+dam channel slack-dm connect my-agent --purpose "your Friday draft"
+dam channel slack-dm disconnect my-agent
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
 Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
+
+`dam channel slack-dm` is the DM Bridge: `status` reports whether the user's Slack account can be paired, `connect` binds the agent to the user's own direct message with the bot, and `disconnect` releases it.
+It works only where the deployment trusts the Slack workspace for email pairing and the user's email is verified there; `status` says why when it cannot.
 
 ### Skills on DAM agents
 

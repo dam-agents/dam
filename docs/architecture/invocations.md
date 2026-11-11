@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -81,6 +81,18 @@ An image target declares nothing, so nothing is narrowed.
 **Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once, at launch, in what the target inherits: `parent` gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none`, the default, leaves it only its provider, and is the only choice for a target whose egress is open.
 Network reach needs no grant of its own: by default a target has no egress identity and runs under its Driver's rules, unless the spawn gives it egress of its own, open or scoped ([detached egress](security-and-credentials.md)), though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 An *open* child follows only the rules its Driver sets and is denied anything else without a prompt, except that a wildcard allow rule (`*`, `*.example.com`) waits for the owner's approval.
+**A child never reaches more than its Driver unless the owner agreed.** An allow rule the Driver sets on an open child, at launch or when it replaces the child's rules, waits for the owner's approval like a wildcard rule when it lets through a request (a host, port, method and path) that the Driver's own rules (as they are at that moment) do not allow, compared as the gate reads them: the most specific host pattern decides, and a Driver limited to one method or path of a host gives its child no more of that host.
+A launch and an update name the rules that wait, each with its request id, to the Driver: in the tool's answer, and in the SDK's answer and log.
+A one-off sub-agent does not start its work while a rule set at its launch waits: its task is held until the owner has answered every one, it shows as waiting for the owner, and a wait nobody answers ends at the spawn's deadline with that reason.
+A kept sub-agent or an Environment keeps working, and a request that a waiting rule would allow is held at the gate until the owner answers, then passes or is refused with the reason.
+The owner's answers are kept on the sub-agent's invocation and returned with its result, so its Driver can tell a declined host from a network fault.
+What the owner approves is that rule, its method and path included: a Driver that later asks for another method or path on the same host asks again, unless the owner approved the whole host.
+A block the owner set on the child stays the owner's: replacing the child's rules never removes it, and a Driver's allow the gate would rank before it is not set, and named back to the Driver as blocked.
+Replacing the child's rules takes back only the Driver's own rules and the owner's approvals of what the Driver asked, which stay the owner's rules for as long as the Driver names them; the platform's own rule and a rule the owner wrote by hand on the child stay.
+The owner agrees once, with a switch on the Driver's network access page, off by default and offered with the Environments feature, "sub-agents and Environments may have network access of their own".
+Approving one such request writes that one rule and leaves the switch as it is; the owner can instead approve it for all of the Driver's sub-agents and Environments, which turns the switch on.
+Turning the switch on, either way, also writes every rule that waits for it under that Agent, as its Driver's own.
+Only the switch of the root Agent of a launch chain counts, so a child never gives its own children more than the owner allowed at the root, and a wildcard rule still waits for the owner each time.
 A *scoped* child starts with a copy of its parent's rules for the hosts named; anything else waits for the user's approval, shown on the parent, which widens the child alone.
 
 **Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
@@ -227,13 +239,15 @@ Scripts stay the path for orchestration logic — loops, scoring one result with
 The bound sits under Node's 300-second request timeout, which the harness server does not override, as the [satellite](satellites.md) wait does; no harness's own tool timeout is raised.
 A harness's MCP client often gives up sooner, after a minute, so while a call waits it sends a progress message every 20 seconds to a client that asked for progress, which restarts that client's own timeout.
 The mesh also cuts open calls: every Agent created or removed reloads the proxy in front of the platform, which closes the calls open before it about 45 seconds later.
-A cut call collects nothing, so the agent, told to call again after a connection error, gets the result from its next call, or the sweep below delivers it as a turn.
-The Driver keeps the ids; the platform tracks nothing per call, a finished id asked again answers again, and an id that is not one of the caller's own Invocations answers as unknown.
+A cut call collects nothing and holds its ids for a minute, so the agent, told to call again after a connection error, gets the result from its next call; past that minute the sweep below delivers it as a turn.
+The Driver keeps the ids; the platform tracks nothing per call, a finished id a wait returned answers again when asked again, and an id that is not one of the caller's own Invocations answers as unknown.
 
 **An outcome nobody waited for is delivered as a turn.** An agent that spawned through the tool and ended its turn, or stopped calling await_subagents, is told when each Invocation ends: a short cluster-wide sweep leases such outcomes for one tick, writes one sub-agent-outcome turn per Driver, carrying what await_subagents would have returned, marks them delivered only once the turn is written, and wakes the Driver if it hibernated ([runtime-delivery](runtime-delivery.md)).
 A lease the server died holding expires and the next tick claims the outcome again, so none is lost.
 The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
-A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
+A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing and holds its ids for that minute too.
+An outcome the sweep holds, or wrote whole into a turn, stays the turn's: a later await_subagents takes only what no turn has, in one write, and names the rest as delivered as a turn without the result, so a call the mesh cut does not hand the agent one outcome twice.
+An outcome its turn carried trimmed stays readable in full through await_subagents, as the turn says.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
 A stop its Driver asked for owes no turn, and neither does a run the stop took down below its target, so no stopped child wakes its own Driver; a target the owner stopped still reaches its Driver as a turn.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.

@@ -14,6 +14,8 @@ export {
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationStartAdapter,
+  createInvocationEgressHoldAdapter,
+  recordEgressAnswerAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
   createInvocationCancelOutcome,

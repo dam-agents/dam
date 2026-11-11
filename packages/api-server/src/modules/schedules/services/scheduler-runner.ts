@@ -27,19 +27,12 @@ import {
   isNoDefaultModelError,
   type FirePair,
   type RunBoundary,
+  type SessionChoicesValidator,
 } from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
 const TRIGGER_TTL_SECONDS = 3600;
-
-/** UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run on its agent fails the same way every fire, so the attempt is final rather than retried like a transient refusal. */
-class ProfileRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ProfileRefusedError";
-  }
-}
 
 export type ActivityStamp = AgentActivityStamp;
 
@@ -79,16 +72,9 @@ export interface SchedulerRunner {
 
 export interface SchedulerRunnerDeps {
   firePair?: FirePair;
-  /* UNIT_BOUNDARY_DESCRIPTION: a fire is a run, so its payload carries the settings the one rule derives against the pair it resolved, native subagent keys included, when the schedule holds none of its own (D193B). */
+  /* UNIT_BOUNDARY_DESCRIPTION: a fire is a run, so its payload carries the settings the one rule derives against the pair it resolved, native subagent keys included, when the schedule holds none of its own. */
   boundary?: RunBoundary;
-  validateSessionChoices?: (
-    agentId: string,
-    choices: {
-      harness?: string;
-      model?: string;
-      settings?: Record<string, string>;
-    },
-  ) => Promise<string | undefined>;
+  validateSessionChoices?: SessionChoicesValidator;
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
@@ -129,6 +115,11 @@ const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   declined: "declined",
   failed: "precheck-failed",
 };
+
+/* UNIT_BOUNDARY_DESCRIPTION: a refusal that a retry cannot change ends the fire early; a model still being granted to the Agent is not one of those, so the attempt is retried until it lands. */
+function noModelForGood(err: unknown): boolean {
+  return isNoDefaultModelError(err) && !err.pending;
+}
 
 export function createSchedulerRunner(
   deps: SchedulerRunnerDeps,
@@ -223,10 +214,6 @@ export function createSchedulerRunner(
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
-    if (sched.profileIssue !== undefined)
-      throw new ProfileRefusedError(
-        `this schedule's profile cannot run: ${sched.profileIssue}`,
-      );
     if (!continues && opts.wakeFirst) {
       const stamp = await deps.ensureDefault(sched.agentId);
       if (stamp) earlyWake.set(sched, stamp);
@@ -247,7 +234,7 @@ export function createSchedulerRunner(
         message:
           "no model provider granted to this agent can run its harness; grant one to run this schedule",
       });
-    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them, the native subagent keys derived against the pair the fire runs on rather than against a default it may not; a schedule holding none follows its default, whose settings are derived here too (D193B). */
+    /* UNIT_BOUNDARY_DESCRIPTION: both slots reach the run, as a chat start sends them, the native subagent keys derived against the pair the fire runs on rather than against a default it may not; a schedule holding none follows its default, whose settings are derived here too. */
     const slotsSettings =
       sched.spec.settings || sched.subagentSettings
         ? { ...sched.spec.settings, ...sched.subagentSettings }
@@ -265,13 +252,15 @@ export function createSchedulerRunner(
     );
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
-      ...(model && { model }),
+      ...(!pair && model && { model }),
       ...(settings && { settings }),
     };
+    /* UNIT_BOUNDARY_DESCRIPTION: checked at save for what the person typed, and at a fire for what the run takes: the pair a fire resolved decides its own model, so a saved one its provider no longer serves is never a refusal. */
     if (!continues && Object.keys(choices).length > 0) {
       const refusal = await deps.validateSessionChoices?.(
         sched.agentId,
         choices,
+        pair ?? undefined,
       );
       if (refusal)
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
@@ -284,7 +273,7 @@ export function createSchedulerRunner(
       else delete payload.model;
     }
     if (settings) payload.settings = settings;
-    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names no choices of its own follows its default, and says so even though its payload carries the settings settled from that default (D193B). */
+    /* UNIT_BOUNDARY_DESCRIPTION: a schedule that names no choices of its own follows its default, and says so even though its payload carries the settings settled from that default. */
     if (pair && !namesOwnChoices) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
@@ -447,10 +436,7 @@ export function createSchedulerRunner(
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        const final =
-          lastAttempt ||
-          isNoDefaultModelError(err) ||
-          err instanceof ProfileRefusedError;
+        const final = lastAttempt || noModelForGood(err);
         if (final) {
           await deps.repo
             .writeStatus(sched.id, {
@@ -545,10 +531,7 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const final =
-        lastAttempt ||
-        isNoDefaultModelError(err) ||
-        err instanceof ProfileRefusedError;
+      const final = lastAttempt || noModelForGood(err);
       const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
         await deps.repo
@@ -645,8 +628,10 @@ export function createSchedulerRunner(
         log(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
+        /* UNIT_BOUNDARY_DESCRIPTION: a provider still on its way is under way rather than missing, so Run Now says it is still setting up and leaves the schedule's record alone, as it does while a moved Agent's default is converted. */
+        if (isNoDefaultModelError(err) && err.pending) return "default-pending";
         await emitFired(sched, "failure");
-        if (isNoDefaultModelError(err) || err instanceof ProfileRefusedError) {
+        if (isNoDefaultModelError(err)) {
           await deps.repo
             .writeStatus(scheduleId, {
               lastFiredAt: now(),

@@ -9,7 +9,7 @@ The harness ships in the default image every harness Template boots, built by `/
 
 | Component          | Source                                                        | Purpose                                                                                                                                                                                                              |
 | ------------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness            | `@ibm/bob` 2.0.9 (npm, as a mise `npm:` tool)                 | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
+| Harness            | `@ibm/bob` 2.1.0 (npm, as a mise `npm:` tool)                 | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)             | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
 | Session ref        | [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs)   | Preloaded into `bob acp` only: hides the file's platform MCP entry from Bob, so the per-session entry carrying the session ref is the one Bob uses (see [Session ref](#session-ref))                                 |
 | MCP startup        | [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs) | Preloaded into `bob acp` only: starts the servers of `mcp.json` in the background, so one that never gets ready cannot hold every chat session back (see [MCP startup](#mcp-startup))                                |
@@ -61,13 +61,13 @@ One visible side effect: Bob's own `read_file` tool, in a chat session, shows `m
 The preload takes its own `--import` out of `NODE_OPTIONS` only once the process reads the file, so a parent that merely starts the real Bob still hands it down, and it writes one line to stderr the first time it reads the file and finds nothing to hide, since the only other symptom would be anonymous platform calls.
 The Bob preloads share [`bob-preload-lib.mjs`](rootfs/usr/local/lib/bob-preload-lib.mjs): the path an fs call names, the wrapping of renames and copies, and the `NODE_OPTIONS` cleanup.
 
-The preload is written against Bob 2.0.9, which reads and writes the file through `node:fs` by that path.
+The preload is written against Bob 2.1.0, which reads and writes the file through `node:fs` by that path.
 `mise run //packages/agents:check:bob-mcp-file` fails when the image pins another Bob than the preload names, so a bump runs `mise run //packages/agents:test:bob-session-ref` with `BOB_CLI` naming the new Bob: its control scenario fails when Bob starts preferring a session's own entry, which is the moment to delete the preload, its line in `harness-chat`, and these tests; its other scenarios fail when Bob stops reading the file the way the preload expects.
 `mise run //packages/agents:test:bob-mcp-file` checks the preload itself with a fake Bob and runs in CI.
 
 ### MCP startup
 
-`bob acp` builds each session's harness as a non-interactive one, and Bob 2.0.9 ties the MCP startup mode to that flag.
+`bob acp` builds each session's harness as a non-interactive one, and Bob 2.1.0 ties the MCP startup mode to that flag.
 Left alone, a `session/new`, `session/load` or `session/resume` answers only after every server of `mcp.json` finished its first connect.
 A stdio server gets no timeout of its own: the per-server `timeout` reaches HTTP servers only, so one that never answers `initialize` holds each session for the MCP SDK's 60 s request timeout.
 Every new chat then waits a minute for its first answer, and a reopen, which also spawns Bob, ran past agent-runtime's load budget before Bob's manifest raised it, so a single broken entry, such as an `npx` server an agent added for itself, stopped every chat on the agent.
@@ -86,8 +86,9 @@ Its control scenario fails when Bob starts the servers in the background on its 
 
 Bob 2.0.6 compacts its context automatically right after a batch of tool calls, when the context passes its threshold.
 That is the steer point, where the agent-runtime cancels Bob's turn to give it a waiting message ([interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery)).
-A cancel during that compaction makes Bob replace the whole history with an empty summary, and a person's Stop at that moment did the same.
-The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that was cancelled or produced an empty summary leaves the history as it was.
+A cancel during that compaction made Bob replace the whole history with an empty summary, and a person's Stop at that moment did the same.
+Bob 2.1.0 keeps the history when the compaction was cancelled, but it still starts a compaction in a loop already cancelled and still replaces the history with an empty summary.
+The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that produced an empty summary leaves the history as it was.
 Drop them once a Bob release does both on its own.
 
 ### Send now and a running command
@@ -139,7 +140,34 @@ A prompt per `ls` is worse than no prompt at all, which is why the default stand
 Two things to know before switching: an unattended session has nobody to answer, so a request expires against agent-runtime's TTL and the tool call aborts; and one "always allow" on `execute_command` silences commands for the rest of that session anyway.
 Per-session granularity would have to come from Bob — approvals wired to its modes, or `session/set_config_option` registered in its ACP host.
 
-Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate ahead of any approval decision (the settings bootstrap opens it, or Bob would refuse every tool touching `$HOME` — skills, rules), `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
+Guardrails that stay active: `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
+
+### Outside the work directory
+
+Bob's workspace is the session's `cwd`, the work directory, while the agent's own files (instructions, kit docs, memory) live in `$HOME`.
+Bob gates a file tool call outside the workspace twice.
+`approval.outsideWorkspaceAllowed` decides whether it may run at all; the settings bootstrap sets it, or Bob would refuse every file tool that touches `$HOME`.
+A call it lets through is still protected: Bob asks about it even under `--auto-approve`, with no "always allow", unless the tool's permission group has `enableOutsideWorkspace: true` in `approval.permissionOptions`.
+A shell command that names a path outside the workspace is not protected.
+
+On auto nobody may be there to answer, so a protected call waits until its approval expires, and a scheduled session loses every read of its own notes.
+So both harness scripts preload [`bob-outside-workspace.mjs`](rootfs/usr/local/lib/bob-outside-workspace.mjs) into Bob, which opens groups in what Bob reads of its settings file:
+
+| Groups                                  | Auto-approve | Ask       |
+| --------------------------------------- | ------------ | --------- |
+| `read`, `execute`                       | open         | open      |
+| `edit`, `browser`, `mcp` and the others | open         | protected |
+
+On ask the agent's own files read like the work directory, and a file write outside it still asks every time.
+The owner's settings file can open more: a group with any entry marked `enableOutsideWorkspace: true` is open on both postures.
+It cannot close a group the posture opens, because on auto that brings the expiring approvals back; Approvals on ask is the way to make Bob ask.
+Writes to `~/.bob` and commands Bob's own safety check flags stay protected on both postures.
+
+The posture never reaches the file.
+In what Bob writes back, to the file or to its `settings.json.bak` backup, each group whose value is still the one the preload laid over gets the file's own entries back, or none, while every other change Bob saves, a group a person changes in the TUI included, lands as written.
+A `bob` started by hand, over SSH for example, runs without the preload and reads the file as it is.
+The preload comes after [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs) in `harness-chat`, so it works on the path Bob names whether or not the process has a settings copy of its own.
+`mise run //packages/agents:test:bob-outside-workspace` checks the posture, the write-back and both harness scripts; `mise run //packages/agents:check:bob-outside-workspace` fails when the image pins another Bob than the preload names, so a bump checks the protected rule and the group list again.
 
 ## Configuration
 

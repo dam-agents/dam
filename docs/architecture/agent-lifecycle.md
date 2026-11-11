@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -204,6 +204,7 @@ It runs even when the default is never-hibernate, for the Agents that opt in, an
 It skips any Agent already at rest — observed down *and* hibernation published.
 It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
 That check and the stop are taken together under the owner's lock, the one a roll start takes, so a roll that begins while the machine is being probed still sees it left up.
+A sweepable Agent parked for room is never hibernated either: it is an [Invocation](invocations.md) target that has not started, so both the idle checker and its reconcile treat it as one that should run until a stop or its Invocation's deadline, and the Agent Sweep cannot delete it before then.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to bring it up, so bringing it up and taking it down can never disagree.

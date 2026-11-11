@@ -45,6 +45,7 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
+    adoptDamKey: async () => {},
     mergeInputs: async (id, inputs) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });
@@ -131,6 +132,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: OWNER,

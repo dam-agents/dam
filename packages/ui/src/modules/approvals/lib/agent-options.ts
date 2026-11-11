@@ -10,6 +10,7 @@ const OPTION_KIND_OF: Record<ApprovalActionId, AcpPermissionOptionKind> = {
   "allow-once": "allow_once",
   "allow-permanent": "allow_always",
   "allow-host": "allow_always",
+  "allow-children": "allow_always",
   dismiss: "reject_once",
   "deny-forever": "reject_always",
 };

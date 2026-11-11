@@ -13,6 +13,7 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
@@ -84,6 +85,7 @@ function harness(opts: {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub) => opts.termsAccepted?.(sub) ?? true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

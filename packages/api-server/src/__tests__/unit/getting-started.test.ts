@@ -20,7 +20,10 @@ import type { Checklist } from "../../modules/getting-started/domain/unlocks.js"
 import type { GettingStartedRepository } from "../../modules/getting-started/infrastructure/getting-started-repository.js";
 import { startUnlockAvatarsSaga } from "../../modules/getting-started/sagas/unlock-avatars.js";
 import { createEnrollment } from "../../modules/getting-started/services/enrollment.js";
-import { recordProvisionedAgent } from "../../modules/getting-started/services/first-agent.js";
+import {
+  recordProvisionedAgent,
+  recordTaskSeenIn,
+} from "../../modules/getting-started/services/first-agent.js";
 import { createGettingStartedService } from "../../modules/getting-started/services/getting-started-service.js";
 import { createUnlockRecorder } from "../../modules/getting-started/services/unlock-recorder.js";
 
@@ -64,6 +67,40 @@ function memoryRepo(): GettingStartedRepository & {
         unlocks: [...c.unlocks, unlock],
       });
       return unlock;
+    },
+    /* UNIT_BOUNDARY_DESCRIPTION: the transaction-scoped variants the assistant's first result uses — the memory store has one transaction, so they run the same writes the standalone ones do. */
+    async unlockIn(_tx, owner, task, choose, opts) {
+      // UNIT_BOUNDARY_DESCRIPTION: as the store behaves — an unlock for a checklist that does not exist is refused by the foreign key, not conjured into one.
+      const c = checklists.get(owner);
+      if (c === undefined) return null;
+      if (c.unlocks.some((u) => u.task === task)) return null;
+      const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
+      if (!chosen) return null;
+      const unlock = {
+        task,
+        character: chosen.character,
+        unlockedAt: tick(),
+        seenAt: opts?.seen ? tick() : null,
+        pickedAt: chosen.picked ? tick() : null,
+      };
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: [...c.unlocks, unlock],
+      });
+      return unlock;
+    },
+    async markSeenIn(_tx, owner, task) {
+      const c = checklists.get(owner);
+      if (c === undefined) return;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.task === task ? { ...u, seenAt: u.seenAt ?? tick() } : u,
+        ),
+      });
+    },
+    async resetIn(_tx, owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
     },
     async markSeen(owner, task) {
       const c = checklists.get(owner)!;
@@ -203,10 +240,10 @@ describe("enrollment", () => {
 });
 
 describe("an Agent the platform made", () => {
-  /** TEST_SCENARIO: the assistant's create finishes the checklist's first task as done and seen, so the person meets a first-timer's checklist — one task of eight, with nothing to celebrate — rather than an empty one. */
-  it("finishes the first task as done and seen", async () => {
-    const { repo, recorder, service } = setup();
-    await recordProvisionedAgent({ recorder, repo }, "alice", {
+  /** TEST_SCENARIO: the assistant's create finishes the checklist's first task and leaves it unseen, so the person meets the avatar it unlocks in the assistant's chat — one task of eight, and one celebration held for the moment they land in it. */
+  it("finishes the first task, unseen, for the chat to celebrate", async () => {
+    const { recorder, service } = setup();
+    await recordProvisionedAgent({ recorder }, "alice", {
       agentId: "agent-a",
       character: "tower",
     });
@@ -215,12 +252,63 @@ describe("an Agent the platform made", () => {
       expect.objectContaining({
         task: "create-agent",
         character: "tower",
-        seen: true,
+        seen: false,
         fresh: false,
       }),
     ]);
     expect(progress.unlocks).toHaveLength(1);
     expect(GETTING_STARTED_TASKS).toHaveLength(8);
+  });
+});
+
+describe("a task the platform reports", () => {
+  /** TEST_SCENARIO: the assistant finished a schedule for the person and reports it; the task is recorded done and seen, so the checklist counts it rather than celebrating it — read back from the stored progress, not from the call. */
+  it("records a task the assistant did as done and seen", async () => {
+    const { repo, service } = setup();
+    // UNIT_BOUNDARY_DESCRIPTION: the checklist exists before a task lands on it, as provisioning enrols the person before the assistant is made.
+    await service("alice").progress();
+    await recordTaskSeenIn(
+      { repo, random: () => 0 },
+      null as never,
+      "alice",
+      "create-schedule",
+    );
+    const progress = await service("alice").progress();
+    expect(progress.unlocks).toEqual([
+      expect.objectContaining({
+        task: "create-schedule",
+        seen: true,
+      }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: the task was unlocked already — the person set a schedule themselves, so the domain event reached it first and left it unseen — and the report still makes it count, rather than being a no-op that never ticks. */
+  it("marks a task the event already unlocked as seen", async () => {
+    const { repo, service } = setup();
+    await service("alice").progress();
+    await repo.unlock("alice", "create-schedule", () => ({
+      character: "tower",
+      picked: false,
+    }));
+    const before = await service("alice").progress();
+    expect(before.unlocks).toEqual([
+      expect.objectContaining({ task: "create-schedule", seen: false }),
+    ]);
+
+    await recordTaskSeenIn(
+      { repo, random: () => 0 },
+      null as never,
+      "alice",
+      "create-schedule",
+    );
+    const after = await service("alice").progress();
+    expect(after.unlocks).toEqual([
+      expect.objectContaining({
+        task: "create-schedule",
+        character: "tower",
+        seen: true,
+      }),
+    ]);
   });
 });
 
@@ -448,9 +536,9 @@ describe("unlock avatars saga", () => {
     expect(after.unlocks.every((u) => !u.fresh)).toBe(true);
   });
 
-  /** TEST_SCENARIO: resetting locks every character and reopens the checklist, and a task done again unlocks again even on the replica that recorded it before. */
+  /** TEST_SCENARIO: resetting — through the assistant's onboarding reset, the one door left — locks every character and reopens the checklist, and a task done again unlocks again even on the replica that recorded it before. */
   it("locks everything on reset and unlocks a repeated task again", async () => {
-    const { service } = start();
+    const { repo, service } = start();
     const schedule = () =>
       emit({
         type: EventType.ScheduleCreated,
@@ -461,8 +549,14 @@ describe("unlock avatars saga", () => {
     schedule();
     await settle();
     await service("u1").setDismissed(true);
-    const reset = await service("u1").reset();
-    expect(reset).toEqual({ unlocks: [], dismissed: false });
+    await repo.reset("u1");
+    // UNIT_BOUNDARY_DESCRIPTION: the reset's own event is what tells this replica to forget the tasks it recorded.
+    emit({ type: EventType.GettingStartedReset, ownerSub: "u1" });
+    await settle();
+    expect(await service("u1").progress()).toEqual({
+      unlocks: [],
+      dismissed: false,
+    });
     schedule();
     await settle();
     expect((await service("u1").progress()).unlocks).toEqual([
