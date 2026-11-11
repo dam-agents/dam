@@ -56,6 +56,12 @@ export interface BuildResult {
   secrets: Map<string, Record<string, string>>;
 }
 
+const GITHUB_ENTERPRISE_TEMPLATE_IDS = new Set([
+  "github-enterprise",
+  "github-enterprise-pat",
+  "github-enterprise-app",
+]);
+
 export async function buildConnection(
   template: ConnectionTemplate,
   input: ConnectionCreateInput,
@@ -67,6 +73,25 @@ export async function buildConnection(
     throw new Error(
       `template ${template.id} expects authKind=${template.authKind}, got ${input.authKind}`,
     );
+  }
+
+  if (
+    GITHUB_ENTERPRISE_TEMPLATE_IDS.has(template.id) &&
+    "host" in input &&
+    input.host
+  ) {
+    const { host, port } = parseClusterEndpoint(input.host.toLowerCase());
+    if (!/^[a-z0-9.-]+$/.test(host) || !host.includes(".")) {
+      throw new Error(
+        `${input.host.trim()} is not a GitHub Enterprise hostname. Enter the host alone, e.g. github.example.com.`,
+      );
+    }
+    if (port && template.id !== "github-enterprise-pat") {
+      throw new Error(
+        `${host}:${port} names a port. A GitHub Enterprise sign-in or app installation reaches its host on port 443: enter the host alone.`,
+      );
+    }
+    input = { ...input, host: port ? `${host}:${port}` : host };
   }
 
   const inputHost = "host" in input ? input.host : undefined;
@@ -168,6 +193,16 @@ async function buildOAuthStatic(
   if (!clientId && template.hostApps && host) {
     throw new Error(
       `No GitHub app is registered for ${host}. Pick one of ${template.hostChoices?.join(", ") ?? "the listed hosts"}, or enter your own app's client ID.`,
+    );
+  }
+  if (
+    template.hostApps &&
+    host &&
+    !operatorApp.clientId &&
+    !input.clientSecret
+  ) {
+    throw new Error(
+      `${hostnameOf(host)} has no app the platform registered, so a sign-in there uses your own app: enter its client secret too.`,
     );
   }
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);

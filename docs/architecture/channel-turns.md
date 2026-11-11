@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-11-09
+Last verified: 2026-11-11
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -102,8 +102,9 @@ A few observations the diagram glosses over:
   A resume that fails (the home does not hold it, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
   A fresh session opens on the pair the channel's own profile resolves to ([harness configuration](harness-config.md)); a channel that names none, one written before profiles, follows the Agent's channel or chat default, and picking on the channel's row, in the chat's own picker, changes what its next fresh session runs on.
   The channel's subagent slot, a profile or values of its own, joins the primary as a chat default's does; an empty one lets the Agent pick.
-  A profile that cannot run on the Agent refuses the turn with its reason and a reply that names the profile and the row to change it on, never the Agent's default.
-  With no default model it runs on the [automatic model](harness-config.md#session-settings); with no model provider to run on, or a default on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the agent's Providers section, and when no granted provider fits, it fails rather than running elsewhere.
+  A profile that cannot run on the Agent leaves the turn on the Agent's channel default.
+  With no default model, or one whose provider is gone, it runs on the [automatic model](harness-config.md#session-settings).
+  An Agent holding no model provider is granted the deployment's shared CurveBender, and the reply says it is still setting up; without one the turn fails with the `no-default-model` reason and a reply naming its Providers section, and with no fitting provider it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
   A **resumed** thread keeps the values it already runs on, as a session that picked does (D94 A, D119): the channel's profile is applied when a session is created, so a profile edit reaches the next fresh thread and never a running one ([sessions](sessions.md#session-inside-the-machine)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
@@ -236,7 +237,7 @@ What the agent sees:
   `start_thread` posts too, and owns the thread ([slack-threads](slack-threads.md)).
   A post into a channel still counts as answering the newest turn in flight there, whichever thread that turn is in, so that turn is not nudged.
   Telegram has no thread to reply into, so there it is also how a turn is answered.
-  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; a post Slack makes by sharing its file, or a file sent alone, names no `ts`.
+  On Slack its result names the conversation and `ts` of the post, so the agent can later `reply` into the thread it started; for a post Slack makes by sharing its file, the `ts` is read back from the file.
   Where a target is ambiguous the worker refuses and names the candidates rather than picking one.
 - **The agent meets people as ids, and resolves them itself.** A messenger names a person only by their user id — in speaker labels, injected history, and mentions inside message text — so `describe_channel_users` turns ids into people, as far as the workspace discloses.
   An id means something only inside one workspace, so the lookup asks the workspace of the conversation it is named or called from, and an Agent in several workspaces that settles neither is refused rather than answered from a guess.
@@ -269,7 +270,7 @@ What the agent sees:
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `post` can.
-  Like `post`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a post Slack makes by sharing its file names no `ts`, since that share does not return one, and neither does a private reply to a whisper, which only its sender sees.
+  Like `post`, a reply's result names its conversation and `ts`, so the agent can `react` to it; a shared file's post names it as `post` does, and a private reply to a whisper, which only its sender sees, names none.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
   Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.

@@ -22,9 +22,11 @@ vi.mock("../../modules/egress-rules/api/queries.js", () => ({
   }),
   useCurrentPreset: () => ({ data: "none" }),
   usePlatformRule: () => ({ data: state.platform }),
+  useChildEgress: () => ({ data: { state: "unavailable" } }),
 }));
 vi.mock("../../modules/egress-rules/api/mutations.js", () => ({
   useApplyEgressPreset: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetChildEgress: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateEgressRule: () => ({ mutate: vi.fn(), isPending: false }),
   useRevokeEgressRule: () => ({ mutate: vi.fn(), isPending: false }),
   useRestorePlatformRule: () => ({

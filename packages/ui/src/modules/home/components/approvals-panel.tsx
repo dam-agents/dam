@@ -20,7 +20,12 @@ import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useOutageAlerts } from "../hooks/use-outage-alerts.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
-import { ALL_AGENTS_SUBJECT, countsAllAgents } from "../lib/approval-copy.js";
+import {
+  ALL_AGENTS_SUBJECT,
+  approvalSubjectId,
+  approvalSubjectName,
+  countsAllAgents,
+} from "../lib/approval-copy.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
@@ -142,14 +147,21 @@ function ApprovalsList({ view }: { view: ApprovalsView }) {
           {groups.map((group) => {
             const item = group[0]!;
             const allAgents = countsAllAgents(item.approval);
-            const agent = allAgents ? undefined : agentOf(item.agentId);
+            const subjectId = approvalSubjectId(item.approval);
+            const agent = allAgents ? undefined : agentOf(subjectId);
             return (
               <FeedApprovalCard
                 key={groupKeyOf(item)}
                 approval={item.approval}
                 ids={group.map((member) => member.approval.id)}
+                members={group.map((member) => member.approval)}
                 agentName={
-                  allAgents ? ALL_AGENTS_SUBJECT : (agent?.name ?? item.agentId)
+                  allAgents
+                    ? ALL_AGENTS_SUBJECT
+                    : (approvalSubjectName(
+                        item.approval,
+                        (id) => agentOf(id)?.name,
+                      ) ?? subjectId)
                 }
                 avatarName={agent?.name}
                 avatar={agent?.avatar}

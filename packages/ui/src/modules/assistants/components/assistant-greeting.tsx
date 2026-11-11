@@ -10,9 +10,10 @@ import type { GreetingCopy } from "../lib/greeting.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting an unused assistant opens its chat
- * with, shown where the transcript would start: its avatar and name, what it
- * asks of the owner, and the tasks it offers. A task goes into the composer for
- * the owner to send or edit, so nothing runs before they act.
+ * with, shown where the transcript would start: its avatar and name, what it is
+ * set up with, where the person changes that, and the five ideas it offers.
+ * An idea goes into the composer for the owner to send or edit, so nothing runs
+ * before they act.
  */
 export function AssistantGreeting({
   greeting,
@@ -36,22 +37,38 @@ export function AssistantGreeting({
         <AgentSpeaker agent={{ name: greeting.assistantName, avatar }} />
       </SpeakerRow>
       <div className="flex flex-col gap-4 text-sm text-foreground">
-        {greeting.paragraphs.map((paragraph) => (
-          <p key={paragraph}>{paragraph}</p>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {greeting.suggestions.map((suggestion) => (
+        <p>
+          {greeting.opening}
+          {greeting.provider ? ` ${greeting.provider}` : ""}{" "}
+          {greeting.settingsPrefix}{" "}
           <Button
-            key={suggestion}
+            variant="link"
+            size="inline"
+            onClick={onConfigure}
+            data-testid="assistant-greeting-settings"
+          >
+            {greeting.settingsLink}
+          </Button>
+          .
+        </p>
+        <p>{greeting.learn}</p>
+      </div>
+      <div className="flex flex-col items-start gap-2">
+        {greeting.ideas.map((idea) => (
+          <Button
+            key={idea.label}
             variant="outline"
             size="sm"
             onClick={() => {
-              setDraft(draftKey(agentId, sessionId), { text: suggestion });
+              setDraft(draftKey(agentId, sessionId), {
+                text: `${idea.label}: ${idea.text}`,
+              });
               onPicked();
             }}
+            className="h-10 max-w-full rounded-full px-5 whitespace-normal text-left"
           >
-            {suggestion}
+            <span className="shrink-0 font-semibold">{idea.label}:</span>{" "}
+            {idea.text}
           </Button>
         ))}
       </div>

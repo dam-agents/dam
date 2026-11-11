@@ -1,0 +1,1 @@
+ALTER TABLE "invocation_runs" ADD COLUMN "delivered_in_turn" boolean DEFAULT false NOT NULL;

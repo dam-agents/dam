@@ -1,10 +1,14 @@
 import { getUser } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
+import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAssistantOn, useAssistantState } from "../api/assistant-state.js";
 import {
   type GreetingCopy,
   greetingCopy,
   greetingShown,
+  isAssistantChat,
+  preferredProviderTemplate,
+  providerLineFor,
 } from "../lib/greeting.js";
 
 export type AssistantGreetingState =
@@ -14,6 +18,23 @@ export type AssistantGreetingState =
 
 const NONE: AssistantGreetingState = { kind: "none" };
 const LOADING: AssistantGreetingState = { kind: "loading" };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether this chat is the assistant's own, which does
+ * not stop being true when a turn runs or its first message is sent: the greeting
+ * goes then, but the unlock the platform made still plays here. It stands apart
+ * from the greeting because the chat view asks after the greeting only while the
+ * chat is idle.
+ */
+export function useAssistantChat(selectedAgent: string | null): boolean {
+  const assistantOn = useAssistantOn();
+  const listed = useAssistantState().data;
+  return isAssistantChat({
+    assistantOn,
+    assistantId: listed?.agentId ?? null,
+    selectedAgent,
+  });
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the greeting this chat opens with, or why it has
@@ -30,6 +51,7 @@ export function useAssistantGreeting(
 ): AssistantGreetingState {
   const assistantOn = useAssistantOn();
   const state = useAssistantState();
+  const granted = useAgentConnections(agentId);
   const listed = state.data;
   const shown = greetingShown({
     assistantOn,
@@ -46,6 +68,7 @@ export function useAssistantGreeting(
         firstName: typeof givenName === "string" ? givenName : null,
         assistantName: brand.assistantName,
         brandName: brand.name,
+        provider: providerLineFor(preferredProviderTemplate(granted.data)),
       }),
     };
   }

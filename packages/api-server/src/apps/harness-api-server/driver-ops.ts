@@ -17,6 +17,7 @@ import {
   type spawnInvocationRequestSchema,
   type spawnScriptInvocationRequestSchema,
   type TemplatesService,
+  type EgressWaiting,
 } from "api-server-api";
 import {
   AttenuationError,
@@ -51,7 +52,7 @@ export type ScriptSpawnRequest = z.infer<
 type SpawnTargetRequest = Omit<ScriptSpawnRequest, "script">;
 
 export type SpawnOutcome =
-  | { ok: true; id: string }
+  | { ok: true; id: string; egressWaiting: EgressWaiting[] }
   | {
       ok: false;
       kind: "invalid" | "forbidden" | "conflict" | "spend_limit_reached";
@@ -77,8 +78,12 @@ export interface DriverOpsDeps {
       agentId: string,
       decidedBy: string,
       rules: readonly ChildEgressRule[],
-    ): Promise<{ waiting: { host: string; id: string }[] }>;
+    ): Promise<{
+      waiting: { host: string; id: string }[];
+      blocked: { host: string }[];
+    }>;
   };
+  childEgressWaiting?: (childId: string) => Promise<EgressWaiting[]>;
   inheritanceOf?: (agentId: string) => Promise<{
     parentAgentId: string;
     egressFrom: "parent" | "open" | "scoped";
@@ -307,7 +312,20 @@ function driverOps(
     throw err;
   };
 
+  const egressWaiting = async (childId: string): Promise<EgressWaiting[]> =>
+    (await deps.childEgressWaiting?.(childId)) ?? [];
+
+  const spawned = async (
+    id: string,
+  ): Promise<Extract<SpawnOutcome, { ok: true }>> => ({
+    ok: true,
+    id,
+    egressWaiting: await egressWaiting(id),
+  });
+
   return {
+    egressWaiting,
+
     async spawn(
       body: SpawnRequest,
       from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
@@ -339,7 +357,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -368,7 +386,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -400,7 +418,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -581,7 +599,11 @@ function driverOps(
       childId: string,
       rules: readonly ChildEgressRule[],
     ): Promise<
-      | { ok: true; waiting: { host: string; id: string }[] }
+      | {
+          ok: true;
+          waiting: { host: string; id: string }[];
+          blocked: { host: string }[];
+        }
       | { ok: false; message: string }
     > {
       const inherited = await deps.inheritanceOf?.(childId);
@@ -595,12 +617,12 @@ function driverOps(
               ? `${childId} has scoped egress, which only the user widens`
               : `${childId} follows your egress; launch it with egress "open" to set its own`,
         };
-      const { waiting } = await deps.childEgress!.setOpenRules(
+      const { waiting, blocked } = await deps.childEgress!.setOpenRules(
         childId,
         driverId,
         rules,
       );
-      return { ok: true, waiting };
+      return { ok: true, waiting, blocked };
     },
 
     async connections() {

@@ -20,7 +20,6 @@ import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
-  ARTIFACT_INTERNAL_LINK_PREFIX,
   ChannelType,
   onceState,
   precheckSchema,
@@ -65,7 +64,6 @@ import {
   type TextContent,
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
-import { withChannelArtifactLinks } from "../../modules/artifact-library/channel-links.js";
 import {
   buildChannelCard,
   CARD_LIMITS,
@@ -344,61 +342,17 @@ export function createMcpSession(
     })
     .optional();
 
-  const channelLinks = (text: string, surface: string) =>
-    withChannelArtifactLinks(text, surface, (id) =>
-      deps.artifactLibrary.get(id),
-    );
-
   const cardInput = cardTreeSchema
     .optional()
     .describe(
       'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
     );
 
-  async function linkedValues(
-    value: unknown,
-    surface: string,
-    lookup: (id: string) => ReturnType<typeof deps.artifactLibrary.get>,
-  ): Promise<{ value: unknown } | { error: string }> {
-    if (typeof value === "string") {
-      if (!value.includes(ARTIFACT_INTERNAL_LINK_PREFIX)) return { value };
-      const linked = await withChannelArtifactLinks(value, surface, lookup);
-      return "error" in linked ? linked : { value: linked.text };
-    }
-    if (value === null || typeof value !== "object") return { value };
-    const entries = Array.isArray(value)
-      ? value.map((item, index) => [String(index), item] as const)
-      : Object.entries(value);
-    const linked: [string, unknown][] = [];
-    for (const [key, item] of entries) {
-      const result = await linkedValues(item, surface, lookup);
-      if ("error" in result) return result;
-      linked.push([key, result.value]);
-    }
-    return {
-      value: Array.isArray(value)
-        ? linked.map(([, item]) => item)
-        : Object.fromEntries(linked),
-    };
-  }
-
   const cardOf = async (
     tree: Record<string, unknown> | undefined,
-    surface: string,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
     if (!tree) return {};
-    const artifacts = new Map<
-      string,
-      ReturnType<typeof deps.artifactLibrary.get>
-    >();
-    const lookup = (id: string) => {
-      const known = artifacts.get(id) ?? deps.artifactLibrary.get(id);
-      artifacts.set(id, known);
-      return known;
-    };
-    const linked = await linkedValues(tree, surface, lookup);
-    if ("error" in linked) return linked;
-    const built = buildChannelCard(linked.value as Record<string, unknown>);
+    const built = buildChannelCard(tree);
     if ("issues" in built)
       return {
         error: `The card was not sent: ${built.issues.join("; ")}. Fix the card — describe_card_components lists the components, their props and the limits — or send the message as text.`,
@@ -532,18 +486,14 @@ export function createMcpSession(
 
   const postMessage = async ({
     channel,
-    text: written,
+    text,
     chatId,
     attachment,
     card: tree,
     unfurlLinks,
     unfurlMedia,
   }: z.infer<z.ZodObject<typeof postInput>>) => {
-    const surface = channel === ChannelType.Slack ? "Slack" : "Telegram";
-    const linked = await channelLinks(written, surface);
-    if ("error" in linked) return errorResult(linked.error);
-    const { text } = linked;
-    const built = await cardOf(tree, surface);
+    const built = await cardOf(tree);
     if ("error" in built) return errorResult(built.error);
     const { card } = built;
     const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -555,6 +505,7 @@ export function createMcpSession(
       channel,
       text,
       {
+        byAgent: true,
         ...(chatId ? { conversationId: chatId } : {}),
         ...(resolved ? { attachment: resolved } : {}),
         ...(card ? { card } : {}),
@@ -599,7 +550,7 @@ export function createMcpSession(
   };
 
   const POST_DESCRIPTION =
-    "Post a NEW top-level message to a connected channel (slack or telegram) — a one-way announcement or cross-post. On Slack, replies under the post are not followed: they do not come back to this session, so to ask something and get the answer here use start_thread instead, and to answer a message you are handling use reply. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on; the chat's next message goes to that chat's own session, which is this session only when it is that chat's session. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, the result names the posted message's chatId and ts, which react takes as chatId and messageTs. A message with an attachment may come back without a ts, when Slack posts it as a file share. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.";
+    "Post a NEW top-level message to a connected channel (slack or telegram) — a one-way announcement or cross-post. On Slack, replies under the post are not followed: they do not come back to this session, so to ask something and get the answer here use start_thread instead, and to answer a message you are handling use reply. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on; the chat's next message goes to that chat's own session, which is this session only when it is that chat's session. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. The result names the posted message's chatId and ts: edit_post takes them to change the post later, also to replace its file, and on Slack react takes them as chatId and messageTs. A message with an attachment comes back without a ts on Telegram, and rarely on Slack, when Slack is slow to record the file's message. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.";
 
   server.tool("post", POST_DESCRIPTION, postInput, postMessage);
 
@@ -932,7 +883,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment may come back without one, when Slack posts it as a file share. It also answers in a thread you started with start_thread: pass that thread's chatId and threadTs. Use post instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. The result names the reply's chatId and ts: pass them to react as chatId and messageTs, or to edit_post to change the reply later. A private reply to a whisper names no ts, since only its sender sees it, and a reply with an attachment rarely comes back without one, when Slack is slow to record the file's message. It also answers in a thread you started with start_thread: pass that thread's chatId and threadTs. Use post instead for a new top-level or cross-channel post.`,
     {
       text: z
         .string()
@@ -973,7 +924,7 @@ export function createMcpSession(
         ),
     },
     async ({
-      text: written,
+      text,
       attachment,
       card: tree,
       threadTs,
@@ -982,10 +933,7 @@ export function createMcpSession(
       unfurlLinks,
       unfurlMedia,
     }) => {
-      const linked = await channelLinks(written, "Slack");
-      if ("error" in linked) return errorResult(linked.error);
-      const { text } = linked;
-      const built = await cardOf(tree, "Slack");
+      const built = await cardOf(tree);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -1086,6 +1034,57 @@ export function createMcpSession(
       });
       if ("error" in result) return errorResult(result.error);
       return textResult("Reaction added");
+    },
+  );
+
+  server.tool(
+    "edit_post",
+    "Change a post you made earlier, in place: keep one post up to date while a long task runs, or fix a mistake in a post you already sent, instead of posting again. Pass the chatId and ts that reply, post or start_thread returned for the post (for a thread you started, its threadTs is the ts), and the whole new text and card: the post then shows exactly what you pass, so repeat what should stay. A post that carries a file keeps it unless you pass attachment: on Slack that file then replaces the post's file, for example an updated chart in place of the old one. You can change only your own posts, never another agent's or a person's, and not a private answer to a whisper. An edit notifies no one, so when people must see the final state, also reply. Edits are limited to a few a minute; one refused for coming too fast says how long to wait.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      chatId: z
+        .string()
+        .describe("The chatId the posting tool returned for the post."),
+      ts: z.string().describe("The ts the posting tool returned for the post."),
+      text: z
+        .string()
+        .describe(
+          "The whole new text of the post. On Slack, use standard Markdown, not mrkdwn. Leave it empty to show a card alone, or the file alone.",
+        ),
+      card: cardInput,
+      attachment: attachmentInput.describe(
+        "Slack only: a file that replaces the file the post carries, or adds one to a post without a file. Same shape as in post. Omit it to keep the post's file.",
+      ),
+    },
+    async ({ channel, chatId, ts, text, card: tree, attachment }) => {
+      const built = await cardOf(tree);
+      if ("error" in built) return errorResult(built.error);
+      const { card } = built;
+      const loaded = attachment ? await loadAttachment(attachment) : null;
+      if (loaded && "error" in loaded) return errorResult(loaded.error);
+      const result = await deps.channelManager.editPost(agentId, channel, {
+        conversationId: chatId,
+        messageId: ts,
+        text,
+        ...(card ? { card } : {}),
+        ...(loaded ? { attachment: loaded.resolved } : {}),
+      });
+      const failed = "error" in result;
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        ...channelAudit(channel),
+        result: failed ? "failure" : "success",
+        detail: {
+          action: "edit",
+          conversationId: chatId,
+          messageTs: ts,
+          textLength: text.length,
+          hasCard: card !== undefined,
+          ...(loaded ? { attachment: loaded.audit } : {}),
+          ...("error" in result ? { error: result.error } : {}),
+        },
+      });
+      if ("error" in result) return errorResult(result.error);
+      return textResult(`Post changed in chatId ${chatId}, ts ${ts}`);
     },
   );
 
@@ -1701,8 +1700,7 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
-    cardOf: (tree, channel) =>
-      cardOf(tree, channel === ChannelType.Slack ? "Slack" : "Telegram"),
+    cardOf,
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>
@@ -1864,7 +1862,10 @@ export function createMcpSession(
     registerEgressProposalTool(server, { proposals: deps.egressProposals });
 
   if (deps.environments)
-    registerEnvironmentTools(server, { environments: deps.environments });
+    registerEnvironmentTools(server, {
+      environments: deps.environments,
+      egressWaiting: (id) => deps.driverOps.egressWaiting(id),
+    });
 
   if (deps.satellites)
     registerSatelliteTools(server, {

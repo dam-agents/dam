@@ -90,15 +90,44 @@ export function forgetAssistantUsed(): void {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the record's answer is settled enough to say
+ * who the CurveBender notice belongs to, and which chat is the assistant's. Both
+ * halves of the answer move while a read is out: a person who has just turned the
+ * assistant on still has "no assistant" here, and one whose assistant was deleted
+ * and made again in another tab still has the old Agent's id — so nothing is
+ * decided while a read is in flight, and a failed read decides nothing either.
+ */
+export function assistantAudienceKnown(query: {
+  isSuccess: boolean;
+  isFetching: boolean;
+}): boolean {
+  return query.isSuccess && !query.isFetching;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: drops what this tab was told about the assistant, so
+ * the answer is read again from nothing rather than from a record that is being
+ * written right now: switching the assistant on makes one at that moment, and
+ * nothing may decide on the answer from before.
+ */
+export function forgetAssistantState(): void {
+  void queryClient.resetQueries({
+    queryKey: trpc.assistants.state.queryKey(),
+  });
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: What the server knows about the owner's assistant
- * without waking it — which Agent it is, and whether it has ever been used, as
- * the local marks above leave it — and the call that starts their onboarding
- * over. A person the assistant is off for is asked nothing at all.
+ * without waking it — which Agent it is, whether it has ever been used as the
+ * local marks above leave it, and when their onboarding was last reset.
+ * It is asked of everyone, not only of a person the feature is on for: the record
+ * is what says which Agent the assistant is, and a chat must know that to keep
+ * out of it even when the feature has been turned off. One read of a row the
+ * person either has or has not.
  */
 export function useAssistantState() {
   return useQuery({
     ...trpc.assistants.state.queryOptions(),
-    enabled: useAssistantOn(),
     select: assistantStateFor,
   });
 }

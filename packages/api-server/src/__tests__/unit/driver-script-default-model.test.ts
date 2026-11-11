@@ -77,7 +77,11 @@ describe("a driver script's spawn with no model", () => {
       request({ harnessConfig: { mode: "bypassPermissions" } }),
     );
 
-    expect(outcome).toEqual({ ok: true, id: "target-1" });
+    expect(outcome).toEqual({
+      ok: true,
+      id: "target-1",
+      egressWaiting: [],
+    });
     expect(asked).toEqual([["driver-1", "claude-code"]]);
     expect(spawned[0]?.harnessConfig).toEqual({
       model: DEFAULT,

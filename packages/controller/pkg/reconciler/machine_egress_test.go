@@ -86,8 +86,9 @@ func TestTransparentTLSFeedsTheEgressCheckedChainsOnlyForAMachine(t *testing.T) 
 
 // TEST_SCENARIO: a name no public resolver could answer does not exist, so a cluster inside the machine falls back to its own search list for `<service>.<namespace>.svc` instead of dialing the gateway; every name that could be public still resolves to the gateway. The patterns are read out of the Corefile as CoreDNS reads them, so a quoting slip that turns them into something else fails here.
 func TestTheMachineResolverDeniesNamesThatCannotBePublic(t *testing.T) {
+	corefile := machineDNSCorefile(bootstrapTestCfg)
 	var patterns []*regexp.Regexp
-	for _, line := range strings.Split(machineDNSCorefile, "\n") {
+	for _, line := range strings.Split(corefile, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[0] == "match" {
 			patterns = append(patterns, regexp.MustCompile(strings.Trim(fields[1], `"`)))
@@ -108,29 +109,26 @@ func TestTheMachineResolverDeniesNamesThatCannotBePublic(t *testing.T) {
 	for _, name := range []string{"github.com.", "api.anthropic.com.", "my-svc.com.", "svc.example.com.", "local.example.org.", "homexarpa.com.", "internal.company.io."} {
 		assert.False(t, denied(name), "%s must still resolve to the gateway", name)
 	}
-	assert.Contains(t, machineDNSCorefile, "rcode NXDOMAIN\n        fallthrough", "without fallthrough every other name fails instead of reaching the A template")
+	assert.Contains(t, corefile, "rcode NXDOMAIN\n        fallthrough", "without fallthrough every other name fails instead of reaching the A template")
 }
 
 // TEST_SCENARIO: the machine resolver is what closes DNS exfiltration. It must answer every A with the gateway's address from the controller, refuse every type that could carry an answer back, and hold no plugin that forwards, recurses or logs — so a name the agent looks up never leaves the gateway and is never written anywhere.
 func TestTheMachineResolverAnswersLocallyAndForwardsNothing(t *testing.T) {
+	corefile := machineDNSCorefile(bootstrapTestCfg)
 	for _, plugin := range []string{"forward", "proxy", "grpc", "etcd", "kubernetes", "file", "log", "dnstap", "hosts"} {
-		for _, line := range strings.Split(machineDNSCorefile, "\n") {
+		for _, line := range strings.Split(corefile, "\n") {
 			if fields := strings.Fields(line); len(fields) > 0 {
 				assert.NotEqual(t, plugin, fields[0], "the resolver carries the %q plugin", plugin)
 			}
 		}
 	}
-	assert.Contains(t, machineDNSCorefile, "template IN A {")
-	assert.Contains(t, machineDNSCorefile, "IN A {$"+machineDNSGatewayIPEnv+"}")
-	assert.Contains(t, machineDNSCorefile, "template ANY ANY {\n        rcode REFUSED")
+	assert.Contains(t, corefile, "template IN A {")
+	assert.Contains(t, corefile, "IN A {$"+machineDNSGatewayIPEnv+"}")
+	assert.Contains(t, corefile, "template ANY ANY {\n        rcode REFUSED")
 
 	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	require.NoError(t, err)
-	assert.Equal(t, machineDNSCorefile, cm.Data[machineDNSCorefileKey])
-
-	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
-	require.NoError(t, err)
-	assert.Equal(t, machineDNSCorefile, cm.Data[machineDNSCorefileKey], "every Agent is a machine, so every gateway resolves for one")
+	assert.Equal(t, corefile, cm.Data[machineDNSCorefileKey], "every Agent is a machine, so every gateway resolves for one")
 }
 
 // TEST_SCENARIO: the resolver runs beside Envoy only in a machine's gateway, answers with the address it was handed, and keeps a single capability. It states no uid, so OpenShift's restricted policy can assign one from the namespace range; a stated uid would fit no SCC the gateway may use. CoreDNS's binary carries the bind capability as a file capability, which the kernel refuses to exec outside the bounding set — dropping it too leaves a gateway pod that never starts.
@@ -220,4 +218,21 @@ func TestTheOwnerResolverAnswersEachPortWithItsOwnAgent(t *testing.T) {
 	empty := ownerResolverCorefile(nil)
 	assert.Contains(t, empty, "rcode REFUSED")
 	assert.NotContains(t, empty, "IN A")
+}
+
+// TEST_SCENARIO: an Agent names the api-server Service of its own install over HTTPS, so the machine resolver answers that one name with the gateway's address — and keeps refusing every other cluster-internal name, so nothing in the machine can reach a Service by asking for it.
+func TestTheMachineResolverAnswersTheInstallsOwnService(t *testing.T) {
+	corefile := machineDNSCorefile(bootstrapTestCfg)
+	host := bootstrapTestCfg.APIServerHost()
+
+	quoted := regexp.QuoteMeta(host)
+	assert.Contains(t, corefile, `match "^`+quoted+`\.$"`)
+	assert.Less(t,
+		strings.Index(corefile, `match "^`+quoted+`\.$"`),
+		strings.Index(corefile, "rcode NXDOMAIN"),
+		"the answer comes before the rule that refuses cluster names")
+
+	ownerCorefile := ownerResolverCorefile([]ownerResolverBlock{{Port: 20001, ClusterIP: "10.43.0.1", ClusterService: host}})
+	assert.Contains(t, ownerCorefile, `match "^`+quoted+`\.$"`)
+	assert.Contains(t, ownerCorefile, "IN A 10.43.0.1")
 }

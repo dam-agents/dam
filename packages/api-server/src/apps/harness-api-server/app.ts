@@ -1,3 +1,4 @@
+import { childEgressWaiting } from "../../modules/approvals/compose.js";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
@@ -204,8 +205,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
       },
-      readStartWait: async (agentId) =>
-        startWaitOf(agentsRepo.peekCached(agentId)),
+      readStartWait: async (agentId) => {
+        const wait = startWaitOf(agentsRepo.peekCached(agentId));
+        if (wait) return wait;
+        const waiting = await childEgressWaiting(db)(agentId);
+        return waiting.length > 0
+          ? `It waits for your owner to answer the network rules you set for it: ${[...new Set(waiting.map((w) => w.host))].join(", ")}.`
+          : null;
+      },
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
@@ -281,6 +288,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     ...(deps.childEgressSeeder
       ? {
           childEgress: deps.childEgressSeeder,
+          childEgressWaiting: childEgressWaiting(db),
           inheritanceOf: inheritanceOf(db),
         }
       : {}),

@@ -187,14 +187,14 @@ export function runSubagentSettings(
   );
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot composed; a primary profile that cannot run, or a lent sub-agent that would run and cannot, refuses with its reason rather than running on another model. */
+/** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot composed; a primary profile that cannot run, or a lent sub-agent that would run and cannot, refuses with its reason rather than running on another model, and still answers the pair it names, so a run falls back on that harness. */
 export async function resolvedChoice(
   slots: SessionChoiceSlots,
   resolveProfile: ProfileResolver,
   agentId: string,
 ): Promise<
   | { pair: SessionPair | null; refused?: undefined }
-  | { refused: { profile: string; detail: string } }
+  | { refused: { profile: string; detail: string }; pair?: SessionPair | null }
 > {
   let primary = slots.pair;
   let lent: LentSubagent | null = null;
@@ -214,6 +214,7 @@ export async function resolvedChoice(
           profile: resolved.profile.name,
           detail: resolved.unavailable,
         },
+        pair: resolved.pair,
       };
     primary = resolved.pair;
     profileName = resolved.profile.name;
@@ -225,7 +226,10 @@ export async function resolvedChoice(
   if (!primary) return { pair: null };
   const subagent = await composedSubagent(slots, lent, resolveProfile, agentId);
   if (subagent.refused)
-    return { refused: { profile: profileName, detail: subagent.refused } };
+    return {
+      refused: { profile: profileName, detail: subagent.refused },
+      pair: primary,
+    };
   return { pair: withPlatformSubagent(primary, subagent.settings ?? null) };
 }
 
@@ -421,38 +425,51 @@ function resolveLeasedPair(input: SessionPairInputs): SessionPair | null {
  * of a saved default: the platform's preferred work model across the
  * agent's providers in the owner catalog's order, else the first model the
  * first of them lists for the harness. A "not set" default that names a
- * provider the agent still holds keeps to it, so the run never moves off the
- * provider it ran on; one the agent no longer holds pins nothing. A
- * provider that has not listed offers nothing. Null when no provider lists a
- * model for the harness, which the caller reports as the agent having no
- * model provider to run on.
+ * provider the agent still holds is a preference, not a wall: that provider
+ * answers first, and another one of the agent's answers when it lists
+ * nothing, so the run never moves off the provider it ran on needlessly and
+ * never stops while a provider can serve it. A provider that has not listed
+ * offers nothing. Null when no provider lists a model for the harness, which
+ * the caller leaves to the runtime or reports as the agent having no model
+ * provider to run on.
  */
 export function automaticModel(
   providers: readonly ProviderCatalogView[],
   pair: Pick<SessionPair, "harness" | "provider">,
 ): { provider: string; model: string } | null {
-  const pinned = providers.some((p) => p.connectionId === pair.provider);
-  const listings = providers.flatMap((p) => {
-    const models =
-      p.status === "listed" && (!pinned || p.connectionId === pair.provider)
-        ? p.models.filter((m) => m.harnesses.includes(pair.harness))
-        : [];
-    return models.length > 0 ? [{ ...p, models }] : [];
-  });
-  const preferred = preferredModelOf(
-    "work",
-    listings.map((p) => ({
-      alias: p.alias,
-      listed: p.models.map((m) => m.upstreamId),
-    })),
-    pair.harness,
+  const listings = providers
+    .flatMap((p) => {
+      const models =
+        p.status === "listed"
+          ? p.models.filter((m) => m.harnesses.includes(pair.harness))
+          : [];
+      return models.length > 0 ? [{ ...p, models }] : [];
+    })
+    .sort(
+      (a, b) =>
+        Number(b.connectionId === pair.provider) -
+        Number(a.connectionId === pair.provider),
+    );
+  const preferredOf = (of: typeof listings) => {
+    const preferred = preferredModelOf(
+      "work",
+      of.map((p) => ({
+        alias: p.alias,
+        listed: p.models.map((m) => m.upstreamId),
+      })),
+      pair.harness,
+    );
+    for (const p of of) {
+      const model = preferred
+        ? p.alias === preferred.alias &&
+          p.models.find((m) => m.upstreamId === preferred.upstreamId)
+        : p.models[0];
+      if (model) return { provider: p.connectionId, model: model.name };
+    }
+    return null;
+  };
+  return (
+    preferredOf(listings.filter((p) => p.connectionId === pair.provider)) ??
+    preferredOf(listings)
   );
-  for (const p of listings) {
-    const model = preferred
-      ? p.alias === preferred.alias &&
-        p.models.find((m) => m.upstreamId === preferred.upstreamId)
-      : p.models[0];
-    if (model) return { provider: p.connectionId, model: model.name };
-  }
-  return null;
 }
