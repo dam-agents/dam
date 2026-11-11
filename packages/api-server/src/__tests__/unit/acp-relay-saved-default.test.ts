@@ -243,8 +243,8 @@ describe("fillSavedDefault", () => {
     expect(pick).toHaveBeenCalledWith("agent-1", "chat", { harness: "codex" });
   });
 
-  // TEST_SCENARIO: a runtime that does not route Session Pairs, or a saved default with no model, leaves nothing to fill.
-  it("fills nothing when the resolved pair has no model", async () => {
+  // TEST_SCENARIO: a runtime that does not route Session Pairs leaves nothing to fill. A resolved pair with no model is a run the runtime resolves itself, so its harness, provider and follow marker are filled in all the same, or the frame would start on no harness at all.
+  it("fills the pair's harness and provider even with no model", async () => {
     const none = vi.fn<FirePair>(async () => undefined);
     await expect(
       fillSavedDefault(cliNewSession, "agent-1", none),
@@ -252,6 +252,20 @@ describe("fillSavedDefault", () => {
     const noModel = vi.fn<FirePair>(async () => ({ ...saved, model: null }));
     await expect(
       fillSavedDefault(cliNewSession, "agent-1", noModel),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      ...cliNewSession,
+      params: {
+        ...cliNewSession.params,
+        _meta: {
+          platform: {
+            follows: "chat",
+            mode: "chat",
+            type: "cli_run",
+            harness: "claude-code",
+            provider: "conn-1",
+          },
+        },
+      },
+    });
   });
 });

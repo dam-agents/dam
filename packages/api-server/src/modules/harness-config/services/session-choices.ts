@@ -24,9 +24,17 @@ export interface SessionChoices {
   settings?: SessionSettings;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the pair a fire already resolved, given to the check that runs at fire rather than at save, so the run's own model is never refused as if the person had just typed it. */
+export type FiredPair = {
+  harness: string;
+  provider?: string | null;
+  model: string | null;
+};
+
 export type SessionChoicesValidator = (
   agentId: string,
   choices: SessionChoices,
+  fire?: FiredPair,
 ) => Promise<string | undefined>;
 
 /**
@@ -84,17 +92,23 @@ export function createSessionChoicesValidator(deps: {
     agentId: string,
     carried: readonly HarnessCapability[],
     choices: SessionChoices,
+    fired: FiredPair | undefined,
   ): Promise<string | undefined> => {
-    const fire = await deps
-      .firePair(agentId, "scheduled", {
-        ...(choices.harness !== undefined && { harness: choices.harness }),
-        ...(choices.model !== undefined && { model: choices.model }),
-      })
-      .catch((err: unknown) => {
-        if (err instanceof NoDefaultModelError) return undefined;
-        throw err;
-      });
-    if (!fire) return undefined;
+    const fire: { harness: string; model: string | null } | null | undefined =
+      fired
+        ? fired
+        : await deps
+            .firePair(agentId, "scheduled", {
+              ...(choices.harness !== undefined && {
+                harness: choices.harness,
+              }),
+              ...(choices.model !== undefined && { model: choices.model }),
+            })
+            .catch((err: unknown) => {
+              if (err instanceof NoDefaultModelError) return undefined;
+              throw err;
+            });
+    if (!fire || fire.model === null) return undefined;
     const capability = carried.find((h) => h.name === fire.harness);
     const nativeTemplates = capability?.nativeTemplates ?? [];
     if (nativeTemplates.length === 0 || !choices.settings) return undefined;
@@ -130,7 +144,7 @@ export function createSessionChoicesValidator(deps: {
       : undefined;
   };
 
-  return async (agentId, choices) => {
+  return async (agentId, choices, fired) => {
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities))
       return legacyChoices(agentId, capabilities, choices);
@@ -186,7 +200,12 @@ export function createSessionChoicesValidator(deps: {
         choices.model ? qualifiedPairModel(choices.model) : null,
       );
       if (invalid) return invalid;
-      const crossed = await crossedSubagentModel(agentId, carried, choices);
+      const crossed = await crossedSubagentModel(
+        agentId,
+        carried,
+        choices,
+        fired,
+      );
       if (crossed) return crossed;
     }
     return undefined;

@@ -23,6 +23,8 @@ import { createScheduleModelForFire } from "./services/schedule-model.js";
 import { startConvertDefaultOnHelloSaga } from "./sagas/convert-default-on-hello.js";
 import { startPublishDefaultsOnHelloSaga } from "./sagas/publish-defaults-on-hello.js";
 import { createSessionDefaultsPublisher } from "./services/session-defaults-publisher.js";
+import { createSharedCurveBenderGrant } from "./services/shared-curvebender.js";
+import { startGrantSharedCurveBenderOnHelloSaga } from "./sagas/grant-shared-curvebender-on-hello.js";
 import {
   createDefaultConverter,
   type DefaultConverter,
@@ -127,6 +129,8 @@ export function composeFirePair(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  /* UNIT_BOUNDARY_DESCRIPTION: where the deployment offers its shared CurveBender, a run for an Agent holding no provider asks for that grant and reports itself as still setting up, so no run is refused for a model that is on its way. */
+  onNoProvider?: (agentId: string) => void;
 }): FirePair {
   const resolver = {
     ...deps,
@@ -188,6 +192,44 @@ export function composeDefaultConverter(deps: {
   return { converter, helloSaga };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the deployment's shared CurveBender reaches an
+ * Agent that says hello while nothing it holds lists a model for its harness,
+ * so no run stops for a model; the grant is composed here with the connections
+ * service's own call and the defaults republished from the chat default, so
+ * the runtime learns the provider like any other.
+ */
+export function composeSharedCurveBender(deps: {
+  db: Db;
+  namespace: string;
+  enabled: boolean;
+  catalog: HarnessCatalog;
+  getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
+  runtimeMutator: RuntimeMutator;
+  grant: (agentId: string) => Promise<boolean>;
+  log: (msg: string) => void;
+}): { grant: (agentId: string) => Promise<void>; helloSaga: Subscription } {
+  const pairRepo = createSessionPairRepo(deps.db);
+  const publishDefaults = createSessionDefaultsPublisher({
+    db: deps.db,
+    pairRepo,
+    runtimeMutator: deps.runtimeMutator,
+  });
+  const grant = createSharedCurveBenderGrant({
+    enabled: deps.enabled,
+    catalog: deps.catalog,
+    getCapabilities: deps.getCapabilities,
+    specHarness: deps.specHarness,
+    catalogView: createRuntimeCatalogReader(deps.namespace),
+    grantedProviders: (agentId) => pairRepo.grantedProviders(agentId),
+    grant: deps.grant,
+    publishDefaults,
+    log: deps.log,
+  });
+  return { grant, helloSaga: startGrantSharedCurveBenderOnHelloSaga(grant) };
+}
+
 export function composeConvertingFirePair(
   converter: DefaultConverter,
   firePair: FirePair,
@@ -201,7 +243,7 @@ export function composeConvertingFirePair(
       return await firePair(agentId, kind, {});
     } catch (err) {
       if (err instanceof NoDefaultModelError && outcome === "waiting")
-        throw new NoDefaultModelError(undefined, { pending: true });
+        throw new NoDefaultModelError({ pending: true });
       throw err;
     }
   };

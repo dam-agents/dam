@@ -1,16 +1,11 @@
 export class NoDefaultModelError extends Error {
   readonly pending: boolean;
 
-  constructor(
-    readonly model?: string,
-    opts: { pending?: boolean } = {},
-  ) {
+  constructor(opts: { pending?: boolean } = {}) {
     super(
       opts.pending
-        ? "this agent is still setting up its default model; try again in a minute"
-        : model === undefined
-          ? "this agent has no model provider that lists a model it can run; connect a model provider on its Providers page"
-          : `no provider this agent holds serves ${model}; attach its provider or pick another model`,
+        ? "this agent is still setting up its model provider; try again in a minute"
+        : "this agent has no model provider it can run on; connect a model provider on its Providers page",
     );
     this.name = "NoDefaultModelError";
     this.pending = opts.pending ?? false;

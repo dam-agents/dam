@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with no default model fails with a reason, and an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
+// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with no default model goes to the runtime on the pair it saved, and fails only when the Agent holds no model provider at all; an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
 import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
@@ -8,7 +8,6 @@ import {
   convertedDefaultModel,
 } from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
-import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
 import { createScheduleModelForFire } from "../../modules/harness-config/services/schedule-model.js";
 import {
@@ -68,28 +67,37 @@ const BEDROCK = {
 };
 
 describe("a fire on an Agent with no default model", () => {
-  const deps = (saved: SessionPair | null) => ({
+  const deps = (
+    saved: SessionPair | null,
+    over: {
+      granted?: (typeof ANTHROPIC)[];
+      onNoProvider?: (agentId: string) => void;
+    } = {},
+  ) => ({
     pairRepo: {
       read: async () => saved,
       write: async () => {},
-      grantedProviders: async () => [ANTHROPIC],
+      grantedProviders: async () => over.granted ?? [ANTHROPIC],
     },
     catalog: CATALOG,
     specHarness: async () => undefined,
     getCapabilities: async () => ROUTED,
+    ...(over.onNoProvider && { onNoProvider: over.onNoProvider }),
   });
 
-  // TEST_SCENARIO: nothing is saved, so no provider or model is the person's choice; the fire fails with the reason instead of running on one the platform picked.
-  it("fails with the missing default instead of guessing one", async () => {
-    await expect(
-      resolveFirePair(deps(null), "a", "scheduled", {}),
-    ).rejects.toBeInstanceOf(NoDefaultModelError);
+  // TEST_SCENARIO: nothing is saved, yet the agent holds a provider: the pair goes to the runtime with no model, which resolves one from the models its providers list, so the fire never stops for a saved default.
+  it("leaves the model to the runtime when nothing is saved", async () => {
+    expect(await resolveFirePair(deps(null), "a", "scheduled", {})).toEqual({
+      harness: "claude-code",
+      provider: null,
+      model: null,
+    });
   });
 
-  // TEST_SCENARIO: the saved default names a model on a provider the agent no longer holds, so the fire fails naming that model, which a channel tells apart from an agent with no provider.
-  it("names the saved model whose provider is gone", async () => {
-    await expect(
-      resolveFirePair(
+  // TEST_SCENARIO: the saved default names a model on a provider the agent no longer holds; the pair keeps its harness and goes to the runtime with no model, which runs another model the agent can use rather than refusing the fire.
+  it("leaves a saved model whose provider is gone to the runtime", async () => {
+    expect(
+      await resolveFirePair(
         deps({
           harness: "claude-code",
           provider: "gone",
@@ -99,7 +107,33 @@ describe("a fire on an Agent with no default model", () => {
         "scheduled",
         {},
       ),
-    ).rejects.toMatchObject({ model: "openai/gpt-5" });
+    ).toEqual({ harness: "claude-code", provider: null, model: null });
+  });
+
+  // TEST_SCENARIO: the only failure left is an agent holding no model provider at all, where the deployment offers no shared CurveBender; the reason says to connect a model provider, never to pick a model.
+  it("fails as having no model provider when the agent holds none", async () => {
+    await expect(
+      resolveFirePair(deps(null, { granted: [] }), "a", "scheduled", {}),
+    ).rejects.toThrow(
+      /no model provider it can run on; connect a model provider/,
+    );
+  });
+
+  // TEST_SCENARIO: an agent holding no provider on a deployment with a shared CurveBender is not short of one, it is waiting for the grant, which may have gone out before this api-server knew the key; the run asks for it again and reports itself as still setting up, so the next one finds it.
+  it("asks for the shared CurveBender and reports itself as still setting up", async () => {
+    const asked: string[] = [];
+    await expect(
+      resolveFirePair(
+        deps(null, {
+          granted: [],
+          onNoProvider: (agentId) => asked.push(agentId),
+        }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).rejects.toMatchObject({ name: "NoDefaultModelError", pending: true });
+    expect(asked).toEqual(["a"]);
   });
 
   // TEST_SCENARIO: the person's view of the default shows it as not set rather than failing, so the UI can ask for one.
