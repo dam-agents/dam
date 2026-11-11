@@ -8,6 +8,11 @@ const HOLD_CLOSE = /^agent (?:not ready|unavailable)(?:: ([a-z-]+))?$/;
 
 export type AgentHoldFailure = { cause: string };
 
+export interface AgentHoldFailureCopy {
+  cause: string;
+  ownInstruction: boolean;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the api-server holds a chat's socket while the
  * agent wakes or comes back, and closes it with 1011 and the hold's cause —
@@ -27,7 +32,7 @@ export function agentHoldFailure(e: unknown): AgentHoldFailure | null {
 
 const HOLD_COPY: Record<string, string> = {
   "over-budget":
-    "Starting it would go over its compute budget. Stop agents you aren't using, then try again.",
+    "Starting it would go over your compute budget. Open an agent you aren't using and disable it on its page, then retry.",
   "hibernated-not-scaled":
     "The agent went to sleep before it could open the conversation.",
   "agent-start-failed": "The agent's machine failed to start.",
@@ -37,15 +42,26 @@ const HOLD_COPY: Record<string, string> = {
   "reconcile-error": "The platform could not bring the agent up.",
 };
 
-export function agentHoldFailureCopy(failure: AgentHoldFailure): string {
-  return HOLD_COPY[failure.cause] ?? "The agent did not become ready in time.";
+const OWN_INSTRUCTION = new Set(["over-budget"]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the sentence that names why a hold ended without the agent. A cause that tells the reader what to do carries its own instruction, so the card gives no generic one beside it: for a budget, retrying the same open only fails again until room is freed.
+export function agentHoldFailureCopy(
+  failure: AgentHoldFailure,
+): AgentHoldFailureCopy {
+  return {
+    cause:
+      HOLD_COPY[failure.cause] ?? "The agent did not become ready in time.",
+    ownInstruction: OWN_INSTRUCTION.has(failure.cause),
+  };
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the chat says while a session open waits.
  * The wait is for the agent whenever it is not running, so it names that wait
- * instead of the conversation's, and an agent that sleeps is being woken by
- * the open itself.
+ * instead of the conversation's. Waking a sleeping agent and one still
+ * starting are one wait to the reader, and a message sent to it reads
+ * "Waking the agent" too, so all of them say the same; "Reconnecting to
+ * <agent>…" stays for a running agent whose connection dropped.
  */
 export function sessionOpenWaitLabel(
   state: AgentDisplayState | undefined,
@@ -53,10 +69,9 @@ export function sessionOpenWaitLabel(
   switch (state) {
     case "hibernated":
     case "hibernating":
-      return "Waking the agent…";
     case "starting":
     case "preparing_workspace":
-      return "Waiting for the agent to start…";
+      return "Waking the agent…";
     default:
       return "Loading session…";
   }
