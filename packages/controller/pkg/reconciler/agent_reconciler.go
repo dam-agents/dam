@@ -290,7 +290,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
 			}
 			if moved {
 				dropOwnPrincipal(policy)
@@ -303,7 +303,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
 			}
 			if moved {
 				dropOwnPrincipal(policy)
