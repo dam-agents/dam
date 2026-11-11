@@ -725,10 +725,61 @@ describe("a person's edit to a message agents read along", () => {
     expect(h.turns()[0]).not.toContain(BLUE);
     expect(h.turns()[0]).not.toContain(CHANGED);
   });
-
 });
 
 describe("an edit that starts no turn", () => {
+  /**
+   * TEST_SCENARIO: Another agent edits its post, and Slack reports the edit
+   * twice. The reading agent is listed the edit once, in its next turn, and
+   * the second report must not list it again.
+   */
+  it("lists an agent's edit once when Slack reports it twice", async () => {
+    const peer: SlackSender = {
+      kind: "agent",
+      agentId: "agent-2",
+      ambientRound: false,
+    };
+    const h = harness({ ambient: true });
+    h.gw.setHistory([{ ts: T1, user: "UBOT", text: BLUE }]);
+    await h.worker.connect();
+    const edit = { sender: peer, channel: BOUND, ts: T1, text: GREEN };
+    const edited = { ts: T1, user: "UBOT", text: GREEN, edited: true };
+
+    await h.gw.fireMessage({
+      sender: peer,
+      channel: BOUND,
+      ts: T1,
+      text: BLUE,
+    });
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+    await h.gw.fireMessageEdited(edit);
+
+    h.gw.setHistory([edited, { ts: T2, user: USER, text: "anything new?" }]);
+    await h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T2,
+      text: "anything new?",
+    });
+    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
+    expect(h.turns()[1]).toContain(CHANGED);
+
+    await h.gw.fireMessageEdited(edit);
+    h.gw.setHistory([
+      edited,
+      { ts: T2, user: USER, text: "anything new?" },
+      { ts: T3, user: USER, text: "and now?" },
+    ]);
+    await h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T3,
+      text: "and now?",
+    });
+    expect(await h.settled(() => h.turns().length === 3)).toBe(true);
+    expect(h.turns()[2]).not.toContain(CHANGED);
+  });
+
   /**
    * TEST_SCENARIO: An agent asks a peer by tagging the bot, then corrects its
    * post while the peer has not started on it. An agent's edit starts no
