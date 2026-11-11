@@ -1,21 +1,30 @@
+import { separateRendererBlocks } from "api-server-api";
 import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 
+/**
+ * What the person typed, as the chat shows it: the blocks the composer adds
+ * behind their back (`<a2ui-capabilities>`, form data and actions) are cut,
+ * so a prompt that was only such blocks, a form submit, recalls nothing.
+ */
 function promptText(message: Message): string {
   return message.parts
-    .flatMap((p) => (p.kind === "text" ? [p.text] : []))
+    .flatMap((p) =>
+      p.kind === "text" ? [separateRendererBlocks(p.text).text] : [],
+    )
+    .filter(Boolean)
     .join("\n\n")
     .trim();
 }
 
-function promptsNewestFirst(messages: Message[]): string[] {
+export function promptsNewestFirst(messages: readonly Message[]): string[] {
   const prompts: string[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!;
-    if (m.role !== "user") continue;
+    if (m.role !== "user" || m.notice) continue;
     const text = promptText(m);
     if (text && text !== prompts[prompts.length - 1]) prompts.push(text);
   }
