@@ -15,21 +15,31 @@ import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import type { ActivityFilters } from "../../home/lib/activity-filter.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionSpend } from "../../spend/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { useProvisionalSessions, useSessionPages } from "../api/queries.js";
+import {
+  useAgentSession,
+  useProvisionalSessions,
+  useSessionPages,
+} from "../api/queries.js";
+import { sessionListNarrowing } from "../lib/agent-session-filters.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { shownSessionId } from "../lib/shown-session.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
 
 const EMPTY: never[] = [];
 
-export function useAgentSessionList(agentId: string) {
+export function useAgentSessionList(agentId: string, filter?: ActivityFilters) {
   const sessionId = useStore(shownSessionId);
   const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
+  const shownHere = useStore((s) =>
+    s.selectedAgent === agentId ? shownSessionId(s) : null,
+  );
+  const narrowing = sessionListNarrowing(filter);
 
   const agent = useAgent(agentId);
   const terminals = !agent || holds(agent.access, "terminal");
@@ -50,11 +60,27 @@ export function useAgentSessionList(agentId: string) {
   } = useSessionPages(agentId, sessionFilter, {
     enabled: answerableSoon,
     activeSessionId: sessionId,
+    narrowing,
   });
+  const shownOutside =
+    !!shownHere &&
+    (!!narrowing.channelTypes || !!narrowing.status) &&
+    !!listed &&
+    !listed.some((s) => s.sessionId === shownHere);
+  const { data: shownSession } = useAgentSession(
+    agentId,
+    shownOutside ? shownHere : null,
+    { enabled: answerableSoon },
+  );
   const lastKnown = useProvisionalSessions(agentId, listed === undefined);
   const provisional = listed === undefined && !!lastKnown?.length;
-  const sessions: SessionView[] =
-    listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
+  const sessions: SessionView[] = useMemo(
+    () =>
+      listed && shownOutside && shownSession
+        ? [...listed, shownSession]
+        : (listed ?? (provisional ? lastKnown : undefined) ?? EMPTY),
+    [listed, shownOutside, shownSession, provisional, lastKnown],
+  );
   const loading =
     listed === undefined && !provisional && (isFetching || !operable);
   const runState = useAgentRunState(agentId);

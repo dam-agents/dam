@@ -101,6 +101,8 @@ export const sessionDefaultsSchema = z.object({
  * reference instead of guessing it from the values. */
 export const sessionDefaultsViewSchema = sessionDefaultsSchema.extend({
   chatProfileId: z.string().nullable(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair the chat default's profile names, kept while that profile cannot run, so a run falls back on the profile's own harness rather than the agent's default harness. */
+  chatProfilePair: sessionPairSchema.nullable().optional(),
   /* UNIT_BOUNDARY_DESCRIPTION: the chat default's subagent slot as stored, a
    * profile or values, which `chat` drops while it or the primary cannot run,
    * so a picker still shows what the slot holds. */

@@ -98,6 +98,17 @@ export function parseAgentFooter(
   return null;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A post reduced to the block that ends it, which
+ * is where the platform puts the Agent Footer. An Agent's card can render a
+ * context block of its own, with any link in it, ahead of the footer, so a
+ * decision that rests on who wrote a post reads the footer from here and
+ * nowhere else in the post.
+ */
+export function closingBlock(message: SlackMessage): SlackMessage {
+  return { blocks: (message.blocks ?? []).slice(-1) };
+}
+
 export function footerMarksAmbientRound(message: SlackMessage): boolean {
   return footerTexts(message).some((text) =>
     FOOTER_AMBIENT_ROUND_RE.test(text),

@@ -7,6 +7,7 @@ import {
   type AgentsService,
   DEFAULT_INVOCATION_TTL_MS,
   type InvocationHarnessConfig,
+  EGRESS_ANSWERS_NOTE,
   type InvocationView,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
@@ -313,6 +314,25 @@ function skillsSkippedReason(
 ): string | null {
   if (skipped.length === 0) return null;
   return skipped.map((s) => `${s.name} (${s.reason})`).join(", ");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's answers to a target's waiting network rules as its driver reads them: what was allowed and what was declined, each as the request the rule names, with the sentence that says a refused request closes without a response.
+function egressAnswersView(
+  answers: NonNullable<InvocationRow["egressAnswers"]>,
+): NonNullable<InvocationView["egress"]> {
+  const named = (a: (typeof answers)[number]): string => {
+    const target = a.port === undefined ? a.host : `${a.host}:${a.port}`;
+    const request = a.path === "*" ? target : `${target}${a.path}`;
+    return a.method === "*" ? request : `${a.method} ${request}`;
+  };
+  const of = (verdict: "allow" | "deny"): string[] => [
+    ...new Set(answers.filter((a) => a.verdict === verdict).map(named)),
+  ];
+  return {
+    allowed: of("allow"),
+    declined: of("deny"),
+    note: EGRESS_ANSWERS_NOTE,
+  };
 }
 
 export function createInvocationsService(deps: {
@@ -946,6 +966,10 @@ export function createInvocationsService(deps: {
         ...(row.exitCode !== null && { exitCode: row.exitCode }),
         ...(row.script !== null && { output: row.output ?? {} }),
         ...(waiting && { waiting }),
+        ...(row.egressAnswers &&
+          row.egressAnswers.length > 0 && {
+            egress: egressAnswersView(row.egressAnswers),
+          }),
         ...(row.keepUntil && { keepUntil: row.keepUntil.toISOString() }),
         ...(row.reapedAt && { removed: true }),
       };

@@ -1,5 +1,6 @@
 import {
   and,
+  apiKeyRevocations,
   asc,
   desc,
   eq,
@@ -9,6 +10,7 @@ import {
   connectionGrants as connectionGrantsTable,
   connections as connectionsTable,
 } from "db";
+import { DAM_KEY_INPUT } from "../domain/dam-connection.js";
 import {
   connectionAuthConfigSchema as authConfigSchema,
   contribution as contributionSchema,
@@ -41,6 +43,14 @@ export interface ConnectionsRepository {
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
 
   mergeInputs(id: string, patch: Record<string, unknown>): Promise<void>;
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the Connection starts naming a key of its own, and the key it named before is queued for revocation in the same statement — so no moment exists in which the old key is neither named nor queued, and no failure can leave the new one unnamed and unqueued. */
+  adoptDamKey(input: {
+    id: string;
+    ownerSub: string;
+    keyId: string;
+    previousKeyId: string | null;
+  }): Promise<void>;
 
   updateContributions(id: string, contributions: Contribution[]): Promise<void>;
 
@@ -203,6 +213,24 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .update(connectionsTable)
         .set({ auth, updatedAt: new Date() })
         .where(eq(connectionsTable.id, id));
+    },
+
+    async adoptDamKey({ id, ownerSub, keyId, previousKeyId }) {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(connectionsTable)
+          .set({
+            inputs: sql`${connectionsTable.inputs} || ${JSON.stringify({ [DAM_KEY_INPUT]: keyId })}::jsonb`,
+            updatedAt: new Date(),
+          })
+          .where(eq(connectionsTable.id, id));
+        if (previousKeyId !== null) {
+          await tx
+            .insert(apiKeyRevocations)
+            .values({ keyId: previousKeyId, ownerSub, connectionId: id })
+            .onConflictDoNothing();
+        }
+      });
     },
 
     async mergeInputs(id, patch): Promise<void> {

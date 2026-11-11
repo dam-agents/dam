@@ -298,6 +298,15 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonContainerBackendRemoved is stamped on Ready for an Agent whose spec still
+// asks for the container backend, which this release neither runs nor can move:
+// its machine would boot on a home its data is not on, while the volume that
+// holds the home stays unread. The controller reconciles nothing for such an
+// Agent, and only an operator's runtime migration on the release before this one
+// moves it. An Agent whose spec names no backend counts as one of them, since
+// that is how a release before this one wrote a container Agent.
+const ReasonContainerBackendRemoved = "ContainerBackendRemoved"
+
 // ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
 // hibernation has begun but whose machine the runner is still stopping. The
 // runner answers a stop before the guest has powered off, so the agent is not

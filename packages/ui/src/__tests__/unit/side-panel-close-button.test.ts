@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions and behind a vertical border; clicking it closes the whole panel, or runs the panel's own close when it brings one, and hands focus to the rail's open tab, or with no rail to the top bar's open tab or the main region. Where clearing the tab closes nothing, only a panel with its own close shows it.
+// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions, with no border before it; clicking it closes the whole panel, or runs the panel's own close when it brings one, and hands focus to the rail's open tab, or with no rail to the top bar's open tab or the main region. Where clearing the tab closes nothing, only a panel with its own close shows it.
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
@@ -67,8 +67,8 @@ function closeCellClasses(html: string): string[] {
   return cell.split(" ");
 }
 
-// TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.
-it("ends the panel's top bar with the X, behind a border", () => {
+// TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with no border before it; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.
+it("ends the panel's top bar with the X, with no border before it", () => {
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -82,8 +82,9 @@ it("ends the panel's top bar with the X, behind a border", () => {
     ),
   );
   expect(html).toMatch(
-    /id="own-action"><\/button><div class="[^"]*border-l[^"]*"><button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"/,
+    /id="own-action"><\/button><div class="[^"]*"><button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"/,
   );
+  expect(closeCellClasses(html)).not.toContain("border-l");
   const headerClass = html.match(/class="([^"]*h-12[^"]*)"/)?.[1] ?? "";
   expect(headerClass.split(" ")).toContain("border-b");
 });

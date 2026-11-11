@@ -1,6 +1,6 @@
 # Profiles
 
-Last verified: 2026-11-05
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -23,7 +23,7 @@ The channel and scheduled pickers lead with **Use agent default**, which reads t
 A channel or schedule naming none follows its kind's pair, which is the chat default until the agent's page sets one; picking a profile grants its provider on the agent.
 An edit that no agent using the profile can run is put back, and that revert never undoes a newer edit made meanwhile.
 A profile's platform sub-agent runs on the profile's harness and the agent's Connection of its own provider template, and its model is a model of that template; a slot with a subagent pick of its own never runs it, whole, and a null or absent sub-agent is **Same as agent**, which lets the harness pick.
-A subagent slot that holds a profile which can no longer run leaves the subagent to the agent, and a sub-agent the profile lends that cannot run refuses the run rather than running on another; an edit that breaks it is put back like any other no agent can run.
+A subagent slot that holds a profile which can no longer run leaves the subagent to the agent, and a run whose profile lends a sub-agent that cannot run goes on, on the profile's primary model without it; an edit that breaks it is put back like any other no agent can run.
 An interactive page keeps the same two slots for the Sessions its prompts open ([a page's model](artifact-library.md#a-pages-model)).
 A profile in use cannot be deleted, and the refusal names what uses it.
 

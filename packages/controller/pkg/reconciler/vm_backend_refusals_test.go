@@ -832,6 +832,13 @@ func expireTheStepDownGrace(t *testing.T, r *AgentReconciler, agent *apiv1.Agent
 // UNIT_BOUNDARY_DESCRIPTION: one idle machine up and holding memory, two starts waiting for the node, and a runner pod the node has granted 2560 MiB of, which holds the two machines that wait but not the one more a start needs. `stepped` puts the reduced ask in the pod, as a step-down the node has already been given and refused; without it the pod carries the whole demand, as a step-down the node has not been given yet. Both figures come from the production sizing, so the fixture cannot drift from it.
 func deferredResizeWithWaits(t *testing.T, stepped bool) (context.Context, *AgentReconciler, *apiv1.Agent) {
 	t.Helper()
+	ctx, r, _, agent := deferredResizeOnNode(t, stepped)
+	return ctx, r, agent
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the same state as deferredResizeWithWaits, with the fake runner it answers from, so a test can set what that runner reports.
+func deferredResizeOnNode(t *testing.T, stepped bool) (context.Context, *AgentReconciler, *fakeNode, *apiv1.Agent) {
+	t.Helper()
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -876,5 +883,38 @@ func deferredResizeWithWaits(t *testing.T, stepped bool) (context.Context, *Agen
 	require.NoError(t, err)
 	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	return ctx, r, agent
+	return ctx, r, node, agent
+}
+
+// TEST_SCENARIO: a sweepable Invocation target parked for room keeps asking to run after its activity expires, so its reconcile never publishes it hibernated for the Agent Sweep to delete; a parked Agent that is not sweepable, and a parked target someone stopped, hibernate as before.
+func TestAParkedInvocationTargetKeepsWaitingForRoom(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		waits       bool
+	}{
+		{"sweepable", map[string]string{annSweepable: "true"}, true},
+		{"not sweepable", map[string]string{}, false},
+		{"sweepable and stopped", map[string]string{annSweepable: "true", annStopRequested: stale}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := vmAgentCR()
+			agent.Annotations[annLastActivity] = stale
+			for k, v := range tc.annotations {
+				agent.Annotations[k] = v
+			}
+			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonOverBudget, LastTransitionTime: metav1.Now()}}
+			r, node, _ := setupVMReconciler(t, agent)
+			node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000}
+
+			require.NoError(t, r.Reconcile(context.Background(), agent))
+
+			assert.Equal(t, tc.waits, node.spec("my-agent").Running, "a waiting target asks the runner to start it")
+			if !tc.waits {
+				return
+			}
+			assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+		})
+	}
 }

@@ -122,6 +122,43 @@ describe("approvalDetail", () => {
       ),
     ).toBe("registry.npmjs.org (any path), from its Environment pr-42");
   });
+
+  // TEST_SCENARIO: a driver asks for a rule on its sub-agent or Environment. The card's request line names only what would be reached, in words that read the same for every kind: the host, with its method and path when the rule names them, or what a wildcard covers. The sentence under it, from the server, says who asks and for which child.
+  it("names what a child's rule would reach", () => {
+    const proposal = (
+      host: string,
+      extra: { widerThanDriver?: true; method?: string; path?: string } = {},
+    ) =>
+      egress({
+        type: "egress_proposal",
+        agentId: "sub-1",
+        payload: {
+          kind: "egress_proposal",
+          host,
+          method: extra.method ?? "*",
+          path: extra.path ?? "*",
+          reason: "",
+          forAgentId: "a-1",
+          ...(extra.widerThanDriver && { widerThanDriver: true }),
+        },
+      });
+    expect(
+      approvalDetail(proposal("pypi.org", { widerThanDriver: true })),
+    ).toBe("pypi.org");
+    expect(
+      approvalDetail(
+        proposal("pypi.org", {
+          widerThanDriver: true,
+          method: "GET",
+          path: "/simple/*",
+        }),
+      ),
+    ).toBe("GET pypi.org/simple/*");
+    expect(approvalDetail(proposal("*.github.com"))).toBe(
+      "Every subdomain of github.com",
+    );
+    expect(approvalDetail(proposal("*"))).toBe("Any host");
+  });
 });
 
 describe("approvalGroupKey", () => {

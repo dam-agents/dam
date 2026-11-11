@@ -28,6 +28,7 @@ const EXCHANGE_RETRY_MS = 10 * 60_000;
 export interface SlackInstallRecord {
   teamId: string;
   teamName: string | null;
+  enterpriseId: string | null;
   botToken: string;
   rotation: Omit<SlackRotatingToken, "accessToken"> | null;
   installedBy: string | null;
@@ -39,6 +40,7 @@ export interface SlackInstallServiceDeps {
   upsert: (install: {
     teamId: string;
     teamName: string | null;
+    enterpriseId: string | null;
     secretPath: string;
     secretField: string;
     installedBy: string | null;
@@ -164,6 +166,7 @@ export function createSlackInstallService(
     await deps.upsert({
       teamId: install.teamId,
       teamName: install.teamName,
+      enterpriseId: install.enterpriseId,
       secretPath: ref.path,
       secretField: ref.field,
       installedBy: install.installedBy,
@@ -196,6 +199,7 @@ export function createSlackInstallService(
       await writeInstall({
         teamId,
         teamName: install.teamName,
+        enterpriseId: install.enterpriseId,
         botToken: result.accessToken,
         rotation: {
           refreshToken: result.refreshToken,
@@ -347,6 +351,7 @@ export function createSlackInstallService(
           await writeInstall({
             teamId,
             teamName: null,
+            enterpriseId: null,
             botToken: token,
             rotation: null,
             installedBy: null,

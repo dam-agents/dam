@@ -10,6 +10,7 @@ export {
   nearestOwnEgress,
   inheritanceOf,
   ownEgressAgentIds,
+  childEgressGrants,
 } from "./compose.js";
 export type {
   AgentCleanupHook,

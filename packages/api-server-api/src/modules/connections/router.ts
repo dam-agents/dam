@@ -74,6 +74,11 @@ export const connectionsRouter = t.router({
       );
     }),
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the person's own create of the Connection that drives this install, one per owner: the api-server mints its key, and the install's flag decides whether they are offered it at all. */
+  createDam: manageCredentialsProcedure.mutation(({ ctx }) =>
+    ctx.connections.ensureDamConnection().then((id) => ({ id })),
+  ),
+
   get: readCredentialsProcedure
     .input(connectionIdInputSchema)
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
@@ -164,6 +169,12 @@ export const connectionsRouter = t.router({
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
+
+  rotateDam: manageCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.rotateDamConnection(input.id),
+    ),
 
   requestSecret: manageCredentialsProcedure
     .input(connectionRequestSecretInputSchema)

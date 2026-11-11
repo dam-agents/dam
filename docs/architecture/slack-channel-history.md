@@ -12,7 +12,6 @@ It is **off by default** on every connect path — the in-chat bind, the UI form
 A re-connect changes only the modes it names and keeps the others, so a surface that flips one never touches the other.
 Turning it on for an existing binding from the UI or CLI needs the person and the bot in the conversation, as a new connect does, so nobody opens the past of a conversation they have left; the in-chat command runs inside it, and turning it off asks nothing.
 Every change is security-logged, none is announced in the channel, and the agent list says which Agents have it.
-As a mention the command needs on or off, because history is an everyday word: a bare question about it still reaches the Agent.
 Telegram has no such switch: its bot cannot read history.
 
 ## Reach

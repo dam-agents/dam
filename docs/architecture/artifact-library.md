@@ -67,13 +67,20 @@ The page still never holds a credential for either call.
 The frame is sandboxed without modals, so browser dialogs are blocked.
 A link the page opens in a new tab escapes the sandbox, so a link to a shared page loads as if the viewer pasted it.
 
-Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized and full page, and work in a newly started conversation without reloading the page.
+Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized, and work in a newly started conversation without reloading the page.
 There is no permanent Session binding: the currently open conversation is the destination.
 The same preview on a page outside that chat sends no requests, and refuses a plain prompt with a notice that the button works in the Agent's chat.
 A prompt there that asks for a session of its own (`sendPrompt(text, { newSession: true })`) starts or continues the owner's own Session for that page on the publishing Agent, one per owner and artifact, as a viewer's prompt does below.
 The server checks the artifact again, as for a request; it hands the prompt to the same delivery as a viewer's, so the Agent is woken, not at a spend limit, and the turn runs unattended as a channel turn, on the page's [model](#a-pages-model).
 The Session is titled with the artifact's title alone, and the owner gets a notice that names the Agent, says nobody answers the turn's permission prompts, and opens the Session once the Agent has named it; every such prompt is in the security log under the owner, without its text.
 In the publishing Agent's chat the open chat stays the destination, with or without the option.
+
+A page used for many separate conversations, such as one per thread, names the conversation with each prompt: `sendPrompt(text, { conversation: "<key>" })`.
+The key is 1 to 64 letters, digits, dots, underscores or hyphens; the bridge throws on any other, and the server refuses it.
+Each conversation of one caller on one page gets a Session of its own, keyed by the page, the caller and the conversation, and a later prompt with the same key continues it; a prompt without a key keeps the caller's one Session for the page.
+The key only splits the caller's own Sessions for that page, so it never reaches another person's Session or a chat.
+A prompt with a key always wants a Session of its own: for the owner it goes to their Session for that conversation even in the publishing Agent's chat, and where no such Session can start it is refused with a notice.
+The Session's title ends with the key, and the security log records the key, never the prompt text.
 Historical versions cannot send prompts or requests.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog.
@@ -107,6 +114,7 @@ A page the owner makes private or plain and a viewer the owner removes both stop
 
 - **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's, naming the viewer in the caller headers.
 - **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
+  A prompt that names a conversation goes to the viewer's own Session for that conversation instead, titled with the key as well, as the owner's does.
   It is typed `artifact`, as the owner's Session for the page is, so the session list files it with the channels and the Home feed can filter it on its own.
   The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
   The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.
@@ -122,6 +130,8 @@ Out of scope: limits per viewer on what the Agent may do.
 **Visibility** is one field with three values, and the share link — a URL on the share host keyed by an unguessable random **slug** — is the same for the two that have one, so switching between them never changes the link.
 
 - An artifact is **private** by default: visible in-app only, no link.
+  A channel message that carries its in-app `platform://artifacts/<id>` link is refused, so the link never reaches Slack or Telegram as dead text or as a page nobody shared: the platform replaces the link with the artifact's share URL, and a private artifact has none ([slack guarantees](slack-guarantees.md#3-who-decides-what)).
+  The one exception is the 1:1 Slack DM between an Agent and its owner: there the link becomes the artifact's own address in the app, which opens behind the owner's sign-in, and only for an artifact that Agent published.
 - **Restricted** opens the link to a named group.
   The owner keeps a **viewer allowlist** of email addresses — emails, not user ids, because a listed person may exist only in the identity provider and never have signed in to the platform.
   Viewers need an account admitted by that identity provider; an email address alone does not create one.
@@ -245,6 +255,7 @@ flowchart LR
 ## UI surfaces
 
 - The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
+  An artifact also has an address of its own, `/artifacts/<id>`, which opens that page with the artifact docked, the state a click on its row leaves; an id that is gone or not the owner's leaves the library and says in the dock that there is no such artifact.
   The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
   On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
   In an Agent's chat the list is an **Artifacts section** in the column beside the conversation, under Files.
@@ -263,13 +274,14 @@ flowchart LR
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then Full page, which stays in the bar while editing, then the side panel's close X, which the docked preview in a chat with both experiments off does not show — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
-  It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does.
-  **Full page** lays the same preview over the whole browser window, above the app's navigation and below its dialogs, and works for a private artifact, which has no link to open in a new tab.
-  The preview's frame stays where it is in the page, so the content does not reload and an interactive page keeps its bridge; while it is on, the page columns around the preview move up to the overlay layer with it.
-  The keyboard stays inside the preview, and a change of side panel tab or of the docked item ends full page.
-  The button or Escape takes it back; Escape while a dialog, menu or tooltip is open closes only that, and the Escape that leaves full page closes nothing else.
-  Deleting the artifact a preview is showing closes that preview.
+  The docked preview's top bar shows only the actions users take most: the title, the version switcher, **Share** with the current visibility ("Private", "Restricted", "Public") and a chevron, which opens the sharing dialog, Download, **Open in new tab**, a ⋮ menu and the side panel's close X, which the docked preview in a chat with both experiments off does not show.
+  The ⋮ menu holds the rest, in groups: Rename and Move first; then **Edit source** and Start a new session, where the artifact offers them; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
+  Edit source names what it changes, the artifact's text, which may be Markdown as well as code, so it does not read as asking the Agent for a change.
+  So opening an artifact is a place to start sharing or continuing it rather than a dead end, and the bar stays short enough to scan.
+  It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does; it has no full page of its own, because a wider panel or Open in new tab covers that.
+  **Open in new tab** opens the artifact alone in the app, `/artifacts/<id>/view`, in a new browser tab, so the chat stays in the first one; `/artifacts/<id>` stays the library with the artifact docked.
+  That page is the app signed in as the owner, not the share link, so it opens a private artifact too, which has no link; it shows the same top bar without Back, close and Open in new tab, which it has no use for, and an interactive page there asks its Agent in a Session of its own, as on the Artifacts page.
+  Deleting the artifact a preview is showing closes that preview, and deleting it from its own page opens the Artifacts list.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.

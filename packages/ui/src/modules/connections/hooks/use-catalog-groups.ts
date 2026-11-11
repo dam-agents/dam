@@ -14,6 +14,7 @@ import {
   type CatalogTab,
   groupCatalog,
 } from "../lib/catalog-providers.js";
+import { damConnectionOffered } from "../lib/dam-connection.js";
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 
@@ -25,12 +26,18 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
 } {
   const templatesQ = useConnectionTemplates();
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
-  const showInternal = useFeatures().data?.["advanced-connections"] ?? false;
+  const flags = useFeatures().data;
+  const showInternal = flags?.["advanced-connections"] ?? false;
+  const damOffered = damConnectionOffered(flags);
 
   const byTab = useMemo(
     () =>
       groupCatalog({
-        offeredTemplates: filterOfferedTemplates(allTemplates, showInternal)
+        offeredTemplates: filterOfferedTemplates(
+          allTemplates,
+          showInternal,
+          damOffered,
+        )
           .filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id))
           .filter((t) => t.id !== SHARED_KB_TEMPLATE_ID),
         allTemplates,
@@ -40,7 +47,7 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
             c.templateId !== SHARED_KB_TEMPLATE_ID,
         ),
       }),
-    [allTemplates, connections, showInternal],
+    [allTemplates, connections, showInternal, damOffered],
   );
   const populated = useMemo(
     () => [...byTab.values()].flat().filter((g) => g.connections.length > 0),

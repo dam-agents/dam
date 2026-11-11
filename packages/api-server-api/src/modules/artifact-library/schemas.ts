@@ -5,7 +5,10 @@ import {
   sessionChoiceReferencesSchema,
   sessionPairSchema,
 } from "../harness-config/schemas.js";
-import { ARTIFACT_PROMPT_MAX_LENGTH } from "./prompt.js";
+import {
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptConversationSchema,
+} from "./prompt.js";
 
 export const artifactKindSchema = z.enum([
   "html",
@@ -187,6 +190,7 @@ export const artifactCallAgentApiInputSchema =
 export const artifactSendPromptInputSchema = z.object({
   artifactId: z.string().min(1),
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export const artifactAgentInputSchema = z.object({
