@@ -12,8 +12,11 @@ export function NativeLoginCard({
   agentId: string;
   maySignIn: boolean;
 }) {
-  const [loginSession, setLoginSession] = useState<string | null>(null);
-  const status = useNativeLoginStatus(agentId, loginSession !== null);
+  const [loginSession, setLoginSession] = useState<{
+    id: string;
+    running: boolean;
+  } | null>(null);
+  const status = useNativeLoginStatus(agentId, loginSession?.running ?? false);
   const state = !status.operable
     ? "asleep"
     : status.isError
@@ -48,7 +51,9 @@ export function NativeLoginCard({
           (state === "sign-in-required" || state === "signed-in") && (
             <Button
               size="sm"
-              onClick={() => setLoginSession(crypto.randomUUID())}
+              onClick={() =>
+                setLoginSession({ id: crypto.randomUUID(), running: true })
+              }
             >
               {state === "signed-in" ? "Sign in again" : "Sign in to ChatGPT"}
             </Button>
@@ -71,11 +76,21 @@ export function NativeLoginCard({
       )}
       {loginSession !== null && (
         <NativeLoginDialog
-          key={loginSession}
+          key={loginSession.id}
           agentId={agentId}
-          sessionId={loginSession}
+          sessionId={loginSession.id}
           signedIn={state === "signed-in"}
-          onRetry={() => setLoginSession(crypto.randomUUID())}
+          onExit={() => {
+            setLoginSession((current) =>
+              current?.id === loginSession.id
+                ? { ...current, running: false }
+                : current,
+            );
+            void status.refetch();
+          }}
+          onRetry={() =>
+            setLoginSession({ id: crypto.randomUUID(), running: true })
+          }
           onClose={() => {
             setLoginSession(null);
             void status.refetch();

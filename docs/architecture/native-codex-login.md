@@ -21,3 +21,7 @@ The provider being configured is not proof that an agent is signed in or entitle
 Detaching or deleting the Connection removes managed selection, not the native login: the owner logs out on the agent to remove its cached credentials.
 Reauthorizing an expired login, changing accounts or logging out requires an agent restart because existing Codex processes cache their account.
 The OpenAI API-key mode never requires or clears that native login.
+
+Fast status checks run only while a device-login terminal is active; exit or close returns the card to its normal polling interval.
+Native launches require Codex to report a successful ChatGPT login; API-key caches and unrecognized status output fail with sign-in instructions.
+A schedule validates router-only settings against the resolved provider's native mode, even when it inherits its model.

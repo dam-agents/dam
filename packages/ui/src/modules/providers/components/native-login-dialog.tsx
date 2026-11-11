@@ -11,12 +11,14 @@ export function NativeLoginDialog({
   signedIn,
   onClose,
   onRetry,
+  onExit,
 }: {
   agentId: string;
   sessionId: string;
   signedIn: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onExit: () => void;
 }) {
   const [exitCode, setExitCode] = useState<number | null>(null);
   return (
@@ -44,7 +46,10 @@ export function NativeLoginDialog({
             sessionId={sessionId}
             fresh
             nativeLogin
-            onExit={setExitCode}
+            onExit={(code) => {
+              setExitCode(code);
+              onExit();
+            }}
           />
         </div>
         {exitCode !== null && exitCode !== 0 && (

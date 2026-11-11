@@ -4,7 +4,7 @@
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,14 @@ writeFileSync(join(home, "AGENTS.md"), "Project instructions\n");
 const instructions = join(home, "platform-instructions");
 writeFileSync(instructions, "Platform instructions\n");
 const recorder = join(home, "record.mjs");
-writeFileSync(recorder, `import {writeFileSync} from 'node:fs'; if(process.env.NATIVE_AUTH_STATUS==='missing' && process.argv.includes('login') && process.argv.includes('status')) process.exit(1); writeFileSync(process.env.CAPTURE, JSON.stringify({args:process.argv.slice(2), env:Object.fromEntries(['OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL','OPENAI_MODEL','CODEX_HOME','INITIAL_AGENT_MODE','CODEX_CONFIG','PLATFORM_CODEX_AUTH_MODE'].map(key=>[key,process.env[key]]))}));`);
+writeFileSync(recorder, `import {writeFileSync} from 'node:fs';
+if (process.argv.includes('login') && process.argv.includes('status')) {
+  const state=process.env.NATIVE_AUTH_STATUS || 'chatgpt';
+  if (state==='chatgpt-stdout') console.log('private fixture output');
+  console.error(state==='api' ? 'Logged in using an API key - fixture-only' : state==='missing' ? 'Not logged in' : state==='unknown' ? 'Unrecognized private status' : 'Logged in using ChatGPT');
+  process.exit(state==='missing' || state==='failed' ? 1 : 0);
+}
+writeFileSync(process.env.CAPTURE, JSON.stringify({args:process.argv.slice(2), env:Object.fromEntries(['OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL','OPENAI_MODEL','CODEX_HOME','INITIAL_AGENT_MODE','CODEX_CONFIG','PLATFORM_CODEX_AUTH_MODE'].map(key=>[key,process.env[key]]))}));`);
 writeFileSync(join(bin, "codex"), '#!/bin/sh\nunset NODE_OPTIONS\nexec "$TEST_NODE" "$RECORDER" "$@"\n', { mode: 0o755 });
 writeFileSync(join(bin, "codex-acp"), '#!/bin/sh\nexec "$TEST_APP_SERVER" app-server\n', { mode: 0o755 });
 for (const name of ["codex-app-server", "harness-terminal", "harness-chat", "codex-chatgpt"]) {
@@ -89,6 +96,21 @@ try {
     return true;
   });
   native(run("harness-chat", [], env));
+
+  // TEST_SCENARIO: Only a successful, recognized ChatGPT login can launch native ACP. An API-key cache, unknown status, or failed status command cannot masquerade as a subscription or leak its private output.
+  for (const state of ["api", "unknown", "failed"]) {
+    rmSync(capture, { force: true });
+    assert.throws(() => run("harness-chat", [], { ...env, NATIVE_AUTH_STATUS: state }), (error) => {
+      assert.equal(error.status, 77);
+      assert.match(error.stderr.toString(), /ChatGPT sign-in is required/);
+      assert.doesNotMatch(error.stderr.toString(), /fixture-only|Unrecognized private status/);
+      return true;
+    });
+    assert.equal(existsSync(capture), false, "ACP must not start before a recognized native login");
+  }
+
+  // TEST_SCENARIO: Status recognition follows the status API's stderr-only contract; unrelated stdout never changes a valid saved ChatGPT login or reaches the caller.
+  native(run("harness-chat", [], { ...env, NATIVE_AUTH_STATUS: "chatgpt-stdout" }));
 
   // TEST_SCENARIO: Native and API launches share MCP/config/history in the existing home, but API processes select the router without a global login restriction that would log out the native account.
   const api = run("harness-terminal");

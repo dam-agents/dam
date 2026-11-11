@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -136,7 +136,8 @@ Its responsibilities are:
 - Accept ACP WebSocket connections (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process.
   Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server).
-  Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
+  A harness terminal gets a PTY running `/usr/local/bin/harness-terminal`; a native Codex sign-in terminal runs its fixed login command ([native login](native-codex-login.md)).
+  For both, agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
   A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
   A harness that starts a new session inside a running PTY (Claude Code's `/clear`) reports the new id from a hook; the PTY moves to that session id and the viewer gets a session frame and follows it, so the old session stays listed with its own transcript and the new one is the one the terminal shows.
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server).
@@ -310,7 +311,8 @@ See [`helm/`](../../helm/) for the install layout.
   Each limit sits well above the largest legitimate input: a `skills.createLocal` call for users, a 20 000-file kb-publish plan for agents.
   The MCP SDK also holds each MCP endpoint to 4 MiB and 100 messages per JSON-RPC batch.
   A tRPC HTTP batch, user or agent, holds at most 1 000 calls; a tRPC WebSocket batch is bounded only by the message byte limit, because the WebSocket adapter has no batch limit.
-- **Credential isolation.** Agents never hold real upstream credentials.
+- **Credential isolation.** Platform-managed upstream credentials stay outside agents.
+  An owner's explicit [native Codex login](native-codex-login.md) stores that subscription's credentials on the agent.
   The gateway intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the machine has no path anywhere except through its gateway.
   See [security-and-credentials](security-and-credentials.md).
 - **SPIFFE identity per hop.** Three hops, the latter two gated by per-agent Istio AuthorizationPolicies: (1) machine → gateway on the proxy port, through the owner's runner (admitted by NetworkPolicy — the runner sits outside the ambient mesh), (2) gateway → harness via the waypoint (all agent egress traverses the gateway's Envoy, including the harness call), (3) gateway → ext-authz on the per-agent ext-authz Service.

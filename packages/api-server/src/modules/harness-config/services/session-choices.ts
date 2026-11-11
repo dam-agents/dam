@@ -213,16 +213,23 @@ export function createSessionChoicesValidator(deps: {
       const effectiveHarness = fire?.harness ?? harness;
       const effectiveCapability =
         carried.find((h) => h.name === effectiveHarness) ?? harnessCapability;
+      const catalog = await deps.ownerCatalog(agentId);
+      const pair = {
+        harness: effectiveHarness,
+        provider: fire?.provider ?? null,
+        model:
+          fire?.model ??
+          (choices.model ? qualifiedPairModel(choices.model) : null),
+      };
+      const template = catalog.providers.find(
+        (provider) => provider.connectionId === pair.provider,
+      )?.template;
+      const native =
+        effectiveCapability?.nativeTemplates?.includes(template ?? "") ?? false;
       const settings = runSubagentSettings(
         effectiveCapability,
-        await deps.ownerCatalog(agentId),
-        {
-          harness: effectiveHarness,
-          provider: fire?.provider ?? null,
-          model:
-            fire?.model ??
-            (choices.model ? qualifiedPairModel(choices.model) : null),
-        },
+        catalog,
+        pair,
         choices.settings,
       );
       const unsupported = Object.keys(settings).find(
@@ -241,7 +248,8 @@ export function createSessionChoicesValidator(deps: {
       const invalid = sessionSettingsError(
         effectiveCapability?.harnessConfigCatalog,
         settings,
-        choices.model ? qualifiedPairModel(choices.model) : null,
+        pair.model,
+        native,
       );
       if (invalid) return invalid;
       const crossed = await crossedSubagentModel(

@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-09
+Last verified: 2026-11-11
 
 ## Session inside the machine
 
@@ -249,6 +249,7 @@ Claude Code can lose its idle report, so a busy session that stays silent for te
 
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
+The owner's fixed native-login action runs `codex-chatgpt login --device-auth` instead, using a Codex lease without model-selection overrides ([native login](native-codex-login.md)).
 A session on a removed provider or an unknown harness closes with the reason.
 A terminal sitting at the harness's prompt sends nothing, so the api-server's relay pings its viewer every 30 seconds, as it pings SSH and browser viewers: the traffic keeps networks that close quiet connections (mobile carriers, proxies) from cutting it, and a viewer that leaves a ping unanswered is cut, which detaches the PTY as a closed tab does.
 Scrollback is tracked so that reattaching while the PTY lives replays it.

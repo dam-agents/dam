@@ -100,8 +100,8 @@ export function withoutApproval(
 export function sessionSettingsError(
   catalog: HarnessConfigCatalog | undefined,
   settings: SessionSettings,
-  model?: string | null,
-  native = false,
+  model: string | null | undefined,
+  native: boolean,
 ): string | undefined {
   for (const [id, value] of Object.entries(settings)) {
     if (isPlatformSubagentSetting(id)) continue;
