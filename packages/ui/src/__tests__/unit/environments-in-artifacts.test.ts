@@ -182,7 +182,7 @@ describe("Environments in the Artifacts list", () => {
     for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
   });
 
-  // TEST_SCENARIO: #6230 — a row with four addresses keeps its name, state and deletion chip on the first line and shows every address, by name, on a line under it. The line is open when the list opens; the row's chevron hides it and shows it again, and the row's menu lists no address.
+  // TEST_SCENARIO: #6230 — a row with four addresses keeps its name, state and deletion chip on the first line and shows every address, by name, on a line under it. The line is open when the list opens; the row's chevron hides it and shows it again, its tooltip says which, and the row's menu lists no address.
   it("shows four addresses under the row, and folds them with the chevron", () => {
     const names = ["app", "keycloak", "share", "content"];
     const busy = environment("busy", "agent-dev", {
@@ -209,6 +209,11 @@ describe("Environments in the Artifacts list", () => {
       act(() => {
         toggle().dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
+    const tooltipOnFocus = () => {
+      act(() => (toggle() as HTMLElement).blur());
+      act(() => (toggle() as HTMLElement).focus());
+      return doc.querySelector('[role="tooltip"]')?.textContent;
+    };
 
     const label = row.querySelector(
       '[data-testid="environment-state"]',
@@ -239,6 +244,7 @@ describe("Environments in the Artifacts list", () => {
     expect(toggle().getAttribute("aria-label")).toBe(
       "Hide the addresses of busy",
     );
+    expect(tooltipOnFocus()).toBe("Hide addresses");
 
     press();
     expect(addresses()).toBeNull();
@@ -247,6 +253,7 @@ describe("Environments in the Artifacts list", () => {
     expect(toggle().getAttribute("aria-label")).toBe(
       "Show the addresses of busy",
     );
+    expect(tooltipOnFocus()).toBe("Show addresses");
 
     press();
     expect(

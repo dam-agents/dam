@@ -161,17 +161,19 @@ export function EnvironmentRow({
             />
           ))}
         {several && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="shrink-0"
-            aria-expanded={addressesOpen}
-            aria-label={`${addressesOpen ? "Hide" : "Show"} the addresses of ${environment.name}`}
-            data-testid="environment-addresses-toggle"
-            onClick={() => setAddressesOpen((open) => !open)}
-          >
-            <DisclosureChevron open={addressesOpen} />
-          </Button>
+          <Tooltip content={addressesOpen ? "Hide addresses" : "Show addresses"}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              aria-expanded={addressesOpen}
+              aria-label={`${addressesOpen ? "Hide" : "Show"} the addresses of ${environment.name}`}
+              data-testid="environment-addresses-toggle"
+              onClick={() => setAddressesOpen((open) => !open)}
+            >
+              <DisclosureChevron open={addressesOpen} />
+            </Button>
+          </Tooltip>
         )}
         <div className="shrink-0">
           <RowActionsMenu
