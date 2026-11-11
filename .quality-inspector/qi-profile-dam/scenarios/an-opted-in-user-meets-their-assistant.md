@@ -156,3 +156,12 @@ When the owner asks Dammy to save something as a knowledge base, and it reports 
 Then nothing changes either, since a knowledge base is not the first result any more
 When the owner restarts their onboarding from the Onboarding progress card
 Then the recorded first result is gone, and a later one is recorded as if it were the first
+
+## AC-15 — a starter idea reaches a result in at most three questions
+
+Given that account's greeting, on an install that provides the shared CurveBender
+When the owner clicks the *Artifact:* pill and sends it
+Then Dammy asks for a small sample of their own decks to upload or paste, and never asks them to connect a tool, an account or a provider
+When they upload one and answer what Dammy asks
+Then Dammy shows what it learned and asks whether it got it right
+And it makes the deck after at most three questions in all, counting the ask for the sample and that check

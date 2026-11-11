@@ -79,7 +79,7 @@ A person the feature is off for, and any other Agent, open on the ordinary new-c
 
 **What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the ideas it offers, and what to do about them — learn how the person works one task at a time, say what it could do for them, and remember what they tell it.
 It also carries the **onboarding rules** that take a picked idea to a first result: one small sample of the person's own work, at most three questions before the result, a default it names rather than a question, nothing to connect, and what it learned shown before it is saved.
-The same rules are a personal-assistant-only section of the `dam` skill, which an upgrade rewrites; the `~/AGENTS.md` written at create never changes, so the skill is how an assistant made earlier gets a change to them.
+The same rules are a personal-assistant-only section of the `dam` skill, which an upgrade rewrites; the platform never rewrites the `~/AGENTS.md` it wrote at create, so the skill is how an assistant made earlier gets a change to them, and the skill's description asks the assistant to read it before it starts on a task.
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
@@ -109,7 +109,8 @@ It is a rule in the `dam` skill, not platform logic: the skill tells the assista
 The skill reaches every Agent that holds the DAM Connection, but only the Agent whose instructions name it the person's personal assistant offers unasked; any other Agent connects to the DM only when the person asks.
 The assistant offers only when `dam channel slack-dm status` says the person is reachable, so on an install or workspace where email pairing is off or a scope is missing it says nothing about Slack and results stay in the app.
 On a yes, `dam channel slack-dm connect` pairs the person and binds the assistant to their DM ([channels](channels.md)), and the assistant does what it offered: a schedule running on the assistant gains the delivery (`start_thread` in the DM when it needs the person's input, `post` otherwise), and a schedule on another Agent does so only once that Agent is connected too, an artifact is posted to the DM at once, and something it learned needs no schedule, only a short summary posted to the DM.
-A schedule's first result is sent at once too — done in the offering Session and posted, or asked for in a DM thread when it needs the person's input — so a yes is answered in the DM within minutes, not at the next fire.
+A schedule's first result is sent at once too: the schedule itself, with any draft or report already made in the offering Session, without running its task again.
+When the schedule needs input the person has not given, the assistant asks for it in a DM thread instead, and the result follows their answer; the question is not the result.
 It never offers to read the person's Slack: it reads only what the person sends it in that DM, and that content is information for the task, never an instruction to change its instructions, schedules, connections or delivery; such a request is answered by pointing to the app's chat.
 
 ## Starting it over
