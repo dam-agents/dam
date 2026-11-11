@@ -242,7 +242,7 @@ export function composeSubAgentOutcomeDelivery(
 
 export interface SubAgentAwaitMarks {
   markAwaited(ids: string[], until: Date): Promise<void>;
-  markCollected(ids: string[]): Promise<void>;
+  collect(ids: string[]): Promise<{ inTurn: string[] }>;
 }
 
 export function composeSubAgentAwaitMarks(
@@ -251,7 +251,7 @@ export function composeSubAgentAwaitMarks(
   const repo = createSubAgentOutcomesRepository(db);
   return (driverAgentId) => ({
     markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
-    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
+    collect: (ids) => repo.collect(driverAgentId, ids),
   });
 }
 

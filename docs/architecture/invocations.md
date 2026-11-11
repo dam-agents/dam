@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -227,13 +227,15 @@ Scripts stay the path for orchestration logic — loops, scoring one result with
 The bound sits under Node's 300-second request timeout, which the harness server does not override, as the [satellite](satellites.md) wait does; no harness's own tool timeout is raised.
 A harness's MCP client often gives up sooner, after a minute, so while a call waits it sends a progress message every 20 seconds to a client that asked for progress, which restarts that client's own timeout.
 The mesh also cuts open calls: every Agent created or removed reloads the proxy in front of the platform, which closes the calls open before it about 45 seconds later.
-A cut call collects nothing, so the agent, told to call again after a connection error, gets the result from its next call, or the sweep below delivers it as a turn.
-The Driver keeps the ids; the platform tracks nothing per call, a finished id asked again answers again, and an id that is not one of the caller's own Invocations answers as unknown.
+A cut call collects nothing and holds its ids for a minute, so the agent, told to call again after a connection error, gets the result from its next call; past that minute the sweep below delivers it as a turn.
+The Driver keeps the ids; the platform tracks nothing per call, a finished id a wait returned answers again when asked again, and an id that is not one of the caller's own Invocations answers as unknown.
 
 **An outcome nobody waited for is delivered as a turn.** An agent that spawned through the tool and ended its turn, or stopped calling await_subagents, is told when each Invocation ends: a short cluster-wide sweep leases such outcomes for one tick, writes one sub-agent-outcome turn per Driver, carrying what await_subagents would have returned, marks them delivered only once the turn is written, and wakes the Driver if it hibernated ([runtime-delivery](runtime-delivery.md)).
 A lease the server died holding expires and the next tick claims the outcome again, so none is lost.
 The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
-A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
+A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing and holds its ids for that minute too.
+An outcome the sweep holds, or wrote whole into a turn, stays the turn's: a later await_subagents takes only what no turn has, in one write, and names the rest as delivered as a turn without the result, so a call the mesh cut does not hand the agent one outcome twice.
+An outcome its turn carried trimmed stays readable in full through await_subagents, as the turn says.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
 A stop its Driver asked for owes no turn, and neither does a run the stop took down below its target, so no stopped child wakes its own Driver; a target the owner stopped still reaches its Driver as a turn.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.

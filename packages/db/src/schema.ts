@@ -1467,6 +1467,8 @@ export const invocationRuns = pgTable(
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the outcome went to its driver whole in a sub-agent-outcome turn, not as an await_subagents answer, so a later wait points to that turn instead of repeating the result; a turn that carried it trimmed leaves it false, so a wait still returns it in full. */
+    deliveredInTurn: boolean("delivered_in_turn").notNull().default(false),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
   },
   (table) => [
