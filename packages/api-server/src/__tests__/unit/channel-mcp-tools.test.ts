@@ -19,6 +19,7 @@ import type {
   ChannelReply,
   ChannelSendResult,
   MessageReactionsResult,
+  PostEdit,
   ReactionsQuery,
   ThreadQuery,
   ThreadResult,
@@ -46,6 +47,7 @@ vi.mock("../../core/security-log.js", () => ({
 async function mcpHarness(opts?: {
   postResult?: ChannelSendResult;
   replyResult?: ChannelSendResult;
+  editResult?: ChannelSendResult;
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
@@ -54,6 +56,7 @@ async function mcpHarness(opts?: {
   sessionRef?: string;
 }) {
   const replies: ChannelReply[] = [];
+  const edits: { type: ChannelType; edit: PostEdit }[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
@@ -75,6 +78,12 @@ async function mcpHarness(opts?: {
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
         replies.push(args);
         return opts?.replyResult ?? ({ ok: true } as ChannelSendResult);
+      },
+    ),
+    editPost: vi.fn(
+      async (_agentId: string, type: ChannelType, edit: PostEdit) => {
+        edits.push({ type, edit });
+        return opts?.editResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     describeMessageReactions: vi.fn(
@@ -157,6 +166,7 @@ async function mcpHarness(opts?: {
     client,
     posts,
     replies,
+    edits,
     reactionQueries,
     threadQueries,
     historyQueries,
@@ -209,13 +219,97 @@ describe("outbound MCP tools — Slack unfurls (#3499)", () => {
     expect(posts).toEqual([
       {
         text: "links without cards",
-        options: { unfurlLinks: false, unfurlMedia: false },
+        options: { byAgent: true, unfurlLinks: false, unfurlMedia: false },
       },
     ]);
     expect(replies).toEqual([
       { text: "media without cards", threadTs: "1.1", unfurlMedia: false },
       { text: "Slack default previews", threadTs: "1.2" },
     ]);
+  });
+});
+
+describe("edit_post MCP tool — an agent changes its own post (#6406)", () => {
+  // TEST_SCENARIO: the agent passes the reference a posting tool returned and the whole new text; the tool hands both on for the messenger it names and records the edit, with no message-sent event, since nothing new was posted.
+  it("hands the post's reference and the whole new text to the channel", async () => {
+    const { client, edits } = await mcpHarness();
+    auditLines.length = 0;
+    const sent: ChannelMessageSent[] = [];
+    const sub = events$()
+      .pipe(ofType<ChannelMessageSent>(EventType.ChannelMessageSent))
+      .subscribe((event) => sent.push(event));
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1758100320.000100",
+        text: "step 2 of 3",
+      },
+    });
+    sub.unsubscribe();
+
+    expect(result.isError).toBeFalsy();
+    expect(edits).toEqual([
+      {
+        type: ChannelType.Slack,
+        edit: {
+          conversationId: "C-BOUND",
+          messageId: "1758100320.000100",
+          text: "step 2 of 3",
+        },
+      },
+    ]);
+    expect(auditLines).toContainEqual({
+      event: "channel.outbound",
+      detail: expect.objectContaining({ action: "edit", hasCard: false }),
+    });
+    expect(sent).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a refusal from the channel, such as another agent's post or edits that come too fast, reaches the agent as the tool's error, in the channel's own words.
+  it("returns the channel's refusal as the tool error", async () => {
+    const { client } = await mcpHarness({
+      editResult: {
+        error:
+          "Another agent wrote that post. You can change only your own posts.",
+      },
+    });
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1.1",
+        text: "rewritten",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain(
+      "You can change only your own posts",
+    );
+  });
+
+  // TEST_SCENARIO: a card that fails its check must leave the post as it was, so the edit never reaches the channel.
+  it("refuses a card that fails its check before anything changes", async () => {
+    const { client, edits } = await mcpHarness();
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1.1",
+        text: "status",
+        card: { type: "NoSuchComponent", props: {} },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(edits).toEqual([]);
   });
 });
 

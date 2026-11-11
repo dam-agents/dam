@@ -46,6 +46,7 @@ export function telegramWorkerHarness(
     channelPair?: ChannelPair;
     artifacts?: StubArtifact[];
     ownerOf?: (agentId: string) => Promise<string | null>;
+    boundAgent?: () => string;
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];
@@ -55,6 +56,7 @@ export function telegramWorkerHarness(
     opts: SendPromptOpts;
   }> = [];
   const posts: string[] = [];
+  const edits: Array<{ messageId: number; text: string }> = [];
   let nextId = 1;
 
   async function botApi(
@@ -91,6 +93,24 @@ export function telegramWorkerHarness(
         from: BOT,
       });
     }
+    if (method === "editMessageText" && typeof init?.body === "string") {
+      const body = JSON.parse(init.body) as {
+        text?: string;
+        message_id?: number;
+        chat_id?: number | string;
+      };
+      edits.push({
+        messageId: Number(body.message_id),
+        text: body.text ?? "",
+      });
+      return okJson({
+        message_id: Number(body.message_id),
+        date: 0,
+        text: body.text ?? "",
+        chat: { id: Number(body.chat_id), type: "private" },
+        from: BOT,
+      });
+    }
     return okJson({ ...BOT, message_id: (nextId += 1), date: 0 });
   }
 
@@ -121,7 +141,7 @@ export function telegramWorkerHarness(
     agents: () => ({ ensureReady: async () => {} }) as unknown as AgentsService,
     conversations: {
       findAgentByConversation: async () => ({
-        agentId: "agent-1",
+        agentId: opts.boundAgent?.() ?? "agent-1",
         authorizedBy: "kc|owner-1",
         ambient: opts.ambient ?? false,
       }),
@@ -197,5 +217,5 @@ export function telegramWorkerHarness(
     });
   }
 
-  return { worker, botApi, prompts, posts, sendDirect, sendGroup };
+  return { worker, botApi, prompts, posts, edits, sendDirect, sendGroup };
 }

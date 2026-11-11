@@ -70,6 +70,7 @@ import type {
   ChannelHistoryQuery,
   ChannelReaction,
   ChannelReply,
+  PostEdit,
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
@@ -96,6 +97,11 @@ import {
   MESSAGE_EDIT_TTL_MS,
   type MessageEdit,
 } from "../domain/message-edits.js";
+import {
+  createPostEditRateLimit,
+  EMPTY_POST_EDIT,
+  tooManyPostEdits,
+} from "../domain/post-edit-rate-limit.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpModelCallFailedError,
@@ -200,6 +206,8 @@ import {
   historyPreamble,
   labelHistoryMessage,
   marksThread,
+  closingBlock,
+  footerMarksAmbientRound,
   footerSessionId,
   threadWindowMarker,
   parseAgentFooter,
@@ -209,6 +217,7 @@ import {
   DELETE_POST_CONFIRM,
   agentPostMetadata,
   deletePostFileIds,
+  madeByAgent,
   deletePostModal,
   parseAgentPostLink,
   parseDeletePostModal,
@@ -1855,6 +1864,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text?: string;
     replyText?: string;
     replyTexts?: string[];
+    replyTs?: Array<string | undefined>;
     ambient?: boolean;
     slackUserId?: string;
     hasThread?: boolean;
@@ -1875,6 +1885,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   };
 
   const botPosts = createBotPostRateLimit();
+
+  const postEdits = createPostEditRateLimit();
 
   const messageEdits = createMessageEdits<SlackMessage>();
 
@@ -2319,24 +2331,33 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   function noteEngagedTurn(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
-    opts: { messaged?: boolean; replyText?: string } = {},
+    opts: { messaged?: boolean; replyText?: string; replyTs?: string } = {},
   ) {
     noteEngaged(findTurnRef(instanceName, match), opts);
   }
 
   function noteEngaged(
     engaged: TurnRef | undefined,
-    opts: { messaged?: boolean; replyText?: string } = {},
+    opts: { messaged?: boolean; replyText?: string; replyTs?: string } = {},
   ) {
     if (!engaged) return;
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
-    if (opts.replyText) {
-      engaged.replyTexts = [...(engaged.replyTexts ?? []), opts.replyText];
-      engaged.replyText = engaged.replyText
-        ? `${engaged.replyText}\n${opts.replyText}`
-        : opts.replyText;
-    }
+    if (!opts.replyText) return;
+    /* UNIT_BOUNDARY_DESCRIPTION: what the turn said is kept per post, so an
+     * edit of a post the turn made replaces what that post said instead of
+     * standing beside it: the readers after it in a round are told the post's
+     * current words. */
+    const said = [...(engaged.replyTexts ?? [])];
+    const times = said.map((_, i) => engaged.replyTs?.[i]);
+    const at =
+      opts.replyTs === undefined ? -1 : times.lastIndexOf(opts.replyTs);
+    const index = at === -1 ? said.length : at;
+    said[index] = opts.replyText;
+    times[index] = opts.replyTs;
+    engaged.replyTexts = said;
+    engaged.replyTs = times;
+    engaged.replyText = said.join("\n");
   }
 
   const userCache = createTtlMap<string, SlackUserInfo | null>({
@@ -3024,6 +3045,63 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       return { uploadError: formatError(err), ...message };
     }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: reads back the post an Agent asks to change,
+   * and answers only when that Agent made it with one of its own tools. The
+   * bot posts for every Agent, so Slack would let any of them change any of
+   * the bot's posts. The Agent Footer names the author, and it is read from
+   * the block that ends the post, where the platform puts it: an Agent's card
+   * can show a link to another Agent's page earlier in the post. The platform
+   * also posts in an Agent's name, with its footer, so the post must carry
+   * the mark of an Agent's own tool as well. A post by another Agent, a
+   * platform notice, a person's message and a post that carries a file are
+   * each refused with their own reason. A reply is read through its own send
+   * time as a thread, which Slack answers with that one message, and a
+   * top-level post through the channel; a read Slack refuses counts as no
+   * post found.
+   */
+  async function readOwnPost(
+    gw: SlackGateway,
+    instanceName: string,
+    target: { id: string; teamId: SlackWorkspace },
+    ts: string,
+  ): Promise<{ post: SlackMessage & { ts: string } } | { error: string }> {
+    const read = (threadTs?: string) =>
+      gw.getMessage({
+        channel: target.id,
+        ts,
+        ...(threadTs ? { threadTs } : {}),
+        teamId: target.teamId,
+      });
+    const post =
+      (await read(ts).catch(() => null)) ?? (await read().catch(() => null));
+    if (!post)
+      return {
+        error:
+          "No post with that ts in that chat. Pass the chatId and ts that " +
+          "reply, post or start_thread returned for the post.",
+      };
+    const author = parseAgentFooter(closingBlock(post))?.agentId;
+    if (author !== undefined && author !== instanceName)
+      return {
+        error:
+          "Another agent wrote that post. You can change only your own posts.",
+      };
+    if (author === undefined || !madeByAgent(post))
+      return {
+        error:
+          "That message is not one of your posts. You can change only a " +
+          "post you made with reply, post or start_thread.",
+      };
+    if (deletePostFileIds(post).length > 0)
+      return {
+        error:
+          "A post that carries a file cannot be changed yet. Say what " +
+          "changed in a new message instead.",
+      };
+    return { post };
   }
 
   type PendingPostDelete = {
@@ -8508,7 +8586,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                   text: post.text,
                   ...persona,
                   blocks,
-                  metadata: agentPostMetadata(fileIds),
+                  metadata: agentPostMetadata(
+                    fileIds,
+                    options?.byAgent === true,
+                  ),
                   ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                   ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
                 }),
@@ -8538,6 +8619,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         noteEngaged(engaged, {
           messaged: true,
           ...(post.replyText ? { replyText: post.replyText } : {}),
+          ...(ts !== undefined ? { replyTs: ts } : {}),
         });
         return {
           ok: true as const,
@@ -8886,7 +8968,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 text: post.text,
                 ...persona,
                 blocks,
-                metadata: agentPostMetadata(fileIds),
+                metadata: agentPostMetadata(fileIds, true),
                 ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
                 ...(args.unfurlLinks !== undefined
                   ? { unfurlLinks: args.unfurlLinks }
@@ -8906,7 +8988,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 post.cardBlocks,
               ),
         );
-        noteEngaged(engaged, { messaged: true, replyText: post.replyText });
+        noteEngaged(engaged, {
+          messaged: true,
+          replyText: post.replyText,
+          ...(ts !== undefined ? { replyTs: ts } : {}),
+        });
         return {
           ok: true as const,
           conversationId: target.id,
@@ -8916,6 +9002,95 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       } catch (err) {
         return { error: formatError(err) };
       }
+    },
+
+    async editPost(instanceName: string, edit: PostEdit) {
+      const boundChannelIds =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (boundChannelIds.length === 0)
+        return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+      if (edit.text.trim() === "" && edit.card === undefined)
+        return { error: EMPTY_POST_EDIT };
+
+      const turnChannel = findTurnRef(
+        instanceName,
+        (ref) => ref.channel === edit.conversationId,
+      )?.channel;
+      const target = await resolveOutboundTarget(
+        gw,
+        boundChannelIds,
+        edit.conversationId,
+        turnWorkspace(instanceName),
+        async (id, teamId, dm) =>
+          id === turnChannel
+            ? null
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
+      );
+      if ("error" in target) return target;
+      const bridged = await bridgeClosed(
+        instanceName,
+        target.teamId,
+        target.id,
+      );
+      if (bridged) return bridged;
+      const waiting = postEdits.check(target.teamId, instanceName);
+      if (!waiting.admitted)
+        return { error: tooManyPostEdits(waiting.retryAfterMs) };
+      const found = await readOwnPost(gw, instanceName, target, edit.messageId);
+      if ("error" in found) return found;
+      const written = closingBlock(found.post);
+      const linked = await linkForTarget(gw, instanceName, target, {
+        text: edit.text,
+        ...(edit.card ? { card: edit.card } : {}),
+      });
+      if ("error" in linked) return linked;
+
+      const [base, { sign, emoji }] = await Promise.all([
+        agentFooter(
+          instanceName,
+          footerSessionId(written) ?? undefined,
+          footerMarksAmbientRound(written),
+        ),
+        agentPersona(gw, instanceName, target),
+      ]);
+      const post = agentPost(
+        linked.text,
+        linked.card,
+        { ...base, emoji },
+        sign,
+      );
+      const refused = postRefusal(post);
+      if (refused) return refused;
+      const admission = postEdits.admit(target.teamId, instanceName);
+      if (!admission.admitted)
+        return { error: tooManyPostEdits(admission.retryAfterMs) };
+      try {
+        await sendAgentPost(target.id, post, (blocks) =>
+          gw.updateMessage({
+            channel: target.id,
+            ts: edit.messageId,
+            teamId: target.teamId,
+            text: post.text,
+            blocks,
+            metadata: agentPostMetadata([], true),
+          }),
+        );
+      } catch (err) {
+        return { error: formatError(err) };
+      }
+      const threadTs = found.post.threadTs ?? found.post.ts;
+      noteEngagedTurn(
+        instanceName,
+        (ref) => ref.channel === target.id && ref.threadTs === threadTs,
+        { replyText: post.replyText, replyTs: edit.messageId },
+      );
+      return {
+        ok: true as const,
+        conversationId: target.id,
+        ts: edit.messageId,
+      };
     },
 
     async react(instanceName: string, args: ChannelReaction) {
@@ -9378,6 +9553,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (!start.text.trim())
         return { error: "nothing to send — start_thread needs text" };
       const posted = await worker.postMessage(instanceName, start.text, {
+        byAgent: true,
         conversationId: start.conversationId,
         ...(start.card ? { card: start.card } : {}),
       });

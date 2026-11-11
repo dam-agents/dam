@@ -524,7 +524,7 @@ describe("slack reply / react tools", () => {
     ).toEqual(["markdown", "context"]);
     expect(sent.metadata).toEqual({
       eventType: "agent_post",
-      payload: { files: ["F2-report.md"] },
+      payload: { files: ["F2-report.md"], byAgent: true },
     });
     expect(
       h
