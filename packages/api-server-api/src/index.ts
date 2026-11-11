@@ -482,6 +482,8 @@ export type {
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
+  ARTIFACT_PROMPT_CONVERSATION_PATTERN,
+  artifactPromptConversationSchema,
   artifactPromptSchema,
   type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
