@@ -885,3 +885,36 @@ func deferredResizeOnNode(t *testing.T, stepped bool) (context.Context, *AgentRe
 	require.NoError(t, err)
 	return ctx, r, node, agent
 }
+
+// TEST_SCENARIO: a sweepable Invocation target parked for room keeps asking to run after its activity expires, so its reconcile never publishes it hibernated for the Agent Sweep to delete; a parked Agent that is not sweepable, and a parked target someone stopped, hibernate as before.
+func TestAParkedInvocationTargetKeepsWaitingForRoom(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		waits       bool
+	}{
+		{"sweepable", map[string]string{annSweepable: "true"}, true},
+		{"not sweepable", map[string]string{}, false},
+		{"sweepable and stopped", map[string]string{annSweepable: "true", annStopRequested: stale}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := vmAgentCR()
+			agent.Annotations[annLastActivity] = stale
+			for k, v := range tc.annotations {
+				agent.Annotations[k] = v
+			}
+			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonOverBudget, LastTransitionTime: metav1.Now()}}
+			r, node, _ := setupVMReconciler(t, agent)
+			node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000}
+
+			require.NoError(t, r.Reconcile(context.Background(), agent))
+
+			assert.Equal(t, tc.waits, node.spec("my-agent").Running, "a waiting target asks the runner to start it")
+			if !tc.waits {
+				return
+			}
+			assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+		})
+	}
+}

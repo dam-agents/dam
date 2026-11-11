@@ -180,7 +180,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if parkedSweepableHolds(agent) {
+		if ready, _, _ := vmStartConditions(agent); parkedTargetWaits(agent.GetAnnotations(), fmt.Sprint(ready["reason"])) {
 			continue
 		}
 
@@ -242,19 +242,6 @@ func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context, owner string) (m
 		}
 	}
 	return awaiting, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a sweepable Agent parked for room is an Invocation target that has not started: its Invocation's deadline bounds the wait, and a hibernation would let the Agent Sweep delete it, failing the Invocation as a deleted target instead of one that waited for room.
-func parkedSweepableHolds(agent *unstructured.Unstructured) bool {
-	if agent.GetAnnotations()[annSweepable] != "true" {
-		return false
-	}
-	ready, _, _ := vmStartConditions(agent)
-	switch ready["reason"] {
-	case apiv1.ReasonOverBudget, apiv1.ReasonAwaitingMemory, apiv1.ReasonAwaitingAllocation, apiv1.ReasonAwaitingWarmUp, apiv1.ReasonAllocationUnreadable:
-		return true
-	}
-	return false
 }
 
 func hibernationPublished(agent *unstructured.Unstructured) bool {
