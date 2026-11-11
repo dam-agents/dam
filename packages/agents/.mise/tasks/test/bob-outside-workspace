@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+//MISE description="Test that the Bob preload opens tools outside the work directory per approval posture in what Bob reads of its settings file, keeps the posture out of what Bob writes while keeping Bob's own changes, and is loaded by the terminal too"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-outside-workspace.mjs", "bob/rootfs/usr/local/lib/bob-settings-file.mjs", "bob/rootfs/usr/local/lib/bob-preload-lib.mjs", "bob/rootfs/usr/local/bin/harness-terminal", "bob/rootfs/app/bob-settings.mjs", ".mise/tasks/test/bob-outside-workspace"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// TEST_OVERVIEW: Bob asks before a file tool call outside its workspace (~/work) unless that tool's permission group has enableOutsideWorkspace in approval.permissionOptions, even with --auto-approve, and the agent's own files live in $HOME. Preloaded into Bob, bob-outside-workspace.mjs opens every group in what Bob reads of ~/.bob/settings/settings.json under --auto-approve, and read and execute otherwise; a group the owner's file opens in any of its entries stays open. What Bob writes back keeps every change Bob made, and each group whose value is still the laid-over one gets the owner's own entries back, so the posture never reaches the owner's file.
+
+const lib = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/", import.meta.url));
+const rootfs = fileURLToPath(new URL("../../../bob/rootfs/", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "bob-outside-workspace-"));
+const settings = join(home, ".bob/settings/settings.json");
+mkdirSync(join(home, ".bob/settings"), { recursive: true });
+
+const ownerFile = {
+  session: { model: "m" },
+  approval: {
+    permissionOptions: [
+      { groupId: "custom", enableOutsideWorkspace: true },
+      { groupId: "read", enableOutsideWorkspace: false, note: "owner" },
+      { groupId: "edit", enableOutsideWorkspace: false },
+      { groupId: "edit", enableOutsideWorkspace: true },
+    ],
+  },
+};
+const ALL = ["read", "edit", "execute", "browser", "mcp", "skill", "todo", "subtask", "subagent", "mode", "artifact"];
+
+const bob = join(home, "bob.mjs");
+writeFileSync(
+  bob,
+  `import fs from "node:fs";
+const p = ${JSON.stringify(settings)};
+const doc = JSON.parse(fs.readFileSync(p, "utf8"));
+console.log(JSON.stringify(doc.approval.permissionOptions));
+const change = process.env.CHANGE;
+if (change) {
+  new Function("doc", change)(doc);
+  await fs.promises.writeFile(p + ".tmp", JSON.stringify(doc));
+  fs.renameSync(p + ".tmp", p);
+}
+`,
+);
+const run = ({ auto, change, env = {}, preloads = ["bob-outside-workspace.mjs"] }) => {
+  writeFileSync(settings, JSON.stringify(ownerFile));
+  const out = execFileSync(
+    process.execPath,
+    [...preloads.map((name) => `--import=${join(lib, name)}`), bob, ...(auto ? ["--auto-approve"] : [])],
+    { env: { PATH: process.env.PATH, HOME: home, ...(change && { CHANGE: change }), ...env }, encoding: "utf8" },
+  );
+  const seen = JSON.parse(out);
+  return Object.fromEntries(seen.map(({ groupId, enableOutsideWorkspace }) => [groupId, enableOutsideWorkspace]));
+};
+const onDisk = () => JSON.parse(readFileSync(settings, "utf8"));
+
+try {
+  // TEST_SCENARIO: under --auto-approve nobody may be there to answer, so Bob reads every group open, even read, which the owner's file closes; the owner's other group passes through.
+  assert.deepEqual(run({ auto: true }), { custom: true, ...Object.fromEntries(ALL.map((g) => [g, true])) });
+
+  // TEST_SCENARIO: on ask a person answers, so only read and execute open; edit opens because one of the owner's two edit entries opens it.
+  assert.deepEqual(run({ auto: false }), { custom: true, read: true, edit: true, execute: true });
+
+  // TEST_SCENARIO: Bob saves a setting of its own (the TUI's model) through a staged file and a rename; the save lands, and the owner's permissionOptions come back exactly as they were, with no posture in them.
+  run({ auto: true, change: 'doc.session.model = "tui";' });
+  assert.deepEqual(onDisk(), { ...ownerFile, session: { model: "tui" } });
+
+  // TEST_SCENARIO: a person opens browser in the TUI on ask; that change is the person's, so it is kept, and the untouched groups go back to the owner's entries.
+  run({ auto: false, change: 'doc.approval.permissionOptions.push({ groupId: "browser", enableOutsideWorkspace: true });' });
+  assert.deepEqual(onDisk().approval.permissionOptions, [
+    { groupId: "custom", enableOutsideWorkspace: true },
+    { groupId: "browser", enableOutsideWorkspace: true },
+    { groupId: "read", enableOutsideWorkspace: false, note: "owner" },
+    { groupId: "edit", enableOutsideWorkspace: false },
+    { groupId: "edit", enableOutsideWorkspace: true },
+  ]);
+
+  // TEST_SCENARIO: a Bob process with pins of its own reads a settings copy through bob-settings-file.mjs; loaded after it, as harness-chat does, the posture applies to that copy.
+  const copy = join(home, ".bob/platform-processes/a/settings.json");
+  mkdirSync(join(home, ".bob/platform-processes/a"), { recursive: true });
+  writeFileSync(copy, JSON.stringify({ approval: { outsideWorkspaceAllowed: true } }));
+  assert.deepEqual(
+    run({ auto: false, env: { BOB_SETTINGS_FILE: copy }, preloads: ["bob-settings-file.mjs", "bob-outside-workspace.mjs"] }),
+    { read: true, execute: true },
+  );
+
+  // TEST_SCENARIO: the terminal's `bob chat` gets the preload too, with and without the Model Router's loopback preload.
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin/bob"), '#!/bin/sh\nprintf "%s\\n" "$NODE_OPTIONS" > "$HOME/bob-args"\n', { mode: 0o755 });
+  const terminal = readFileSync(join(rootfs, "usr/local/bin/harness-terminal"), "utf8")
+    .replaceAll("/app/bob-settings.mjs", join(rootfs, "app/bob-settings.mjs"))
+    .replaceAll("--import=/usr/local/lib/", "--import=/preload/");
+  writeFileSync(join(home, "harness-terminal"), terminal);
+  const launch = (env) => {
+    execFileSync("/bin/sh", [join(home, "harness-terminal")], {
+      env: { PATH: `${join(home, "bin")}:${process.env.PATH}`, HOME: home, ...env },
+      encoding: "utf8",
+    });
+    return readFileSync(join(home, "bob-args"), "utf8").trim().split(" ");
+  };
+  assert.deepEqual(launch({}), ["--import=/preload/bob-outside-workspace.mjs"]);
+  assert.deepEqual(launch({ PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:1" }), [
+    "--import=/preload/bob-loopback-direct.mjs",
+    "--import=/preload/bob-outside-workspace.mjs",
+  ]);
+  console.log("Bob reads its posture's groups open outside the work directory; its own saves land and the posture never reaches the owner's file");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}
