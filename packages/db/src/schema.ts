@@ -829,6 +829,15 @@ export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Agents whose owner lets the sub-agents and Environments they launch have network access of their own, wider than the Agent's: one row per Agent with the toggle on, none with it off. A child is bound by the row of the root Agent of its launch chain, never by one of its own. */
+export const agentChildEgressGrants = pgTable("agent_child_egress_grants", {
+  agentId: text("agent_id").primaryKey(),
+  grantedBy: text("granted_by").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentPublicProfiles = pgTable("agent_public_profiles", {
   agentId: text("agent_id").primaryKey(),
   name: text("name").notNull(),
@@ -1420,6 +1429,16 @@ export const invocations = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     /* UNIT_BOUNDARY_DESCRIPTION: until when a kept target outlives its result, asleep with its disk; null for a target reaped after its result, as every target was before keep. Wall-clock, set at spawn and moved only by its driver. */
     keepUntil: timestamp("keep_until", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the owner answered the network rules the driver set on this target that had to wait for them, one entry per answered rule. Kept on the target so its driver can read the answers with a result after a one-off target, and its requests with it, is removed; null when no rule waited. */
+    egressAnswers: jsonb("egress_answers").$type<
+      {
+        host: string;
+        port?: number;
+        method: string;
+        path: string;
+        verdict: "allow" | "deny";
+      }[]
+    >(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")
       .notNull()

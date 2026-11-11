@@ -49,6 +49,7 @@ import {
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import { createInvocationStart } from "./services/invocation-start.js";
+import { createInvocationEgressHold } from "./services/invocation-egress-hold.js";
 import {
   createScriptOutputs,
   type OutputBlobStore,
@@ -158,11 +159,15 @@ export function composeInvocationsQueryForOwner(opts: {
   db: Db;
   owner: string;
   frames: DelegationFramesPort;
+  egressWaitingAmong?: (agentIds: readonly string[]) => Promise<Set<string>>;
 }): InvocationsQueryService {
   return createDelegationsQuery({
     repo: createInvocationsRepository(opts.db),
     owner: opts.owner,
     frames: opts.frames,
+    ...(opts.egressWaitingAmong && {
+      egressWaitingAmong: opts.egressWaitingAmong,
+    }),
   });
 }
 
@@ -271,6 +276,24 @@ export function createInvocationStartAdapter(
   log: (msg: string) => void,
 ): ReturnType<typeof createInvocationStart> {
   return createInvocationStart({ repo: createInvocationsRepository(db), log });
+}
+
+export function createInvocationEgressHoldAdapter(
+  db: Db,
+  waitingRules: (agentId: string) => Promise<readonly unknown[]>,
+): ReturnType<typeof createInvocationEgressHold> {
+  return createInvocationEgressHold({
+    repo: createInvocationsRepository(db),
+    waitingRules,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: records the owner's answer to a child's waiting network rule on the child's invocation, for the approvals context to call when a verdict lands.
+export function recordEgressAnswerAdapter(
+  db: Db,
+): InvocationsRepository["recordEgressAnswer"] {
+  const repo = createInvocationsRepository(db);
+  return (id, answer) => repo.recordEgressAnswer(id, answer);
 }
 
 export function createInvocationTasksAdapter(db: Db): InvocationTasks {

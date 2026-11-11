@@ -1,10 +1,12 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import {
+  childEgressGrants,
   childrenMirroringConnections,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
+  inheritanceOf,
 } from "../../../modules/agents/index.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
 import { assistantProvisioningGuard } from "../../../modules/assistants/services/provisioning-guard-instance.js";
@@ -51,6 +53,7 @@ import {
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
+  recordEgressAnswerAdapter,
   composeInvocationsControlForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
@@ -74,7 +77,11 @@ import {
 } from "../../../modules/connections/compose.js";
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { damKeyPortFor } from "../../../modules/connections/domain/dam-connection.js";
-import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import {
+  composeApprovalsService,
+  composeChildEgressRelease,
+  childEgressWaitingAmong,
+} from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -422,6 +429,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
       frames: delegationFrames,
+      egressWaitingAmong: childEgressWaitingAmong(db),
     });
     const invocationsControl = composeInvocationsControlForOwner({
       db,
@@ -532,6 +540,20 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownerSub: user.sub,
       isAgentOwnedBy,
     });
+    const egressRuleWriter = createEgressRuleWriterAdapter(db, l7Hosts);
+    const childGrants = childEgressGrants(db);
+    const turnOnChildEgress = async (
+      rootAgentId: string,
+      decidedBy: string,
+    ) => {
+      await childGrants.set(rootAgentId, true, decidedBy);
+      await composeChildEgressRelease({
+        db,
+        writer: egressRuleWriter,
+        rootOf: childGrants.rootOf,
+        answered: recordEgressAnswerAdapter(db),
+      }).release(rootAgentId, decidedBy);
+    };
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -542,6 +564,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       trustedHosts,
       platformAccess,
+      childEgress: {
+        available: async (agentId) =>
+          Boolean((await features.flags()).environments) &&
+          !(await inheritanceOf(db)(agentId)) &&
+          !(await agentsRepo.get(agentId, user.sub))?.spec.environmentOf,
+        isGranted: (agentId) => childGrants.isGranted(agentId),
+        set: (agentId, on, decidedBy) =>
+          on
+            ? turnOnChildEgress(agentId, decidedBy)
+            : childGrants.set(agentId, false, decidedBy),
+      },
     });
     const { service: approvals } = composeApprovalsService({
       db,
@@ -554,8 +587,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
-      egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
+      egressRuleWriter,
       wrapperFrameSender,
+      childEgressAnswered: recordEgressAnswerAdapter(db),
+      childEgressSwitch: {
+        turnOnForRootOf: async (driverId, decidedBy) => {
+          const root = await childGrants.rootOf(driverId);
+          if (root) await turnOnChildEgress(root, decidedBy);
+        },
+      },
     });
     const costReviews = composeCostReviewsForOwner({
       db,

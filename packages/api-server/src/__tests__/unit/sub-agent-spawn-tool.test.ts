@@ -45,7 +45,7 @@ function setup(
     spawn: async (body: SpawnRequest, origin: unknown) => {
       spawned.push(body);
       from.push(origin);
-      return { ok: true, id: "agent-child" };
+      return { ok: true, id: "agent-child", egressWaiting: [] };
     },
   } as unknown as DriverOps;
   registerSubAgentTools(server, {

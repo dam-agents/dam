@@ -28,6 +28,7 @@ import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import { createInheritanceRepository } from "./infrastructure/inheritance-repository.js";
+import { createChildEgressGrantsRepository } from "./infrastructure/child-egress-grants-repository.js";
 import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
 import { accessTo } from "./domain/agent-access.js";
 import { permissionsOf } from "./domain/agent-permissions.js";
@@ -475,6 +476,39 @@ export function nearestOwnEgress(db: Db): (agentId: string) => Promise<{
 }
 
 const MAX_INHERITANCE_DEPTH = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's toggle that lets an Agent's sub-agents and Environments have network access of their own, wider than the Agent's. Only a root Agent's toggle counts: a driver anywhere down a launch chain is granted when the root of its chain is, so a child never gives its own children more than the owner allowed at the root, and a chain longer than MAX_INHERITANCE_DEPTH is never granted. Also the cleanup that drops a deleted Agent's row.
+export function childEgressGrants(db: Db): {
+  isGrantedFor(driverId: string): Promise<boolean>;
+  isGranted(agentId: string): Promise<boolean>;
+  rootOf(agentId: string): Promise<string | null>;
+  set(agentId: string, on: boolean, decidedBy: string): Promise<void>;
+  listAgentIds(): Promise<string[]>;
+  cleanup(agentId: string): Promise<void>;
+} {
+  const inheritance = createInheritanceRepository(db);
+  const grants = createChildEgressGrantsRepository(db);
+  async function rootOf(agentId: string): Promise<string | null> {
+    let current = agentId;
+    for (let depth = 0; depth < MAX_INHERITANCE_DEPTH; depth++) {
+      const row = await inheritance.get(current);
+      if (!row) return current;
+      current = row.parentAgentId;
+    }
+    return null;
+  }
+  return {
+    async isGrantedFor(driverId) {
+      const root = await rootOf(driverId);
+      return root !== null && (await grants.isGranted(root));
+    },
+    isGranted: (agentId) => grants.isGranted(agentId),
+    rootOf,
+    set: (agentId, on, decidedBy) => grants.set(agentId, on, decidedBy),
+    listAgentIds: () => grants.listAgentIds(),
+    cleanup: (agentId) => grants.deleteForAgent(agentId),
+  };
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: a child's inheritance record, for a check that only its launching agent may change its open egress.
 export function inheritanceOf(db: Db): (agentId: string) => Promise<{

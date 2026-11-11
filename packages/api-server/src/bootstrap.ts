@@ -71,6 +71,7 @@ import {
   childrenMirroringConnections,
   inheritanceCleanup,
   nearestOwnEgress,
+  childEgressGrants,
   ownEgressAgentIds,
   composeAgentEditors,
   composeAgentsModule,
@@ -323,6 +324,7 @@ import {
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationStartAdapter,
+  createInvocationEgressHoldAdapter,
   createInvocationsCleanupHook,
   createDelegationFramesClient,
   createInvocationSetupFailure,
@@ -345,7 +347,9 @@ import { composeAgentKeys } from "./modules/agent-keys/index.js";
 import {
   composeApprovalsSystem,
   composeEgressProposals,
-  composeWildcardEgressRequests,
+  composeChildEgressRequests,
+  childEgressWaiting,
+  startChildEgressAnsweredSaga,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -367,6 +371,7 @@ import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
 import { startSpendAlerts } from "./modules/spend-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
+  ruleSpeaksFor,
   createEgressRulesCleanupHook,
   createK8sAgentL7Source,
   createL7PromotionReconcile,
@@ -1011,7 +1016,8 @@ export async function bootstrap() {
     resolveAgentName,
     resolveEvent: async (agentId, event) => {
       const paired = await resolveInitializationPair(agentId, event);
-      return paired && resolveInvocationStart(agentId, paired);
+      const released = paired && (await holdForEgress(agentId, paired));
+      return released && resolveInvocationStart(agentId, released);
     },
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
@@ -1060,6 +1066,24 @@ export async function bootstrap() {
   const resolveInvocationStart = createInvocationStartAdapter(db, (msg) =>
     getLogger().warn(msg),
   );
+  const egressWaitingOf = childEgressWaiting(db);
+  const holdForEgress = createInvocationEgressHoldAdapter(db, egressWaitingOf);
+  /* UNIT_BOUNDARY_DESCRIPTION: why a sub-agent has not started, for its driver and for the reason it fails with if it never does: its owner's memory is full, or a network rule its driver set at launch waits for the owner. */
+  const startWaitReason = async (agentId: string): Promise<string | null> => {
+    const wait = startWaitOf(agentsRepo.peekCached(agentId));
+    if (wait) return wait;
+    const waiting = await egressWaitingOf(agentId);
+    return waiting.length > 0
+      ? `It waits for your owner to answer the network rules you set for it: ${[...new Set(waiting.map((w) => w.host))].join(", ")}.`
+      : null;
+  };
+  startChildEgressAnsweredSaga((childId) => {
+    void runtimeDelivery.queue.enqueue(childId).catch((err: unknown) => {
+      getLogger().warn(
+        `[invocation-egress-hold] ${childId}: redelivery after the owner's answer not queued: ${formatError(err)}`,
+      );
+    });
+  });
   const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
@@ -2161,7 +2185,8 @@ export async function bootstrap() {
     createL7HostsPortFor({ authority: config.agentStore, k8s: k8sClient, db }),
     async (agentId) =>
       (await egressIdentity?.resolve(agentId))?.agentId ?? null,
-    composeWildcardEgressRequests({
+    (driverId) => childEgressGrants(db).isGrantedFor(driverId),
+    composeChildEgressRequests({
       db,
       ownerOf: resolveAgentOwner,
       nameOf: async (agentId) => {
@@ -2171,6 +2196,10 @@ export async function bootstrap() {
           : undefined;
         return task?.name || (await resolveAgentName(agentId));
       },
+      isEnvironment: async (agentId) =>
+        Boolean(
+          (await agentsRepo.get(agentId).catch(() => null))?.spec.environmentOf,
+        ),
     }),
   );
   await markTrustedRowsTakenOverAdapter(db, trustedHosts)
@@ -2210,6 +2239,7 @@ export async function bootstrap() {
       nearestOwnEgress: nearestOwnEgress(db),
     })),
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    waitingRuleSpeaksFor: ruleSpeaksFor,
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
@@ -2440,6 +2470,10 @@ export async function bootstrap() {
       ...inheritanceCleanup(db),
     },
     {
+      name: "child-egress-grants",
+      ...childEgressGrants(db),
+    },
+    {
       name: "cost-reviews",
       ...createCostReviewsCleanup(db),
     },
@@ -2656,8 +2690,7 @@ export async function bootstrap() {
           }
         : null;
     },
-    readStartWait: async (agentId) =>
-      startWaitOf(agentsRepo.peekCached(agentId)),
+    readStartWait: startWaitReason,
     hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
     frames: delegationFrames,
