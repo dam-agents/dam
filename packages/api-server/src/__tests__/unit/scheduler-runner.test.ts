@@ -416,7 +416,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(enqueued).toEqual([]);
     expect(events).toEqual([]);
     expect(stampedResults.map((r) => r.result)).toEqual([
-      "this agent is still setting up its default model; try again in a minute",
+      "this agent is still setting up its model; try again in a minute",
     ]);
   });
 

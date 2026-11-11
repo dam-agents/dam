@@ -8,10 +8,10 @@ import {
   AcpModelCallFailedError,
   AcpModelRefusedError,
   AcpTurnAbandonedError,
+  refusedForNoModel,
 } from "../../../core/acp-client.js";
 import { agentSessionUrl } from "./agent-footer.js";
 import { PROVIDER_UNAVAILABLE_TURN_REASON } from "../../../events.js";
-import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
   isAgentStoppedError,
@@ -79,13 +79,16 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
           ? "This agent is disabled by its owner — ask them to enable it."
           : "This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.",
     };
-  if (isNoDefaultModelError(err))
+  /* UNIT_BOUNDARY_DESCRIPTION: the runtime refuses a turn for lack of a model only when no provider the agent holds serves it, so its refusal reads as the api-server's own no-provider failure. */
+  if (isNoDefaultModelError(err) || refusedForNoModel(err)) {
+    const pending = isNoDefaultModelError(err) && err.pending;
     return {
       kind: "plain",
       reason: "no-default-model",
       copy: ({ uiBaseUrl, agentId }) =>
-        noDefaultModelUserCopy(err, uiBaseUrl, agentId),
+        noDefaultModelUserCopy(pending, uiBaseUrl, agentId),
     };
+  }
   if (saysProviderUnavailable(errorText(err)))
     return {
       kind: "provider-unavailable",
@@ -180,11 +183,11 @@ function modelCallFailedUserCopy(
 }
 
 function noDefaultModelUserCopy(
-  err: NoDefaultModelError,
+  pending: boolean,
   uiBaseUrl: string,
   agentId: string,
 ): string {
-  if (err.pending)
+  if (pending)
     return "This agent is still setting up its model provider. Try again in a minute.";
   return `This agent has no model provider it can run on, so it can't answer here yet. Its owner can connect a model provider at ${agentPageUrl(uiBaseUrl, agentId, "providers")}`;
 }
