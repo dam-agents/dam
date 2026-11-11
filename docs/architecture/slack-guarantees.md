@@ -1,8 +1,8 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
-Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md) and [slack-channel-history](slack-channel-history.md).
+Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
 A change to Slack behavior updates all three in the same PR.
 It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
@@ -89,7 +89,6 @@ flowchart TD
 | `@DAM …` inside a thread                                        | Joins that thread's session; if the agent is mid-turn there it is fed into the running turn (harness permitting), else it's the next turn                                             | none                                                                                                |
 | Reply in the thread without `@DAM`                              | **Dropped**, even under the agent's own answer, even mid-turn. In a thread the agent has answered in, the writer gets a note only they can see, once per thread, saying how to tag it | The natural follow-up doesn't work; the once-per-thread memory is lost when the API server restarts |
 | `@DAM Reviewer …`                                               | Reaches the Agent named Reviewer (name must open the message; case-insensitive, whole word)                                                                                           | `@DAM hey Reviewer` goes to the default                                                             |
-| Edit a message to add the tag                                   | Ignored                                                                                                                                                                               | none                                                                                                |
 | Another bot, workflow or Agent posts a plain message            | Reaches readers only, like a person's; never the Agent that posted it                                                                                                                 | Each reader spends a turn; `/dam ignore` silences one app                                           |
 | Another bot, workflow or Agent posts a message that tags `@DAM` | Routed like a person's mention                                                                                                                                                        | More than ten bot posts a minute per thread pause bot posts there for five minutes, with a notice   |
 
@@ -209,6 +208,19 @@ Decided by **Platform** for every rule below, and **Setup** for the operator's t
 
 ---
 
+### 1.10 Editing a message
+
+| Situation                                                                                  | What happens                                                                                                                                               | Drawback                                                                                                                                       |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anyone edits a message before the agent starts on it                                       | The agent reads the message once, as edited                                                                                                                | none                                                                                                                                           |
+| A person edits a mention, a DM or a message in an owned thread while the agent works on it | The edit joins the running turn (harness permitting), else it is the next turn                                                                             | The agent may answer the first text, then the edit                                                                                             |
+| The same, after the agent answered                                                         | A new turn on the same session: only the new text, marked as replacing the message; the agent corrects its work, says what it cannot undo, or stays silent | Every edit costs a turn, a fixed typo included; for a mention or a DM, lost when the API server restarted since the message, or after two days |
+| A person edits a message to add the tag                                                    | A mention sent at that moment, once, for each Agent not sent the message before                                                                            | none                                                                                                                                           |
+| A person edits a message an agent only read along                                          | No turn; the agent's next turn there lists the message as it reads now, once                                                                               | The agent acts on the first text until its next turn                                                                                           |
+| An Agent or an app edits its post                                                          | No turn, for anyone; each Agent that saw the post is shown it as it reads now in its next turn there                                                       | Same                                                                                                                                           |
+| An edit in a group DM                                                                      | Never arrives: the platform doesn't subscribe to group-DM messages                                                                                         | The agent keeps the first text                                                                                                                 |
+| A message is deleted                                                                       | Nothing; the agent keeps what it was sent                                                                                                                  | none                                                                                                                                           |
+
 ## 2. Reach: bot vs. owner's account
 
 Both belong to the Agent; they differ in identity and scope.
@@ -297,7 +309,6 @@ flowchart TD
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Untagged reply in the agent's thread (normal binding)      | Dropped; the writer sees a note once per thread                                                                                                            |
 | Untagged message in a group DM                             | Dropped                                                                                                                                                    |
-| Edited a message to add the tag                            | Edits are ignored                                                                                                                                          |
 | A bot or workflow wrote to the agent without tagging it    | Plain posts reach readers only; a mention-only Agent needs a tag                                                                                           |
 | An app's posts reach no Agent in one channel               | The channel ignores that app (`/dam ignore` lists them)                                                                                                    |
 | Agents or apps went quiet after a few posts back and forth | More than ten bot posts a minute per thread pause them for five minutes; a notice in the thread says so; the Agent's Channels page shows the dropped posts |

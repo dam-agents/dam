@@ -90,6 +90,12 @@ import {
   ownedThreadMessages,
   type OwnedThreadBatch,
 } from "./slack-owned-thread-copy.js";
+import { changedMessagesBlock, editedMessageText } from "./slack-edit-copy.js";
+import {
+  createMessageEdits,
+  MESSAGE_EDIT_TTL_MS,
+  type MessageEdit,
+} from "../domain/message-edits.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpModelCallFailedError,
@@ -163,6 +169,7 @@ import type {
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
+  SlackMessageEditedEvent,
   SlackSlashCommand,
   SlackThreadRead,
   SlackUserInfo,
@@ -280,6 +287,7 @@ function framePrompt(opts: {
   guidance?: string;
   context?: string[];
   contextLegend?: string;
+  changed?: string[];
   text: string;
   images: FetchedImage[];
   files?: DeliveredFile[];
@@ -292,6 +300,8 @@ function framePrompt(opts: {
       ["<context>", ...legend, ...opts.context, "</context>"].join("\n"),
     );
   }
+  if (opts.changed && opts.changed.length > 0)
+    parts.push(changedMessagesBlock(opts.changed));
   parts.push(opts.text);
   const delivered = opts.files ?? [];
   if (delivered.length > 0) {
@@ -925,7 +935,7 @@ async function readConversation(
 const NO_COMMIT = (): void => {};
 
 interface CatchUpFrame {
-  frame: { context?: string[]; contextLegend?: string };
+  frame: { context?: string[]; contextLegend?: string; changed?: string[] };
   commit: () => void;
 }
 
@@ -1861,9 +1871,100 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     speaker?: string;
     sender?: SlackSender;
     inThread: boolean;
+    edited?: true;
   };
 
   const botPosts = createBotPostRateLimit();
+
+  const messageEdits = createMessageEdits<SlackMessage>();
+
+  type AddressedReception = {
+    road: "addressed";
+    instanceName: string;
+    text: string;
+    queue: ConversationQueue<AddressedPending> | null;
+    conversation: AddressedConversation;
+    slackUserId: string;
+    inThread: boolean;
+  };
+
+  type OwnedReception = {
+    road: "owned";
+    instanceName: string;
+    text: string;
+    queue: ConversationQueue<OwnedPending> | null;
+  };
+
+  type Reception = AddressedReception | OwnedReception;
+
+  const receptions = createTtlMap<string, Reception[]>({
+    ttlMs: MESSAGE_EDIT_TTL_MS,
+  });
+
+  function messageKey(channel: string, ts: string): string {
+    return `${channel} ${ts}`;
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: records that a message is being sent to an
+   * Agent — as an addressed one, or into a thread one of its Sessions owns —
+   * or answers that it already was. The claim is made in one step, before
+   * anything is fetched, because Slack can report one message more than once
+   * (as a mention again when it is edited, and beside the edit that first
+   * tags the bot) and two reports must not both start a turn. The record
+   * holds the text the Agent has or is about to be handed and, once the
+   * message is queued, the queue that took it, so a later edit can follow the
+   * message to the same Session; until then an edit only replaces that text.
+   */
+  function claimReception<R extends Reception>(
+    channel: string,
+    ts: string,
+    reception: R,
+  ): R | null {
+    const key = messageKey(channel, ts);
+    const held = receptions.get(key) ?? [];
+    if (held.some((r) => r.instanceName === reception.instanceName))
+      return null;
+    receptions.set(key, [...held, reception]);
+    return reception;
+  }
+
+  function forgetReception(
+    channel: string,
+    ts: string,
+    instanceName: string,
+  ): void {
+    const key = messageKey(channel, ts);
+    const kept = (receptions.get(key) ?? []).filter(
+      (r) => r.instanceName !== instanceName,
+    );
+    if (kept.length === 0) receptions.delete(key);
+    else receptions.set(key, kept);
+  }
+
+  async function labelChangedMessages(
+    gw: SlackGateway,
+    instanceName: string,
+    teamId: SlackWorkspace,
+    changed: readonly MessageEdit<SlackMessage>[],
+    bot?: { userId: string | null; label: string },
+  ): Promise<string[]> {
+    if (changed.length === 0) return [];
+    const entries = changed.map((edit) => ({
+      message: edit.message,
+      footer: edit.authorAgentId ? { agentId: edit.authorAgentId } : null,
+    }));
+    return labelMessages(
+      entries,
+      await resolveAuthorNames(entries, resolveAgentName),
+      instanceName,
+      bot ?? {
+        userId: await gw.getBotUserId(teamId).catch(() => null),
+        label: botHistoryLabel(brand),
+      },
+      { showThreadMarkers: false, showTs: true },
+    );
+  }
 
   const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
   const botMentionsSeen = createTtlMap<string, true>({
@@ -4120,6 +4221,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<BuiltPrompt> {
+    const edits = messageEdits.readBy(ctx.channel, {
+      agentId: ctx.instanceName,
+      session: ctx.threadKey,
+      threadTs: ctx.hasThread ? ctx.threadTs : null,
+      since: null,
+      carried: [],
+    });
     const {
       bot,
       lines,
@@ -4164,7 +4272,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         images: ctx.images,
         files: delivered?.files ?? [],
       }),
-      commit: () =>
+      commit: () => {
         commitSeenBoundary({
           instanceName: ctx.instanceName,
           threadKey: ctx.threadKey,
@@ -4177,7 +4285,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           },
           deliveredUpTo: ctx.deliveredUpTo,
           steeredTs: ctx.steeredTs,
-        }),
+        });
+        edits.settle();
+      },
     };
   }
 
@@ -4249,6 +4359,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         threadKey,
         teamId: ctx.teamId,
       });
+      const edits = messageEdits.readBy(ctx.channel, {
+        agentId: ctx.instanceName,
+        session: threadKey,
+        threadTs: conversationTs ?? null,
+        since,
+        carried: ctx.batchTs,
+      });
       const {
         bot,
         lines,
@@ -4267,7 +4384,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...readSeenAbove(ctx.instanceName, threadKey),
         ],
       });
-      const commit = () =>
+      const changedLines = await labelChangedMessages(
+        gw,
+        ctx.instanceName,
+        ctx.teamId,
+        edits.owed,
+        bot,
+      );
+      const changedFrame =
+        changedLines.length > 0 ? { changed: changedLines } : {};
+      const commit = () => {
         commitSeenBoundary({
           instanceName: ctx.instanceName,
           threadKey,
@@ -4275,10 +4401,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           deliveredUpTo: ctx.deliveredUpTo,
           steeredTs: ctx.steeredTs,
         });
-      if (lines.length === 0) return { frame: {}, commit };
+        edits.settle();
+      };
+      if (lines.length === 0) return { frame: changedFrame, commit };
       noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
       return {
         frame: {
+          ...changedFrame,
           context: lines,
           contextLegend: catchUpLegend(
             await hasScope(gw, ctx.teamId, "users:read"),
@@ -5976,10 +6105,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
   }
 
+  type EditSettles = Array<() => void>;
+
+  function ownedThreadReader(channel: string, threadTs: string): string {
+    return `owned ${channel} ${threadTs}`;
+  }
+
   async function ownedBatches(
     gw: SlackGateway,
     instanceName: string,
     queued: OwnedPending[],
+    settles?: EditSettles,
   ): Promise<OwnedThreadBatch[]> {
     const byThread = new Map<string, OwnedPending[]>();
     for (const msg of queued) {
@@ -5992,6 +6128,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const owned = await ownedThreads
           .find(first.channelId, first.threadTs)
           .catch(() => null);
+        const edits =
+          owned && settles
+            ? messageEdits.readBy(first.channelId, {
+                agentId: instanceName,
+                session: ownedThreadReader(first.channelId, first.threadTs),
+                threadTs: first.threadTs,
+                since: owned.deliveredUpTo,
+                carried: messages.map((m) => m.eventTs),
+              })
+            : null;
+        if (edits) settles?.push(edits.settle);
         return {
           channel: first.channelId,
           threadTs: first.threadTs,
@@ -6000,7 +6147,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             ts: m.eventTs,
             speaker: m.speaker,
             text: m.text,
+            ...(m.edited ? { edited: true } : {}),
           })),
+          changed: await labelChangedMessages(
+            gw,
+            instanceName,
+            first.teamId,
+            edits?.owed ?? [],
+          ),
           missed: owned
             ? await missedInOwnedThread(gw, instanceName, owned, messages)
             : [],
@@ -6094,8 +6248,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     gw: SlackGateway,
     instanceName: string,
     batch: OwnedPending[],
+    settles: EditSettles,
   ): Promise<string | ContentBlock[]> {
-    const batches = await ownedBatches(gw, instanceName, batch);
+    const batches = await ownedBatches(gw, instanceName, batch, settles);
     const owner = await resolveChannelOwner(instanceName, batch[0]!.teamId);
     const files = await deliverTurnFiles({
       agentId: instanceName,
@@ -6149,6 +6304,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     await ownedThreads.forgetSession(instanceName, sessionId).catch(() => {});
     for (const msg of batch) {
       msg.release();
+      forgetReception(msg.channelId, msg.eventTs, instanceName);
       await msg.reroute();
     }
   }
@@ -6200,6 +6356,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         }
         const refs = batch.map((m) => ownedRefOf(m, sessionId));
         for (const ref of refs) beginTurn(instanceName, ref);
+        const settles: EditSettles = [];
         let outcome: TurnOutcome = "failure";
         let failureReason: string | undefined;
         let gone = false;
@@ -6220,7 +6377,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             for (const message of batch)
               if (!admitted.includes(message)) message.release();
             if (admitted.length === 0) return;
-            const prompt = await ownedTurnPrompt(gw, instanceName, admitted);
+            const prompt = await ownedTurnPrompt(
+              gw,
+              instanceName,
+              admitted,
+              settles,
+            );
             await acp.sendPrompt(prompt, {
               resumeSessionId: sessionId,
               surface: MESSAGE_SURFACE,
@@ -6233,6 +6395,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             return;
           }
           outcome = "success";
+          for (const settle of settles) settle();
           await steersSettled();
           await markOwnedDelivered([
             ...batch,
@@ -6293,6 +6456,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           const ref = { ...ownedRefOf(msg, sessionId), steered: true };
           beginTurn(instanceName, ref);
           steeredRefs.push(ref);
+          if (msg.edited)
+            messageEdits.tell(
+              msg.channelId,
+              msg.eventTs,
+              ownedThreadReader(msg.channelId, msg.threadTs),
+            );
           msg.release();
         }
       },
@@ -6381,6 +6550,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return { owner: agentId, dropped: false, rateChecked: false };
     if (!(await admitBotPost(sender, event)))
       return { owner: agentId, dropped: true, rateChecked: true };
+    const reception = claimReception<OwnedReception>(event.channel, event.ts, {
+      road: "owned",
+      instanceName: agentId,
+      text: event.text,
+      queue: null,
+    });
+    if (!reception)
+      return { owner: agentId, dropped: false, rateChecked: true };
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const fetched = await fetchSlackAttachments(
       gateway,
@@ -6404,15 +6581,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         channelId: event.channel,
       },
     });
+    const speaker = await speakerOf(sender);
     const key = ownedQueueKey(agentId, sessionId);
-    void getOrCreateQueue(ownedQueues, key, () =>
+    const withheldNote = renderWithheldNote(fetched.failures);
+    const queue = getOrCreateQueue(ownedQueues, key, () =>
       createOwnedQueue(key, agentId, sessionId),
-    ).submit({
-      text: event.text + renderWithheldNote(fetched.failures),
+    );
+    reception.queue = queue;
+    void queue.submit({
+      text: reception.text + withheldNote,
+      ...(withheldNote ? { withheldNote } : {}),
       eventTs: event.ts,
       slackUserId,
       sender,
-      speaker: await speakerOf(sender),
+      speaker,
       images: fetched.images,
       files: fetched.files,
       release: fetched.release,
@@ -6687,41 +6869,60 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
     if (!rateChecked && !(await admitBotPost(sender, event))) return;
 
-    const fetched = await fetchTurnAttachments(event, slackUserId);
-    if (fetched === null) return;
-
     const inThread = !!event.threadTs;
-
-    await enqueueAddressed(
+    const conversation: AddressedConversation = {
+      channelId: event.channel,
+      teamId: binding.teamId,
+      threadTs,
+      oneThread: inThread || !opts.directMessage,
+      instanceName: binding.instanceName,
+      speakerLabel: !opts.directMessage,
+      directMessage: opts.directMessage,
+    };
+    const reception = claimReception<AddressedReception>(
+      event.channel,
+      event.ts,
       {
-        channelId: event.channel,
-        teamId: binding.teamId,
-        threadTs,
-        oneThread: inThread || !opts.directMessage,
+        road: "addressed",
         instanceName: binding.instanceName,
-        speakerLabel: !opts.directMessage,
-        directMessage: opts.directMessage,
-      },
-      slackUserId,
-      {
-        text: event.text + fetched.withheldNote,
-        eventTs: event.ts,
+        text: event.text,
+        queue: null,
+        conversation,
         slackUserId,
-        sender,
-        speaker: await speakerOf(sender),
         inThread,
-        images: fetched.images,
-        files: fetched.files,
-        release: fetched.release,
-        turn: {
-          owner: binding.owner,
-          teamId: binding.teamId,
-          ambient: binding.ambient,
-          roster,
-          ambiguousName: routed.ambiguousName,
-        },
       },
     );
+    if (!reception) return;
+
+    const fetched = await fetchTurnAttachments(event, slackUserId);
+    if (fetched === null) {
+      forgetReception(event.channel, event.ts, binding.instanceName);
+      return;
+    }
+    const speaker = await speakerOf(sender);
+    const queue = addressedQueue(conversation, slackUserId);
+    reception.queue = queue;
+    reception.conversation = addressedConversations.get(queue) ?? conversation;
+
+    await queue.submit({
+      text: reception.text + fetched.withheldNote,
+      ...(fetched.withheldNote ? { withheldNote: fetched.withheldNote } : {}),
+      eventTs: event.ts,
+      slackUserId,
+      sender,
+      speaker,
+      inThread,
+      images: fetched.images,
+      files: fetched.files,
+      release: fetched.release,
+      turn: {
+        owner: binding.owner,
+        teamId: binding.teamId,
+        ambient: binding.ambient,
+        roster,
+        ambiguousName: routed.ambiguousName,
+      },
+    });
   }
 
   type AddressedConversation = {
@@ -6786,7 +6987,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
           ]),
-      ...batch.map((m) => `[ts ${m.eventTs}] ${m.speaker}: ${m.text}`),
+      ...batch.map(
+        (m) =>
+          `[ts ${m.eventTs}] ${m.speaker}: ${
+            m.edited ? editedMessageText(m.eventTs, m.text, "decline") : m.text
+          }`,
+      ),
       "</new-messages>",
     ].join("\n");
   }
@@ -6853,13 +7059,22 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             teamId: conversation.teamId,
             threadTs: conversation.threadTs,
             messages: batch.map(
-              ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
+              ({
                 text,
                 eventTs,
                 slackUserId,
                 speaker,
                 sender,
                 inThread,
+                edited,
+              }) => ({
+                text,
+                eventTs,
+                slackUserId,
+                speaker,
+                sender,
+                inThread,
+                ...(edited ? { edited } : {}),
               }),
             ),
             slackUserId: latest.slackUserId,
@@ -6928,6 +7143,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             };
             beginTurn(conversation.instanceName, ref);
             steeredRefs.push(ref);
+            if (msg.edited)
+              messageEdits.tell(
+                conversation.channelId,
+                msg.eventTs,
+                slackThreadKey(conversation.channelId, conversation.threadTs),
+              );
             securityLog("info", "channel.authz", {
               category: "channel",
               actor: null,
@@ -6973,15 +7194,36 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return queue;
   }
 
+  const addressedConversations = new WeakMap<
+    ConversationQueue<AddressedPending>,
+    AddressedConversation
+  >();
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the queue a message of this conversation joins.
+   * A direct message outside a thread joins its sender's live queue, whose
+   * Session was opened by an earlier message of the burst, so the queue
+   * remembers the conversation it was made for: that one, not the message's
+   * own, names the Session the message runs on.
+   */
+  function addressedQueue(
+    conversation: AddressedConversation,
+    slackUserId: string,
+  ): ConversationQueue<AddressedPending> {
+    const key = addressedQueueKey(conversation, slackUserId);
+    return getOrCreateQueue(addressedQueues, key, () => {
+      const queue = createAddressedQueue(key, conversation);
+      addressedConversations.set(queue, conversation);
+      return queue;
+    });
+  }
+
   function enqueueAddressed(
     conversation: AddressedConversation,
     slackUserId: string,
     msg: AddressedPending,
   ): Promise<void> {
-    const key = addressedQueueKey(conversation, slackUserId);
-    return getOrCreateQueue(addressedQueues, key, () =>
-      createAddressedQueue(key, conversation),
-    ).submit(msg);
+    return addressedQueue(conversation, slackUserId).submit(msg);
   }
 
   const handleAppMention = (event: SlackMentionEvent) =>
@@ -7087,13 +7329,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       channel: args.channel,
       threadTs: args.threadTs,
       title: sessionTitleOf(args.messages[0]!.text),
-      messages: args.messages.map((message) => ({
-        ...message,
-        text:
-          args.speakerLabel === false
-            ? message.text
-            : `${message.speaker ?? `<@${message.slackUserId}>`}: ${message.text}`,
-      })),
+      messages: args.messages.map((message) => {
+        const text = message.edited
+          ? editedMessageText(message.eventTs, message.text, "decline")
+          : message.text;
+        return {
+          ...message,
+          text:
+            args.speakerLabel === false
+              ? text
+              : `${message.speaker ?? `<@${message.slackUserId}>`}: ${text}`,
+        };
+      }),
       actorSub: null,
       externalActorId: args.slackUserId,
       slackUserId: args.slackUserId,
@@ -7402,6 +7649,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     files: FetchedFile[];
     release: () => void;
     ownedBy?: string;
+    edited?: true;
+    withheldNote?: string;
   };
 
   function batchFiles(batch: PendingMessage[]): {
@@ -7685,6 +7934,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const speaker = await speakerOf(sender);
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text: event.text + withheldNote,
+      ...(withheldNote ? { withheldNote } : {}),
       eventTs: event.ts,
       slackUserId,
       sender,
@@ -7694,6 +7944,209 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       release,
       ...(owned.owner !== null && { ownedBy: owned.owner }),
     });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a person's edit to a message in a thread one
+   * of an Agent's Sessions started starts a turn on that Session, as the
+   * message itself did. The thread's record is kept in the database, so this
+   * road still works after a restart, when nothing remembers the message.
+   */
+  async function submitOwnedEdit(
+    event: SlackMessageEditedEvent,
+    revision: PendingMessage,
+  ): Promise<void> {
+    const { threadTs } = event;
+    if (!threadTs) return;
+    const owned = await ownedThreads
+      .find(event.channel, threadTs)
+      .catch(() => null);
+    if (!owned) return;
+    const connected = await channelRegistry
+      .resolveSlackChannelsByInstance(owned.agentId)
+      .catch(() => []);
+    if (connected.length === 0) return;
+    if (await bridgeClosed(owned.agentId, owned.teamId, event.channel)) return;
+    const { agentId, sessionId } = owned;
+    securityLog("info", "channel.authz", {
+      category: "channel",
+      actor: null,
+      actorKind: "external",
+      surface: "slack",
+      agentId,
+      decision: "allow",
+      detail: {
+        basis: "place",
+        trigger: "owned-thread-edit",
+        slackUserId: revision.slackUserId,
+        channelId: event.channel,
+      },
+    });
+    const key = ownedQueueKey(agentId, sessionId);
+    await getOrCreateQueue(ownedQueues, key, () =>
+      createOwnedQueue(key, agentId, sessionId),
+    ).submit({
+      ...revision,
+      channelId: event.channel,
+      threadTs,
+      teamId: owned.teamId,
+      reroute: async () => {},
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a person's edit follows the addressed message
+   * it edits to the Agent that was sent it. The binding is read again, since
+   * the edit can come long after the message and the conversation may have
+   * been disconnected meanwhile. A direct message outside a thread shares one
+   * queue per sender, so the edit joins that queue only while it is still the
+   * one that took the message; otherwise, and in a thread or a channel, the
+   * edit goes into the queue of the conversation the message ran in, where it
+   * joins the running turn or starts one on that Session.
+   */
+  async function submitAddressedEdit(
+    event: SlackMessageEditedEvent,
+    revision: PendingMessage,
+    reception: AddressedReception,
+  ): Promise<void> {
+    const { conversation, slackUserId } = reception;
+    const roster = await resolveRoster(event.channel);
+    const binding = roster.find(
+      (entry) => entry.instanceName === conversation.instanceName,
+    );
+    if (!binding) return;
+    if (await bridgeClosed(binding.instanceName, binding.teamId, event.channel))
+      return;
+    const turn: AddressedTurnContext = {
+      owner: binding.owner,
+      teamId: binding.teamId,
+      ambient: binding.ambient,
+      roster,
+      ambiguousName: null,
+    };
+    const live = addressedQueues.get(
+      addressedQueueKey(conversation, slackUserId),
+    );
+    if (!conversation.oneThread && live && live === reception.queue) {
+      await live.submit({ ...revision, inThread: reception.inThread, turn });
+      return;
+    }
+    await enqueueAddressed({ ...conversation, oneThread: true }, slackUserId, {
+      ...revision,
+      inThread: true,
+      turn,
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether anything in a conversation could be
+   * owed an edit: an Agent connected to it, or a Session that owns the
+   * thread. An edit anywhere else is dropped before anything is looked up or
+   * kept for it.
+   */
+  async function followsEdits(
+    channel: string,
+    threadTs: string | null,
+  ): Promise<boolean> {
+    if ((await resolveRoster(channel)).length > 0) return true;
+    if (threadTs === null) return false;
+    return (
+      (await ownedThreads.find(channel, threadTs).catch(() => null)) !== null
+    );
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: what an edit to a Slack message does. Wherever
+   * the message still waits — being fetched, or in a queue — the edit only
+   * replaces its text, whoever made it, so the Agent reads the message once,
+   * as it reads now. Past that, only a person's edit can start a turn, and
+   * only for a message an Agent was sent: a mention, a direct message, or a
+   * message in a thread one of its Sessions started. An edit that first tags
+   * the bot is also a mention sent at that moment, for every Agent not sent
+   * the message before. Every edit is kept as well, for the next turn of each
+   * Session that holds the earlier text, so an Agent that updates its own
+   * post often cannot make others answer each update.
+   */
+  async function handleMessageEdited(signedEvent: SlackMessageEditedEvent) {
+    if (!gateway) return;
+    const event = await withoutAgentSignature(gateway, signedEvent);
+    const { sender, channel, ts } = event;
+    const threadTs = event.threadTs ?? null;
+    const held = () => receptions.get(messageKey(channel, ts)) ?? [];
+    if (held().length === 0 && !(await followsEdits(channel, threadTs))) return;
+    if (await isIgnoredApp(sender, channel)) return;
+
+    const retext = <T extends PendingMessage>(queued: T): T | null =>
+      queued.eventTs === ts
+        ? { ...queued, text: event.text + (queued.withheldNote ?? "") }
+        : null;
+    ambientQueues.get(ambientQueueKey(channel, threadTs))?.replace(retext);
+    messageEdits.note(channel, {
+      ts,
+      threadTs,
+      authorAgentId: sender.kind === "agent" ? sender.agentId : null,
+      message: {
+        ...event.message,
+        text: event.text,
+        edited: true,
+        blocks: undefined,
+        metadata: undefined,
+      },
+    });
+
+    const person = sender.kind === "person" ? sender.user : null;
+    if (person !== null && event.mentionAdded && !isDirectMessageId(channel))
+      await handleAppMention({
+        user: person,
+        sender,
+        channel,
+        ts,
+        ...(event.threadTs ? { threadTs: event.threadTs } : {}),
+        text: event.text,
+        ...(event.files ? { files: event.files } : {}),
+        teamId: event.teamId,
+        ...(event.channelType ? { channelType: event.channelType } : {}),
+      });
+
+    const behind = held().filter((reception) => reception.text !== event.text);
+    for (const reception of behind) reception.text = event.text;
+    const delivered = behind.filter(
+      (reception) =>
+        reception.queue !== null &&
+        !match(reception)
+          .with({ road: "addressed" }, (r) => r.queue?.replace(retext))
+          .with({ road: "owned" }, (r) =>
+            r.queue?.replace((queued) =>
+              queued.channelId === channel ? retext(queued) : null,
+            ),
+          )
+          .exhaustive(),
+    );
+    if (person === null) return;
+
+    const revision: PendingMessage = {
+      text: event.text,
+      eventTs: ts,
+      slackUserId: person,
+      sender,
+      speaker: await speakerOf(sender),
+      images: [],
+      files: [],
+      release: () => {},
+      edited: true,
+    };
+    const ownedKnown = held().some((reception) => reception.road === "owned");
+    await Promise.all([
+      ...delivered.map((reception) =>
+        match(reception)
+          .with({ road: "addressed" }, (r) =>
+            submitAddressedEdit(event, revision, r),
+          )
+          .with({ road: "owned" }, () => submitOwnedEdit(event, revision))
+          .exhaustive(),
+      ),
+      ...(ownedKnown ? [] : [submitOwnedEdit(event, revision)]),
+    ]);
   }
 
   let serving = false;
@@ -7715,6 +8168,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onCommand: handleCommand,
         onMessage: handleChannelMessage,
         onDirectMessage: handleDirectMessage,
+        onMessageEdited: handleMessageEdited,
         onBotJoinedChannel: handleBotJoinedChannel,
         onViewSubmission: handleViewSubmission,
         onSessionStopped: handleSessionStopped,
