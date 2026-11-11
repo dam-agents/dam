@@ -6,10 +6,8 @@ import {
   resolvePrompt,
 } from "../modules/chat/commands/run.js";
 import { ok } from "../result.js";
-import { NO_MODEL_REASON } from "agent-runtime-api";
 import {
   createRunService,
-  noModelHint,
   stallLine,
   type RunService,
 } from "../modules/chat/services/run-service.js";
@@ -661,20 +659,9 @@ describe("run service: session choices", () => {
   });
 
   /**
-   * TEST_SCENARIO: the runtime refuses a session with no model and names the
-   * web app's Providers page; the CLI adds the commands that fix it from
-   * the terminal: pass a listed model, or grant a provider.
+   * TEST_SCENARIO: the runtime refuses for lack of a model only when no
+   * provider serves the session, and the CLI adds the command that grants one.
    */
-  /**
-   * TEST_SCENARIO: a session from `--session` keeps its own model and the CLI
-   * refuses `--model` with it, so the hint names `--model` for a new run only.
-   */
-  it("names --model for a new run when the session was resumed", () => {
-    const refusal = { data: { platform: { reason: NO_MODEL_REASON } } };
-    expect(noModelHint(refusal, true)).toContain("--model` on a new run");
-    expect(noModelHint(refusal)).not.toContain("on a new run");
-  });
-
   it("adds the CLI's way out to a no-model refusal", async () => {
     relay = startRelay((ws, frame) => {
       if (frame.method === "session/new")
@@ -684,7 +671,8 @@ describe("run service: session choices", () => {
             id: frame.id,
             error: {
               code: -32001,
-              message: "This session has no model.",
+              message:
+                "This agent has no model provider that serves this session. Connect a model provider on the agent's Providers page.",
               data: { platform: { reason: "no-model" } },
             },
           }),
@@ -701,8 +689,7 @@ describe("run service: session choices", () => {
     expect(result.ok).toBe(false);
     const reason =
       !result.ok && "reason" in result.error ? result.error.reason : "";
-    expect(reason).toContain("This session has no model.");
-    expect(reason).toContain("dam agent models <agent>");
+    expect(reason).toContain("no model provider that serves this session");
     expect(reason).toContain("dam agent update <agent> --provider");
   });
 });

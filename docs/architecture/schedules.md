@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-02
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -200,12 +200,14 @@ A schedule's choices live on its sessions alone.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
 The scheduled section of the agent's Providers page lists every schedule that names a harness, model or settings of its own, except a one-time task that continues its session, and moves one or all of them to the scheduled default by clearing those choices; moving all asks first, listing each change.
-With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
+With no default model saved, a fire runs on the model its resolved pair names once the runtime picks one from the providers the agent holds, and a saved model on a provider the agent no longer holds falls back the same way.
+An agent holding no model provider at all is still setting up while the deployment's shared CurveBender is granted to it, so the fire is retried and Run Now says so; where the deployment offers no shared one, the `no-default-model` reason ends the attempt at once, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.
 A save that fails names the reason.
-A fire whose choices no longer hold, because a provider was revoked or a model left the list, is refused with that reason rather than running on a substitute.
+A fire checks the harness and the settings it carries, never the model its resolved pair already settled: a schedule whose model lost its provider, or left the list, fires on the fallback rather than refusing every occurrence.
+A choice a person types is still refused at save with its reason.
 A one-time task that continues its scheduling session keeps that session's choices.
 An agent creating a schedule names the same choices through its tools.
 

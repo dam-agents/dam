@@ -31,9 +31,9 @@ const RUN_NOW_REFUSAL: Record<Exclude<RunNowResult, "started">, string> = {
   "spend-ceiling":
     "the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until midnight UTC",
   "no-default-model":
-    "the agent has no model it can run on: connect a model provider on its Providers page, or pick another model if its default's provider is gone",
+    "the agent has no model provider it can run on: connect one on its Providers page",
   "default-pending":
-    "the agent is setting up its default model. Try again in a minute",
+    "the agent is still setting up its model. Try again in a minute",
 };
 
 export interface AgentOnceLimits {

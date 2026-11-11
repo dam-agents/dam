@@ -382,6 +382,8 @@ export interface PairResolverDeps {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  /* UNIT_BOUNDARY_DESCRIPTION: present only where the deployment offers its shared CurveBender: an Agent holding no provider at all is then refused as still setting up while that grant is asked for, since the provider is on its way and the next run finds it. */
+  onNoProvider?: (agentId: string) => void;
 }
 
 export async function resolveRememberedPair(
@@ -396,9 +398,14 @@ export async function resolveRememberedPair(
  * UNIT_BOUNDARY_DESCRIPTION: the pair an unattended run asks the agent for —
  * the one it names, or, naming only a model, that model on the agent's own
  * harness, or else the default saved for its kind of run (chat, channel or
- * scheduled, the last two falling back to chat). Undefined when the agent's
- * runtime holds one harness only and would ignore a pair, or runs a harness
- * the catalog does not offer, such as a custom template's own.
+ * scheduled, the last two falling back to chat). With no model in the
+ * resolved pair, the run goes on to the agent as it is, for the runtime to
+ * resolve from the providers it holds, whether it saved a model its provider
+ * no longer serves or has a fitting provider that has not listed yet; only an
+ * agent holding no provider at all is refused, as still setting up where the
+ * deployment's shared CurveBender is on its way to it. Undefined when the
+ * agent's runtime holds one harness only and would ignore a pair, or runs a
+ * harness the catalog does not offer, such as a custom template's own.
  */
 export async function resolveFirePair(
   deps: PairResolverDeps,
@@ -455,7 +462,12 @@ export async function resolveFirePair(
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
   });
-  if (requireLeases && routed && pair?.model === null && granted.length > 0)
-    throw new NoDefaultModelError(remembered?.model ?? undefined);
+  if (requireLeases && routed && pair?.model === null) {
+    if (granted.length > 0) return pair;
+    /* UNIT_BOUNDARY_DESCRIPTION: an agent holding no provider at all is refused as still setting up where a shared CurveBender is being granted to it, and asked for that grant here, since it may have said hello before the deployment offered its key. */
+    if (!deps.onNoProvider) throw new NoDefaultModelError();
+    deps.onNoProvider(agentId);
+    throw new NoDefaultModelError({ pending: true });
+  }
   return pair;
 }

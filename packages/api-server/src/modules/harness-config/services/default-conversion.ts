@@ -248,7 +248,7 @@ export function createDefaultConverter(deps: {
         const since = now();
         stamp = await deps.wake(agentId);
         if (!(await helloSince(agentId, since)))
-          throw new NoDefaultModelError(undefined, { pending: true });
+          throw new NoDefaultModelError({ pending: true });
       }
       if (!(await deps.pairRepo.read(agentId, "chat"))?.model)
         await ensure(agentId, LISTING_WAIT_MS);

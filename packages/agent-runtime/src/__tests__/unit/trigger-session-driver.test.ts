@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { NO_MODEL_REASON } from "agent-runtime-api";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
 import type { AcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
 import {
@@ -31,15 +32,34 @@ function startPrompt(channel: ClientChannel, frame: any): void {
 }
 
 function fakeRuntime(
-  onPrompt: (channel: ClientChannel, frame: any) => void = startPrompt,
+  opts: {
+    refuses?: string;
+    reason?: string;
+    onPrompt?: (channel: ClientChannel, frame: any) => void;
+  } = {},
 ): { runtime: AcpRuntime; sent: any[] } {
+  const onPrompt = opts.onPrompt ?? startPrompt;
   const sent: any[] = [];
   const runtime: AcpRuntime = {
     attach(channel: ClientChannel) {
       channel.onMessage((data) => {
         const frame = JSON.parse(data);
         sent.push(frame);
-        if (frame.method === "initialize") {
+        if (frame.method === opts.refuses) {
+          channel.send(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: {
+                code: -32001,
+                message: "this model cannot serve this run",
+                data: {
+                  platform: { reason: opts.reason ?? NO_MODEL_REASON },
+                },
+              },
+            }),
+          );
+        } else if (frame.method === "initialize") {
           channel.send(
             JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
           );
@@ -94,7 +114,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -121,7 +141,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -139,7 +159,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -157,7 +177,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -171,24 +191,135 @@ describe("createTriggerSessionDriver", () => {
     ).toEqual({ sessionId: "s0", model: "opus" });
   });
 
-  /** TEST_SCENARIO: On a harness that needs a model, a fire with none opens
-   * no session, and a resumed session still without one gets no prompt; both
-   * are refused with what to do, so no model the user never chose runs. */
-  it("refuses a run that would start without a model", async () => {
-    const { runtime, sent } = fakeRuntime();
+  /** TEST_SCENARIO: A fire whose Session no provider can serve is refused by
+   * the runtime, after its own bounded wait for a model, and the refusal says
+   * a provider is what is missing rather than a model to pick; nothing is
+   * prompted, so no model the user never chose runs. */
+  it("refuses a run the runtime cannot find a model for", async () => {
+    const { runtime, sent } = fakeRuntime({ refuses: "session/new" });
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => true,
+      modelReady: async () => true,
       modelMissing: () => true,
       sessionMetadata: { tombstone: () => {} },
     });
-    await expect(driver.start({ task: "do it" })).rejects.toBeInstanceOf(
-      NoSessionModelError,
+    await expect(driver.start({ task: "do it" })).rejects.toThrow(
+      /no model provider that serves this session/,
     );
+    expect(sent.map((f) => f.method)).not.toContain("session/prompt");
+
+    const resuming = fakeRuntime({ refuses: "session/resume" });
+    const other = createTriggerSessionDriver({
+      acpRuntime: resuming.runtime,
+      modelReady: async () => true,
+      modelMissing: () => true,
+      sessionMetadata: { tombstone: () => {} },
+    });
     await expect(
-      driver.start({ task: "do it", resumeSessionId: "s0" }),
-    ).rejects.toThrow(/connect a model provider on the agent's Providers page/);
-    expect(sent.map((f) => f.method)).not.toContain("session/new");
+      other.start({ task: "do it", resumeSessionId: "s0" }),
+    ).rejects.toBeInstanceOf(NoSessionModelError);
+    expect(resuming.sent.map((f) => f.method)).not.toContain("session/prompt");
+  });
+
+  /** TEST_SCENARIO: A resumed scheduled Session whose model its provider lost
+   * is no longer refused before the resume: the lease router resolves another
+   * model from the agent's catalog, or says that nothing can serve it, and
+   * the fire runs on that model. */
+  it("runs a resumed session with a revoked model instead of throwing", async () => {
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelReady: async () => true,
+      modelMissing: () => true,
+      sessionMetadata: { tombstone: () => {} },
+    });
+    const res = await driver.start({
+      task: "due",
+      resumeSessionId: "s0",
+      unattended: true,
+    });
+    expect(res.sessionId).toBe("s0");
+    expect(sent.map((f) => f.method)).toEqual([
+      "initialize",
+      "session/resume",
+      "session/prompt",
+    ]);
+  });
+
+  /** TEST_SCENARIO: A fire pins the model it names, but that model may belong
+   * to a provider the agent lost or that no listing holds, and the lease
+   * router then resolves one that serves; so the refused pin is logged and
+   * the run goes on to the router's model instead of failing. */
+  it("runs on the router's model when a fire's pin is refused", async () => {
+    const logged: string[] = [];
+    const { runtime, sent } = fakeRuntime({
+      refuses: "_platform/session/pin_model",
+      reason: "provider-removed",
+    });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelMissing: () => true,
+      modelReady: async () => true,
+      log: (msg) => logged.push(msg),
+      sessionMetadata: { tombstone: () => {} },
+    });
+    const res = await driver.start({
+      task: "due",
+      resumeSessionId: "s0",
+      model: "cb/glm",
+    });
+    expect(res.sessionId).toBe("s0");
+    expect(sent.map((f) => f.method)).toEqual([
+      "initialize",
+      "_platform/session/pin_model",
+      "session/resume",
+      "session/prompt",
+    ]);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain("cb/glm");
+  });
+
+  /** TEST_SCENARIO: A prompt the runtime would hold must not be sent before a
+   * model serves the Session, since the driver closes its connection as soon
+   * as it returns and a held prompt would be dropped when released; so the
+   * fire waits on the runtime's model readiness first. */
+  it("prompts only once the runtime finds a model", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelMissing: () => true,
+      modelReady: async () => {
+        await gate;
+        return true;
+      },
+      sessionMetadata: { tombstone: () => {} },
+    });
+    const started = driver.start({ task: "due", resumeSessionId: "s0" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sent.map((f) => f.method)).not.toContain("session/prompt");
+    release();
+    await started;
+    expect(sent.map((f) => f.method)).toContain("session/prompt");
+  });
+
+  /** TEST_SCENARIO: A fire whose Session the runtime never finds a model for
+   * is refused after that wait, with the copy that names a provider as what
+   * is missing, and nothing is prompted. */
+  it("refuses the run when no model serves it in time", async () => {
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelMissing: () => true,
+      modelReady: async () => false,
+      sessionMetadata: { tombstone: () => {} },
+    });
+    await expect(
+      driver.start({ task: "due", resumeSessionId: "s0" }),
+    ).rejects.toThrow(/no model provider that serves this session/);
     expect(sent.map((f) => f.method)).not.toContain("session/prompt");
   });
 
@@ -200,7 +331,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => missing,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -229,12 +360,13 @@ describe("createTriggerSessionDriver", () => {
 
   /** TEST_SCENARIO: a new Session whose model comes in its platform metadata
    * (kit setup, outcome turns) runs; a resumed Session with no model and none
-   * to pin is refused before anything resumes it. */
-  it("reads the model from the metadata and refuses before resuming", async () => {
+   * to pin reaches the runtime, which answers the resume with its no-model
+   * refusal once nothing can serve. */
+  it("reads the model from the metadata and refuses a resume the runtime cannot serve", async () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => true,
+      modelReady: async () => true,
       modelMissing: () => true,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -243,11 +375,19 @@ describe("createTriggerSessionDriver", () => {
       platformMeta: { mode: "chat", model: "ibm/opus" } as never,
     });
     expect(sent.map((f) => f.method)).toContain("session/new");
-    sent.length = 0;
+
+    const resuming = fakeRuntime({ refuses: "session/resume" });
+    const other = createTriggerSessionDriver({
+      acpRuntime: resuming.runtime,
+      modelReady: async () => true,
+      modelMissing: () => true,
+      sessionMetadata: { tombstone: () => {} },
+    });
     await expect(
-      driver.start({ task: "go on", resumeSessionId: "s0" }),
+      other.start({ task: "go on", resumeSessionId: "s0" }),
     ).rejects.toBeInstanceOf(NoSessionModelError);
-    expect(sent.map((f) => f.method)).not.toContain("session/resume");
+    expect(resuming.sent.map((f) => f.method)).toContain("session/resume");
+    expect(resuming.sent.map((f) => f.method)).not.toContain("session/prompt");
   });
 
   /** TEST_SCENARIO: the harness went down with the fire's first prompt still
@@ -255,13 +395,15 @@ describe("createTriggerSessionDriver", () => {
    * and reported the run, so the start returns as before: a fire delivered
    * again on top would be a second run beside a prompt kept for resending. */
   it("returns when the runtime hangs up after it queued the prompt", async () => {
-    const { runtime } = fakeRuntime((channel, frame) => {
-      notifyPrompt(channel, frame, "platform/promptAccepted");
-      channel.close();
+    const { runtime } = fakeRuntime({
+      onPrompt: (channel, frame) => {
+        notifyPrompt(channel, frame, "platform/promptAccepted");
+        channel.close();
+      },
     });
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });
@@ -275,11 +417,11 @@ describe("createTriggerSessionDriver", () => {
    * spawn work and the connection closes. Nothing wrote it down, so the start
    * fails and the empty session is retired. */
   it("fails when the runtime hangs up before it queued the prompt", async () => {
-    const { runtime } = fakeRuntime((channel) => channel.close());
+    const { runtime } = fakeRuntime({ onPrompt: (channel) => channel.close() });
     const tombstone = vi.fn();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone },
     });
@@ -295,11 +437,11 @@ describe("createTriggerSessionDriver", () => {
   it("stops waiting for the first turn after its bound", async () => {
     vi.useFakeTimers();
     try {
-      const { runtime } = fakeRuntime(() => {});
+      const { runtime } = fakeRuntime({ onPrompt: () => {} });
       const tombstone = vi.fn();
       const driver = createTriggerSessionDriver({
         acpRuntime: runtime,
-        modelRequired: () => false,
+        modelReady: async () => true,
         modelMissing: () => false,
         sessionMetadata: { tombstone },
       });
@@ -319,7 +461,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: { tombstone: () => {} },
     });

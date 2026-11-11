@@ -4,6 +4,7 @@ import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import {
   createAgentInformer,
   createApi,
@@ -150,6 +151,7 @@ import {
   composeScheduleModelForFire,
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
+  composeSharedCurveBender,
   createInitializationPairResolver,
   createUnattendedAgentsReader,
   isNoDefaultModelError,
@@ -689,6 +691,10 @@ export async function bootstrap() {
     if (!(await runtimeDelivery.contributionsProgress(agentId)).settled)
       await runtimeDelivery.queue.enqueue(agentId);
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: bound below, once the Connections services exist, and asked for only where the deployment offers its shared CurveBender; a run for an Agent holding no provider kicks it and reports itself as still setting up. */
+  let grantSharedCurveBender: (agentId: string) => Promise<void> = async () =>
+    undefined;
+  const sharedCurveBenderConfigured = config.curveBenderDeployment !== null;
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
@@ -697,6 +703,9 @@ export async function bootstrap() {
         ?.runtimeCapabilities ?? null,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
+    ...(sharedCurveBenderConfigured && {
+      onNoProvider: (agentId) => void grantSharedCurveBender(agentId),
+    }),
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
   const resolveInitializationPair = createInitializationPairResolver({
@@ -1096,6 +1105,37 @@ export async function bootstrap() {
       log: (msg) => getLogger().info(msg),
     });
   convertDefault = (agentId) => defaultConverter.convert(agentId);
+  const sharedCurveBender = composeSharedCurveBender({
+    db,
+    namespace: config.namespace,
+    enabled: sharedCurveBenderConfigured,
+    catalog: harnessCatalog,
+    getCapabilities: async (agentId) =>
+      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+        ?.runtimeCapabilities ?? null,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    /* UNIT_BOUNDARY_DESCRIPTION: the one call the UI's Try now makes, so a granted Agent holds the shared CurveBender as it holds any provider, and its owner's Connection is reconciled first in case it was never created. */
+    grant: async (agentId) => {
+      const owner = (await agentsRepo.get(agentId))?.owner;
+      if (!owner) return false;
+      const connections = connectionsServiceFor(owner);
+      await connections.reconcileManagedConnections();
+      const shared = (await connections.listConnections()).find(
+        (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      );
+      if (!shared) return false;
+      await connections.updateAgentConnections(agentId, {
+        grant: [shared.id],
+        revoke: [],
+      });
+      return true;
+    },
+    log: (msg) => getLogger().info(msg),
+  });
+  grantSharedCurveBender = sharedCurveBender.grant;
+  defaultConversionSaga.add(sharedCurveBender.helloSaga);
 
   const sessionWatcher = composeSessionWatcher({
     db,

@@ -33,6 +33,23 @@ export class ConnectionClosedError extends Error {
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a request the runtime answered with an error. It
+ * keeps the error's `code` and `data`, which a caller acts on: the
+ * `platform.reason` a refusal carries tells a fire whether a model can still
+ * serve its run.
+ */
+export class InProcessRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "InProcessRequestError";
+  }
+}
+
 export interface InProcessCaller {
   request<T>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
@@ -106,7 +123,11 @@ export function createInProcessCaller(
           }
           if (frame.error) {
             reject(
-              new Error(`${method} failed: ${describeError(frame.error)}`),
+              new InProcessRequestError(
+                `${method} failed: ${describeError(frame.error)}`,
+                frame.error.code,
+                frame.error.data,
+              ),
             );
             return;
           }

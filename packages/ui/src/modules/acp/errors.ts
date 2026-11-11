@@ -77,10 +77,10 @@ export function describeSendError(raw: string): SendErrorDescription {
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
-  if (/this session has no model/i.test(raw)) {
+  if (/has no model/i.test(raw)) {
     return {
       message: raw,
-      hint: "A run starts on the model saved in the agent's settings, and none is saved for this agent. Picking one there fixes every new session.",
+      hint: "This agent has no model provider it can run on. Connecting a model provider on its Providers page lets every run pick a model.",
       needsModel: true,
     };
   }

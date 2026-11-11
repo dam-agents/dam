@@ -6,6 +6,7 @@ export {
   composeHarnessConfigModule,
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
+  composeSharedCurveBender,
   type FirePair,
 } from "./compose.js";
 export { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
@@ -18,6 +19,7 @@ export {
 export { harnessConfigEvent } from "./domain/harness-config-event.js";
 export { createHarnessConfigSnapshotWriter } from "./infrastructure/snapshot-writer.js";
 export type {
+  FiredPair,
   SessionChoices,
   SessionChoicesValidator,
 } from "./services/session-choices.js";

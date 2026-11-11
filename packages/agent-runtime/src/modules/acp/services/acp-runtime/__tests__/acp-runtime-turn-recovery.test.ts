@@ -52,7 +52,7 @@ async function boot(resumes: boolean): Promise<World> {
     sessionMetadata,
     triggerDriver: createTriggerSessionDriver({
       acpRuntime: world.runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata,
     }),
@@ -138,7 +138,7 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
       sessionMetadata,
       triggerDriver: createTriggerSessionDriver({
         acpRuntime: world.runtime,
-        modelRequired: () => false,
+        modelReady: async () => true,
         modelMissing: () => false,
         sessionMetadata,
       }),
