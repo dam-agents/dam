@@ -52,7 +52,7 @@ function fireWorld(
   });
   const driver = createTriggerSessionDriver({
     acpRuntime: world.runtime,
-    modelRequired: () => false,
+    modelReady: async () => true,
     modelMissing: () => false,
     sessionMetadata: metadata,
   });
@@ -96,8 +96,18 @@ describe("acp-runtime: a fire's fresh session", () => {
     await vi.waitFor(() =>
       world.harness().replyTo("session/new", { sessionId: "s-fire" }),
     );
+    await vi.waitFor(() =>
+      expect(
+        world.harness().received("session/set_config_option"),
+      ).toHaveLength(1),
+    );
     refuseModel(world);
     vi.advanceTimersByTime(2_500);
+    await vi.waitFor(() =>
+      expect(
+        world.harness().received("session/set_config_option"),
+      ).toHaveLength(2),
+    );
     refuseModel(world);
 
     const failed = await outcome;
@@ -119,7 +129,7 @@ describe("acp-runtime: a fire's fresh session", () => {
     const world = createWorld({ sessionMetadata: metadata });
     const driver = createTriggerSessionDriver({
       acpRuntime: world.runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
       sessionMetadata: metadata,
     });
@@ -249,6 +259,11 @@ describe("acp-runtime: a fire's fresh session", () => {
     await vi.waitFor(() => world.harness().replyTo("initialize"));
     await vi.waitFor(() =>
       world.harness().replyTo("session/new", { sessionId: "s-sub" }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        world.harness().received("session/set_config_option"),
+      ).toHaveLength(1),
     );
     world.harness().exit();
 

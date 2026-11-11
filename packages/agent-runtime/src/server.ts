@@ -634,6 +634,7 @@ const {
     await runtimeChannel.writeModelWindows();
   },
   providerAliases: grantedAliases,
+  catalog: modelCatalog,
   aliasOfConnection,
   unroutedProviderEnv,
   routerEnv: routerEnvOf,

@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { PIN_MODEL_METHOD, type SessionDefaultKind } from "agent-runtime-api";
+import {
+  NO_MODEL_REASON,
+  PIN_MODEL_METHOD,
+  type SessionDefaultKind,
+} from "agent-runtime-api";
 import {
   ConnectionClosedError,
   createInProcessCaller,
@@ -9,6 +13,7 @@ import type {
   PlatformSessionMeta,
   SessionMetadataStore,
 } from "../infrastructure/session-metadata-store.js";
+import { PROVIDER_REMOVED_REASON } from "./lease-router.js";
 import {
   MESSAGE_SURFACE,
   SCHEDULE_SURFACE,
@@ -55,14 +60,15 @@ export class SessionModelError extends Error {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a run that would start without a model on a
- * harness that needs one is not started, so no model the user never chose
- * runs it.
+ * UNIT_BOUNDARY_DESCRIPTION: a run that no model can serve is refused by the
+ * lease router, which holds the frame while a model may still arrive; this
+ * error carries that refusal to the platform, as the runtime's own no-model
+ * reason does, so a fire that ends without a model says a provider is missing.
  */
 export class NoSessionModelError extends Error {
   constructor() {
     super(
-      "not run: the session has no model. Pick a model for this schedule, or connect a model provider on the agent's Providers page",
+      "not run: this agent has no model provider that serves this session. Connect a model provider on the agent's Providers page",
     );
     this.name = "NoSessionModelError";
   }
@@ -137,10 +143,37 @@ function firstTurn(
   });
 }
 
+function asNoSessionModel(err: unknown): never {
+  const reason = platformReason(err);
+  if (reason === NO_MODEL_REASON) throw new NoSessionModelError();
+  throw err;
+}
+
+function platformReason(err: unknown): unknown {
+  const data = (err as { data?: unknown } | null)?.data;
+  return typeof data === "object" && data !== null
+    ? (data as { platform?: { reason?: unknown } }).platform?.reason
+    : undefined;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a pin from a fire is a preference, since the
+ * model the fire names may belong to a provider the agent no longer holds; the
+ * lease router then resolves one that serves, so the refusal to pin says so
+ * instead of failing the run, and the pin the UI sends for a person stays
+ * strict, since nobody would fall back for it.
+ */
+function pinUnusable(err: unknown): boolean {
+  return [PROVIDER_REMOVED_REASON, NO_MODEL_REASON].includes(
+    platformReason(err) as string,
+  );
+}
+
 export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
-  modelRequired: (harness: string | undefined) => boolean;
   modelMissing: (sessionId: string) => boolean;
+  modelReady: (sessionId: string) => Promise<boolean>;
+  log?: (msg: string) => void;
   sessionMetadata: Pick<SessionMetadataStore, "tombstone">;
 }): TriggerSessionDriver {
   return {
@@ -160,13 +193,6 @@ export function createTriggerSessionDriver(deps: {
         !!resumeSessionId &&
         !!model &&
         (!keepSessionModel || deps.modelMissing(resumeSessionId));
-      if (
-        resumeSessionId
-          ? !pins && deps.modelMissing(resumeSessionId)
-          : !(model ?? platformMeta?.model) &&
-            deps.modelRequired(platformMeta?.harness)
-      )
-        throw new NoSessionModelError();
       const caller = createInProcessCaller((channel) =>
         deps.acpRuntime.attach(channel, { viewer: false }),
       );
@@ -194,35 +220,45 @@ export function createTriggerSessionDriver(deps: {
                 ...intent,
               })
               .catch((err: unknown) => {
+                if (pinUnusable(err)) {
+                  deps.log?.(
+                    `[trigger] ${resumeSessionId}: the pinned model ${model} cannot serve this run, so the router resolves one: ${(err as Error).message}`,
+                  );
+                  return;
+                }
                 throw new SessionModelError(
                   model,
                   (err as Error).message,
                   resumeSessionId,
                 );
               });
-          const res = await caller.request<OpenedSession>("session/resume", {
-            sessionId: resumeSessionId,
-            cwd: ".",
-            mcpServers: mcp,
-          });
+          const res = await caller
+            .request<OpenedSession>("session/resume", {
+              sessionId: resumeSessionId,
+              cwd: ".",
+              mcpServers: mcp,
+            })
+            .catch(asNoSessionModel);
           sessionId = resumeSessionId;
           openedOn = openedModel(res);
-          if (deps.modelMissing(sessionId)) throw new NoSessionModelError();
         } else {
-          const res = await caller.request<
-            OpenedSession & { sessionId: string }
-          >("session/new", {
-            cwd: ".",
-            mcpServers: mcp,
-            ...((platformMeta || model) && {
-              _meta: {
-                platform: { ...platformMeta, ...(model && { model }) },
-              },
-            }),
-          });
+          const res = await caller
+            .request<OpenedSession & { sessionId: string }>("session/new", {
+              cwd: ".",
+              mcpServers: mcp,
+              ...((platformMeta || model) && {
+                _meta: {
+                  platform: { ...platformMeta, ...(model && { model }) },
+                },
+              }),
+            })
+            .catch(asNoSessionModel);
           sessionId = res.sessionId;
           openedOn = openedModel(res);
         }
+
+        if (!(await deps.modelReady(sessionId)))
+          throw new NoSessionModelError();
 
         const surface = steer
           ? MESSAGE_SURFACE
