@@ -23,13 +23,13 @@ import {
 } from "../lib/rule-choice.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and, while it is on, the agent's one web search rule, which answers every search without asking. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own.
+ * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and the agent's one web search rule, which answers every search without asking once the switch is on. The rule shows while the switch is off too when one is stored, and turning the switch on names it, because a stored rule answers in place of the hold the switch promises. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own.
  */
 export function WebSearchControlCard({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const setControl = useSetWebSearchControl();
   const setRule = useSetWebSearchRule();
-  const { data: state } = useWebSearchState(agent.id);
+  const { data: state, isPending: stateLoading } = useWebSearchState(agent.id);
   const editable = holds(agent.access, "egressRules");
   const on =
     (setControl.isPending
@@ -37,9 +37,17 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
       : undefined) ?? agent.webSearchControl;
   const choice = ruleChoiceOf(state?.rule?.verdict);
   const chosen = WEB_SEARCH_RULE_CHOICES.find((c) => c.value === choice);
+  const storedRule = state?.rule ? chosen : undefined;
 
   const toggle = async (next: boolean) => {
-    if (!(await confirmWebSearchControlRestart(showConfirm, next))) return;
+    if (
+      !(await confirmWebSearchControlRestart(
+        showConfirm,
+        next,
+        storedRule?.label,
+      ))
+    )
+      return;
     setControl.mutate({ id: agent.id, webSearchControl: next });
   };
 
@@ -63,13 +71,13 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
           <Switch
             className="mt-0.5"
             checked={on}
-            disabled={!editable || setControl.isPending}
+            disabled={!editable || setControl.isPending || stateLoading}
             onCheckedChange={(next) => void toggle(next)}
             label="Web search control"
           />
         }
       />
-      {on && (
+      {(on || storedRule) && (
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor={`web-search-rule-${agent.id}`}
@@ -102,6 +110,7 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
             </Select>
           </div>
           <p className="text-sm text-muted-foreground">
+            {!on && "Applies once web search control is on. "}
             {chosen?.hint}
             {state?.rule &&
               ` Set by ${state.rule.decidedByEmail ?? state.rule.decidedBy}.`}

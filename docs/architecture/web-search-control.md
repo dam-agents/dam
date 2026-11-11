@@ -1,6 +1,6 @@
 # Web search control
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -52,6 +52,7 @@ Otherwise the search waits as a **web search approval**, where network approvals
 A retry of the same search joins the waiting approval: the same query, or the same body when the model chooses the query; a different search files its own.
 Allow once sends the call on to the gate's other checks, and deny refuses it.
 Always allow and always deny write the agent's web search rule, also on an approval whose hold already ended; the owner changes or clears the rule under Web search in the agent's Network settings.
+The rule stays when the setting turns off and answers again when it turns back on, so the Network settings show a stored rule while the setting is off too, and the warning before turning the setting on names it.
 
 An allowed search still runs at the provider: the platform approves it but does not run it.
 The IBM LiteLLM proxy lets the model search again with queries it writes after reading the first results, up to two more by its default, and reports only the first, so the approval says that an allowed search may run up to two more queries.

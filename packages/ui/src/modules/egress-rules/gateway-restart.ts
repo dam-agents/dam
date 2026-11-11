@@ -85,10 +85,11 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
 export async function confirmWebSearchControlRestart(
   showConfirm: ShowConfirm,
   on: boolean,
+  storedRuleLabel?: string,
 ): Promise<boolean> {
   try {
     return await showConfirm(
-      describeWebSearchControlRestart(on),
+      describeWebSearchControlRestart(on, storedRuleLabel),
       GATEWAY_RESTART_TITLE,
       { confirmLabel: on ? "Turn on & restart" : "Turn off & restart" },
     );

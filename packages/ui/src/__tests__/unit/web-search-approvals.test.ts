@@ -18,7 +18,7 @@ import {
   verdictOfChoice,
 } from "../../modules/web-search/lib/rule-choice.js";
 
-// TEST_OVERVIEW: a held web search where the owner meets it: in the agent's chat beside its waiting network approvals, and on Home. It reads as a web search, shows the query or says the model chooses it, and says an allowed search can run more queries the model writes. Two requests for the same search are one approval with a count. The setting that turns control on warns that the gateway restarts, and its rule reads as ask, allow or deny.
+// TEST_OVERVIEW: a held web search where the owner meets it: in the agent's chat beside its waiting network approvals, and on Home. It reads as a web search, shows the query or says the model chooses it, and says an allowed search can run more queries the model writes. Two requests for the same search are one approval with a count. The setting that turns control on warns that the gateway restarts and names a stored rule that would answer in place of the hold, and its rule reads as ask, allow or deny.
 
 const NOW = new Date("2026-11-10T12:00:00Z");
 
@@ -103,6 +103,17 @@ describe("the web search setting", () => {
       /^Network access restarts .* to start reading/,
     );
     expect(describeWebSearchControlRestart(false)).toContain("to stop reading");
+  });
+
+  // TEST_SCENARIO: a stored rule answers every search in place of the hold, so turning control on names it; turning control off does not, because nothing is held then.
+  it("names a stored rule when control turns on", () => {
+    expect(describeWebSearchControlRestart(true, "Always allow")).toContain(
+      'The agent\'s stored web search rule, "Always allow", then answers every search without asking you.',
+    );
+    expect(describeWebSearchControlRestart(true)).not.toContain("stored");
+    expect(
+      describeWebSearchControlRestart(false, "Always allow"),
+    ).not.toContain("stored");
   });
 
   // TEST_SCENARIO: no rule reads as asking each time, and choosing ask clears the rule.
