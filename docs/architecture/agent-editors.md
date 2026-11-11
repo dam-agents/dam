@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-11-02
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -58,8 +58,9 @@ The owner, an API key and a stranger keep their own context, so their answers do
 Reads of the Agent's set-up need `view`, so an editor reads the owner's schedules, rules, skill sets and spend status for that Agent.
 Reading the Agent's connections returns each granted connection's display fields, read on the owner's behalf and never with secrets: that is all an editor sees of the owner's connections.
 The updates the Agent context once took in one procedure are now one procedure per permission: settings, environment variables, the credential injection switch, whispers and secretRef.
+`egressRules` also covers web search control ([web-search-control](web-search-control.md)): the switch that holds each web search (`agents.setWebSearchControl`) and the Agent's one web search rule (`webSearch.setRule`), which answers every search without asking.
 
-An approval names only its id, so the middleware reads the Agent from the approval, and the approval adds the permission of what it lets through: `sessions` for a tool call, `egressRules` for network access or a rule the Agent proposes.
+An approval names only its id, so the middleware reads the Agent from the approval, and the approval adds the permission of what it lets through: `sessions` for a tool call, `egressRules` for network access, a rule the Agent proposes or a web search, whose always allow and always deny write the web search rule.
 A spend limit question names no Agent for this check, because continuing it raises the owner's own spending: it stays with the owner.
 
 An editor opens the Agent's Environments like its owner, and sets the Agent's Environment Members on its page; adding a person to one Environment is the owner's, in the Artifacts list (see [environments](environments.md#surfaces)).
