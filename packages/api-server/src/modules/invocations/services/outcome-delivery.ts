@@ -70,7 +70,7 @@ async function deliverTo(
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<boolean> {
-  const { told, task } = composeOutcomeTurn({
+  const { told, task, trimmed } = composeOutcomeTurn({
     descriptions: rows.map(describe),
     subject: (count) =>
       count === 1
@@ -82,6 +82,7 @@ async function deliverTo(
   await deps.repo.release(rows.slice(told).map(runIdOf), lease);
 
   const ids = rows.slice(0, told).map(runIdOf);
+  const whole = ids.filter((_, i) => !trimmed.includes(i));
   const routed = rows
     .slice(0, told)
     .flatMap((r) => (r.runId && r.runId !== r.id ? [r.runId, r.id] : [r.id]));
@@ -98,7 +99,7 @@ async function deliverTo(
       payloadValues: routed,
     },
     release: () => deps.repo.release(ids, lease),
-    markWritten: () => deps.repo.markDelivered(ids, lease),
+    markWritten: () => deps.repo.markDelivered(ids, lease, whole),
     wake: () =>
       wakeOutcomeTurn(deps, {
         tag: "sub-agents",

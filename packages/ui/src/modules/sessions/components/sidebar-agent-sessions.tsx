@@ -15,6 +15,8 @@ import { useInstallCapabilities } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import {
   type ActivityFilters,
+  activityFilterSummary,
+  defaultActivityFilters,
   isFiltered,
 } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
@@ -26,9 +28,15 @@ import {
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useConfirmDeleteSession } from "../hooks/use-confirm-delete-session.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
-import { useAgentSessionFilter } from "../lib/agent-session-filters.js";
 import {
+  setAgentSessionFilter,
+  useAgentSessionFilter,
+} from "../lib/agent-session-filters.js";
+import {
+  fillsStep,
+  fillState,
   newestFirst,
+  SIDEBAR_FILL_PAGES,
   SIDEBAR_SESSION_STEP,
   sidebarSessionWindow,
   viewMore,
@@ -60,8 +68,12 @@ interface Props {
  * first newly shown Session, also once a provisional list gives way to the
  * Agent's own list or a Retry loads the page that failed. An Agent that is not open in the page previews
  * its Sessions from the attention record and reads its own list only after
- * View more; its own list loads a further page only when the loaded rows run
- * out.
+ * View more; after a View more its own list loads further pages until the rows
+ * fill the window or the list ends, at most five pages per click before it
+ * offers Keep looking; a changed filter starts again at five. A filter on the
+ * Agent goes with the page request, so
+ * the runtime pages matching Sessions only, except Needs attention, which only
+ * the browser can tell; the list names the filter and offers to clear it.
  */
 export function SidebarAgentSessions({
   agentId,
@@ -81,6 +93,11 @@ export function SidebarAgentSessions({
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
+  const [limitFilter, setLimitFilter] = useState(filter);
+  if (limitFilter !== filter) {
+    setLimitFilter(filter);
+    setLimit(SIDEBAR_SESSION_STEP);
+  }
 
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
@@ -94,6 +111,14 @@ export function SidebarAgentSessions({
 
   return (
     <>
+      {filtered && (
+        <FilterNote
+          summary={activityFilterSummary(filter)}
+          onClear={() =>
+            setAgentSessionFilter(agentId, defaultActivityFilters())
+          }
+        />
+      )}
       {open ||
       limit > SIDEBAR_SESSION_STEP ||
       (preview.length === 0 && !previewComplete) ? (
@@ -169,7 +194,6 @@ function SessionPreview({
     shown: visible.length,
     limit: SIDEBAR_SESSION_STEP,
     hasNextPage: !complete,
-    isFetchingNextPage: false,
   });
 
   return (
@@ -198,6 +222,7 @@ function SessionPreview({
       })}
       {more && (
         <ViewMoreRow
+          label={sessions.length === 0 ? "Look further" : "View more"}
           onClick={() =>
             onMore(new Set(visible.map((item) => item.session.sessionId)))
           }
@@ -226,11 +251,12 @@ function AgentSessionList({
   onFocusAfterChange: (shown: ReadonlySet<string> | null) => void;
   onNavigate?: () => void;
 }) {
-  const list = useAgentSessionList(agentId);
+  const list = useAgentSessionList(agentId, filter);
   const openSession = useOpenSession();
   const telemetryEnabled =
     useInstallCapabilities().data?.telemetryBackend ?? false;
   const rootRef = useRef<HTMLDivElement>(null);
+  const [pagesLeft, setPagesLeft] = useState(SIDEBAR_FILL_PAGES);
 
   const {
     hasNextPage,
@@ -242,11 +268,10 @@ function AgentSessionList({
   const filtered = filter !== undefined;
   const rows = newestFirst(
     list.sessions
-      .map((session) => ({ session, state: list.rowState(session) }))
-      .filter(
-        ({ session, state }) =>
+      .map((session) => {
+        const state = list.rowState(session);
+        const matches =
           filter === undefined ||
-          state.active ||
           matchesActivityFilters(
             {
               session,
@@ -255,8 +280,10 @@ function AgentSessionList({
               needsApproval: state.needsApproval,
             },
             filter,
-          ),
-      ),
+          );
+        return { session, state, outsideFilter: !matches };
+      })
+      .filter(({ state, outsideFilter }) => state.active || !outsideFilter),
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
@@ -267,9 +294,21 @@ function AgentSessionList({
     shown: visible.length,
     limit,
     hasNextPage,
-    isFetchingNextPage,
   });
   const paged = limit > SIDEBAR_SESSION_STEP;
+  const filling = fillsStep({
+    total: rows.length,
+    limit,
+    hasNextPage,
+    fetchNextPageFailed,
+  });
+  const fill = fillState({ filling, pagesLeft });
+
+  useEffect(() => {
+    if (fill !== "searching" || isFetchingNextPage || list.loading) return;
+    setPagesLeft((left) => left - 1);
+    void fetchNextPage();
+  }, [fill, isFetchingNextPage, list.loading, fetchNextPage]);
 
   useEffect(() => {
     if (!focusAfter || list.loading || isFetchingNextPage) return;
@@ -285,7 +324,11 @@ function AgentSessionList({
           `[data-session-id="${CSS.escape(id)}"] [data-row-main]`,
         )
         ?.focus();
-    const pending = list.provisional || list.failed || fetchNextPageFailed;
+    const pending =
+      list.provisional ||
+      list.failed ||
+      fetchNextPageFailed ||
+      fill === "searching";
     if (id || !unclaimed || !pending) onFocusAfterChange(null);
   });
 
@@ -316,11 +359,12 @@ function AgentSessionList({
         (!hasNextPage || filtered) && (
           <ListNote>{emptyText(filtered, hasNextPage)}</ListNote>
         )}
-      {visible.map(({ session: s, state }) => (
+      {visible.map(({ session: s, state, outsideFilter }) => (
         <SessionRow
           key={s.sessionId}
           session={s}
           {...state}
+          outsideFilter={outsideFilter}
           className={ROW_CLASS}
           onResume={() => {
             openSession(agentId, s.sessionId, s.mode);
@@ -355,11 +399,19 @@ function AgentSessionList({
         next.more && (
           <ViewMoreRow
             busy={isFetchingNextPage}
-            onClick={async () => {
-              const shown = new Set(visibleIds);
-              onLimitChange(next.limit);
-              if (next.fetchNextPage) await fetchNextPage();
-              onFocusAfterChange(shown);
+            label={
+              fill === "searching"
+                ? "Looking for more…"
+                : fill === "paused"
+                  ? "Keep looking"
+                  : filtered && rows.length === 0
+                    ? "Look further"
+                    : "View more"
+            }
+            onClick={() => {
+              onFocusAfterChange(new Set(visibleIds));
+              setPagesLeft(SIDEBAR_FILL_PAGES);
+              if (fill !== "paused") onLimitChange(next.limit);
             }}
           />
         )
@@ -371,7 +423,7 @@ function AgentSessionList({
 function emptyText(filtered: boolean, more: boolean): string {
   if (!filtered) return "No sessions yet.";
   return more
-    ? "No loaded sessions match the filter."
+    ? "None of the latest sessions match."
     : "No sessions match the filter.";
 }
 
@@ -381,11 +433,40 @@ function ListNote({ children }: { children: ReactNode }) {
   );
 }
 
+function FilterNote({
+  summary,
+  onClear,
+}: {
+  summary: string;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      data-testid="sidebar-agent-filter-note"
+      className="flex h-6 min-w-0 items-center gap-2 pr-2 pl-12 text-2xs text-muted-foreground"
+    >
+      <span className="min-w-0 truncate" title={`Filtered: ${summary}`}>
+        Filtered: {summary}
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        data-testid="sidebar-agent-filter-clear"
+        className={`shrink-0 rounded-sm underline-offset-2 hover:text-foreground hover:underline ${FOCUS_RING}`}
+      >
+        Clear filter
+      </button>
+    </div>
+  );
+}
+
 function ViewMoreRow({
   busy = false,
+  label = "View more",
   onClick,
 }: {
   busy?: boolean;
+  label?: string;
   onClick: () => void;
 }) {
   return (
@@ -396,7 +477,7 @@ function ViewMoreRow({
       data-testid="sidebar-agent-sessions-more"
       className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg pl-12 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
     >
-      View more
+      {label}
       {busy && <Spinner />}
     </button>
   );

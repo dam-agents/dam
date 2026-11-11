@@ -21,5 +21,4 @@ export interface GettingStartedService {
   markUnlockSeen(task: GettingStartedTask): Promise<GettingStartedProgress>;
   markAvatarPicked(character: AvatarCharacter): Promise<GettingStartedProgress>;
   setDismissed(dismissed: boolean): Promise<GettingStartedProgress>;
-  reset(): Promise<GettingStartedProgress>;
 }

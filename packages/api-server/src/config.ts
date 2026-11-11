@@ -87,6 +87,23 @@ const gheHostsSchema = z
     ),
   );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack workspaces an operator vouches for as
+ * naming the same people DAM knows by mailbox. Empty is the shipped state —
+ * no workspace is trusted, so nothing pairs — and each entry is searched only
+ * while it is installed and active. */
+const slackEmailPairingWorkspacesSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().min(1)));
+
 const gheRetiredHostsSchema = z
   .string()
   .default("[]")
@@ -236,6 +253,8 @@ const configSchema = z.object({
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   harnessServerUrl: z.string().url(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the api-server's own public Service, as a gateway pod reaches it inside the cluster. The Connection that lets an Agent drive this install names that address over HTTPS, and its gateway chain takes the request there; absent means the install offers no such Connection. */
+  apiserverUrl: z.url().optional(),
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   databaseCaCertPath: z.string().optional(),
@@ -259,6 +278,7 @@ const configSchema = z.object({
   slackOauthCallbackUrl: z.string().nullable().default(null),
   slackInstallCallbackUrl: z.string().nullable().default(null),
   slackEnterpriseId: z.string().default(""),
+  slackEmailPairingWorkspaces: slackEmailPairingWorkspacesSchema,
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
   slackTokenRotation: z.coerce.boolean().default(false),
@@ -466,6 +486,7 @@ export function loadConfig(): Config {
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
+    apiserverUrl: process.env.PLATFORM_APISERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,
@@ -481,6 +502,7 @@ export function loadConfig(): Config {
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     slackInstallCallbackUrl: process.env.SLACK_INSTALL_CALLBACK_URL,
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
+    slackEmailPairingWorkspaces: process.env.SLACK_EMAIL_PAIRING_WORKSPACES,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
     slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,

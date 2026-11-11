@@ -1,4 +1,10 @@
 import type { TtlStore } from "../../../core/ttl-store.js";
+import { createTtlMap } from "../../../core/ttl-map.js";
+import {
+  createPostEditRateLimit,
+  EMPTY_POST_EDIT,
+  tooManyPostEdits,
+} from "../domain/post-edit-rate-limit.js";
 import {
   annotateSpan,
   inBackgroundSpan,
@@ -25,8 +31,14 @@ import {
   type SessionChoiceSlots,
 } from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
+import {
+  linkOutboundArtifacts,
+  type LinkOutboundArtifacts,
+} from "./outbound-artifact-links.js";
 import type {
   ChannelWorker,
+  ChannelSendResult,
+  PostEdit,
   PostMessageOptions,
 } from "../services/worker-contract.js";
 import {
@@ -124,7 +136,8 @@ export interface TelegramWorker extends ChannelWorker {
     agentId: string,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
+  editPost(agentId: string, edit: PostEdit): Promise<ChannelSendResult>;
 }
 
 async function isTelegramChatAdmin(
@@ -293,6 +306,10 @@ export function telegramPayload(
 }
 
 export const TELEGRAM_MESSAGE_CHARS = 4096;
+
+const OWN_POST_TTL_MS = 48 * 60 * 60 * 1000;
+
+const OWN_POSTS_KEPT = 10_000;
 
 export const TELEGRAM_CAPTION_CHARS = 1024;
 
@@ -693,6 +710,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
+  linkArtifacts: LinkOutboundArtifacts;
   ownerOf: (agentId: string) => Promise<string | null>;
   ownerDisplayName: (sub: string) => Promise<string | null>;
   settleMs?: number;
@@ -710,6 +728,41 @@ export function createTelegramWorker(deps: {
   const lastPostAt = new Map<string, number>();
   const notePost = (agentId: string, chatId: string) =>
     lastPostAt.set(`${agentId}|${chatId}`, Date.now());
+
+  /* UNIT_BOUNDARY_DESCRIPTION: which Agent made which message, for the posts
+   * an Agent may change later. A Telegram message carries nothing that names
+   * its Agent, the bot cannot read a chat's history, and message ids in a
+   * chat can be guessed, so a chat that moved to another Agent would let it
+   * change the first Agent's messages. Only a message recorded here for the
+   * calling Agent is changed; the record lives in memory, so after a restart
+   * an earlier post can no longer be changed. The platform sends its own
+   * notices through the same call, in the Agent's name, so only a post an
+   * Agent made with its own tool is recorded. A message sent with a file is
+   * not recorded either: its text is a caption, which this does not change. */
+  const ownPosts = createTtlMap<string, string>({
+    ttlMs: OWN_POST_TTL_MS,
+    maxEntries: OWN_POSTS_KEPT,
+  });
+  const ownPostKey = (conversationId: string, messageId: string) =>
+    `${conversationId} ${messageId}`;
+  const postEdits = createPostEditRateLimit();
+
+  function sentPost(
+    agentId: string,
+    conversationId: string,
+    sent: unknown,
+    options: PostMessageOptions | undefined,
+  ): ChannelSendResult {
+    notePost(agentId, conversationId);
+    const id =
+      typeof sent === "object" && sent !== null && "id" in sent
+        ? sent.id
+        : undefined;
+    if (typeof id !== "string" || !options?.byAgent || options.attachment)
+      return { ok: true as const };
+    ownPosts.set(ownPostKey(conversationId, id), agentId);
+    return { ok: true as const, conversationId, ts: id };
+  }
 
   async function findThreadSession(agentId: string, threadId: string) {
     const acp = makeAcpClient(agentId);
@@ -1161,10 +1214,27 @@ export function createTelegramWorker(deps: {
     ) {
       if (!bot) return { error: "telegram bot is not running" };
 
-      const { conversationId } = options ?? {};
-      const tooLong = telegramCardTooLong(text, options);
+      const { conversationId, card } = options ?? {};
+      const linked = await linkOutboundArtifacts(
+        { text, ...(card ? { card } : {}) },
+        async (value) =>
+          deps.linkArtifacts({
+            agentId,
+            owner: await deps.ownerOf(agentId),
+            surface: "Telegram",
+            ownerDirectMessage: false,
+            text: value,
+          }),
+      );
+      if ("error" in linked) return linked;
+      const { card: _unlinkedCard, ...rest } = options ?? {};
+      const linkedOptions = {
+        ...rest,
+        ...(linked.card ? { card: linked.card } : {}),
+      };
+      const tooLong = telegramCardTooLong(linked.text, linkedOptions);
       if (tooLong) return tooLong;
-      const payload = telegramPayload(text, options);
+      const payload = telegramPayload(linked.text, linkedOptions);
 
       if (conversationId) {
         const binding = await deps.conversations.findAgentByConversation(
@@ -1173,9 +1243,12 @@ export function createTelegramWorker(deps: {
         if (!binding || binding.agentId !== agentId)
           return { error: "conversation is not connected to this agent" };
         try {
-          await bot.adapter.postMessage(conversationId, payload);
-          notePost(agentId, conversationId);
-          return { ok: true as const };
+          return sentPost(
+            agentId,
+            conversationId,
+            await bot.adapter.postMessage(conversationId, payload),
+            options,
+          );
         } catch (err) {
           return { error: err instanceof Error ? err.message : String(err) };
         }
@@ -1188,9 +1261,66 @@ export function createTelegramWorker(deps: {
             "no active Telegram thread; pass conversationId from list_channel_conversations",
         };
       try {
-        await thread.post(payload);
-        notePost(agentId, thread.id);
-        return { ok: true as const };
+        return sentPost(
+          agentId,
+          thread.id,
+          await thread.post(payload),
+          options,
+        );
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+
+    async editPost(agentId: string, edit: PostEdit) {
+      if (!bot) return { error: "telegram bot is not running" };
+      const { conversationId, messageId, text, card } = edit;
+      if (edit.attachment)
+        return {
+          error:
+            "Replacing the file of a post works only in Slack. Send the new " +
+            "file in a new message instead.",
+        };
+      const binding = await deps.conversations.findAgentByConversation(
+        telegramChatOf(conversationId),
+      );
+      if (!binding || binding.agentId !== agentId)
+        return { error: "conversation is not connected to this agent" };
+      if (ownPosts.get(ownPostKey(conversationId, messageId)) !== agentId)
+        return {
+          error:
+            "That message is not a post you can change: you can change only " +
+            "a text post you made with post, and only until the platform " +
+            "restarts. Say what changed in a new message instead.",
+        };
+      if (text.trim() === "" && card === undefined)
+        return { error: EMPTY_POST_EDIT };
+      const linked = await linkOutboundArtifacts(
+        { text, ...(card ? { card } : {}) },
+        async (value) =>
+          deps.linkArtifacts({
+            agentId,
+            owner: await deps.ownerOf(agentId),
+            surface: "Telegram",
+            ownerDirectMessage: false,
+            text: value,
+          }),
+      );
+      if ("error" in linked) return linked;
+      const shown = linked.card ? { card: linked.card } : {};
+      const tooLong = telegramCardTooLong(linked.text, shown);
+      if (tooLong) return tooLong;
+      const admission = postEdits.admit(conversationId, agentId);
+      if (!admission.admitted)
+        return { error: tooManyPostEdits(admission.retryAfterMs) };
+      try {
+        await bot.adapter.editMessage(
+          conversationId,
+          messageId,
+          telegramPayload(linked.text, shown),
+        );
+        notePost(agentId, conversationId);
+        return { ok: true as const, conversationId, ts: messageId };
       } catch (err) {
         return { error: err instanceof Error ? err.message : String(err) };
       }

@@ -79,8 +79,16 @@ import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import {
+  assistantAudienceKnown,
+  useAssistantState,
+} from "../../assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
-import { useAssistantGreeting } from "../../assistants/hooks/use-assistant-greeting.js";
+import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
+import {
+  useAssistantChat,
+  useAssistantGreeting,
+} from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
@@ -364,11 +372,16 @@ export function ChatView() {
   const shared = sharedCurveBender(providers.owned);
   const routed =
     choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant record says which Agent is the assistant, and whether the account had an Agent of its own before the platform gave it one — so the notice keeps out of its chat and off an account onboarded with it, and waits for that record rather than guessing. */
+  const assistantRecord = useAssistantState();
   const notice = curveBenderNotice({
     sessionId,
     shared,
     pair,
     pairSettled,
+    agentId: selectedAgent,
+    assistant: assistantRecord.data ?? null,
+    assistantKnown: assistantAudienceKnown(assistantRecord),
   });
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
@@ -408,6 +421,9 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const dialog = useStore((s) => s.dialog);
+  /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
+  const providerPromptOpen = providersModal ?? noProviders;
 
   const view = useStore((s) => s.view);
   const continuesInvocation = useStore((s) =>
@@ -429,6 +445,8 @@ export function ChatView() {
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
+  const assistantChat = useAssistantChat(selectedAgent);
 
   const {
     messagesRef,
@@ -1142,6 +1160,11 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
+          {assistantChat && (
+            <AssistantUnlockCelebration
+              covered={providerPromptOpen || dialog !== null}
+            />
+          )}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}
@@ -1309,7 +1332,7 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
-      {(providersModal ?? noProviders) && (
+      {providerPromptOpen && (
         <ProviderSettingsModal
           agentId={newSessionAgent}
           onClose={() => setProvidersModal(false)}

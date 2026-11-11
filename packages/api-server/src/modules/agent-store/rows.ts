@@ -306,6 +306,18 @@ export function rowsFromResource(
     return refuse("the resource has no usable uid to treat as its incarnation");
   const image = text(spec.image);
   if (!image) return refuse("the spec carries no image");
+  /* UNIT_BOUNDARY_DESCRIPTION: a row describes a machine, and nothing in it can
+   * name another backend, so an Agent on the container backend is refused here
+   * rather than absorbed and exported as a machine: the one this release runs is
+   * the vm backend, and an Agent that names none is the container Agent an
+   * earlier release wrote. */
+  const backend = text((spec.backend as { type?: unknown } | undefined)?.type);
+  if (backend !== "vm")
+    return refuse(
+      backend === undefined
+        ? "the spec names no backend, which an earlier release wrote for a container Agent: a row describes a machine, and this release runs only machines"
+        : `the spec names the ${backend} backend, and this release runs only machines`,
+    );
 
   const limits = (spec.resources ?? {}) as {
     limits?: Record<string, string>;
@@ -683,8 +695,10 @@ export function resourceFromRows(
       ? undefined
       : goDuration(agent.hibernationTimeoutNs),
   );
-  if (agent.nestedVirtualization)
-    spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
+  // UNIT_BOUNDARY_DESCRIPTION: a row is a machine — rowsFromResource refuses any other backend — so the export always writes the discriminator the chart's gate and the controller read.
+  spec.backend = agent.nestedVirtualization
+    ? { type: "vm", vm: { nestedVirtualization: true } }
+    : { type: "vm" };
   if (agent.requireConnectionAddress || complete)
     spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);

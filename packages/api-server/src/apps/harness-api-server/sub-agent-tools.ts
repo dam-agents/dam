@@ -6,8 +6,9 @@ import {
   type SessionSubAgentContext,
 } from "agent-runtime-api";
 import {
-  isWildcardEgressRule,
   childEgressRuleSchema,
+  type InvocationView,
+  OWNER_EGRESS_NOTE,
   formatQualifiedModel,
   INVOCATION_OUTPUT_STREAMS,
   type InvocationOutput,
@@ -74,7 +75,7 @@ const KEPT_AWAIT_SENTENCE =
   " Pass a sub-agent id for its latest run, or a run id from run_subagent for that run; a kept sub-agent's result also names its run and the session it ran in, which run_subagent can continue.";
 
 const awaitDescription = (kept: boolean): string =>
-  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} A finished sub-agent whose result goes to you as a new turn comes back under deliveredAsTurn, without the result: read it in that turn when it reaches you, which may be after your current turn ends. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const FETCH_DESCRIPTION = `Save the full stdout or stderr of a finished script sub-agent to a file in your sandbox, as await_subagents only shows its start and end. Returns one shell command: run it, and it downloads the stream byte for byte to the path you give and checks its sha256. Then read the file as often as you need. The platform deletes its copy once the download is checked, so fetch each stream once; one nobody fetches is deleted after seven days.`;
 
@@ -201,7 +202,7 @@ const idleTimeoutShape = z
 // UNIT_BOUNDARY_DESCRIPTION: the spawn options that keep a sub-agent or give it egress of its own, offered only to an owner with the Environments feature, which kept sub-agents are part of.
 const keptSpawnInput = {
   egress: spawnShape.egress.describe(
-    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+    'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a rule that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval, and the answer names them; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
   ),
   keep: spawnShape.keep.describe(
     "Keep it after its result: it sleeps with its disk instead of being removed, so you can enter it again over ssh sub-<id> or run more work in it, until keepForMs (a day by default, at most as long as an Environment lives). Without keep it is removed once it reports.",
@@ -228,17 +229,8 @@ function subAgentIdleTimeout(
   return { minutes: parsed };
 }
 
-const WILDCARD_EGRESS_NOTE =
-  "a rule to a wildcard host (* or *.example.com) is your owner's to approve: it waits for their verdict (egress_proposal status with its id), and until then only your other rules apply";
-
-const wildcardEgressAsked = (egress: unknown): boolean =>
-  typeof egress === "object" &&
-  egress !== null &&
-  "open" in egress &&
-  Array.isArray(egress.open) &&
-  egress.open.some((rule) =>
-    isWildcardEgressRule(rule as { host: string; verdict: string }),
-  );
+const OWNER_BLOCK_NOTE =
+  "your owner blocked these on the sub-agent, and a block is theirs alone: the rules allowing them were not set, and only the owner can lift the block";
 
 const KEPT_STOP_SENTENCE =
   " A sub-agent you spawned with keep keeps its conversation and only stops running; stopping it takes a reason.";
@@ -322,18 +314,22 @@ interface RunOf {
   session?: string;
 }
 
+type EgressAnswersView = NonNullable<InvocationView["egress"]>;
+
 type Settled =
   | ({
       id: string;
       status: "done";
       result: unknown;
       script?: ScriptEnd;
+      egress?: EgressAnswersView;
     } & RunOf)
   | ({
       id: string;
       status: "failed";
       reason: string | undefined;
       script?: ScriptEnd;
+      egress?: EgressAnswersView;
     } & RunOf)
   | ({ id: string; status: "running"; waiting?: string } & RunOf)
   | { id: string; status: "idle" }
@@ -359,14 +355,23 @@ async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
         ...(view.run && { run: view.run }),
         ...(view.session && { session: view.session }),
       };
+      const egress = view.egress ? { egress: view.egress } : {};
       if (view.status === "done")
-        return { id, status: "done", result: view.result, ...script, ...runOf };
+        return {
+          id,
+          status: "done",
+          result: view.result,
+          ...script,
+          ...egress,
+          ...runOf,
+        };
       if (view.status === "failed")
         return {
           id,
           status: "failed",
           reason: view.errorReason,
           ...script,
+          ...egress,
           ...runOf,
         };
       if (view.status === "idle") return { id, status: "idle" };
@@ -429,7 +434,15 @@ function runFields(s: { id: string } & RunOf): RunOf {
   };
 }
 
-async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
+async function summarize(
+  ops: DriverOps,
+  all: Settled[],
+  kept: boolean,
+  inTurn: ReadonlySet<string>,
+) {
+  const turned = (s: Settled) =>
+    "run" in s && s.run !== undefined && inTurn.has(s.run);
+  const settled = all.filter((s) => !turned(s));
   const runFieldsOf = (s: { id: string } & RunOf): RunOf =>
     kept ? runFields(s) : {};
   const ended = await Promise.all(
@@ -443,9 +456,12 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
     done: ended.flatMap((s) =>
       s.status === "done"
         ? [
-            s.report
-              ? { id: s.id, ...runFieldsOf(s), ...s.report }
-              : { id: s.id, ...runFieldsOf(s), result: s.result },
+            {
+              id: s.id,
+              ...runFieldsOf(s),
+              ...(s.report ?? { result: s.result }),
+              ...(s.egress && { egress: s.egress }),
+            },
           ]
         : [],
     ),
@@ -457,6 +473,7 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
               ...runFieldsOf(s),
               reason: s.reason ?? null,
               ...s.report,
+              ...(s.egress && { egress: s.egress }),
             },
           ]
         : [],
@@ -469,6 +486,7 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
     ),
     idle: settled.flatMap((s) => (s.status === "idle" ? [s.id] : [])),
     unknown: settled.flatMap((s) => (s.status === "unknown" ? [s.id] : [])),
+    deliveredAsTurn: all.filter(turned).map((s) => s.id),
   };
 }
 
@@ -833,8 +851,12 @@ export function registerSubAgentTools(
                   `set by this session's platform sub-agent settings: ${boundNote.join(", ")} (arguments for these are ignored)`,
                 ]
               : []),
-            ...(wildcardEgressAsked(args.egress)
-              ? [`egress: ${WILDCARD_EGRESS_NOTE}`]
+            ...(outcome.egressWaiting.length > 0
+              ? [
+                  `egress waiting for your owner: ${JSON.stringify(outcome.egressWaiting)}`,
+                  `egress: ${OWNER_EGRESS_NOTE}`,
+                  "A sub-agent that is not kept starts its work only once your owner has answered them; await_subagents shows it as waiting to start.",
+                ]
               : []),
             ...(ignored.length > 0
               ? [
@@ -915,17 +937,20 @@ export function registerSubAgentTools(
           settled = await readAll(ops, unique);
           await heartbeat(settled);
         }
-        const summary = await summarize(ops, settled, kept);
-        if (!signal.aborted) {
-          await awaits.markCollected(runIdsOf(settled, ["done", "failed"]));
-          const running = runIdsOf(settled, ["running"]);
-          if (running.length > 0)
-            await awaits.markAwaited(
-              running,
-              new Date(Date.now() + AWAIT_AGAIN_GRACE_MS),
-            );
+        const grace = () => new Date(Date.now() + AWAIT_AGAIN_GRACE_MS);
+        if (signal.aborted) {
+          await awaits.markAwaited(
+            runIdsOf(settled, ["running", "done", "failed"]),
+            grace(),
+          );
+          return json({});
         }
-        return json(summary);
+        const inTurn = new Set(
+          (await awaits.collect(runIdsOf(settled, ["done", "failed"]))).inTurn,
+        );
+        const running = runIdsOf(settled, ["running"]);
+        if (running.length > 0) await awaits.markAwaited(running, grace());
+        return json(await summarize(ops, settled, kept, inTurn));
       }),
   );
 
@@ -1150,7 +1175,7 @@ function registerKeptTools(
 
   server.tool(
     "update_subagent_egress",
-    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set: it waits for your owner\'s approval, and the answer names it. Refused for one that follows your egress or has scoped egress, which only the user widens.',
+    'Replace the egress rules of a sub-agent or Environment you launched with egress "open": its requests are decided by these rules alone, with no prompt to the user, and a host outside them is denied. Each rule is {host, verdict: "allow" or "deny", port?, method?, pathPattern?}; host may be a *.wildcard or *. A rule allowing a wildcard host (* or *.example.com) is not yours to set, nor one that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own: each waits for your owner\'s approval, and the answer names it. A rule allowing what your owner blocked on it is not set, and the answer names that too. Refused for one that follows your egress or has scoped egress, which only the user widens.',
     {
       id: z
         .string()
@@ -1172,7 +1197,11 @@ function registerKeptTools(
               rules: rules.length,
               ...(outcome.waiting.length > 0 && {
                 waitingForOwner: outcome.waiting,
-                note: WILDCARD_EGRESS_NOTE,
+                note: OWNER_EGRESS_NOTE,
+              }),
+              ...(outcome.blocked.length > 0 && {
+                blockedByOwner: outcome.blocked,
+                blockedNote: OWNER_BLOCK_NOTE,
               }),
             })
           : errorResult(`update_subagent_egress refused: ${outcome.message}`);

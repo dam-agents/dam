@@ -12,6 +12,8 @@ import type {
   invocationViewSchema,
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
+  setEgressResponseSchema,
+  egressWaitingSchema,
   stopInvocationRequestSchema,
   stopInvocationResponseSchema,
   spawnScriptInvocationRequestSchema,
@@ -32,6 +34,8 @@ export type InvocationOutputLink = z.infer<typeof invocationOutputLinkSchema>;
 export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
+export type SetEgressResponse = z.infer<typeof setEgressResponseSchema>;
+export type EgressWaiting = z.infer<typeof egressWaitingSchema>;
 export type InvocationView = z.infer<typeof invocationViewSchema>;
 export type StopInvocationRequest = z.infer<typeof stopInvocationRequestSchema>;
 export type StopInvocationResponse = z.infer<
@@ -84,6 +88,8 @@ export interface DelegationNode {
   requestedModel: string | null;
   createdAt: string;
   started: boolean;
+  // UNIT_BOUNDARY_DESCRIPTION: the sub-agent has not started its work because a network rule its driver set for it waits for the owner's answer; it is not working.
+  waitingForOwner?: boolean;
   completedAt: string | null;
   transcriptAvailable: boolean;
   children: DelegationNode[];

@@ -202,9 +202,14 @@ export function createArtifactApiWorld() {
     artifactId: string,
     text: string,
     caller: Caller = {},
+    conversation?: string,
   ): Promise<ArtifactSendPromptResult> {
     return library(caller).sendPrompt(
-      { artifactId, prompt: text },
+      {
+        artifactId,
+        prompt: text,
+        ...(conversation === undefined ? {} : { conversation }),
+      },
       { agentIds: caller.keyBoundTo ?? "*" },
     );
   }
