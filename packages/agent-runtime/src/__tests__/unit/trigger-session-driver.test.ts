@@ -59,7 +59,7 @@ function fakeRuntime(opts: { refuses?: string; reason?: string } = {}): {
     hasSessionWork: () => false,
     toolCallsOpen: () => false,
     harnessBusy: () => false,
-    sessionFrames: () => ({ frames: [], truncated: false }),
+    sessionFrames: () => ({ frames: [], truncated: false, partial: false }),
     status: () => ({
       idle: true,
       backgroundWork: [],

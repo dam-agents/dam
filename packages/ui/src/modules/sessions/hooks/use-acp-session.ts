@@ -46,6 +46,7 @@ import {
   SESSION_HISTORY_TAIL,
   setSessionRunning,
 } from "../api/queries.js";
+import { agentHoldFailure } from "../lib/agent-hold.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { rewrittenThread } from "../lib/rewrite-messages.js";
@@ -260,6 +261,15 @@ export function useAcpSession(
           return;
         }
         setMessages([]);
+        const held = agentHoldFailure(e);
+        if (held !== null) {
+          useStore.getState().setSessionError({
+            sessionId: sid,
+            kind: "agent",
+            agentCause: held.cause,
+          });
+          return;
+        }
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });

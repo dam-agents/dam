@@ -126,7 +126,7 @@ export function createSessionsService(deps: {
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
-  sessionFrames: (sessionId: string) => SessionHistory;
+  sessionFrames: (sessionId: string) => SessionHistory & { partial?: boolean };
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
   terminalSessionPins?: () => PlatformSessionOf;
@@ -230,14 +230,36 @@ export function createSessionsService(deps: {
      * UNIT_BOUNDARY_DESCRIPTION: a session's replay read as data rather than
      * over the chat protocol, for a caller that wants to keep the conversation
      * rather than show it. The live transcript answers while the session is
-     * loaded; otherwise the harness image's own history provider does, which is
-     * the same source a cold re-attach replays from. Neither having anything is
+     * loaded and holds the tail asked for; otherwise the harness image's own
+     * history provider does, which is the same source a cold re-attach replays
+     * from. A live transcript filled from the newest part of that history alone
+     * does not hold the whole conversation, so a read of more than it holds
+     * goes to the provider. A read of a tail asks the provider for the newest
+     * window of the history when it reads windows, so the preview of a long
+     * session does not read all of it. Neither having anything is
      * an empty answer, not a failure: a harness that declares no provider, or a
      * session that produced nothing, has nothing to keep.
      */
     async history(sessionId, opts): Promise<SessionHistory> {
       const live = deps.sessionFrames(sessionId);
-      if (live.frames.length > 0) return newestTail(live, opts?.tail);
+      const enough =
+        !live.partial ||
+        (opts?.tail !== undefined && live.frames.length >= opts.tail);
+      if (live.frames.length > 0 && enough)
+        return newestTail(
+          { frames: live.frames, truncated: live.truncated },
+          opts?.tail,
+        );
+      const tail = opts?.tail;
+      const window =
+        tail === undefined
+          ? null
+          : await deps.historyProvider?.window?.(sessionId, { frames: tail });
+      if (window)
+        return newestTail(
+          { frames: window.lines, truncated: window.older !== null },
+          tail,
+        );
       const stored = await deps.historyProvider?.fetch(sessionId);
       return stored
         ? newestTail({ frames: stored, truncated: false }, opts?.tail)

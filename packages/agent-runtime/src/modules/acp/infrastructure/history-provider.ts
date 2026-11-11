@@ -1,8 +1,22 @@
 import { DEFAULT_EXPORT_NAME } from "./history-worker.js";
 import { createWorkerCall } from "./worker-call.js";
 
+export interface HistoryWindow {
+  lines: string[];
+  older: string | null;
+}
+
+export interface HistoryWindowAsk {
+  frames: number;
+  before?: string;
+}
+
 export interface HistoryProvider {
   fetch(sessionId: string): Promise<string[] | null>;
+  window?(
+    sessionId: string,
+    ask: HistoryWindowAsk,
+  ): Promise<HistoryWindow | null>;
   warm?(): void;
 }
 
@@ -48,6 +62,11 @@ export interface WorkerHistoryProviderDeps {
  * Any failure — spawn, import, per-request error, crash, timeout, invalid
  * frames — resolves that fetch to null so the caller falls back to the
  * harness `session/load`; a dead worker is respawned on the next fetch.
+ * `window` asks the same export for part of the conversation, `{ sessionId,
+ * frames, before? }`, and expects `{ lines, older }`: the newest part, or the
+ * part before an earlier answer's `older` cursor, and the cursor of the part
+ * before it. A module that answers a window with every frame has answered the
+ * whole conversation, with nothing older.
  */
 export function createWorkerHistoryProvider(
   deps: WorkerHistoryProviderDeps,
@@ -59,21 +78,50 @@ export function createWorkerHistoryProvider(
     label: "history provider",
     log: deps.log,
   });
+  const linesOf = (sessionId: string, result: unknown): string[] | null => {
+    if (!Array.isArray(result)) return null;
+    const lines = validateLines(sessionId, result as string[]);
+    if (lines === null)
+      deps.log(`history provider for ${sessionId}: emitted an invalid frame`);
+    return lines;
+  };
   return {
     warm: () => worker.warm(),
+    async window(sessionId, ask) {
+      const outcome = await worker.call(
+        {
+          sessionId,
+          frames: ask.frames,
+          ...(ask.before !== undefined && { before: ask.before }),
+        },
+        timeoutMs,
+      );
+      if (!outcome.ok) {
+        deps.log(`history provider for ${sessionId}: ${outcome.error}`);
+        return null;
+      }
+      if (Array.isArray(outcome.result)) {
+        const lines = linesOf(sessionId, outcome.result);
+        return lines === null ? null : { lines, older: null };
+      }
+      const answer = outcome.result as {
+        lines?: unknown;
+        older?: unknown;
+      } | null;
+      const lines = linesOf(sessionId, answer?.lines);
+      if (lines === null) return null;
+      return {
+        lines,
+        older: typeof answer?.older === "string" ? answer.older : null,
+      };
+    },
     async fetch(sessionId) {
       const outcome = await worker.call(sessionId, timeoutMs);
       if (!outcome.ok) {
         deps.log(`history provider for ${sessionId}: ${outcome.error}`);
         return null;
       }
-      if (!Array.isArray(outcome.result)) return null;
-      const lines = validateLines(sessionId, outcome.result as string[]);
-      if (lines === null) {
-        deps.log(`history provider for ${sessionId}: emitted an invalid frame`);
-        return null;
-      }
-      return lines;
+      return linesOf(sessionId, outcome.result);
     },
   };
 }

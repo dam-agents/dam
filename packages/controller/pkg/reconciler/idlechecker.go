@@ -284,7 +284,7 @@ func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duratio
 	switch podReady["reason"] {
 	case vmrunner.ReasonCopyingDisk:
 		return true
-	case vmrunner.ReasonNotReady, vmrunner.ReasonOOMKilled, vmrunner.ReasonSeccompKilled, apiv1.ReasonRunnerOutOfMemory:
+	case vmrunner.ReasonNotReady, apiv1.ReasonMachineRestarting, vmrunner.ReasonOOMKilled, vmrunner.ReasonSeccompKilled, apiv1.ReasonRunnerOutOfMemory:
 	default:
 		return false
 	}

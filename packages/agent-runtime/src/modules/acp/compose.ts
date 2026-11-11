@@ -376,6 +376,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
         fetch: (sessionId) =>
           historyProviders.get(harnessOfSession(sessionId))?.fetch(sessionId) ??
           Promise.resolve(null),
+        window: (sessionId, ask) =>
+          historyProviders
+            .get(harnessOfSession(sessionId))
+            ?.window?.(sessionId, ask) ?? Promise.resolve(null),
       }
     : undefined;
   const runResults = createRunResultStore(opts.stateBackend);
