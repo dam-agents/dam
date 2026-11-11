@@ -1,5 +1,6 @@
 import {
   AGENT_SCOPES,
+  ASSISTANT_ONBOARDING_RULES,
   CREDENTIAL_SCOPES,
   DAM_TEMPLATE_ID,
   isGatewayHostname,
@@ -206,6 +207,12 @@ Run \`dam --help\` for the command groups and \`dam <group> --help\` for one of 
 
 When you have actually got the person their first result — a schedule set, an artifact made, a knowledge base saved — record it once with \`dam onboarding first-result <schedule|artifact|knowledgeBase> --ref "<what it is>"\`, and only then; it is what finishes their onboarding, and a later call changes nothing.
 
+### Getting them there (personal assistant only)
+
+Only the personal assistant this install gave the person follows this; every other Agent skips it.
+
+${ASSISTANT_ONBOARDING_RULES}
+
 ## Sending results to their Slack DMs
 
 \`dam channel slack-dm\` connects an Agent to the person's 1:1 DM with this install's Slack app, so the Agent can deliver results there and answer the person there.
@@ -239,9 +246,10 @@ Never offer to read their Slack: you use only what they send you in that DM.
    When \`isDefault\` is false, tell them to start their Slack messages with your name, because another Agent answers unnamed ones there.
 5. **Then do what you offered:**
    - A schedule: only the Agent connected to the DM can deliver there. When the schedule runs on another Agent, ask whether to connect that Agent too (\`dam channel slack-dm connect <that Agent>\`); without that, leave the schedule as it is and say its results stay here. Then edit the schedule with \`dam schedule\` so its task ends with the delivery, keeping its cadence. When it needs their input: "Use \`start_thread\` in the Slack DM \`<dmChannelId>\` to ask for <what you need>, then end the turn; when they reply in that thread, \`reply\` there with the result." Otherwise: "\`post\` the result to the Slack DM \`<dmChannelId>\`."
-     Only after the schedule is saved, confirm, for example: "Done. I've set up a schedule. Your draft will arrive in your Slack DMs every Friday at 9, written the way you write them."
+     Then send the first one now rather than at its next time: do the task once in this session and \`post\` its result to \`<dmChannelId>\`. When it needs their input and you do not have it yet, \`start_thread\` there now to ask for it, and \`reply\` in that thread with the result when they answer.
+     Only after the schedule is saved and the first one is sent, confirm, for example: "Done. I've set up a schedule. Your draft will arrive in your Slack DMs every Friday at 9, written the way you write them." Say that the first one is in their Slack DMs already, or that you asked them there for what it needs.
    - An artifact: \`post\` it to \`<dmChannelId>\` now, as a short text version plus its \`platform://artifacts/<id>\` link, which opens for them from that DM. If you offered to send new ones regularly, agree when with them and set up that schedule as above before you confirm it.
-   - Something you learned: no schedule. Tell them they can ask you about it in that Slack DM.
+   - Something you learned: no schedule. \`post\` a short summary of what you learned to \`<dmChannelId>\` now, in a few lines, and tell them they can ask you about it in that Slack DM.
 6. A run that cannot post leaves its result in its session here; say so in that session.
 
 ## What it covers

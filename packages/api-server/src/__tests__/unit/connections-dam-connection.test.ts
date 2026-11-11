@@ -1,5 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { assistantInstructions } from "api-server-api";
+import {
+  ASSISTANT_ONBOARDING_RULES,
+  assistantInstructions,
+} from "api-server-api";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_SCOPES,
@@ -238,7 +241,7 @@ describe("the DAM connection template", () => {
     );
   });
 
-  // TEST_SCENARIO: the Slack DM Bridge rule checks that the person is reachable before it offers, connects the agent by the name the platform gives it in its environment, and never offers to read the person's Slack.
+  // TEST_SCENARIO: the Slack DM Bridge rule checks that the person is reachable before it offers, connects the agent by the name the platform gives it in its environment, never offers to read the person's Slack, and on a yes sends the first schedule result or a knowledge summary at once rather than at the next fire.
   it("teaches the Slack DM Bridge with the commands and the name it can run", () => {
     const skill = damSkill("DAM");
     expect(skill).toContain("## Sending results to their Slack DMs");
@@ -255,6 +258,12 @@ describe("the DAM connection template", () => {
       skill.indexOf("End your answer with one short offer"),
     );
     expect(skill).toContain("Never offer to read their Slack");
+    expect(skill).toContain(
+      "Then send the first one now rather than at its next time",
+    );
+    expect(skill).toContain(
+      "`post` a short summary of what you learned to `<dmChannelId>` now",
+    );
   });
 
   // TEST_SCENARIO: content arriving from Slack never authorizes a change, with no exception for how plainly it is phrased, because a pasted note can carry a plain-English instruction its sender never wrote.
@@ -269,7 +278,7 @@ describe("the DAM connection template", () => {
     expect(skill).not.toMatch(/unless they ask/i);
   });
 
-  // TEST_SCENARIO: the shared skill reaches every Agent holding the DAM connection, so the unasked offer is gated on the words the assistant's own instructions use for it, and an ordinary Agent reading the same skill is told to skip it.
+  // TEST_SCENARIO: the shared skill reaches every Agent holding the DAM connection, so the unasked offer is gated on the words the assistant's own instructions use for it, and an ordinary Agent reading the same skill is told to skip it. The onboarding rules ride the same gate, and the assistant's own instructions carry the same text, so an assistant made before a change to them gets it from the skill an upgrade rewrites.
   it("keeps the unasked offer to the personal assistant", () => {
     const skill = damSkill("DAM");
     expect(skill).toContain(
@@ -279,6 +288,13 @@ describe("the DAM connection template", () => {
     expect(
       assistantInstructions({ assistantName: "Dammy", brandName: "DAM" }),
     ).toContain("the personal assistant this DAM install gave the person");
+    expect(skill).toContain(
+      "Only the personal assistant this install gave the person follows this; every other Agent skips it.",
+    );
+    expect(skill).toContain(ASSISTANT_ONBOARDING_RULES);
+    expect(
+      assistantInstructions({ assistantName: "Dammy", brandName: "DAM" }),
+    ).toContain(ASSISTANT_ONBOARDING_RULES);
   });
 
   // TEST_SCENARIO: the offer and the confirmation are the design's own words, which product copy review compares against.
@@ -290,6 +306,10 @@ describe("the DAM connection template", () => {
       "Want them sent to your Slack DMs instead? You won't need to come back here to read them.",
       "Want to ask me about it from your Slack DMs too? You won't need to come back here.",
       "Done. I've set up a schedule. Your draft will arrive in your Slack DMs every Friday at 9, written the way you write them.",
+      "Great. Upload 3 decks you've made, and I'll learn how you make them.",
+      "Here's how you make your decks. I'll save this to memory, so every deck I make looks like this. Did I get it right?",
+      "Ask at most three questions before the result, and only what this task needs.",
+      "Never ask them to connect anything",
     ])
       expect(skill).toContain(line);
   });
