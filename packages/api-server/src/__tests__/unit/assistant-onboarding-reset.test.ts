@@ -67,6 +67,38 @@ function checklistRepo(): GettingStartedRepository & {
       });
       return unlock;
     },
+    /* UNIT_BOUNDARY_DESCRIPTION: the transaction-scoped variants the assistant's first result uses; the memory store has one transaction, so they perform the same writes. */
+    async unlockIn(_tx, owner, task, choose, opts) {
+      const c = checklists.get(owner);
+      if (c === undefined) return null;
+      if (c.unlocks.some((u) => u.task === task)) return null;
+      const chosen = choose(new Set(c.unlocks.map((u) => u.character)));
+      if (!chosen) return null;
+      const unlock = {
+        task,
+        character: chosen.character,
+        unlockedAt: tick(),
+        seenAt: opts?.seen ? tick() : null,
+        pickedAt: chosen.picked ? tick() : null,
+      };
+      checklists.set(owner, {
+        dismissedAt: null,
+        unlocks: [...c.unlocks, unlock],
+      });
+      return unlock;
+    },
+    async markSeenIn(_tx, owner, task) {
+      const c = checklists.get(owner)!;
+      checklists.set(owner, {
+        ...c,
+        unlocks: c.unlocks.map((u) =>
+          u.task === task ? { ...u, seenAt: u.seenAt ?? tick() } : u,
+        ),
+      });
+    },
+    async resetIn(_tx, owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
     async markSeen(owner, task) {
       const c = checklists.get(owner)!;
       checklists.set(owner, {
@@ -102,6 +134,8 @@ const readyRow = (agentId: string, used = true) => ({
   agentId,
   state: "ready" as const,
   legacy: false,
+  firstResult: null,
+  epoch: 0,
   used,
   resetAt: null,
 });
@@ -122,7 +156,7 @@ describe("resetting a person's onboarding", () => {
     const state = await w.assistants.state();
     expect(state).toMatchObject({ agentId: id, used: false });
     expect(state?.resetAt).toEqual(expect.any(String));
-    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
+    expect(w.resetChecklistIn).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(2);
     expect(agents.create).toHaveBeenCalledTimes(1);
   });
@@ -225,6 +259,8 @@ describe("resetting a person's onboarding", () => {
       legacy: false,
       used: false,
       resetAt: null,
+      firstResult: null,
+      epoch: 0,
     });
     const w = assistantService({ rows, waitMs: 0 });
     await w.assistants.resetOnboarding();
@@ -257,6 +293,8 @@ describe("resetting a person's onboarding", () => {
       legacy: false,
       used: true,
       resetAt: null,
+      firstResult: null,
+      epoch: 0,
     });
     const agents = agentStore();
     // UNIT_BOUNDARY_DESCRIPTION: the caller's own assistant is the Agent their record names, renamed.
@@ -277,7 +315,7 @@ describe("resetting a person's onboarding", () => {
     const rows = rowStore(readyRow("agent-a"));
     const w = assistantService({ rows, agents: agentStore(), enabled: false });
     await w.assistants.resetOnboarding();
-    expect(w.resetChecklist).toHaveBeenCalledTimes(1);
+    expect(w.resetChecklistIn).toHaveBeenCalledTimes(1);
     expect(w.agents.create).not.toHaveBeenCalled();
     expect(rows.rows.get(OWNER)).toMatchObject({
       agentId: "agent-a",

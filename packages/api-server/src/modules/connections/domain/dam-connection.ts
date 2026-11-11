@@ -110,6 +110,27 @@ const isAlreadyRevoked = (err: unknown): boolean =>
 export const isDamConnection = (templateId: string) =>
   templateId === DAM_TEMPLATE_ID;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the skill the platform hands every Agent that holds
+ * this Connection, as the install would write it now. A Connection stores the
+ * contributions it was made with, so one made before the skill learned a command
+ * would keep teaching the old one; the runtime state is built from the stored
+ * contributions, and the skill is the platform's own file, so it is read from here
+ * instead — no write, and every install upgrades as its api-server does.
+ */
+export function currentDamSkill(
+  templateId: string,
+  contributions: readonly Contribution[],
+  brandName: string,
+): Contribution[] {
+  if (!isDamConnection(templateId)) return [...contributions];
+  return contributions.map((contribution) =>
+    contribution.kind === "file" && contribution.path === DAM_SKILL_PATH
+      ? { ...contribution, content: damSkill(brandName) }
+      : contribution,
+  );
+}
+
 export function damContributions(
   target: DamTarget,
   brandName: string,
@@ -179,8 +200,15 @@ Run \`dam --help\` for the command groups and \`dam <group> --help\` for one of 
    Read commands take \`--json\`, and an empty list is \`[]\`.
    Table output is for showing to the person.
 
+> This file is the platform's: this install writes it, and an upgrade replaces it. Edit it and your edits go; put your own notes in another file beside it.
+
+## The first result
+
+When you have actually got the person their first result — a schedule set, an artifact made, a knowledge base saved — record it once with \`dam onboarding first-result <schedule|artifact|knowledgeBase> --ref "<what it is>"\`, and only then; it is what finishes their onboarding, and a later call changes nothing.
+
 ## What it covers
 
+- **\`dam onboarding\`** — record the first result the person's onboarding reached.
 - **\`dam agent\`** — list, get, create, update, restart, sleep, disable and enable the person's Agents.
 - **\`dam schedule\`** — list, create and edit a scheduled task, and run one now.
 - **\`dam approval\`** — the queue of decisions the person has to make.

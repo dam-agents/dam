@@ -143,3 +143,16 @@ When that account opens a new chat on its own Dammy
 Then no CurveBender notice is shown there at all; only the greeting, while it is unused
 When it deletes and recreates Dammy, or resets its onboarding
 Then its new chats on other agents still show the notice, because the account was judged once and that does not change
+
+## AC-14 — the assistant marks the person's first result, and onboarding is done
+
+Given that account in Dammy's chat, with the Get started checklist showing *Create your first agent* done
+When the owner asks Dammy for a weekly status schedule, it sets one, and Dammy reports it as its first result
+Then the Get started checklist counts *Schedule a recurring task* as done, without a celebration
+And what the onboarding recorded is that schedule, and when it was reached
+When the owner then asks for an artifact and Dammy reports that too
+Then nothing about the recorded first result changes: it is still the schedule, and it is still counted once
+When the owner asks Dammy to save something as a knowledge base, and it reports that as well
+Then nothing changes either, since a knowledge base is not the first result any more
+When the owner restarts their onboarding from the Onboarding progress card
+Then the recorded first result is gone, and a later one is recorded as if it were the first

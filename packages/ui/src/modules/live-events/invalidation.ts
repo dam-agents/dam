@@ -31,7 +31,11 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
     kbShares: () => [trpc.kbShares.pathKey()],
     artifacts: () => [trpc.artifactLibrary.pathKey()],
     attention: () => [trpc.attention.pathKey()],
-    gettingStarted: () => [trpc.gettingStarted.pathKey()],
+    gettingStarted: () => [
+      trpc.gettingStarted.pathKey(),
+      // UNIT_BOUNDARY_DESCRIPTION: a first result the assistant reports is announced on this family, and it is the assistant's record that holds it.
+      trpc.assistants.state.queryKey(),
+    ],
   };
 
 interface Pass {

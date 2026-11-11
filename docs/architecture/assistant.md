@@ -81,6 +81,25 @@ A person the feature is off for, and any other Agent, open on the ordinary new-c
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
 
+## The first result
+
+Onboarding is done when the person has got their first **result** out of the platform: a schedule set, an artifact made, or a knowledge base saved.
+Nobody else can know when that happened, so the assistant says so itself, over the [Connection](connection-presets.md#platform-preset-this-install-itself) that lets it act as the person: `dam onboarding first-result <kind> --ref "<what it is>"`, whose kind is one of `schedule`, `artifact` and `knowledgeBase`.
+The in-image `dam` skill tells the agent to call it only at a real first result, and that a later call changes nothing.
+
+It is recorded **once per account**, on the same per-owner record as the rest of the assistant's state: a later report — another artifact, a better reference — is a no-op answered with the first one, so the moment the person's onboarding finished cannot move under them.
+The record holds the kind, the reference the assistant gave it, and when it landed, and `assistants.state` reports it, so every surface in the app can read it.
+The report is caller-scoped: it writes the caller's own record and nobody else's.
+
+The checklist counts what it can of it: a schedule finishes `create-schedule` and an artifact `create-artifact`, recorded as the platform's — done, and seen, since the assistant did it for the person rather than the other way round.
+A saved knowledge base has no checklist item, so it is recorded and nothing new appears there; that is the design's limit, not a gap in the record.
+
+The report and every onboarding reset run in one per-owner transaction, so nothing lands between a report's claim and its side effects: the reset clears the result, moves the record's onboarding epoch on and restarts the checklist inside the same lock, and a report that began in the earlier onboarding finds its result gone.
+The record's epoch is a number, not a timestamp, so two clocks' microseconds never decide whether a report still applies.
+The report also announces itself as one domain event, `assistant.first_result_recorded` with the owner, the kind, the reference and the epoch it completed in, which is the seam for carrying the news somewhere else; the app's open tabs refresh the checklist and the record from it.
+At most once: the event leaves after the transaction commits, and only from the call that marked the result done, so a crash in between loses it and nothing ever repeats it — the seam has no consumer yet, and the epoch is what a later one would dedupe on.
+[Starting over](#starting-it-over) forgets it along with the rest, so a person who starts again reaches their first result again — and that holds for a person the assistant is off for too, since the first result is the checklist's own state rather than the assistant's.
+
 ## Starting it over
 
 Experimental features ends with one **Onboarding progress** card, one button and one confirm: it restarts the person's [Getting Started](getting-started.md) checklist and, for a person the feature is on for, gives them a first open in their assistant too.

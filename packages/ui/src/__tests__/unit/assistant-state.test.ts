@@ -30,6 +30,7 @@ type Record = {
   used: boolean;
   resetAt: string | null;
   ready: boolean;
+  firstResult: null;
 };
 
 const record = (used: boolean, resetAt: string | null = null): Record => ({
@@ -38,12 +39,15 @@ const record = (used: boolean, resetAt: string | null = null): Record => ({
   used,
   resetAt,
   ready: true,
+  firstResult: null,
 });
 
 const cached = () =>
   queryClient.getQueryData<Record>(trpc.assistants.state.queryKey());
 
-function greetingWouldShow(state: Record | null | undefined): boolean {
+function greetingWouldShow(
+  state: { agentId: string; used: boolean } | null | undefined,
+): boolean {
   return greetingShown({
     assistantOn: true,
     assistantId: state?.agentId ?? null,

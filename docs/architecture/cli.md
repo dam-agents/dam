@@ -149,6 +149,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-pool).
 - **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
+- **`onboarding`** — the person's onboarding state, which the assistant itself reports: `first-result <schedule|artifact|knowledgeBase> --ref <what it is>` records the first result once, owned by [assistant.md](assistant.md#the-first-result).
 
 ## Shared conventions
 

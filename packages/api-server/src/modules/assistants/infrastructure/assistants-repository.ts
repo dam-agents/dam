@@ -1,4 +1,13 @@
-import { and, dambledoreProvisioned, eq, isNull, sql, type Db } from "db";
+import type { FirstResultKind } from "api-server-api";
+import {
+  and,
+  dambledoreProvisioned,
+  eq,
+  isNull,
+  sql,
+  type Db,
+  type DbTx,
+} from "db";
 
 /** UNIT_BOUNDARY_DESCRIPTION: how far the assistant has got: its Agent is being made, or it is there. A `creating` row is a create in flight, not a deleted assistant, so nothing that finds one may make a second. */
 export type AssistantState = "creating" | "ready";
@@ -11,6 +20,15 @@ export interface AssistantRow {
   legacy: boolean;
   used: boolean;
   resetAt: Date | null;
+  firstResult: {
+    kind: FirstResultKind;
+    ref: string | null;
+    at: Date;
+    /* UNIT_BOUNDARY_DESCRIPTION: whether the checklist write and the announcement behind the claim have run — a claim that never completed is finished by the next caller. */
+    completed: boolean;
+  } | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: how many onboarding resets this person's record has taken, which is what says whether a report began in the onboarding it is finishing. */
+  epoch: number;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a Session report needs to know about the record it may mark as used. */
@@ -36,6 +54,19 @@ export interface AssistantsRepository {
   markUsed(agentId: string): Promise<void>;
   /** UNIT_BOUNDARY_DESCRIPTION: starts the person's onboarding over: unused again, and every Session that began before now stops counting as a use. */
   resetUsed(owner: string): Promise<void>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the first result as the per-owner transaction sees it, and the writes that transaction makes. The read takes the row's own lock, so a reset and a report cannot interleave inside it. */
+  firstResultIn(tx: DbTx, owner: string): Promise<AssistantRow | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: records the person's first result if none is recorded yet, and answers whether this call is the one that wrote it. */
+  claimFirstResultIn(
+    tx: DbTx,
+    owner: string,
+    kind: FirstResultKind,
+    ref: string | null,
+  ): Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: marks the result's side effects — the checklist write and the announcement — as done, so no later caller runs them again. */
+  completeFirstResultIn(tx: DbTx, owner: string): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: forgets the first result and moves the onboarding epoch on, in one transaction: a report that began in the onboarding this reset ends finds its result gone and its epoch behind. */
+  clearFirstResultIn(tx: DbTx, owner: string): Promise<void>;
 }
 
 const COLUMNS = {
@@ -45,13 +76,60 @@ const COLUMNS = {
   legacy: dambledoreProvisioned.legacy,
   usedAt: dambledoreProvisioned.usedAt,
   resetAt: dambledoreProvisioned.resetAt,
+  firstResultKind: dambledoreProvisioned.firstResultKind,
+  firstResultRef: dambledoreProvisioned.firstResultRef,
+  firstResultAt: dambledoreProvisioned.firstResultAt,
+  firstResultCompletedAt: dambledoreProvisioned.firstResultCompletedAt,
+  epoch: dambledoreProvisioned.onboardingEpoch,
 };
+
+const isFirstResultKind = (value: string): value is FirstResultKind =>
+  value === "schedule" || value === "artifact" || value === "knowledgeBase";
+
+type SelectedRow = {
+  owner: string;
+  agentId: string;
+  state: string;
+  legacy: boolean;
+  usedAt: Date | null;
+  resetAt: Date | null;
+  firstResultKind: string | null;
+  firstResultRef: string | null;
+  firstResultAt: Date | null;
+  firstResultCompletedAt: Date | null;
+  epoch: number;
+};
+
+function toRow(row: SelectedRow): AssistantRow {
+  return {
+    owner: row.owner,
+    agentId: row.agentId,
+    state: row.state === "ready" ? "ready" : "creating",
+    legacy: row.legacy,
+    used: row.usedAt !== null,
+    resetAt: row.resetAt,
+    epoch: row.epoch,
+    firstResult:
+      row.firstResultKind !== null &&
+      row.firstResultAt !== null &&
+      isFirstResultKind(row.firstResultKind)
+        ? {
+            kind: row.firstResultKind,
+            ref: row.firstResultRef,
+            at: row.firstResultAt,
+            completed: row.firstResultCompletedAt !== null,
+          }
+        : null,
+  };
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The row per owner that makes the assistant's create
- * happen once, and the marks that say whether it is there and whether it was ever
- * used. Every call is one statement, so nothing holds a pool connection across
- * the Agent's creation, and none of them waits for another.
+ * happen once, and the marks that say whether it is there, whether it was ever
+ * used, and what onboarding has reached. Every call that is not handed a
+ * transaction is one statement, so nothing holds a pool connection across the
+ * Agent's creation; the first result's own calls take the transaction its lock
+ * opened, so a report and a reset settle against the same row.
  */
 export function createAssistantsRepository(db: Db): AssistantsRepository {
   return {
@@ -60,15 +138,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         .select(COLUMNS)
         .from(dambledoreProvisioned)
         .where(eq(dambledoreProvisioned.owner, owner));
-      if (!row) return null;
-      return {
-        owner: row.owner,
-        agentId: row.agentId,
-        state: row.state === "ready" ? "ready" : "creating",
-        legacy: row.legacy,
-        used: row.usedAt !== null,
-        resetAt: row.resetAt,
-      };
+      return row === undefined ? null : toRow(row);
     },
 
     async claim(owner, agentId, legacy) {
@@ -116,7 +186,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
         .select(COLUMNS)
         .from(dambledoreProvisioned)
         .where(eq(dambledoreProvisioned.agentId, agentId));
-      if (!row) return null;
+      if (row === undefined) return null;
       return {
         owner: row.owner,
         used: row.usedAt !== null,
@@ -125,6 +195,7 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
     },
 
     async markUsed(agentId) {
+      // UNIT_BOUNDARY_DESCRIPTION: every Session report asks this, and only the assistant's own Agent matches; the table holds one row per owner, so the miss is a scan of that and writes nothing.
       await db
         .update(dambledoreProvisioned)
         .set({ usedAt: sql`now()` })
@@ -140,6 +211,54 @@ export function createAssistantsRepository(db: Db): AssistantsRepository {
       await db
         .update(dambledoreProvisioned)
         .set({ usedAt: null, resetAt: sql`now()` })
+        .where(eq(dambledoreProvisioned.owner, owner));
+    },
+
+    async firstResultIn(tx, owner) {
+      const [row] = await tx
+        .select(COLUMNS)
+        .from(dambledoreProvisioned)
+        .where(eq(dambledoreProvisioned.owner, owner))
+        .for("update");
+      return row === undefined ? null : toRow(row);
+    },
+
+    async claimFirstResultIn(tx, owner, kind, ref) {
+      const claimed = await tx
+        .update(dambledoreProvisioned)
+        .set({
+          firstResultKind: kind,
+          firstResultRef: ref,
+          firstResultAt: sql`now()`,
+          firstResultCompletedAt: null,
+        })
+        .where(
+          and(
+            eq(dambledoreProvisioned.owner, owner),
+            isNull(dambledoreProvisioned.firstResultKind),
+          ),
+        )
+        .returning({ owner: dambledoreProvisioned.owner });
+      return claimed.length > 0;
+    },
+
+    async completeFirstResultIn(tx, owner) {
+      await tx
+        .update(dambledoreProvisioned)
+        .set({ firstResultCompletedAt: sql`now()` })
+        .where(eq(dambledoreProvisioned.owner, owner));
+    },
+
+    async clearFirstResultIn(tx, owner) {
+      await tx
+        .update(dambledoreProvisioned)
+        .set({
+          firstResultKind: null,
+          firstResultRef: null,
+          firstResultAt: null,
+          firstResultCompletedAt: null,
+          onboardingEpoch: sql`${dambledoreProvisioned.onboardingEpoch} + 1`,
+        })
         .where(eq(dambledoreProvisioned.owner, owner));
     },
   };

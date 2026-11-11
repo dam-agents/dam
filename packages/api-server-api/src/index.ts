@@ -530,9 +530,16 @@ export {
   featureOnForUser,
 } from "./modules/features/modes.js";
 export type {
+  AssistantFirstResult,
+  AssistantFirstResultInput,
   AssistantState,
   AssistantsService,
+  FirstResultKind,
 } from "./modules/assistants/types.js";
+export {
+  assistantFirstResultInputSchema,
+  firstResultKindSchema,
+} from "./modules/assistants/schemas.js";
 export {
   ASSISTANT_IDEAS,
   ASSISTANT_LEARN_LINE,
