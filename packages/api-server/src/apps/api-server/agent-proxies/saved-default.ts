@@ -25,9 +25,11 @@ const named = (platform: Platform, key: string): string | undefined => {
  * session as having no model on a harness that reaches its models through
  * the Model Router. Null when the frame is not a `session/new` without a
  * model, so it is passed on as it is. The promise gives null when there is
- * nothing to fill in: no model to run on for the harness the frame names,
- * or a runtime that does not route Session Pairs. Then the runtime's own
- * `no-model` refusal tells the client what to set.
+ * nothing to fill in: no pair for the harness the frame names, or a runtime
+ * that does not route Session Pairs. A pair with no model still fills its
+ * harness, provider, settings and follow marker, since the runtime resolves
+ * the model; then it is the runtime's own `no-model` refusal that tells the
+ * client what is missing.
  */
 export function fillSavedDefault(
   frame: unknown,
@@ -47,7 +49,7 @@ export function fillSavedDefault(
     ...(provider !== undefined && { provider }),
   }).then(
     (pair) => {
-      if (!pair?.model) return null;
+      if (!pair) return null;
       return {
         ...frame,
         params: {
@@ -60,7 +62,7 @@ export function fillSavedDefault(
               ...platform,
               harness: pair.harness,
               ...(pair.provider !== null && { provider: pair.provider }),
-              model: pair.model,
+              ...(pair.model !== null && { model: pair.model }),
               ...(pair.settings &&
                 platform.settings === undefined && {
                   settings: pair.settings,

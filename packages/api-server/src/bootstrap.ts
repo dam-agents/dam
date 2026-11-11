@@ -7,6 +7,7 @@ import {
   type InvocationCancelEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import {
   createAgentInformer,
   createApi,
@@ -202,6 +203,7 @@ import {
   composeScheduleModelForFire,
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
+  composeSharedCurveBender,
   createInitializationPairResolver,
   createRunBoundary,
   isNoDefaultModelError,
@@ -1036,6 +1038,10 @@ export async function bootstrap() {
       ? { providers: [] }
       : connectionsServiceFor(owner).modelCatalog(agentId);
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: bound below, once the Connections services exist, and asked for only where the deployment offers its shared CurveBender; a run for an Agent holding no provider kicks it and reports itself as still setting up. */
+  let grantSharedCurveBender: (agentId: string) => Promise<void> = async () =>
+    undefined;
+  const sharedCurveBenderConfigured = config.curveBenderDeployment !== null;
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
@@ -1044,6 +1050,9 @@ export async function bootstrap() {
     getCapabilities: capabilitiesOf,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
+    ...(sharedCurveBenderConfigured && {
+      onNoProvider: (agentId) => void grantSharedCurveBender(agentId),
+    }),
   });
   /* UNIT_BOUNDARY_DESCRIPTION: the one helper every path that builds a run's payload uses, so a channel fallback, a schedule following its default and the defaults event cannot skip the derivation (D193B). */
   const runBoundary = createRunBoundary({
@@ -1524,6 +1533,38 @@ export async function bootstrap() {
       log: (msg) => getLogger().info(msg),
     });
   convertDefault = (agentId) => defaultConverter.convert(agentId);
+  const sharedCurveBender = composeSharedCurveBender({
+    db,
+    enabled: sharedCurveBenderConfigured,
+    catalog: harnessCatalog,
+    resolveProfile,
+    resolveProfileOn: composeProfileResolverOn(subPseudonymizer),
+    getCapabilities: capabilitiesOf,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
+    ownerCatalog: ownerCatalogOf,
+    /* UNIT_BOUNDARY_DESCRIPTION: the one call the UI's Try now makes, so a granted Agent holds the shared CurveBender as it holds any provider, and its owner's Connection is reconciled first in case it was never created. */
+    grant: async (agentId) => {
+      const owner = (await agentsRepo.get(agentId))?.owner;
+      if (!owner) return false;
+      const connections = connectionsServiceFor(owner);
+      await connections.reconcileManagedConnections();
+      const shared = (await connections.listConnections()).find(
+        (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      );
+      if (!shared) return false;
+      await connections.updateAgentConnections(agentId, {
+        grant: [shared.id],
+        revoke: [],
+      });
+      return true;
+    },
+    boundary: runBoundary,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    log: (msg) => getLogger().info(msg),
+  });
+  grantSharedCurveBender = sharedCurveBender.grant;
+  defaultConversionSaga.add(sharedCurveBender.helloSaga);
 
   const sessionWatch = createSessionWatchClient(config.namespace, (m) =>
     getLogger().warn(`[attention] ${m}`),

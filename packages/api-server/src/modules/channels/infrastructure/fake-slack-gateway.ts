@@ -14,6 +14,7 @@ import type {
   SlackFileInfo,
   SlackSessionStoppedEvent,
   SlackSlashCommand,
+  SlackUpdateMessage,
   SlackUserInfo,
   SlackEmailUser,
   SlackWorkspace,
@@ -102,6 +103,7 @@ export interface FakeSlackGateway extends SlackGateway {
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
   fireSessionStopped(event: FiredSlackSessionStop): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
+  readUpdates(): SlackUpdateMessage[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   addChannelMember(channelId: string, userId: string, teamId?: string): void;
@@ -222,6 +224,7 @@ function channelWindowOf(
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
+  const updates: SlackUpdateMessage[] = [];
   const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
   let modelsThreads = false;
@@ -287,6 +290,20 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.metadata ? { metadata: args.metadata } : {}),
       });
       return { ts };
+    },
+
+    async updateMessage(args) {
+      const key = `${args.channel}:${args.ts}`;
+      const message = messagesByRef.get(key);
+      if (!message) throw new Error("message_not_found");
+      updates.push(args);
+      messagesByRef.set(key, {
+        ...message,
+        text: args.text,
+        blocks: args.blocks,
+        metadata: args.metadata,
+        edited: true,
+      });
     },
 
     async deleteMessage() {
@@ -542,6 +559,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         },
       );
       return ackText;
+    },
+
+    readUpdates() {
+      return [...updates];
     },
 
     readOutbound() {

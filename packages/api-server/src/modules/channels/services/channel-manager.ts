@@ -50,6 +50,7 @@ import {
   type MessageReactionsResult,
   type OwnedThreadsResult,
   type PersonNotice,
+  type PostEdit,
   type PostMessageOptions,
   type ReactionsQuery,
   type StartedThread,
@@ -76,6 +77,7 @@ export type {
   MessageReactionsResult,
   OwnedThreadSummary,
   OwnedThreadsResult,
+  PostEdit,
   PostMessageOptions,
   ReactionsQuery,
   StartedThread,
@@ -105,6 +107,11 @@ export interface ChannelManager {
     instanceName: string,
     channelType: ChannelType,
     reply: ChannelReply,
+  ): Promise<ChannelSendResult>;
+  editPost(
+    instanceName: string,
+    channelType: ChannelType,
+    edit: PostEdit,
   ): Promise<ChannelSendResult>;
   react(
     instanceName: string,
@@ -202,6 +209,7 @@ export interface ChannelManager {
 }
 
 const ADDRESSED_METHODS = [
+  "editPost",
   "react",
   "declineTurn",
   "handOffTurn",
@@ -289,6 +297,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: forInstance,
   postMessage: forInstance.rest(z.unknown()),
   reply: forInstance.rest(z.unknown()),
+  editPost: forInstance.rest(z.unknown()),
   react: forInstance.rest(z.unknown()),
   declineTurn: forInstance.rest(z.unknown()),
   handOffTurn: forInstance.rest(z.unknown()),
@@ -331,6 +340,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   ),
   postMessage: sendResultSchema,
   reply: sendResultSchema,
+  editPost: sendResultSchema,
   react: okOrErrorSchema,
   declineTurn: okOrErrorSchema,
   handOffTurn: z.union([
@@ -412,6 +422,9 @@ const unsupported: Record<
   AddressedMethod,
   (channelType: ChannelType) => unknown
 > = {
+  editPost: (channelType) => ({
+    error: `editing a post is not supported on ${channelType}`,
+  }),
   react: (channelType) => ({
     error: `reactions not supported on ${channelType}`,
   }),

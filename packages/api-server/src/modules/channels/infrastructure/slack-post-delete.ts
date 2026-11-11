@@ -34,8 +34,28 @@ export function parseAgentPostLink(raw: string): AgentPostLink | null {
   };
 }
 
-export function agentPostMetadata(fileIds: string[]): SlackMessageMetadata {
-  return { eventType: AGENT_POST_METADATA, payload: { files: fileIds } };
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a post by the bot carries, unseen, beside
+ * its text: the files posted apart from it, and whether an Agent made the
+ * post with one of its own tools. The platform also posts in an Agent's name,
+ * with the same footer, so the footer alone cannot tell a post the Agent may
+ * change later from a notice the platform wrote for it.
+ */
+export function agentPostMetadata(
+  fileIds: string[],
+  byAgent: boolean,
+): SlackMessageMetadata {
+  return {
+    eventType: AGENT_POST_METADATA,
+    payload: { files: fileIds, ...(byAgent ? { byAgent: true } : {}) },
+  };
+}
+
+export function madeByAgent(message: SlackMessage): boolean {
+  return (
+    message.metadata?.eventType === AGENT_POST_METADATA &&
+    message.metadata.payload["byAgent"] === true
+  );
 }
 
 export function deletePostFileIds(message: SlackMessage): string[] {

@@ -25,6 +25,7 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type ChatUpdateArgs = Parameters<BoltApp["client"]["chat"]["update"]>[0];
 type ChatPostEphemeralArgs = Parameters<
   BoltApp["client"]["chat"]["postEphemeral"]
 >[0];
@@ -595,6 +596,23 @@ export function createBoltSlackGateway(
           : {}),
       } as ChatPostMessageArgs);
       return res.ts ? { ts: res.ts } : null;
+    },
+
+    async updateMessage(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.chat.update({
+        token,
+        channel: args.channel,
+        ts: args.ts,
+        text: args.text,
+        blocks: args.blocks,
+        metadata: {
+          event_type: args.metadata.eventType,
+          event_payload: args.metadata.payload,
+        },
+      } as ChatUpdateArgs);
     },
 
     async deleteMessage(channel, ts, teamId) {

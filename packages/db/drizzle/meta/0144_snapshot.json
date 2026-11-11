@@ -1,5 +1,5 @@
 {
-  "id": "48c1c00b-f048-494d-8153-17072e3f6d8d",
+  "id": "bbe6efbd-deae-4ee5-88eb-62aff679611b",
   "prevId": "92697406-9f0d-458d-8a9f-9a4f470d69b0",
   "version": "7",
   "dialect": "postgresql",
@@ -456,38 +456,6 @@
         },
         "updated_at": {
           "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_child_egress_grants": {
-      "name": "agent_child_egress_grants",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_at": {
-          "name": "granted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -3450,6 +3418,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "delivered_in_turn": {
+          "name": "delivered_in_turn",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "woke_at": {
           "name": "woke_at",
           "type": "timestamp with time zone",
@@ -3632,12 +3607,6 @@
         "keep_until": {
           "name": "keep_until",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "egress_answers": {
-          "name": "egress_answers",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

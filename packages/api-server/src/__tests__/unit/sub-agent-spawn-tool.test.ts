@@ -50,7 +50,10 @@ function setup(
   } as unknown as DriverOps;
   registerSubAgentTools(server, {
     ops,
-    awaits: { markAwaited: async () => {}, markCollected: async () => {} },
+    awaits: {
+      markAwaited: async () => {},
+      collect: async () => ({ inTurn: [] }),
+    },
     ...(sessionContext && { sessionContext }),
     ...(catalogModels && { catalogModels }),
     spawningSession: spawningSession ?? (async () => null),
