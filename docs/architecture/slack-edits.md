@@ -2,7 +2,7 @@
 
 Last verified: 2026-11-11
 
-What happens when someone edits a Slack message an Agent was sent or has read.
+What happens when someone edits a Slack message an Agent was sent or has read, and how an Agent changes a post of its own.
 What a channel turn is lives on [channel-turns](channel-turns.md), threads a Session owns on [slack-threads](slack-threads.md), and which outcomes are guaranteed on [slack-guarantees](slack-guarantees.md).
 
 ## What counts as an edit
@@ -67,6 +67,35 @@ A turn that fails settles nothing, and an edit made while a turn runs waits for 
 The Agent that wrote the message is owed nothing, and a later edit of the same message is owed again.
 The same edit reported once more changes nothing, so it is not listed again.
 Sessions are told apart, because one Agent can hold a message in several: the channel's Session and a thread's.
+
+## An Agent changes its own post
+
+An Agent changes a post it made earlier with one tool on its MCP endpoint ([channel-turns](channel-turns.md#outbound--agent-to-channel)).
+It names the post by the conversation and the message reference the posting tool returned, and passes the whole new text and card.
+The post then shows exactly that; nothing is merged with what it showed before.
+A card is checked as on a new post, and a refused one leaves the post as it was ([channel-cards](channel-cards.md)).
+An edit notifies no one, so an Agent that needs people to see the final state also replies.
+
+- **Only its own post.** The bot posts for every Agent, so Slack would let any of them change any of the bot's posts.
+  The platform reads the post back and changes it only when its [Agent Footer](channel-turns.md#the-agent-footer) names the calling Agent, and the platform writes that footer, never an Agent.
+  The footer is read from the block that ends the post, where the platform puts it, because an Agent's card can show a link to another Agent's page earlier in the post.
+  The platform also posts in an Agent's name, a greeting or a notice, with the same footer; a post therefore also carries, unseen, whether the Agent made it with one of its own tools, and only such a post is changed.
+  Another Agent's post, a platform notice, a person's message and a message that does not exist are each refused.
+- **Where it may post.** The conversation is held to the reach a new post has.
+- **The footer stays.** The edited post names the Agent and the Session it named before, so it still opens the Session that made it, a deleted post's notice still finds that Session, and other Agents still read the post as that Agent's.
+- **No file.** A post that carries a file is refused for now, and a private answer to a whisper has no reference to name.
+- **A limit.** Slack takes about fifty edits a minute for a whole workspace, shared by every Agent there.
+  The platform admits a little less per workspace and a smaller share per Agent, so one Agent cannot use up the others', and refuses the rest with the time to wait; it queues nothing.
+  The limit is asked before the post is read back, so an edit that will be refused reads nothing from Slack.
+- **A turn's answer.** An edit to a post in the thread a turn answers counts as answering that turn, as a reaction does.
+- **Other Agents.** Slack reports the edit like any other, so it starts no turn, and each Session that holds the earlier text is listed the post in its next turn, as above.
+
+In Telegram a text post names its chat and message the same way, and the same tool changes it.
+A Telegram message carries nothing that names its Agent, the bot cannot read a chat's history, and message ids in a chat can be guessed.
+So the platform records which Agent made which message with its own tool, in memory for two days, and changes only a message recorded for the calling Agent, in a chat still connected to it.
+A notice the platform sends to the chat in the Agent's name is not recorded, so no Agent can change it.
+After a restart an earlier message can no longer be changed, and a message sent with a file names no reference.
+The limits are counted per chat there, since Telegram has no workspace.
 
 ## Limits
 

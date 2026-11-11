@@ -1,6 +1,6 @@
 # Channel cards
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -13,6 +13,7 @@ Plain text stays the default; a card is for an answer whose structure helps the 
 
 - **The posting tools take it.** `reply`, `post` and `start_thread` take an optional card beside the text, on the per-Agent MCP endpoint ([channel-turns](channel-turns.md#outbound--agent-to-channel)).
   The text shows above the card; a reply or a post may carry a card alone, while a new thread opens with text.
+  An edit of an Agent's own post takes a card the same way, under the same check ([slack-edits](slack-edits.md#an-agent-changes-its-own-post)).
 - **The catalog is disclosed on demand.** A card's components, their props as JSON Schema, where each one goes and an example come from `describe_card_components`, not from every session's tool list, because most agents never post a card.
   The answer is generated from json-render's catalog at runtime, so a component a later catalog adds reaches agents with the upgrade, without a change here.
 - **The agent writes a tree.** Each node is a component with its props and children; the platform flattens it into the catalog's spec before checking it.
