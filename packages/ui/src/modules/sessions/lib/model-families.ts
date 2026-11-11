@@ -8,6 +8,7 @@ export interface ModelFamily {
   sizes: readonly string[];
   names?: readonly string[];
   variantSuffix?: boolean;
+  versionless?: boolean;
 }
 
 /**
@@ -16,7 +17,8 @@ export interface ModelFamily {
  * size is one string here, in that order. A family whose ids carry no size
  * word has no tiers, so it reads as one tier of its own. A family with fixed
  * names (Bob's service tiers) lists them in display order, and one whose ids
- * carry a variant tail after the size (Nemotron) says so.
+ * carry a variant tail after the size or version (Nemotron, Granite) says
+ * so, and one whose ids carry no version at all (Muse Spark) says that.
  */
 export const MODEL_FAMILIES: readonly ModelFamily[] = [
   {
@@ -44,6 +46,19 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = [
     token: "nemotron",
     sizes: ["nano", "ultra"],
     variantSuffix: true,
+  },
+  {
+    name: "Granite",
+    token: "granite",
+    sizes: [],
+    variantSuffix: true,
+  },
+  {
+    name: "Muse",
+    token: "muse",
+    sizes: ["spark"],
+    variantSuffix: true,
+    versionless: true,
   },
   {
     name: "Bob",
@@ -125,7 +140,7 @@ export function parseModelFamily(name: string): ParsedModel | null {
     parts.length > 0 && parts.every((p) => VERSION_PART.test(p))
       ? parts.map((p) => Number(p.replace(/^v/, "")))
       : null;
-  if (family.sizes.length === 0) {
+  if (family.sizes.length === 0 && !family.variantSuffix) {
     if (rest.length < 1 || rest.length > 2) return null;
     const version = versionOf(rest);
     return version === null
@@ -138,6 +153,10 @@ export function parseModelFamily(name: string): ParsedModel | null {
         };
   }
   if (family.variantSuffix) {
+    if (family.sizes.length === 0) {
+      const version = versionOf(rest.slice(0, 2));
+      return version === null ? null : { family, size: family.token, version };
+    }
     for (const size of family.sizes) {
       const at = rest.indexOf(size);
       if (at < 0) continue;
@@ -149,7 +168,9 @@ export function parseModelFamily(name: string): ParsedModel | null {
           version: before,
           ...(buildStamp !== undefined && { buildStamp }),
         };
-      const after = versionOf(rest.slice(at + 1, at + 2));
+      const tail = rest.slice(at + 1, at + 3);
+      const parts = tail.findIndex((p) => !VERSION_PART.test(p));
+      const after = versionOf(tail.slice(0, parts < 0 ? 2 : parts));
       if (after !== null)
         return {
           family,
@@ -157,6 +178,7 @@ export function parseModelFamily(name: string): ParsedModel | null {
           version: after,
           ...(buildStamp !== undefined && { buildStamp }),
         };
+      if (at === 0 && family.versionless) return { family, size, version: [] };
     }
     return null;
   }
@@ -206,7 +228,7 @@ const entryLabel = (parsed: ParsedModel) => {
     ? parsed.size
     : parsed.family.sizes.length === 0 || parsed.size === parsed.family.token
       ? version
-      : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${version}`;
+      : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${version}`.trimEnd();
 };
 
 /**
