@@ -142,6 +142,7 @@ export interface InfraAgent {
   statusVersion?: number;
   machineNotReadyReason?: string;
   machineReady?: boolean;
+  machineReadinessCurrent?: boolean;
   gatewayPodReady?: boolean;
   gatewayPodNotReadyReason?: string;
   gatewayFailure?: string;
@@ -395,6 +396,10 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     machineNotReadyReason:
       machineCond?.status === "False" ? machineCond.reason : undefined,
     machineReady: machineCond ? machineCond.status === "True" : undefined,
+    ...(machineCond &&
+      generation !== undefined && {
+        machineReadinessCurrent: machineCond.observedGeneration === generation,
+      }),
     gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
     gatewayPodNotReadyReason:
       gatewayPod?.status === "False" ? gatewayPod.reason : undefined,

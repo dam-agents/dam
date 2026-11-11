@@ -268,3 +268,35 @@ func TestARunnerWhoseAddressDoesNotResolveYetIsStillStarting(t *testing.T) {
 	assert.Equal(t, "the owner's VM runner is still starting: its address does not resolve yet", msg)
 	assert.Equal(t, "3s", requeued.last().String())
 }
+
+// TEST_SCENARIO: the runner restarts a running machine onto a new spec, and the old guest keeps answering its health check until the runner stops it. The api-server's relays trust that answer on a running agent unless its readiness says the machine restarts, so the restart is published under a reason of its own, kept while the runner cannot be reached, and cleared once the machine runs again.
+func TestARestartingMachineSaysSoUntilItRunsAgain(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRestarting})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	reason, _ := agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, apiv1.ReasonMachineRestarting, reason)
+
+	reachable := r.runnerEndpoint
+	gone := httptest.NewServer(nil)
+	gone.Close()
+	r.runnerEndpoint = func(string) string { return gone.URL }
+	r.runnerMu.Lock()
+	r.runners = nil
+	r.runnerMu.Unlock()
+	_ = r.Reconcile(ctx, cachedAgent(t, r, "my-agent"))
+	reason, _ = agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, apiv1.ReasonMachineRestarting, reason, "a runner out of reach turned the restart into a plain wait")
+
+	r.runnerEndpoint = reachable
+	r.runnerMu.Lock()
+	r.runners = nil
+	r.runnerMu.Unlock()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting})
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	reason, _ = agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, vmrunner.ReasonNotReady, reason)
+}

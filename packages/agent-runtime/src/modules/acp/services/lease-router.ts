@@ -1243,6 +1243,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         leaseOfSession(sessionId)?.runtime.sessionFrames(sessionId) ?? {
           frames: [],
           truncated: false,
+          partial: false,
         }
       );
     },

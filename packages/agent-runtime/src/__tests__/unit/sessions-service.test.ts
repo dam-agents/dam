@@ -560,3 +560,64 @@ describe("adoptHarnessTitles", () => {
     expect(t.meta("old")?.title).toBeUndefined();
   });
 });
+
+describe("sessions service history read of a windowed transcript", () => {
+  const service = (live: { frames: string[]; partial: boolean }) =>
+    createSessionsService({
+      subAgentContextOf: () => ({ role: "main" }) as never,
+      openCaller: () => ({}) as never,
+      sessionMetadata: fakeStore(),
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ ...live, truncated: false }),
+      delegations: {} as never,
+      historyProvider: { fetch: async () => ["s1", "s2", "s3"] },
+      log: () => {},
+    });
+
+  // TEST_SCENARIO: a transcript filled from the newest window of the harness's own history holds a tail, not the conversation, so a caller keeping the whole conversation reads the provider instead.
+  it("reads the provider for the whole conversation", async () => {
+    const read = await service({ frames: ["s3"], partial: true }).history(
+      "s",
+      {},
+    );
+    expect(read.frames).toEqual(["s1", "s2", "s3"]);
+  });
+
+  // TEST_SCENARIO: the chat's preview of a session nobody opened yet asks for a tail; a provider that reads windows reads only that tail, not the whole history.
+  it("reads a tail of a cold session as a window", async () => {
+    const windows: unknown[] = [];
+    const cold = createSessionsService({
+      subAgentContextOf: () => ({ role: "main" }) as never,
+      openCaller: () => ({}) as never,
+      sessionMetadata: fakeStore(),
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: {} as never,
+      historyProvider: {
+        fetch: async () => {
+          throw new Error("the whole history was read");
+        },
+        window: async (_sessionId, ask) => {
+          windows.push(ask);
+          return { lines: ["w1", "w2", "w3"], older: "c" };
+        },
+      },
+      log: () => {},
+    });
+    expect(await cold.history("s", { tail: 2 })).toEqual({
+      frames: ["w2", "w3"],
+      truncated: true,
+    });
+    expect(windows).toEqual([{ frames: 2 }]);
+  });
+
+  it("answers a tail the window holds from the transcript", async () => {
+    const read = await service({ frames: ["l2", "l3"], partial: true }).history(
+      "s",
+      { tail: 2 },
+    );
+    expect(read.frames).toEqual(["l2", "l3"]);
+  });
+});

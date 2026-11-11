@@ -728,12 +728,17 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		}
 	}
 	reason := st.Reason
-	switch reason {
-	case "":
+	// UNIT_BOUNDARY_DESCRIPTION: a restart says so in its reason: the api-server's relays trust a health check answer on a running agent that is not Ready, except during a restart, when the old guest keeps answering until the runner stops it.
+	switch {
+	case !runnerReached && stillRestarting(&agent.Status):
+		reason = apiv1.ReasonMachineRestarting
+	case reason == "" && st.State == vmrunner.StateRestarting:
+		reason = apiv1.ReasonMachineRestarting
+	case reason == "":
 		reason = vmrunner.ReasonNotReady
-	case vmrunner.ReasonHomeFull:
+	case reason == vmrunner.ReasonHomeFull:
 		reason = apiv1.ReasonHomeVolumeFull
-	case vmrunner.ReasonImageCacheUnreachable:
+	case reason == vmrunner.ReasonImageCacheUnreachable:
 		// UNIT_BOUNDARY_DESCRIPTION: the runner sees its own mount of the cache directory, and two runners on one node directory and on a stale copy of it refuse with the same socket, so the Agent's own failure names the node directory this runner mounts. That is the fact an operator compares with the one the cache service writes, and it is here because a start that fails without a pending runner change writes no roll Event to carry it.
 		if src := r.runnerImageCacheSourceOf(ctx, agent.Labels[envoyOwnerLabel]); src != "" {
 			msg += " (this runner mounts the node's " + src + " as its image cache)"
@@ -993,6 +998,12 @@ func (r *AgentReconciler) publishCertificateWait(ctx context.Context, agent *api
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner that cannot be reached says nothing about a restart it was performing, so the restart stands until the runner answers: published as a plain wait instead, it would let the api-server's relays trust the old guest's health check answers.
+func stillRestarting(s *apiv1.AgentStatus) bool {
+	c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionAgentPodReady)
+	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == apiv1.ReasonMachineRestarting
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a machine that could not be ensured is not known to be ready, so the failed reconcile takes Ready and AgentPodReady down with it rather than leaving the last success standing. A runner that could not be reached is described without its address; the dial error goes to the log.
 func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agent, cause error) error {
 	var unreachable *vmrunner.UnreachableError
@@ -1002,7 +1013,11 @@ func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agen
 	msg := fmt.Sprintf("reconciling vm machine: %v", cause)
 	gen := agent.Generation
 	if err := r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
+		reason := vmrunner.ReasonNotReady
+		if stillRestarting(s) {
+			reason = apiv1.ReasonMachineRestarting
+		}
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
 	}); err != nil {
 		slog.Warn("writing agent machine-error status", "agent", agent.Name, "error", err)

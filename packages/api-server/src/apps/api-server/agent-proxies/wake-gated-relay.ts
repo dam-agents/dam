@@ -6,7 +6,12 @@ import type { AgentsRepository } from "../../../modules/agents/infrastructure/ag
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { keepAlive } from "./heartbeat.js";
-import { readyOrAnswering } from "./ready-or-answering.js";
+import { holdStartOf, readyOrAnswering } from "./ready-or-answering.js";
+import {
+  createRequestSpans,
+  startHoldSpan,
+  type WatchedMethod,
+} from "./relay-spans.js";
 import type { SessionPresence } from "./session-presence.js";
 
 const DEFAULT_PENDING_BUFFER_MAX_BYTES = 1024 * 1024;
@@ -44,6 +49,7 @@ export interface WakeGatedRelay {
 }
 
 export interface WakeGatedRelayOptions {
+  name: string;
   repo: Pick<AgentsRepository, "peekCached">;
   upstreamBase: (agentId: string) => string;
   upstreamPath: (agentId: string, req: IncomingMessage) => string;
@@ -70,6 +76,7 @@ export interface WakeGatedRelayOptions {
     reason: Buffer,
   ) => { code: number; reason: string };
   closeOnUpstreamError?: (err: Error, opened: boolean) => string;
+  watchedRequest?: WatchedMethod;
 }
 
 /**
@@ -91,6 +98,7 @@ export function createWakeGatedRelay(
   options: WakeGatedRelayOptions,
 ): WakeGatedRelay {
   const {
+    name,
     repo,
     upstreamBase,
     upstreamPath,
@@ -107,6 +115,7 @@ export function createWakeGatedRelay(
     closeOnWakeFailure,
     closeOnUpstreamClose,
     closeOnUpstreamError,
+    watchedRequest,
   } = options;
 
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
@@ -153,13 +162,20 @@ export function createWakeGatedRelay(
 
       let upstream: WebSocket | undefined;
       let clientGone = false;
+      const hold = startHoldSpan(name, holdStartOf(repo.peekCached(agentId)));
+      const requests = watchedRequest
+        ? createRequestSpans(name, watchedRequest, () => hold.link())
+        : null;
       client.on("close", () => {
         clientGone = true;
         if (tick) clearInterval(tick);
         release();
+        hold.end("gone");
+        requests?.close();
         closeWs(upstream);
       });
 
+      const heldSince = Date.now();
       const pending: [Buffer, boolean][] = [];
       let pendingBytes = 0;
       let overflow = false;
@@ -181,17 +197,21 @@ export function createWakeGatedRelay(
       try {
         const refused = await refuse(agentId);
         if (refused) {
+          hold.end("refused");
           closeWs(client, 1011, refused);
           return;
         }
-        await readyOrAnswering(
-          repo,
-          agentId,
-          ensureReady(agentId, req),
-          `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
-          () => clientGone,
+        hold.end(
+          await readyOrAnswering(
+            repo,
+            agentId,
+            ensureReady(agentId, req),
+            `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
+            () => clientGone,
+          ),
         );
       } catch (err) {
+        hold.end("failed", err);
         closeWs(
           client,
           1011,
@@ -213,16 +233,22 @@ export function createWakeGatedRelay(
         if (holdAtOpen) release = holdAtOpen.acquire(agentId);
         actor.attached();
         client.off("message", buffer);
-        for (const [d, b] of pending) us.send(d, { binary: b });
+        const queuedMs = Date.now() - heldSince;
+        for (const [d, b] of pending) {
+          us.send(d, { binary: b });
+          if (!b) requests?.sent(d, queuedMs);
+        }
         pending.length = 0;
         client.on("message", (d: Buffer, isBinary) => {
           if (us.readyState !== WebSocket.OPEN) return;
           const passed = gate ? gate(client, d, isBinary) : d;
           if (passed === null) return;
           us.send(passed, { binary: isBinary });
+          if (!isBinary) requests?.sent(passed, 0);
           onClientForwarded?.(agentId);
         });
         us.on("message", (d, isBinary) => {
+          if (!isBinary && requests) requests.answered(d as Buffer);
           if (client.readyState === WebSocket.OPEN)
             client.send(d, { binary: isBinary });
         });
