@@ -993,14 +993,27 @@ describe("mentions that read as commands", () => {
 
   /**
    * TEST_SCENARIO: a sentence that only starts with a command word, a bare
-   * mention, and a mention that names an Agent are ordinary messages, so no
-   * tip interrupts them.
+   * mention, and a mention that names an Agent (even a name two Agents share)
+   * are ordinary messages, so no tip interrupts them.
    */
   it("gives no tip to a mention that is not a valid command", async () => {
     const h = harness([
       ...both(),
       { instanceName: "agent-whisper", name: "Whisper" },
     ]);
+    const twins = harness([
+      ...both(),
+      { instanceName: "agent-whisper", name: "Whisper" },
+      { instanceName: "agent-whisper-2", name: "Whisper" },
+    ]);
+    await twins.mention("<@U-BOT> Whisper what do you think?");
+    expect(
+      twins.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).not.toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining("tried the `whisper` command"),
+      }),
+    );
     await h.mention("<@U-BOT> default to the safer option", undefined, "1.1");
     await h.mention("<@U-BOT>", undefined, "2.2");
     await h.mention("<@U-BOT> Whisper what do you think?", undefined, "3.3");

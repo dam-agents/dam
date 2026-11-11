@@ -26,8 +26,8 @@ export function parseSwitchArgs(rest: string): {
  * UNIT_BOUNDARY_DESCRIPTION: Tells whether a mention's words read as a `/dam`
  * command, and which one. A mention always reaches an Agent; this only decides
  * whether its sender also gets a private tip that names the slash form. A
- * mention that opens with a connected Agent's name addresses that Agent, so it
- * is never a command, and an everyday sentence that only starts with a command
+ * mention that opens with a connected Agent's name addresses that Agent, even
+ * when two Agents share the name, so it is never a command, and an everyday sentence that only starts with a command
  * word (`who owns this?`) is not one either.
  */
 export async function mentionedCommand(
@@ -37,7 +37,8 @@ export async function mentionedCommand(
 ): Promise<string | null> {
   const words = mentionBody(text).split(/\s+/).filter(Boolean);
   const verb = words[0]?.toLowerCase();
-  if (!verb || routeMention(text, roster)?.addressedByName) return null;
+  const routed = routeMention(text, roster);
+  if (!verb || routed?.addressedByName || routed?.ambiguousName) return null;
   const rest = words.slice(1).join(" ");
   const namesAgent = (name: string) =>
     !name || matchRosterName(roster, name).matches.length > 0;
