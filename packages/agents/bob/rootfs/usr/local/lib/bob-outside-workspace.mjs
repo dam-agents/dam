@@ -9,7 +9,8 @@
  * execute otherwise. A group the file itself opens stays open. In what Bob
  * writes to that file, each group whose value is still the one this preload
  * laid over gets the file's own entries back, so the owner's file never
- * carries the posture, and every other change Bob saves is kept. Bob 2.1.0
+ * carries the posture, and every other change Bob saves is kept. A file it
+ * cannot parse passes through unchanged, said once on stderr. Bob 2.1.0
  * reads and writes the file through node:fs by that path;
  * check:bob-outside-workspace ties BOB_VERSION to the image pin. */
 import fs from "node:fs";
@@ -43,6 +44,15 @@ const original = {
   writeFileSync: fs.writeFileSync,
   writeFile: fs.writeFile,
   writeFileP: fs.promises.writeFile,
+};
+
+let said = false;
+const sayOnce = (error) => {
+  if (said) return;
+  said = true;
+  process.stderr.write(
+    `bob-outside-workspace: cannot parse ${target}, so tools outside the work directory keep asking: ${error.message}\n`,
+  );
 };
 
 const asText = (data) =>
@@ -88,7 +98,8 @@ const withPosture = (data) => {
       permissionOptions: laidOver(optionsOf(doc)),
     };
     return likeInput(JSON.stringify(doc, null, 2), data);
-  } catch {
+  } catch (error) {
+    sayOnce(error);
     return data;
   }
 };
@@ -101,6 +112,10 @@ const withoutPosture = (data) => {
     try {
       onDisk = optionsOf(JSON.parse(original.readFileSync(target, "utf8")));
     } catch {}
+    if (!("permissionOptions" in doc.approval)) {
+      if (onDisk.length > 0) doc.approval.permissionOptions = onDisk;
+      return likeInput(JSON.stringify(doc, null, 2), data);
+    }
     const written = optionsOf(doc);
     const kept = written.filter((entry) => {
       if (!isObject(entry) || !GROUPS.includes(entry.groupId)) return true;
