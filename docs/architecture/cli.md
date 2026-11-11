@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -133,6 +133,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
 - **`artifact`** — see who can open an artifact, and share it with named people or change who is on its list, through the same sharing write as the Share dialog, owned by [artifact-library.md](artifact-library.md#sharing-model).
   It narrows an interactive page's audience but never widens it.
+  It changes viewers only for a `dam login` sign-in or a CLI-issued token in `DAM_TOKEN`; a Platform API key, as an Agent's own CLI holds, keeps to private and public, so an Agent shares with named people through its tool instead.
 - **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear.
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).

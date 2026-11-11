@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -142,8 +142,9 @@ Out of scope: limits per viewer on what the Agent may do.
   The Share dialog, the agent tools and the CLI all set it through the same sharing write, with the same normalisation and cap.
   A change either replaces the whole list or adds and removes single emails and keeps the rest, resolved against the locked row, so an agent or the CLI can change one viewer without knowing the others.
   An agent sees the list on every artifact its tools hand back, so it can say who has access.
-  Only the owner, in the Share dialog, widens the audience of an [interactive page](#interactive-pages).
+  Only the owner, in the Share dialog, makes public a restricted artifact, or a private one that keeps its viewer list, and widens the audience of an [interactive page](#interactive-pages).
   A caller that is not the app, an agent or the CLI keeps to private and public and cannot change a restricted artifact.
+  That includes a Platform API key, so `dam artifact share` changes viewers only with a `dam login` sign-in or a CLI-issued token in `DAM_TOKEN`.
   An artifact an agent creates is private unless the agent passes public.
   The agent tools tell it to change sharing only when the user asks — a public link when the user asks for one, viewers only for the people the user names — and to recommend the narrowest level that fits.
 - **Public** opens the link to anyone.

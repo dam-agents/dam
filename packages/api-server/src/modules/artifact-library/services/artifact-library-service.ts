@@ -358,6 +358,16 @@ export function createArtifactLibraryService(
     match(sharingAuthority(surface))
       .with("share-dialog", () => {})
       .with("named-viewers", () => {
+        if (
+          visibility === "public" &&
+          before.visibility !== "public" &&
+          (before.visibility === "restricted" || existing.length > 0)
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This artifact is restricted to named viewers, or keeps their list while private. Only the owner opens it to anyone with the link, in the app's Share dialog. Adding or removing viewers or making it private works here.",
+          });
         if (widensInteractiveAudience(before, visibility, existing, next))
           throw new TRPCError({
             code: "FORBIDDEN",
@@ -369,12 +379,14 @@ export function createArtifactLibraryService(
         if (before.visibility === "restricted")
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "Restricted by the owner. Change sharing in the app.",
+            message:
+              "Restricted by the owner. Change sharing in the app, or with `dam artifact share` after `dam login`; an API key cannot change it.",
           });
         if (visibility === "restricted" || next !== undefined)
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "Restricted sharing is set by the owner in the app.",
+            message:
+              "Restricted sharing is set by the owner in the app, or with `dam artifact share` after `dam login`; an API key cannot set it.",
           });
       })
       .exhaustive();

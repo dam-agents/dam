@@ -891,7 +891,7 @@ describe("restricted sharing permissions", () => {
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(
         service.setSharing(row.id, { viewers: ["viewer@example.com"] }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      ).rejects.toThrow(/after `dam login`; an API key cannot set it/);
       row.visibility = "restricted";
       await expect(
         service.setSharing(row.id, { visibility: "public" }),
@@ -943,9 +943,27 @@ describe("restricted sharing permissions", () => {
       await expect(service.get(row.id)).resolves.toMatchObject({
         viewers: ["ada@example.com", "cy@example.com"],
       });
+    },
+  );
+
+  // TEST_SCENARIO: an artifact restricted to named viewers opens to anyone with the link only from the owner's Share dialog; an agent or the CLI is refused and the artifact stays restricted, and making it private still works but keeps the list, so a second step to public is refused too.
+  it.each(["mcp", "cli"] as const)(
+    "keeps %s from making a restricted artifact public",
+    async (surface) => {
+      const row = artifactRow({ visibility: "restricted" });
+      const service = await serviceFor(surface, fakeRepo([row]));
+      await service.setSharing(row.id, { addViewers: ["ada@example.com"] });
       await expect(
         service.setSharing(row.id, { visibility: "public" }),
-      ).resolves.toMatchObject({ visibility: "public" });
+      ).rejects.toThrow(/Only the owner opens it to anyone with the link/);
+      expect(row.visibility).toBe("restricted");
+      await expect(
+        service.setSharing(row.id, { visibility: "private" }),
+      ).resolves.toMatchObject({ visibility: "private" });
+      await expect(
+        service.setSharing(row.id, { visibility: "public" }),
+      ).rejects.toThrow(/Only the owner opens it to anyone with the link/);
+      expect(row.visibility).toBe("private");
     },
   );
 
