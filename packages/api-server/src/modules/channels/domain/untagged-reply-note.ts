@@ -22,7 +22,10 @@ export function untaggedNoteDue(
   now: Date,
 ): boolean {
   if (learner.graduatedAt !== null) return false;
-  if (now.getTime() - learner.firstUsedAt.getTime() >= UNTAGGED_NOTE_NEW_USER_MS)
+  if (
+    now.getTime() - learner.firstUsedAt.getTime() >=
+    UNTAGGED_NOTE_NEW_USER_MS
+  )
     return false;
   return (
     learner.lastNotedAt === null ||
