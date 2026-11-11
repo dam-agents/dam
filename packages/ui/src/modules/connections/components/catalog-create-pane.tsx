@@ -15,7 +15,6 @@ import {
   templateCreateHeading,
   templateMethodCopy,
 } from "../lib/catalog-providers.js";
-import { hostChoicesOf } from "../lib/github-enterprise-hosts.js";
 import { CatalogPaneHeader } from "./catalog-pane-header.js";
 import { DamConnectionCreateBody } from "./dam-connection-create-body.js";
 
@@ -137,7 +136,7 @@ export function CatalogCreatePane({
         initialName={editedName}
         onNameChange={setEditedName}
         autoFocusName={!multiMethod}
-        hostChoices={hostsEnabled ? hostChoicesOf(template) : undefined}
+        pickHost={hostsEnabled}
         layout={(fields, footer) => (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">

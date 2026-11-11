@@ -404,7 +404,7 @@ import {
   keycloakRealmUrl,
   type AddressSet,
 } from "./core/address-sets.js";
-import { createXactLock } from "./core/xact-lock.js";
+import { createXactLock, createXactTxLock } from "./core/xact-lock.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
@@ -995,6 +995,7 @@ export async function bootstrap() {
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
+    brandName: config.brand.name,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -2754,6 +2755,7 @@ export async function bootstrap() {
     config,
     api,
     db,
+    assistantFirstResultLock: createXactTxLock(db),
     outboxRepo: runtimeDelivery.outboxRepo,
     channelManager,
     identityLinkService,

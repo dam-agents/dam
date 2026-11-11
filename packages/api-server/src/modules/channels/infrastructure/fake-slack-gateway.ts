@@ -9,6 +9,7 @@ import type {
   SlackGatewayHandlers,
   SlackMentionEvent,
   SlackMessage,
+  SlackMessageEditedEvent,
   SlackMessageReaction,
   SlackFileInfo,
   SlackSessionStoppedEvent,
@@ -41,6 +42,37 @@ function firedEvent(input: FiredSlackEvent): SlackMentionEvent | null {
   if (!sender) return null;
   return { ...input, sender, teamId: input.teamId ?? FAKE_WORKSPACE };
 }
+export type FiredSlackEdit = Omit<
+  SlackMessageEditedEvent,
+  "teamId" | "sender" | "message" | "mentionAdded"
+> & {
+  user?: string;
+  sender?: SlackSender;
+  teamId?: string;
+  message?: SlackMessage;
+  mentionAdded?: boolean;
+};
+
+function firedEdit(input: FiredSlackEdit): SlackMessageEditedEvent | null {
+  const { user, ...edit } = input;
+  const sender =
+    input.sender ?? (user ? ({ kind: "person", user } as const) : null);
+  if (!sender) return null;
+  return {
+    ...edit,
+    sender,
+    teamId: input.teamId ?? FAKE_WORKSPACE,
+    mentionAdded: input.mentionAdded ?? false,
+    message: input.message ?? {
+      ts: input.ts,
+      text: input.text,
+      edited: true,
+      ...(sender.kind === "person" ? { user: sender.user } : {}),
+      ...(input.threadTs ? { threadTs: input.threadTs } : {}),
+    },
+  };
+}
+
 export type FiredSlackCommand = Omit<
   SlackSlashCommand,
   "teamId" | "triggerId"
@@ -64,6 +96,7 @@ export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: FiredSlackEvent): Promise<void>;
   fireMessage(event: FiredSlackEvent): Promise<void>;
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
+  fireMessageEdited(event: FiredSlackEdit): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
@@ -455,6 +488,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireMessage(input) {
       const event = firedEvent(input);
       if (event) await requireHandlers().onMessage(event);
+    },
+
+    async fireMessageEdited(input) {
+      const event = firedEdit(input);
+      if (event) await requireHandlers().onMessageEdited(event);
     },
 
     async fireViewSubmission(event) {

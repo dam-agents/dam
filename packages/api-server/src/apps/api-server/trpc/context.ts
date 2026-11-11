@@ -134,6 +134,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     config,
     api,
     db,
+    assistantFirstResultLock,
     channelManager,
     identityLinkService,
     telegramBindFlows,
@@ -471,6 +472,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
       agents,
       gettingStarted,
+      firstResultLock: assistantFirstResultLock,
       damConnection: () => connections.ensureDamConnection({ platform: true }),
     });
     const skills = composeSkillsModule({

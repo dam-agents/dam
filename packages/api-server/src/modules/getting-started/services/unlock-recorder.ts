@@ -7,10 +7,16 @@ import type { GettingStartedRepository } from "../infrastructure/getting-started
 import type { Enrollment } from "./enrollment.js";
 
 export interface UnlockRecorder {
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: records the task's unlock. `seen` writes it already
+   * seen — a task the platform reports for the person is counted, never announced —
+   * so no unseen hint and no celebration ever goes out for it.
+   */
   record(
     owner: string,
     task: GettingStartedTask,
     created?: { agentId: string; character: AvatarCharacter },
+    opts?: { seen: boolean },
   ): Promise<void>;
 }
 
@@ -20,10 +26,13 @@ export function createUnlockRecorder(deps: {
   random: () => number;
 }): UnlockRecorder {
   return {
-    async record(owner, task, created) {
+    async record(owner, task, created, opts) {
       await deps.enrollment.ensure(owner, created?.agentId);
-      const unlock = await deps.repo.unlock(owner, task, (taken) =>
-        chooseUnlock(taken, created?.character, deps.random),
+      const unlock = await deps.repo.unlock(
+        owner,
+        task,
+        (taken) => chooseUnlock(taken, created?.character, deps.random),
+        opts,
       );
       if (!unlock) return;
       emit({

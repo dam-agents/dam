@@ -41,6 +41,7 @@ export function slackWorkerHarness(
     ownedThreads?: SlackOwnedThreads;
     ensureReady?: () => Promise<void>;
     reportSession?: boolean;
+    connected?: () => boolean;
     unbindSlackChannel?: (agentId: string, channelId: string) => Promise<void>;
   } = {},
 ) {
@@ -111,15 +112,18 @@ export function slackWorkerHarness(
     getInstanceOwner: async () => SLACK_HARNESS_OWNER,
     ownerDisplayName: async () => null,
     channelRegistry: {
-      resolveSlackBindings: async () => [
-        {
-          instanceName: "agent-1",
-          owner: SLACK_HARNESS_OWNER,
-          ambient: opts.ambient ?? false,
-          history: history.on,
-          isDefault: true,
-        },
-      ],
+      resolveSlackBindings: async () =>
+        opts.connected?.() === false
+          ? []
+          : [
+              {
+                instanceName: "agent-1",
+                owner: SLACK_HARNESS_OWNER,
+                ambient: opts.ambient ?? false,
+                history: history.on,
+                isDefault: true,
+              },
+            ],
       resolveSlackChannelsByInstance: async () => [
         {
           id: boundChannelId,

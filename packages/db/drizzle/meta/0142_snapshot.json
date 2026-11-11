@@ -1,5 +1,5 @@
 {
-  "id": "c0539cad-557b-444d-83c4-5b9b86683df9",
+  "id": "330cac43-37f4-4a55-988b-6d318a7053c7",
   "prevId": "eb689ae1-e6f4-4aa6-b9a3-61f91e220118",
   "version": "7",
   "dialect": "postgresql",
@@ -456,38 +456,6 @@
         },
         "updated_at": {
           "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_child_egress_grants": {
-      "name": "agent_child_egress_grants",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "granted_by": {
-          "name": "granted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "granted_at": {
-          "name": "granted_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -2510,6 +2478,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'creating'"
+        },
+        "legacy": {
+          "name": "legacy",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "used_at": {
           "name": "used_at",

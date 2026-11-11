@@ -102,6 +102,7 @@ async function main(): Promise<void> {
   const created = await repo.create(
     {
       image: "agent:1",
+      backend: { type: "vm" },
       resources: { limits: { cpu: "2", memory: "4Gi" } },
       hibernationTimeout: "90m0s",
       l7Hosts: ["a.test", "b.test"],
@@ -424,7 +425,11 @@ async function main(): Promise<void> {
     return Promise.race([work, timeout]);
   };
   await repo.create(
-    { image: "agent:1", resources: { limits: { cpu: "1", memory: "2Gi" } } },
+    {
+      image: "agent:1",
+      backend: { type: "vm" },
+      resources: { limits: { cpu: "1", memory: "2Gi" } },
+    },
     OWNER,
     INTERLEAVE,
   );
@@ -457,7 +462,11 @@ async function main(): Promise<void> {
 
   // TEST_SCENARIO: the same interleaving with a delete. The controller holds the status row and is about to change a condition the cascade would remove; a delete that starts cascading before taking the signals lock waits on the condition while the trigger waits on the status row. Taking the signals lock first makes the delete wait for the whole status transaction instead.
   await repo.create(
-    { image: "agent:1", resources: { limits: { cpu: "1", memory: "2Gi" } } },
+    {
+      image: "agent:1",
+      backend: { type: "vm" },
+      resources: { limits: { cpu: "1", memory: "2Gi" } },
+    },
     OWNER,
     INTERLEAVE_DELETE,
   );
@@ -515,7 +524,11 @@ async function main(): Promise<void> {
   );
   // TEST_SCENARIO: the L7 host projection over the rows writes the sets an agent has now and advances the definition's generation, which is what reached the machine as a spec change before the switch.
   const l7 = createControlAgentL7HostsPort(db);
-  const l7Agent = await repo.create({ image: "agent:1" }, OWNER, "l7-check");
+  const l7Agent = await repo.create(
+    { image: "agent:1", backend: { type: "vm" } },
+    OWNER,
+    "l7-check",
+  );
   const hostsOf = async (): Promise<string> => {
     const rows = (await db.execute(
       sql`SELECT host FROM control.agent_l7_hosts WHERE agent_id = ${l7Agent.id} ORDER BY host`,

@@ -1,5 +1,5 @@
 ---
-id: 134
+id: 135
 title: A sub-agent or Environment reaches no more than its driver unless the owner agreed
 status: accepted
 subsystem: security-and-credentials
@@ -7,7 +7,7 @@ tags: [invocations, environments, egress, hitl]
 summary: A driver's rule that lets its child reach a host the driver itself cannot reach waits for the owner, until the owner turns on one switch per agent that lets its sub-agents and Environments have network access of their own.
 ---
 
-# ADR-134: A sub-agent or Environment reaches no more than its driver unless the owner agreed
+# ADR-135: A sub-agent or Environment reaches no more than its driver unless the owner agreed
 
 **Date:** 2026-11-10 **Status:** Accepted **Owner:** @jjeliga
 

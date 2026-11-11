@@ -60,6 +60,19 @@ export const SESSION_CATEGORIES = [
 
 export const sessionCategorySchema = z.enum(SESSION_CATEGORIES);
 
+export const SESSION_CHANNEL_TYPES = [
+  "chat",
+  "slack",
+  "telegram",
+  "artifact",
+  "schedule",
+  "terminal",
+] as const;
+
+export const sessionChannelTypeSchema = z.enum(SESSION_CHANNEL_TYPES);
+
+export const SESSION_LIST_STATUSES = ["running", "unread"] as const;
+
 export const SESSION_LIST_MAX_LIMIT = 200;
 
 export const sessionListCursorSchema = z.object({
@@ -70,6 +83,8 @@ export const sessionListCursorSchema = z.object({
 export const sessionListInputSchema = z
   .object({
     categories: z.array(sessionCategorySchema).optional(),
+    channelTypes: z.array(sessionChannelTypeSchema).optional(),
+    status: z.enum(SESSION_LIST_STATUSES).optional(),
     sessionId: z.string().min(1).optional(),
     scheduleId: z.string().min(1).optional(),
     after: sessionListCursorSchema.optional(),

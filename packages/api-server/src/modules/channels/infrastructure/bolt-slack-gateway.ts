@@ -4,6 +4,7 @@ import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
 import { renderSlackPostText } from "./slack-post-text.js";
+import { classifySlackEdit, type SlackMessageChanged } from "./slack-edit.js";
 import { classifySlackSender } from "./slack-sender.js";
 import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
@@ -399,6 +400,24 @@ export function createBoltSlackGateway(
         };
         const workspace = msg.team ?? context.teamId ?? NO_WORKSPACE;
         const self = await selfOf(workspace, context.botUserId);
+        if (msg.subtype === "message_changed") {
+          const changed = event as SlackMessageChanged;
+          const edit = classifySlackEdit(changed, self);
+          if (!edit || !changed.message) return;
+          const direct = msg.channel_type === "im";
+          const shared =
+            msg.channel_type === "channel" || msg.channel_type === "group";
+          if (direct ? edit.sender.kind !== "person" : !shared) return;
+          await handlers.onMessageEdited({
+            ...edit,
+            channel: msg.channel,
+            channelType: msg.channel_type,
+            teamId: workspace,
+            message: toSlackMessage(changed.message),
+            files: (changed.message as { files?: SlackImageFile[] }).files,
+          });
+          return;
+        }
         const sender = classifySlackSender(msg, self);
         if (!sender) return;
         const payload = {
