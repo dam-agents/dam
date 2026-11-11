@@ -962,40 +962,65 @@ describe("hand-off refusals and signals the review named", () => {
   });
 });
 
-describe("commands by mention", () => {
-  it("runs a person's mention whose words are a command, privately", async () => {
+describe("mentions that read as commands", () => {
+  /**
+   * TEST_SCENARIO: a person who types "@bot whisper ..." expects privacy, but
+   * the channel already sees the text. The Agent still gets it as a normal
+   * message, and only the person is told to use the slash form.
+   */
+  it("passes a whisper mention to the agent and tips the person privately", async () => {
     const h = harness(both());
-    await h.mention("<@U-BOT> default Reviewer");
-    expect(h.defaultCalls).toEqual([{ agentId: REVIEWER, channelId: CHANNEL }]);
-    expect(h.prompts).toEqual([]);
-    const ephemeral = h.gw
+    await h.mention("<@U-BOT> whisper the build key is rotated");
+    expect(h.promptsFor(SCRIBE)[0]).toContain("the build key is rotated");
+    const ephemerals = h.gw
       .readOutbound()
-      .find((r) => r.kind === "ephemeral") as { text: string } | undefined;
-    expect(ephemeral?.text).toContain("now this channel's default agent");
+      .filter((r) => r.kind === "ephemeral") as { text: string }[];
+    expect(ephemerals).toHaveLength(1);
+    expect(ephemerals[0]!.text).toContain(
+      "Everyone in this channel can see this message.",
+    );
+    expect(ephemerals[0]!.text).toContain("`/dam whisper`");
   });
 
-  it("sends a mention whose words are not a valid command to the default agent", async () => {
+  it("runs no command from a mention, so the agent gets it", async () => {
     const h = harness(both());
-    await h.mention("<@U-BOT> default to the safer option");
+    await h.mention("<@U-BOT> default Reviewer");
     expect(h.defaultCalls).toEqual([]);
     expect(h.promptsFor(SCRIBE)).toHaveLength(1);
   });
 
   /**
-   * TEST_SCENARIO: an app's post that spells out a command stays a message,
-   * so no bot can change the conversation's agents through a mention.
+   * TEST_SCENARIO: a sentence that only starts with a command word, a bare
+   * mention, and a mention that names an Agent are ordinary messages, so no
+   * tip interrupts them.
    */
-  it("never runs a command from an app's post", async () => {
+  it("gives no tip to a mention that is not a valid command", async () => {
+    const h = harness([
+      ...both(),
+      { instanceName: "agent-whisper", name: "Whisper" },
+    ]);
+    await h.mention("<@U-BOT> default to the safer option");
+    await h.mention("<@U-BOT>");
+    await h.mention("<@U-BOT> Whisper what do you think?");
+    expect(
+      h.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).toHaveLength(0);
+    expect(h.promptsFor("agent-whisper")).toHaveLength(1);
+  });
+
+  it("never tips an app's post", async () => {
     const h = harness(both());
     await h.start();
     await h.gw.fireMention({
       sender: { kind: "app", botId: "B-CI", name: "CI" },
       channel: CHANNEL,
       ts: "333.3",
-      text: "<@U-BOT> default Reviewer",
+      text: "<@U-BOT> whisper the build key is rotated",
     });
     for (let i = 0; i < 8; i++) await tick();
-    expect(h.defaultCalls).toEqual([]);
+    expect(
+      h.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).toHaveLength(0);
     expect(h.promptsFor(SCRIBE)).toHaveLength(1);
   });
 });

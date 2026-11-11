@@ -193,11 +193,7 @@ import {
   slackCardText,
   slackRefusedBlocks,
 } from "./slack-card-blocks.js";
-import {
-  mentionCommandVerb,
-  parseMentionCommand,
-  parseSwitchArgs,
-} from "./slack-mention-commands.js";
+import { mentionedCommand, parseSwitchArgs } from "./slack-mention-commands.js";
 import {
   agentContextBlock,
   agentFooterLabel,
@@ -4921,7 +4917,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here. Every command except \`whisper\` and \`delete\` also works as a mention, for example \`@${brand.name} who\`.`,
+          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -6703,50 +6699,34 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { owner: agentId, dropped: false, rateChecked: true };
   }
 
-  async function runMentionCommand(
-    event: SlackMentionEvent,
-    user: string,
-  ): Promise<boolean> {
-    if (!mentionCommandVerb(event.text)) return false;
-    const parsed = await parseMentionCommand(
-      event.text,
-      await resolveRoster(event.channel),
-      async () =>
-        (await ignoredApps.list(event.channel)).map(
-          (app) => app.name || app.botId,
-        ),
-    );
-    if (!parsed) return false;
-    const say = (text: string) =>
-      ephemeral(event.channel, user, event.threadTs, text, event.teamId);
-    getLogger().info(
-      {
-        channelId: event.channel,
-        command:
-          parsed.kind === "run" ? parsed.text.split(" ")[0] : parsed.verb,
-      },
-      "slack.mention.command",
-    );
-    if (parsed.kind === "slash-only") {
-      await say(
-        `Run \`/${brandShort} delete <message link> [reason]\` to delete an agent post. Its confirmation opens only from the slash command.`,
+  async function tipSlashCommand(event: SlackMentionEvent, user: string) {
+    try {
+      const verb = await mentionedCommand(
+        event.text,
+        await resolveRoster(event.channel),
+        async () =>
+          (await ignoredApps.list(event.channel)).map(
+            (app) => app.name || app.botId,
+          ),
       );
-      return true;
+      if (!verb) return;
+      getLogger().info(
+        { channelId: event.channel, command: verb },
+        "slack.mention.command_tip",
+      );
+      await ephemeral(
+        event.channel,
+        user,
+        event.threadTs,
+        `Everyone in this channel can see this message. It looks like you tried the \`${verb}\` command. Commands run only as \`/${brandShort} ${verb}\`, and \`/${brandShort} help\` lists them all.`,
+        event.teamId,
+      );
+    } catch (err) {
+      getLogger().warn(
+        { channelId: event.channel, err: formatError(err) },
+        "slack.mention.command_tip_failed",
+      );
     }
-    await handleCommand(
-      {
-        text: parsed.text,
-        userId: user,
-        channelId: event.channel,
-        teamId: event.teamId,
-        triggerId: "",
-      },
-      async (response) => {
-        if (response) await say(response.text);
-      },
-      say,
-    );
-    return true;
   }
 
   /**
@@ -6868,12 +6848,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
-    if (
-      !opts.directMessage &&
-      sender.kind === "person" &&
-      (await runMentionCommand(event, sender.user))
-    )
-      return;
+    if (!opts.directMessage && sender.kind === "person" && !rerouted)
+      await tipSlashCommand(event, sender.user);
     if (
       !rerouted &&
       sender.kind !== "person" &&
