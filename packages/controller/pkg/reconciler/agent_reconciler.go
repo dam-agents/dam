@@ -82,6 +82,7 @@ type AgentReconciler struct {
 	grantProbes           sync.Map
 	noNodeResize          sync.Map
 	steppedSince          sync.Map
+	allocationWaits       sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
@@ -608,6 +609,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		r.clearMemoryGrace(name)
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
+	startWaitSpent := r.allocationWaitSpent(name, running && machine.Reason == vmrunner.ReasonAwaitingAllocation && !holdsMemory(machine.State))
 	if machine.Reason == vmrunner.ReasonAwaitingAllocation {
 		// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
 		bootInFlight := holdsMemory(machine.State)
@@ -618,9 +620,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if r.requeue != nil {
 			r.requeue(name, vmReadinessPoll)
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
-		if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
-			if _, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
+		// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left. It also starts once this start has waited a grace in all, whatever the asks did meanwhile: each changed ask begins a grace of its own, and an ask the controller's count reads as covered is never recorded at all, so without this bound a start could wait past the wake that asked for it.
+		stepGraceOver := r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner)
+		if !bootInFlight && (startWaitSpent || stepGraceOver) {
+			if _, err := r.reclaimForAllocationWait(ctx, agent, owner); err != nil {
 				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 			}
 		}
@@ -895,6 +898,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	}
 	r.vmRunning.Delete(name)
 	r.vmAnswers.Delete(name)
+	r.allocationWaits.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
