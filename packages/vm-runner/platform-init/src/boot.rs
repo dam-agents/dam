@@ -803,7 +803,7 @@ impl FreshRoot {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a layer of this boot alone, over the image, holding the image's /etc/passwd with `agent` as uid 0: SSH logins come as `agent`, and on a machine the harness runs as root. A layer rather than a write keeps the entry out of the kept upper, so the next image's /etc/passwd shows through, and the file is an ordinary one of the root, which useradd copies up as it replaces it. The layer's /etc and passwd take the image's owners and modes, which the root shows for them. An image without /etc/passwd, or whose /etc/passwd names `agent` already, gets no layer.
+// UNIT_BOUNDARY_DESCRIPTION: a layer of this boot alone, over the image, holding the image's /etc/passwd with `agent` as uid 0: SSH logins come as `agent`, and on a machine the harness runs as root. A layer rather than a write keeps the entry out of the kept upper, so the next image's /etc/passwd shows through, and the file is an ordinary one of the root, which useradd copies up as it replaces it. The layer's /etc and passwd take the image's owners and modes, which the root shows for them. An image whose /etc/passwd names `agent` already gets that entry as uid 0 with the agent's home, keeping its shell; an image without /etc/passwd gets no layer.
 fn accounts_layer(image: &Path, layer: &Path) -> io::Result<bool> {
     let image_passwd = image.join("etc/passwd");
     let Some(passwd) = fs::read_to_string(&image_passwd)
@@ -823,10 +823,27 @@ fn accounts_layer(image: &Path, layer: &Path) -> io::Result<bool> {
     Ok(true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image's /etc/passwd with `agent` at its end as uid 0, with HOME as its home and root's shell, or nothing when the image names `agent` already.
+// UNIT_BOUNDARY_DESCRIPTION: the image's /etc/passwd with `agent` at its end as uid 0, with HOME as its home and root's shell, or the image's own `agent` entry rewritten to uid and gid 0 with HOME as its home, keeping its shell.
 fn accounts_passwd(image: &str) -> Option<String> {
     if image.lines().any(|line| line.starts_with("agent:")) {
-        return None;
+        return Some(
+            image
+                .split_inclusive('\n')
+                .map(|line| match line.strip_prefix("agent:") {
+                    Some(rest) => {
+                        let fields: Vec<&str> = rest.splitn(6, ':').collect();
+                        match fields.as_slice() {
+                            [password, _, _, gecos, _, shell] => format!(
+                                "agent:{password}:0:0:{gecos}:{}:{shell}",
+                                guest::AGENT_HOME
+                            ),
+                            _ => line.to_string(),
+                        }
+                    }
+                    None => line.to_string(),
+                })
+                .collect(),
+        );
     }
     let shell = image
         .lines()
@@ -5947,7 +5964,7 @@ mod tests {
         ));
     }
 
-    // TEST_SCENARIO: SSH logins come as `agent`, which on a machine is uid 0 with the agent's home and root's shell, appended to the image's own entries; an image that names `agent` itself is left as it is.
+    // TEST_SCENARIO: SSH logins come as `agent`, which on a machine is uid 0 with the agent's home and root's shell, appended to the image's own entries; an image that names `agent` itself keeps that entry's shell, with uid and gid 0 and the agent's home.
     #[test]
     fn the_boot_maps_agent_to_root_after_the_images_entries() {
         let image = "root:x:0:0:root:/home/agent:/bin/bash\ndaemon:x:1:1::/:/usr/sbin/nologin";
@@ -5960,8 +5977,8 @@ mod tests {
             "root:x:0:0:root:/root:\nagent:x:0:0:Agent User:/home/agent:/bin/sh\n"
         );
         assert_eq!(
-            accounts_passwd("root:x:0:0::/root:/bin/sh\nagent:x:1000:1000::/home/agent:/bin/sh\n"),
-            None
+            accounts_passwd("root:x:0:0::/root:/bin/sh\nagent:x:65532:65532::/home/nonroot:/bin/bash\nb:x:1:1::/:/bin/sh").unwrap(),
+            "root:x:0:0::/root:/bin/sh\nagent:x:0:0::/home/agent:/bin/bash\nb:x:1:1::/:/bin/sh"
         );
     }
 
