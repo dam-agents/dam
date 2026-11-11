@@ -74,7 +74,7 @@ const KEPT_AWAIT_SENTENCE =
   " Pass a sub-agent id for its latest run, or a run id from run_subagent for that run; a kept sub-agent's result also names its run and the session it ran in, which run_subagent can continue.";
 
 const awaitDescription = (kept: boolean): string =>
-  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} A finished sub-agent whose result goes to you as a new turn comes back under deliveredAsTurn, without the result: read it in that turn when it reaches you, which may be after your current turn ends. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const FETCH_DESCRIPTION = `Save the full stdout or stderr of a finished script sub-agent to a file in your sandbox, as await_subagents only shows its start and end. Returns one shell command: run it, and it downloads the stream byte for byte to the path you give and checks its sha256. Then read the file as often as you need. The platform deletes its copy once the download is checked, so fetch each stream once; one nobody fetches is deleted after seven days.`;
 
@@ -429,7 +429,15 @@ function runFields(s: { id: string } & RunOf): RunOf {
   };
 }
 
-async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
+async function summarize(
+  ops: DriverOps,
+  all: Settled[],
+  kept: boolean,
+  inTurn: ReadonlySet<string>,
+) {
+  const turned = (s: Settled) =>
+    "run" in s && s.run !== undefined && inTurn.has(s.run);
+  const settled = all.filter((s) => !turned(s));
   const runFieldsOf = (s: { id: string } & RunOf): RunOf =>
     kept ? runFields(s) : {};
   const ended = await Promise.all(
@@ -469,6 +477,7 @@ async function summarize(ops: DriverOps, settled: Settled[], kept: boolean) {
     ),
     idle: settled.flatMap((s) => (s.status === "idle" ? [s.id] : [])),
     unknown: settled.flatMap((s) => (s.status === "unknown" ? [s.id] : [])),
+    deliveredAsTurn: all.filter(turned).map((s) => s.id),
   };
 }
 
@@ -915,17 +924,20 @@ export function registerSubAgentTools(
           settled = await readAll(ops, unique);
           await heartbeat(settled);
         }
-        const summary = await summarize(ops, settled, kept);
-        if (!signal.aborted) {
-          await awaits.markCollected(runIdsOf(settled, ["done", "failed"]));
-          const running = runIdsOf(settled, ["running"]);
-          if (running.length > 0)
-            await awaits.markAwaited(
-              running,
-              new Date(Date.now() + AWAIT_AGAIN_GRACE_MS),
-            );
+        const grace = () => new Date(Date.now() + AWAIT_AGAIN_GRACE_MS);
+        if (signal.aborted) {
+          await awaits.markAwaited(
+            runIdsOf(settled, ["running", "done", "failed"]),
+            grace(),
+          );
+          return json({});
         }
-        return json(summary);
+        const inTurn = new Set(
+          (await awaits.collect(runIdsOf(settled, ["done", "failed"]))).inTurn,
+        );
+        const running = runIdsOf(settled, ["running"]);
+        if (running.length > 0) await awaits.markAwaited(running, grace());
+        return json(await summarize(ops, settled, kept, inTurn));
       }),
   );
 
