@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { SANDBOX_SECTIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
 import { AcpModelRefusedError } from "../../core/acp-client.js";
-import { ChannelProfileRefusedError } from "../../modules/channels/infrastructure/channel-profile.js";
 import { classifyTurnFailure } from "../../modules/channels/infrastructure/turn-failure-copy.js";
 
 const SRC = join(import.meta.dirname, "../..");
@@ -37,22 +36,6 @@ describe("links to an agent's page", () => {
         .map((section) => `${path}: ${section}`),
     );
     expect(unknown).toEqual([]);
-  });
-
-  /** TEST_SCENARIO: a channel whose profile cannot run sends its owner to the agent's Channels section, where the channel's row picks another profile. */
-  it("sends a refused channel profile to the Channels section", () => {
-    const failure = classifyTurnFailure(
-      new ChannelProfileRefusedError("Fast review", "no provider"),
-    );
-    expect(failure.kind).toBe("plain");
-    if (failure.kind !== "plain") return;
-    expect(
-      failure.copy({
-        uiBaseUrl: "https://dam.example",
-        agentId: "agent-1",
-        threads: true,
-      }),
-    ).toContain("https://dam.example/sandboxes/agent-1/channels");
   });
 
   /** TEST_SCENARIO: a message the model refused sends the owner to the agent's Providers section, where another model can be picked. */

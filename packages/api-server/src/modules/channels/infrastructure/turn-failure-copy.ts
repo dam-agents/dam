@@ -10,7 +10,6 @@ import {
   AcpTurnAbandonedError,
 } from "../../../core/acp-client.js";
 import { agentSessionUrl } from "./agent-footer.js";
-import { ChannelProfileRefusedError } from "./channel-profile.js";
 import { PROVIDER_UNAVAILABLE_TURN_REASON } from "../../../events.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
@@ -86,13 +85,6 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
       reason: "no-default-model",
       copy: ({ uiBaseUrl, agentId }) =>
         noDefaultModelUserCopy(err, uiBaseUrl, agentId),
-    };
-  if (err instanceof ChannelProfileRefusedError)
-    return {
-      kind: "plain",
-      reason: "profile-unavailable",
-      copy: ({ uiBaseUrl, agentId }) =>
-        `This channel runs on the profile “${err.profileName}”, which this agent can't use: ${err.detail}. Its owner can pick another profile on the channel's row at ${agentPageUrl(uiBaseUrl, agentId, "channels")}`,
     };
   if (saysProviderUnavailable(errorText(err)))
     return {
@@ -192,10 +184,7 @@ function noDefaultModelUserCopy(
   uiBaseUrl: string,
   agentId: string,
 ): string {
-  const providers = agentPageUrl(uiBaseUrl, agentId, "providers");
   if (err.pending)
-    return "This agent is still setting up its default model after an update. Try again in a minute.";
-  return err.model === undefined
-    ? `This agent has no model it can run on, so it can't answer here yet. Its owner can connect a model provider or pick a model at ${providers}`
-    : `This agent's default model ${err.model} is on a provider it no longer holds, so it can't answer here yet. Its owner can pick another at ${providers}`;
+    return "This agent is still setting up its model provider. Try again in a minute.";
+  return `This agent has no model provider it can run on, so it can't answer here yet. Its owner can connect a model provider at ${agentPageUrl(uiBaseUrl, agentId, "providers")}`;
 }
