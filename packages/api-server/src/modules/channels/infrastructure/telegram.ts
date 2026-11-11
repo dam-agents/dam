@@ -1275,6 +1275,12 @@ export function createTelegramWorker(deps: {
     async editPost(agentId: string, edit: PostEdit) {
       if (!bot) return { error: "telegram bot is not running" };
       const { conversationId, messageId, text, card } = edit;
+      if (edit.attachment)
+        return {
+          error:
+            "Replacing the file of a post works only in Slack. Send the new " +
+            "file in a new message instead.",
+        };
       const binding = await deps.conversations.findAgentByConversation(
         telegramChatOf(conversationId),
       );

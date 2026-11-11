@@ -196,6 +196,7 @@ export interface SlackUpdateMessage {
   text: string;
   blocks: SlackBlock[];
   metadata: SlackMessageMetadata;
+  fileIds?: string[];
   teamId: SlackWorkspace;
 }
 
@@ -208,16 +209,6 @@ export interface SlackPostEphemeral {
   teamId: SlackWorkspace;
   username?: string;
   iconUrl?: string;
-}
-
-export interface SlackUpload {
-  channelId: string;
-  file: Buffer;
-  filename: string;
-  title?: string;
-  blocks?: SlackBlock[];
-  threadTs?: string;
-  teamId: SlackWorkspace;
 }
 
 export interface SlackStopStream {
@@ -329,9 +320,9 @@ export interface SlackGateway {
   stop(): Promise<void>;
   postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
   /** UNIT_BOUNDARY_DESCRIPTION: replace the text, blocks and metadata of a
-   *  message this bot posted. Slack keeps the message's send time, its
-   *  thread, and its sender name and icon; a refusal is thrown with Slack's
-   *  own error code. */
+   *  message this bot posted, and its files when fileIds is set. Slack keeps
+   *  the message's send time, its thread, and its sender name and icon; a
+   *  refusal is thrown with Slack's own error code. */
   updateMessage(args: SlackUpdateMessage): Promise<void>;
   deleteMessage(
     channel: string,
@@ -375,7 +366,6 @@ export interface SlackGateway {
     threadTs?: string;
     teamId: SlackWorkspace;
   }): Promise<(SlackMessage & { ts: string }) | null>;
-  uploadFile(args: SlackUpload): Promise<void>;
   reserveFile(args: {
     filename: string;
     length: number;
@@ -393,11 +383,19 @@ export interface SlackGateway {
     title?: string;
     username?: string;
     iconUrl?: string;
-    channelId: string;
+    channelId?: string;
     threadTs?: string;
     blocks?: SlackBlock[];
     teamId: SlackWorkspace;
   }): Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the send time of the message that shares a
+   *  file in a channel, or null while Slack has not recorded the share yet:
+   *  sharing a file answers before the message is known. */
+  fileShareTs(
+    fileId: string,
+    channelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<string | null>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,

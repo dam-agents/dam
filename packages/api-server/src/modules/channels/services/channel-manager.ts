@@ -709,9 +709,24 @@ export function createChannelManager(deps: {
     ]),
   ) as Record<AddressedMethod, (...args: unknown[]) => Promise<unknown>>;
 
+  const editPostLocally = async (
+    instanceName: string,
+    channelType: ChannelType,
+    edit: PostEdit,
+  ): Promise<ChannelSendResult> => {
+    const attachment = await restoreAttachment(edit.attachment);
+    if (attachment && "error" in attachment) return attachment;
+    return addressedHandlers.editPost(
+      instanceName,
+      channelType,
+      attachment ? { ...edit, attachment } : edit,
+    ) as Promise<ChannelSendResult>;
+  };
+
   const localHandlers: LocalHandlers = {
     ...explicitHandlers,
     ...addressedHandlers,
+    editPost: editPostLocally,
   };
 
   subscriptions.push(
@@ -822,6 +837,20 @@ export function createChannelManager(deps: {
             text,
             options,
           ),
+      );
+    },
+
+    async editPost(instanceName, channelType, edit) {
+      let wireEdit = edit;
+      if (!isLeader() && rpc && edit.attachment) {
+        const attachment = await stashAttachment(edit.attachment);
+        if ("error" in attachment) return attachment;
+        wireEdit = { ...edit, attachment };
+      }
+      return dispatchResult(
+        "editPost",
+        [instanceName, channelType, wireEdit],
+        () => editPostLocally(instanceName, channelType, edit),
       );
     },
 

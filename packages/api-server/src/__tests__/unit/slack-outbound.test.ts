@@ -328,7 +328,11 @@ describe("slack outbound — cross-workspace reach", () => {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toEqual({ ok: true, conversationId: "C-ALERTS" });
+    expect(result).toEqual({
+      ok: true,
+      conversationId: "C-ALERTS",
+      ts: expect.any(String),
+    });
     expect(h.messages()).toEqual([]);
     expect(h.uploads()).toMatchObject([
       {

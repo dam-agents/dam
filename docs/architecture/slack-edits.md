@@ -92,7 +92,9 @@ An edit notifies no one, so an Agent that needs people to see the final state al
   Another Agent's post, a platform notice, a person's message and a message that does not exist are each refused.
 - **Where it may post.** The conversation is held to the reach a new post has.
 - **The footer stays.** The edited post names the Agent and the Session it named before, so it still opens the Session that made it, a deleted post's notice still finds that Session, and other Agents still read the post as that Agent's.
-- **No file.** A post that carries a file is refused for now, and a private answer to a whisper has no reference to name.
+- **Files.** A post that carries a file keeps it through an edit, or gets the file the edit carries in its place, and the replaced file is deleted.
+  Slack shares a file without naming its message and takes no metadata with it, so the platform reads the post's `ts` back from the file and marks the post by an edit right after.
+  A private answer to a whisper has no reference to name.
 - **A limit.** Slack takes about fifty edits a minute for a whole workspace, shared by every Agent there.
   The platform admits a little less per workspace and a smaller share per Agent, so one Agent cannot use up the others', and refuses the rest with the time to wait; it queues nothing.
   The limit is asked before the post is read back, so an edit that will be refused reads nothing from Slack.

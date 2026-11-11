@@ -58,15 +58,20 @@ export function madeByAgent(message: SlackMessage): boolean {
   );
 }
 
-export function deletePostFileIds(message: SlackMessage): string[] {
+export function filesPostedApart(message: SlackMessage): string[] {
   const files =
     message.metadata?.eventType === AGENT_POST_METADATA
       ? message.metadata.payload["files"]
       : [];
-  const shared = Array.isArray(files)
+  return Array.isArray(files)
     ? files.filter((f): f is string => typeof f === "string")
     : [];
-  return [...new Set([...shared, ...(message.fileIds ?? [])])];
+}
+
+export function deletePostFileIds(message: SlackMessage): string[] {
+  return [
+    ...new Set([...filesPostedApart(message), ...(message.fileIds ?? [])]),
+  ];
 }
 
 export interface DeletePostModalMetadata {
