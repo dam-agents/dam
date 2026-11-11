@@ -26,6 +26,7 @@ const RESET = "2026-11-09T12:00:00.000Z";
 
 type Record = {
   agentId: string;
+  legacy: boolean;
   used: boolean;
   resetAt: string | null;
   ready: boolean;
@@ -33,6 +34,7 @@ type Record = {
 
 const record = (used: boolean, resetAt: string | null = null): Record => ({
   agentId: ASSISTANT,
+  legacy: true,
   used,
   resetAt,
   ready: true,

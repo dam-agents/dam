@@ -176,6 +176,7 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
+      legacy: true,
       used: false,
       resetAt: null,
       ready: true,
@@ -196,6 +197,7 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
+      legacy: true,
       used: false,
       resetAt: null,
       ready: true,

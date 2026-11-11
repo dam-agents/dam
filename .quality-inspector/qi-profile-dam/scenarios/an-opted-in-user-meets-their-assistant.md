@@ -127,3 +127,19 @@ Then no second agent appears for that name, and their own Dammy opens on the ord
 And their next sign-in lands on Home rather than in that chat
 When they delete or rename their own Dammy and switch the row off and on again
 Then the platform's Dammy appears, unused, and greets them
+
+## AC-13 — the CurveBender notice keeps off the assistant's chat, and off the accounts it was made for
+
+Given an install that provides the shared CurveBender, and that account, which was onboarded with the assistant
+When the owner is in Dammy's chat, on a new chat
+Then no CurveBender notice is shown above the composer
+And the greeting opens that chat, because the assistant has never been used
+And no chat of theirs on any agent shows the notice either, because their first agent was Dammy
+When they send a message there and open a new chat on Dammy again
+Then that chat opens on the ordinary new-chat page, and still shows no CurveBender notice
+When an account that had agents before Dammy opens a new chat on one of them
+Then the CurveBender notice is shown there as it always was, on that agent's new chat
+When that account opens a new chat on its own Dammy
+Then no CurveBender notice is shown there at all; only the greeting, while it is unused
+When it deletes and recreates Dammy, or resets its onboarding
+Then its new chats on other agents still show the notice, because the account was judged once and that does not change

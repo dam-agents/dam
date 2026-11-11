@@ -11,18 +11,19 @@ import { createAssistantsService } from "../../modules/assistants/services/assis
 export const OWNER = "alice";
 export const NAME = "Dambledore";
 
-/** UNIT_BOUNDARY_DESCRIPTION: the record store as PostgreSQL behaves — the primary key settles `claim`, and `replaceAgent` and `pointAt` are what say which Agent the row names. */
+/** UNIT_BOUNDARY_DESCRIPTION: the record store as PostgreSQL behaves — the primary key settles `claim`, `replaceAgent` says which Agent the row names, and the cohort `claim` wrote is never touched again. */
 export function rowStore(initial?: AssistantRow) {
   const rows = new Map<string, AssistantRow>();
   if (initial) rows.set(initial.owner, initial);
   const repo: AssistantsRepository = {
     find: async (owner) => rows.get(owner) ?? null,
-    claim: async (owner, agentId) => {
+    claim: async (owner, agentId, legacy) => {
       if (rows.has(owner)) return false;
       rows.set(owner, {
         owner,
         agentId,
         state: "creating",
+        legacy,
         used: false,
         resetAt: null,
       });

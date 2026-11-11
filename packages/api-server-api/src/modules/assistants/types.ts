@@ -1,12 +1,20 @@
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What the UI needs to know about the owner's
  * assistant without waking it: which Agent it is, whether it has ever been used —
- * the first landing in its chat and the greeting rest on that — and when the
- * person's onboarding was last reset, which is the epoch a tab's own unconfirmed
- * mark is read against.
+ * the first landing in its chat and the greeting rest on that — when the person's
+ * onboarding was last reset, which is the epoch a tab's own unconfirmed mark is
+ * read against, and which cohort the account was in when the platform made it one.
  */
 export interface AssistantState {
   agentId: string;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether the account had an Agent of its own before
+   * the platform gave it this one, decided once when it first did and never
+   * recomputed, so no delete, reset or new assistant moves an account between the
+   * cohort that knew the platform before its assistant and the one onboarded with
+   * it.
+   */
+  legacy: boolean;
   used: boolean;
   resetAt: string | null;
   /* UNIT_BOUNDARY_DESCRIPTION: whether the platform finished making this Agent. A record the platform wrote and has not settled is a create still running behind the request that started it, which the client waits out rather than reading as an assistant it does not have. */

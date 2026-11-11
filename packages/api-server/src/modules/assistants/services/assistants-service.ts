@@ -172,13 +172,16 @@ export function createAssistantsService(deps: {
     if (await nameTaken()) return { agent: null, made: false };
     if (row === null) {
       const agentId = generateK8sName("agent");
-      if (!(await deps.repo.claim(deps.owner, agentId)))
+      /* UNIT_BOUNDARY_DESCRIPTION: the account's cohort is settled here, at the one moment the platform first makes it an assistant: an Agent already in its list is one it had before this. It is never read again — a delete, a reset or a new assistant leaves it as it was. */
+      const legacy = (await deps.agents.list()).length > 0;
+      if (!(await deps.repo.claim(deps.owner, agentId, legacy)))
         return { agent: await joinOrFinish(forMs), made: false };
       return {
         agent: await makeAgent({
           owner: deps.owner,
           agentId,
           state: "creating",
+          legacy,
           used: false,
           resetAt: null,
         }),
@@ -212,6 +215,7 @@ export function createAssistantsService(deps: {
           ? null
           : {
               agentId: row.agentId,
+              legacy: row.legacy,
               used: row.used,
               resetAt: row.resetAt?.toISOString() ?? null,
               ready: row.state === "ready",
