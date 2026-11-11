@@ -53,6 +53,25 @@ export interface SlackSlashCommand {
 
 export type SlackChannelMessageEvent = SlackMentionEvent;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A post whose text someone changed after it was
+ * sent. It names the post by its own send time, not the time of the edit,
+ * carries the text as it reads now, the post as a later history read would
+ * return it, and whether the edit is what first tagged the bot.
+ */
+export interface SlackMessageEditedEvent {
+  sender: SlackSender;
+  channel: string;
+  channelType?: string;
+  teamId: SlackWorkspace;
+  ts: string;
+  threadTs?: string;
+  text: string;
+  message: SlackMessage;
+  mentionAdded: boolean;
+  files?: SlackImageFile[];
+}
+
 export type SlackAck = (response?: { text: string }) => Promise<void>;
 
 export type SlackRespond = (text: string) => Promise<void>;
@@ -84,6 +103,7 @@ export interface SlackGatewayHandlers {
   ) => Promise<void>;
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
+  onMessageEdited: (event: SlackMessageEditedEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
   onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
