@@ -17,6 +17,7 @@ import {
   type spawnInvocationRequestSchema,
   type spawnScriptInvocationRequestSchema,
   type TemplatesService,
+  type EgressWaiting,
 } from "api-server-api";
 import {
   AttenuationError,
@@ -49,12 +50,6 @@ export type ScriptSpawnRequest = z.infer<
   typeof spawnScriptInvocationRequestSchema
 >;
 type SpawnTargetRequest = Omit<ScriptSpawnRequest, "script">;
-
-// UNIT_BOUNDARY_DESCRIPTION: a rule of a child's open egress that its driver could not set itself and that waits for the owner's verdict: the host, and the request's id, which egress_proposal reads the status of.
-export interface EgressWaiting {
-  host: string;
-  id: string;
-}
 
 export type SpawnOutcome =
   | { ok: true; id: string; egressWaiting: EgressWaiting[] }
