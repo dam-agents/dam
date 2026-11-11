@@ -65,6 +65,7 @@ Every other edit noted by then is to a message the Session reads in that turn, w
 When the turn is delivered, all of them are settled for that Session, so an edit is listed once.
 A turn that fails settles nothing, and an edit made while a turn runs waits for the next one.
 The Agent that wrote the message is owed nothing, and a later edit of the same message is owed again.
+The same edit reported once more changes nothing, so it is not listed again.
 Sessions are told apart, because one Agent can hold a message in several: the channel's Session and a thread's.
 
 ## Limits

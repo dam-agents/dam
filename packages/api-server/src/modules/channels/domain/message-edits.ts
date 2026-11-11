@@ -4,6 +4,7 @@ export interface MessageEdit<M> {
   ts: string;
   threadTs: string | null;
   authorAgentId: string | null;
+  text: string;
   message: M;
 }
 
@@ -49,7 +50,8 @@ type Noted<M> = MessageEdit<M> & { told: Set<string>; expiresAt: number };
  * An Agent's Sessions are told apart, because one Agent can hold a message
  * in several of them. The Agent that wrote a message, and a Session told of
  * an edit in a turn already running, are owed nothing. A later edit of the
- * same message replaces the earlier one and is owed to everyone again. The
+ * same message replaces the earlier one and is owed to everyone again; the
+ * same edit reported once more changes nothing, so it is not owed again. The
  * record lives in memory, is capped per conversation and expires, because a
  * message read from Slack later already carries its current text.
  */
@@ -90,6 +92,7 @@ export function createMessageEdits<M>(
     note(channel, edit) {
       sweep();
       const edits = live(channel) ?? new Map<string, Noted<M>>();
+      if (edits.get(edit.ts)?.text === edit.text) return;
       channels.set(channel, edits);
       edits.delete(edit.ts);
       edits.set(edit.ts, {

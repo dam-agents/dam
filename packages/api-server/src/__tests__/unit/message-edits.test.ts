@@ -24,6 +24,7 @@ function edit(
   return {
     threadTs: null,
     authorAgentId: null,
+    text: `text of ${over.ts}`,
     message: `text of ${over.ts}`,
     ...over,
   };
@@ -169,15 +170,41 @@ describe("createMessageEdits", () => {
    *  second. */
   it("owes a later edit of the same message again", () => {
     const edits = createMessageEdits<string>();
-    edits.note(CHANNEL, edit({ ts: "100.000000", message: "first" }));
+    edits.note(
+      CHANNEL,
+      edit({ ts: "100.000000", text: "first", message: "first" }),
+    );
     const first = edits.readBy(CHANNEL, reader());
-    edits.note(CHANNEL, edit({ ts: "100.000000", message: "second" }));
+    edits.note(
+      CHANNEL,
+      edit({ ts: "100.000000", text: "second", message: "second" }),
+    );
 
     first.settle();
 
     expect(edits.readBy(CHANNEL, reader()).owed.map((e) => e.message)).toEqual([
       "second",
     ]);
+  });
+
+  /** TEST_SCENARIO: Slack can report one edit twice. The second report has
+   *  the text the record already holds, so it must not make a Session that
+   *  was listed the edit owed it again, nor keep the record alive longer. */
+  it("owes nothing again when the same edit is reported twice", () => {
+    let now = 0;
+    const edits = createMessageEdits<string>({ ttlMs: 10, now: () => now });
+    edits.note(CHANNEL, edit({ ts: "100.000000" }));
+    edits.readBy(CHANNEL, reader()).settle();
+
+    now = 6;
+    edits.note(CHANNEL, edit({ ts: "100.000000" }));
+
+    expect(owed(edits)).toEqual([]);
+    expect(owed(edits, reader({ session: "session-2" }))).toEqual([
+      "100.000000",
+    ]);
+    now = 11;
+    expect(owed(edits, reader({ session: "session-2" }))).toEqual([]);
   });
 
   it("forgets an edit after its time to live", () => {

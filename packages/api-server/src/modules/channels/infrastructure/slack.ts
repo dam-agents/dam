@@ -1901,6 +1901,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ttlMs: MESSAGE_EDIT_TTL_MS,
   });
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the messages Agents read along that have
+   * arrived but are not queued yet, because their files are still fetched.
+   * An edit in that time replaces the text here, and the queue takes it. */
+  const readAlongArrivals = new Map<string, { text: string }>();
+
   function messageKey(channel: string, ts: string): string {
     return `${channel} ${ts}`;
   }
@@ -7922,18 +7927,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
     if (!rateChecked && !(await admitBotPost(sender, event))) return;
 
-    const { images, files, failures, release } = await fetchSlackAttachments(
-      gateway,
-      event.files,
-      slackUserId,
-      heldBudget,
-      event.teamId,
-    );
+    const arrival = { text: event.text };
+    const arrivalKey = messageKey(event.channel, event.ts);
+    readAlongArrivals.set(arrivalKey, arrival);
+    const fetched = await (async () => {
+      try {
+        return {
+          ...(await fetchSlackAttachments(
+            gateway,
+            event.files,
+            slackUserId,
+            heldBudget,
+            event.teamId,
+          )),
+          speaker: await speakerOf(sender),
+        };
+      } finally {
+        if (readAlongArrivals.get(arrivalKey) === arrival)
+          readAlongArrivals.delete(arrivalKey);
+      }
+    })();
+    const { images, files, failures, release, speaker } = fetched;
     const withheldNote = renderWithheldNote(failures);
 
-    const speaker = await speakerOf(sender);
     enqueueAmbient(event.channel, event.threadTs ?? null, {
-      text: event.text + withheldNote,
+      text: arrival.text + withheldNote,
       ...(withheldNote ? { withheldNote } : {}),
       eventTs: event.ts,
       slackUserId,
@@ -8080,11 +8098,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       queued.eventTs === ts
         ? { ...queued, text: event.text + (queued.withheldNote ?? "") }
         : null;
+    const readAlong = readAlongArrivals.get(messageKey(channel, ts));
+    if (readAlong) readAlong.text = event.text;
     ambientQueues.get(ambientQueueKey(channel, threadTs))?.replace(retext);
     messageEdits.note(channel, {
       ts,
       threadTs,
       authorAgentId: sender.kind === "agent" ? sender.agentId : null,
+      text: event.text,
       message: {
         ...event.message,
         text: event.text,

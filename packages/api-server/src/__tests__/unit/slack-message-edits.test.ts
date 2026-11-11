@@ -31,6 +31,35 @@ const T3 = "300.000000";
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const NOTES_URL = "https://files.slack.com/files-pri/T1-F1/notes.txt";
+const NOTES = {
+  id: "F1",
+  name: "notes.txt",
+  mimetype: "text/plain",
+  url_private: NOTES_URL,
+  size: 5,
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: holds the download of a message's file until the
+ * spec lets it go, so a spec can send an edit while the message has arrived
+ * but is not queued yet.
+ */
+function heldDownload(gw: ReturnType<typeof slackWorkerHarness>["gw"]) {
+  let release!: () => void;
+  let begin!: () => void;
+  const started = new Promise<void>((resolve) => (begin = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const download = gw.downloadFile.bind(gw);
+  gw.setFileBytes(NOTES_URL, Buffer.from("notes"));
+  gw.downloadFile = async (...args) => {
+    begin();
+    await gate;
+    return download(...args);
+  };
+  return { started, release: () => release() };
+}
+
 function harness(opts: Parameters<typeof slackWorkerHarness>[0] = {}) {
   const h = slackWorkerHarness({
     boundChannelId: BOUND,
@@ -38,7 +67,9 @@ function harness(opts: Parameters<typeof slackWorkerHarness>[0] = {}) {
     ...opts,
   });
   const turns = () =>
-    h.prompts.map(String).filter((p) => !p.includes("<turn-undelivered>"));
+    h.prompts
+      .map((p) => (typeof p === "string" ? p : JSON.stringify(p)))
+      .filter((p) => !p.includes("<turn-undelivered>"));
   return { ...h, turns };
 }
 
@@ -99,6 +130,39 @@ describe("a person's edit to a message an agent was sent", () => {
       ts: T1,
       text: GREEN,
     });
+    await sent;
+
+    expect(h.turns()).toHaveLength(1);
+    expect(h.turns()[0]).toContain(GREEN);
+    expect(h.turns()[0]).not.toContain(BLUE);
+    expect(h.turns()[0]).not.toContain(EDITED);
+  });
+
+  /**
+   * TEST_SCENARIO: A message with a file is not queued until the file is
+   * fetched. An edit in that time finds the message in no queue, and must
+   * still reach the turn: the agent reads the message once, as edited.
+   */
+  it("replaces a message whose file is still being fetched", async () => {
+    const h = harness();
+    const download = heldDownload(h.gw);
+    await h.worker.connect();
+
+    const sent = h.gw.fireMention({
+      user: USER,
+      channel: BOUND,
+      ts: T1,
+      text: BLUE,
+      files: [NOTES],
+    });
+    await download.started;
+    await h.gw.fireMessageEdited({
+      user: USER,
+      channel: BOUND,
+      ts: T1,
+      text: GREEN,
+    });
+    download.release();
     await sent;
 
     expect(h.turns()).toHaveLength(1);
@@ -595,6 +659,80 @@ describe("an edit that starts no turn", () => {
     expect(h.turns()[0]).toContain(GREEN);
     expect(h.turns()[0]).not.toContain(BLUE);
     expect(h.turns()[0]).not.toContain(CHANGED);
+  });
+
+  /**
+   * TEST_SCENARIO: A read-along message with a file is not queued until the
+   * file is fetched. An edit in that time must replace its text all the same,
+   * or the agent would read the first text and never be shown the edit.
+   */
+  it("replaces a read-along message whose file is still being fetched", async () => {
+    const h = harness({ ambient: true });
+    const download = heldDownload(h.gw);
+    await h.worker.connect();
+
+    const sent = h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T1,
+      text: BLUE,
+      files: [NOTES],
+    });
+    await download.started;
+    await h.gw.fireMessageEdited({
+      user: USER,
+      channel: BOUND,
+      ts: T1,
+      text: GREEN,
+    });
+    download.release();
+    await sent;
+
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+    expect(h.turns()[0]).toContain(GREEN);
+    expect(h.turns()[0]).not.toContain(BLUE);
+    expect(h.turns()[0]).not.toContain(CHANGED);
+  });
+
+  /**
+   * TEST_SCENARIO: Slack can report one edit twice. An agent already listed
+   * the edit must not be listed it again because of the second report.
+   */
+  it("lists an edit once when Slack reports it twice", async () => {
+    const h = harness({ ambient: true });
+    h.gw.setHistory([{ ts: T1, user: USER, text: BLUE }]);
+    await h.worker.connect();
+    const edit = { user: USER, channel: BOUND, ts: T1, text: GREEN };
+    const edited = { ts: T1, user: USER, text: GREEN, edited: true };
+
+    await h.gw.fireMessage({ user: USER, channel: BOUND, ts: T1, text: BLUE });
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+    await h.gw.fireMessageEdited(edit);
+
+    h.gw.setHistory([edited, { ts: T2, user: USER, text: "anything new?" }]);
+    await h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T2,
+      text: "anything new?",
+    });
+    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
+    expect(h.turns()[1]).toContain(CHANGED);
+
+    await h.gw.fireMessageEdited(edit);
+    h.gw.setHistory([
+      edited,
+      { ts: T2, user: USER, text: "anything new?" },
+      { ts: T3, user: USER, text: "and now?" },
+    ]);
+    await h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T3,
+      text: "and now?",
+    });
+    expect(await h.settled(() => h.turns().length === 3)).toBe(true);
+    expect(h.turns()[2]).not.toContain(CHANGED);
   });
 
   /**
