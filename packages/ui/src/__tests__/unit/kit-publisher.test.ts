@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // TEST_OVERVIEW: a user tells a kit the platform team publishes from a kit another user published, on the catalog tile and in the kit modal's header. The team's kit names the install's brand, as configured, beside a mark; a user's kit names that user, and only the header links the user's page, because the whole tile is one button.
 import type { StarterKitPublisher, StarterKitView } from "api-server-api";
 import { createElement } from "react";
@@ -47,7 +48,9 @@ function byline(publisher: StarterKitPublisher, surface: "tile" | "header") {
 }
 
 function text(html: string): string {
-  return html.replace(/<[^>]+>/g, "");
+  return (
+    new DOMParser().parseFromString(html, "text/html").body.textContent ?? ""
+  );
 }
 
 describe("KitPublisher", () => {
