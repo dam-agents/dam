@@ -78,6 +78,7 @@ export enum EventType {
   AgentResourceRemoved = "AgentResourceRemoved",
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
+  AssistantUsed = "AssistantUsed",
   CostReviewStarted = "CostReviewStarted",
   CostReviewDismissed = "CostReviewDismissed",
 }
@@ -255,6 +256,8 @@ export type ApprovalRequested = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the parent a scoped child's prompt surfaces on, when the request came from such a child.
+  forAgentId?: string;
 };
 
 export type ApprovalResolved = {
@@ -263,6 +266,7 @@ export type ApprovalResolved = {
   agentId: string;
   ownerSub: string;
   resolution: ApprovalResolution;
+  forAgentId?: string;
 };
 
 export type SpendLimitsChanged = {
@@ -587,6 +591,13 @@ export type GettingStartedReset = {
   ownerSub: string;
 };
 
+/** UNIT_BOUNDARY_DESCRIPTION: the assistant was used for the first time since the person's onboarding reset, which takes the greeting and the first landing away in every tab that has the owner signed in. */
+export type AssistantUsed = {
+  type: EventType.AssistantUsed;
+  agentId: string;
+  ownerSub: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -650,6 +661,7 @@ export type DomainEvent =
   | AgentResourceRemoved
   | AvatarUnlocked
   | GettingStartedReset
+  | AssistantUsed
   | CostReviewStarted
   | CostReviewDismissed;
 

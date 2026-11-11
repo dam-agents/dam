@@ -21,14 +21,49 @@ export { agentId as driverAgentId };
 
 const root = `${base}/api/agents/${encodeURIComponent(agentId)}`;
 
+const SESSION_REF_VAR = "PLATFORM_SESSION_REF";
+
+const SESSION_ID_VARS = [
+  "HARNESS_SESSION_ID",
+  "CLAUDE_CODE_SESSION_ID",
+  "CODEX_THREAD_ID",
+  "PI_SESSION_ID",
+];
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Driver's Session this script runs in, as
+ * the harness put it in the script's environment, so a spawn records it and
+ * its sub-agent shows only in that Session's chat. Pi hands its chat Sessions
+ * a Session ref; every harness, and a terminal, sets a Session id on its shell
+ * commands, the platform's own variable first. A blank value names nothing:
+ * Pi sets a blank ref outside a chat Session. A script run outside any
+ * Session sends nothing and its sub-agents show in every chat.
+ */
+export function spawningSessionHeaders(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const ref = env[SESSION_REF_VAR]?.trim();
+  const sessionId = SESSION_ID_VARS.map((name) => env[name]?.trim()).find(
+    (value) => value,
+  );
+  return {
+    ...(ref ? { "x-platform-session-ref": ref } : {}),
+    ...(sessionId ? { "x-platform-session-id": sessionId } : {}),
+  };
+}
+
 export async function req<T>(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   const res = await fetch(`${root}${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...extraHeaders,
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -44,5 +79,14 @@ export function log(msg: string): void {
   process.stderr.write(`[invoke] ${msg}\n`);
 }
 
-export const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });

@@ -117,15 +117,14 @@ fi
 
 # The jobs that build what is stale, by the names the jobs API gives them:
 # CI_IMAGES_IMAGES_JOB builds controller, api-server, ui, keycloak and the
-# vm-runner; CI_IMAGES_MOCK_JOB the mock; CI_IMAGES_AGENTS_JOB the default
-# image. CI_IMAGES_CHANGES_JOB, which detects the stale images, is always
-# waited on: when it fails, the build jobs that need it never start under
-# their names, and nothing else would end the wait.
+# vm-runner; CI_IMAGES_AGENTS_JOB the default image and the mock, which one
+# `oci` run builds together. CI_IMAGES_CHANGES_JOB, which detects the stale
+# images, is always waited on: when it fails, the build jobs that need it never
+# start under their names, and nothing else would end the wait.
 JOBS=("${CI_IMAGES_CHANGES_JOB:?}")
 for c in ${stale[@]+"${stale[@]}"}; do
   case "$c" in
-    mock) JOBS+=("${CI_IMAGES_MOCK_JOB:?}") ;;
-    default) JOBS+=("${CI_IMAGES_AGENTS_JOB:?}") ;;
+    mock | default) JOBS+=("${CI_IMAGES_AGENTS_JOB:?}") ;;
     *) JOBS+=("${CI_IMAGES_IMAGES_JOB:?}") ;;
   esac
 done
@@ -156,7 +155,7 @@ while :; do
 done
 
 # One artifact holds every built image's digest, at <component>/<hex>; see
-# image:ci-build. build-mock pushes the mock under its source sha.
+# image:ci-build. build-agents pushes the mock under its source sha.
 for c in ${stale[@]+"${stale[@]}"}; do
   if [ "$c" = mock ]; then
     ref="$IMAGE_PREFIX/mock:$($resolve source-sha mock)"

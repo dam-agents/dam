@@ -18,15 +18,18 @@ import {
   BOB_HOST,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
 } from "api-server-api";
-import type {
-  ClientCredentialsConnectionTemplate,
-  ConnectionTemplate,
-  GitHubAppConnectionTemplate,
-  HeaderConnectionTemplate,
-  NoneConnectionTemplate,
-  OAuthConnectionTemplate,
-  Sigv4ConnectionTemplate,
+import {
+  hostnameOf,
+  type ClientCredentialsConnectionTemplate,
+  type ConnectionTemplate,
+  type GitHubAppConnectionTemplate,
+  type HeaderConnectionTemplate,
+  type NoneConnectionTemplate,
+  type OAuthConnectionTemplate,
+  type OperatorHostApp,
+  type Sigv4ConnectionTemplate,
 } from "./connection-template.js";
 import {
   CUSTOM_HEADER_FAMILY,
@@ -37,6 +40,7 @@ import {
   MODAL_FAMILY,
 } from "./families.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
+import { damContributions, damTargetOf } from "./dam-connection.js";
 import { DEFAULT_S3_SIGNING_REGION } from "./s3-contributions.js";
 
 function envContributions(mappings: EnvMapping[]): Contribution[] {
@@ -58,6 +62,54 @@ export interface GitHubEnterpriseCredentials {
   clientId?: string;
   clientSecret?: string;
   appSlug?: string;
+  hosts?: readonly OperatorHostApp[];
+  retiredHosts?: readonly string[];
+}
+
+interface GitHubEnterpriseHosts {
+  defaults: Omit<OperatorHostApp, "host"> & { host?: string };
+  hostFields: Pick<
+    OAuthConnectionTemplate,
+    "hostApps" | "hostChoices" | "retiredHosts"
+  >;
+}
+
+function githubEnterpriseHosts(
+  creds?: GitHubEnterpriseCredentials,
+): GitHubEnterpriseHosts {
+  const retired = [...new Set((creds?.retiredHosts ?? []).map(hostnameOf))];
+  const apps: OperatorHostApp[] = [];
+  for (const app of [
+    ...(creds?.host ? [{ ...creds, host: creds.host }] : []),
+    ...(creds?.hosts ?? []),
+  ]) {
+    const host = hostnameOf(app.host);
+    if (apps.some((a) => a.host === host)) continue;
+    apps.push({
+      host,
+      ...(app.clientId ? { clientId: app.clientId } : {}),
+      ...(app.clientSecret ? { clientSecret: app.clientSecret } : {}),
+      ...(app.appSlug ? { appSlug: app.appSlug } : {}),
+    });
+  }
+  const choices = apps.filter((a) => !retired.includes(a.host));
+  return {
+    defaults: apps.length > 0 ? (choices[0] ?? {}) : (creds ?? {}),
+    hostFields: {
+      ...(apps.length > 0 ? { hostApps: apps } : {}),
+      ...(choices.length > 0
+        ? { hostChoices: choices.map((a) => a.host) }
+        : {}),
+      ...(retired.length > 0 ? { retiredHosts: retired } : {}),
+    },
+  };
+}
+
+function hostListOf(
+  fields: GitHubEnterpriseHosts["hostFields"],
+): Pick<OAuthConnectionTemplate, "hostChoices" | "retiredHosts"> {
+  const { hostApps: _apps, ...hostList } = fields;
+  return hostList;
 }
 
 export interface OperatorCredentials {
@@ -270,7 +322,7 @@ const CURVE_BENDER_DEPLOYMENT_PATHS = [
  */
 const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
   id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  name: "CurveBender (shared)",
+  name: "CurveBender",
   category: "app",
   isCustom: false,
   description: "Open-source models hosted internally in IBM.",
@@ -316,25 +368,25 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "model",
       envName: "BOB_SHELL_MODEL",
       label: "Model",
-      hint: "Default model for new sessions. Empty → Bob's built-in default.",
+      hint: "Fallback model of a terminal session that names none, after the agent's Config panel and the agent's default provider; a chat session always picks its model. Empty → Bob's built-in default.",
     },
     {
       inputName: "instanceId",
       envName: "BOB_INSTANCE_ID",
       label: "Instance ID",
-      hint: "IBM tenant scoping. Applies to terminal (TUI) sessions; chat sessions ignore it.",
+      hint: "IBM tenant scoping: the Bob instance the agent's chat and terminal sessions run on.",
     },
     {
       inputName: "teamId",
       envName: "BOB_TEAM_ID",
       label: "Team ID",
-      hint: "Team ID for general-type API keys. Applies to terminal (TUI) sessions; chat sessions ignore it.",
+      hint: "Team ID for general-type API keys: the team the agent's chat and terminal sessions run on.",
     },
     {
       inputName: "maxCost",
       envName: "BOB_MAX_COINS",
       label: "Max cost",
-      hint: "Per-task cost cap, written to session.maxCost; Bob stops the task when exceeded.",
+      hint: "Per-task cost cap for chat and terminal sessions, written to session.maxCost; Bob stops the task when exceeded.",
       pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
       patternHint: "a positive amount, e.g. 0.50 or 5",
     },
@@ -342,7 +394,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "chatMode",
       envName: "BOB_CHAT_MODE",
       label: "Mode",
-      hint: `Default mode for new sessions. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      hint: `Starting mode of terminal, channel and scheduled sessions unless the agent's Config panel sets one; a web chat carries the mode its session picker computes. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
     },
   ],
@@ -486,6 +538,7 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
 function githubEnterprise(
   creds?: GitHubEnterpriseCredentials,
 ): OAuthConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -496,10 +549,11 @@ function githubEnterprise(
       "Connect a GitHub Enterprise host so agents can call its API on your behalf.",
     iconSlug: "github-enterprise",
     authKind: "oauth",
-    ...(creds?.host ? { host: creds.host } : {}),
-    ...(creds?.clientId ? { clientId: creds.clientId } : {}),
-    ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
-    ...(creds?.appSlug ? { extras: { appSlug: creds.appSlug } } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...(defaults.clientId ? { clientId: defaults.clientId } : {}),
+    ...(defaults.clientSecret ? { clientSecret: defaults.clientSecret } : {}),
+    ...(defaults.appSlug ? { extras: { appSlug: defaults.appSlug } } : {}),
+    ...hostFields,
     authorizationUrl: "https://{host}/login/oauth/authorize",
     tokenUrl: "https://{host}/login/oauth/access_token",
     scopes: ["repo", "read:user", "user:email"],
@@ -853,6 +907,7 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
 function githubEnterprisePat(
   creds?: GitHubEnterpriseCredentials,
 ): HeaderConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise-pat",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -863,7 +918,8 @@ function githubEnterprisePat(
       "Read + write repos, issues, PRs on a GitHub Enterprise host with a personal access token.",
     iconSlug: "github-enterprise",
     authKind: "header",
-    ...(creds?.host ? { host: creds.host } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...hostListOf(hostFields),
     headerName: "Authorization",
     valueFormat: "Bearer {value}",
     credentialCheck: "github-user",
@@ -874,6 +930,7 @@ function githubEnterprisePat(
 function githubEnterpriseApp(
   creds?: GitHubEnterpriseCredentials,
 ): GitHubAppConnectionTemplate {
+  const { defaults, hostFields } = githubEnterpriseHosts(creds);
   return {
     id: "github-enterprise-app",
     family: GITHUB_ENTERPRISE_FAMILY,
@@ -884,7 +941,8 @@ function githubEnterpriseApp(
       "Act as a GitHub App installation on a GitHub Enterprise host. The platform mints short-lived installation tokens (ghs_…) from the app's private key — usable by bots and scheduled agents, not just interactive sign-in.",
     iconSlug: "github-enterprise",
     authKind: "github-app",
-    ...(creds?.host ? { host: creds.host } : {}),
+    ...(defaults.host ? { host: defaults.host } : {}),
+    ...hostListOf(hostFields),
     apiBaseUrl: "https://api.{host}",
     contributions: [GH_TOKEN_ENV],
   };
@@ -933,6 +991,21 @@ const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   contributions: [],
 };
 
+const FIGMA_MCP: OAuthConnectionTemplate = {
+  id: "figma",
+  name: "Figma",
+  category: "mcp",
+  isCustom: false,
+  description:
+    "Figma's MCP server: agents read designs, frames and variables. Figma limits tool calls per seat — 20 a month on View and Collab seats, 200 a day on Full and Dev seats (600 on Enterprise).",
+  iconSlug: "figma",
+  authKind: "oauth",
+  dynamicRegistration: true,
+  mcpUrl: "https://mcp.figma.com/mcp",
+  registrationClientName: "Claude Code",
+  contributions: [],
+};
+
 const CUSTOM_MCP_NONE: NoneConnectionTemplate = {
   id: "custom-mcp-none",
   family: MCP_SERVER_FAMILY,
@@ -962,6 +1035,27 @@ function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
   };
 }
 
+function dam(
+  baseUrl: string,
+  brandName: string,
+): HeaderConnectionTemplate | null {
+  const target = damTargetOf(baseUrl);
+  if (!target) return null;
+  return {
+    id: DAM_TEMPLATE_ID,
+    name: brandName,
+    category: "app",
+    isCustom: false,
+    description: `Drive this install as you, from an Agent: the \`dam\` CLI, already signed in.`,
+    iconSlug: "key",
+    authKind: "header",
+    host: target.host,
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+    contributions: damContributions(target, brandName),
+  };
+}
+
 function assertContributionsParse(
   templates: ConnectionTemplate[],
 ): ConnectionTemplate[] {
@@ -983,9 +1077,16 @@ export function buildCatalog(
   opts: {
     shareBaseUrl?: string;
     curveBenderDeployment?: boolean;
+    damBaseUrl?: string;
+    brandName?: string;
   } = {},
 ): ConnectionTemplate[] {
+  const damTemplate =
+    opts.damBaseUrl && opts.brandName
+      ? dam(opts.damBaseUrl, opts.brandName)
+      : null;
   return assertContributionsParse([
+    ...(damTemplate ? [damTemplate] : []),
     ...(opts.curveBenderDeployment ? [CURVE_BENDER_DEPLOYMENT] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
@@ -1008,6 +1109,7 @@ export function buildCatalog(
     spotify(creds.spotify),
     slack(creds.slack),
     ...GOOGLE_SERVICES.map((def) => googleService(def, creds.google)),
+    FIGMA_MCP,
     CUSTOM_HEADER,
     CUSTOM_CLIENT_CREDENTIALS,
     CUSTOM_MCP_OAUTH,

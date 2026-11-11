@@ -48,7 +48,10 @@ const DENIAL_HOLD_MS = 1_000;
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
-  composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
+  composeApiContext: (
+    user: UserIdentity,
+    surface: string,
+  ) => Promise<ApiContext>;
 }
 
 /**

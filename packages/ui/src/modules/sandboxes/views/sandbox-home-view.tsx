@@ -28,7 +28,10 @@ import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
-import { AgentModelSettingsSection } from "../components/agent-config-sections.js";
+import {
+  AgentDescriptionSection,
+  AgentModelSettingsSection,
+} from "../components/agent-config-sections.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
@@ -133,6 +136,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
+              <AgentDescriptionSection agent={agent} />
               {holds(agent.access, "sessions") && (
                 <AgentUsageActions agent={agent} />
               )}

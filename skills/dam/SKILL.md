@@ -4,6 +4,7 @@ description: >
   Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
   Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
+  Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -33,6 +34,9 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 6. **Only the CLI talks to DAM.**
    Never call DAM's API directly — with curl, a script or anything else — and never reuse the CLI's sign-in to do so.
    See [When the CLI can't do it](#when-the-cli-cant-do-it).
+7. **Say who can act as the user.**
+   Anyone who can steer a DAM agent uses every connection and satellite it holds.
+   Before you bind a channel, grant a connection or satellite, or widen what an agent reaches, check the agent as the [security advisory](references/security-advisory.md) says: choose the safer set-up it names, and tell the user what each change shares.
 
 ## Set up
 
@@ -295,7 +299,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 
-When a run fails because the agent has no model provider, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
+When a run fails because the session has no model, run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
+When it lists none, or no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Name and avatar
 
@@ -357,9 +362,11 @@ dam connection templates
 dam connection list my-agent
 dam connection grant my-agent --connection github
 dam connection revoke my-agent --connection github
+dam connection default my-agent --connection github-work
 ```
 
 A connection belongs to the user; granting it lets one agent use it.
+An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
 `dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
@@ -426,9 +433,16 @@ Show the user what the request is and act only on their answer (hard rule 4).
 dam channel available
 dam channel list my-agent
 dam channel slack connect my-agent --channel-id C0123ABCD
+dam channel slack-dm status
+dam channel slack-dm connect my-agent --purpose "your Friday draft"
+dam channel slack-dm disconnect my-agent
 ```
 
 A Telegram chat is bound from inside the chat with the bind command, not from the CLI.
+Everyone in a bound channel steers the agent with its connections: check the agent first, as the [security advisory](references/security-advisory.md#check-before-you-share) says.
+
+`dam channel slack-dm` is the DM Bridge: `status` reports whether the user's Slack account can be paired, `connect` binds the agent to the user's own direct message with the bot, and `disconnect` releases it.
+It works only where the deployment trusts the Slack workspace for email pairing and the user's email is verified there; `status` says why when it cannot.
 
 ### Skills on DAM agents
 

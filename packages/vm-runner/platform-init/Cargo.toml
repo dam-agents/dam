@@ -32,6 +32,15 @@ serde_json = "1"
 # of the runner.
 serde = { version = "1", features = ["derive"] }
 smolvm-protocol = { path = "../.smolvm/crates/smolvm-protocol" }
+# The accepting end of the link between agents' machines (link.rs), which runs
+# as a process of its own beside the init, never inside PID 1: an SSH server
+# with sftp, on ring, the one crypto backend the runner already builds, so no
+# second C library joins the static link. No RSA: the dialer's link key is
+# ed25519. tokio is already in the lock by way of the runner.
+russh = { version = "0.65", default-features = false, features = ["ring"] }
+russh-sftp = "3"
+rand = { version = "0.10", features = ["thread_rng"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "process", "fs", "time", "sync"] }
 
 [lints.clippy]
 all = "deny"

@@ -52,12 +52,13 @@ export interface ExtAuthzGate {
   gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzDecision>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from.
+// UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from; or a child whose egress is its own (`own`), whose open rules deny what they do not allow, and whose scoped rules are widened only by the user, on its parent.
 export interface AgentIdentityResolver {
   resolve(agentId: string): Promise<{
     ownerSub: string;
     agentId: string;
     environment?: string;
+    own?: { mode: "open" | "scoped"; parentAgentId: string };
   } | null>;
 }
 
@@ -254,9 +255,25 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           : matched.verdict;
       }
 
+      if (identity.own?.mode === "open") {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "open-child-unlisted",
+          detail: { method, path, via },
+        });
+        return "deny";
+      }
+
+      const attendee = identity.own?.parentAgentId ?? identity.agentId;
       const unattended =
-        (await deps.attendance.hasOpenChannelTurn(identity.agentId)) &&
-        !(await deps.attendance.hasInteractiveSession(identity.agentId));
+        (await deps.attendance.hasOpenChannelTurn(attendee)) &&
+        !(await deps.attendance.hasInteractiveSession(attendee));
 
       const nonDefaultPort = port === (tls ? 443 : 80) ? undefined : port;
       const existing = await deps.repo.findActivePendingExtAuthz({
@@ -284,6 +301,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             ...(identity.environment
               ? { viaEnvironment: identity.environment }
               : {}),
+            ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
           },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
@@ -292,6 +310,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           approvalId: pendingId,
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
+          ...(identity.own ? { forAgentId: identity.own.parentAgentId } : {}),
         });
       }
 

@@ -28,7 +28,10 @@ import {
   createPlatformMcpEntryStore,
   type PlatformMcpEntryStore,
 } from "./infrastructure/platform-mcp-entry-store.js";
-import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
+import {
+  createUndeliveredPromptStore,
+  type UndeliveredPromptStore,
+} from "./infrastructure/undelivered-prompt-store.js";
 import { createContinuedFromStore } from "./infrastructure/continued-from-store.js";
 import {
   createActiveTurnStore,
@@ -105,6 +108,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   gitTraceEnv?: Record<string, string>;
   onTurnOutcome?: (
     sessionId: string,
@@ -302,6 +306,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: RuntimeSessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  undeliveredPrompts: UndeliveredPromptStore;
   subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
   warmHistory: () => void;
@@ -523,6 +528,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        ...(opts.onInvocationTurn && {
+          onInvocationTurn: opts.onInvocationTurn,
+        }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         ...(opts.beforeFirstPrompt && {
@@ -596,6 +604,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    undeliveredPrompts,
     subAgentSessions,
     platformMcpEntry,
     warmHistory: () => {

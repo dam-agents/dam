@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
+import {
+  sessionChoiceReferencesSchema,
+  sessionPairSchema,
+} from "../harness-config/schemas.js";
 import { ARTIFACT_PROMPT_MAX_LENGTH } from "./prompt.js";
 
 export const artifactKindSchema = z.enum([
@@ -173,6 +177,17 @@ export const artifactSendPromptInputSchema = z.object({
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
 });
 
+export const artifactAgentInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const artifactPromptChoiceInputSchema = z
+  .object({
+    id: z.string().min(1),
+    pair: sessionPairSchema.nullable(),
+  })
+  .merge(sessionChoiceReferencesSchema);
+
 export const artifactSendPromptResultSchema = z.discriminatedUnion("ok", [
   z.object({
     ok: z.literal(true),
@@ -181,7 +196,12 @@ export const artifactSendPromptResultSchema = z.discriminatedUnion("ok", [
   }),
   z.object({
     ok: z.literal(false),
-    reason: z.enum(["not-allowed", "agent-unreachable", "spend-limit"]),
+    reason: z.enum([
+      "not-allowed",
+      "agent-unreachable",
+      "spend-limit",
+      "profile-unavailable",
+    ]),
   }),
 ]);
 

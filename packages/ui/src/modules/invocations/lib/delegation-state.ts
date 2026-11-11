@@ -3,7 +3,8 @@ import type { DelegationNode } from "api-server-api";
 import type { AgentView } from "../../../types.js";
 import { VM_MEMORY_FULL } from "../../agents/lib/overlay-copy.js";
 
-export type DelegationDisplayState = "working" | "waiting" | "done" | "failed";
+export type DelegationDisplayState =
+  "working" | "waiting" | "done" | "failed" | "stopped";
 
 export type DelegationTarget = Pick<
   AgentView,
@@ -25,12 +26,21 @@ export function delegationState(
   target: DelegationTarget | undefined,
 ): DelegationDisplayState {
   if (node.status === "done") return "done";
-  if (node.status === "failed") return "failed";
+  if (node.status === "failed") return node.stopped ? "stopped" : "failed";
+  if (node.status === "idle") return "waiting";
   return delegationWaitReason(node, target) !== null ? "waiting" : "working";
 }
 
 export function flattenIds(nodes: readonly DelegationNode[]): string[] {
   return nodes.flatMap((node) => [node.id, ...flattenIds(node.children)]);
+}
+
+export function runningSubAgents(node: DelegationNode): number {
+  return node.children.reduce(
+    (n, child) =>
+      n + (child.status === "running" ? 1 : 0) + runningSubAgents(child),
+    0,
+  );
 }
 
 export function hasRunning(nodes: readonly DelegationNode[]): boolean {
@@ -71,18 +81,33 @@ export function awaitsCapture(
   );
 }
 
+export type DelegationCounts = Record<
+  DelegationNode["status"] | "stopped",
+  number
+>;
+
 export function countByStatus(
   nodes: readonly DelegationNode[],
-): Record<DelegationNode["status"], number> {
-  const counts = { running: 0, done: 0, failed: 0 };
+): DelegationCounts {
+  const counts = { idle: 0, running: 0, done: 0, failed: 0, stopped: 0 };
   for (const node of nodes) {
-    counts[node.status] += 1;
+    counts[node.stopped ? "stopped" : node.status] += 1;
     const nested = countByStatus(node.children);
+    counts.idle += nested.idle;
     counts.running += nested.running;
     counts.done += nested.done;
     counts.failed += nested.failed;
+    counts.stopped += nested.stopped;
   }
   return counts;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a card says of a stop in place of a failure's reason: who stopped it, and the driver's words when it gave them.
+export function stoppedLine(stopped: NonNullable<DelegationNode["stopped"]>) {
+  if (stopped.by === "user") return "Stopped by you";
+  return stopped.reason
+    ? `Stopped by its driver: ${stopped.reason}`
+    : "Stopped by its driver";
 }
 
 export interface DelegationModel {

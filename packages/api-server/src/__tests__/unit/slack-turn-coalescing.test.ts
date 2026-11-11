@@ -9,6 +9,7 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SteerOutcome } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 const SESSION = "sess-1";
@@ -93,6 +94,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -103,6 +105,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

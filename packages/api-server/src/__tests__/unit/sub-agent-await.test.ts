@@ -24,6 +24,9 @@ function setup(views: Record<string, InvocationView | null>) {
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
       tools.set(name, handler);
     },
+    registerTool: (name: string, _config: unknown, handler: Handler) => {
+      tools.set(name, handler);
+    },
   } as unknown as McpServer;
   const leases: Date[] = [];
   const collected: string[][] = [];
@@ -31,7 +34,8 @@ function setup(views: Record<string, InvocationView | null>) {
   const ops = {
     get: async (id: string) => {
       reads++;
-      return views[id] ?? null;
+      const view = views[id];
+      return view ? { run: id, ...view } : null;
     },
   } as unknown as DriverOps;
   registerSubAgentTools(server, {

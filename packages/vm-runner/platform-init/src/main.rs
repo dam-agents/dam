@@ -1,8 +1,13 @@
-// UNIT_BOUNDARY_DESCRIPTION: one binary, two stages. As /sbin/platform-init of the agent rootfs it is the first stage, which mounts the share and executes the share's copy of itself; that copy, the runner release's, is the guest's init.
+// UNIT_BOUNDARY_DESCRIPTION: one binary, two stages and the link. As /sbin/platform-init of the agent rootfs it is the first stage, which mounts the share and executes the share's copy of itself; that copy, the runner release's, is the guest's init, which starts the same copy as platform-link for each connection of the link.
 #[cfg(target_os = "linux")]
 fn main() {
     if std::env::args_os().next().as_deref() == Some(std::ffi::OsStr::new("/sbin/platform-init")) {
         platform_init::boot::stage0()
+    }
+    if std::env::args_os().next().as_deref()
+        == Some(std::ffi::OsStr::new(platform_init::link::PROCESS_NAME))
+    {
+        platform_init::link::session()
     }
     platform_init::boot::run()
 }

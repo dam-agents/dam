@@ -11,3 +11,13 @@ export function useStopDelegation() {
     },
   });
 }
+
+export function useDeleteKeptSubAgent() {
+  return useMutation({
+    ...trpc.agents.delete.mutationOptions(),
+    meta: {
+      invalidates: [trpc.invocations.pathKey(), trpc.agents.pathKey()],
+      errorToast: "Couldn't delete the sub-agent",
+    },
+  });
+}

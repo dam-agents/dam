@@ -233,6 +233,8 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  // UNIT_BOUNDARY_DESCRIPTION: a sub-agent run's turn starts, the run its prompt names: a run whose prompt waited behind another turn of its session starts here, not when it was queued.
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   onTurnOutcome?: (
@@ -467,8 +469,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       queuedAt,
       frame,
       sender,
+      source,
     }) => {
       autonomousTurns.end(sessionId);
+      const invocationRun = platformString(source, "invocationRun");
+      if (invocationRun) deps.onInvocationTurn?.(sessionId, invocationRun);
       finishHeldRun(sessionId);
       interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);
@@ -725,6 +730,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     historyProvider: deps.historyProvider,
     onProviderServed(sessionId) {
       harnessColdSessions.add(sessionId);
+      deps.sessionMetadata?.markStored(sessionId);
     },
     harnessLoadOrphaned(sessionId) {
       return orphanedHarnessLoads.has(sessionId);
@@ -974,14 +980,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a harness may refuse a model name it has not
-   * listed yet (Claude Code lists the router's catalog lazily), so a critical
-   * setting is sent once more after a short wait; a second refusal answers
+   * listed yet (Claude Code lists the router's catalog lazily, and loading it
+   * can take longer than one short wait), so a critical setting is sent again
+   * after each of a few growing waits; a refusal after the last one answers
    * the queued prompts with the harness's own reason rather than running
    * them on a substitute. The refused value is forgotten, so the next prompt
    * asks again until the model changes.
    */
   const criticalRetries = new Map<string, number>();
-  const CRITICAL_RETRY_MS = 2_000;
+  const CRITICAL_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 16_000];
   function retryCriticalSetting(
     sessionId: string,
     mapping: OutboundMapping,
@@ -990,7 +997,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): boolean {
     const key = `${sessionId}:${mapping.method}`;
     const tried = criticalRetries.get(key) ?? 0;
-    if (tried < 1) {
+    const delay = CRITICAL_RETRY_DELAYS_MS[tried];
+    if (delay !== undefined) {
       criticalRetries.set(key, tried + 1);
       const timer = setTimeout(() => {
         const applied = appliedSettings.get(sessionId);
@@ -998,7 +1006,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (k.startsWith(mapping.method)) applied?.delete(k);
         syncSettings(sessionId, true);
         promptScheduler.onSettingResponse(sessionId, outboundId);
-      }, CRITICAL_RETRY_MS);
+      }, delay);
       timer.unref?.();
       return true;
     }
@@ -2324,6 +2332,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           } else if (mapping.method === "session/load") {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
+          if (
+            (mapping.method === "session/load" ||
+              mapping.method === "session/resume") &&
+            (frame as { error?: unknown }).error === undefined
+          )
+            deps.sessionMetadata?.markStored(mapping.attachSessionId);
           if (
             !mapping.rehydrate &&
             (mapping.method === "session/load" ||

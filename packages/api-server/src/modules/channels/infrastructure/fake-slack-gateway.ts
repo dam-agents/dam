@@ -14,6 +14,7 @@ import type {
   SlackSessionStoppedEvent,
   SlackSlashCommand,
   SlackUserInfo,
+  SlackEmailUser,
   SlackWorkspace,
 } from "./slack-gateway.js";
 
@@ -25,6 +26,7 @@ export interface FakeSlackChannel {
   botIsMember: boolean;
   members?: string[];
   isPrivate?: boolean;
+  isGroupDirectMessage?: boolean;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
@@ -75,6 +77,8 @@ export interface FakeSlackGateway extends SlackGateway {
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
+  setEmailUsers(users: SlackEmailUser[]): void;
+  readEmailLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
@@ -163,19 +167,22 @@ function hiddenInThread(m: SlackMessage): boolean {
 
 function channelWindowOf(
   history: SlackMessage[],
-  oldest: string | undefined,
+  range: { oldest?: string | undefined; latest?: string | undefined },
   modelsThreads: boolean,
 ): SlackMessage[] {
   const topLevel = modelsThreads
     ? history.filter((m) => !hiddenInThread(m))
     : [...history];
-  if (oldest === undefined) return [...topLevel];
+  const floor = range.oldest === undefined ? null : Number(range.oldest);
+  const ceiling = range.latest === undefined ? null : Number(range.latest);
   return topLevel.filter((m) => {
     if (m.ts === undefined) return true;
     const at = Number(m.ts);
-    const floor = Number(oldest);
-    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
-    return at >= floor;
+    if (!Number.isFinite(at)) return true;
+    if (floor !== null && Number.isFinite(floor) && at < floor) return false;
+    if (ceiling !== null && Number.isFinite(ceiling) && at >= ceiling)
+      return false;
+    return true;
   });
 }
 
@@ -187,6 +194,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
+  let emailUsers: SlackEmailUser[] = [];
+  const emailLookups: string[] = [];
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
   let nextFileId = 1;
@@ -308,7 +317,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async getChannelHistory(args) {
       const newestFirst = channelWindowOf(
         history,
-        args.oldest,
+        { oldest: args.oldest, latest: args.latest },
         modelsThreads,
       ).reverse();
       return {
@@ -389,8 +398,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ? {
             kind: "found",
             isMember: channel.botIsMember,
-            isDirectMessage: false,
-            isGroupDirectMessage: false,
+            isDirectMessage: channel.isGroupDirectMessage ?? false,
+            isGroupDirectMessage: channel.isGroupDirectMessage ?? false,
             name: channel.name,
             directMessageUser: null,
           }
@@ -415,6 +424,15 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async getUserInfo(userId) {
       userLookups.push(userId);
       return users.find((u) => u.id === userId) ?? null;
+    },
+
+    /* UNIT_BOUNDARY_DESCRIPTION: The fake answers with what a test configured,
+     * not with a filtered result: a mismatch of mailbox, workspace or
+     * organization must reach the caller's own refusals instead of being
+     * tidied away here. */
+    async lookupUserByEmail(email, teamId) {
+      emailLookups.push(`${teamId}|${email}`);
+      return emailUsers[0] ?? null;
     },
 
     async getMessageReactions(channel, ts) {
@@ -534,6 +552,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     readUserLookups() {
       return [...userLookups];
+    },
+
+    setEmailUsers(next) {
+      emailUsers = [...next];
+    },
+
+    readEmailLookups() {
+      return [...emailLookups];
     },
 
     async getGrantedScopes() {

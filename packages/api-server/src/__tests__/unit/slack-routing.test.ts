@@ -25,6 +25,7 @@ function entry(
     name,
     owner: "owner-sub",
     ambient: false,
+    history: false,
     isDefault: opts.isDefault ?? false,
   };
 }

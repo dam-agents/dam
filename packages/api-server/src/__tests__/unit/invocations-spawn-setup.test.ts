@@ -12,40 +12,19 @@ import {
 } from "../../modules/invocations/services/invocations-service.js";
 import { createSetupFailure } from "../../modules/invocations/services/setup-failure.js";
 import { inheritProvider } from "../../modules/invocations/domain/provider-inheritance.js";
+import { fakeInvocationsRepo } from "../helpers/invocations-repo.js";
 
 // TEST_OVERVIEW: A spawn sets up its sub-agent the way a starter kit sets up an agent. The endpoint resolves the harness to its Template, or runs a given image instead, and collects the driver's provider grants; the service turns the Agent Setup into the create, queues the install ahead of the task, and gives the target the driver's provider. A failed seed or install fails the Invocation at once.
 
 function repoStub(overrides: Partial<InvocationsRepository> = {}) {
   const failed: Array<[string, string]> = [];
-  const repo: InvocationsRepository = {
-    insert: async () => {},
-    get: async () => null,
-    complete: async () => true,
-    markStarted: async () => null,
-    failExpired: async () => false,
-    fail: async (id, reason) => {
-      failed.push([id, reason]);
+  const repo = fakeInvocationsRepo({
+    fail: async (runId, reason) => {
+      failed.push([runId, reason]);
+      return { cancelPending: false };
     },
-    listExpiredRunning: async () => [],
-    listRunning: async () => [],
-    listRunningByDriver: async () => [],
-    listRunningAgentIds: async () => [],
-    listTargetsByOwner: async () => [],
-    listRootDriverIds: async () => [],
-    listTerminalUnreaped: async () => [],
-    markReaped: async () => {},
-    markTranscriptCaptured: async () => {},
-    listByRoot: async () => [],
-    listUnreapedByRoot: async () => [],
-    delete: async () => {},
-    finishScript: async () => true,
-    dropOutputStream: async () => {},
-    clearOutput: async () => {},
-    listExpiredOutputs: async () => [],
-    listScriptsByRoot: async () => [],
-    deleteReapedByRoot: async () => 0,
     ...overrides,
-  };
+  });
   return { repo, failed };
 }
 
@@ -80,7 +59,12 @@ function makeService(opts: { failPin?: boolean } = {}) {
     } as never,
     wakeAgent: async () => {},
     reaper: { reap: async () => {} },
+    stopper: {
+      stop: async () => ({ stopped: false }),
+      running: async () => false,
+    },
     reportedReap: { afterReport: () => {} },
+    cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,
     skills: {
@@ -200,7 +184,8 @@ function makeFailingSkillsService(
   }) => Promise<unknown>,
 ) {
   const { repo, failed } = repoStub({
-    get: async (id) => ({ id, owner: "owner-1", status: "running" }) as never,
+    get: async (id) =>
+      ({ id, owner: "owner-1", status: "running", runId: id }) as never,
   });
   const deleted: string[] = [];
   const service = createInvocationsService({
@@ -225,7 +210,12 @@ function makeFailingSkillsService(
         deleted.push(row.id);
       },
     },
+    stopper: {
+      stop: async () => ({ stopped: false }),
+      running: async () => false,
+    },
     reportedReap: { afterReport: () => {} },
+    cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,
     skills: { applyEntries } as never,
@@ -440,7 +430,12 @@ describe("a failed seed or install fails the Invocation", () => {
   test("a running target fails with the step's reason and is deleted", async () => {
     const { repo, failed } = repoStub({
       get: async () =>
-        ({ id: "agent-1", owner: "owner-1", status: "running" }) as never,
+        ({
+          id: "agent-1",
+          owner: "owner-1",
+          status: "running",
+          runId: "agent-1",
+        }) as never,
     });
     const deleted: string[] = [];
     const fail = createSetupFailure({
@@ -489,6 +484,7 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
+    spawningSession: async () => null,
     readAgent: async (id: string) =>
       id === "driver-1"
         ? {

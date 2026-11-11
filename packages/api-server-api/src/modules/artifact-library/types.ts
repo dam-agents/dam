@@ -1,6 +1,8 @@
 import type { z } from "zod";
+import type { SessionChoiceSlots } from "../harness-config/types.js";
 import type {
   artifactCallAgentApiInputSchema,
+  artifactPromptChoiceInputSchema,
   artifactCallAgentApiResultSchema,
   artifactSendPromptInputSchema,
   artifactSendPromptResultSchema,
@@ -163,6 +165,24 @@ export interface ArtifactLibraryService {
     input: ArtifactSendPromptInput,
     caller: { agentIds: readonly string[] | "*" },
   ): Promise<ArtifactSendPromptResult>;
+  promptChoice(
+    id: string,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<SessionChoiceSlots>;
+  setPromptChoice(
+    input: ArtifactPromptChoiceInput,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<void>;
+  agentPromptChoices(
+    agentId: string,
+    caller: { agentIds: readonly string[] | "*" },
+  ): Promise<ArtifactPromptChoiceRow[]>;
+}
+
+export interface ArtifactPromptChoiceRow {
+  id: string;
+  title: string;
+  choice: SessionChoiceSlots;
 }
 
 export interface ArtifactTouch {
@@ -190,6 +210,9 @@ export type ArtifactCallAgentApiResult = z.infer<
 >;
 export type ArtifactSendPromptInput = z.infer<
   typeof artifactSendPromptInputSchema
+>;
+export type ArtifactPromptChoiceInput = z.infer<
+  typeof artifactPromptChoiceInputSchema
 >;
 export type ArtifactSendPromptResult = z.infer<
   typeof artifactSendPromptResultSchema

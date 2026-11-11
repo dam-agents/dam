@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Whose rules an egress request falls under. An ordinary agent decides by its own; an Environment by its Owning Agent's, of the same owner, and the approval names the Environment. An Environment whose Owning Agent is gone or belongs to someone else resolves to nothing, so the gate denies it.
+// TEST_OVERVIEW: Whose rules an egress request falls under. An ordinary agent decides by its own; an Environment by its Owning Agent's, of the same owner, and the approval names the Environment; a child whose egress is its own by its own. An Environment whose Owning Agent is gone or belongs to someone else resolves to nothing, so the gate denies it.
 import { describe, expect, it } from "vitest";
 import {
   createEgressIdentityResolver,
@@ -54,5 +54,42 @@ describe("the egress identity", () => {
     expect(await r.resolve("agent-env")).toBeNull();
     expect(await r.resolve("agent-orphan")).toBeNull();
     expect(await r.resolve("agent-unknown")).toBeNull();
+  });
+
+  // TEST_SCENARIO: a child whose egress is its own, or whose nearest such ancestor is, falls under that child, not its root: an Environment no longer hops to its Owning Agent, and the result says how the child's rules widen and which parent shows its prompts.
+  it("stops at the nearest child with egress of its own", async () => {
+    const r = createEgressIdentityResolver({
+      resolveRoot: async () => "agent-root",
+      identityOf: async (id) =>
+        ({
+          "agent-root": { owner: "alice", agentId: "agent-root" },
+          "agent-env": {
+            owner: "alice",
+            agentId: "agent-env",
+            environmentOf: "agent-root",
+          },
+        })[id] ?? null,
+      environmentName: async () => "pr-42",
+      nearestOwnEgress: async (id) =>
+        id === "agent-env" || id === "agent-env-child"
+          ? {
+              agentId: "agent-env",
+              mode: "scoped",
+              parentAgentId: "agent-root",
+            }
+          : null,
+    });
+    const own = {
+      ownerSub: "alice",
+      agentId: "agent-env",
+      environment: "pr-42",
+      own: { mode: "scoped", parentAgentId: "agent-root" },
+    };
+    expect(await r.resolve("agent-env")).toEqual(own);
+    expect(await r.resolve("agent-env-child")).toEqual(own);
+    expect(await r.resolve("agent-root")).toEqual({
+      ownerSub: "alice",
+      agentId: "agent-root",
+    });
   });
 });

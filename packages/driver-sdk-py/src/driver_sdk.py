@@ -10,6 +10,12 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
 - ``spawn_script`` runs a shell command on a sub-agent set up the same way,
   with no model turn, and returns its exit code, stdout and stderr byte for
   byte.
+- ``spawn_slate`` starts a clean slate that runs nothing until
+  ``SubAgent.run`` or ``run_script``; enter it meanwhile with ``ssh sub-<id>``.
+  ``sub_agent(id)`` is a handle on one spawned with ``keep``.
+- ``spawn`` and ``spawn_script`` take ``cancel``, a ``threading.Event``: set
+  it to stop the sub-agent, which raises ``Stopped``. ``SubAgent.stop`` stops
+  a clean slate or a kept one.
 - ``list_images`` / ``list_connections`` read what a spawn can use.
 - ``s`` is shorthand for result schemas.
 
@@ -25,8 +31,10 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -34,14 +42,20 @@ __all__ = [
     "InvocationFailed",
     "ScriptFailed",
     "ScriptOutput",
+    "Stopped",
+    "SubAgent",
     "list_connections",
     "list_images",
     "s",
     "spawn",
     "spawn_script",
+    "spawn_slate",
+    "sub_agent",
 ]
 
 _DEFAULT_POLL_SECONDS = 5.0
+_SCRIPT_STOP_REASON = "its script aborted the spawn"
+_MAX_STOP_REASON_CHARS = 500
 # A sub-agent may wait up to its ttl for room to start, then has its whole
 # ttl for the work: twice the ttl (the server's default is 1h) plus the
 # liveness sweep's period and a few polls of slack.
@@ -60,6 +74,16 @@ class InvocationFailed(Exception):
         super().__init__(f"invocation {label} ({invocation_id}) failed{detail}")
         self.invocation_id = invocation_id
         self.reason = reason
+
+
+class Stopped(Exception):
+    """A spawn whose ``cancel`` event was set: the sub-agent, and every
+    sub-agent it started in turn, was stopped before it ended."""
+
+    def __init__(self, invocation_id: str | None, label: str):
+        which = f"{label} ({invocation_id})" if invocation_id else label
+        super().__init__(f"invocation {which} stopped")
+        self.invocation_id = invocation_id
 
 
 def _log(msg: str) -> None:
@@ -85,7 +109,41 @@ _RETRY_ATTEMPTS = 4
 _RETRY_BASE_DELAY_S = 1.0
 
 
-def _request(method: str, path: str, body: Any | None = None) -> Any:
+_SESSION_REF_VAR = "PLATFORM_SESSION_REF"
+_SESSION_ID_VARS = (
+    "HARNESS_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "CODEX_THREAD_ID",
+    "PI_SESSION_ID",
+)
+
+
+def _spawning_session_headers() -> dict[str, str]:
+    """The driver's session this script runs in, as the harness put it in the
+    script's environment, so a spawn records it and its sub-agent shows only
+    in that session's chat. Pi hands its chat sessions a session ref; every
+    harness, and a terminal, sets a session id on its shell commands, the
+    platform's own variable first. A blank value names nothing: Pi sets a
+    blank ref outside a chat session."""
+    headers: dict[str, str] = {}
+    ref = os.environ.get(_SESSION_REF_VAR, "").strip()
+    if ref:
+        headers["x-platform-session-ref"] = ref
+    session_id = next(
+        (v for v in (os.environ.get(n, "").strip() for n in _SESSION_ID_VARS) if v),
+        None,
+    )
+    if session_id:
+        headers["x-platform-session-id"] = session_id
+    return headers
+
+
+def _request(
+    method: str,
+    path: str,
+    body: Any | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
     """One platform call. GETs retry transient failures with backoff, since a
     long run polls thousands of times. A POST is sent once: a duplicated
     POST /invocations is a second sub-agent, not a duplicate."""
@@ -100,7 +158,10 @@ def _request(method: str, path: str, body: Any | None = None) -> Any:
             f"{root}{path}",
             data=data,
             method=method,
-            headers={"content-type": "application/json"} if data else {},
+            headers={
+                **({"content-type": "application/json"} if data else {}),
+                **(headers or {}),
+            },
         )
         try:
             with urllib.request.urlopen(req) as res:
@@ -195,7 +256,11 @@ def _target_body(
     *,
     harness: str | None,
     image: str | None,
-    connections: list[str] | None,
+    connections: list[str] | str | None,
+    egress: Any | None = None,
+    keep: bool = False,
+    keep_for_ms: int | None = None,
+    idle_timeout_min: int | None = None,
     seed: dict[str, Any] | None,
     install: str | None,
     env: dict[str, str] | None,
@@ -213,8 +278,16 @@ def _target_body(
         body["image"] = image
     if label is not None:
         body["label"] = label
-    if connections:
+    if connections is not None:
         body["connections"] = connections
+    if egress is not None:
+        body["egress"] = egress
+    if keep:
+        body["keep"] = True
+    if keep_for_ms is not None:
+        body["keepForMs"] = keep_for_ms
+    if idle_timeout_min is not None:
+        body["idleTimeoutMin"] = idle_timeout_min
     if seed is not None:
         body["seed"] = seed
     if install is not None:
@@ -230,6 +303,11 @@ def _target_body(
     return body
 
 
+def _segment(id_: str) -> str:
+    """A sub-agent or run id as one path segment; a run id holds colons."""
+    return urllib.parse.quote(id_, safe="")
+
+
 def _await(
     invocation_id: str,
     name: str,
@@ -237,6 +315,8 @@ def _await(
     ttl_ms: int | None,
     poll_seconds: float,
     timeout_seconds: float | None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + (
         timeout_seconds
@@ -245,8 +325,12 @@ def _await(
     )
     waiting = None
     while True:
-        view = _request("GET", f"/invocations/{invocation_id}")
-        if view["status"] != "running":
+        if cancel is not None and cancel.is_set():
+            _stop(invocation_id, cancel_reason)
+            _log(f"stopped {name} ({invocation_id})")
+            raise Stopped(invocation_id, name)
+        view = _request("GET", f"/invocations/{_segment(invocation_id)}")
+        if view["status"] in ("done", "failed"):
             return view
         if view.get("waiting") != waiting:
             waiting = view.get("waiting")
@@ -254,7 +338,18 @@ def _await(
                 _log(f"{name} ({invocation_id}) waits for room to start: {waiting}")
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
-        time.sleep(poll_seconds)
+        if cancel is not None:
+            cancel.wait(poll_seconds)
+        else:
+            time.sleep(poll_seconds)
+
+
+def _stop(invocation_id: str, reason: str | None = None) -> bool:
+    reason = reason.strip()[:_MAX_STOP_REASON_CHARS].strip() if reason else None
+    body = {"reason": reason} if reason else {}
+    return _request("POST", f"/invocations/{_segment(invocation_id)}/stop", body)[
+        "stopped"
+    ]
 
 
 def spawn(
@@ -263,7 +358,12 @@ def spawn(
     *,
     harness: str | None = None,
     image: str | None = None,
-    connections: list[str] | None = None,
+    connections: list[str] | str | None = None,
+    egress: Any | None = None,
+    keep: bool = False,
+    keep_for_ms: int | None = None,
+    idle_timeout_min: int | None = None,
+    on_spawned: Any | None = None,
     seed: dict[str, Any] | None = None,
     install: str | None = None,
     env: dict[str, str] | None = None,
@@ -276,6 +376,8 @@ def spawn(
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> Any:
     """Spawn a sub-agent and block until its schema-validated result.
 
@@ -291,10 +393,21 @@ def spawn(
     and ``skills=[{"source": ..., "name": ...}]``. A failed seed or install
     fails the spawn at once with its reason.
 
-    The sub-agent runs on this driver's model provider and receives only the
-    ``connections`` passed (ids from ``list_connections()``). Its egress
-    follows this driver's rules, except the hosts of its own model provider,
-    which pass over them.
+    The sub-agent runs on this driver's model provider. ``connections`` says
+    which of this driver's connections it holds: ``"none"`` (the default),
+    only its model; ``"parent"``, all of them, granted and revoked with the
+    driver's own; or a list of ids from ``list_connections()``, copied once.
+    ``egress`` says whose rules decide its requests: ``"parent"`` (the
+    default), the rules of this driver's root agent, live, except the hosts of
+    its own model provider, which pass over them; ``"open"`` or
+    ``{"open": [rules]}``, rules this driver sets (``SubAgent.set_egress``)
+    with no prompt and anything else denied, except an allow rule to a
+    wildcard host, which waits for the owner's approval; or ``{"scoped": [hosts]}``, a copy of the driver's rules for those
+    hosts that only the user widens. With ``keep=True`` it outlives its result
+    asleep until ``keep_for_ms`` (a day by default), sleeping after
+    ``idle_timeout_min`` minutes idle (the install's default otherwise), so it
+    can be entered over ``ssh sub-<id>`` or given more runs (``sub_agent(id)``);
+    ``on_spawned`` gets its id at once. Its own Environments go with it when it is removed.
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
     sub-agent the moment it lapses, mid-work or not. It runs from the
@@ -312,11 +425,22 @@ def spawn(
     before anything is created; a setting the harness cannot apply fails the
     spawn once the sub-agent boots. Omit ``model`` to run on this agent's
     default model, on the harness that default runs on; on any other
-    harness, or with no default, the spawn is refused."""
+    harness, or with no default, the spawn is refused.
+
+    Set ``cancel`` (a ``threading.Event``) from another thread to stop the
+    sub-agent, and every sub-agent it started in turn, before it ends: the
+    call raises ``Stopped``, and an event set before the call spawns nothing.
+    ``cancel_reason`` is the stop's reason, which the user reads; a spawn with
+    ``keep``, which is stopped only with a reason, says its script aborted it
+    when none is given."""
     body = _target_body(
         harness=harness,
         image=image,
         connections=connections,
+        egress=egress,
+        keep=keep,
+        keep_for_ms=keep_for_ms,
+        idle_timeout_min=idle_timeout_min,
         seed=seed,
         install=install,
         env=env,
@@ -338,8 +462,14 @@ def spawn(
     if harness_config:
         body["harnessConfig"] = harness_config
 
-    invocation_id = _request("POST", "/invocations", body)["id"]
+    if cancel is not None and cancel.is_set():
+        raise Stopped(None, name)
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
     _log(f"spawned {name} ({invocation_id})")
+    if on_spawned is not None:
+        on_spawned(invocation_id)
 
     view = _await(
         invocation_id,
@@ -347,11 +477,178 @@ def spawn(
         ttl_ms=ttl_ms,
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
+        cancel=cancel,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     if view["status"] == "failed":
         raise InvocationFailed(invocation_id, name, view.get("errorReason"))
     _log(f"{name} ({invocation_id}) done")
     return view.get("result")
+
+
+class SubAgent:
+    """A sub-agent this driver works in rather than fires once: spawned by
+    ``spawn_slate`` as a clean slate that runs nothing, entered over the link
+    (``ssh sub-<id>``, ``scp``) to put files in and take them out, and given
+    runs, a prompt with its schema or a script, each on the same machine with
+    its files. Without keep it is removed after its first result; with keep it
+    takes runs until its keep expiry, which ``keep`` moves. Its own
+    Environments go with it when it is removed. A kept one takes several runs
+    at once (from threads), each awaited on its own. A prompt run continues the
+    conversation of the latest prompt run unless it names another ``session``
+    (``last_session`` holds the one each run ran in), or ``"new"`` for a fresh
+    one."""
+
+    last_session: str | None = None
+
+    def __init__(self, invocation_id: str, name: str | None = None):
+        self.id = invocation_id
+        self._name = name or invocation_id
+
+    def _start(
+        self,
+        body: dict[str, Any],
+        ttl_ms: int | None,
+        poll_seconds: float,
+        timeout_seconds: float | None,
+    ) -> dict[str, Any]:
+        if ttl_ms is not None:
+            body["ttlMs"] = ttl_ms
+        run = _request("POST", f"/invocations/{_segment(self.id)}/run", body)["run"]
+        _log(f"run {run} started in {self._name} ({self.id})")
+        return _await(
+            run,
+            self._name,
+            ttl_ms=ttl_ms,
+            poll_seconds=poll_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def run(
+        self,
+        prompt: str,
+        schema: Any,
+        *,
+        model: str | None = None,
+        session: str | None = None,
+        ttl_ms: int | None = None,
+        poll_seconds: float = _DEFAULT_POLL_SECONDS,
+        timeout_seconds: float | None = None,
+    ) -> Any:
+        """Run a prompt in this sub-agent and block until its schema-validated
+        result. ``model`` names the model as ``spawn`` takes it; this agent's
+        default model on the sub-agent's harness otherwise. ``session`` picks
+        the conversation it continues, as described on the class."""
+        body: dict[str, Any] = {"prompt": prompt, "schema": s(schema)}
+        if model is not None:
+            body["model"] = model
+        if session is not None:
+            body["session"] = session
+        view = self._start(body, ttl_ms, poll_seconds, timeout_seconds)
+        if view.get("session"):
+            self.last_session = view["session"]
+        if view["status"] == "failed":
+            raise InvocationFailed(self.id, self._name, view.get("errorReason"))
+        return view.get("result")
+
+    def run_script(
+        self,
+        script: str,
+        *,
+        ttl_ms: int | None = None,
+        poll_seconds: float = _DEFAULT_POLL_SECONDS,
+        timeout_seconds: float | None = None,
+    ) -> ScriptOutput:
+        """Run a shell command in this sub-agent, as ``spawn_script`` does."""
+        view = self._start({"script": script}, ttl_ms, poll_seconds, timeout_seconds)
+        output = ScriptOutput(
+            view.get("run") or self.id, view.get("exitCode"), view.get("output") or {}
+        )
+        if view["status"] == "failed":
+            raise ScriptFailed(self.id, self._name, view.get("errorReason"), output)
+        return output
+
+    def keep(
+        self, keep_for_ms: int | None = None, *, idle_timeout_min: int | None = None
+    ) -> str:
+        """Keep this sub-agent ``keep_for_ms`` from now, and let it sleep after
+        ``idle_timeout_min`` minutes idle; returns the keep expiry."""
+        body: dict[str, Any] = {}
+        if keep_for_ms is not None:
+            body["keepForMs"] = keep_for_ms
+        if idle_timeout_min is not None:
+            body["idleTimeoutMin"] = idle_timeout_min
+        return _request("POST", f"/invocations/{_segment(self.id)}/keep", body)[
+            "keepUntil"
+        ]
+
+    def stop(self, reason: str | None = None) -> bool:
+        """Stop its runs, and every sub-agent it started in turn. A kept one
+        keeps its conversation and is stopped only with a ``reason``, which its
+        user reads. False when nothing was running."""
+        stopped = _stop(self.id, reason)
+        _log(
+            f"{'stopped' if stopped else 'nothing running in'} {self._name} ({self.id})"
+        )
+        return stopped
+
+    def wake(self) -> None:
+        """Wake it when it sleeps; ``ssh sub-<id>`` does this itself."""
+        _request("POST", f"/invocations/{self.id}/wake", {})
+
+    def set_egress(self, rules: list[dict[str, Any]]) -> None:
+        """Replace the rules of a sub-agent spawned with ``egress="open"``."""
+        _request("POST", f"/invocations/{self.id}/egress", {"rules": rules})
+
+
+def spawn_slate(
+    *,
+    harness: str | None = None,
+    image: str | None = None,
+    connections: list[str] | str | None = None,
+    egress: Any | None = None,
+    keep: bool = False,
+    keep_for_ms: int | None = None,
+    idle_timeout_min: int | None = None,
+    seed: dict[str, Any] | None = None,
+    install: str | None = None,
+    env: dict[str, str] | None = None,
+    resources: dict[str, str] | None = None,
+    skills: list[dict[str, str]] | None = None,
+    ttl_ms: int | None = None,
+    label: str | None = None,
+) -> SubAgent:
+    """Spawn a clean slate: a sub-agent set up as ``spawn`` sets one up that
+    runs nothing until ``SubAgent.run`` or ``run_script``. Enter it meanwhile
+    with ``ssh sub-<id>``. Not kept, it is removed after its first result, or
+    at ``ttl_ms`` if it never runs."""
+    body = _target_body(
+        harness=harness,
+        image=image,
+        connections=connections,
+        egress=egress,
+        keep=keep,
+        keep_for_ms=keep_for_ms,
+        idle_timeout_min=idle_timeout_min,
+        seed=seed,
+        install=install,
+        env=env,
+        resources=resources,
+        skills=skills,
+        ttl_ms=ttl_ms,
+        label=label,
+    )
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
+    name = label or harness or image or invocation_id
+    _log(f"spawned clean slate {name} ({invocation_id})")
+    return SubAgent(invocation_id, name)
+
+
+def sub_agent(invocation_id: str) -> SubAgent:
+    """A handle on a sub-agent this driver spawned, by its id."""
+    return SubAgent(invocation_id)
 
 
 _STREAMS = ("stdout", "stderr")
@@ -409,7 +706,7 @@ class ScriptOutput:
     def _path(self, stream: str) -> str:
         if stream not in _STREAMS:
             raise ValueError(f"stream is one of {_STREAMS}, not {stream!r}")
-        return f"/invocations/{self.invocation_id}/output/{stream}"
+        return f"/invocations/{_segment(self.invocation_id)}/output/{stream}"
 
     def _link(self, stream: str) -> dict[str, Any]:
         path = self._path(stream)
@@ -451,7 +748,12 @@ def spawn_script(
     *,
     harness: str | None = None,
     image: str | None = None,
-    connections: list[str] | None = None,
+    connections: list[str] | str | None = None,
+    egress: Any | None = None,
+    keep: bool = False,
+    keep_for_ms: int | None = None,
+    idle_timeout_min: int | None = None,
+    on_spawned: Any | None = None,
     seed: dict[str, Any] | None = None,
     install: str | None = None,
     env: dict[str, str] | None = None,
@@ -461,6 +763,8 @@ def spawn_script(
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
+    cancel: threading.Event | None = None,
+    cancel_reason: str | None = None,
 ) -> ScriptOutput:
     """Run ``script`` on a sub-agent instead of a prompt, and block until it
     ends. No model turn runs: the sub-agent is set up exactly as ``spawn``
@@ -470,13 +774,18 @@ def spawn_script(
     Returns a ``ScriptOutput`` when the script exits 0; read its streams with
     ``bytes``, ``text`` or ``download``. Any other end raises ``ScriptFailed``
     with the exit code and the tail of stderr in ``reason``. ``ttl_ms`` is the
-    script's deadline: past it the script is killed and the spawn fails."""
+    script's deadline: past it the script is killed and the spawn fails.
+    ``cancel`` stops it as it stops a ``spawn``."""
     if not script.strip():
         raise ValueError("pass a script")
     body = _target_body(
         harness=harness,
         image=image,
         connections=connections,
+        egress=egress,
+        keep=keep,
+        keep_for_ms=keep_for_ms,
+        idle_timeout_min=idle_timeout_min,
         seed=seed,
         install=install,
         env=env,
@@ -488,14 +797,22 @@ def spawn_script(
     body["script"] = script
     name = label or harness or image or "invocation"
 
-    invocation_id = _request("POST", "/invocations", body)["id"]
+    if cancel is not None and cancel.is_set():
+        raise Stopped(None, name)
+    invocation_id = _request("POST", "/invocations", body, _spawning_session_headers())[
+        "id"
+    ]
     _log(f"spawned {name} ({invocation_id})")
+    if on_spawned is not None:
+        on_spawned(invocation_id)
     view = _await(
         invocation_id,
         name,
         ttl_ms=ttl_ms,
         poll_seconds=poll_seconds,
         timeout_seconds=timeout_seconds,
+        cancel=cancel,
+        cancel_reason=cancel_reason or (_SCRIPT_STOP_REASON if keep else None),
     )
     output = ScriptOutput(invocation_id, view.get("exitCode"), view.get("output") or {})
     if view["status"] == "failed":

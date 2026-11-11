@@ -93,12 +93,18 @@ export interface SlackLoopGuardDrops {
   recent: SlackLoopGuardDrop[];
 }
 
+export interface SlackBindingModes {
+  ambient?: boolean | undefined;
+  history?: boolean | undefined;
+}
+
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   teamId?: string;
   label?: SlackConversationLabel;
   ambient?: boolean;
+  history?: boolean;
   default?: boolean;
   customEmoji?: string[] | null;
   loopGuard?: SlackLoopGuardDrops;
@@ -209,7 +215,30 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
   environmentOf?: string;
+  linkFrom?: string;
+  inheritance?: ChildInheritance;
+  /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which tells it what the platform greeted its owner with. Only the provisioning that names it writes it, and only once. */
+  instructions?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the Agent is one the platform makes for the person, so the Connections its create names are granted whatever the flags that offer them to people say. Not expressible over the API: the create's schema does not carry it. */
+  platformGrants?: true;
 };
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a child Agent takes from the Agent that launched it, recorded once at create: its connections mirrored from the parent, copied as a subset, or none, and its egress decided by the parent's root, live. */
+export interface ChildInheritance {
+  parentAgentId: string;
+  connectionsFrom: "parent" | "subset" | "none";
+  egressFrom: "parent" | "open" | "scoped";
+  // UNIT_BOUNDARY_DESCRIPTION: what a child with egress of its own starts with: for `open`, the rules its launching agent set; for `scoped`, the hosts whose rules it copies from its parent, or all of them.
+  egressSeed?: { rules: ChildEgressRuleSeed[] } | { hosts: string[] | "all" };
+}
+
+export interface ChildEgressRuleSeed {
+  host: string;
+  port?: number;
+  method?: string;
+  pathPattern?: string;
+  verdict: "allow" | "deny";
+}
 export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 
 export interface BackgroundWorkItemView {
@@ -375,7 +404,7 @@ export interface AgentsService {
   connectSlack: (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes?: SlackBindingModes,
     customEmoji?: string[] | null,
     options?: { quiet?: boolean },
   ) => Promise<ConnectSlackResult>;

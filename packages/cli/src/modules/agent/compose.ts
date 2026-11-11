@@ -11,6 +11,7 @@ import { buildDeleteCommand } from "./commands/delete.js";
 import { buildDisableCommand } from "./commands/disable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildKeptCommand } from "./commands/kept.js";
 import { buildModelsCommand } from "./commands/models.js";
 import { buildRestartCommand } from "./commands/restart.js";
 import { buildUpdateCommand } from "./commands/update.js";
@@ -72,6 +73,7 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     "Address Agents by name or ID",
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
+  parent.addCommand(buildKeptCommand(shared));
   parent.addCommand(
     buildGetCommand({ ...withModels, createKitService: opts.kitService }),
   );

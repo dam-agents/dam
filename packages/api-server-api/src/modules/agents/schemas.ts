@@ -156,6 +156,7 @@ export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
   ambient: z.boolean().optional(),
+  history: z.boolean().optional(),
   customEmoji: z
     .array(
       z

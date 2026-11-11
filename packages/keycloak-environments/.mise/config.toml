@@ -1,0 +1,11 @@
+[tasks.build]
+description = "Build the Environments extension JAR, with its unit tests, to target/keycloak-environments.jar"
+run = "mvn -q -B package"
+sources = ["src/**/*", "pom.xml"]
+outputs = ["target/keycloak-environments.jar"]
+
+[tasks.test]
+description = "Run the Environments extension's unit tests"
+run = "mvn -q -B test"
+sources = ["src/**/*", "pom.xml"]
+outputs = []

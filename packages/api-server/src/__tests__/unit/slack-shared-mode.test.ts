@@ -13,6 +13,7 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
@@ -73,6 +74,7 @@ function harness(opts: {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -83,6 +85,7 @@ function harness(opts: {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub) => opts.termsAccepted?.(sub) ?? true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

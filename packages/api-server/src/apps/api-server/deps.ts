@@ -1,3 +1,4 @@
+import type { ChildInheritance } from "api-server-api";
 import type { AgentAccess } from "../../modules/agent-keys/index.js";
 import type { CoreV1Api } from "@kubernetes/client-node";
 import type { EnvironmentGate } from "../../modules/environments/index.js";
@@ -121,6 +122,9 @@ export interface ApiServerDeps {
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
+  childEgressSeeder?: {
+    seed(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
   // UNIT_BOUNDARY_DESCRIPTION: what follows the platform's Environments egress rule: the Agent's key.
   platformAccess: AgentAccess;
   trustedHosts: readonly string[];
@@ -149,7 +153,10 @@ export interface ApiServerDeps {
   artifacts: ArtifactService;
   delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
-  userDirectory: Pick<KeycloakUserDirectory, "resolveBySub">;
+  userDirectory: Pick<
+    KeycloakUserDirectory,
+    "resolveBySub" | "resolveVerifiedEmailBySub"
+  >;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

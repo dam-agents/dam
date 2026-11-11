@@ -5,9 +5,11 @@ import {
 } from "api-server-api";
 
 import {
+  AcpModelCallFailedError,
   AcpModelRefusedError,
   AcpTurnAbandonedError,
 } from "../../../core/acp-client.js";
+import { agentSessionUrl } from "./agent-footer.js";
 import { ChannelProfileRefusedError } from "./channel-profile.js";
 import { PROVIDER_UNAVAILABLE_TURN_REASON } from "../../../events.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
@@ -97,6 +99,19 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
       kind: "provider-unavailable",
       reason: PROVIDER_UNAVAILABLE_TURN_REASON,
     };
+  if (err instanceof AcpModelCallFailedError)
+    return {
+      kind: "plain",
+      reason:
+        err.failure === "rejected"
+          ? "model-call-rejected"
+          : "model-call-failed",
+      copy: ({ uiBaseUrl, agentId }) =>
+        modelCallFailedUserCopy(err, {
+          providersUrl: agentPageUrl(uiBaseUrl, agentId, "providers"),
+          sessionUrl: agentSessionUrl(uiBaseUrl, agentId, err.sessionId),
+        }),
+    };
   return {
     kind: "plain",
     reason: "acp-error",
@@ -107,7 +122,11 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
 function errorText(err: unknown): string {
   if (err === null || typeof err !== "object") return String(err);
   const { message, data } = err as { message?: unknown; data?: unknown };
-  return [message, jsonRpcErrorDetails(data)]
+  return [
+    message,
+    jsonRpcErrorDetails(data),
+    ...(err instanceof AcpModelCallFailedError ? [errorText(err.cause)] : []),
+  ]
     .filter((part) => typeof part === "string")
     .join(" ");
 }
@@ -149,6 +168,25 @@ function modelRefusedUserCopy(
     : `${refused} Try rephrasing it, or ${switchModel}`;
 }
 
+function modelCallFailedUserCopy(
+  err: AcpModelCallFailedError,
+  links: { providersUrl: string; sessionUrl: string },
+): string {
+  const failed =
+    err.failure === "rejected"
+      ? "The agent's model call was refused, so it couldn't answer this message."
+      : "The agent's model call failed, so it couldn't answer this message.";
+  const said =
+    err.providerText === null
+      ? ""
+      : ` The error was: “${err.providerText.replace(/</g, "‹").replace(/>/g, "›")}”.`;
+  const next =
+    err.failure === "rejected"
+      ? `Try again in a moment. If it fails again, ask the agent's owner to check its model provider — its key, its quota and its access to the model — at ${links.providersUrl}`
+      : `Try again in a moment. If it keeps failing, ask the agent's owner to check its model provider at ${links.providersUrl}`;
+  return `${failed}${said} ${next}\nThe session, with the error: ${links.sessionUrl}`;
+}
+
 function noDefaultModelUserCopy(
   err: NoDefaultModelError,
   uiBaseUrl: string,
@@ -158,6 +196,6 @@ function noDefaultModelUserCopy(
   if (err.pending)
     return "This agent is still setting up its default model after an update. Try again in a minute.";
   return err.model === undefined
-    ? `This agent has no model provider, so it can't answer here yet. Its owner can connect one at ${providers}`
+    ? `This agent has no model it can run on, so it can't answer here yet. Its owner can connect a model provider or pick a model at ${providers}`
     : `This agent's default model ${err.model} is on a provider it no longer holds, so it can't answer here yet. Its owner can pick another at ${providers}`;
 }

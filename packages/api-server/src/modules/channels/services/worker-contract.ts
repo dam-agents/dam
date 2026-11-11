@@ -1,3 +1,4 @@
+import type { CardElement } from "chat";
 import { z } from "zod";
 import { ChannelType } from "api-server-api";
 
@@ -8,9 +9,15 @@ export interface ChannelAttachment {
   title?: string;
 }
 
+export interface ChannelCard {
+  card: CardElement;
+  text: string;
+}
+
 export interface PostMessageOptions {
   conversationId?: string;
   attachment?: ChannelAttachment;
+  card?: ChannelCard;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
 }
@@ -21,6 +28,7 @@ export interface ChannelReply {
   conversationId?: string;
   alsoSendToChannel?: boolean;
   attachment?: ChannelAttachment;
+  card?: ChannelCard;
   unfurlLinks?: boolean;
   unfurlMedia?: boolean;
 }
@@ -38,7 +46,11 @@ export const sendResultSchema = z.union([
     conversationId: z.string().optional(),
     ts: z.string().optional(),
   }),
-  z.object({ error: z.string() }),
+  /* UNIT_BOUNDARY_DESCRIPTION: a refused send carries Slack's own error code,
+   *  which is the only evidence that nothing was posted. A plain `error` is a
+   *  call whose answer nobody saw — a throw, a timeout, a lost RPC reply — and a
+   *  caller that must not repeat a message reads the two differently. */
+  z.object({ error: z.string(), refused: z.string().optional() }),
 ]);
 export type ChannelSendResult = z.infer<typeof sendResultSchema>;
 
@@ -123,10 +135,27 @@ export const threadResultSchema = z.object({
 });
 export type ThreadResult = z.infer<typeof threadResultSchema>;
 
+export interface ChannelHistoryQuery {
+  sessionId?: string;
+  conversationId?: string;
+  cursor?: string;
+  since?: string;
+  until?: string;
+}
+
+export const channelHistoryResultSchema = z.object({
+  messages: z.array(z.string()),
+  conversationId: z.string(),
+  hasMore: z.boolean(),
+  cursor: z.string().optional(),
+});
+export type ChannelHistoryResult = z.infer<typeof channelHistoryResultSchema>;
+
 export interface ThreadStart {
   sessionId: string;
   conversationId: string;
   text: string;
+  card?: ChannelCard;
 }
 
 export const startedThreadSchema = z.object({
@@ -234,6 +263,10 @@ export interface AddressedWorker {
     instanceName: string,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  readChannelHistory(
+    instanceName: string,
+    query: ChannelHistoryQuery,
+  ): Promise<ChannelHistoryResult | { error: string }>;
   fetchAttachment(
     instanceName: string,
     query: AttachmentQuery,

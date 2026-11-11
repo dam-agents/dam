@@ -11,6 +11,11 @@ function fakeSlackWorker(): SlackWorker {
     conversationStanding: vi.fn(async () => "unknown" as const),
     channelChoices: vi.fn(async () => ({ linked: false as const })),
     channelMembership: vi.fn(async () => ({ kind: "unlinked" as const })),
+    emailUserByEmail: vi.fn(async () => null),
+    openDirectMessageWith: vi.fn(async () => ({ kind: "not-found" as const })),
+    conversationInfoOf: vi.fn(async () => ({ kind: "not-found" as const })),
+    grantedScopesOf: vi.fn(async () => null),
+    notifyClosedBind: vi.fn(async () => {}),
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
@@ -36,6 +41,11 @@ function fakeSlackWorker(): SlackWorker {
       messages: [],
       conversationId: "C1",
       threadTs: "1.1",
+      hasMore: false,
+    })),
+    readChannelHistory: vi.fn(async () => ({
+      messages: [],
+      conversationId: "C1",
       hasMore: false,
     })),
     startThread: vi.fn(async () => ({

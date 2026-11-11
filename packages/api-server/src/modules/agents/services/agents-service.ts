@@ -10,6 +10,7 @@ import {
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
+  type ChildInheritance,
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
@@ -25,6 +26,7 @@ import {
   type BindSlackChannelResult,
   type ConnectSlackError,
   type ConnectSlackResult,
+  type SlackBindingModes,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
@@ -625,10 +627,19 @@ export function createAgentsService(deps: {
     connectionId: string;
     bind: (agentId: string) => Promise<string | null>;
   } | null>;
+  /* UNIT_BOUNDARY_DESCRIPTION: where a child Agent's inheritance from the Agent that launched it is recorded at create, before its grants are applied, so a change of the parent's grants made meanwhile already reaches it. */
+  inheritance?: {
+    record(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the rules a child whose egress is its own starts with, written once it exists. */
+  childEgress?: {
+    seed(agentId: string, inheritance: ChildInheritance): Promise<void>;
+  };
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
       providerConnectionId?: string;
+      platform?: boolean;
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],
@@ -643,7 +654,7 @@ export function createAgentsService(deps: {
     }>;
     applyAfterCreate(
       agentId: string,
-      sel: { connectionIds: string[] },
+      sel: { connectionIds: string[]; platform?: boolean },
     ): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
@@ -690,6 +701,7 @@ export function createAgentsService(deps: {
       owner: string;
       teamId: string;
       ambient: boolean;
+      history: boolean;
       isDefault: boolean;
     }[]
   >;
@@ -947,7 +959,7 @@ export function createAgentsService(deps: {
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
-    ambient?: boolean,
+    modes: SlackBindingModes,
     knownWorkspace?: string,
     customEmoji?: string[] | null,
   ): Promise<SlackConnectResult> => {
@@ -966,7 +978,8 @@ export function createAgentsService(deps: {
     if (workspace.kind !== "resolved")
       return err(unresolvedWorkspace(workspace));
 
-    const requestedAmbient = ambient === true;
+    const requestedAmbient = modes.ambient ?? existing?.ambient ?? false;
+    const requestedHistory = modes.history ?? existing?.history ?? false;
 
     const txResult = await deps.unitOfWork(async (tx) => {
       try {
@@ -975,6 +988,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(requestedHistory ? { history: true } : {}),
           ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
@@ -1025,6 +1039,19 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
+      });
+    }
+
+    const hadHistory = existing?.history === true;
+    if (hadHistory !== requestedHistory) {
+      securityLog("info", "channel.history_toggled", {
+        category: "authz-list",
+        actor: deps.actor ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, history: requestedHistory },
       });
     }
 
@@ -1388,6 +1415,7 @@ export function createAgentsService(deps: {
         spec.environmentOf = input.environmentOf;
         delete spec.harness;
       }
+      if (input.linkFrom !== undefined) spec.linkFrom = input.linkFrom;
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
@@ -1426,6 +1454,8 @@ export function createAgentsService(deps: {
           ]),
         ),
         providerConnectionId,
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform makes for the person, not one they asked for, so a grant it carries is not held to the flag that offers that Connection to people. */
+        ...(input.platformGrants ? { platform: true as const } : {}),
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({
@@ -1448,7 +1478,8 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
-      await assertNameFree(input.name, owner);
+      /* UNIT_BOUNDARY_DESCRIPTION: the id a caller names is its own — a platform resume of an Agent an earlier attempt already wrote — so that Agent's own name is not evidence the name is taken. */
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1489,21 +1520,28 @@ export function createAgentsService(deps: {
           Object.keys(createAnnotations).length ? createAnnotations : undefined,
         );
       } catch (e) {
-        if (input.registryCredential) {
-          try {
-            await deps.registrySecretPort.delete(agentId);
-          } catch (cleanupErr) {
-            securityLog("error", "agent.create.pull_secret_orphaned", {
-              category: "resource",
-              actor: deps.actor ?? null,
-              actorKind: "user",
-              result: "failure",
-              reason:
-                cleanupErr instanceof Error ? cleanupErr.message : "unknown",
-            });
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform resumes — the same id asked for again after an earlier attempt wrote the row and then failed on its bookkeeping — finishes that Agent from here rather than failing on the row it already has. Only a caller that names the id reaches this, and no API caller can: the id is the platform's own. The steps below are written to run again. */
+        const resumed = input.id
+          ? await deps.repo.get(agentId, owner).catch(() => null)
+          : null;
+        if (resumed === null) {
+          if (input.registryCredential) {
+            try {
+              await deps.registrySecretPort.delete(agentId);
+            } catch (cleanupErr) {
+              securityLog("error", "agent.create.pull_secret_orphaned", {
+                category: "resource",
+                actor: deps.actor ?? null,
+                actorKind: "user",
+                result: "failure",
+                reason:
+                  cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+              });
+            }
           }
+          throw e;
         }
-        throw e;
+        infra = resumed;
       }
 
       const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);
@@ -1517,6 +1555,8 @@ export function createAgentsService(deps: {
           owner,
         );
       }
+      if (input.inheritance && input.inheritance.egressFrom !== "parent")
+        await deps.childEgress?.seed(infra.id, input.inheritance);
 
       const createdAt = new Date();
       await deps.runtimeMutator.bump(infra.id, [
@@ -1534,13 +1574,15 @@ export function createAgentsService(deps: {
           ? [
               agentInstructionsEvent(
                 infra.id,
-                AGENT_INSTRUCTIONS_TEMPLATE,
+                input.instructions ?? AGENT_INSTRUCTIONS_TEMPLATE,
                 createdAt,
               ),
             ]
           : []),
       ]);
 
+      if (input.inheritance)
+        await deps.inheritance?.record(infra.id, input.inheritance);
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
@@ -1845,19 +1887,44 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient, customEmoji, options) {
+    async connectSlack(id, slackChannelId, modes, customEmoji, options) {
       if (!(await deps.repo.get(id, deps.owner)))
         return err({ type: "AgentNotFound" });
       const bindings = await deps.findSlackBindings(slackChannelId);
-      const alreadyHere = bindings.some((b) => b.agentId === id);
-      if (alreadyHere)
+      const existing = bindings.find((b) => b.agentId === id);
+      if (existing) {
+        if (modes?.history === true && !existing.history) {
+          const workspace = existing.teamId
+            ? ({ kind: "resolved", teamId: existing.teamId } as const)
+            : await deps.resolveSlackWorkspace(slackChannelId);
+          if (workspace.kind !== "resolved")
+            return err(unresolvedWorkspace(workspace));
+          const reader = await connectorInConversation(
+            slackChannelId,
+            workspace.teamId,
+          );
+          if (!reader.ok) {
+            securityLog("warn", "channel.connect_refused", {
+              category: "channel",
+              actor: deps.actor ?? null,
+              actorKind: "user",
+              surface: "slack",
+              agentId: id,
+              result: "failure",
+              reason: reader.error.type,
+              detail: { slackChannelId, turningOn: "history" },
+            });
+            return err(reader.error);
+          }
+        }
         return connectSlackImpl(
           id,
           slackChannelId,
-          ambient,
+          modes ?? {},
           undefined,
           customEmoji,
         );
+      }
       const workspace = await deps.resolveSlackWorkspace(slackChannelId);
       if (workspace.kind !== "resolved")
         return err(unresolvedWorkspace(workspace));
@@ -1881,7 +1948,7 @@ export function createAgentsService(deps: {
       const connected = await connectSlackImpl(
         id,
         slackChannelId,
-        ambient,
+        modes ?? {},
         workspace.teamId,
         customEmoji,
       );
@@ -2050,7 +2117,7 @@ export function createAgentsService(deps: {
         getAgent: namedAgent,
         findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId, teamId) =>
-          connectSlackImpl(id, slackChannelId, undefined, teamId),
+          connectSlackImpl(id, slackChannelId, {}, teamId),
         binding,
       })(agentId, flowId);
     },

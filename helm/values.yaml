@@ -21,6 +21,11 @@ brand:
   # a visitor arriving from Slack that the platform is open to them. Empty
   # string drops that sentence.
   vendor: "IBM Research"
+  # Name of each person's assistant — the ordinary agent the platform gives
+  # them, once, when the `dambledore` feature is on for them. It follows
+  # `featureDefault` unless `features.dambledore` names it. The name is the
+  # greeting's and the app's to show; a person may rename the agent.
+  assistantName: Dammy
   # What `name` stands for. The sign-in page shows one meaning above its
   # heading and swaps it for another at random every few seconds, never the
   # same one twice in a row. An empty list shows no meaning.
@@ -92,9 +97,6 @@ links:
   # Where "Request more" next to the compute meter points — a chat channel,
   # form, or ticket queue. Complete URL. Empty string hides the link.
   computeRequest: "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759"
-  # The #curvebender-community channel the CurveBender thank-you dialog
-  # invites people to. Complete URL. Empty string drops that sentence.
-  curveBenderCommunity: "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1"
   # Where "Request it" on the Slack setup surfaces points — the form people
   # use to ask for the Slack app in a workspace that does not have it yet.
   # Complete URL. Empty string hides that line; there is no bundled default.
@@ -216,6 +218,16 @@ istio:
   # Service. Istio's mesh-controller synthesises the waypoint Deployment
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
+  # Where a kubelet probe of a pod in the mesh arrives from. istio-cni rewrites
+  # the source of a host probe to one fixed link-local address, so ztunnel can
+  # tell a probe from a workload's traffic; an owner gateway's ingress policy
+  # admits these, on its health port alone. They must be the addresses the
+  # cluster's istio-cni is installed with (`HOST_PROBE_SNAT_IP` and
+  # `HOST_PROBE_SNAT_IPV6`), which default to these two. The chart refuses an
+  # entry that is not a range, and a list that names none.
+  hostProbeSNAT:
+    - 169.254.7.127/32
+    - fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128
   # LOCAL-ONLY. `false` renders every AuthorizationPolicy but puts no
   # workload in the mesh, so nothing enforces them: no mTLS, and any pod can
   # call the harness and ext-authz ports as any agent. It exists for local
@@ -270,6 +282,30 @@ environments:
   # -- Longest idle timeout an agent may give an Environment; a longer one is
   # cut to it. Its agent may still keep one awake with "never".
   idleTimeoutMax: "24h"
+  # -- A person's own OAuth clients — an MCP client in an IDE, a desktop app,
+  # a CLI — sign in to an Environment with their platform account, in
+  # Keycloak, and get a token for that one address. Rendered only with a
+  # domain.
+  oauth:
+    # -- Callbacks a client may register itself with. A loopback entry allows
+    # any port and path on it (RFC 8252); an https entry, any path under that
+    # site; `<scheme>:` an app's own scheme. Anything else is refused.
+    redirects:
+      - http://localhost
+      - http://127.0.0.1
+      - http://[::1]
+      - https://claude.ai
+      - https://claude.com
+      - https://chatgpt.com
+      - https://vscode.dev
+      - https://insiders.vscode.dev
+      - "cursor:"
+      - "vscode:"
+      - "vscode-insiders:"
+      - "windsurf:"
+    # -- Most clients that may register themselves at once; a daily task
+    # deletes those unused for 30 days.
+    maxClients: 5000
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
   # Environment address to the api-server; visitors sign in on the share
   # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
@@ -1369,6 +1405,13 @@ apiServer:
   # organizations connected at once would let a conversation reach the wrong
   # Agent and a person inherit another person's platform identity.
   slackEnterpriseId: ""
+  # -- Slack workspace (team) ids an operator vouches for as naming the same
+  # people DAM knows by mailbox: the DM Bridge pairs an owner's verified email
+  # with their Slack account only inside these, and only while the workspace is
+  # installed and active. Empty disables the Bridge, and nothing pairs. A paid
+  # plan lets a workspace admin set a member's email without verification, so
+  # list only a workspace whose addresses you trust as identities.
+  slackEmailPairingWorkspaces: []
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web
@@ -1748,6 +1791,25 @@ apiServer:
       clientId: ""
       clientSecret: ""
       appSlug: ""
+      # More GitHub Enterprise hosts a user may connect to, by hostname, each
+      # with the app registered on it:
+      #   hosts:
+      #     research.github.example.com:
+      #       clientId: ""
+      #       clientSecret: ""
+      #       appSlug: ""
+      # With `host` above set too, that host is the first choice, and the others
+      # follow in name order. With two or more hosts the connect form asks the
+      # user to pick one, and each host signs in through its own app. A values
+      # file can set a host to null to drop it. The hosts, client secrets
+      # included, are kept in the api-server's Secret.
+      hosts: {}
+      # Hosts no user may connect to any more, by hostname, such as one a
+      # Business Unit moved away from: `retiredHosts: {github.example.com: true}`.
+      # `false` or null puts a host back. A connection on a retired host stays,
+      # reads disconnected, and can be moved to another host and authorized
+      # there.
+      retiredHosts: {}
     # The Slack app must be registered out of band (Slack offers no dynamic
     # client registration) with the platform OAuth callback as a redirect URL
     # and the Slack MCP user-token scopes enabled.
@@ -1949,7 +2011,7 @@ controller:
     harnessTemplateDefaults:
       # (agentHome is gone: the agent home is fixed at /home/agent. The
       # controller decodes this block strictly, so a key it does not declare —
-      # agentHome included — stops it at startup instead of being ignored.)
+      # agentHome included — fails the render.)
 
       storageSize: "10Gi"
       # The resource limits every Agent's spec is stamped with at create, and
@@ -2301,7 +2363,6 @@ starterKits:
       k-search: { enabled: false }
       spotlights: { enabled: true }
       software-developer: { enabled: false }
-      micro-manager: { enabled: true }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into

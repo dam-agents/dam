@@ -250,6 +250,45 @@ export interface SlackUserInfo {
   isDeleted?: boolean;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A Slack person found by their mailbox, with the
+ * evidence that says whether that mailbox is a trustworthy identity for them at
+ * all. Slack reports no single "trusted" flag, so every way a person can stand
+ * outside a workspace's own membership is carried here for the caller to
+ * refuse: the workspace Slack attributes them to (never the one we asked
+ * about), the ones an enterprise says they belong to, and the guest and
+ * external markers. A marker Slack did not report is `null` — unknown, not
+ * false — and the adapter answers nothing at all when the payload leaves a
+ * membership fact out.
+ */
+export interface SlackEmailUser {
+  id: string;
+  teamId: string;
+  enterpriseId: string | null;
+  enterpriseTeams: string[] | null;
+  enterpriseIsGuest: boolean | null;
+  email: string;
+  deleted: boolean;
+  isBot: boolean;
+  isAppUser: boolean;
+  isRestricted: boolean;
+  isUltraRestricted: boolean;
+  isStranger: boolean | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack organization a workspace belongs to, as
+ * the install record holds it: an id for a workspace in one, the empty string
+ * for a workspace the handshake said stands alone, and null when nothing
+ * recorded one — a token imported from Helm, or an install older than the
+ * column. A pairing compares it and refuses when it is unknown or differs from
+ * the organization Slack reports for the person.
+ */
+export interface SlackWorkspaceIdentity {
+  teamId: SlackWorkspace;
+  enterpriseId: string | null;
+}
+
 export interface SlackMessageReaction {
   name: string;
   count: number;
@@ -293,6 +332,7 @@ export interface SlackGateway {
     channel: string;
     limit: number;
     oldest?: string;
+    latest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
   getMessage(args: {
@@ -339,6 +379,10 @@ export interface SlackGateway {
     userId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackUserInfo | null>;
+  lookupUserByEmail(
+    email: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackEmailUser | null>;
   getMessageReactions(
     channel: string,
     ts: string,

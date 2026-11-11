@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-05
+Last verified: 2026-11-10
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -58,7 +58,8 @@ Opening an Agent's Sessions wakes a hibernated Agent once per open, as opening i
 An open lasts until the Agent's list closes: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
 When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
 When that list's own first read fails, it offers a retry instead of "No sessions yet."
-View more asks the Agent for one more page of its list only when the loaded rows run out, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
+After View more, the list asks the Agent for further pages while its rows fall short of the next five and the Agent has more, and it stops offering more when a page brings no new Session or the Agent's cursor does not move.
+One click asks for at most five pages, while the button says it is looking; then the button offers Keep looking, so a click never waits without end.
 Opening a Session from Activity leaves its Agent's row as it was, closed or open.
 
 The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
@@ -66,6 +67,10 @@ An Agent the order does not name yet, a new Agent, joins the foot of the list, a
 Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
 An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
+The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
+The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.
+While the filter is on, the list names it and offers Clear filter; when none of the latest Sessions match, it says so and its button reads Look further.
+The open Session stays in the list even when the filter would hide it, marked as open.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
@@ -148,7 +153,6 @@ Accepting starts nothing unless the Agent may spend today: a spend limit or the 
 An accepted review is a regular chat Session on the Agent's chat default, opened on the same rail as a kit's onboarding Session but marked with the `cost-review` purpose instead: it is titled "Cost review", its first turn shows as a collapsed request from the platform, and the UI opens it once it appears.
 That first turn runs like a scheduled one, without anyone watching, because the owner already asked for it: a review accepted and then left behind still runs and shows as unread.
 That first turn names the skill, which holds the procedure; the review recommends and changes nothing.
-It also says whether the owner has Interactive artifacts on, which the Agent cannot see, so the review's report page has buttons that ask the Agent for a change only when they can reach it ([artifact-library](artifact-library.md#interactive-pages)).
 Later, and the card's dismiss for all its Agents at once, tells the owner when the offer returns and that they can ask the Agent for a review in its chat any time, which the skill covers on its own.
 Both answers are recorded in the activity log.
 

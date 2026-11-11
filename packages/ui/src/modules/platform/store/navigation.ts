@@ -17,6 +17,7 @@ type ParameterlessView =
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
+  artifactId: string | null;
   settingsTab: SettingsTab;
   settingsProfileId: string | null;
   usagePeriod: string | null;

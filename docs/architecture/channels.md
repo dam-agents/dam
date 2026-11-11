@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-05
+Last verified: 2026-11-10
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -30,7 +30,8 @@ A Slack "conversation" is any surface the bot is party to: a public/private **ch
 The binding key is the conversation id in every case, so DMs and group DMs reuse the channel binding mechanics wholesale.
 
 Because one bot serves every Agent in a workspace, a bare `@bot` cannot say which Agent is meant.
-So a conversation carries at most one **default Agent** — the first connected, and the one a bare mention reaches — while a mention opening with an Agent's name reaches that Agent.
+So a conversation carries at most one **default Agent** — the first connected, and the one a mention whose message names no Agent reaches — while a mention opening with an Agent's name reaches that Agent.
+A mention that is a command runs it instead (**Commands by mention**, below).
 Which Agent holds it can be changed, in-chat.
 A name matching nobody is not an address at all: it falls through to the default as ordinary prose.
 A name matching *several* Agents also falls through, but carries the unresolved name forward, so the default can say it could not tell them apart.
@@ -56,7 +57,7 @@ Every turn relays single-track to the main agent; the **binding owner's** Terms-
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
-Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+Members use every granted Connection and Satellite; the UI and the CLI warn, never block, when a group binding and grants meet.
 
 #### Ambient mode
 
@@ -76,6 +77,8 @@ Where several Agents read along in one channel, they take each message **one at 
 Running them concurrently would have them talk over each other; in sequence, a later Agent is handed what the ones before it said — it has no other way to know — so it builds on that or stays silent rather than repeating it.
 The **default Agent goes first** where it reads along, being the conversation's primary; the rest follow **shuffled**, freshly per message — past the default there is nothing to rank them by, and a stable order would quietly hand one Agent every second look.
 The cost is deliberate: a channel with several read-along Agents spends that many turns per message, which is why ambient stays a per-Agent opt-in.
+
+A Slack binding can also carry **channel history**, which lets its Agent read the conversation's older messages ([slack-channel-history](slack-channel-history.md)).
 
 #### Posts by Agents and apps
 
@@ -250,13 +253,13 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Re-install, not uninstall, is the lifecycle event.** A workspace re-authorizes to pick up scopes added to the manifest later; the handshake rewrites the same Secret in place, and bindings and identity links key on conversation and user id so they are untouched.
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
-- **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
-  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+- **Identity linking.** The link table is the source of truth for "who is this Slack user in Platform terms": it authorizes the in-chat `bind`, `unbind`, `ambient`, `history`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never a turn, and reaches a person directly.
+  A `/platform login` slash command proves the person, and the DM Bridge may also pair a link by verified email under rules of its own ([slack-dm-bridge](slack-dm-bridge.md)).
 - **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
   A group DM is outside what Slack lists for a person, so it is connected in-chat only.
   Without it, anyone who knows a conversation id could lend an Agent to a private channel they are not in.
   An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
-  Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
+  Only a new binding, or a re-connect turning channel history on, is checked.
   The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, an outage alert or a spend stop, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
@@ -275,11 +278,17 @@ The differences are transport, identity model, and where the bot token comes fro
 - **A conversation shows who stands behind its Agents.** Every connect, in-chat, from the UI or from the CLI, posts one notice in the conversation that tags the person who connected the Agent, because members otherwise find an Agent there with nobody to ask about it.
   That person is always the Agent's owner, since only the owner may manage its channels.
   A 1:1 DM is the exception: the notice there names no one, as the person reading it is the one who connected.
-  Afterwards `/platform who` lists the conversation's Agents with each owner's Slack tag, and `/platform default` with no name shows the same list.
+  Afterwards `/platform who` lists the conversation's Agents, and `/platform default` with no name shows the same list.
+  Each line gives the owner's tag, the default, what the Agent reads, the mention that reaches it, and the Agent's own description, cut to 200 characters; one equal to its template's is left out, and a new Agent no longer copies it.
   The tag is the owner's link in that workspace; an owner with none there, after a logout or from a connect that predates the membership check, is named by display name instead, so a member never needs the Public Agent Page to find them, and an owner with neither is left out.
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **Commands by mention.** Every command except `whisper` and `delete` also runs as `@bot <command>`, for people who never use slash commands.
+  A mention is a command only when its words parse as one, such as `@bot ambient <agent> on`; any other, such as `@bot who owns this?`, is a message to the default Agent.
+  A bare `@bot` runs `who`, a command word wins over a same-named Agent, and the reply is ephemeral.
+  Only a person's mention runs a command, so one Agent can never disconnect another.
+  `whisper` has none, as the mention shows its text to everyone; `@bot delete` only points to `/platform delete`, whose dialog Slack opens only from a slash command.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
   Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.

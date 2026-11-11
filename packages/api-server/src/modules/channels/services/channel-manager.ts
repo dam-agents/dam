@@ -11,7 +11,9 @@ import {
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type {
+  SlackConversationLookup,
   SlackConversationRef,
+  SlackEmailUser,
   SlackLabelledConversation,
 } from "../infrastructure/slack-gateway.js";
 import type { SlackConversationStanding } from "./slack-workspace-probe.js";
@@ -24,6 +26,7 @@ import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
 import {
   attachmentResultSchema,
+  channelHistoryResultSchema,
   channelUserSchema,
   messageLinkResultSchema,
   messageReactionsResultSchema,
@@ -35,6 +38,8 @@ import {
   type AttachmentQuery,
   type AttachmentResult,
   type ChannelAttachment,
+  type ChannelHistoryQuery,
+  type ChannelHistoryResult,
   type ChannelReaction,
   type ChannelReply,
   type ChannelSendResult,
@@ -59,6 +64,8 @@ export type {
   AttachmentQuery,
   AttachmentResult,
   ChannelAttachment,
+  ChannelHistoryQuery,
+  ChannelHistoryResult,
   ChannelMessageReaction,
   ChannelReaction,
   ChannelReply,
@@ -145,11 +152,29 @@ export interface ChannelManager {
     slackChannelId: string,
     teamId: string,
   ): Promise<SlackChannelMembership>;
+  slackEmailUserByEmail(
+    email: string,
+    teamId: string,
+  ): Promise<SlackEmailUser | null>;
+  slackOpenDirectMessage(
+    slackUserId: string,
+    teamId: string,
+  ): Promise<SlackConversationLookup & { channelId?: string }>;
+  slackConversationInfo(
+    channelId: string,
+    teamId: string,
+  ): Promise<SlackConversationLookup>;
+  slackGrantedScopes(teamId: string): Promise<string[] | null>;
   readThread(
     instanceName: string,
     channelType: ChannelType,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  readChannelHistory(
+    instanceName: string,
+    channelType: ChannelType,
+    query: ChannelHistoryQuery,
+  ): Promise<ChannelHistoryResult | { error: string }>;
   fetchAttachment(
     instanceName: string,
     channelType: ChannelType,
@@ -184,6 +209,7 @@ const ADDRESSED_METHODS = [
   "describeMessageReactions",
   "getMessageLink",
   "readThread",
+  "readChannelHistory",
   "fetchAttachment",
   "startThread",
   "listThreads",
@@ -201,6 +227,10 @@ const METHOD_NAMES = [
   "slackConversationStanding",
   "slackChannelChoices",
   "slackChannelMembership",
+  "slackEmailUserByEmail",
+  "slackOpenDirectMessage",
+  "slackConversationInfo",
+  "slackGrantedScopes",
   "notifyPerson",
 ] as const;
 
@@ -214,6 +244,37 @@ const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
 const slackConversationRefSchema = z.object({
   channelId: z.string(),
   teamId: z.string(),
+});
+const slackConversationLookupSchema = z.union([
+  z.object({
+    kind: z.literal("found"),
+    isMember: z.boolean(),
+    isDirectMessage: z.boolean(),
+    isGroupDirectMessage: z.boolean(),
+    name: z.string().nullable(),
+    directMessageUser: z.string().nullable(),
+  }),
+  z.object({ kind: z.literal("not-found") }),
+  z.object({ kind: z.literal("no-credential") }),
+]);
+/* UNIT_BOUNDARY_DESCRIPTION: the mailbox answer as it crosses the RPC, which
+ *  must mirror `SlackEmailUser` field for field: a schema that drops the
+ *  organization's membership list, or refuses a marker Slack left unreported,
+ *  would turn a usable answer into a refusal for every replica that is not the
+ *  leader. */
+export const slackEmailUserSchema = z.object({
+  id: z.string(),
+  teamId: z.string(),
+  enterpriseId: z.string().nullable(),
+  enterpriseTeams: z.array(z.string()).nullable(),
+  enterpriseIsGuest: z.boolean().nullable(),
+  email: z.string(),
+  deleted: z.boolean(),
+  isBot: z.boolean(),
+  isAppUser: z.boolean(),
+  isRestricted: z.boolean(),
+  isUltraRestricted: z.boolean(),
+  isStranger: z.boolean().nullable(),
 });
 const slackConversationLabelSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("channel"), name: z.string() }),
@@ -238,7 +299,12 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   slackChannelChoices: z.tuple([z.string()]),
   slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
+  slackEmailUserByEmail: z.tuple([z.string(), z.string()]),
+  slackOpenDirectMessage: z.tuple([z.string(), z.string()]),
+  slackConversationInfo: z.tuple([z.string(), z.string()]),
+  slackGrantedScopes: z.tuple([z.string()]),
   readThread: forInstance.rest(z.unknown()),
+  readChannelHistory: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
   startThread: forInstance.rest(z.unknown()),
   listThreads: forInstance.rest(z.unknown()),
@@ -308,7 +374,27 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ kind: z.literal("not-member") }),
     z.object({ kind: z.literal("unlinked") }),
   ]),
+  slackEmailUserByEmail: slackEmailUserSchema.nullable(),
+  slackOpenDirectMessage: z.union([
+    z.object({
+      kind: z.literal("found"),
+      channelId: z.string(),
+      isMember: z.boolean(),
+      isDirectMessage: z.boolean(),
+      isGroupDirectMessage: z.boolean(),
+      name: z.string().nullable(),
+      directMessageUser: z.string().nullable(),
+    }),
+    z.object({ kind: z.literal("not-found") }),
+    z.object({ kind: z.literal("no-credential") }),
+  ]),
+  slackConversationInfo: slackConversationLookupSchema,
+  slackGrantedScopes: z.array(z.string()).nullable(),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
+  readChannelHistory: z.union([
+    channelHistoryResultSchema,
+    z.object({ error: z.string() }),
+  ]),
   fetchAttachment: z.union([
     attachmentResultSchema,
     z.object({ error: z.string() }),
@@ -344,6 +430,9 @@ const unsupported: Record<
   }),
   readThread: (channelType) => ({
     error: `thread reads are not supported on ${channelType}`,
+  }),
+  readChannelHistory: (channelType) => ({
+    error: `channel history reads are not supported on ${channelType}`,
   }),
   fetchAttachment: (channelType) => ({
     error: `attachment fetches are not supported on ${channelType}`,
@@ -546,6 +635,22 @@ export function createChannelManager(deps: {
             teamId,
           )
         : Promise.reject(new Error("slack worker not available")),
+    slackEmailUserByEmail: (email: string, teamId: string) =>
+      deps.slackWorker
+        ? deps.slackWorker.emailUserByEmail(email, teamId)
+        : Promise.resolve(null),
+    slackOpenDirectMessage: (slackUserId: string, teamId: string) =>
+      deps.slackWorker
+        ? deps.slackWorker.openDirectMessageWith(slackUserId, teamId)
+        : Promise.resolve({ kind: "no-credential" as const }),
+    slackConversationInfo: (channelId: string, teamId: string) =>
+      deps.slackWorker
+        ? deps.slackWorker.conversationInfoOf(channelId, teamId)
+        : Promise.resolve({ kind: "no-credential" as const }),
+    slackGrantedScopes: (teamId: string) =>
+      deps.slackWorker
+        ? deps.slackWorker.grantedScopesOf(teamId)
+        : Promise.resolve(null),
     notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
       const inSlack = slackWorker
         ? await slackWorker
@@ -602,6 +707,9 @@ export function createChannelManager(deps: {
       .subscribe((event) => {
         if (slackWorker && isLeader()) {
           slackWorker.start(event.agentId);
+          void slackWorker
+            .notifyClosedBind(event.agentId, event.slackChannelId)
+            .catch(() => {});
         }
       }),
   );
@@ -749,6 +857,30 @@ export function createChannelManager(deps: {
             slackChannelId,
             teamId,
           ),
+      );
+    },
+
+    slackEmailUserByEmail(email, teamId) {
+      return dispatch("slackEmailUserByEmail", [email, teamId], () =>
+        explicitHandlers.slackEmailUserByEmail(email, teamId),
+      );
+    },
+
+    slackOpenDirectMessage(slackUserId, teamId) {
+      return dispatch("slackOpenDirectMessage", [slackUserId, teamId], () =>
+        explicitHandlers.slackOpenDirectMessage(slackUserId, teamId),
+      );
+    },
+
+    slackConversationInfo(channelId, teamId) {
+      return dispatch("slackConversationInfo", [channelId, teamId], () =>
+        explicitHandlers.slackConversationInfo(channelId, teamId),
+      );
+    },
+
+    slackGrantedScopes(teamId) {
+      return dispatch("slackGrantedScopes", [teamId], () =>
+        explicitHandlers.slackGrantedScopes(teamId),
       );
     },
 

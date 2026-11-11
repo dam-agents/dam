@@ -46,6 +46,9 @@ export function DelegationShell({
           {counts.running > 0 && (
             <span className="shrink-0 text-2xs">{counts.running} working</span>
           )}
+          {counts.stopped > 0 && (
+            <span className="shrink-0 text-2xs">{counts.stopped} stopped</span>
+          )}
           {counts.failed > 0 && (
             <span className="shrink-0 text-2xs text-danger">
               {counts.failed} failed

@@ -19,11 +19,19 @@ export interface SubAgentOutcomeDeliveryDeps extends OutcomeTurnDeps {
 }
 
 function describe(row: InvocationRow): string {
-  const name = row.label ? `${row.label} (${row.id})` : row.id;
+  const name = `${row.label ? `${row.label} (${row.id})` : row.id}${runOf(row)}`;
   if (row.script !== null) return describeScript(name, row);
   return row.status === "done"
     ? `${name} — done. Result:\n${JSON.stringify(row.result, null, 2)}`
     : `${name} — failed: ${row.errorReason ?? "no reason recorded"}`;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a kept target takes more runs, several at once, so its outcome names the run, and the session a later run may continue.
+function runOf(row: InvocationRow): string {
+  if (row.keepUntil === null || row.runId === null) return "";
+  return row.sessionId
+    ? ` [run ${row.runId}, session ${row.sessionId}]`
+    : ` [run ${row.runId}]`;
 }
 
 function describeScript(name: string, row: InvocationRow): string {
@@ -42,6 +50,8 @@ function describeScript(name: string, row: InvocationRow): string {
       : "It left no output to read.";
   return `${ended} ${streams}`;
 }
+
+const runIdOf = (row: InvocationRow): string => row.runId ?? row.id;
 
 function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {
   const grouped = new Map<string, InvocationRow[]>();
@@ -69,12 +79,12 @@ async function deliverTo(
     trimHint: "call await_subagents with this id for the full result",
     maxPerTurn: MAX_OUTCOMES_PER_TURN,
   });
-  await deps.repo.release(
-    rows.slice(told).map((r) => r.id),
-    lease,
-  );
+  await deps.repo.release(rows.slice(told).map(runIdOf), lease);
 
-  const ids = rows.slice(0, told).map((r) => r.id);
+  const ids = rows.slice(0, told).map(runIdOf);
+  const routed = rows
+    .slice(0, told)
+    .flatMap((r) => (r.runId && r.runId !== r.id ? [r.runId, r.id] : [r.id]));
   const firedAt = now().getTime();
   return deliverOutcomeTurn(deps, {
     tag: "sub-agents",
@@ -85,7 +95,7 @@ async function deliverTo(
       id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
       kind: "sub-agent-outcome",
       payloadKey: "ids",
-      payloadValues: ids,
+      payloadValues: routed,
     },
     release: () => deps.repo.release(ids, lease),
     markWritten: () => deps.repo.markDelivered(ids, lease),
@@ -146,7 +156,7 @@ export function createSubAgentOutcomeWakeRetry(
       await wakeOutcomeTurn(deps, {
         tag: "sub-agents",
         agentId: driverAgentId,
-        markWoken: () => deps.repo.markWoken(driverRows.map((r) => r.id)),
+        markWoken: () => deps.repo.markWoken(driverRows.map(runIdOf)),
       });
     return grouped.size;
   };

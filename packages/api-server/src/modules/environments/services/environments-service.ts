@@ -6,6 +6,8 @@ import {
   type AgentEnvironmentMembersView,
   type AgentEnvironmentView,
   type AgentsService,
+  type ChildConnections,
+  type ChildEgress,
   type EnvironmentAgentLookup,
   type EnvironmentEndpoint,
   type EnvironmentMemberAgent,
@@ -14,6 +16,7 @@ import {
   type SharedEnvironmentView,
 } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
+import { environmentCreateInput } from "../../agents/index.js";
 import {
   clampExpiry,
   clampIdleTimeout,
@@ -40,6 +43,10 @@ export interface EnvironmentsConfig {
 
 export interface CreateEnvironmentInput {
   name: string;
+  // UNIT_BOUNDARY_DESCRIPTION: which of the owning agent's connections the Environment holds: none, as an Environment always has; all of them, kept in step with the owning agent's; or the ones named, each the owning agent's, copied once.
+  connections?: ChildConnections;
+  // UNIT_BOUNDARY_DESCRIPTION: whose rules decide its requests: the owning agent's, live (the default), or its own, open or scoped.
+  egress?: ChildEgress;
   endpoints: EnvironmentEndpoint[];
   storage?: string;
   expiresAt?: ExpiryRequest;
@@ -111,6 +118,34 @@ export interface EnvironmentsServiceImpl {
   setAwake(id: string, awake: boolean): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the connections an Environment is created with, as its inheritance records them. A named connection the owning agent does not hold is refused, and so is any connection on an Environment whose egress is open, which holds none.
+function environmentConnections(
+  input: Pick<CreateEnvironmentInput, "connections" | "egress">,
+  owningGrants: readonly string[],
+): { connectionsFrom: "parent" | "subset" | "none"; connectionIds: string[] } {
+  const connections = input.connections ?? "none";
+  if (isOpenEgress(input.egress) && connections !== "none")
+    refuse('an Environment with egress "open" holds no connections');
+  if (connections === "parent")
+    return { connectionsFrom: "parent", connectionIds: [...owningGrants] };
+  if (connections === "none")
+    return { connectionsFrom: "none", connectionIds: [] };
+  const held = new Set(owningGrants);
+  const missing = connections.filter((id) => !held.has(id));
+  if (missing.length > 0)
+    refuse(
+      `connections not granted to the owning agent: ${missing.join(", ")}`,
+    );
+  return { connectionsFrom: "subset", connectionIds: [...connections] };
+}
+
+function isOpenEgress(egress: ChildEgress | undefined): boolean {
+  return (
+    egress === "open" ||
+    (typeof egress === "object" && egress !== null && "open" in egress)
+  );
 }
 
 function withReadyPaths(
@@ -378,16 +413,20 @@ export function createEnvironmentsService(
         );
       const expiresAt = expiry(input.expiresAt);
       const hibernationTimeoutMin = idleTimeout(input.idleTimeoutMin);
-      const agent = await deps.agents.create({
-        name: environmentAgentName(owning.name, input.name),
-        description: `Environment ${input.name} of ${owning.name}`,
-        environmentOf: owningAgentId,
-        noDefaultProvider: true,
-        egressPreset: "none",
-        requireConnectionAddress: true,
-        hibernationTimeoutMin,
-        ...(input.storage ? { storage: input.storage } : {}),
-      });
+      const agent = await deps.agents.create(
+        environmentCreateInput({
+          parentAgentId: owningAgentId,
+          ...environmentConnections(
+            input,
+            owning.spec.grantedConnectionIds ?? [],
+          ),
+          ...(input.egress ? { egress: input.egress } : {}),
+          name: environmentAgentName(owning.name, input.name),
+          description: `Environment ${input.name} of ${owning.name}`,
+          hibernationTimeoutMin,
+          ...(input.storage ? { storage: input.storage } : {}),
+        }),
+      );
       const record: EnvironmentRecord = {
         agentId: agent.id,
         owningAgentId,

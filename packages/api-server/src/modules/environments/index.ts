@@ -1,6 +1,6 @@
 export { composeEnvironments } from "./compose.js";
 export type { EnvironmentsComposition } from "./compose.js";
-export { registerEnvironmentTools } from "./mcp-tools.js";
+export { registerEnvironmentTools, parseIdleTimeout } from "./mcp-tools.js";
 export type {
   AgentDirectory,
   EnvironmentsServiceImpl,

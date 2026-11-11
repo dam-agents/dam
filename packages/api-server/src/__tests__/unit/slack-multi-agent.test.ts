@@ -11,6 +11,7 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: several agents connected to one Slack conversation — which one
@@ -107,6 +108,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -120,6 +122,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub: string) => hooks.termsAccepted?.(sub) ?? true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],
@@ -625,7 +628,7 @@ describe("choosing the default agent in-chat", () => {
     const h = harness(both());
     const ack = await h.command("default");
     expect(ack).toContain("`Scribe` is this channel's default agent");
-    expect(ack).toContain("• `Scribe` — default");
+    expect(ack).toContain("• `Scribe`, the default.");
     expect(ack).toContain("• `Reviewer`");
     expect(h.defaultCalls).toEqual([]);
   });
@@ -635,7 +638,9 @@ describe("choosing the default agent in-chat", () => {
       { instanceName: SCRIBE, name: "Scribe", isDefault: true },
       { instanceName: REVIEWER, name: "Reviewer", ambient: true },
     ]);
-    expect(await h.command("default")).toContain("`Reviewer` (reads along)");
+    expect(await h.command("default")).toMatch(
+      /`Reviewer`[^\n]*Reads every message here/,
+    );
   });
 
   it("changes the default when the agent's owner asks", async () => {
@@ -954,5 +959,43 @@ describe("hand-off refusals and signals the review named", () => {
     await h.channelMessage("idle chatter");
     const prompt = h.promptsFor(SCRIBE)[0]!;
     expect(prompt).not.toContain("read along here too");
+  });
+});
+
+describe("commands by mention", () => {
+  it("runs a person's mention whose words are a command, privately", async () => {
+    const h = harness(both());
+    await h.mention("<@U-BOT> default Reviewer");
+    expect(h.defaultCalls).toEqual([{ agentId: REVIEWER, channelId: CHANNEL }]);
+    expect(h.prompts).toEqual([]);
+    const ephemeral = h.gw
+      .readOutbound()
+      .find((r) => r.kind === "ephemeral") as { text: string } | undefined;
+    expect(ephemeral?.text).toContain("now this channel's default agent");
+  });
+
+  it("sends a mention whose words are not a valid command to the default agent", async () => {
+    const h = harness(both());
+    await h.mention("<@U-BOT> default to the safer option");
+    expect(h.defaultCalls).toEqual([]);
+    expect(h.promptsFor(SCRIBE)).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: an app's post that spells out a command stays a message,
+   * so no bot can change the conversation's agents through a mention.
+   */
+  it("never runs a command from an app's post", async () => {
+    const h = harness(both());
+    await h.start();
+    await h.gw.fireMention({
+      sender: { kind: "app", botId: "B-CI", name: "CI" },
+      channel: CHANNEL,
+      ts: "333.3",
+      text: "<@U-BOT> default Reviewer",
+    });
+    for (let i = 0; i < 8; i++) await tick();
+    expect(h.defaultCalls).toEqual([]);
+    expect(h.promptsFor(SCRIBE)).toHaveLength(1);
   });
 });

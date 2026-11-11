@@ -30,6 +30,7 @@ import {
 import {
   ScheduleChoicesField,
   SchedulePrecheckField,
+  ScheduleRowGroup,
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
@@ -224,13 +225,15 @@ export function CronScheduleForm({
           inheritChoice={scheduleInheritsChoices(existing)}
         />
 
+        <ScheduleRowGroup label="Options">
+          <ScheduleSessionTypeField control={control} />
+        </ScheduleRowGroup>
+
         <SchedulePrecheckField
           layout="stacked"
           registration={register("precheck")}
           error={errors.precheck?.message}
         />
-
-        <ScheduleSessionTypeField layout="stacked" control={control} />
 
         <ScheduleSessionTitleField
           registration={register("sessionTitle")}

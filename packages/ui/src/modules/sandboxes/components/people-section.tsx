@@ -7,14 +7,20 @@ import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { getUser } from "../../../auth.js";
+import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useSetAgentEditors } from "../../agents/api/mutations.js";
 import { ConnectionNamesTooltip } from "../../agents/components/connection-names-tooltip.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useActingConnectionNames } from "../../agents/hooks/use-acting-connection-names.js";
+import { useHoldsDamConnection } from "../../agents/hooks/use-holds-dam-connection.js";
 import { editorsWarning } from "../../agents/lib/agent-editors.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
+import {
+  damAudienceSentence,
+  damHoldWarns,
+} from "../../connections/lib/dam-connection.js";
 import { useAgentManagement } from "../hooks/use-agent-management.js";
 
 type EditorAccess = Extract<AgentAccess, { role: "editor" }>;
@@ -30,7 +36,7 @@ const signedInEmail = () => getUser()?.profile.email?.trim().toLowerCase();
 export function PeopleSection({ agent }: { agent: AgentView }) {
   return match(agent.access)
     .with({ role: "owner" }, ({ editors }) => (
-      <OwnerPeople key={agent.id} agentId={agent.id} editors={editors} />
+      <OwnerPeople key={agent.id} agent={agent} editors={editors} />
     ))
     .with({ role: "editor" }, (access) => (
       <EditorPeople agent={agent} access={access} />
@@ -39,14 +45,16 @@ export function PeopleSection({ agent }: { agent: AgentView }) {
 }
 
 function OwnerPeople({
-  agentId,
+  agent,
   editors,
 }: {
-  agentId: string;
+  agent: AgentView;
   editors: string[];
 }) {
+  const agentId = agent.id;
   const ownEmail = signedInEmail();
   const warning = editorsWarning(useActingConnectionNames(agentId) ?? []);
+  const holdsDam = damHoldWarns(useHoldsDamConnection(agent));
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
       <div className="flex flex-col gap-2">
@@ -59,6 +67,17 @@ function OwnerPeople({
         <SectionLabel>Editors</SectionLabel>
         <EditorListForm agentId={agentId} saved={editors} />
       </div>
+      {holdsDam && (
+        <Callout
+          tone="warning"
+          size="sm"
+          role="note"
+          className="text-xs"
+          data-testid="agent-dam-editors-warning"
+        >
+          {damAudienceSentence(getBrand().name, "anyone you add as an editor")}
+        </Callout>
+      )}
       <ConnectionNamesTooltip connections={warning.connections}>
         <Callout
           tone="warning"

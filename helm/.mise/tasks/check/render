@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="The chart renders, telemetry backend included"
-#MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
+#MISE sources=["**/*.{yaml,yml,tpl}", "controller-config-keys.json", "charts/*.tgz"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 # Render with the telemetry backend enabled so its manifests are schema-checked too. The
@@ -297,6 +297,133 @@ case "$out" in
   *'controller.agent.templateDefaults is no longer read'*) ;;
   *) echo "a render setting controller.agent.templateDefaults failed for another reason: $out" >&2; exit 1 ;;
 esac
+# The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS,
+# GATEWAY_EGRESS and the AGENT_VM dict the chart assembles, and exits on a key
+# its structs do not declare: an install that kept one renders fine and then
+# crash-loops — prod still set the agent pod fields #5802 removed. The render
+# fails instead, naming the key: the pod fields with the container backend they
+# went with, so an operator deletes them rather than looks for a new name, and
+# every other unknown key, typo and nested block included — inside the
+# Kubernetes shapes too, which the decoder reads rather than the API server.
+refused_key() {
+  if out=$(helm template platform . "${COMMON[@]}" --set "$2" 2>&1 >/dev/null); then
+    echo "a render setting $2 succeeded, but the controller refuses $1 at startup" >&2
+    exit 1
+  fi
+  case "$out" in
+    *"$1 is not a key the controller reads"*) ;;
+    *) echo "a render setting $2 did not name $1: $out" >&2; exit 1 ;;
+  esac
+  if [ -n "${3:-}" ] && ! grep -qF -- "$3" <<<"$out"; then
+    echo "a render setting $2 did not say $3: $out" >&2
+    exit 1
+  fi
+}
+refused_key controller.agent.base.runtimeClassName controller.agent.base.runtimeClassName=runc 'container backend'
+refused_key controller.agent.base.iptablesInit controller.agent.base.iptablesInit.enabled=true 'container backend'
+refused_key controller.agent.base.npGateInit controller.agent.base.npGateInit.image=busybox 'container backend'
+refused_key controller.agent.base.storageClass controller.agent.base.storageClass=fast 'container backend'
+refused_key controller.agent.base.agentHome controller.agent.base.agentHome=/home/agent
+refused_key controller.agent.harnessTemplateDefaults.agentHome controller.agent.harnessTemplateDefaults.agentHome=/home/agent
+refused_key 'controller.agent.harnessTemplateDefaults.mounts[0].persistMode' controller.agent.harnessTemplateDefaults.mounts[0].persistMode=ro
+refused_key 'controller.agent.harnessTemplateDefaults.env[0].valu' controller.agent.harnessTemplateDefaults.env[0].valu=8080
+refused_key controller.gatewayEgress.clusterDns.names controller.gatewayEgress.clusterDns.names=kube-dns
+refused_key 'controller.gatewayEgress.peers[0].label' controller.gatewayEgress.peers[0].label=app
+refused_key controller.agent.harnessTemplateDefaults.resources.limts controller.agent.harnessTemplateDefaults.resources.limts.memory=4Gi
+refused_key 'controller.agent.harnessTemplateDefaults.resources.claims[0].requst' 'controller.agent.harnessTemplateDefaults.resources.claims[0].requst=y'
+refused_key virtualization.runner.resources.limts virtualization.runner.resources.limts.memory=4Gi
+refused_key 'virtualization.runner.tolerations[0].opertor' 'virtualization.runner.tolerations[0].opertor=Exists'
+refused_key 'virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operators' 'virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operators=In'
+refused_key 'imagePullSecrets[0].nmae' 'imagePullSecrets[0].nmae=regcred'
+# A value of the wrong kind is the other half of the same decoder: it refuses a
+# map where the field is a list, a list where it is a string, a map where a pull
+# secret's entry is, a list where a resource quantity is, and a string where the
+# runner's own node selector, its devices, its boot size or the shared-gateway
+# switch is — the whole AGENT_VM dict the chart renders is checked, not a list
+# of the values hoped to reach it. A values file says so, since `--set` merges a
+# map into a list rather than replacing it.
+kinds=$(mktemp)
+refused_kind() {
+  printf '%s\n' "$2" >"$kinds"
+  if out=$(helm template platform . "${COMMON[@]}" -f "$kinds" 2>&1 >/dev/null); then
+    echo "a values file setting $1 to the wrong kind succeeded, but the controller refuses that value at startup" >&2
+    exit 1
+  fi
+  case "$out" in
+    *"$1"*" must "*) ;;
+    *) echo "a values file setting $1 to the wrong kind failed for another reason: $out" >&2; exit 1 ;;
+  esac
+}
+refused_kind controller.agent.harnessTemplateDefaults.mounts \
+  '{"controller":{"agent":{"harnessTemplateDefaults":{"mounts":{"path":"/tmp"}}}}}'
+refused_kind controller.agent.harnessTemplateDefaults.env \
+  '{"controller":{"agent":{"harnessTemplateDefaults":{"env":{"name":"PORT"}}}}}'
+refused_kind controller.agent.base.vmIdleTimeout \
+  '{"controller":{"agent":{"base":{"vmIdleTimeout":["5m"]}}}}'
+refused_kind imagePullSecrets \
+  '{"imagePullSecrets":["regcred"]}'
+refused_kind virtualization.runner.resources.limits.cpu \
+  '{"virtualization":{"runner":{"resources":{"limits":{"cpu":[1]}}}}}'
+refused_kind virtualization.runner.nodeSelector \
+  '{"virtualization":{"runner":{"nodeSelector":"feature.node.kubernetes.io/sandbox-enabled=true"}}}'
+refused_kind virtualization.runner.devices \
+  '{"virtualization":{"runner":{"devices":"kvm"}}}'
+refused_kind virtualization.runner.bootMiB \
+  '{"virtualization":{"runner":{"bootMiB":"1024"}}}'
+refused_kind virtualization.gateway.perOwner \
+  '{"virtualization":{"gateway":{"perOwner":"yes"}}}'
+# A fraction is no more an int than a string is: the decoder refuses `1.5` in a
+# field it reads as one. The values file carries it, since `--set` keeps a
+# decimal a string.
+refused_kind virtualization.runner.bootMiB \
+  '{"virtualization":{"runner":{"bootMiB":1.5}}}'
+refused_kind virtualization.runner.machineCPUs \
+  '{"virtualization":{"runner":{"machineCPUs":2.5}}}'
+# A whole number is held to the width of the field it lands in: an int32 turns
+# away a port past its last value, and an int64 a number past 2^63, which is
+# what a float renders as at that limit.
+refused_kind 'virtualization.runner.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight' \
+  '{"virtualization":{"runner":{"affinity":{"podAntiAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":4000000000,"podAffinityTerm":{"topologyKey":"kubernetes.io/hostname"}}]}}}}}'
+refused_kind virtualization.runner.machineCPUs \
+  '{"virtualization":{"runner":{"machineCPUs":9223372036854775808}}}'
+# A whole number a JSON values file hands Helm as a float64 is one to the
+# decoder too — inside the field's width, which a plain `int` holds more of than
+# an int32 does — and still renders.
+printf '%s\n' '{"virtualization":{"runner":{"machineCPUs":4000000000,"bootMiB":3072.0}},"controller":{"gatewayEgress":{"clusterDns":{"ports":[53]}}}}' >"$kinds"
+helm template platform . "${COMMON[@]}" -f "$kinds" >/dev/null \
+  || { echo "a values file holding whole numbers as floats failed the render, but the controller takes them" >&2; exit 1; }
+rm -f "$kinds"
+# The keys the controller declares keep rendering, the Kubernetes shapes among
+# them field by field: an install's own pull secrets, mount, env, a meshed peer,
+# the runner's tolerations, its affinity and the agent defaults' resource claims.
+helm template platform . "${COMMON[@]}" \
+  --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
+  --set controller.agent.harnessTemplateDefaults.mounts[0].size=20Gi \
+  --set controller.agent.harnessTemplateDefaults.env[0].name=PORT \
+  --set-string controller.agent.harnessTemplateDefaults.env[0].value=8081 \
+  --set controller.gatewayEgress.peers[0].namespace=llm \
+  --set controller.gatewayEgress.peers[0].podLabels.app=vllm \
+  --set controller.gatewayEgress.peers[0].ports[0]=8443 \
+  --set controller.gatewayEgress.peers[0].mesh=true \
+  --set-json 'controller.agent.harnessTemplateDefaults.resources={"limits":{"cpu":"2","memory":"4Gi"},"claims":[{"name":"agent"}]}' \
+  --set 'imagePullSecrets[0].name=regcred' \
+  --set virtualization.runner.tolerations[0].key=dedicated \
+  --set virtualization.runner.tolerations[0].operator=Exists \
+  --set virtualization.runner.tolerations[0].effect=NoSchedule \
+  --set virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=platform.dev/runner \
+  --set virtualization.runner.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=Exists \
+  --set virtualization.runner.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight=100 \
+  --set virtualization.runner.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey=kubernetes.io/hostname \
+  --set virtualization.runner.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels.app=platform-runner \
+  --show-only templates/controller/deployment.yaml >/dev/null \
+  || { echo "a render of the keys the controller declares failed, but its decoder takes every one of them" >&2; exit 1; }
+# The container backend is gone, and an upgrade refuses while an Agent in the
+# agent namespace still says anything but vm. An offline render cannot see the
+# Agents, and must not be refused for it: a pipeline and a GitOps controller's
+# plan render the upgrade with no cluster to ask, and only the upgrade itself
+# carries the refusal.
+helm template platform . "${COMMON[@]}" --is-upgrade >/dev/null ||
+  { echo "an offline upgrade render was refused, but it cannot see the Agents the refusal reads" >&2; exit 1; }
 # A Template for a private registry brings its own pull Secret, and every Agent
 # created from it names that Secret: the chart renders it, in the agent
 # namespace, under the very name the Template stamps on the Agent. A machine
@@ -332,6 +459,24 @@ for unenforced in '--set istio.enforce=false' '--set-string istio.enforce=false'
     *'istio.enforce=false is local-only'* | *'istio.enforce must be true or false'*) ;;
     *) echo "a render with $unenforced failed for another reason: $out" >&2; exit 1 ;;
   esac
+done
+# The source a kubelet probe of a meshed pod arrives from reaches the controller
+# as the ranges the owner gateway's ingress policy admits; a range it cannot
+# read, or none at all, fails the render rather than leaving that policy
+# rejected or admitting no probe.
+probe_snat() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/controller/deployment.yaml |
+    yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "PLATFORM_ISTIO_HOST_PROBE_SNAT") | .value'
+}
+[ "$(probe_snat)" = '["169.254.7.127/32","fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"]' ] \
+  || { echo "the controller does not get the mesh's own probe source: $(probe_snat)" >&2; exit 1; }
+[ "$(probe_snat --set-json 'istio.hostProbeSNAT=["169.254.1.1/32"]')" = '["169.254.1.1/32"]' ] \
+  || { echo "istio.hostProbeSNAT did not reach the controller: $(probe_snat --set-json 'istio.hostProbeSNAT=["169.254.1.1/32"]')" >&2; exit 1; }
+for refused in '["169.254.7.127"]' '["169.254.7.127/33"]' '[]'; do
+  if helm template platform . "${COMMON[@]}" --set-json "istio.hostProbeSNAT=$refused" >/dev/null 2>&1; then
+    echo "a render setting istio.hostProbeSNAT=$refused succeeded, but no ingress rule could admit the probe source it names" >&2
+    exit 1
+  fi
 done
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
@@ -454,6 +599,31 @@ for refused in '[{"username":"qa-member"}]' '[{"username":"qa-member","password"
     exit 1
   fi
 done
+# A person's own OAuth clients sign in to an Environment only on an install
+# that serves Environments: with a domain the realm has the environments
+# scope, its client policy and the anonymous registration policies, and
+# Keycloak gets the addresses and callbacks its extension reads; without one,
+# none of it renders.
+oauth_realm() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/realm-configmap.yaml | yq -r '.data["platform-realm.json"]'
+}
+jq -e '([.clientScopes[].name] == ["environments"])
+  and (.clientScopes[0].protocolMappers[0].protocolMapper == "dam-environment-audience")
+  and (.clientPolicies.policies[0].profiles == ["dam-environments"])
+  and ([.components["org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy"][] | select(.providerId == "trusted-hosts")] | length == 1)
+  and ([.components["org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy"][] | select(.providerId == "max-clients")][0].config["max-clients"] == ["5000"])' \
+  <<<"$(oauth_realm --set environments.domain=env.example.com)" >/dev/null ||
+  { echo "a realm with environments.domain lacks the environments scope, policy or registration policies" >&2; exit 1; }
+jq -e '(has("clientScopes") or has("clientPolicies") or has("components")) | not' <<<"$(oauth_realm --set environments.domain=)" >/dev/null ||
+  { echo "a realm without environments.domain renders the Environments OAuth parts" >&2; exit 1; }
+kc_env() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/app.yaml |
+    yq -r '.spec.template.spec.containers[0].env[] | select(.name | test("^DAM_ENVIRONMENTS_")) | .name + "=" + .value'
+}
+[ "$(kc_env --set environments.domain=env.example.com --set scheme=https --set port= | head -1)" = "DAM_ENVIRONMENTS_URL_TEMPLATE=https://{host}.env.example.com" ] ||
+  { echo "Keycloak does not get the Environments URL template: $(kc_env --set environments.domain=env.example.com)" >&2; exit 1; }
+[ -z "$(kc_env --set environments.domain=)" ] ||
+  { echo "Keycloak gets Environments settings without environments.domain" >&2; exit 1; }
 # A TLS-intercepting egress path's CA reaches the api-server too, not only the
 # gateways and agents: its own Slack, GitHub and OAuth calls take that path.
 extra_ca_env() {
@@ -464,6 +634,18 @@ extra_ca_env() {
   || { echo "controller.gatewayUpstreamExtraCAs does not reach the api-server as NODE_EXTRA_CA_CERTS" >&2; exit 1; }
 [ -z "$(extra_ca_env)" ] \
   || { echo "the api-server names NODE_EXTRA_CA_CERTS with no extra CA configured" >&2; exit 1; }
+# The api-server learns its own public Service, in-cluster: the Connection that
+# lets an Agent drive this install names that address, and its gateway chain
+# takes the request there. A chart that stops naming it leaves the Connection
+# without a destination.
+apiserver_url() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/apiserver/app.yaml |
+    yq -r '.spec.template.spec.containers[0].env[] | select(.name == "PLATFORM_APISERVER_URL") | .value'
+}
+[ "$(apiserver_url)" = "http://platform-apiserver.default.svc.cluster.local:4000" ] \
+  || { echo "the api-server is not told its own Service address: $(apiserver_url)" >&2; exit 1; }
+[ "$(apiserver_url --set apiServer.port=4100 --set fullnameOverride=acme)" = "http://acme-apiserver.default.svc.cluster.local:4100" ] \
+  || { echo "the api-server's own Service address follows neither its port nor the release name" >&2; exit 1; }
 # The deployment's CurveBender key reaches the api-server only when the operator
 # sets one, and then only through a secretKeyRef: unset, no env at all, so the
 # api-server offers no shared provider; an inline key lands in the credentials
@@ -757,3 +939,29 @@ helm template platform . "${COMMON[@]}" \
   --set agentStore.cutover.acknowledged=true \
   --set agentStore.contract.emptyArchive=true >/dev/null \
   || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }
+# The api-server pod-level DENY on the ext-authz port is the migration bridge:
+# one source entry admits either the agent namespace or the waypoint principal,
+# because a Service not yet relabelled still reaches the pod directly. Two
+# separate rules would OR and deny every caller.
+pod_deny=$(helm template platform . "${COMMON[@]}" \
+  --show-only templates/apiserver/auth-policy-pod-deny.yaml | yq -o=json)
+jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" --arg agents "platform-agents" '
+  [.spec.rules[] | select(any(.to[]?; any(.operation.ports[]?; . == "4002")))] as $ext
+  | ($ext | length) == 1
+  and ($ext[0].from | length) == 1
+  and $ext[0].from[0].source.notNamespaces == [$agents]
+  and $ext[0].from[0].source.notPrincipals == [$principal]' <<<"$pod_deny" >/dev/null ||
+  { echo "the api-server pod-DENY on ext-authz is not the one-source migration bridge: $pod_deny" >&2; exit 1; }
+# The api-server ingress NetworkPolicy admits the ext-authz port and HBONE from
+# the release namespace, where the waypoint the ext-authz Services are bound to
+# runs, as well as from the agent namespace, whose gateways still reach a
+# Service not yet relabelled directly. Without the release namespace the
+# waypoint's hop would rest on the harness rule alone.
+api_netpol=$(helm template platform . "${COMMON[@]}" --set apiServer.networkPolicy.enabled=true \
+  --show-only templates/apiserver/networkpolicy.yaml | yq -o=json)
+jq -e --arg release "default" --arg agents "platform-agents" '
+  [.spec.ingress[] | select(any(.ports[]?; .port == 4002))] as $ext
+  | ($ext | length) == 1
+  and ([$ext[0].from[].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]] | sort) == ([$release, $agents] | sort)
+  and ([$ext[0].ports[].port] | sort) == [4002, 15008]' <<<"$api_netpol" >/dev/null ||
+  { echo "the api-server ingress NetworkPolicy does not admit the waypoint's namespace on ext-authz and HBONE: $api_netpol" >&2; exit 1; }

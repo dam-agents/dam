@@ -1,0 +1,55 @@
+{
+  "specs": {
+    "12-connection-regrant": [
+      "packages/api-server/src/modules/connections",
+      "packages/ui/src/modules/connections",
+      "packages/ui/src/modules/sandboxes/components/connections-section.tsx"
+    ],
+    "18-satellites": [
+      "packages/api-server/src/modules/satellites",
+      "packages/api-server-api/src/modules/satellites",
+      "packages/ui/src/modules/satellites"
+    ],
+    "19-agent-machine": [
+      "packages/agents/base",
+      "packages/vm-runner",
+      "packages/controller/pkg/reconciler/vm_*",
+      "packages/controller/pkg/reconciler/hibernation.go"
+    ],
+    "21-s3-signing": [
+      "packages/api-server/src/modules/connections/domain/s3-contributions.ts",
+      "packages/controller/pkg/reconciler/envoy_bootstrap.go",
+      "packages/controller/pkg/reconciler/envoy_connection_address.go"
+    ],
+    "23-browser-tabs": [
+      "packages/agents/default",
+      "packages/agent-runtime/src/modules/browser-*",
+      "packages/api-server/src/apps/api-server/routes/browser-stream.ts",
+      "packages/api-server/src/apps/api-server/agent-proxies/browser-stream-relay.ts",
+      "packages/ui/src/modules/browser"
+    ],
+    "25-sidebar-order": [
+      "packages/api-server/src/modules/sidebar-order",
+      "packages/api-server-api/src/modules/sidebar-order",
+      "packages/ui/src/modules/agents/*sidebar*"
+    ],
+    "27-vm-boot-matrix": [
+      "packages/vm-runner",
+      "packages/controller/pkg/reconciler/vm_*"
+    ]
+  },
+  "lanes": {
+    "owner-gateway": ["packages/controller/pkg/reconciler/owner_gateway*"]
+  },
+  "exclude": [
+    "*.md",
+    "*__tests__*",
+    "*.test.ts",
+    "*_test.go",
+    "*_tests.rs",
+    "packages/vm-runner/tests",
+    "packages/agents/base/rootfs/app/working-dir/.agents/skills",
+    "packages/agents/base/rootfs/usr/local/share/dam-skills",
+    "packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json"
+  ]
+}

@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-26
+Last verified: 2026-11-09
 
 ## System context
 
@@ -73,7 +73,9 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
+- [channel-cards](architecture/channel-cards.md) — structured cards in agents' Slack and Telegram posts: the catalog, the check, native rendering and the text form.
 - [slack-threads](architecture/slack-threads.md) — a Slack thread a Session started: its replies come back to that Session as turns.
+- [slack-channel-history](architecture/slack-channel-history.md) — a Slack binding that opts in lets its Agent read the conversation's older messages and threads.
 - [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
 - [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
@@ -82,13 +84,14 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.
 - [agent-skills](architecture/agent-skills.md) — the agent-local half: which skill files sit on one agent, the provenance verdict each carries, and the agent-runtime surface that mutates them behind Envoy credential injection.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs or from a link to one kit's repository, never from cluster state.
-- [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes; [GitHub](architecture/github-connections.md) sign-ins and App installations and the Connections made from them.
+- [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes; the [presets](architecture/connection-presets.md) catalogue; [GitHub](architecture/github-connections.md) sign-ins and App installations and the Connections made from them.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [harness configuration](architecture/harness-config.md) — harness defaults and the session model list: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
 - [profiles](architecture/profiles.md) — an owner's named harness, provider and model settings: what follows one, and the default a new agent starts on.
 - [owner model catalog](architecture/owner-model-catalog.md) — every model an owner's providers offer, listed by the api-server with no agent, for every routed picker.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.
 - [environments](architecture/environments.md) — sandboxes an agent owns to run software for others to open, at an address per endpoint.
+- [assistant](architecture/assistant.md) — the one ordinary Agent the platform makes for a person under its assistant name: made when they switch the feature on, or at their first request where the install pins it on, greeted in its first chat, and landed in until it is used.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
 - [home-feed](architecture/home-feed.md) — what Home shows since you last looked: a per-owner attention record kept server-side, so hibernated agents still report.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish work products into an owner-scoped library and share them by link — with anyone, or with a named list of viewers who sign in.

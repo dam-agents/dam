@@ -26,10 +26,6 @@ export function useComputeRequestUrl(): string | null {
   return useExternalLink("computeRequest");
 }
 
-export function useCurveBenderCommunityUrl(): string | null {
-  return useExternalLink("curveBenderCommunity");
-}
-
 export function useDocsUrl(page: DocsPage): string | null {
   const root = useExternalLink("docs");
   return root && docsPageUrl(root, page);

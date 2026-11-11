@@ -31,6 +31,12 @@ import { fetchOrFallback } from "../services/fetch-or-fallback.js";
 import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
 import { avatarFromFlagsOrExit, type AvatarOpts } from "./avatar-flags.js";
 import { waitForRunningOrExit } from "./wait-or-exit.js";
+import {
+  audienceOf,
+  sharedConnectionNames,
+  sharingUnchecked,
+  sharingWarning,
+} from "../../sharing/index.js";
 
 export interface KitCreateOpts extends AvatarOpts {
   kit: string;
@@ -186,6 +192,16 @@ export async function runCreateFromKit(
     templates,
   );
   const kitRef = kitRefOf(kit, catalogKits);
+  const audience = audienceOf(finalAgent, []);
+  if (granted === null && audience.conversations.length > 0)
+    process.stderr.write(
+      sharingUnchecked(finalAgent.name, "your connections could not be read"),
+    );
+  const warning = sharingWarning(finalAgent.name, audience, {
+    connections: granted ? sharedConnectionNames(granted) : [],
+    satellites: [],
+  });
+  if (warning) process.stderr.write(warning);
 
   if (opts.json) {
     process.stdout.write(

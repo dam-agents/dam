@@ -1,8 +1,10 @@
 export {
   createModelCatalog,
+  modelCatalogCachePath,
   type ModelCatalog,
   type ModelCatalogDeps,
 } from "./services/model-catalog.js";
+export { watchHarnessCatalog } from "./services/harness-catalog-watch.js";
 export { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
 export { selectNativeConnection } from "./domain/native-selection.js";
 export {

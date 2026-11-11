@@ -3,6 +3,7 @@ import {
   CONFIGURE_SESSION_METHOD,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
+  type SessionDefaultsEventPayload,
 } from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
@@ -26,6 +27,13 @@ import { createActiveTurnStore } from "../../../infrastructure/active-turn-store
 import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
 import type { SessionDefaultsStore } from "../../../infrastructure/session-defaults-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
+import {
+  catalogOn,
+  curveBender,
+  keptCatalogPath,
+  removeKeptCatalogs,
+  stateOf,
+} from "../../../../../__tests__/unit/model-catalog-fixture.js";
 import {
   createLeaseRouter,
   PROVIDER_REMOVED_REASON,
@@ -53,6 +61,7 @@ import {
 const IDLE_CHECK_MS = 10_000;
 const LEASE_IDLE_MS = 60_000;
 const ENV_WAIT_MS = 15_000;
+const CRITICAL_RETRY_WAITS_MS = [2_000, 4_000, 8_000, 16_000] as const;
 
 const SESSION_SETTINGS: Record<string, "process" | "session"> = {
   mode: "session",
@@ -72,6 +81,7 @@ function createLeaseWorld(opts: {
   modelRequired?: boolean | (() => boolean);
   envReady?: () => boolean;
   sessionDefaults?: SessionDefaultsStore;
+  beforeSpawn?: () => Promise<void>;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -169,6 +179,7 @@ function createLeaseWorld(opts: {
               : []),
           ];
         },
+        ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         spawnAgent: () => {
           scoped.harnessSpawned();
           const { harness, process } = createHarness();
@@ -694,6 +705,193 @@ describe("acp-runtime: one harness process per harness", () => {
     });
   });
 
+  /** TEST_SCENARIO: A wake whose machine kept its model catalog. The runtime
+   * prestarts the default lease at listen, from that catalog, before the
+   * agent's first state arrives, and the person opens a session in that
+   * second. A prestart gives the lease a process, not a state: the model-less
+   * session/new is still held, and opens on the chat default once the env and
+   * the converted default land, on the process the prestart started. */
+  it("holds a session opened after a prestart from the kept catalog", async () => {
+    vi.useFakeTimers();
+    const cachePath = keptCatalogPath();
+    const models = (): string[] => ["rits/zai-org/glm-5-3"];
+    const state = stateOf(() => [curveBender("256000")]);
+    try {
+      await catalogOn({ cachePath, models, state }).catalog.refresh();
+      const kept = catalogOn({ cachePath, models, state, held: true });
+      expect(kept.catalog.entries().map((e) => e.name)).toEqual([
+        "cb/rits/zai-org/glm-5-3",
+      ]);
+
+      const chat = {
+        harness: "claude-code",
+        provider: "conn-a",
+        model: "ibm/aws/claude-sonnet-4-6",
+      };
+      let envArrived = false;
+      let defaults: SessionDefaultsEventPayload | null = null;
+      const world = createLeaseWorld({
+        providers: ["conn-a"],
+        modelRequired: true,
+        envReady: () => envArrived,
+        sessionDefaults: {
+          get: () => defaults,
+          revision: () => (defaults === null ? 0 : 1),
+          set: (next) => {
+            defaults = next;
+          },
+        },
+        beforeSpawn: () => kept.catalog.settled(),
+      });
+
+      world.router.prestart();
+      for (let tick = 0; tick < 5; tick += 1) await Promise.resolve();
+      expect(world.harnessCount("claude-code")).toBe(1);
+      const client = world.connect();
+      client.send(newSessionOn(1, {}));
+      expect(client.reply(1)).toBeUndefined();
+
+      envArrived = true;
+      world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+      world.harness("claude-code").replyTo("session/new", {
+        sessionId: "s-kept",
+      });
+      expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-kept" });
+      expect(world.metadata.store.get("s-kept")?.meta).toMatchObject({
+        model: chat.model,
+        follows: "chat",
+      });
+      expect(world.harnessCount("claude-code")).toBe(1);
+    } finally {
+      removeKeptCatalogs();
+    }
+  });
+
+  /** TEST_SCENARIO: A session opened before a new agent's runtime has its
+   * state, as when a create publishes Ready before the runtime's first
+   * applyState, is not refused as no-model: it waits for that state, and once
+   * both the env and the agent's converted chat default are here it opens on
+   * its kind's default model, settings and follow marker, so its first prompt
+   * runs. The all-null defaults a hello publishes before the conversion are
+   * not that state. An agent whose converted default carries no model for the
+   * harness is still refused at once. */
+  it("opens a session held for the agent's first state on its default", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+      settings: { mode: "acceptEdits" },
+    };
+    let envArrived = false;
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => envArrived,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: { namesChanged: true },
+      providers: [],
+      harnesses: [],
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    world.harness("claude-code").replyTo("session/new", { sessionId: "s-1" });
+    expect(client.reply(1)?.error).toBeUndefined();
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-1" });
+    expect(world.metadata.store.get("s-1")?.meta).toMatchObject({
+      model: chat.model,
+      settings: chat.settings,
+      follows: "chat",
+    });
+    const harness = world.harness("claude-code");
+    client.send(frames.prompt(2, "s-1", "hi"));
+    harness.replyToSession("session/set_config_option", "s-1", {});
+    harness.replyToSession("session/set_mode", "s-1", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+
+    const settled = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => true,
+      sessionDefaults: {
+        get: () => ({
+          chat: { harness: "claude-code", provider: null, model: null },
+          channel: null,
+          scheduled: null,
+        }),
+        revision: () => 1,
+        set: () => {},
+      },
+    });
+    const other = settled.connect();
+    other.send(newSessionOn(2, {}));
+    expect(other.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+  });
+
+  /** TEST_SCENARIO: A prompt that reaches a model-less session while the
+   * runtime still has no state is held rather than refused, and once the
+   * agent's converted chat default lands it runs on that kind's model. */
+  it("holds a prompt with no model until the agent's defaults land", () => {
+    vi.useFakeTimers();
+    const chat = {
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "ibm/aws/claude-sonnet-4-6",
+    };
+    let envArrived = false;
+    let defaults: SessionDefaultsEventPayload | null = null;
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+      envReady: () => envArrived,
+      sessionDefaults: {
+        get: () => defaults,
+        revision: () => (defaults === null ? 0 : 1),
+        set: (next) => {
+          defaults = next;
+        },
+      },
+    });
+    world.metadata.store.set("old", { type: "regular" });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old", "hi"));
+    expect(client.reply(1)).toBeUndefined();
+    envArrived = true;
+    world.router.receiveDefaults({
+      chat: null,
+      channel: null,
+      scheduled: null,
+    });
+    expect(client.reply(1)).toBeUndefined();
+    world.router.receiveDefaults({ chat, channel: null, scheduled: null });
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["hi"]);
+    expect(world.metadata.store.get("old")?.meta.model).toBe(chat.model);
+  });
+
   /** TEST_SCENARIO: On a harness that reaches its models through the Model
    * Router, a session with no model never reaches the harness, which would
    * otherwise run a model the user never chose: session/new without one is
@@ -968,11 +1166,12 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harnessCount("claude-code")).toBe(1);
   });
 
-  /** TEST_SCENARIO: The harness refuses the session's model twice (Claude
-   * Code could not confirm it with the API), so the session's queued prompt
-   * is answered with the harness's own reason rather than run on whatever
-   * the harness would substitute; the next prompt, with the model unchanged,
-   * asks again and is refused again instead of running on the default. */
+  /** TEST_SCENARIO: The harness keeps refusing the session's model (Claude
+   * Code could not confirm it with the API) through every retry, so the
+   * session's queued prompt is answered with the harness's own reason rather
+   * than run on whatever the harness would substitute; the next prompt, with
+   * the model unchanged, asks again and is refused again instead of running
+   * on the default. */
   it("refuses the prompt when the harness will not take the session's model", () => {
     vi.useFakeTimers();
     const world = createLeaseWorld({ providers: ["conn-a"] });
@@ -987,11 +1186,18 @@ describe("acp-runtime: one harness process per harness", () => {
         message: "Internal error",
         data: { details: 'Couldn\'t confirm model "ibm/unknown-model"' },
       });
-    refuse();
+    const refuseThroughRetries = () => {
+      for (const wait of CRITICAL_RETRY_WAITS_MS) {
+        refuse();
+        vi.advanceTimersByTime(wait);
+      }
+      refuse();
+    };
     client.send(frames.prompt(2, "s", "go"));
-    vi.advanceTimersByTime(2_500);
-    expect(modelFrames(harness, "s")).toHaveLength(2);
-    refuse();
+    refuseThroughRetries();
+    expect(modelFrames(harness, "s")).toHaveLength(
+      CRITICAL_RETRY_WAITS_MS.length + 1,
+    );
     expect(client.reply(2)?.error).toMatchObject({
       message: expect.stringContaining(
         "refused the session's model: Couldn't confirm model \"ibm/unknown-model\"",
@@ -1000,14 +1206,44 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(promptTextsOf(harness)).toEqual([]);
 
     client.send(frames.prompt(3, "s", "again"));
-    expect(modelFrames(harness, "s")).toHaveLength(3);
-    refuse();
-    vi.advanceTimersByTime(2_500);
-    refuse();
+    expect(modelFrames(harness, "s")).toHaveLength(
+      CRITICAL_RETRY_WAITS_MS.length + 2,
+    );
+    refuseThroughRetries();
     expect(client.reply(3)?.error).toMatchObject({
       message: expect.stringContaining("refused the session's model"),
     });
     expect(promptTextsOf(harness)).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: Claude Code lists the router's catalog lazily, and the
+   * catalog takes longer than the first retry's wait to load: the harness
+   * refuses the session's model twice, takes it on the third ask, and the
+   * prompt queued behind it runs on that model instead of failing. */
+  it("runs the prompt once the harness takes the model on a later retry", () => {
+    vi.useFakeTimers();
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code", "s", 1, {
+      model: "claude/ibm/aws/claude-opus-5-5",
+    });
+    const harness = world.harness("claude-code");
+    const refuse = () =>
+      harness.refuseTo("session/set_config_option", {
+        code: -32603,
+        message: "Internal error",
+        data: { details: "Model 'claude/ibm/aws/claude-opus-5-5' not found" },
+      });
+    client.send(frames.prompt(2, "s", "go"));
+    refuse();
+    vi.advanceTimersByTime(CRITICAL_RETRY_WAITS_MS[0]);
+    refuse();
+    vi.advanceTimersByTime(CRITICAL_RETRY_WAITS_MS[1]);
+    expect(modelFrames(harness, "s")).toHaveLength(3);
+    expect(client.reply(2)).toBeUndefined();
+
+    harness.replyTo("session/set_config_option", {});
+    expect(promptTextsOf(harness)).toEqual(["go"]);
   });
 
   /** TEST_SCENARIO: A mode picked during a turn belongs to the session's next

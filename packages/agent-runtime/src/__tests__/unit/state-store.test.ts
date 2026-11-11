@@ -61,7 +61,7 @@ describe("runtime-channel state store", () => {
         harnesses: [],
       }),
     );
-    const env = createEnvStateStore(home, "claude-code");
+    const env = createEnvStateStore(home, "claude-code", () => ({}));
     return createStateStore(createFileDocumentStoreBackend(home), {
       envReady: env.ready,
       envStale: () => staleEnvReason(env.state()),

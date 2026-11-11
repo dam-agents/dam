@@ -1,20 +1,22 @@
 # Experimental features
 
-Last verified: 2026-10-27
+Last verified: 2026-11-10
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces.
-Every feature defaults **off**; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
+Every feature defaults **off**, except the assistant, which every person has on and can turn off; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
 The tab also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
-The current features are advanced connection types, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), Environments (sandboxes an agent creates for others to open; see [environments](environments.md)), and the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries).
-Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md) and addressed credential injection graduated this way).
+The current features are advanced connection types, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), Environments and kept sub-agents (sandboxes an agent creates for others to open, and sub-agents it keeps after their result to enter, run more work in and continue; see [environments](environments.md) and [invocations](invocations.md#outcomes)), the Hermes harness (Nous Research's Hermes Agent offered beside the other harnesses an agent's image carries), the install's own Connection ([connection presets](connection-presets.md#platform-preset-this-install-itself)), which lets an Agent act as its owner, GitHub Enterprise hosts (a host picker in the connect form, of the offered hosts or one with the user's own app, and a move between offered hosts; see [github-connections](github-connections.md#github-enterprise-hosts)), and the assistant (the ordinary Agent the platform makes for a person under its brand's assistant name; see [assistant](assistant.md)).
+Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md), addressed credential injection and [interactive artifacts](artifact-library.md#interactive-pages) graduated this way).
+A graduation may also add a migration that deletes the dropped id's rows, so no stored choice outlives the feature; interactive artifacts did.
 
 An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
 A feature `features` does not name takes the chart's `featureDefault` mode, `experimental` unless set.
 The chart names no feature itself, so an install that sets `featureDefault` to `off` keeps every feature off, including one a later release adds, until it names that feature.
 A pinned feature's switch is hidden from the settings tab, and the api-server answers its flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
 Stored rows are kept, so returning a feature to `experimental` restores each user's own choice.
+One feature is **on by default** — the [assistant](assistant.md) — so in `experimental` a person who has stored nothing has it on, and their switch turns it off; every other feature is off until switched on.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only.
@@ -34,7 +36,11 @@ It controls where a feature *appears*:
 - **Agent surface** — whether the feature's MCP tools are registered into an agent's MCP session, decided at session creation.
   A toggle then reaches live agents when their session rolls over (bounded by the session TTL) and new sessions immediately.
   [Chat forms](chat-forms.md) carries one: the `check_chat_form` tool.
+  Environments carries the Environment tools and the kept sub-agent ones: `spawn_subagent`'s `keep`, `keepForMs`, `idleTimeout` and `egress` and its clean slate, and `run_subagent`, `wake_subagent`, `update_subagent` and `update_subagent_egress`; the driver SDK's routes for them stay open, as every endpoint does.
   The endpoint creates a session per request, so the owner's flags are read on every request.
+
+- **A create the platform makes for the person** — switching the assistant's flag on gives that person their assistant, and an install that pins the flag `on` gives it at the first request instead ([assistant](assistant.md#provisioning)).
+  The flag decides who is offered one; it protects nothing afterwards, since the Agent it makes is the person's own.
 
 - **A rollup inside a shared read** — where a feature adds one section to a response every caller already receives, the flag decides whether that section is computed.
   The gate is a cost decision, not an access one: the section rides in a procedure nobody can opt out of, so leaving it ungated would charge every user its backing queries to render nothing.
@@ -43,7 +49,8 @@ It controls where a feature *appears*:
 
 What none of these do is **gate an endpoint**: the feature's tRPC procedures remain callable by the authenticated owner regardless of the flag, and a flagged-off client that calls one gets a valid, owner-scoped answer rather than a refusal.
 Every endpoint is owner-scoped and safe on its own terms — a flag decides what is shown and what is computed, it is not a security boundary.
-Anything that must actually be denied is enforced by auth and owner scoping, never by a flag check.
+The `damConnection` feature is the one thing a flag refuses: its own create and its grants are refused with it off, because they make the Connection that acts as the owner and hand it to an Agent.
+Anything else that must actually be denied is enforced by auth and owner scoping, never by a flag check.
 
 ## Semantics
 

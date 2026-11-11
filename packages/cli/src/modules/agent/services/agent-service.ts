@@ -10,7 +10,11 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
-import type { AgentUpdateInput, RuntimeFleet } from "api-server-api";
+import type {
+  KeptSubAgent,
+  AgentUpdateInput,
+  RuntimeFleet,
+} from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
@@ -26,6 +30,11 @@ export interface AgentService {
   deleteAgent(
     agentId: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
+  kept(
+    driverAgentId: string,
+  ): Promise<
+    Result<readonly KeptSubAgent[], TransportError | AuthRequiredError>
+  >;
   restart(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
@@ -61,6 +70,12 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
   return {
     async list() {
       return trpcCall(() => deps.trpc.agents.list.query());
+    },
+    async kept(driverAgentId) {
+      const result = await trpcCall(() =>
+        deps.trpc.invocations.kept.query({ driverAgentId }),
+      );
+      return result.ok ? ok(result.value.subAgents) : result;
     },
     async runtimeFleet() {
       return trpcCall(() => deps.trpc.agents.runtimeFleet.query());

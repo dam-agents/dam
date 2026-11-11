@@ -1,21 +1,21 @@
 import { TRPCError } from "@trpc/server";
 import type { InvocationsControlService } from "api-server-api";
 
-import { securityLog } from "../../../core/security-log.js";
+import { userStopReason } from "../domain/stop-reason.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
-import type { TargetReaper } from "./target-reaper.js";
+import type { DelegationStop } from "./delegation-stop.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the owner's hand on a running delegation. A stop
- * fails the Invocation with its reason and reaps the target through the one
- * reap path, so the Driver reads it like any other failure and the target's
- * conversation is kept. A row the owner does not hold under that Driver's
- * root is not found; one already terminal is left as it is.
+ * UNIT_BOUNDARY_DESCRIPTION: the owner's hand on a running delegation: a stop
+ * of any target under the Driver's root, through the one stop, which takes
+ * every target below it down too. The stopped target still reaches its
+ * driver as a turn, since that driver did not ask for the stop. A row the
+ * owner does not hold under that Driver's root is not found.
  */
 export function createDelegationControl(deps: {
-  repo: InvocationsRepository;
+  repo: Pick<InvocationsRepository, "get">;
   owner: string;
-  reaper: TargetReaper;
+  stopper: DelegationStop;
 }): InvocationsControlService {
   return {
     async stop({ driverAgentId, id }) {
@@ -30,17 +30,12 @@ export function createDelegationControl(deps: {
           message: `no delegation ${id} under ${driverAgentId}`,
         });
       }
-      if (row.status !== "running") return;
-      await deps.repo.fail(id, "stopped by the user");
-      securityLog("info", "invocation.stopped", {
-        category: "resource",
+      await deps.stopper.stop(row, {
+        reason: userStopReason(),
         actor: deps.owner,
         actorKind: "user",
-        agentId: id,
-        result: "success",
-        detail: { driverAgentId },
+        collectTarget: false,
       });
-      await deps.reaper.reap(row);
     },
   };
 }
