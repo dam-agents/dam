@@ -1,6 +1,6 @@
 # Connection presets
 
-Last verified: 2026-11-09
+Last verified: 2026-11-12
 
 What each shipped Connection Template gives an Agent: the template's shape, the hosts it reaches, the credential the gateway injects and the Contributions a grant materializes.
 The model they all share — a template, a grant, and which rail each Contribution kind takes — is on [connections](connections.md).
@@ -145,14 +145,16 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
 It is not behind a feature flag: where the key is set, every user has it, and a user who connects nothing of their own still has a provider to run an agent on.
-Such an install shows a CurveBender notice above every chat's composer, for every user: the coloured logo on a white tile, the page's own surface colours, a link to the documentation, and a close kept in this browser alone.
-Its **Try now** button attaches the shared Connection and selects its work model — a fresh chat also moves to Pi, an open session keeps its harness — then thanks the person and links the community channel.
+Such an install shows a CurveBender notice above a new chat's composer, never in an existing chat, with a link to the documentation.
+A new chat already on the shared Connection is told it is set up and can open its picker; any other is offered **Try now**, which moves it to Pi on the shared Connection's work model and makes that the chat default.
+Each of the two closes on its own, in this browser alone.
+It keeps off the assistant's chats, and off the accounts onboarded with the assistant ([assistant](assistant.md#where-it-appears)).
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on the default profile while the user holds none.
 It follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
-It is named `CurveBender (shared)` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
 The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.

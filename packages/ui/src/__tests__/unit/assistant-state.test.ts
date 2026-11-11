@@ -26,22 +26,28 @@ const RESET = "2026-11-09T12:00:00.000Z";
 
 type Record = {
   agentId: string;
+  legacy: boolean;
   used: boolean;
   resetAt: string | null;
   ready: boolean;
+  firstResult: null;
 };
 
 const record = (used: boolean, resetAt: string | null = null): Record => ({
   agentId: ASSISTANT,
+  legacy: true,
   used,
   resetAt,
   ready: true,
+  firstResult: null,
 });
 
 const cached = () =>
   queryClient.getQueryData<Record>(trpc.assistants.state.queryKey());
 
-function greetingWouldShow(state: Record | null | undefined): boolean {
+function greetingWouldShow(
+  state: { agentId: string; used: boolean } | null | undefined,
+): boolean {
   return greetingShown({
     assistantOn: true,
     assistantId: state?.agentId ?? null,

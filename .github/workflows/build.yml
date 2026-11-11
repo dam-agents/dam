@@ -209,10 +209,10 @@ jobs:
         run: |
           set -euo pipefail
           url=postgresql://postgres@localhost:5432
-          for db in agent_store control_grants harness_config controller_store; do
+          for db in agent_store control_grants harness_config controller_store slack_dm_bridge; do
             createdb -h localhost -U postgres "$db"
           done
-          for db in agent_store control_grants; do
+          for db in agent_store control_grants slack_dm_bridge; do
             DATABASE_URL="$url/$db" mise run //packages/db:migrate
           done
           HARNESS_CONFIG_DATABASE_URL="$url/harness_config" \
@@ -221,6 +221,8 @@ jobs:
             mise run //packages/api-server:test:control-grants
           AGENT_STORE_DATABASE_URL="$url/agent_store" \
             mise run //packages/api-server:test:agent-store
+          SLACK_DM_BRIDGE_DATABASE_URL="$url/slack_dm_bridge" \
+            mise run //packages/api-server:test:slack-dm-bridge
           AGENT_STORE_DATABASE_URL="$url/controller_store" \
             AGENT_STORE_CONTROLLER_URL="postgresql://platform_controller@localhost:5432/controller_store" \
             AGENT_STORE_ADMIN_DATABASE_URL="$url/controller_store" \

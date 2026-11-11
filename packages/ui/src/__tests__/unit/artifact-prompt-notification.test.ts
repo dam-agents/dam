@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The artifact message listener shows one notification when its chat callback refuses a prompt. Chat delivery reporting and rejected frame messages must not produce extra notifications. With no chat, only a prompt that asks for a session of its own is sent, through the new-session callback; a plain prompt there is refused with a notice.
+// TEST_OVERVIEW: The artifact message listener shows one notification when its chat callback refuses a prompt. Chat delivery reporting and rejected frame messages must not produce extra notifications. With no chat, only a prompt that asks for a session of its own is sent, through the new-session callback; a plain prompt there is refused with a notice. A prompt that names a conversation goes to the owner's own Session for it, even beside a chat.
 
 import type React from "react";
 import { createElement, type EffectCallback } from "react";
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitToast } from "../../lib/toast.js";
 import {
   NO_CHAT_PROMPT_REFUSAL,
+  NO_SESSION_PROMPT_REFUSAL,
   useArtifactPrompt,
 } from "../../modules/artifacts/hooks/use-artifact-prompt.js";
 import { readArtifactPrompt } from "../../modules/artifacts/lib/artifact-prompt.js";
@@ -25,7 +26,8 @@ vi.mock("../../modules/artifacts/lib/artifact-prompt.js", () => ({
 
 describe("artifact prompt notifications", () => {
   const sendPrompt = vi.fn<(prompt: string) => Promise<void>>();
-  const newSessionPrompt = vi.fn<(prompt: string) => Promise<void>>();
+  const newSessionPrompt =
+    vi.fn<(prompt: string, conversation?: string) => Promise<void>>();
   const cleanups = new Set<() => void>();
 
   function mount(
@@ -141,5 +143,41 @@ describe("artifact prompt notifications", () => {
 
     expect(sendPrompt).toHaveBeenCalledExactlyOnceWith("Refresh the dashboard");
     expect(newSessionPrompt).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: A team page keeps one conversation per thread. Docked beside the agent's chat, a prompt that names its conversation still goes to the owner's own Session for that conversation, not into the open chat.
+  it("sends a prompt that names a conversation to its own session, even beside a chat", async () => {
+    vi.mocked(readArtifactPrompt).mockReturnValue({
+      prompt: "Answer the thread",
+      conversation: "thread-7",
+    });
+    mount(sendPrompt, newSessionPrompt);
+
+    window.dispatchEvent(new MessageEvent("message"));
+    await Promise.resolve();
+
+    expect(newSessionPrompt).toHaveBeenCalledExactlyOnceWith(
+      "Answer the thread",
+      "thread-7",
+    );
+    expect(sendPrompt).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: The page names a conversation where no session of its own can start. It must not fall back into the open chat, and the person is told why.
+  it("refuses a named conversation out loud when no session can start", async () => {
+    vi.mocked(readArtifactPrompt).mockReturnValue({
+      prompt: "Answer the thread",
+      conversation: "thread-7",
+    });
+    mount(sendPrompt);
+
+    window.dispatchEvent(new MessageEvent("message"));
+    await vi.waitFor(() =>
+      expect(emitToast).toHaveBeenCalledExactlyOnceWith({
+        kind: "error",
+        message: NO_SESSION_PROMPT_REFUSAL,
+      }),
+    );
+    expect(sendPrompt).not.toHaveBeenCalled();
   });
 });

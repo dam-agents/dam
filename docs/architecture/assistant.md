@@ -59,7 +59,9 @@ That answer is the record's own mark, set by the first Session that began after 
 A Session that began before the reset does not count however late it is reported: a runtime that boots re-reports the Sessions it already had, and those are no use of a first-timer's assistant.
 Setting the mark is announced to the owner's open tabs, since a Session started in another tab, or a turn from a Slack or Telegram conversation, marks the assistant used without this tab having sent anything.
 A tab also keeps its own mark for a Session it just started, before the report lands, and that mark belongs to one onboarding: the reset's moment is part of the record, so a reset — the person's own, or another tab's — takes the mark away with it rather than leaving a tab that never greets them again.
-The UI asks the server for the record only for someone the feature is on for.
+The UI asks the server for the record whoever the person is, not only for someone the feature is on for: which Agent is the assistant is what a chat needs to know, even after the feature is turned off, and a person without one costs an answer of nothing.
+The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) never shows in the assistant's own chat, and an account that was onboarded with the assistant — one that had no Agent of its own before the platform made it this one — never sees it anywhere, since its first chat is already set up on the shared Connection.
+That cohort is **decided once and written on the record** when the platform first makes the assistant, and never recomputed: deleting the assistant, making a new one or deleting the last older Agent leaves an account in the cohort it was in, so the notice's audience cannot move under it.
 
 ## The first chat
 
@@ -78,6 +80,34 @@ A person the feature is off for, and any other Agent, open on the ordinary new-c
 **What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the ideas it offers, and what to do about them — learn how the person works one task at a time, say what it could do for them, and remember what they tell it.
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
+
+## The first result
+
+Onboarding is done when the person has got their first **result** out of the platform: a schedule set, an artifact made, or a knowledge base saved.
+Nobody else can know when that happened, so the assistant says so itself, over the [Connection](connection-presets.md#platform-preset-this-install-itself) that lets it act as the person: `dam onboarding first-result <kind> --ref "<what it is>"`, whose kind is one of `schedule`, `artifact` and `knowledgeBase`.
+The in-image `dam` skill tells the agent to call it only at a real first result, and that a later call changes nothing.
+
+It is recorded **once per account**, on the same per-owner record as the rest of the assistant's state: a later report — another artifact, a better reference — is a no-op answered with the first one, so the moment the person's onboarding finished cannot move under them.
+The record holds the kind, the reference the assistant gave it, and when it landed, and `assistants.state` reports it, so every surface in the app can read it.
+The report is caller-scoped: it writes the caller's own record and nobody else's.
+
+The checklist counts what it can of it: a schedule finishes `create-schedule` and an artifact `create-artifact`, recorded as the platform's — done, and seen, since the assistant did it for the person rather than the other way round.
+A saved knowledge base has no checklist item, so it is recorded and nothing new appears there; that is the design's limit, not a gap in the record.
+
+The report and every onboarding reset run in one per-owner transaction, so nothing lands between a report's claim and its side effects: the reset clears the result, moves the record's onboarding epoch on and restarts the checklist inside the same lock, and a report that began in the earlier onboarding finds its result gone.
+The record's epoch is a number, not a timestamp, so two clocks' microseconds never decide whether a report still applies.
+The report also announces itself as one domain event, `assistant.first_result_recorded` with the owner, the kind, the reference and the epoch it completed in, which is the seam for carrying the news somewhere else; the app's open tabs refresh the checklist and the record from it.
+At most once: the event leaves after the transaction commits, and only from the call that marked the result done, so a crash in between loses it and nothing ever repeats it — the seam has no consumer yet, and the epoch is what a later one would dedupe on.
+[Starting over](#starting-it-over) forgets it along with the rest, so a person who starts again reaches their first result again — and that holds for a person the assistant is off for too, since the first result is the checklist's own state rather than the assistant's.
+
+## Sending results to Slack DMs
+
+Right after the first result, the assistant offers once to send that task's results to the person's Slack DMs; this is the **Slack DM Bridge**.
+It is a rule in the `dam` skill, not platform logic: the skill tells the assistant when to offer, in which words, and never twice for one task, and the assistant records each offer in its memory file before it asks.
+The skill reaches every Agent that holds the DAM Connection, but only the Agent whose instructions name it the person's personal assistant offers unasked; any other Agent connects to the DM only when the person asks.
+The assistant offers only when `dam channel slack-dm status` says the person is reachable, so on an install or workspace where email pairing is off or a scope is missing it says nothing about Slack and results stay in the app.
+On a yes, `dam channel slack-dm connect` pairs the person and binds the assistant to their DM ([channels](channels.md)), and the assistant does what it offered: a schedule running on the assistant gains the delivery (`start_thread` in the DM when it needs the person's input, `post` otherwise), and a schedule on another Agent does so only once that Agent is connected too, an artifact is posted to the DM at once, and something it learned needs no schedule, only the DM.
+It never offers to read the person's Slack: it reads only what the person sends it in that DM, and that content is information for the task, never an instruction to change its instructions, schedules, connections or delivery; such a request is answered by pointing to the app's chat.
 
 ## Starting it over
 
@@ -98,6 +128,7 @@ The greeting rests on that mark alone, not on how many sessions the assistant ho
 
 ## Boundaries
 
-Its owner's other Agents are not visible to it, it is never proactive, and it holds no special standing: it knows what any Agent knows, with the access any Agent has.
-The one grant provisioning gives it is the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), so it can drive the platform as its owner — a grant the platform makes whatever the flag that offers that Connection to people says.
-Anything it should know later — a team knowledge base, the state of the owner's other Agents, cost and failure explanations, a way to drive the platform itself — arrives as a grant or a capability, without changing provisioning or this page's guarantees.
+It holds no special standing: it knows what any Agent knows, with the access any Agent has.
+The one grant provisioning gives it is the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), so it can drive the platform as its owner — a grant the platform makes whatever the flag that offers that Connection to people says; without that Connection it has only the access any Agent has.
+It is proactive only through what its owner set up with it: a schedule it created runs on time, and a Slack DM Bridge delivers there.
+Anything else it should know later, such as a team knowledge base, arrives as a grant or a capability, without changing provisioning or this page's guarantees.

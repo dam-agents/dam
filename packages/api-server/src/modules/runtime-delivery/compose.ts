@@ -131,6 +131,8 @@ export interface ComposeRuntimeDeliveryOpts {
   resolveAgentName: (agentId: string) => Promise<string | null>;
   resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
+  /* UNIT_BOUNDARY_DESCRIPTION: the install's brand, so the skill the DAM Connection carries is read as this install writes it now. */
+  brandName: string;
 }
 
 export function composeRuntimeDelivery(
@@ -148,6 +150,7 @@ export function composeRuntimeDelivery(
   const stateBuilder = createStateBuilder({
     db: opts.db,
     outboxRepo,
+    brandName: opts.brandName,
     builtin,
     agentName: opts.resolveAgentName,
     egressDenies: (agentId) => async (host, method, path) =>

@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -318,7 +318,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Agent resolution.** A mention (channel, group DM) or a plain 1:1-DM message resolves to exactly one Agent: the one whose name opens the message, else the conversation's default.
   Name matching is over the Agents connected to that conversation only, whole-name and case-insensitive, longest name first — Agent names are not unique, so a name matching two of them resolves to the default rather than a guess.
   An addressed message in an unconnected conversation is refused with an ephemeral.
-- **Message intake.** The gateway subscribes to plain messages on three surfaces and pre-filters them all the same way: message edits, joins and other subtypes never reach the worker, and neither do the bot's own footer-less posts.
+- **Message intake.** The gateway subscribes to plain messages on three surfaces and pre-filters them all the same way: joins and other subtypes never reach the worker, and neither do the bot's own footer-less posts; an edit reaches it apart ([slack-edits](slack-edits.md)).
   Every post that passes carries its **sender** — a person, an Agent (the bot's own post, named by its footer), or an app (any other bot or webhook, named by its username).
   While the bot's own ids are unknown, every bot post is dropped, so an Agent's reply can never pass for an app's.
   A person's tag arrives on the mention path, so their plain-message copy is dropped; a bot post that tags the bot is handed to the mention path too, because Slack may not send it as a mention, and the worker takes each such post once.

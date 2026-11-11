@@ -1,4 +1,7 @@
-import { ARTIFACT_PROMPT_MAX_LENGTH } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptConversationSchema,
+} from "api-server-api";
 import {
   artifactApiCallerEmail,
   SESSION_TITLE_MAX_LENGTH,
@@ -22,6 +25,7 @@ export type ViewerBridgeAccess =
 
 export const viewerPromptInputSchema = z.object({
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export type ViewerPromptResult =
@@ -72,26 +76,47 @@ export function shareCaller(
   };
 }
 
-export function viewerSessionKey(artifactId: string, viewerSub: string) {
-  return `artifact:${artifactId}:${viewerSub}`;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a caller's Sessions for one page are keyed by
+ * the page and the caller, so artifact code never picks a Session outside
+ * them. A page's conversation only splits that caller's own Sessions: its key
+ * has its own prefix and holds no colon, and the sub comes last, so no key
+ * a page chooses can spell another caller's Session (a sub may hold colons).
+ */
+export function viewerSessionKey(
+  artifactId: string,
+  viewerSub: string,
+  conversation?: string,
+) {
+  return conversation === undefined
+    ? `artifact:${artifactId}:${viewerSub}`
+    : `artifact-conversation:${artifactId}:${conversation}:${viewerSub}`;
 }
 
-function sessionTitle(full: string): string {
-  return full.length <= SESSION_TITLE_MAX_LENGTH
-    ? full
-    : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
+function sessionTitle(base: string, conversation?: string): string {
+  const suffix = conversation === undefined ? "" : ` · ${conversation}`;
+  const room = SESSION_TITLE_MAX_LENGTH - suffix.length;
+  const head = base.length <= room ? base : `${base.slice(0, room - 1)}…`;
+  return `${head}${suffix}`;
 }
 
-export function viewerSessionTitle(viewer: string, title: string): string {
-  return sessionTitle(`${viewer} · ${title}`);
+export function viewerSessionTitle(
+  viewer: string,
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(`${viewer} · ${title}`, conversation);
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the owner's Session for a page is theirs alone,
  * so the page's title names it; a viewer's also names the viewer.
  */
-export function ownerSessionTitle(title: string): string {
-  return sessionTitle(title);
+export function ownerSessionTitle(
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(title, conversation);
 }
 
 export function viewerPromptText(input: {

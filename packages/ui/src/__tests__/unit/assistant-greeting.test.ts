@@ -176,9 +176,11 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
+      legacy: true,
       used: false,
       resetAt: null,
       ready: true,
+      firstResult: null,
     };
     queryClient.setQueryData(key, row);
     markAssistantUsed(ASSISTANT);
@@ -196,9 +198,11 @@ describe("the record's used mark", () => {
     const key = trpc.assistants.state.queryKey();
     const row = {
       agentId: ASSISTANT,
+      legacy: true,
       used: false,
       resetAt: null,
       ready: true,
+      firstResult: null,
     };
     queryClient.setQueryData(key, row);
     markAssistantUsed("agent-2");
