@@ -25,13 +25,14 @@ describe("send-error surfacing", () => {
     expect(hint).toMatch(/billing/i);
   });
 
-  // TEST_SCENARIO: the release refuses a run whose agent has no saved model. The old chat says where that model is picked and offers the way there, instead of leaving the router's sentence alone.
-  test("a session with no model points at the agent's model control", () => {
+  // TEST_SCENARIO: the runtime refuses a run only when the agent has no model provider it can run on. The chat says to connect one, and offers the way to its Providers page, instead of leaving the router's sentence alone.
+  test("a session with no model provider points at the Providers page", () => {
     const { hint, needsModel } = describeSendError(
-      "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+      "This agent has no model provider that serves this session. Connect a model provider on the agent's Providers page.",
     );
     expect(needsModel).toBe(true);
-    expect(hint).toMatch(/agent's settings/i);
+    expect(hint).toMatch(/no model provider it can run on/i);
+    expect(hint).toMatch(/Providers page/);
   });
 
   test("bare internal error is rewritten to say where to look", () => {
