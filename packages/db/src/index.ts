@@ -32,6 +32,7 @@ export {
   agentCostReviews,
   agentPublicProfiles,
   egressRules,
+  webSearchRules,
   pendingApprovals,
   connections,
   connectionGrants,

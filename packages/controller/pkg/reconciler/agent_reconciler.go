@@ -331,7 +331,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, gatewayChoicesOf(agentSpec))
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -467,7 +467,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return nil
 		}
 		machineGatewayIP := gatewayIP
-		gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
+		gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, gatewayChoicesOf(agentSpec))
 		stampRollRev(gatewaySS, rollRev)
 		if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))

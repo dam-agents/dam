@@ -924,6 +924,7 @@ export type {
   ApprovalPayload,
   SpendLimitPayload,
   EgressProposalPayload,
+  WebSearchPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -986,6 +987,18 @@ export {
   gatewayRestartImpact,
   promotedHosts,
 } from "./modules/egress-rules/promotion.js";
+export type {
+  WebSearchRuleView,
+  WebSearchService,
+  WebSearchStateView,
+  WebSearchVerdict,
+} from "./modules/web-search/types.js";
+export { webSearchVerdictSchema } from "./modules/web-search/schemas.js";
+export {
+  WEB_SEARCH_FOLLOW_UP_QUERIES,
+  WEB_SEARCH_HARNESSES_COVERED,
+  WEB_SEARCH_HARNESSES_NOT_COVERED,
+} from "./modules/web-search/copy.js";
 
 export {
   platformTurnEndedParamsSchema,

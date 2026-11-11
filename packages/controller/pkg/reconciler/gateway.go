@@ -30,7 +30,7 @@ func GatewayName(pairKey string) string {
 	return pairKey + "-gateway"
 }
 
-func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGatewayIP string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string, requireAddress bool) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGatewayIP string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -59,7 +59,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGa
 
 	annotations := map[string]string{
 		// + leaf cert. Per-agent grain: a sibling agent's rule never
-		"agent-platform.ai/envoy-secrets-rev": envoyGatewayRev(cfg, credentialSecrets, l7Hosts, requireAddress),
+		"agent-platform.ai/envoy-secrets-rev": envoyGatewayRev(cfg, credentialSecrets, l7Hosts, choices),
 	}
 
 	podSpec := corev1.PodSpec{

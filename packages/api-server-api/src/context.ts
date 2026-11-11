@@ -31,6 +31,7 @@ import type {
 } from "./modules/features/types.js";
 import type { AssistantsService } from "./modules/assistants/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
+import type { WebSearchService } from "./modules/web-search/types.js";
 import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
 import type { ProviderStatusService } from "./modules/provider-status/types.js";
@@ -92,6 +93,7 @@ export interface ApiContext {
   attention: AttentionService;
   costReviews: CostReviewsService;
   egressRules: EgressRulesService;
+  webSearch: WebSearchService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;
   environments: EnvironmentsService;

@@ -29,7 +29,7 @@ export function buildApproveCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `approve` is durable: for a network (ext_authz) request it writes a\npermanent allow rule — egress to that host/method/path stays open and the rule\nappears in `dam network list <agent>`. Use --once to allow only the held call.\nTool-call (acp_native) approvals never write an egress rule; the harness owns\nits own permission persistence, and --entire-host falls back to the durable approve.\nOn a spend-limit question (spend_limit), every form of approve continues: it adds\none more limit amount for today and writes no rule.\nOn a rule an agent proposed (egress_proposal), approve writes that rule and\n--entire-host a host-wide rule instead; --once does not apply.\n",
+      "\nBare `approve` is durable: for a network (ext_authz) request it writes a\npermanent allow rule — egress to that host/method/path stays open and the rule\nappears in `dam network list <agent>`. Use --once to allow only the held call.\nTool-call (acp_native) approvals never write an egress rule; the harness owns\nits own permission persistence, and --entire-host falls back to the durable approve.\nOn a spend-limit question (spend_limit), every form of approve continues: it adds\none more limit amount for today and writes no rule.\nOn a rule an agent proposed (egress_proposal), approve writes that rule and\n--entire-host a host-wide rule instead; --once does not apply.\nOn a held web search (web_search), approve writes the agent's web search rule,\nso every later search goes ahead without asking; --entire-host does not apply.\n",
     )
     .action(
       async (
@@ -64,6 +64,8 @@ export function buildApproveCommand(deps: {
             "Approved this call only — the same request shape will re-prompt next time.",
           spendLimitLine:
             "Continued — the spend limit is raised by its daily amount for today, so the agent's model calls work again.",
+          webSearchRuleLine:
+            "every later web search of the agent goes ahead without asking.",
           expiredEffect: "the next request of this shape passes.",
         });
       },

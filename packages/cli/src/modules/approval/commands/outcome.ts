@@ -16,6 +16,7 @@ export interface OutcomeWording {
   pastTense: string;
   onceLine: string;
   spendLimitLine?: string;
+  webSearchRuleLine: string;
   expiredEffect: string;
 }
 
@@ -40,6 +41,10 @@ export function printOutcomeAndExit(
         process.stdout.write(
           `${wording.pastTense} — wrote permanent ${describeRule(outcome.rule)}. It now appears in \`dam network list <agent>\`.\n`,
         );
+      } else if (outcome.type === "web_search" && !opts.once) {
+        process.stdout.write(
+          `${wording.pastTense} — wrote the agent's web search rule: ${wording.webSearchRuleLine}\n`,
+        );
       } else if (outcome.type === "egress_proposal") {
         process.stdout.write(
           `${wording.pastTense} — the proposed egress rule was not written.\n`,
@@ -53,6 +58,12 @@ export function printOutcomeAndExit(
       }
       break;
     case "rule_written_expired":
+      if (outcome.type === "web_search") {
+        process.stdout.write(
+          `Held search already expired — wrote the agent's web search rule anyway: ${wording.webSearchRuleLine}\n`,
+        );
+        break;
+      }
       process.stdout.write(
         `Held call already expired — wrote the durable ${
           outcome.rule ? describeRule(outcome.rule) : "egress rule"

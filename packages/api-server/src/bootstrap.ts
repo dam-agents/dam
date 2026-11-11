@@ -381,6 +381,11 @@ import {
   markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
+  createWebSearchCleanupHook,
+  createWebSearchGatePorts,
+  listWebSearchRuleAgentIds,
+} from "./modules/web-search/compose.js";
+import {
   composeConnectionsAtBoot,
   composeAgentSecretRequests,
   composeConnectionsForOwner,
@@ -2243,6 +2248,15 @@ export async function bootstrap() {
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
+    webSearch: {
+      ...createWebSearchGatePorts(db),
+      sessions: {
+        isScheduled: async (agentId, sessionId) =>
+          (await sessionDirectory.categorize([agentId], [sessionId])).get(
+            sessionId,
+          ) === "scheduled",
+      },
+    },
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -2430,6 +2444,11 @@ export async function bootstrap() {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
       cleanup: createEgressRulesCleanupHook(db),
+    },
+    {
+      name: "web-search-rules",
+      listAgentIds: () => listWebSearchRuleAgentIds(db),
+      cleanup: createWebSearchCleanupHook(db),
     },
     {
       name: "pending-approvals",

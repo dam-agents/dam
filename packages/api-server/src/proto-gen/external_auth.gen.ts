@@ -76,6 +76,11 @@ export interface HttpRequest {
   path: string;
   host: string;
   scheme: string;
+  /**
+   * Sent only by a gateway rendered with web search control, which buffers
+   * the whole body of a model-provider chain's request (pack_as_bytes).
+   */
+  rawBody: Uint8Array;
   _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
 }
 
@@ -926,6 +931,7 @@ function createBaseHttpRequest(): HttpRequest {
     path: "",
     host: "",
     scheme: "",
+    rawBody: new Uint8Array(0),
     _unknownFields: {},
   };
 }
@@ -954,6 +960,9 @@ export const HttpRequest: MessageFns<HttpRequest> = {
     }
     if (message.scheme !== "") {
       writer.uint32(58).string(message.scheme);
+    }
+    if (message.rawBody.length !== 0) {
+      writer.uint32(98).bytes(message.rawBody);
     }
     if (message._unknownFields !== undefined) {
       for (const [key, values] of globalThis.Object.entries(
@@ -1028,6 +1037,14 @@ export const HttpRequest: MessageFns<HttpRequest> = {
             message.scheme = reader.string();
             continue;
           }
+          case 12: {
+            if (tag !== 98) {
+              break;
+            }
+
+            message.rawBody = reader.bytes();
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -1068,6 +1085,7 @@ export const HttpRequest: MessageFns<HttpRequest> = {
     message.path = object.path ?? "";
     message.host = object.host ?? "";
     message.scheme = object.scheme ?? "";
+    message.rawBody = object.rawBody ?? new Uint8Array(0);
     return message;
   },
 };

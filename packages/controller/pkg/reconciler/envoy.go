@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
@@ -112,17 +113,19 @@ type envoyPathRewrite struct {
 }
 
 type envoyHostChain struct {
-	RequireAddress  bool
-	ChainID         string
-	Host            string
-	Credentials     []envoyCredential
-	Signers         []envoySigner
-	UpstreamCluster string
-	HTTP2           bool
-	UpstreamPort    int
-	Upgrades        bool
-	UpstreamCAFile  string
-	PathRewrites    []envoyPathRewrite
+	RequireAddress bool
+	// UNIT_BOUNDARY_DESCRIPTION: set on every chain of an agent whose owner turned on web search control. A metered chain then sends each request's whole body to the ext_authz check, which holds a model call that declares a web search tool.
+	WebSearchControl bool
+	ChainID          string
+	Host             string
+	Credentials      []envoyCredential
+	Signers          []envoySigner
+	UpstreamCluster  string
+	HTTP2            bool
+	UpstreamPort     int
+	Upgrades         bool
+	UpstreamCAFile   string
+	PathRewrites     []envoyPathRewrite
 	// UNIT_BOUNDARY_DESCRIPTION: set on the chain that carries the install's own key: its upstream is the api-server's public Service inside the cluster, pinned by name and port, so the Agent's Host and SNI can never send that key anywhere else.
 	InCluster bool
 	// UNIT_BOUNDARY_DESCRIPTION: set on the one chain for the environments domain: it carries the Agent's key to the api-server's Environment gate, inside the cluster, instead of to the host the agent named.
@@ -982,11 +985,26 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 	return v
 }
 
-func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) (*corev1.ConfigMap, error) {
-	chains := chainsFromSecrets(secrets, l7Hosts)
+// UNIT_BOUNDARY_DESCRIPTION: the owner's per-agent choices that change what the agent's gateway renders, so each one also moves the gateway's revision and rolls it.
+type gatewayChoices struct {
+	RequireAddress   bool
+	WebSearchControl bool
+}
+
+func gatewayChoicesOf(spec *apiv1.AgentSpec) gatewayChoices {
+	return gatewayChoices{RequireAddress: spec.RequireConnectionAddress, WebSearchControl: spec.WebSearchControl}
+}
+
+func (g gatewayChoices) applyTo(chains []envoyHostChain) {
 	for i := range chains {
-		chains[i].RequireAddress = requireAddress
+		chains[i].RequireAddress = g.RequireAddress
+		chains[i].WebSearchControl = g.WebSearchControl
 	}
+}
+
+func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) (*corev1.ConfigMap, error) {
+	chains := chainsFromSecrets(secrets, l7Hosts)
+	choices.applyTo(chains)
 	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, true)
 	if err != nil {
 		return nil, err
@@ -1069,16 +1087,19 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) string {
+func envoyGatewayRev(cfg *config.Config, secrets []corev1.Secret, l7Hosts []string, choices gatewayChoices) string {
 	rev := envoySecretsRev(secrets, l7Hosts)
-	if cfg.GatewayUpstreamTrustBundle == "" && !requireAddress {
+	if cfg.GatewayUpstreamTrustBundle == "" && choices == (gatewayChoices{}) {
 		return rev
 	}
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		rev += "\ntrust=" + cfg.GatewayUpstreamTrustBundle
 	}
-	if requireAddress {
+	if choices.RequireAddress {
 		rev += "\nrequire-connection-address"
+	}
+	if choices.WebSearchControl {
+		rev += "\nweb-search-control"
 	}
 	sum := sha256.Sum256([]byte(rev))
 	return hex.EncodeToString(sum[:8])

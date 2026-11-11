@@ -145,6 +145,7 @@ function approvalsWorld() {
   const approvals = createApprovalsService({
     repo,
     egressRuleWriter,
+    webSearchRuleWriter: { write: async () => {} },
     wrapperFrameSender: { send: async () => {} },
     isAgentOwnedBy: async () => true,
     ownerSub: "alice",

@@ -7,13 +7,13 @@ import {
   injectChannelOf,
 } from "../infrastructure/acp-frames.js";
 import { securityLog } from "../../../core/security-log.js";
-import { getLogger } from "../../../core/logger.js";
-import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
+import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
+import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -27,11 +27,9 @@ export type ExtAuthzDecision =
   | ExtAuthzVerdict
   | {
       readonly verdict: "refuse";
-      readonly basis: "spend" | "rule";
+      readonly basis: "spend" | "rule" | "web-search";
       readonly response: DeniedResponse;
     };
-
-export const approvalChannelOf = (id: string) => `approval:${id}`;
 
 type SpendCall = Omit<
   Parameters<SpendCheck["checkCall"]>[0],
@@ -46,6 +44,9 @@ interface ExtAuthzGateInput {
   method: string;
   path: string;
   spendCall?: SpendCall | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: set when the request came over a model-provider chain, whose spend meter marks every request, billable or not, so a path spelled to look unbillable is still read for web search. `sessionId` is the Model Router's stamp when the meter kept it. */
+  modelCall?: { sessionId: string | null };
+  body?: ModelCallBody;
 }
 
 export interface ExtAuthzGate {
@@ -113,6 +114,7 @@ interface CreateExtAuthzGateDeps {
   attendance: EgressAttendance;
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
+  webSearch?: WebSearchGate;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
   waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
@@ -128,6 +130,8 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       method,
       path,
       spendCall,
+      modelCall,
+      body,
     }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
@@ -187,6 +191,24 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             response: spend.response,
           };
         }
+      }
+
+      if (modelCall && deps.webSearch) {
+        const searched = await deps.webSearch.check({
+          agentId,
+          identity,
+          via,
+          host,
+          path,
+          body,
+          sessionId: modelCall.sessionId,
+        });
+        if (!searched.pass)
+          return {
+            verdict: "refuse",
+            basis: "web-search",
+            response: searched.response,
+          };
       }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
@@ -462,11 +484,6 @@ function ruleRefusal(host: string, rule: MatchedEgressRule): DeniedResponse {
   };
 }
 
-type SettledVerdict =
-  | { verdict: ExtAuthzVerdict; reason: "hold-resolved" }
-  | { verdict: "deny"; reason: "hold-withdrawn" }
-  | { verdict: "deny"; reason: "hold-expired"; flipped: boolean };
-
 function waitingRefusal(
   host: string,
   reason: SettledVerdict["reason"],
@@ -495,68 +512,4 @@ function waitingRefusal(
     },
     body: `Blocked by the egress gateway, not the upstream: this request to ${host} was not allowed because ${why}. The agent that launched this one set the rule; its owner approves it on Home.`,
   };
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: holds a call until its approval is answered or the hold time runs out. A call that owns its request (one the gate filed for it) expires the request when the hold runs out. A call that waits on a request it does not own (a child's rule its driver asked for) leaves the request open for the owner, and gives up when the request is withdrawn or gone.
-async function waitForVerdict(
-  deps: CreateExtAuthzGateDeps,
-  id: string,
-  { ownsRequest }: { ownsRequest: boolean } = { ownsRequest: true },
-): Promise<SettledVerdict> {
-  return new Promise<SettledVerdict>((resolve) => {
-    let settled = false;
-    const settle = (s: SettledVerdict) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(s);
-    };
-
-    const checkResolved = async () => {
-      const row = await deps.repo.getPending(id);
-      if (!ownsRequest && (!row || row.status === "expired"))
-        return settle({ verdict: "deny", reason: "hold-withdrawn" });
-      if (!row || row.status !== "resolved") return;
-      settle({
-        verdict:
-          row.verdict === "allow" || row.verdict === "allow_once"
-            ? "allow"
-            : "deny",
-        reason: "hold-resolved",
-      });
-    };
-
-    const unsubscribe = deps.bus.subscribe(
-      approvalChannelOf(id),
-      () => void checkResolved(),
-    );
-    void checkResolved();
-
-    const poll = setInterval(() => void checkResolved(), 15_000);
-    poll.unref();
-
-    const timeout = setTimeout(async () => {
-      if (!ownsRequest)
-        return settle({
-          verdict: "deny",
-          reason: "hold-expired",
-          flipped: false,
-        });
-      const flipped = await deps.repo.expirePending(id).catch((err) => {
-        getLogger().error(
-          { pendingId: id, reason: formatError(err) },
-          "egress.hold_expire_error",
-        );
-        return false;
-      });
-      settle({ verdict: "deny", reason: "hold-expired", flipped });
-    }, deps.holdSeconds * 1000);
-    timeout.unref();
-
-    function cleanup() {
-      unsubscribe();
-      clearInterval(poll);
-      clearTimeout(timeout);
-    }
-  });
 }

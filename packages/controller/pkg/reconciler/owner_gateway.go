@@ -320,13 +320,13 @@ type ownerGatewayRefusal struct {
 	decided     time.Time
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what decides whether an owner's wide render fits one Secret, in a fixed encoding so the same facts always hash alike: the members and each one's slot and Service address, its granted credentials by name and version, its promoted hosts, its address requirement and its attribution, with the template revision and the budget. Content changes reach it through a credential's version; anything else that changes the render's size without changing these is either the templates themselves, which moves the revision, or state the refusal's expiry covers.
+// UNIT_BOUNDARY_DESCRIPTION: what decides whether an owner's wide render fits one Secret, in a fixed encoding so the same facts always hash alike: the members and each one's slot and Service address, its granted credentials by name and version, its promoted hosts, its address requirement, its web search control and its attribution, with the template revision and the budget. Content changes reach it through a credential's version; anything else that changes the render's size without changing these is either the templates themselves, which moves the revision, or state the refusal's expiry covers.
 func ownerGatewayFingerprint(members map[string]ownerGatewayMember, names []string, budget int) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\n%d\n", ownerGatewayTemplateRev, budget)
 	for _, name := range names {
 		m := members[name]
-		fmt.Fprintf(h, "%q %d %q %d %q %t %q\n", name, m.slot, m.clusterIP, len(m.secrets), m.agent.Spec.L7Hosts, m.agent.Spec.RequireConnectionAddress, m.agent.Spec.TelemetryAttributionID)
+		fmt.Fprintf(h, "%q %d %q %d %q %t %t %q\n", name, m.slot, m.clusterIP, len(m.secrets), m.agent.Spec.L7Hosts, m.agent.Spec.RequireConnectionAddress, m.agent.Spec.WebSearchControl, m.agent.Spec.TelemetryAttributionID)
 		for _, secret := range m.secrets {
 			fmt.Fprintf(h, "%q %q\n", secret.Name, secret.ResourceVersion)
 		}
@@ -410,9 +410,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		for _, name := range names {
 			m := members[name]
 			chains := chainsFromSecrets(m.secrets, m.agent.Spec.L7Hosts)
-			for i := range chains {
-				chains[i].RequireAddress = m.agent.Spec.RequireConnectionAddress
-			}
+			gatewayChoicesOf(&m.agent.Spec).applyTo(chains)
 			agents = append(agents, ownerGatewayAgent{Name: name, AttributionID: m.agent.Spec.TelemetryAttributionID, ProxyPort: ownerGatewayProxyPort(m.slot), Chains: chains})
 			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP, ClusterService: r.config.APIServerHost()})
 			granted = append(granted, m.secrets)
