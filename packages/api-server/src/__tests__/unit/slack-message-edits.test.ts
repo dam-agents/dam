@@ -13,9 +13,10 @@ configureLogger({ level: "error", write: () => {} });
  * message: it replaces the message while it still waits, joins the turn that
  * carries it, or starts a turn on the Session that answered it, marked as the
  * text that replaces the earlier one. An edit that first tags the bot is a
- * new mention. An edit by an Agent, or to a message an Agent only read along,
- * starts no turn; the Agent's next turn lists the message as it reads now,
- * once. A conversation disconnected since the message was sent gets nothing.
+ * new mention. A person's edit to a message Agents read along starts an
+ * ambient round, marked the same way. An edit by an Agent starts no turn; the
+ * Agent's next turn lists the message as it reads now, once. A conversation
+ * disconnected since the message was sent gets nothing.
  */
 
 const BOUND = "C1";
@@ -581,14 +582,16 @@ describe("an edit that first tags the bot", () => {
   });
 });
 
-describe("an edit that starts no turn", () => {
+describe("a person's edit to a message agents read along", () => {
   /**
-   * TEST_SCENARIO: An agent that reads along saw a person's message, and the
-   * person edits it. Nobody asked the agent anything, so no turn starts. The
-   * agent's next turn lists the message as it reads now, and the turn after
-   * that does not repeat it.
+   * TEST_SCENARIO: An agent that reads along answered nothing to a person's
+   * message, and the person edits it to add a question. The agent would
+   * otherwise see the question only when someone posts again, so the edit
+   * starts a round of its own, as a new message would: the new text with the
+   * edit mark, so the agent knows it replaces the message and may stay
+   * silent.
    */
-  it("shows a read-along agent the new text in its next turn, once", async () => {
+  it("starts a round with the new text, marked as an edit", async () => {
     const h = harness({ ambient: true });
     h.gw.setHistory([{ ts: T1, user: USER, text: BLUE }]);
     await h.worker.connect();
@@ -596,14 +599,60 @@ describe("an edit that starts no turn", () => {
     await h.gw.fireMessage({ user: USER, channel: BOUND, ts: T1, text: BLUE });
     expect(await h.settled(() => h.turns().length === 1)).toBe(true);
 
+    h.gw.setHistory([{ ts: T1, user: USER, text: GREEN, edited: true }]);
     await h.gw.fireMessageEdited({
       user: USER,
       channel: BOUND,
       ts: T1,
       text: GREEN,
     });
-    await pause(5);
-    expect(h.turns()).toHaveLength(1);
+    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
+    expect(h.turns()[1]).toContain(`${EDITED} the sender changed`);
+    expect(h.turns()[1]).toContain(`ts ${T1}`);
+    expect(h.turns()[1]).toContain(GREEN);
+    expect(h.turns()[1]).toContain("<reading-along>");
+    expect(h.turns()[1]).toContain("no_reply_needed");
+    expect(h.turns()[1]).not.toContain(CHANGED);
+  });
+
+  /**
+   * TEST_SCENARIO: Slack can report one edit twice, or report a change that
+   * leaves the text as it was. The agent already has that text, so the
+   * second report starts no round.
+   */
+  it("starts no second round when Slack reports the edit twice", async () => {
+    const h = harness({ ambient: true });
+    await h.worker.connect();
+    const edit = { user: USER, channel: BOUND, ts: T1, text: GREEN };
+
+    await h.gw.fireMessage({ user: USER, channel: BOUND, ts: T1, text: BLUE });
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+    await h.gw.fireMessageEdited(edit);
+    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
+
+    await h.gw.fireMessageEdited(edit);
+    await pause(20);
+    expect(h.turns()).toHaveLength(2);
+  });
+
+  /**
+   * TEST_SCENARIO: The edit's round carries the message the turn asks about,
+   * so the next turn does not list that edit again as a changed message.
+   */
+  it("is not listed again in the next turn", async () => {
+    const h = harness({ ambient: true });
+    h.gw.setHistory([{ ts: T1, user: USER, text: BLUE }]);
+    await h.worker.connect();
+
+    await h.gw.fireMessage({ user: USER, channel: BOUND, ts: T1, text: BLUE });
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+    await h.gw.fireMessageEdited({
+      user: USER,
+      channel: BOUND,
+      ts: T1,
+      text: GREEN,
+    });
+    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
 
     h.gw.setHistory([
       { ts: T1, user: USER, text: GREEN, edited: true },
@@ -614,23 +663,6 @@ describe("an edit that starts no turn", () => {
       channel: BOUND,
       ts: T2,
       text: "anything new?",
-    });
-    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
-    expect(h.turns()[1]).toContain(CHANGED);
-    expect(h.turns()[1]).toContain(`ts ${T1}`);
-    expect(h.turns()[1]).toContain(`${GREEN} (edited)`);
-    expect(h.turns()[1]).not.toContain(EDITED);
-
-    h.gw.setHistory([
-      { ts: T1, user: USER, text: GREEN, edited: true },
-      { ts: T2, user: USER, text: "anything new?" },
-      { ts: T3, user: USER, text: "and now?" },
-    ]);
-    await h.gw.fireMessage({
-      user: USER,
-      channel: BOUND,
-      ts: T3,
-      text: "and now?",
     });
     expect(await h.settled(() => h.turns().length === 3)).toBe(true);
     expect(h.turns()[2]).not.toContain(CHANGED);
@@ -694,47 +726,9 @@ describe("an edit that starts no turn", () => {
     expect(h.turns()[0]).not.toContain(CHANGED);
   });
 
-  /**
-   * TEST_SCENARIO: Slack can report one edit twice. An agent already listed
-   * the edit must not be listed it again because of the second report.
-   */
-  it("lists an edit once when Slack reports it twice", async () => {
-    const h = harness({ ambient: true });
-    h.gw.setHistory([{ ts: T1, user: USER, text: BLUE }]);
-    await h.worker.connect();
-    const edit = { user: USER, channel: BOUND, ts: T1, text: GREEN };
-    const edited = { ts: T1, user: USER, text: GREEN, edited: true };
+});
 
-    await h.gw.fireMessage({ user: USER, channel: BOUND, ts: T1, text: BLUE });
-    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
-    await h.gw.fireMessageEdited(edit);
-
-    h.gw.setHistory([edited, { ts: T2, user: USER, text: "anything new?" }]);
-    await h.gw.fireMessage({
-      user: USER,
-      channel: BOUND,
-      ts: T2,
-      text: "anything new?",
-    });
-    expect(await h.settled(() => h.turns().length === 2)).toBe(true);
-    expect(h.turns()[1]).toContain(CHANGED);
-
-    await h.gw.fireMessageEdited(edit);
-    h.gw.setHistory([
-      edited,
-      { ts: T2, user: USER, text: "anything new?" },
-      { ts: T3, user: USER, text: "and now?" },
-    ]);
-    await h.gw.fireMessage({
-      user: USER,
-      channel: BOUND,
-      ts: T3,
-      text: "and now?",
-    });
-    expect(await h.settled(() => h.turns().length === 3)).toBe(true);
-    expect(h.turns()[2]).not.toContain(CHANGED);
-  });
-
+describe("an edit that starts no turn", () => {
   /**
    * TEST_SCENARIO: An agent asks a peer by tagging the bot, then corrects its
    * post while the peer has not started on it. An agent's edit starts no
