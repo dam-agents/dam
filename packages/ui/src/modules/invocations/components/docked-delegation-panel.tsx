@@ -8,7 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
 import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
@@ -93,7 +93,8 @@ function PanelBody({
   driverAgentId: string;
   driverName: string;
 }) {
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryEnabled =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
   const ids = useMemo(() => [node.id], [node.id]);
   const { data: telemetry } = useInvocationTurns(
     driverAgentId,

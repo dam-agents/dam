@@ -11,10 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
-import {
-  useFeatures,
-  useInstallCapabilities,
-} from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import {
   type ActivityFilters,
@@ -256,10 +253,8 @@ function AgentSessionList({
 }) {
   const list = useAgentSessionList(agentId, filter);
   const openSession = useOpenSession();
-  const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
-  const telemetryBackend =
+  const telemetryEnabled =
     useInstallCapabilities().data?.telemetryBackend ?? false;
-  const telemetryEnabled = telemetryFlag && telemetryBackend;
   const rootRef = useRef<HTMLDivElement>(null);
   const [pagesLeft, setPagesLeft] = useState(SIDEBAR_FILL_PAGES);
 
