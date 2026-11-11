@@ -412,7 +412,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			chains := chainsFromSecrets(m.secrets, m.agent.Spec.L7Hosts)
 			gatewayChoicesOf(&m.agent.Spec).applyTo(chains)
 			agents = append(agents, ownerGatewayAgent{Name: name, AttributionID: m.agent.Spec.TelemetryAttributionID, ProxyPort: ownerGatewayProxyPort(m.slot), Chains: chains})
-			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP})
+			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP, ClusterService: r.config.APIServerHost()})
 			granted = append(granted, m.secrets)
 			out.leafAgents = append(out.leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}

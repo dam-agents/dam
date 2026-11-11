@@ -13,6 +13,7 @@ export function egressApprovalsWaiting(
           a.type === "web_search") &&
         (a.agentId === agentId ||
           ((a.payload.kind === "ext_authz" ||
+            a.payload.kind === "egress_proposal" ||
             a.payload.kind === "web_search") &&
             a.payload.forAgentId === agentId)) &&
         a.status === "pending" &&

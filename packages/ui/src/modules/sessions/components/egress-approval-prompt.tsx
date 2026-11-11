@@ -7,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { OwnerConnectionsNote } from "../../agents/components/owner-connections-note.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
+import { ChildRuleRows } from "../../approvals/components/child-rule-rows.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import {
@@ -18,6 +19,7 @@ import {
   approvalDetail,
   approvalPromptTitle,
   approvalReason,
+  childRulesGroupCopy,
 } from "../../home/lib/approval-copy.js";
 import { ChatColumn } from "./chat-column.js";
 
@@ -42,7 +44,8 @@ function EgressApprovalCard({
       approval,
       group.map((a) => a.id),
     );
-  const reason = approvalReason(approval);
+  const grouped = childRulesGroupCopy(group);
+  const reason = grouped?.reason ?? approvalReason(approval);
   return (
     <div
       data-testid="chat-egress-approval"
@@ -52,12 +55,18 @@ function EgressApprovalCard({
         <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
         <span className="min-w-0">{approvalPromptTitle(approval)}</span>
       </div>
-      <div className="pl-4 font-mono text-sm text-muted-foreground break-all">
-        {approvalDetail(approval)}
-        {group.length > 1 && (
-          <span className="font-sans"> · {group.length} requests</span>
-        )}
-      </div>
+      {grouped ? (
+        <div className="pl-4">
+          <ChildRuleRows approvals={group} />
+        </div>
+      ) : (
+        <div className="pl-4 font-mono text-sm text-muted-foreground break-all">
+          {approvalDetail(approval)}
+          {group.length > 1 && (
+            <span className="font-sans"> · {group.length} requests</span>
+          )}
+        </div>
+      )}
       {reason !== null && (
         <p
           data-testid="chat-egress-proposal-reason"

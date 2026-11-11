@@ -100,6 +100,8 @@ export function hintFor(event: DomainEvent): {
     case EventType.AvatarUnlocked:
     case EventType.GettingStartedReset:
       return { ownerSub: event.ownerSub, hint: { topic: "gettingStarted" } };
+    case EventType.AssistantFirstResultRecorded:
+      return { ownerSub: event.owner, hint: { topic: "gettingStarted" } };
     case EventType.AssistantUsed:
       return {
         ownerSub: event.ownerSub,

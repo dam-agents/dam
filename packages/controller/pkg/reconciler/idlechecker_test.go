@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -37,7 +38,7 @@ func idleAgentCR(name, lastActivity string, annotations map[string]string) *apiv
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: "test-agents", Annotations: annotations,
 		},
-		Spec: apiv1.AgentSpec{Image: "foo"},
+		Spec: apiv1.AgentSpec{Backend: &apiv1.Backend{Type: "vm"}, Image: "foo"},
 	}
 }
 
@@ -547,5 +548,53 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 
 			assert.Equal(t, tt.hibernated, probed)
 		})
+	}
+}
+
+// TEST_SCENARIO: an Invocation target parked for room past its idle timeout is not hibernated, so the Agent Sweep does not delete it before its deadline; a parked Agent that is not sweepable is hibernated as before.
+func TestIdleChecker_HoldsASweepableAgentParkedForRoom(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	for _, tt := range []struct {
+		name       string
+		sweepable  string
+		hibernated bool
+	}{
+		{"sweepable", "true", false},
+		{"not sweepable", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := idleAgentCR("vm-agent", stale, map[string]string{annSweepable: tt.sweepable})
+			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonAwaitingMemory}}
+			checker, _ := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 0))
+			probed := false
+			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+
+			checker.check(context.Background())
+
+			assert.Equal(t, tt.hibernated, probed)
+		})
+	}
+}
+
+// TEST_SCENARIO: the sweep stops the fleet it owns, and an Agent on the removed container backend is not in it: it has no machine to put to sleep and no pair this release runs, so its replicas and its status stay as they are, and its refusal is the reconcile's to publish.
+func TestIdleChecker_LeavesAnAgentOnTheContainerBackendAlone(t *testing.T) {
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("container-agent", stale, nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "container"}
+	noBackend := idleAgentCR("legacy-agent", stale, nil)
+	noBackend.Spec.Backend = nil
+	checker, client := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent, noBackend},
+		agentStatefulSet("container-agent", 1), agentStatefulSet("legacy-agent", 1))
+
+	checker.check(context.Background())
+
+	for _, name := range []string{"container-agent", "legacy-agent"} {
+		ss, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, int32(1), *ss.Spec.Replicas, "the sweep stopped %s, which this release cannot run", name)
+		u, err := checker.backend.Get(context.Background(), name)
+		require.NoError(t, err)
+		conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+		assert.Empty(t, conds, "the sweep published a hibernation on %s", name)
 	}
 }

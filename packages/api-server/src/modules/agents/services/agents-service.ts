@@ -639,6 +639,7 @@ export function createAgentsService(deps: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
       providerConnectionId?: string;
+      platform?: boolean;
     }): Promise<{ grantedConnectionIds: string[] }>;
     defaultProviders(
       connectionIds: string[],
@@ -653,7 +654,7 @@ export function createAgentsService(deps: {
     }>;
     applyAfterCreate(
       agentId: string,
-      sel: { connectionIds: string[] },
+      sel: { connectionIds: string[]; platform?: boolean },
     ): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
@@ -1460,6 +1461,8 @@ export function createAgentsService(deps: {
           ]),
         ),
         providerConnectionId,
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform makes for the person, not one they asked for, so a grant it carries is not held to the flag that offers that Connection to people. */
+        ...(input.platformGrants ? { platform: true as const } : {}),
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({
@@ -1482,7 +1485,8 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
-      await assertNameFree(input.name, owner);
+      /* UNIT_BOUNDARY_DESCRIPTION: the id a caller names is its own — a platform resume of an Agent an earlier attempt already wrote — so that Agent's own name is not evidence the name is taken. */
+      await assertNameFree(input.name, owner, input.id);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1523,21 +1527,28 @@ export function createAgentsService(deps: {
           Object.keys(createAnnotations).length ? createAnnotations : undefined,
         );
       } catch (e) {
-        if (input.registryCredential) {
-          try {
-            await deps.registrySecretPort.delete(agentId);
-          } catch (cleanupErr) {
-            securityLog("error", "agent.create.pull_secret_orphaned", {
-              category: "resource",
-              actor: deps.actor ?? null,
-              actorKind: "user",
-              result: "failure",
-              reason:
-                cleanupErr instanceof Error ? cleanupErr.message : "unknown",
-            });
+        /* UNIT_BOUNDARY_DESCRIPTION: a create the platform resumes — the same id asked for again after an earlier attempt wrote the row and then failed on its bookkeeping — finishes that Agent from here rather than failing on the row it already has. Only a caller that names the id reaches this, and no API caller can: the id is the platform's own. The steps below are written to run again. */
+        const resumed = input.id
+          ? await deps.repo.get(agentId, owner).catch(() => null)
+          : null;
+        if (resumed === null) {
+          if (input.registryCredential) {
+            try {
+              await deps.registrySecretPort.delete(agentId);
+            } catch (cleanupErr) {
+              securityLog("error", "agent.create.pull_secret_orphaned", {
+                category: "resource",
+                actor: deps.actor ?? null,
+                actorKind: "user",
+                result: "failure",
+                reason:
+                  cleanupErr instanceof Error ? cleanupErr.message : "unknown",
+              });
+            }
           }
+          throw e;
         }
-        throw e;
+        infra = resumed;
       }
 
       const userEnv = dropProtectedEnvs([...templateEnv, ...(input.env ?? [])]);

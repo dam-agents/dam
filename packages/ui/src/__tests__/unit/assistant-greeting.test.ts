@@ -6,6 +6,7 @@
 // TEST_OVERVIEW: owner's own assistant, only while the record says it was never
 // TEST_OVERVIEW: used — a mark a Session that just appeared sets at once, so a New
 // TEST_OVERVIEW: chat does not bring the greeting back.
+import { assistantIdeas } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,10 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markAssistantUsed } from "../../modules/assistants/api/assistant-state.js";
 import { AssistantGreeting } from "../../modules/assistants/components/assistant-greeting.js";
 import {
-  GREETING_PLACEHOLDER,
-  GREETING_SUGGESTIONS,
   greetingCopy,
   greetingShown,
+  isAssistantChat,
+  preferredProviderTemplate,
+  providerLineFor,
 } from "../../modules/assistants/lib/greeting.js";
 import { draftKey } from "../../modules/sessions/lib/draft-key.js";
 import { queryClient } from "../../query-client.js";
@@ -33,8 +35,9 @@ const ON = {
 
 const copy = greetingCopy({
   firstName: "Jenna",
-  assistantName: "Dambledore",
+  assistantName: "Dammy",
   brandName: "DAM",
+  provider: "curve-bender",
 });
 
 describe("when the greeting is shown", () => {
@@ -61,12 +64,22 @@ describe("when the greeting is shown", () => {
   });
 });
 
+describe("which chat the celebration belongs to", () => {
+  // TEST_SCENARIO: the assistant's chat stays the assistant's chat after its first message and while a turn runs, so the unlock the platform made keeps playing there while the greeting is gone; any other Agent, and a person the feature is off for, get neither.
+  it("stays the assistant's chat after the greeting is gone", () => {
+    expect(isAssistantChat(ON)).toBe(true);
+    expect(greetingShown({ ...ON, used: true })).toBe(false);
+    expect(isAssistantChat(ON)).toBe(true);
+    expect(isAssistantChat({ ...ON, selectedAgent: "agent-2" })).toBe(false);
+    expect(isAssistantChat({ ...ON, assistantOn: false })).toBe(false);
+    expect(isAssistantChat({ ...ON, assistantId: null })).toBe(false);
+  });
+});
+
 describe("what the greeting says", () => {
   // TEST_SCENARIO: the person's given name and the install's assistant and brand names, never a hardcoded one.
   it("names the person and the branded assistant", () => {
-    expect(copy.paragraphs[0]).toBe(
-      "Hi Jenna! I'm Dambledore, your new personal DAM agent!",
-    );
+    expect(copy.opening).toBe("Hi Jenna! I'm Dammy, your personal DAM agent.");
   });
 
   // TEST_SCENARIO: a person whose profile holds no given name is greeted without one rather than by a made-up name.
@@ -75,21 +88,85 @@ describe("what the greeting says", () => {
       expect(
         greetingCopy({
           firstName,
-          assistantName: "Dambledore",
+          assistantName: "Dammy",
           brandName: "DAM",
-        }).paragraphs[0],
-      ).toBe("Hi! I'm Dambledore, your new personal DAM agent!");
+          provider: "curve-bender",
+        }).opening,
+      ).toBe("Hi! I'm Dammy, your personal DAM agent.");
   });
 
-  // TEST_SCENARIO: the low-trust path offers tasks that need no connection and no personal context, one of them the composer's own example.
-  it("asks about the owner's role and offers tasks needing nothing", () => {
-    expect(copy.paragraphs[1]).toContain("Tell me a bit about your role");
-    expect(copy.suggestions.length).toBeGreaterThanOrEqual(3);
-    expect(copy.suggestions).toContain(GREETING_PLACEHOLDER);
-    expect(copy.placeholder).toBe(
-      "Remember I like answers short and technical",
-    );
-    expect(GREETING_SUGGESTIONS).toEqual(copy.suggestions);
+  // TEST_SCENARIO: the design's five ideas, each labelled with the kind of work it would be, and the composer's example is one of them.
+  it("offers the five labelled ideas", () => {
+    expect(assistantIdeas("DAM").map((idea) => idea.label)).toEqual([
+      "Artifact",
+      "Schedule",
+      "Knowledge base",
+      "Skill",
+      "DAM",
+    ]);
+    expect(copy.ideas).toEqual(assistantIdeas("DAM"));
+    expect(copy.learn).toContain("I learn how you work, one task at a time");
+    expect(
+      assistantIdeas("DAM").map((idea) => `${idea.label}: ${idea.text}`),
+    ).not.toContain(copy.placeholder);
+  });
+
+  // TEST_SCENARIO: the composer under the greeting hints a message to the assistant by name, as the design does, never one of the ideas whose pill already says it.
+  it("hints a message to the assistant by name", () => {
+    expect(copy.placeholder).toBe("Message Dammy");
+  });
+
+  // TEST_SCENARIO: the sentence beside the provider names where to change it, once, in the design's words.
+  it("points at Agent settings in the design's words", () => {
+    expect(copy.settingsPrefix).toBe("You can switch providers anytime in");
+    expect(copy.settingsLink).toBe("Agent settings");
+  });
+
+  // TEST_SCENARIO: the provider line names CurveBender only when that is the provider the Agent runs on, and otherwise points at where it changes without naming one.
+  it("names the provider it has, and no other", () => {
+    expect(copy.provider).toContain("CurveBender");
+    const other = greetingCopy({
+      firstName: "Jenna",
+      assistantName: "Dammy",
+      brandName: "DAM",
+      provider: "other",
+    });
+    expect(other.provider).toBe("");
+    expect(other.provider).not.toContain("CurveBender");
+    expect(providerLineFor("curve-bender-deployment")).toBe("curve-bender");
+    expect(providerLineFor("curve-bender")).toBe("curve-bender");
+    expect(providerLineFor("anthropic")).toBe("other");
+    expect(providerLineFor(undefined)).toBeNull();
+  });
+
+  // TEST_SCENARIO: the Agent holds an app Connection too, listed before its provider: only the provider Connections decide the line, in the order the person set — preferred first, else the first — so a GitHub grant never hides the provider, nor speaks for it.
+  it("reads the provider from provider Connections alone", () => {
+    const grant = (
+      templateId: string,
+      preferred = false,
+    ): { preferred: boolean; connection: { templateId: string } } => ({
+      preferred,
+      connection: { templateId },
+    });
+    expect(
+      preferredProviderTemplate({
+        connections: [grant("github"), grant("anthropic", true)],
+      }),
+    ).toBe("anthropic");
+    expect(
+      preferredProviderTemplate({
+        connections: [grant("github"), grant("curve-bender")],
+      }),
+    ).toBe("curve-bender");
+    expect(
+      preferredProviderTemplate({ connections: [grant("github")] }),
+    ).toBeUndefined();
+    expect(
+      preferredProviderTemplate({
+        connections: [{ preferred: true }],
+      }),
+    ).toBeUndefined();
+    expect(preferredProviderTemplate(undefined)).toBeUndefined();
   });
 });
 
@@ -97,7 +174,14 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: the first Session of the chat appears before the api-server has learned of it, so the cached record learns it here — and the greeting's own gate then stays shut for a New chat in the same page load.
   it("closes the gate the moment a session exists", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false, resetAt: null };
+    const row = {
+      agentId: ASSISTANT,
+      legacy: true,
+      used: false,
+      resetAt: null,
+      ready: true,
+      firstResult: null,
+    };
     queryClient.setQueryData(key, row);
     markAssistantUsed(ASSISTANT);
     expect(queryClient.getQueryData(key)).toEqual({ ...row, used: true });
@@ -112,7 +196,14 @@ describe("the record's used mark", () => {
   // TEST_SCENARIO: a session on another Agent is not the assistant's, so a record that does not name it is left alone.
   it("leaves a record that names another agent alone", () => {
     const key = trpc.assistants.state.queryKey();
-    const row = { agentId: ASSISTANT, used: false, resetAt: null };
+    const row = {
+      agentId: ASSISTANT,
+      legacy: true,
+      used: false,
+      resetAt: null,
+      ready: true,
+      firstResult: null,
+    };
     queryClient.setQueryData(key, row);
     markAssistantUsed("agent-2");
     expect(queryClient.getQueryData(key)).toEqual(row);
@@ -152,21 +243,26 @@ afterEach(() => {
 });
 
 describe("the greeting in the chat", () => {
-  // TEST_SCENARIO: the greeting is shown with the assistant's own name above it and one chip per task it offers.
-  it("shows the assistant above the message, one chip per task", () => {
-    expect(host.textContent).toContain("Dambledore");
-    expect(host.textContent).toContain(copy.paragraphs[0]);
-    const chips = [...host.querySelectorAll("button")].filter((button) =>
-      GREETING_SUGGESTIONS.some((task) => button.textContent === task),
+  // TEST_SCENARIO: the greeting is shown with the assistant's own name above it and one pill per idea it offers, each labelled.
+  it("shows the assistant above the message, one pill per idea", () => {
+    expect(host.textContent).toContain("Dammy");
+    expect(host.textContent).toContain(copy.opening);
+    const pills = [...host.querySelectorAll("button")].filter((button) =>
+      assistantIdeas("DAM").some((idea) =>
+        button.textContent?.includes(idea.text),
+      ),
     );
-    expect(chips).toHaveLength(GREETING_SUGGESTIONS.length);
+    expect(pills).toHaveLength(assistantIdeas("DAM").length);
+    expect(
+      host.querySelector('[data-testid="assistant-greeting-settings"]'),
+    ).not.toBeNull();
   });
 
-  // TEST_SCENARIO: a click on a chip puts its text in the composer of this chat and stops there, so nothing runs before the person acts.
+  // TEST_SCENARIO: a click on a pill puts its labelled text in the composer of this chat and stops there, so nothing runs before the person acts.
   it("fills the composer without sending", () => {
-    const task = GREETING_SUGGESTIONS[0];
-    const chip = [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === task,
+    const task = `${assistantIdeas("DAM")[0]!.label}: ${assistantIdeas("DAM")[0]!.text}`;
+    const chip = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes(assistantIdeas("DAM")[0]!.text),
     );
     expect(chip).toBeDefined();
     act(() => chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

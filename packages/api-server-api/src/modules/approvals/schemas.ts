@@ -29,6 +29,7 @@ export const approvalListForInstanceInputSchema =
 export const approvalApproveOnceInputSchema = idSchema;
 export const approvalApprovePermanentInputSchema = idSchema;
 export const approvalApproveHostInputSchema = idSchema;
+export const approvalApproveForChildrenInputSchema = idSchema;
 export const approvalDenyForeverInputSchema = idSchema;
 export const approvalDismissInputSchema = idSchema;
 export const approvalDismissManyInputSchema = z.object({

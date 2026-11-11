@@ -59,6 +59,7 @@ import {
   RULE_GROUP_TITLE,
   type RuleGroupKey,
 } from "../rule-groups.js";
+import { ChildEgressToggle } from "./child-egress-toggle.js";
 
 const EMPTY: EgressRuleView[] = [];
 const ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -170,6 +171,7 @@ export function AgentEgressEditor({
           </Button>
         </div>
       )}
+      {!compact && <ChildEgressToggle agentId={agentId} />}
       <ListSection
         className={compact ? "mb-0" : undefined}
         loading={isLoading}

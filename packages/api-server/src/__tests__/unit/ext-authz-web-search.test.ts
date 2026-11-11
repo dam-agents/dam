@@ -78,6 +78,7 @@ function world(options: WorldOptions = {}) {
     spend: { checkCall: async () => ({ verdict: "allow" as const }) },
     questions: { ask: async () => {} },
     platformAllowedAuthorities: [],
+    waitingRuleSpeaksFor: () => false,
     webSearch: createWebSearchGate({
       repo: repo.repo,
       bus: bus.bus,

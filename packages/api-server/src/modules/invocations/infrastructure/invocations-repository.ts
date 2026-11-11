@@ -36,6 +36,14 @@ export interface InvocationSpec {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a target and one of its runs, as every reader sees it: the target's latest run when it is read by its id, each running run when runs are listed. A target with no run yet reads as idle, with the spawn's time limit and expiry.
+export interface EgressAnswer {
+  host: string;
+  port?: number;
+  method: string;
+  path: string;
+  verdict: "allow" | "deny";
+}
+
 export interface InvocationRow extends InvocationSpec {
   id: string;
   driverAgentId: string;
@@ -53,6 +61,7 @@ export interface InvocationRow extends InvocationSpec {
   startedAt: Date | null;
   expiresAt: Date;
   keepUntil: Date | null;
+  egressAnswers: EgressAnswer[] | null;
   runId: string | null;
   sessionId: string | null;
   cancelPending: boolean;
@@ -162,6 +171,8 @@ export interface InvocationsRepository {
   hasRunning(invocationId: string): Promise<boolean>;
   markReaped(id: string): Promise<void>;
   setKeepUntil(id: string, keepUntil: Date): Promise<void>;
+  // UNIT_BOUNDARY_DESCRIPTION: adds the owner's answer to one waiting network rule of a target, so its driver reads the answers after the target is removed; a target that does not exist (an Environment has no invocation) is left alone.
+  recordEgressAnswer(id: string, answer: EgressAnswer): Promise<void>;
   // UNIT_BOUNDARY_DESCRIPTION: adds a run to a target that is kept, or a clean slate with no run yet whose wait has not run out; a run that continues a session is refused while another run works in that session or is still being ended there, checked under the target's lock so two runs never take one session.
   beginRun(
     invocationId: string,
@@ -215,6 +226,7 @@ export function toRow(
     startedAt: run?.startedAt ?? null,
     expiresAt: run?.expiresAt ?? target.expiresAt,
     keepUntil: target.keepUntil,
+    egressAnswers: target.egressAnswers ?? null,
     runId: run?.id ?? null,
     sessionId: run?.sessionId ?? null,
     cancelPending: run?.cancelPending ?? false,
@@ -701,6 +713,15 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         .update(runsTable)
         .set({ cancelPending: false })
         .where(eq(runsTable.id, runId));
+    },
+
+    async recordEgressAnswer(id, answer) {
+      await db
+        .update(invocationsTable)
+        .set({
+          egressAnswers: sql`coalesce(${invocationsTable.egressAnswers}, '[]'::jsonb) || ${JSON.stringify([answer])}::jsonb`,
+        })
+        .where(eq(invocationsTable.id, id));
     },
 
     async setKeepUntil(id, keepUntil) {

@@ -12,7 +12,7 @@ import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
-import { waitForVerdict } from "./held-verdict.js";
+import { type SettledVerdict, waitForVerdict } from "./held-verdict.js";
 import type { ModelCallBody, WebSearchGate } from "./web-search-gate.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
@@ -81,6 +81,18 @@ export interface EgressRuleMatcher {
   ): Promise<{ verdict: ExtAuthzVerdict; rule: MatchedEgressRule } | null>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a rule a child's driver asked for, which waits for the owner, would speak for a request once written, read as the gate's own lookup reads a stored rule.
+export type WaitingRuleSpeaksFor = (
+  rule: { host: string; port?: number; method: string; pathPattern: string },
+  request: {
+    host: string;
+    port: number;
+    tls: boolean;
+    method: string;
+    path: string;
+  },
+) => boolean;
+
 export interface ProviderScopes {
   covers(
     agentId: string,
@@ -105,6 +117,7 @@ interface CreateExtAuthzGateDeps {
   webSearch?: WebSearchGate;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
+  waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
@@ -278,6 +291,63 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       if (identity.own?.mode === "open") {
+        const waiting = (
+          await deps.repo.listPendingChildEgressRequests(identity.agentId)
+        ).find(
+          (row) =>
+            row.payload.kind === "egress_proposal" &&
+            deps.waitingRuleSpeaksFor(
+              {
+                host: row.payload.host,
+                ...(row.payload.port !== undefined
+                  ? { port: row.payload.port }
+                  : {}),
+                method: row.payload.method,
+                pathPattern: row.payload.path,
+              },
+              { host, port, tls, method, path },
+            ),
+        );
+        if (waiting) {
+          securityLog("warn", "egress.hold", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "hold",
+            correlationId: waiting.id,
+            detail: { method, path, via, basis: "child-rule-waiting" },
+          });
+          const settled = await waitForVerdict(deps, waiting.id, {
+            ownsRequest: false,
+          });
+          securityLog(
+            settled.verdict === "deny" ? "warn" : "info",
+            "egress.decision",
+            {
+              category: "egress",
+              actor: identity.ownerSub,
+              actorKind: "agent",
+              surface: "ext-authz",
+              agentId: identity.agentId,
+              target: host,
+              decision:
+                settled.reason === "hold-expired" ? "expired" : settled.verdict,
+              correlationId: waiting.id,
+              reason: settled.reason,
+              detail: { method, path, basis: "child-rule-waiting", via },
+            },
+          );
+          return settled.verdict === "allow"
+            ? "allow"
+            : {
+                verdict: "refuse",
+                basis: "rule",
+                response: waitingRefusal(host, settled.reason),
+              };
+        }
         securityLog("warn", "egress.decision", {
           category: "egress",
           actor: identity.ownerSub,
@@ -411,5 +481,35 @@ function ruleRefusal(host: string, rule: MatchedEgressRule): DeniedResponse {
       [PLATFORM_REFUSAL_HEADER]: "egress",
     },
     body: `Blocked by network rule "deny ${ruleHost}, method ${rule.method}, path ${rule.pathPattern}": the egress gateway refused this request to ${host}, not the upstream. The agent's owner can change the rule in the agent's network settings.`,
+  };
+}
+
+function waitingRefusal(
+  host: string,
+  reason: SettledVerdict["reason"],
+): DeniedResponse {
+  const why = match(reason)
+    .with(
+      "hold-resolved",
+      () => "the agent's owner declined the network rule that would allow it",
+    )
+    .with(
+      "hold-withdrawn",
+      () =>
+        "the network rule that would allow it is no longer asked of the agent's owner",
+    )
+    .with(
+      "hold-expired",
+      () =>
+        "the network rule that would allow it still waits for the owner's approval, and the owner did not answer in time",
+    )
+    .exhaustive();
+  return {
+    status: 403,
+    headers: {
+      "content-type": "text/plain",
+      [PLATFORM_REFUSAL_HEADER]: "egress",
+    },
+    body: `Blocked by the egress gateway, not the upstream: this request to ${host} was not allowed because ${why}. The agent that launched this one set the rule; its owner approves it on Home.`,
   };
 }

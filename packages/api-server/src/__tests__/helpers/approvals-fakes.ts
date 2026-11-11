@@ -85,6 +85,8 @@ export function makeFakeApprovalsRepo(): FakeRepo {
     deleteForAgent: async () => {},
     listDistinctAgentIds: async () => [],
     listPendingChildEgressRequests: async () => [],
+    listPendingWiderChildEgressRequests: async () => [],
+    listAgentsWithPendingChildEgressRequests: async () => [],
   };
   return {
     repo,

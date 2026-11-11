@@ -1,5 +1,5 @@
 {
-  "id": "6a66fa8e-6d8d-44d5-8e54-413c4f0c7fd2",
+  "id": "dfa458f9-c931-437d-90b7-6e7d3b7af029",
   "prevId": "590a179e-adb3-47ac-9f9c-e1784133b5ae",
   "version": "7",
   "dialect": "postgresql",
@@ -1380,6 +1380,54 @@
           "value": "\"agents\".\"platform_subagent_profile\" is null or \"agents\".\"platform_subagent_settings\" is null"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.api_key_revocations": {
+      "name": "api_key_revocations",
+      "schema": "",
+      "columns": {
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_sub": {
+          "name": "owner_sub",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "api_key_revocations_owner_idx": {
+          "name": "api_key_revocations_owner_idx",
+          "columns": [
+            {
+              "expression": "owner_sub",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.api_keys": {
@@ -7063,49 +7111,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.web_search_rules": {
-      "name": "web_search_rules",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "web_search_rules_verdict": {
-          "name": "web_search_rules_verdict",
-          "value": "\"web_search_rules\".\"verdict\" IN ('allow', 'deny')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "control.agent_conditions": {
       "name": "agent_conditions",
       "schema": "control",
@@ -7881,13 +7886,6 @@
         },
         "require_connection_address": {
           "name": "require_connection_address",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "web_search_control": {
-          "name": "web_search_control",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

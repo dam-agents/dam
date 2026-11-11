@@ -1,12 +1,15 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
 import {
+  childEgressGrants,
   childrenMirroringConnections,
   composeAgentsModule,
   composeEditorStanding,
   connectionGrantProvisioner,
+  inheritanceOf,
 } from "../../../modules/agents/index.js";
 import { composeAssistantsForOwner } from "../../../modules/assistants/index.js";
+import { assistantProvisioningGuard } from "../../../modules/assistants/services/provisioning-guard-instance.js";
 import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
 import { createAgentTargetResolver } from "./agent-target.js";
@@ -23,7 +26,17 @@ import {
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { createChannelProfiles } from "../../../modules/channels/infrastructure/channel-profile.js";
-import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
+import {
+  findExternalLinksByIdentity,
+  findExternalUsersByIdentity,
+} from "../../../modules/channels/infrastructure/identity-links-repository.js";
+import { createSlackDmBridgesRepository } from "../../../modules/channels/infrastructure/slack-dm-bridges-repository.js";
+import {
+  createSlackDmBridgeService,
+  greetingOutcome,
+  type SlackDmFailureCode,
+} from "../../../modules/channels/services/slack-dm-bridge-service.js";
+import type { SlackDmFailurePartial } from "../../../modules/channels/services/slack-dm-bridge-service.js";
 import { createSlackLoopGuardDropsRepository } from "../../../modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import { listSlackInstalls } from "../../../modules/channels/infrastructure/slack-installs-repository.js";
 import { withWorkspaceNames } from "../../../modules/channels/domain/slack-channel-choices.js";
@@ -40,6 +53,7 @@ import {
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
   composeInvocationsQueryForOwner,
+  recordEgressAnswerAdapter,
   composeInvocationsControlForOwner,
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
@@ -62,7 +76,12 @@ import {
   composeSecretRequestsForOwner,
 } from "../../../modules/connections/compose.js";
 import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
-import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { damKeyPortFor } from "../../../modules/connections/domain/dam-connection.js";
+import {
+  composeApprovalsService,
+  composeChildEgressRelease,
+  childEgressWaitingAmong,
+} from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -85,12 +104,48 @@ import {
 } from "../../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import type { ApiServerDeps } from "../deps.js";
 
+/* UNIT_BOUNDARY_DESCRIPTION: How a Bridge refusal reaches a caller: a code the
+ * CLI can branch on, never a silent success, and the part that persisted named
+ * in the message so a partial connect is reported rather than hidden. A
+ * Slack-side failure is a precondition — the workspace or the app said no. */
+function slackDmError(
+  code: SlackDmFailureCode,
+  message: string,
+  partial?: SlackDmFailurePartial,
+): TRPCError {
+  const trpcCode =
+    code === "agent-not-found"
+      ? "NOT_FOUND"
+      : code === "linked-to-another-account" ||
+          code === "linked-to-another-workspace"
+        ? "CONFLICT"
+        : "PRECONDITION_FAILED";
+  const persisted = partial
+    ? ` (${[
+        partial.link === undefined ? null : `link ${partial.link}`,
+        partial.binding === undefined ? null : `binding ${partial.binding}`,
+        partial.helloPosted === undefined
+          ? null
+          : `hello ${partial.helloPosted ? "posted" : "not posted"}`,
+      ]
+        .filter(Boolean)
+        .join(", ")} in ${partial.dmChannelId})`
+    : "";
+  return new TRPCError({
+    code: trpcCode,
+    message: `${message}${persisted}`,
+    cause: partial,
+  });
+}
+
 export function createApiContextFactory(boot: ApiServerDeps) {
   const {
     config,
     api,
     db,
+    assistantFirstResultLock,
     channelManager,
+    identityLinkService,
     telegramBindFlows,
     slackBindFlows,
     seedSources,
@@ -150,6 +205,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     memory: config.agentDefaultMemoryLimit,
   };
   const readChatFormPreferences = createChatFormPreferencesReader(db);
+  const slackDmBridges = createSlackDmBridgesRepository(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
   const agentOfTarget = createAgentTargetResolver({
@@ -167,6 +223,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       editorStanding,
       contextFor: (identity) => contextFor(identity, surface),
     });
+    const { features } = composeFeaturesForOwner({
+      db,
+      owner: user.sub,
+      surface,
+      modes: config.featureModes,
+    });
+    /* UNIT_BOUNDARY_DESCRIPTION: whether this person is offered the Connection that drives the install — the install's mode, and in `experimental` their own switch. It gates their own create and grants of it, never the platform's provisioning: Dambledore is made holding it whatever this says. */
+    const damConnectionOffered = async (): Promise<boolean> => {
+      const mode = config.featureModes.damConnection;
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags()).damConnection);
+    };
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       mirroredChildren: childrenMirroringConnections(db),
@@ -186,6 +255,18 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
       providerModelCatalog: connectionsBoot.providerModelCatalog,
+      damKey: damKeyPortFor(
+        apiKeysModule.createService({
+          ownerSub: user.sub,
+          surface: "platform",
+        }),
+        {
+          activeKeyIds: apiKeysModule.activeKeyIds,
+          ledger: apiKeysModule.keyLedger(user.sub),
+        },
+        config.brand.name,
+      ),
+      damConnectionOffered,
       newAgentProvider: async () => {
         const chosen = await defaultProfile();
         return chosen
@@ -193,6 +274,55 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           : null;
       },
     });
+    /* UNIT_BOUNDARY_DESCRIPTION: The Slack DM Bridge, per owner: it pairs their
+     * own Slack account and binds one of their Agents to their 1:1 DM with the
+     * bot. Every Slack call goes through the channel manager, so whichever
+     * replica serves the request, the leader's socket makes it, and everything
+     * it settles is written through one repository whose record outlives what
+     * it created. */
+    const slackDm = createSlackDmBridgeService({
+      trustedWorkspaces: config.slackEmailPairingWorkspaces,
+      slackConfigured:
+        channelManager.availableChannels()[ChannelType.Slack] === true,
+      activeWorkspaces: async () =>
+        (await listSlackInstalls(db)())
+          .filter((install) => install.credentialState === "active")
+          .map((install) => ({
+            teamId: install.teamId,
+            enterpriseId: install.enterpriseId,
+          })),
+      grantedScopes: (teamId) => channelManager.slackGrantedScopes(teamId),
+      verifiedEmailOf: (sub) => userDirectory.resolveVerifiedEmailBySub(sub),
+      linksOf: (sub) => findExternalLinksByIdentity(db)("slack", sub),
+      lookupUserByEmail: (email, teamId) =>
+        channelManager.slackEmailUserByEmail(email, teamId),
+      openDirectMessage: async (slackUserId, teamId) => {
+        const opened = await channelManager.slackOpenDirectMessage(
+          slackUserId,
+          teamId,
+        );
+        if (opened.kind !== "found" || !opened.channelId)
+          throw new Error("Slack returned no conversation id");
+        return opened.channelId;
+      },
+      conversationInfo: (channelId, teamId) =>
+        channelManager.slackConversationInfo(channelId, teamId),
+      agentOf: async (agentId, sub) => {
+        const agent = await agentsRepo.get(agentId, sub);
+        return agent ? { id: agent.id, name: agent.name } : null;
+      },
+      bridges: slackDmBridges,
+      announceEmailLink: (slackUserId, sub) =>
+        identityLinkService.announceLink("slack", slackUserId, sub),
+      postHello: (agentId, slackChannelId, text) =>
+        greetingOutcome(() =>
+          channelManager.postMessage(agentId, ChannelType.Slack, text, {
+            conversationId: slackChannelId,
+          }),
+        ),
+      brandShort: config.brand.short,
+    });
+
     const secretRequests = composeSecretRequestsForOwner({
       ownerId: user.sub,
       db,
@@ -303,6 +433,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
       frames: delegationFrames,
+      egressWaitingAmong: childEgressWaitingAmong(db),
     });
     const invocationsControl = composeInvocationsControlForOwner({
       db,
@@ -329,12 +460,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const { features } = composeFeaturesForOwner({
-      db,
-      owner: user.sub,
-      surface,
-      modes: config.featureModes,
-    });
+    const provisioning = assistantProvisioningGuard();
     /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
     const assistantOn = async (): Promise<boolean> => {
       const mode = config.featureModes.dambledore;
@@ -356,6 +482,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentOf: (agentId) => agentsRepo.getLive(agentId, user.sub),
       agents,
       gettingStarted,
+      firstResultLock: assistantFirstResultLock,
+      damConnection: () => connections.ensureDamConnection({ platform: true }),
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
@@ -416,6 +544,20 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownerSub: user.sub,
       isAgentOwnedBy,
     });
+    const egressRuleWriter = createEgressRuleWriterAdapter(db, l7Hosts);
+    const childGrants = childEgressGrants(db);
+    const turnOnChildEgress = async (
+      rootAgentId: string,
+      decidedBy: string,
+    ) => {
+      await childGrants.set(rootAgentId, true, decidedBy);
+      await composeChildEgressRelease({
+        db,
+        writer: egressRuleWriter,
+        rootOf: childGrants.rootOf,
+        answered: recordEgressAnswerAdapter(db),
+      }).release(rootAgentId, decidedBy);
+    };
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -426,6 +568,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       trustedHosts,
       platformAccess,
+      childEgress: {
+        available: async (agentId) =>
+          Boolean((await features.flags()).environments) &&
+          !(await inheritanceOf(db)(agentId)) &&
+          !(await agentsRepo.get(agentId, user.sub))?.spec.environmentOf,
+        isGranted: (agentId) => childGrants.isGranted(agentId),
+        set: (agentId, on, decidedBy) =>
+          on
+            ? turnOnChildEgress(agentId, decidedBy)
+            : childGrants.set(agentId, false, decidedBy),
+      },
     });
     const { service: approvals } = composeApprovalsService({
       db,
@@ -438,9 +591,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
-      egressRuleWriter: createEgressRuleWriterAdapter(db, l7Hosts),
+      egressRuleWriter,
       webSearchRuleWriter: createWebSearchGatePorts(db).ruleWriter,
       wrapperFrameSender,
+      childEgressAnswered: recordEgressAnswerAdapter(db),
+      childEgressSwitch: {
+        turnOnForRootOf: async (driverId, decidedBy) => {
+          const root = await childGrants.rootOf(driverId);
+          if (root) await turnOnChildEgress(root, decidedBy);
+        },
+      },
     });
     const webSearch = composeWebSearchForOwner({
       db,
@@ -571,19 +731,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    /* UNIT_BOUNDARY_DESCRIPTION: a person is given Dambledore by their own switch, so only an install that pins the feature on gives them one at a request — once, and never again after they delete theirs. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing, and nothing a request does may fail because of it. */
-    const provisionAssistant = async () => {
-      if (config.featureModes.dambledore !== "on") return;
+    /* UNIT_BOUNDARY_DESCRIPTION: the assistant is on for everyone who has not turned it off, so a person's first request gives them one — once, and never again after they delete theirs. It runs behind the replica's guard and is never awaited: a create takes as long as it takes, the person's page is answered without it, and the UI picks the Agent up from the agents live hint. An install pinned off pays nothing at all, and one that offers it reads the person's record first, which is one indexed read for anyone who already has it. A request from an API key or from an Agent's own credentials is not a person arriving, so it gives nothing. */
+    const provisionAssistant = (): void => {
+      if (config.featureModes.dambledore === "off") return;
       if (
         user.keyId !== undefined ||
         user.agentIds !== "*" ||
         user.actingEditor !== undefined
       )
         return;
-      await ensureAssistant();
+      provisioning.start(user.sub, () => ensureAssistant());
     };
 
-    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes Dambledore whenever the person has none under that name. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes the assistant whenever the person has none under that name. */
     const optInToAssistant = async () => {
       if (
         user.keyId !== undefined ||
@@ -618,6 +778,34 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             pair,
             references,
           });
+        },
+        slackDm: {
+          status: () => slackDm.status(user.sub),
+          connect: async (input) => {
+            const result = await slackDm.connect(user.sub, input);
+            if (!result.ok)
+              throw slackDmError(result.code, result.message, result.partial);
+            return {
+              teamId: result.teamId,
+              slackUserId: result.slackUserId,
+              dmChannelId: result.dmChannelId,
+              link: result.link,
+              binding: result.binding,
+              isDefault: result.isDefault,
+              helloPosted: result.helloPosted,
+            };
+          },
+          disconnect: async (input) => {
+            const result = await slackDm.disconnect(user.sub, input);
+            if (!result.ok)
+              throw slackDmError(result.code, result.message, result.partial);
+            return {
+              disconnected: result.disconnected,
+              threadsReleased: result.threadsReleased,
+              linksRemoved: result.linksRemoved,
+              incomplete: result.incomplete,
+            };
+          },
         },
         slackChannelChoices: async () => {
           const [choices, installs] = await Promise.all([

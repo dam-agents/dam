@@ -6,13 +6,14 @@ import {
   Globe,
   Misuse,
 } from "@carbon/icons-react";
-import type { ApprovalView } from "api-server-api";
+import { type ApprovalView, wildcardHostReach } from "api-server-api";
 import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import { continueLabel } from "../../spend/lib/copy.js";
 import { localResetTime } from "../../spend/lib/format.js";
 import {
+  useApproveForChildren,
   useApproveHost,
   useApproveOnce,
   useApprovePermanent,
@@ -23,7 +24,12 @@ import { offeredByAgent } from "../lib/agent-options.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 
 export type ApprovalActionId =
-  "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
+  | "allow-once"
+  | "allow-permanent"
+  | "allow-host"
+  | "allow-children"
+  | "dismiss"
+  | "deny-forever";
 
 export interface ApprovalAction {
   id: ApprovalActionId;
@@ -52,6 +58,8 @@ export function useApprovalActions(
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
+  const approveForChildren = useApproveForChildren();
+  const showConfirm = useStore((s) => s.showConfirm);
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -61,6 +69,7 @@ export function useApprovalActions(
     approveOnce.isPending ||
     approvePermanent.isPending ||
     approveHost.isPending ||
+    approveForChildren.isPending ||
     denyForever.isPending ||
     dismiss.isPending;
 
@@ -269,9 +278,86 @@ export function useApprovalActions(
     },
   ];
 
+  const childRequest =
+    row.payload.kind === "egress_proposal" && row.payload.forAgentId
+      ? row.payload
+      : null;
+  const decline = proposalActions.find((a) => a.id === "dismiss")!;
+  const confirmStopAsking = (): Promise<boolean> =>
+    showConfirm(
+      "This agent will be able to give any sub-agent or Environment it creates access to any named host, without asking you. Wildcard hosts, such as *.example.com, still ask. You can turn this off on the agent's Network access page.",
+      "Stop asking for this agent?",
+      { confirmLabel: "Allow and stop asking" },
+    );
+  const childRequestActions: ApprovalAction[] = childRequest
+    ? childRequest.widerThanDriver
+      ? [
+          {
+            id: "allow-permanent",
+            label:
+              ids.length > 1
+                ? `Allow these ${String(ids.length)}`
+                : "Allow this",
+            icon: CheckmarkFilled,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Lets this one sub-agent or Environment make this request. You are asked again for others.",
+            resolvedLabel: "Allowed",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approvePermanent.mutateAsync),
+              ),
+          },
+          ...(hostWideAction &&
+          ids.length === 1 &&
+          (childRequest.method !== "*" || childRequest.path !== "*")
+            ? [hostWideAction]
+            : []),
+          {
+            id: "allow-children",
+            label: "Allow, and stop asking for its sub-agents and Environments",
+            icon: Checkmark,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Allows this, and lets the agent give its sub-agents and Environments network access of their own from now on",
+            resolvedLabel: "Allowed, and no longer asking",
+            run: async () =>
+              (await confirmStopAsking()) &&
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approveForChildren.mutateAsync),
+              ),
+          },
+          decline,
+        ]
+      : [
+          {
+            id: "allow-permanent",
+            label:
+              ids.length > 1
+                ? `Allow these ${String(ids.length)}`
+                : `Allow ${wildcardHostReach(childRequest.host)}`,
+            icon: CheckmarkFilled,
+            danger: false,
+            disabled: inflight,
+            tooltip:
+              "Lets this one sub-agent or Environment reach these hosts. A wildcard always asks you.",
+            resolvedLabel: "Allowed",
+            run: () =>
+              confirmed(restart.confirmNarrow, "Allow & restart", () =>
+                each(approvePermanent.mutateAsync),
+              ),
+          },
+          decline,
+        ]
+    : [];
+
   const actions = match(row.type)
     .with("spend_limit", () => spendLimitActions)
-    .with("egress_proposal", () => proposalActions)
+    .with("egress_proposal", () =>
+      childRequest ? childRequestActions : proposalActions,
+    )
     .with("web_search", () => webSearchActions)
     .with("ext_authz", "acp_native", () => egressActions)
     .exhaustive()

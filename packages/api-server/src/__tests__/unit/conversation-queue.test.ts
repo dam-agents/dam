@@ -14,6 +14,11 @@ import {
 
 type Msg = { id: string; heavy?: boolean };
 
+const rename =
+  (from: string, to: string) =>
+  (queued: Msg): Msg | null =>
+    queued.id === from ? { ...queued, id: to } : null;
+
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const settleFor = (ms: number) => new Promise((r) => setTimeout(r, ms * 8));
 
@@ -414,5 +419,47 @@ describe("createConversationQueue", () => {
     await settleFor(2);
 
     expect(h.turns.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * TEST_SCENARIO: A message can be corrected while it still waits for its
+   * turn. The correction takes the waiting message's place, heavy payload and
+   * position kept, so the turn carries the message once and nothing is
+   * reordered around it.
+   */
+  it("replaces a waiting message in its place", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = spyQueue({ settleMs: 2 });
+
+      const a = h.queue.submit({ id: "a", heavy: true });
+      const b = h.queue.submit({ id: "b" });
+      await vi.advanceTimersByTimeAsync(1);
+      const replaced = h.queue.replace(rename("a", "a2"));
+      await vi.runAllTimersAsync();
+      await Promise.all([a, b]);
+
+      expect(replaced).toBe(true);
+      expect(h.turns).toEqual([["a2", "b"]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: A message a turn already took is past replacing, and so is
+   * one that never waited here. The queue says so, and the caller sends the
+   * correction as a message of its own.
+   */
+  it("replaces nothing once a turn took the message", async () => {
+    const h = spyQueue({ hold: true });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    expect(h.queue.replace(rename("a", "a2"))).toBe(false);
+    expect(h.queue.replace(rename("z", "z2"))).toBe(false);
+    h.releaseAll();
+    expect(h.turns).toEqual([["a"]]);
   });
 });

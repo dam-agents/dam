@@ -23,6 +23,9 @@ const readyRow = (agentId: string, used = false) => ({
   owner: OWNER,
   agentId,
   state: "ready" as const,
+  legacy: false,
+  firstResult: null,
+  epoch: 0,
   used,
   resetAt: null,
 });
@@ -35,9 +38,14 @@ describe("an install that pins the feature on", () => {
     expect(w.agents.create).toHaveBeenCalledTimes(1);
     const input = w.agents.create.mock.calls[0]![0];
     expect(input.name).toBe(NAME);
-    expect(
-      (input as unknown as { instructions: string }).instructions,
-    ).toContain(`I'm ${NAME}, your new personal DAM agent!`);
+    const instructions = (input as unknown as { instructions: string })
+      .instructions;
+    expect(instructions).toContain(`I'm ${NAME}, your personal DAM agent.`);
+    // TEST_SCENARIO: the standing instructions never claim a provider the person's own Connections do not say, since the platform is not the one that knows here.
+    expect(instructions).not.toContain("You're set up with");
+    expect(instructions).toContain(
+      "only when the person's own provider Connection is CurveBender's",
+    );
     expect(w.enrolled).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(1);
     expect(w.rows.rows.get(OWNER)).toMatchObject({
@@ -83,7 +91,67 @@ describe("an install that pins the feature on", () => {
     expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
   });
 
-  // TEST_SCENARIO: the person deleted Dambledore; the record still says they were given one, so no later request makes another — a pinned-on install has no switch, and the reset is their way to ask again.
+  // TEST_SCENARIO: a create wrote the Agent and then failed on its bookkeeping, so the record still says `creating` while the Agent is there: the next request asks for that same Agent again — the create resumes it, its finishing steps run — and the record is marked ready only then, instead of handing over a half-made Agent.
+  it("finishes an Agent an earlier attempt left half-made", async () => {
+    const agents = agentStore();
+    await agents.create({ id: "agent-half", name: NAME });
+    agents.create.mockClear();
+    const rows = rowStore({
+      owner: OWNER,
+      agentId: "agent-half",
+      state: "creating",
+      legacy: false,
+      firstResult: null,
+      epoch: 0,
+      used: false,
+      resetAt: null,
+    });
+    const w = assistantService({ rows, agents });
+
+    await w.ensure();
+    expect(agents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-half" }),
+    );
+    expect(agents.ids()).toEqual(["agent-half"]);
+    expect(w.provisioned).toHaveBeenCalledTimes(1);
+    expect(rows.rows.get(OWNER)).toMatchObject({
+      state: "ready",
+      agentId: "agent-half",
+    });
+  });
+
+  // TEST_SCENARIO: the checklist's bookkeeping is what fails, after the Agent was made: the record stays `creating`, so the bookkeeping is retried with the next request and the row is marked ready only once it landed.
+  it("keeps the record creating until the bookkeeping lands", async () => {
+    const agents = agentStore();
+    const w = assistantService({ agents });
+    w.provisioned.mockRejectedValueOnce(new Error("checklist store down"));
+    await expect(w.ensure()).resolves.toBeUndefined();
+    const agent = agents.ids()[0]!;
+    expect(w.rows.rows.get(OWNER)).toMatchObject({
+      state: "creating",
+      agentId: agent,
+    });
+
+    await w.ensure();
+    expect(w.provisioned).toHaveBeenCalledTimes(2);
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
+  });
+
+  // TEST_SCENARIO: the create fails on the request path, where nobody asked for it and nobody waits to be told: the request completes, the claim is kept, and the next request finishes the same Agent.
+  it("never fails the request, and the next request retries", async () => {
+    const agents = agentStore();
+    const w = assistantService({ agents });
+    agents.create.mockRejectedValueOnce(new Error("store is down"));
+    await expect(w.ensure()).resolves.toBeUndefined();
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "creating" });
+
+    await w.ensure();
+    expect(agents.create).toHaveBeenCalledTimes(2);
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
+    expect(w.provisioned).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: the person deleted Dammy; the record still says they were given one, so no later request makes another — an install without a switch has no other ask, so the reset is their way to ask again.
   it("does not make another after the person deleted theirs", async () => {
     const agents = agentStore();
     const w = assistantService({ agents });
@@ -237,5 +305,46 @@ describe("the switch", () => {
     });
     expect(agents.ids()).toEqual([pending.agentId]);
     expect(w.rows.rows.get(OWNER)).toMatchObject({ state: "ready" });
+  });
+});
+
+describe("the account's cohort, decided once", () => {
+  // TEST_SCENARIO: an account that had an Agent of its own before the platform gave it Dambledore is legacy, and one whose first Agent is Dambledore is not.
+  it("records whether the account had an Agent before its Dambledore", async () => {
+    const mine = assistantService({ agents: agentStore(["Research helper"]) });
+    await mine.optIn();
+    expect(mine.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
+
+    const fresh = assistantService();
+    await fresh.optIn();
+    expect(fresh.rows.rows.get(OWNER)).toMatchObject({ legacy: false });
+    expect(await fresh.assistants.state()).toMatchObject({ legacy: false });
+  });
+
+  // TEST_SCENARIO: it is never recomputed — deleting Dambledore and switching the feature off and on again keeps the cohort, even when the old Agent that made the account legacy was deleted in between.
+  it("keeps the cohort when a new Dambledore is made", async () => {
+    const agents = agentStore(["Research helper"]);
+    const w = assistantService({ agents });
+    await w.optIn();
+    const first = agents.named(NAME)[0]!;
+    agents.remove(first);
+    agents.remove(agents.ids().find((id) => id !== first)!);
+    await w.optIn();
+    expect(w.agents.named(NAME)).toHaveLength(1);
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
+  });
+
+  // TEST_SCENARIO: and it survives the onboarding reset, which reuses or makes an Agent without touching the cohort.
+  it("keeps the cohort through the reset", async () => {
+    const agents = agentStore(["Research helper"]);
+    const w = assistantService({ agents });
+    await w.optIn();
+    await w.assistants.resetOnboarding();
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
+
+    const first = agents.named(NAME)[0]!;
+    agents.remove(first);
+    await w.assistants.resetOnboarding();
+    expect(w.rows.rows.get(OWNER)).toMatchObject({ legacy: true });
   });
 });

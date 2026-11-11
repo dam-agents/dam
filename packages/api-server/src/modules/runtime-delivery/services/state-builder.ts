@@ -26,6 +26,7 @@ import {
   type RuntimeEvent as Event,
   type RuntimeEventKind,
 } from "api-server-api";
+import { currentDamSkill } from "../../connections/domain/dam-connection.js";
 import { contributionHash } from "../domain/contribution-hash.js";
 import {
   filterByCapabilities,
@@ -59,12 +60,14 @@ export function createStateBuilder(deps: {
   builtin: BuiltinContributions;
   agentName: (agentId: string) => Promise<string | null>;
   egressDenies: (agentId: string) => EgressDenies;
+  /* UNIT_BOUNDARY_DESCRIPTION: the install's brand, so the skill the DAM Connection carries is the one this install writes now rather than the one it was made with. */
+  brandName: string;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
       const [userEnv, granted, skills, agentName] = await Promise.all([
         readUserEnvContributions(deps.db, agentId),
-        readGrantedContributions(deps.db, agentId),
+        readGrantedContributions(deps.db, agentId, deps.brandName),
         readSkillRefContributions(deps.db, agentId, deps.egressDenies(agentId)),
         deps.agentName(agentId),
       ]);
@@ -127,6 +130,7 @@ async function readUserEnvContributions(
 async function readGrantedContributions(
   db: Db,
   agentId: string,
+  brandName: string,
 ): Promise<{ contributions: Contribution[]; templateIds: Set<string> }> {
   const rows = (await db
     .select({
@@ -177,7 +181,10 @@ async function readGrantedContributions(
       name: row.name,
       preferred: row.preferred,
       grantedAt: row.grantedAt.toISOString(),
-      contributions: applyConnectionEgressAddressing(row.id, parsed),
+      contributions: applyConnectionEgressAddressing(
+        row.id,
+        currentDamSkill(row.templateId, parsed, brandName),
+      ),
     });
   }
   return {

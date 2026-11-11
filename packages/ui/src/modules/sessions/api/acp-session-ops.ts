@@ -183,6 +183,7 @@ function toSessionViewFromApi(agentId: string, s: Session): SessionView {
 export interface SessionViewPage {
   sessions: SessionView[];
   nextCursor: SessionListCursor | null;
+  hiddenByBrowser?: number;
 }
 
 export async function listAgentSessionPage(
@@ -201,12 +202,15 @@ export async function listAgentSessionPage(
     };
   }
   const page = await agentTrpc(agentId).sessions.list.query(query);
+  const sessions = page.sessions
+    .map((s) => toSessionViewFromApi(agentId, s))
+    .filter((s) => sessionMatchesQuery(s, query))
+    .sort(byRecencyThenId);
+  const hiddenByBrowser = page.sessions.length - sessions.length;
   return {
-    sessions: page.sessions
-      .map((s) => toSessionViewFromApi(agentId, s))
-      .filter((s) => sessionMatchesQuery(s, query))
-      .sort(byRecencyThenId),
+    sessions,
     nextCursor: page.nextCursor ?? null,
+    ...(hiddenByBrowser > 0 && { hiddenByBrowser }),
   };
 }
 

@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-10
+Last verified: 2026-11-11
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -16,6 +16,8 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
+The rules an Agent asks for on one of its sub-agents or Environments share one card, named after the asking Agent: a line per rule with its own "Allow" and "Decline", one button that allows them all, and, for a rule wider than the Agent's own, "Allow, and stop asking", which turns on the Agent's switch for its children's network access ([invocations](invocations.md#spawning)).
+A one-off sub-agent whose start is held for such a rule shows as "Waiting for you", not as working.
 So is a held web search ([web-search-control](web-search-control.md#the-hold)): its card shows the query, or that the model chooses it, offers to allow or deny it once or always, and shows in the Agent's chat beside its held network requests.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
 Its card offers only the choices the harness offered for that request: a verdict reaches the harness as the option of its kind, and one with no such option would cancel the tool call, so a request with no "always" option, such as Bob's writes to its own settings, offers no "Always allow" or "Always deny".
@@ -59,7 +61,8 @@ Opening an Agent's Sessions wakes a hibernated Agent once per open, as opening i
 An open lasts until the Agent's list closes: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
 When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
 When that list's own first read fails, it offers a retry instead of "No sessions yet."
-View more asks the Agent for one more page of its list only when the loaded rows run out, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
+After View more, the list asks the Agent for further pages while its rows fall short of the next five and the Agent has more, and it stops offering more when a page brings no new Session or the Agent's cursor does not move.
+One click asks for at most five pages, while the button says it is looking; then the button offers Keep looking, so a click never waits without end.
 Opening a Session from Activity leaves its Agent's row as it was, closed or open.
 
 The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
@@ -67,6 +70,10 @@ An Agent the order does not name yet, a new Agent, joins the foot of the list, a
 Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
 An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
+The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
+The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.
+While the filter is on, the list names it and offers Clear filter; when none of the latest Sessions match, it says so and its button reads Look further.
+The open Session stays in the list even when the filter would hide it, marked as open.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
@@ -108,7 +115,7 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 ## Default-model notices
 
-The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): the Agent holds no model provider to run on, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+The bell also lists the Agents on the Model Router whose saved default stops or moves a run nobody picks for ([harness configuration](harness-config.md)): the Agent holds no model provider to run on, the provider its model names is no longer the Agent's, so its runs take the automatic model, or the conversion of an old default runs it on another model than its setting named.
 A default with no model is not listed, since its runs take the automatic model.
 That state stops real work only where an Agent runs unattended, so one with no enabled Schedule and no bound Slack or Telegram Channel is not listed for it: nothing of its own fails yet.
 [Outage alerts](provider-status.md#outage-alerts) use the same rule for an Agent that runs unattended.
@@ -145,7 +152,7 @@ The offer is computed on read from the spend ledger and the session directory, s
 
 The owner's answer is stored per Agent: an accepted review never comes back, and Later hides the Agent's offer for 30 days, after which it returns if the Agent still qualifies.
 Only the owner sees the card and may answer it; editors see nothing.
-Accepting starts nothing unless the Agent may spend today: a spend limit or the ceiling refuses it, and so does an Agent with no model to run on (no model provider, or a saved model whose provider is gone).
+Accepting starts nothing unless the Agent may spend today: a spend limit or the ceiling refuses it, and so does an Agent with no model provider to run on.
 An accepted review is a regular chat Session on the Agent's chat default, opened on the same rail as a kit's onboarding Session but marked with the `cost-review` purpose instead: it is titled "Cost review", its first turn shows as a collapsed request from the platform, and the UI opens it once it appears.
 That first turn runs like a scheduled one, without anyone watching, because the owner already asked for it: a review accepted and then left behind still runs and shows as unread.
 That first turn names the skill, which holds the procedure; the review recommends and changes nothing.

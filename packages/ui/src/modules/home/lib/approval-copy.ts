@@ -3,6 +3,7 @@ import {
   type SpendLimitPayload,
   type SpendLimitScope,
   WEB_SEARCH_FOLLOW_UP_QUERIES,
+  wildcardHostReach,
 } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -24,8 +25,28 @@ export function countsAllAgents(approval: ApprovalView): boolean {
   );
 }
 
-const anyHostOf = (host: string): string =>
-  host === "*" ? "Any host" : `Any ${host.slice(1)} host`;
+const capitalized = (text: string): string =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent an approval card names as the one asking. A request for a rule on a sub-agent or Environment is asked by the agent that created it, so the card names that agent and not the child.
+export function approvalSubjectId(approval: ApprovalView): string {
+  return approval.payload.kind === "egress_proposal" &&
+    approval.payload.forAgentId
+    ? approval.payload.forAgentId
+    : approval.agentId;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the name a card gives the asking agent: for a request on a sub-agent or Environment, the name its sentence uses, so the two never differ; otherwise the agent's own name.
+export function approvalSubjectName(
+  approval: ApprovalView,
+  nameOf: (agentId: string) => string | undefined,
+): string | undefined {
+  return (
+    (approval.payload.kind === "egress_proposal"
+      ? approval.payload.forAgentName
+      : undefined) ?? nameOf(approvalSubjectId(approval))
+  );
+}
 
 export function approvalHeadline(approval: ApprovalView): string {
   return match(approval.payload)
@@ -38,7 +59,10 @@ export function approvalHeadline(approval: ApprovalView): string {
     )
     .with({ kind: "egress_proposal" }, (payload) =>
       payload.forAgentId
-        ? "Asks to open a sub-agent's network"
+        ? `Wants more network access for its ${match(payload.forChild)
+            .with("sub-agent", undefined, () => "sub-agent")
+            .with("environment", () => "Environment")
+            .exhaustive()}`
         : "Proposes a network rule",
     )
     .with({ kind: "web_search" }, () => "Wants to search the web")
@@ -111,10 +135,14 @@ export function approvalDetail(
       : `${payload.host}${payload.path}`;
   const request =
     payload.method === "*" ? target : `${payload.method} ${target}`;
-  if (payload.kind === "egress_proposal")
-    return payload.forAgentId
-      ? `${anyHostOf(payload.host)}, for its sub-agent ${approval.agentId}`
-      : request;
+  if (payload.kind === "egress_proposal") {
+    if (!payload.forAgentId) return request;
+    if (!payload.widerThanDriver)
+      return capitalized(wildcardHostReach(payload.host));
+    const asked =
+      payload.path === "*" ? payload.host : `${payload.host}${payload.path}`;
+    return payload.method === "*" ? asked : `${payload.method} ${asked}`;
+  }
   if (payload.viaEnvironment)
     return `${request}, from its Environment ${payload.viaEnvironment}`;
   return payload.forAgentId
@@ -123,6 +151,22 @@ export function approvalDetail(
 }
 
 export const WEB_SEARCH_FOLLOW_UP_NOTE = `If you allow it, the search can also run up to ${String(WEB_SEARCH_FOLLOW_UP_QUERIES)} more queries that the model writes after it reads the first results.`;
+
+// UNIT_BOUNDARY_DESCRIPTION: what a card says when it stands for several rules one agent asked for on the same sub-agent or Environment, as one launch often does: one sentence for all of them, above the rules listed one per line, so the owner can answer the launch once or rule by rule. Null for a single request, which keeps its own line and sentence.
+export function childRulesGroupCopy(
+  group: readonly ApprovalView[],
+): { reason: string } | null {
+  const first = group[0]?.payload;
+  if (group.length < 2 || first?.kind !== "egress_proposal") return null;
+  if (!first.forAgentId) return null;
+  const child = `${first.forChild === "environment" ? "Environment" : "sub-agent"}${first.forChildName ? ` ${first.forChildName}` : ""}`;
+  const who = first.forAgentName ?? "The agent";
+  return {
+    reason: first.widerThanDriver
+      ? `${who} wants its ${child} to reach these ${String(group.length)}. ${who}'s own network rules do not allow them.`
+      : `${who} wants its ${child} to reach these ${String(group.length)} groups of hosts.`,
+  };
+}
 
 export function approvalReason(approval: ApprovalView): string | null {
   return match(approval.payload)

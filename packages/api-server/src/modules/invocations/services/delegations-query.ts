@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import type { InvocationsQueryService } from "api-server-api";
+import type { DelegationNode, InvocationsQueryService } from "api-server-api";
 
 import { buildDelegationTree } from "../domain/delegation-tree.js";
 import { shownInSession } from "../domain/session-scope.js";
@@ -18,6 +18,8 @@ export function createDelegationsQuery(deps: {
   repo: InvocationsRepository;
   owner: string;
   frames: DelegationFramesPort;
+  // UNIT_BOUNDARY_DESCRIPTION: which of the sub-agents named have a network rule that waits for the owner, so a tree shows one whose start is held for it as waiting, not as working.
+  egressWaitingAmong?: (agentIds: readonly string[]) => Promise<Set<string>>;
 }): InvocationsQueryService {
   async function rootOf(driverAgentId: string): Promise<string> {
     const driverRow = await deps.repo.get(driverAgentId);
@@ -48,6 +50,26 @@ export function createDelegationsQuery(deps: {
     return rows.map((r) =>
       running.has(r.id) ? { ...r, status: "running" as const } : r,
     );
+  }
+
+  async function withStartHolds(
+    nodes: DelegationNode[],
+  ): Promise<DelegationNode[]> {
+    const unstarted = (list: readonly DelegationNode[]): string[] =>
+      list.flatMap((node) => [
+        ...(node.status === "running" && !node.started ? [node.id] : []),
+        ...unstarted(node.children),
+      ]);
+    const ids = unstarted(nodes);
+    if (ids.length === 0 || !deps.egressWaitingAmong) return nodes;
+    const held = await deps.egressWaitingAmong(ids);
+    const mark = (list: readonly DelegationNode[]): DelegationNode[] =>
+      list.map((node) => ({
+        ...node,
+        ...(held.has(node.id) && !node.started && { waitingForOwner: true }),
+        children: mark(node.children),
+      }));
+    return held.size > 0 ? mark(nodes) : nodes;
   }
 
   return {
@@ -96,7 +118,7 @@ export function createDelegationsQuery(deps: {
 
     async tree({ driverAgentId, ids }) {
       const owned = await ownedRowsOfRoot(driverAgentId);
-      return { nodes: buildDelegationTree(owned, ids) };
+      return { nodes: await withStartHolds(buildDelegationTree(owned, ids)) };
     },
 
     async running({ driverAgentId, sessionId }) {
@@ -109,7 +131,9 @@ export function createDelegationsQuery(deps: {
         .map((r) => r.id);
       if (running.length === 0) return { nodes: [] };
       const owned = await ownedRowsOfRoot(driverAgentId);
-      return { nodes: buildDelegationTree(owned, running) };
+      return {
+        nodes: await withStartHolds(buildDelegationTree(owned, running)),
+      };
     },
 
     async transcript({ driverAgentId, id }) {
