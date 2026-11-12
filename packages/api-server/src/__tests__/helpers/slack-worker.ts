@@ -9,6 +9,7 @@ import {
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
 import type { SlackDmBridgePort } from "../../modules/channels/infrastructure/slack.js";
 import type { SlackOwnedThreads } from "../../modules/channels/infrastructure/slack-owned-threads-repository.js";
+import type { SlackUntaggedReplyNotes } from "../../modules/channels/infrastructure/slack-untagged-reply-notes-repository.js";
 import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastructure/agent-workspace-files.js";
 import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
@@ -39,6 +40,8 @@ export function slackWorkerHarness(
     channelPair?: ChannelPair;
     dmBridges?: SlackDmBridgePort;
     ownedThreads?: SlackOwnedThreads;
+    untaggedReplyNotes?: SlackUntaggedReplyNotes;
+    untaggedNoteQuietMs?: number;
     ensureReady?: () => Promise<void>;
     reportSession?: boolean;
     connected?: () => boolean;
@@ -157,6 +160,12 @@ export function slackWorkerHarness(
     emit: () => {},
     settleMs: opts.settleMs ?? 0,
     ...(opts.ownedThreads ? { ownedThreads: opts.ownedThreads } : {}),
+    ...(opts.untaggedReplyNotes
+      ? { untaggedReplyNotes: opts.untaggedReplyNotes }
+      : {}),
+    ...(opts.untaggedNoteQuietMs !== undefined
+      ? { untaggedNoteQuietMs: opts.untaggedNoteQuietMs }
+      : {}),
   });
 
   async function settled(done: () => boolean): Promise<boolean> {

@@ -204,6 +204,20 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: what decides whether a person in Slack still gets
+ * the note that an untagged reply did not reach the Agent: when they first
+ * used the platform in Slack, when they last got the note, and when they
+ * stopped needing it. A person is keyed by the same keyed hash of their Slack
+ * user id that the activity log uses, so no raw Slack id is stored here. */
+export const slackUntaggedReplyNotes = pgTable("slack_untagged_reply_notes", {
+  actorHash: text("actor_hash").primaryKey(),
+  firstUsedAt: timestamp("first_used_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastNotedAt: timestamp("last_noted_at", { withTimezone: true }),
+  graduatedAt: timestamp("graduated_at", { withTimezone: true }),
+});
+
 /* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
  * start_thread, so every message in it reaches that Session as a turn of its
  * own. A thread has at most one owner across the install. The row lives in

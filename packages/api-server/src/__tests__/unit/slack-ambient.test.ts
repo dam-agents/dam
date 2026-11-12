@@ -224,7 +224,7 @@ describe("slack ambient inbound", () => {
     expect(h.turnEvents()).toHaveLength(0);
   });
 
-  it("ambient off: an untagged reply in the agent's thread tells its writer, once, that the agent won't see it", async () => {
+  it("ambient off: an untagged reply in the agent's thread is dropped, and no note shows before a quiet minute", async () => {
     const h = harness({ binding: mentionsOnly });
     await h.mention(STRANGER);
     await h.settled(() => h.turnEvents().length === 1);
@@ -234,27 +234,12 @@ describe("slack ambient inbound", () => {
       ts: "1.2",
       threadTs: "1.1",
     });
-    await h.message(STRANGER, "anyone?", { ts: "1.3", threadTs: "1.1" });
-    await h.message("U-TEAMMATE", "no idea", { ts: "1.4", threadTs: "1.1" });
+    await h.message("U-TEAMMATE", "no idea", { ts: "1.3", threadTs: "1.1" });
+    await new Promise((r) => setTimeout(r, 0));
 
-    const notices = h.gw.readOutbound().slice(before);
-    expect(notices).toEqual([
-      expect.objectContaining({
-        kind: "ephemeral",
-        channel: "C1",
-        threadTs: "1.1",
-        user: STRANGER,
-        text: expect.stringContaining(
-          "agent-1 won't see this reply unless you tag",
-        ),
-      }),
-      expect.objectContaining({
-        kind: "ephemeral",
-        threadTs: "1.1",
-        user: "U-TEAMMATE",
-      }),
-    ]);
+    expect(h.gw.readOutbound().slice(before)).toHaveLength(0);
     expect(h.prompts).toHaveLength(1);
+    await h.worker.stopAll();
   });
 
   it("ambient off: an untagged reply in a thread the agent isn't part of stays silent", async () => {

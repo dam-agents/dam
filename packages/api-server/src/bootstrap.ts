@@ -134,6 +134,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackUntaggedReplyNotesRepository } from "./modules/channels/infrastructure/slack-untagged-reply-notes-repository.js";
 import { createSlackOwnedThreadsRepository } from "./modules/channels/infrastructure/slack-owned-threads-repository.js";
 import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
@@ -2046,6 +2047,10 @@ export async function bootstrap() {
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         ownedThreads: slackOwnedThreads,
+        untaggedReplyNotes: createSlackUntaggedReplyNotesRepository(
+          db,
+          subPseudonymizer,
+        ),
         loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },

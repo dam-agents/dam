@@ -87,6 +87,11 @@ import {
   type SlackOwnedThreads,
 } from "./slack-owned-threads-repository.js";
 import {
+  createMemorySlackUntaggedReplyNotes,
+  type SlackUntaggedReplyNotes,
+} from "./slack-untagged-reply-notes-repository.js";
+import { UNTAGGED_NOTE_QUIET_MS } from "../domain/untagged-reply-note.js";
+import {
   ownedThreadGuidance,
   ownedThreadMessages,
   type OwnedThreadBatch,
@@ -1582,6 +1587,8 @@ export type SlackWorkerDeps = {
   agentIcon?: AgentIconUrl | null;
   readPodRestarts?: (agentId: string) => Promise<PodRestartState | null>;
   ownedThreads?: SlackOwnedThreads;
+  untaggedReplyNotes?: SlackUntaggedReplyNotes;
+  untaggedNoteQuietMs?: number;
 };
 
 const FIRST_LINE_MAX = 200;
@@ -1641,6 +1648,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     agentIcon = null,
     readPodRestarts = async () => null,
     ownedThreads = createMemorySlackOwnedThreads(),
+    untaggedReplyNotes = createMemorySlackUntaggedReplyNotes(),
+    untaggedNoteQuietMs = UNTAGGED_NOTE_QUIET_MS,
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -2792,7 +2801,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const agentThreads = createTtlMap<string, true>({
     ttlMs: AGENT_THREAD_TTL_MS,
   });
-  const untaggedNoticesShown = createTtlMap<string, true>({
+  const untaggedNoteWaits = new Map<
+    ReturnType<typeof setTimeout>,
+    (waited: boolean) => void
+  >();
+  const recordedSlackUsers = createTtlMap<string, true>({
     ttlMs: AGENT_THREAD_TTL_MS,
   });
 
@@ -6981,6 +6994,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
+    if (sender.kind === "person" && !rerouted)
+      void noteSlackUse(sender.user, { tagged: !opts.directMessage });
     if (!opts.directMessage && sender.kind === "person" && !rerouted)
       await tipSlashCommand(event, sender.user);
     if (
@@ -8061,6 +8076,54 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ).submit(msg);
   }
 
+  async function noteSlackUse(
+    user: string,
+    opts: { tagged: boolean },
+  ): Promise<void> {
+    if (!opts.tagged && isLive(recordedSlackUsers, user)) return;
+    noteExpiring(recordedSlackUsers, user);
+    await untaggedReplyNotes.used(user, opts).catch((err: unknown) => {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.untagged_note.record_failed",
+      );
+    });
+  }
+
+  function waitQuietMinute(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        untaggedNoteWaits.delete(timer);
+        resolve(true);
+      }, untaggedNoteQuietMs);
+      untaggedNoteWaits.set(timer, resolve);
+    });
+  }
+
+  async function threadStayedQuiet(
+    event: SlackChannelMessageEvent,
+    user: string,
+    threadTs: string,
+  ): Promise<boolean> {
+    if (!gateway) return false;
+    const later = await gateway
+      .getThreadReplies({
+        channel: event.channel,
+        threadTs,
+        oldest: event.ts,
+        inclusive: false,
+        limit: THREAD_LOOKBACK,
+        teamId: event.teamId,
+      })
+      .catch(() => null);
+    return (
+      later !== null &&
+      !later.messages.some(
+        (message) => message.ts !== threadTs && message.user !== user,
+      )
+    );
+  }
+
   async function noticeUntaggedReply(
     event: SlackChannelMessageEvent,
     user: string,
@@ -8071,9 +8134,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       isAgentThread(binding.instanceName, event.channel, threadTs),
     );
     if (!inThread) return;
-    const shownKey = `${event.channel} ${threadTs} ${user}`;
-    if (isLive(untaggedNoticesShown, shownKey)) return;
-    noteExpiring(untaggedNoticesShown, shownKey);
+    const due = await untaggedReplyNotes.due(user).catch(() => false);
+    if (!due) return;
+    if (!(await waitQuietMinute())) return;
+    if (!(await threadStayedQuiet(event, user, threadTs))) return;
+    if (!(await untaggedReplyNotes.claim(user).catch(() => false))) return;
     const name = await resolveAgentName(inThread.instanceName);
     const botUserId = await gateway
       ?.getBotUserId(event.teamId)
@@ -8085,7 +8150,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       event.channel,
       user,
       threadTs,
-      `${name} won't see this reply unless you tag ${tag}${named}. Only you can see this note, and it won't show again in this thread.`,
+      `${name} won't see this reply unless you tag ${tag}${named}. Only you can see this note.`,
       event.teamId,
     );
   }
@@ -8122,11 +8187,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
     if (!reached) {
       if (sender.kind === "person" && event.threadTs && owned.owner === null)
-        await noticeUntaggedReply(event, sender.user, event.threadTs, bindings);
+        void noticeUntaggedReply(
+          event,
+          sender.user,
+          event.threadTs,
+          bindings,
+        ).catch((err: unknown) => {
+          getLogger().warn(
+            { channelId: event.channel, error: formatError(err) },
+            "slack.untagged_note.failed",
+          );
+        });
       return;
     }
     const rateChecked = rerouted || (owned.owner !== null && owned.rateChecked);
     if (!rateChecked && !(await admitBotPost(sender, event))) return;
+    if (sender.kind === "person" && !rerouted)
+      void noteSlackUse(sender.user, { tagged: false });
 
     const arrival = { text: event.text };
     const arrivalKey = messageKey(event.channel, event.ts);
@@ -8496,6 +8573,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     async stopAll() {
       serving = false;
+      for (const [timer, resolve] of untaggedNoteWaits) {
+        clearTimeout(timer);
+        resolve(false);
+      }
+      untaggedNoteWaits.clear();
       await turnRecovery.stop();
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;

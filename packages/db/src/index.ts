@@ -8,6 +8,7 @@ export {
   slackIgnoredApps,
   slackLoopGuardDrops,
   slackOwnedThreads,
+  slackUntaggedReplyNotes,
   publicImageUrls,
   telegramConversations,
   skillSources,
