@@ -858,9 +858,10 @@ describe("replay rules", () => {
     },
   ];
   /** TEST_SCENARIO: A Messages body carrying a GLM-made thinking block in a
-   * prior turn reaches a Claude model with that block as text; the last
-   * assistant message keeps its blocks; a GLM target gets the body as is. */
-  it("turns prior-turn thinking into text for a Claude target only", () => {
+   * prior turn reaches a Claude model without that block, and with no
+   * `<thinking>` text in its place; the last assistant message keeps its
+   * blocks; a GLM target gets the body as is. */
+  it("drops prior-turn thinking for a Claude target only", () => {
     const out = applyReplayRules(
       { messages: history },
       {
@@ -870,10 +871,8 @@ describe("replay rules", () => {
       },
     );
     const messages = out.messages as { content: unknown }[];
-    expect(messages[1]!.content).toEqual([
-      { type: "text", text: "<thinking>fake</thinking>" },
-      { type: "text", text: "a" },
-    ]);
+    expect(messages[1]!.content).toEqual([{ type: "text", text: "a" }]);
+    expect(JSON.stringify(out)).not.toContain("<thinking>");
     expect(messages[3]!.content).toEqual(history[3]!.content);
     const glm = applyReplayRules(
       { messages: history },
