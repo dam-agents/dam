@@ -195,9 +195,9 @@ Run \`dam --help\` for the command groups and \`dam <group> --help\` for one of 
 3. **Their decisions are theirs.**
    Do not decide an approval, accept the Terms of Use, or manage API keys.
    Tell the person what needs deciding instead.
-4. **Their own doors are theirs.**
-   A live conversation or shell needs their own sign-in rather than this machine's, so \`dam chat\`, \`dam run\`, \`dam ssh\` and a session's stream do not work here.
-   Leave that work to them.
+4. **Prompt an Agent with \`dam run\`.**
+   \`dam run <agent> -p "<prompt>" --json\` prompts one of the person's Agents, yourself included, and waits for its answer; a sleeping Agent wakes for it.
+   \`dam chat\` attaches a terminal, which you do not have here: use \`dam run\` instead, and \`--session <id>\` to continue a conversation.
 5. **Parse \`--json\`, not tables.**
    Read commands take \`--json\`, and an empty list is \`[]\`.
    Table output is for showing to the person.
@@ -258,6 +258,7 @@ Never offer to read their Slack: you use only what they send you in that DM.
 - **\`dam onboarding\`** — record the first result the person's onboarding reached.
 - **\`dam agent\`** — list, get, create, update, restart, sleep, disable and enable the person's Agents.
 - **\`dam schedule\`** — list, create and edit a scheduled task, and run one now.
+- **\`dam run\`** — prompt an Agent headlessly and read its answer; \`dam run get\` and \`dam run cancel\` for a run that outlasts \`--timeout\`.
 - **\`dam approval\`** — the queue of decisions the person has to make.
 - **\`dam spend\`**, **\`dam metrics\`**, **\`dam telemetry\`** — what an Agent or the person has spent, and a session's turns.
 - **\`dam connection\`**, **\`dam skill\`**, **\`dam kit\`**, **\`dam template\`** — what an Agent can use, and what it can be built from.
@@ -272,6 +273,7 @@ dam agent list --json
 dam agent get my-agent --json
 dam agent create --name notes --template default
 dam schedule list my-agent --json
+dam run my-agent -p "Summarise today's open issues" --json
 dam connection list --json
 \`\`\`
 `;

@@ -696,7 +696,7 @@ func parseConnectionHosts(s corev1.Secret) []connectionHostInjection {
 	return entries
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the install's own Service carries one credential and no other. The api-server refuses a second Connection naming that host, but a Secret written before that rule — or by an operator — could still be mounted here, and a peer's host-wide scope or path rewrite would widen the chain past the API paths or add a credential to it. Such a peer is dropped and reported rather than merged. */
+/* UNIT_BOUNDARY_DESCRIPTION: the install's own Service carries one credential and no other. The api-server refuses a second Connection naming that host, but a Secret written before that rule — or by an operator — could still be mounted here, and a peer's host-wide scope or path rewrite would widen the chain past the API paths or add a credential to it. Such a peer is dropped and reported rather than merged. That chain always takes WebSocket upgrades, whatever its Secret says, so `dam run`, `dam chat` and `dam ssh` reach the relays from inside an Agent with the key in their upgrade's header. */
 func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostChain {
 	type headerOwner struct{ connectionID, secretName string }
 	type bucket struct {
@@ -846,6 +846,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		}
 		port, caFile := b.opts.port, b.opts.caFile
 		inCluster := b.damOpts != nil
+		upgrades := b.opts.upgrades || inCluster
 		credentials, signers, rewrites := b.credentials, b.signers, b.opts.pathRewrites
 		if b.damOpts != nil {
 			if port != b.damOpts.port || caFile != b.damOpts.caFile {
@@ -881,7 +882,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			Signers:         signers,
 			HTTP2:           b.opts.http2,
 			UpstreamPort:    port,
-			Upgrades:        b.opts.upgrades,
+			Upgrades:        upgrades,
 			UpstreamCAFile:  caFile,
 			PathRewrites:    rewrites,
 			InCluster:       inCluster,

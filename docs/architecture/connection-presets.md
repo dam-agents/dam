@@ -106,7 +106,7 @@ Nothing mints a replacement by itself, so a key revoked on purpose stays revoked
 **Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too, and each surface that decides it says so.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
-The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.
+The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket and send their credential in the header this Connection injects as well as in its query string, so they work from inside an Agent too: `dam run` there prompts the Agent itself or another of the owner's Agents ([CLI](cli.md)).
 
 ## App preset: IBM LiteLLM proxy
 

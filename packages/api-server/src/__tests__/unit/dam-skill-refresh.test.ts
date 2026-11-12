@@ -66,3 +66,12 @@ describe("the skill a stored DAM Connection carries", () => {
     expect(file).toMatchObject({ content: damSkill("Platform") });
   });
 });
+
+describe("what the skill says about dam run", () => {
+  // TEST_SCENARIO: `dam run` works from inside an Agent now, so the skill teaches it and no longer says it does not work here: the skill and the CLI agree.
+  it("teaches dam run and never says it fails here", () => {
+    const skill = damSkill("DAM");
+    expect(skill).toContain('dam run <agent> -p "<prompt>" --json');
+    expect(skill).not.toMatch(/do not work here/);
+  });
+});
