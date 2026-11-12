@@ -256,7 +256,7 @@ Never offer to read their Slack: you use only what they send you in that DM.
 ## What it covers
 
 - **\`dam onboarding\`** — record the first result the person's onboarding reached.
-- **\`dam agent\`** — list, get, create, update, restart, sleep, disable and enable the person's Agents.
+- **\`dam agent\`** — list, get, create, update and restart the person's Agents.
 - **\`dam schedule\`** — list, create and edit a scheduled task, and run one now.
 - **\`dam approval\`** — the queue of decisions the person has to make.
 - **\`dam spend\`**, **\`dam metrics\`**, **\`dam telemetry\`** — what an Agent or the person has spent, and a session's turns.

@@ -11,7 +11,7 @@ Its machine runs on its owner's [VM runner](vm-runner.md) while the Agent is awa
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface a user has — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface a user has — creating, configuring and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).

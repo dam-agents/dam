@@ -138,7 +138,7 @@ Reclaiming is **neither asked nor announced**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
 The victim lands in ordinary `Hibernated` state, which the web UI shows as idle like any other, and its next use wakes it, so there is nothing for the owner to act on.
 While its reclaim mark stands the api-server still reads it off the Agent; a deliberate touch outdates the mark.
-A Sleep removes the mark, since it stales last activity behind it; disabling an agent clears the mark outright.
+A Sleep removes the mark, since it stales last activity behind it.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream

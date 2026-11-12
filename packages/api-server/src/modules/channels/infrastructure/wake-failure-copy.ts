@@ -74,7 +74,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "RunnerOutOfMemory":
           return (
             "This agent restarted: its owner's agents ran out of memory " +
-            "together. Contact its owner — disabling agents that aren't in " +
+            "together. Contact its owner — deleting an agent no longer in " +
             "use frees memory."
           );
         default:
