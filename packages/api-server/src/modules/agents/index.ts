@@ -39,6 +39,7 @@ export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-dire
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export { createImageUpdate } from "./services/image-update.js";
+export { createIdleOverrideSweep } from "./services/idle-override-sweep.js";
 export { agentServiceIsIdle } from "./infrastructure/agent-service-status-client.js";
 export {
   AgentWakeTimeoutError,

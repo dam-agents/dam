@@ -63,7 +63,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  keeping?.stop();
+  await keeping?.stop();
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
@@ -277,7 +277,7 @@ test("takes a scheduled fire", async () => {
 // TEST_SCENARIO: sleep hibernates the agent, and wake brings it back: a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(300_000);
-  keeping?.stop();
+  await keeping?.stop();
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
   await wake();

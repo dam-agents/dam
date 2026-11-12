@@ -1,7 +1,13 @@
 import { createRemoteJWKSet } from "jose";
 import { readFileSync } from "node:fs";
 import { composeLoginTestimonialsModule } from "./modules/login-testimonials/index.js";
-import { controlAgents, createDb, runMigrations } from "db";
+import {
+  controlAgents,
+  createDb,
+  inArray,
+  invocations,
+  runMigrations,
+} from "db";
 import {
   type TriggerEventPayload,
   type InvocationCancelEventPayload,
@@ -95,6 +101,7 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createImageUpdate,
+  createIdleOverrideSweep,
   agentServiceIsIdle,
   createAvatarImagesRepository,
   MAX_AVATAR_BYTES,
@@ -2819,6 +2826,26 @@ export async function bootstrap() {
   });
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
   await periodicJobs.retire("retired-image-migration");
+
+  const idleOverrideSweep = createIdleOverrideSweep({
+    listAgents: () => agentsRepo.list(),
+    invocationIds: async (ids) =>
+      new Set(
+        (
+          await db
+            .select({ id: invocations.id })
+            .from(invocations)
+            .where(inArray(invocations.id, ids))
+        ).map((row) => row.id),
+      ),
+    clear: (id) =>
+      agentsRepo.updateSpec(id, undefined, { hibernationTimeout: null }),
+  });
+  await periodicJobs.register("idle-override-sweep", 60 * 60_000, async () => {
+    const cleared = await idleOverrideSweep();
+    if (cleared > 0)
+      getLogger().info({ cleared }, "agents.idle_overrides_cleared");
+  });
 
   await periodicJobs.register(
     "session-directory-retention",

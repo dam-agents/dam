@@ -5,20 +5,21 @@ import { setTimeout as delay } from "node:timers/promises";
 const everyMs = 30_000;
 
 export interface KeepAwake {
-  stop(): void;
+  stop(): Promise<void>;
   failures: number;
   lastFailure: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what keeps a vm Agent out of the idle sweep, which hibernates a machine whose last activity is older than the chart-wide `controller.agent.base.vmIdleTimeout`: a wake writes the `agent-platform.ai/last-activity` stamp that sweep reads, and this writes one every `everyMs`. An Agent has no idle timeout of its own, so this is the only thing that keeps it up. The interval is the caller's to stop, and a wake that fails is counted rather than thrown: the spec that keeps a machine awake through an upgrade expects the api-server itself to roll, so one refusal must not fail the spec, and the first failure is logged because a keep-awake path broken for another reason otherwise shows up only as the hibernation it caused.
+// UNIT_BOUNDARY_DESCRIPTION: what keeps a vm Agent out of the idle sweep, which hibernates a machine whose last activity is older than the chart-wide `controller.agent.base.vmIdleTimeout`: a wake writes the `agent-platform.ai/last-activity` stamp that sweep reads, and this writes one every `everyMs`. An Agent has no idle timeout of its own, so this is the only thing that keeps it up. The interval is the caller's to stop, and a wake that fails is counted rather than thrown: the spec that keeps a machine awake through an upgrade expects the api-server itself to roll, so one refusal must not fail the spec, and the first failure is logged because a keep-awake path broken for another reason otherwise shows up only as the hibernation it caused. A wake clears a requested sleep, so stop also waits for the wake already sent: a caller stops it before a deliberate sleep and is not woken out of it.
 export function keepAwake(
   wake: () => Promise<unknown>,
   { every = everyMs }: { every?: number } = {},
 ): KeepAwake {
   let failures = 0;
   let lastFailure = "";
+  let inflight: Promise<unknown> = Promise.resolve();
   const timer = setInterval(() => {
-    wake().catch((error: unknown) => {
+    inflight = wake().catch((error: unknown) => {
       failures += 1;
       lastFailure = String(error);
       if (failures === 1)
@@ -26,7 +27,10 @@ export function keepAwake(
     });
   }, every);
   return {
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(timer);
+      return inflight.then(() => undefined);
+    },
     get failures() {
       return failures;
     },
@@ -46,7 +50,7 @@ if (import.meta.main) {
   assert.equal(wakes, 0, "a synchronous child blocked the keep-awake wake");
   await delay(40);
   assert.ok(wakes > 0, "the keep-awake wake did not resume once the loop ran");
-  keeping.stop();
+  await keeping.stop();
   const stopped = wakes;
   await delay(40);
   assert.equal(wakes, stopped, "stop did not cancel the keep-awake wake");
@@ -58,7 +62,7 @@ if (import.meta.main) {
     { every: 5 },
   );
   await delay(30);
-  failing.stop();
+  await failing.stop();
   assert.ok(failing.failures > 0, "a failed wake was not counted");
   assert.match(failing.lastFailure, /the wake was refused/);
   console.log("keep-awake self-check OK");

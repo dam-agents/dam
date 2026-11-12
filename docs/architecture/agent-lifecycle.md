@@ -244,7 +244,8 @@ What none of them hold for is unkept work: a job detached with a plain `nohup`, 
 It survives the user leaving, but for it `active-session` is clear, `last-activity` ages out, the runtime reports `idle`, both checks agree, and the controller hibernates the machine **mid-job, killing the work**.
 
 **One idle timeout for every Agent.** A regular Agent sleeps on the install's idle timeout and has no window of its own: work that must outlive a session is [kept](agent-processes.md#keeping-work), and holds the Agent awake only while it runs.
-The create and update a client sends, a Template and a starter kit all ignore an idle override, and the store cleared the ones regular Agents carried before.
+The create and update a client sends, a Template and a starter kit all ignore an idle override.
+An hourly api-server job clears the override of any regular Agent that still carries one, through the agents repository, so it works on either store and also clears an override an older client, an absorb or a rollback brought back.
 Two kinds of Agent the platform makes still carry an override, set by their own create and keep calls: an [Environment](environments.md) (its idle timeout, `never` included) and an [Invocation](invocations.md) target, whose sleeping between runs its driver decides.
 An override's unset inherits the install's default, a positive value is an idle window in minutes, and `0` disables hibernation.
 The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for waking and hibernating.

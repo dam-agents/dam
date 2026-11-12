@@ -415,7 +415,7 @@ test.afterAll(async () => {
       installMoved = false;
     }
   } finally {
-    keeping?.stop();
+    await keeping?.stop();
     if (agentId) await api.agents.delete.mutate({ id: agentId });
   }
 });
