@@ -158,7 +158,9 @@ export const SESSION_REF_HEADER = "x-platform-session-ref";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the field the api-server sets in the answer to
  * an accepted report_result, which the target's runtime reads in the tool
- * output to learn its run has a result.
+ * output to learn its run has a result. The answer to an accepted ask_owner
+ * carries it too: that run has ended as well, on a question for its owner,
+ * and its turn ending without a result is no failure.
  */
 export const RESULT_ACCEPTED_FIELD = "invocationResultAccepted";
 export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";

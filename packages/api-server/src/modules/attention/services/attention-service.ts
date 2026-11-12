@@ -1,6 +1,7 @@
 import {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
   type AttentionItem,
   type AttentionList,
   type AttentionService,
@@ -8,6 +9,7 @@ import {
   type CostReviewOffer,
   type DefaultModelNotice,
   type OutageAlertNotice,
+  type OwnerQuestionNotice,
   type SessionMode,
   type SessionType,
 } from "api-server-api";
@@ -65,32 +67,57 @@ export function createAttentionService(deps: {
   defaultModelNotices: () => Promise<DefaultModelNotice[]>;
   outageAlerts: () => Promise<OutageAlertNotice[]>;
   costReviews: () => Promise<CostReviewOffer[]>;
+  ownerQuestions?: () => Promise<OwnerQuestionNotice[]>;
   log: (message: string) => void;
 }): AttentionService {
+  // UNIT_BOUNDARY_DESCRIPTION: the questions the owner's sub-agents wait on now, or null when they cannot be read, so a failed read never looks like "no question waits" and clears a dismissal.
+  const currentOwnerQuestions = (): Promise<OwnerQuestionNotice[] | null> =>
+    (deps.ownerQuestions?.() ?? Promise.resolve([])).catch((err: Error) => {
+      deps.log(`[attention] sub-agent questions: ${err.message}`);
+      return null;
+    });
+
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, allDismissals, notices, alerts, costReviews] =
-        await Promise.all([
-          deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
-          deps.repo.listDismissals(deps.ownerSub),
-          deps.defaultModelNotices().catch((err: Error) => {
-            deps.log(`[attention] default-model notices: ${err.message}`);
-            return null;
-          }),
-          deps.outageAlerts().catch((err: Error) => {
-            deps.log(`[attention] outage alerts: ${err.message}`);
-            return null;
-          }),
-          deps.costReviews().catch((err: Error) => {
-            deps.log(`[attention] cost reviews: ${err.message}`);
-            return [];
-          }),
-        ]);
+      const [
+        records,
+        allDismissals,
+        notices,
+        alerts,
+        costReviews,
+        ownerQuestions,
+      ] = await Promise.all([
+        deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
+        deps.repo.listDismissals(deps.ownerSub),
+        deps.defaultModelNotices().catch((err: Error) => {
+          deps.log(`[attention] default-model notices: ${err.message}`);
+          return null;
+        }),
+        deps.outageAlerts().catch((err: Error) => {
+          deps.log(`[attention] outage alerts: ${err.message}`);
+          return null;
+        }),
+        deps.costReviews().catch((err: Error) => {
+          deps.log(`[attention] cost reviews: ${err.message}`);
+          return [];
+        }),
+        currentOwnerQuestions(),
+      ]);
       const resolved = [
         ...staleDismissals(allDismissals, "default-model", notices),
         ...staleDismissals(allDismissals, "outage-alert", alerts),
+        ...staleDismissals(
+          allDismissals,
+          "owner-question",
+          ownerQuestions?.map((q) => ({ id: ownerQuestionNoticeKey(q) })) ??
+            null,
+        ),
       ];
-      for (const kind of ["default-model", "outage-alert"] as const) {
+      for (const kind of [
+        "default-model",
+        "outage-alert",
+        "owner-question",
+      ] as const) {
         const ids = resolved
           .filter((d) => d.kind === kind)
           .map((d) => d.itemId);
@@ -102,6 +129,7 @@ export function createAttentionService(deps: {
         defaultModels: notices ?? [],
         outageAlerts: alerts ?? [],
         costReviews,
+        ownerQuestions: ownerQuestions ?? [],
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -180,6 +208,15 @@ export function createAttentionService(deps: {
           : [],
       );
 
+      const ownerQuestions = items.filter(
+        (item) => item.kind === "owner-question",
+      );
+      const currentQuestions = new Set(
+        ownerQuestions.length > 0
+          ? ((await currentOwnerQuestions()) ?? []).map(ownerQuestionNoticeKey)
+          : [],
+      );
+
       await deps.repo.setDismissals(
         deps.ownerSub,
         [
@@ -187,6 +224,7 @@ export function createAttentionService(deps: {
           ...approvals.filter((a) => a.owned).map((a) => a.item),
           ...defaultModels.filter((d) => d.owned).map((d) => d.item),
           ...outageAlerts.filter((item) => currentAlerts.has(item.id)),
+          ...ownerQuestions.filter((item) => currentQuestions.has(item.id)),
         ].map((item) => ({ kind: item.kind, itemId: item.id })),
         at,
       );

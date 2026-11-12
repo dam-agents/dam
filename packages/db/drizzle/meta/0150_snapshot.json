@@ -1,5 +1,5 @@
 {
-  "id": "feabf8ab-a3b7-40e6-b26c-7e02f25fd2e8",
+  "id": "ca57f415-f849-4390-932b-5eae256ebc11",
   "prevId": "499a10cf-d389-455d-b295-0d9ff69279fb",
   "version": "7",
   "dialect": "postgresql",
@@ -3462,6 +3462,30 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "question": {
+          "name": "question",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "answer_by": {
+          "name": "answer_by",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "continued_by": {
+          "name": "continued_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "answer": {
+          "name": "answer",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -3546,6 +3570,22 @@
           ],
           "isUnique": false,
           "where": "\"invocation_runs\".\"cancel_pending\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "invocation_runs_asking_idx": {
+          "name": "invocation_runs_asking_idx",
+          "columns": [
+            {
+              "expression": "answer_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"invocation_runs\".\"status\" = 'asking'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4101,12 +4141,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "slug": {
           "name": "slug",
