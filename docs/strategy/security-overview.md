@@ -53,7 +53,8 @@ See [security-model § Execution](security-model.md#execution) for the longer fr
 
 ## Authorization flow
 
-Every internal hop carries a SPIFFE ID stamped by `istiod`, and every door checks it.
+Every hop between platform pods carries a SPIFFE ID stamped by `istiod`.
+The harness door checks it per instance; the `ext-authz` door checks only that the caller is in the agent namespace.
 
 ```mermaid
 flowchart LR
