@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -11,7 +11,10 @@ The controller records a hash of the pod it rendered on each runner, leaves a ru
 That hash leaves out every field the controller changes on the running pod in place, and the class the chart sets for every runner at once: the memory limit, which is the owner's pool, and the memory request ([vm-memory](vm-memory.md)), the CPU limit and the zero CPU request the same resize sets, and the PriorityClass, which a pod takes when it is rolled for another reason ([vm-runner](vm-runner.md)).
 None of those alone rolls a runner, so none of them reboots an owner's machines, and a pod created later takes whatever the install renders then.
 The roll width is a count of runners, one by default, or a share of the runners the install has, rounded up to at least one: a count alone cannot keep up, since one runner at a time takes an install of a thousand owners days to roll.
-A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its agent is gone; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
+A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its Agent no longer asks it to run; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
+An Agent no longer asks to run when it is gone, a stop was asked of it, or its hibernation is published and nothing woke it since: such a machine never comes back, so the roll stops waiting for it at once rather than at the settle timeout, machine by machine, and still waits for every other machine it lists.
+That is read off the Agent, never off the runner: right after the pod rolls, the new runner has booted no machine yet, so every machine reads stopped or absent there, and a roll that took that as settled would end before any came back.
+A hand-off can read the runner, since its machines keep running in place.
 The machines it waits on are listed in the runner's `runner-awaiting` annotation, and [the idle checker](agent-lifecycle.md#hibernate) leaves every one of them awake: a hibernated machine never comes back ready, so a sweep that hibernated one would make the roll wait out its settle timeout and give up on machines that were only idle.
 The list is written when the roll starts and cleared in the write that settles it or finds its machines did not come back in time, and the idle checker leaves a stalled roll's list alone, since that roll is waiting on nothing of the owner's.
 That release happens on the owner's own turn whether or not any other runner asks for a place: a runner already on the pod it should run asks for none, so the last roll of an upgrade would otherwise keep its wait — and the pin on its machines — standing for good.

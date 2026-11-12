@@ -490,8 +490,9 @@ virtualization:
     # has (rounded up, at least one), which is what keeps a full roll of a
     # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
-    # before the roll is ready again. `settleTimeout` bounds that wait, so a
-    # machine that never comes back (its agent was stopped mid-roll) does not
+    # before the roll is ready again; a machine whose agent was deleted,
+    # stopped or hibernated mid-roll is not waited for. `settleTimeout` bounds
+    # the wait, so a machine that never comes back for another reason does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
     # A pass visits each runner about once every five minutes while its
     # agents run, and on the controller's ten-minute sweep otherwise, so a
