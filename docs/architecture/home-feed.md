@@ -143,8 +143,8 @@ A new or recovered alert reaches open tabs through the attention hint.
 
 ## Sub-agent questions
 
-The bell also lists each question a sub-agent of the owner's [waits on](invocations.md#asking-the-owner), and counts it: who asks, the question, and the time it waits until.
-The card does not take the answer and cannot be dismissed; it opens the chat of the Agent the sub-agent works for, in the Session that started it, whose input takes the answer.
+The bell also lists the questions the owner's sub-agents [wait on](invocations.md#asking-the-owner), as one card per Agent they work for, which counts once: who asks, the question, and the time it waits until.
+The card does not take an answer and cannot be dismissed; each question opens the chat of that Agent, in the Session that started the sub-agent, whose input takes the answer.
 That Session shows as waiting in Activity and in the Agent's session list, like one with an approval.
 A question asked or answered reaches open tabs through the attention hint.
 

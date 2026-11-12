@@ -7,21 +7,24 @@ import { answerByLine } from "../../invocations/lib/delegation-state.js";
 import { FeedNoticeCard } from "./feed-notice-card.js";
 
 interface Props {
-  notice: OwnerQuestionNotice;
+  notices: readonly OwnerQuestionNotice[];
   agentName: string;
   avatarName: string | undefined;
   avatar: string | null | undefined;
-  onOpen: () => void;
+  onOpen: (notice: OwnerQuestionNotice) => void;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a sub-agent's question among the things that need the owner: it says who asks and what, and leads to the chat whose input takes the answer. It is not answered or dismissed here, and goes once the question is answered.
+// UNIT_BOUNDARY_DESCRIPTION: the questions the sub-agents of one Agent wait on, as one card among the things that need the owner: who asks and what, each leading to the chat whose input takes its answer. Nothing is answered or dismissed here, and a question goes once it is answered.
 export function FeedOwnerQuestionCard({
-  notice,
+  notices,
   agentName,
   avatarName,
   avatar,
   onOpen,
 }: Props) {
+  const first = notices[0];
+  if (!first) return null;
+  const single = notices.length === 1;
   return (
     <FeedNoticeCard
       testId="feed-owner-question-card"
@@ -34,18 +37,48 @@ export function FeedOwnerQuestionCard({
           <span className="truncate">{agentName}</span>
         </>
       }
-      headline={`${notice.title} needs your answer`}
+      headline={
+        single
+          ? `${first.title} needs your answer`
+          : `${notices.length} temporary agents need your answer`
+      }
       dismiss={null}
-      footerStart={answerByLine(notice.answerBy)}
+      footerStart={single ? answerByLine(first.answerBy) : undefined}
       footerEnd={
-        <Button size="sm" onClick={onOpen}>
+        <Button size="sm" onClick={() => onOpen(first)}>
           Answer in chat
         </Button>
       }
     >
-      <p className="mt-2 line-clamp-3 text-sm break-words text-muted-foreground">
-        {notice.text}
-      </p>
+      {single ? (
+        <p className="mt-2 line-clamp-3 text-sm break-words text-muted-foreground">
+          {first.text}
+        </p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-2">
+          {notices.map((notice) => (
+            <li key={`${notice.id}:${notice.askedAt}`} className="text-sm">
+              <button
+                type="button"
+                onClick={() => onOpen(notice)}
+                className="w-full rounded-md text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-hidden"
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate font-medium text-foreground">
+                    {notice.title}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {answerByLine(notice.answerBy)}
+                  </span>
+                </span>
+                <span className="line-clamp-2 break-words text-muted-foreground">
+                  {notice.text}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </FeedNoticeCard>
   );
 }

@@ -28,6 +28,7 @@ import {
   approvalSubjectName,
   countsAllAgents,
 } from "../lib/approval-copy.js";
+import { ownerQuestionGroups } from "../lib/owner-question-groups.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
@@ -112,16 +113,17 @@ function ApprovalsList({
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
       {view.ownerQuestions.length > 0 && (
         <div className="mb-1 flex flex-col gap-1">
-          {view.ownerQuestions.map((notice) => {
-            const agent = agentOf(notice.agentId);
+          {ownerQuestionGroups(view.ownerQuestions).map((group) => {
+            const agentId = group[0]!.agentId;
+            const agent = agentOf(agentId);
             return (
               <FeedOwnerQuestionCard
-                key={`${notice.id}:${notice.askedAt}`}
-                notice={notice}
-                agentName={agent?.name ?? notice.agentId}
+                key={agentId}
+                notices={group}
+                agentName={agent?.name ?? agentId}
                 avatarName={agent?.name}
                 avatar={agent?.avatar}
-                onOpen={() => {
+                onOpen={(notice) => {
                   if (notice.sessionId)
                     openSession(notice.agentId, notice.sessionId);
                   else openAgent(notice.agentId);
