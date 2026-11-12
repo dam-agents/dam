@@ -11,6 +11,7 @@ let currentUser: User | null = null;
 let renewal: Promise<User | null> | null = null;
 
 const RENEW_BEFORE_EXPIRY_S = 45;
+const REFRESH_TIMEOUT_S = 10;
 
 function signinExtraParams(): Record<string, string> {
   return { kc_theme: readStoredTheme() };
@@ -64,9 +65,11 @@ export async function getAccessToken(): Promise<string> {
   }
 
   try {
-    renewal ??= userManager.signinSilent().finally(() => {
-      renewal = null;
-    });
+    renewal ??= userManager
+      .signinSilent({ silentRequestTimeoutInSeconds: REFRESH_TIMEOUT_S })
+      .finally(() => {
+        renewal = null;
+      });
     currentUser = await renewal;
     return currentUser!.access_token;
   } catch {
