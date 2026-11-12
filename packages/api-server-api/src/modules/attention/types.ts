@@ -9,7 +9,7 @@ export const ATTENTION_FEED_LIMIT = 200;
 export const ATTENTION_PAGE_LIMIT = 20;
 
 export type AttentionItemKind =
-  "session" | "approval" | "default-model" | "outage-alert";
+  "session" | "approval" | "default-model" | "outage-alert" | "owner-question";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: why an Agent's saved default needs its owner:
@@ -53,6 +53,28 @@ export interface OutageAlertNotice {
   agents: OutageAlertAgent[];
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a question a sub-agent waits on, told to its
+ * owner wherever they are: the sub-agent and what to call it, the question,
+ * the time it waits until, and the Agent and Session whose chat puts the
+ * question to the owner, where they answer it. The Session is null when the
+ * sub-agent's start recorded none.
+ */
+export interface OwnerQuestionNotice {
+  id: string;
+  title: string;
+  text: string;
+  askedAt: string;
+  answerBy: string;
+  agentId: string;
+  sessionId: string | null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a dismissal of a sub-agent's question names: the sub-agent and the time it asked, so a later question of the same sub-agent is told again.
+export const ownerQuestionNoticeKey = (
+  notice: Pick<OwnerQuestionNotice, "id" | "askedAt">,
+): string => `${notice.id}:${notice.askedAt}`;
+
 export interface AttentionItem {
   agentId: string;
   sessionId: string;
@@ -81,6 +103,7 @@ export interface AttentionList {
   defaultModels: DefaultModelNotice[];
   outageAlerts: OutageAlertNotice[];
   costReviews: CostReviewOffer[];
+  ownerQuestions: OwnerQuestionNotice[];
 }
 
 export interface AttentionListCursor {

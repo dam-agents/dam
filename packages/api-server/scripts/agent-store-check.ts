@@ -205,8 +205,12 @@ async function main(): Promise<void> {
       signals?.pinned === true,
     JSON.stringify({ activity: signals?.activity, pinned: signals?.pinned }),
   );
-  const second = await repo.clearLegacyDisabled(AGENT);
-  check("a second clear changes nothing", second === false, String(second));
+  const secondClear = await repo.clearLegacyDisabled(AGENT);
+  check(
+    "a second clear changes nothing",
+    secondClear === false,
+    String(secondClear),
+  );
   await db.execute(sql`
     UPDATE control.agent_signals
        SET disabled_at = '2026-10-15T10:00:00Z',

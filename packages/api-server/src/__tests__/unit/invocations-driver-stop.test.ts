@@ -9,6 +9,7 @@ import type { InvocationRow } from "../../modules/invocations/infrastructure/inv
 import { createInvocationsService } from "../../modules/invocations/services/invocations-service.js";
 import {
   fakeInvocationsRepo,
+  fakeOwnerQuestions,
   invocationRow,
 } from "../helpers/invocations-repo.js";
 
@@ -24,6 +25,7 @@ function makeService(rows: InvocationRow[]) {
     reaper: { reap: async () => {} },
     stopper: { stop, running },
     reportedReap: { afterReport: () => {} },
+    questions: fakeOwnerQuestions(),
     cancel: { settled: async () => true },
     runtimeMutator: {} as never,
     wakeAgent: async () => {},

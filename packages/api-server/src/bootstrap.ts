@@ -321,6 +321,7 @@ import {
 import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
+  composeQuestionDeadlines,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
@@ -2801,6 +2802,15 @@ export async function bootstrap() {
   );
   await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
     subAgentOutcomes.retry(),
+  );
+  const questionDeadlines = composeQuestionDeadlines({
+    db,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    wakeAgent: wakeAgentFor,
+    batchSize: 100,
+  });
+  await periodicJobs.register("sub-agent-question-deadlines", 30_000, () =>
+    questionDeadlines(),
   );
 
   const agentSweep = createAgentSweep({

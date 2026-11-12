@@ -20,6 +20,10 @@ import {
   type GettingStartedSlice,
 } from "./modules/getting-started/store.js";
 import {
+  createOwnerQuestionsSlice,
+  type OwnerQuestionsSlice,
+} from "./modules/invocations/store.js";
+import {
   createDialogSlice,
   type DialogSlice,
 } from "./modules/platform/store/dialog.js";
@@ -74,7 +78,8 @@ export type PlatformStore = DialogSlice &
   GettingStartedSlice &
   ProcessesSlice &
   SidePanelSlice &
-  SpendSlice;
+  SpendSlice &
+  OwnerQuestionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -93,6 +98,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createSidePanelSlice(...a),
   ...createSpendSlice(...a),
+  ...createOwnerQuestionsSlice(...a),
 }));
 
 let draftSyncStarted = false;
