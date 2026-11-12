@@ -93,6 +93,9 @@ describe("the harness and provider a create form starts on", () => {
         c.choice,
         c.item?.id,
       ]);
+    expect(providerChoices(ROWS, items(shared), false).sharedOffered).toBe(
+      true,
+    );
     expect(choicesOf(shared)).toEqual([
       ["ibm-litellm", undefined],
       [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID, "conn-shared"],
