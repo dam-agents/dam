@@ -54,6 +54,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     agentId: "agent-1",
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "Team dashboard",
     slug: "slug-a",
     kind: "html",
@@ -678,6 +679,7 @@ describe("the share page relay", () => {
   const page = (relay: boolean) =>
     renderWrapper({
       title: "Team dashboard",
+      icon: null,
       brandName: "Platform",
       contentUrl: "https://content.example.com/a/slug-a?v=1&t=tok",
       slug: "slug-a",

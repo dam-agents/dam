@@ -59,11 +59,19 @@ import type {
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import type { ArtifactPromptChoices } from "../infrastructure/artifact-prompt-profile.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
+import { parseArtifactIcon } from "../domain/artifact-icon.js";
 import type { ViewerPromptDelivery } from "./share-bridge-service.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+function storedIcon(raw: string): string {
+  const parsed = parseArtifactIcon(raw);
+  if (!parsed.ok)
+    throw new TRPCError({ code: "BAD_REQUEST", message: parsed.reason });
+  return parsed.icon;
+}
+
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
 
 export interface ArtifactAgentDownloadTicket {
@@ -180,6 +188,7 @@ export function toLibraryArtifact(
   return {
     id: row.id,
     title: row.title,
+    icon: row.icon,
     slug: row.slug,
     kind: row.kind as ArtifactKind,
     contentType: row.contentType,
@@ -467,6 +476,7 @@ export function createArtifactLibraryService(
         blob.content.toString("utf8"),
         {
           title: row.title,
+          icon: row.icon,
           fileName: ref.fileName,
           ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
@@ -488,6 +498,7 @@ export function createArtifactLibraryService(
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
       if (attribution?.agentId) await ensureAgent(attribution.agentId);
+      const icon = input.icon === undefined ? null : storedIcon(input.icon);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;
@@ -530,6 +541,7 @@ export function createArtifactLibraryService(
           agentId,
           folderId: input.folderId ?? null,
           title: input.title,
+          icon,
           slug: generateSlug(),
           kind,
           contentType: stored.contentType,
@@ -589,6 +601,7 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
+      if (input.icon !== undefined) patch.icon = storedIcon(input.icon);
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {

@@ -99,6 +99,7 @@ const artifact = (
 ): LibraryArtifact => ({
   id,
   sourcePath: null,
+  icon: null,
   title: id,
   slug: id,
   kind: "markdown",

@@ -9,6 +9,7 @@ import {
 const artifact = (id: string, folderId: string | null): LibraryArtifact => ({
   id,
   sourcePath: null,
+  icon: null,
   title: id,
   slug: id,
   kind: "markdown",

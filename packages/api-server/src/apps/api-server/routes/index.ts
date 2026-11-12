@@ -1,6 +1,9 @@
 import type { Hono } from "hono";
 import type { AuthConfig } from "api-server-api";
-import { createArtifactLibraryRoutes } from "../../../modules/artifact-library/index.js";
+import {
+  createArtifactIconRoutes,
+  createArtifactLibraryRoutes,
+} from "../../../modules/artifact-library/index.js";
 import { createSlackOAuthRoutes } from "../../../modules/channels/infrastructure/slack-oauth.js";
 import {
   createSlackInstallRoutes,
@@ -81,6 +84,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     }),
   );
   app.route("/api/avatars", avatarImages.upload);
+  app.route("/api/public/artifact-icon", createArtifactIconRoutes());
   app.route(
     "/api/public",
     createPublicAgentRoutes({ service: boot.publicAgentPageService }),

@@ -32,6 +32,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     agentId: "agent-1",
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "Weekly digest",
     slug: "slug-a",
     kind: "html",

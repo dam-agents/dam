@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -31,6 +31,15 @@ An artifact's **kind is settled when it is created** and no revision can move it
 The share link outlives every revision, so a mutable kind would let a URL vetted while it served inert text later serve executing HTML or JSX to the same audience; publishing executable content is fine, silently changing what an already-shared link *does* is not.
 It also keeps a version history coherent, since every version renders through the artifact's one kind.
 Title and file name stay editable, and both describe the whole artifact rather than one revision: the history snapshots bytes, so a past version downloads under the artifact's current name.
+
+An artifact also carries an **icon**, so the user tells its browser tab apart from the others: one emoji, or the name of an icon from the free Font Awesome solid and brands sets.
+The Agent picks it when it publishes, as it picks the title, without being asked: the publish tool requires it, and the update tool gives one to an artifact that has none.
+The platform stores the emoji itself or the icon's own name, with an alias or an `fa-` prefix resolved, and refuses anything else, so a stored icon always draws.
+Like the title, it describes the whole artifact, and a new version keeps it.
+Every page that shows the artifact alone in a tab uses it as the favicon: the share page and the framed document, which carry it as an inline SVG, and the app's own artifact page, which asks a public route to draw it from the icon's value alone, since the browser fetches a favicon without the app's token.
+No page loads Font Awesome itself; the api-server draws the icon's path into the SVG.
+An HTML artifact that names its own favicon keeps it.
+An artifact without an icon, such as an upload or one published before icons, shows the browser's default icon on its share page and the brand icon in the app.
 
 The design is a port of a proven external tool (the "slop" artifact vault) onto platform rails: content bytes live in the S3-compatible object store ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing surface is the per-agent platform MCP server, and by-link serving happens on two dedicated hosts — a **share host** for the pages and a **content host** for the framed artifact itself.
 

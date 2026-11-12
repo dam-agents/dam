@@ -510,6 +510,7 @@ export {
   artifactSharingInputSchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
+  ARTIFACT_ICON_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,

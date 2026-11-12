@@ -1037,6 +1037,13 @@
       "when": 1794406276560,
       "tag": "0147_backfill_slack_untagged_reply_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1794484532569,
+      "tag": "0148_artifact_icon",
+      "breakpoints": true
     }
   ]
 }

@@ -68,6 +68,7 @@ function artifact(overrides: Partial<LibraryArtifact> = {}): LibraryArtifact {
     version: 2,
     folderId: null,
     sourcePath: null,
+    icon: null,
     agentId: "agent-1",
     visibility: "private",
     interactive: false,

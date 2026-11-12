@@ -35,6 +35,7 @@ export interface ArtifactFolder {
 export interface LibraryArtifact {
   id: string;
   title: string;
+  icon: string | null;
   slug: string;
   kind: ArtifactKind;
   contentType: string;
@@ -83,6 +84,7 @@ export interface ArtifactListFilter {
 
 export interface ArtifactCreateInput {
   title: string;
+  icon?: string;
   content?: string;
   uploadRef?: string;
   fileName?: string;
@@ -98,6 +100,7 @@ export interface ArtifactCreateInput {
 
 export interface ArtifactUpdateInput {
   title?: string;
+  icon?: string;
   folderId?: string | null;
   content?: string;
   uploadRef?: string;

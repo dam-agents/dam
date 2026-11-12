@@ -99,6 +99,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
         blob
           ? renderTextKindInner(kind, blob.content.toString("utf8"), {
               title: artifact.title,
+              icon: artifact.icon,
               fileName: artifact.fileName,
               ...(artifact.interactive
                 ? {
