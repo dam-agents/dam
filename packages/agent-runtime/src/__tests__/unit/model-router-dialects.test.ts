@@ -861,9 +861,10 @@ describe("replay rules", () => {
     },
   ];
   /** TEST_SCENARIO: A Messages body carrying a GLM-made thinking block in a
-   * prior turn reaches a Claude model with that block as text; the last
-   * assistant message keeps its blocks; a GLM target gets the body as is. */
-  it("turns prior-turn thinking into text for a Claude target only", () => {
+   * prior turn reaches a Claude model without that block, and with no
+   * `<thinking>` text in its place; the last assistant message keeps its
+   * blocks; a GLM target gets the body as is. */
+  it("drops prior-turn thinking for a Claude target only", () => {
     const out = applyReplayRules(
       { messages: history },
       {
@@ -873,10 +874,8 @@ describe("replay rules", () => {
       },
     );
     const messages = out.messages as { content: unknown }[];
-    expect(messages[1]!.content).toEqual([
-      { type: "text", text: "<thinking>fake</thinking>" },
-      { type: "text", text: "a" },
-    ]);
+    expect(messages[1]!.content).toEqual([{ type: "text", text: "a" }]);
+    expect(JSON.stringify(out)).not.toContain("<thinking>");
     expect(messages[3]!.content).toEqual(history[3]!.content);
     const glm = applyReplayRules(
       { messages: history },
@@ -892,6 +891,40 @@ describe("replay rules", () => {
       { dialect: "anthropic-messages", alias: "ibm", upstreamId: "claude-x" },
     );
     expect(noAssistant.messages).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: An interrupted turn leaves an assistant message that
+   * holds only a thinking block. On a later call to a Claude model that
+   * message is gone, not sent with an empty `content`, which the Messages API
+   * refuses. */
+  it("drops an earlier assistant message that held only thinking", () => {
+    const out = applyReplayRules(
+      {
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "plan", signature: "x".repeat(32) },
+            ],
+          },
+          { role: "user", content: "again" },
+          { role: "assistant", content: [{ type: "text", text: "a" }] },
+          { role: "user", content: "more" },
+        ],
+      },
+      {
+        dialect: "anthropic-messages",
+        alias: "anthropic",
+        upstreamId: "claude-opus-5-5",
+      },
+    );
+    expect(out.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "again" },
+      { role: "assistant", content: [{ type: "text", text: "a" }] },
+      { role: "user", content: "more" },
+    ]);
   });
 
   /** TEST_SCENARIO: A Responses body with a Curve Bender bridge reasoning

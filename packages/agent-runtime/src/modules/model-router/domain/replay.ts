@@ -6,19 +6,12 @@ type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 
-function thinkingToText(blocks: unknown[]): unknown[] {
-  return blocks.flatMap((block) => {
-    if (!isObject(block)) return [block];
-    if (block.type === "thinking") {
-      const text = typeof block.thinking === "string" ? block.thinking : "";
-      return text.trim()
-        ? [{ type: "text", text: `<thinking>${text}</thinking>` }]
-        : [];
-    }
-    if (block.type === "redacted_thinking") return [];
-    return [block];
-  });
-}
+const THINKING = new Set(["thinking", "redacted_thinking"]);
+
+const withoutThinking = (blocks: unknown[]): unknown[] =>
+  blocks.filter(
+    (block) => !isObject(block) || !THINKING.has(String(block.type)),
+  );
 
 const TOOL_CALLS = new Set([
   "function_call",
@@ -96,8 +89,11 @@ function deepseekEffort(body: Json, upstreamId: string): Json {
  * UNIT_BOUNDARY_DESCRIPTION: makes a conversation produced on one model
  * replayable on another, by target, since the router cannot know which model
  * wrote a history. A Claude target verifies thinking signatures, so earlier
- * assistant thinking blocks become text (the last message keeps them for a
- * tool loop in flight). A proxied Responses target refuses encrypted
+ * assistant thinking blocks are dropped (the last message keeps them for a
+ * tool loop in flight); turned into text instead, they put the model's
+ * reasoning into visible replies, which Anthropic's safeguards refuse as
+ * reasoning extraction. An earlier message that held nothing else leaves
+ * with its blocks, since the Messages API refuses an empty `content`. A proxied Responses target refuses encrypted
  * reasoning items, `client_metadata`, and tool items without a tool config;
  * OpenAI itself refuses only reasoning items with a non-empty `content`.
  */
@@ -119,23 +115,19 @@ export function applyReplayRules(
         -1,
       );
       let changed = false;
-      const rewritten = messages.map((m, i) => {
+      const rewritten = messages.flatMap((m, i) => {
         if (
           !isObject(m) ||
           m.role !== "assistant" ||
           i === lastAssistant ||
           !Array.isArray(m.content)
         )
-          return m;
+          return [m];
         const original: unknown[] = m.content;
-        const content = thinkingToText(original);
-        if (
-          content.length === original.length &&
-          content.every((b, j) => b === original[j])
-        )
-          return m;
+        const content = withoutThinking(original);
+        if (content.length === original.length) return [m];
         changed = true;
-        return { ...m, content };
+        return content.length > 0 ? [{ ...m, content }] : [];
       });
       return changed ? { ...body, messages: rewritten } : body;
     }
