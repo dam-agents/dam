@@ -172,6 +172,7 @@ function applyUpdateOf(
         model: update.model,
         stopped: update.stopReason === "cancelled",
         stoppedAtOutputLimit: isOutputLimitStop(update.stopReason),
+        chatFormFix: update.chatFormFix,
       };
       return update.turnId === undefined
         ? closeActiveAssistant(messages, end)
@@ -952,10 +953,14 @@ function closeTurn(
   if (last === -1) return messages;
   const toolStatus = endedToolStatus(end);
   return messages.map((m, i) => {
-    const settled =
+    const tools =
       toolStatus !== null && owned(m)
         ? { ...m, parts: settleRunningTools(m.parts, toolStatus) }
         : m;
+    const settled =
+      end.chatFormFix !== undefined && owned(m)
+        ? { ...tools, chatFormFix: end.chatFormFix }
+        : tools;
     if (i === last)
       return {
         ...settled,
@@ -1062,6 +1067,7 @@ interface ReplyClose {
   model?: string;
   stopped?: boolean;
   stoppedAtOutputLimit?: boolean;
+  chatFormFix?: number;
 }
 
 function closeActiveAssistant(
@@ -1073,6 +1079,7 @@ function closeActiveAssistant(
     model,
     stopped = false,
     stoppedAtOutputLimit,
+    chatFormFix,
   }: ReplyClose = {},
 ): Message[] {
   const i = activeReplyIndex(messages);
@@ -1090,6 +1097,7 @@ function closeActiveAssistant(
           ...(stopped && { stopped: true }),
           ...(stoppedAtOutputLimit &&
             hasAgentContent(x) && { stoppedAtOutputLimit }),
+          ...(chatFormFix !== undefined && { chatFormFix }),
           ...(toolStatus !== null && {
             parts: settleRunningTools(x.parts, toolStatus),
           }),

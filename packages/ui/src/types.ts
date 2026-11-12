@@ -111,6 +111,7 @@ export interface Message {
   model?: string;
   stopped?: boolean;
   stoppedAtOutputLimit?: boolean;
+  chatFormFix?: number;
   turnId?: string;
   error?: {
     message: string;

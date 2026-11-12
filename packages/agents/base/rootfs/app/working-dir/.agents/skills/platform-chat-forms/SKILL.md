@@ -180,19 +180,24 @@ Ask me in plain text instead."), answer that question in plain text and send no 
 - One block per reply, at the end.
   Keep forms short, and follow the user's preferences (see above).
 - Only where the conversation carries renderer capabilities (see above).
-- Every block, new or fixed, passes `check_chat_form` before you send it (see "Check before you send").
+- Every block, new or fixed, is checked by the platform (see "Check before you send").
 - Never ask for secrets.
   Credentials are set by the user in the platform's connections, not typed into chat.
 
 ## Check before you send
 
-Always check a reply with a block before you send it, with no exception: call `check_chat_form` (on the platform MCP server) with your whole reply and `"attempt": 1`.
+The platform checks every reply with a block when your turn ends, with the same check the chat uses.
+A reply that fails is not shown to the user as a form.
+Instead your next prompt is a `<chat-form-check attempt="N">` tag that holds the renderer error messages and the capabilities.
+Then send the whole reply again with every problem fixed, and create each surface again with `createSurface`, because none of the failed surfaces reached the user.
+Do not mention the failed form or the check to the user.
+After the second failed fix, the tag asks for plain text: ask the same questions in plain text, as a numbered list with the options and your recommendation.
+
+To save that round trip, you may check a reply before you send it: call `check_chat_form` (on the platform MCP server) with your whole reply and `"attempt": 1`.
 It answers `ok`, or the problems the chat would report.
 Fix every problem and call it again with the next attempt number.
-Send only a reply the tool answered `ok` for, exactly as you checked it; if you change the block after the check, check it again.
-If attempt 3 still fails, send no block: ask the same questions in plain text, as a numbered list with the options and your recommendation.
+If attempt 3 still fails, send no block: ask in plain text.
 The tool refuses a fourth attempt.
-If `check_chat_form` is not in your tools, or the call fails, send no block: ask in plain text.
 
 ## Lock the chat input
 
