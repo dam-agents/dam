@@ -842,6 +842,7 @@ export type {
 export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
 } from "./modules/attention/types.js";
 export type {
   CostReviewOffer,

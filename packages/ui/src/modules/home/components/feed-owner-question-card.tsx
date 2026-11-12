@@ -12,15 +12,17 @@ interface Props {
   avatarName: string | undefined;
   avatar: string | null | undefined;
   onOpen: (notice: OwnerQuestionNotice) => void;
+  onDismiss: () => void;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the questions the sub-agents of one Agent wait on, as one card among the things that need the owner: who asks and what, each leading to the chat whose input takes its answer. Nothing is answered or dismissed here, and a question goes once it is answered.
+// UNIT_BOUNDARY_DESCRIPTION: the questions the sub-agents of one Agent wait on, as one card among the things that need the owner: who asks and what, each leading to the chat whose input takes its answer. Nothing is answered here; a dismissal only hides the card, and a question goes once it is answered.
 export function FeedOwnerQuestionCard({
   notices,
   agentName,
   avatarName,
   avatar,
   onOpen,
+  onDismiss,
 }: Props) {
   const first = notices[0];
   if (!first) return null;
@@ -42,7 +44,11 @@ export function FeedOwnerQuestionCard({
           ? `${first.title} needs your answer`
           : `${notices.length} temporary agents need your answer`
       }
-      dismiss={null}
+      dismiss={{
+        title:
+          "Hides this from Approvals. The question still waits in the chat.",
+        onDismiss,
+      }}
       footerStart={single ? answerByLine(first.answerBy) : undefined}
       footerEnd={
         <Button size="sm" onClick={() => onOpen(first)}>
