@@ -4,7 +4,7 @@
 // TEST_OVERVIEW: changes or clears it in the Rename dialog, so a bad pick is
 // TEST_OVERVIEW: fixed without asking the Agent again.
 import type { LibraryArtifact } from "api-server-api";
-import { act, createElement } from "react";
+import { act, createElement, type FunctionComponent } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,7 +63,7 @@ function artifact(overrides: Partial<LibraryArtifact> = {}): LibraryArtifact {
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-function render(node: Parameters<typeof createElement>[0], props: object) {
+function render<P extends object>(node: FunctionComponent<P>, props: P) {
   act(() =>
     root.render(
       createElement(TooltipProvider, null, createElement(node, props)),
