@@ -13,6 +13,7 @@ The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox t
 You (the driver) hand it a prompt plus the result shape you expect, and get the validated result back.
 Or you hand it a shell command (`script`): no model runs, and you get the command's exit code and its exact stdout and stderr.
 It runs unattended and cannot ask you anything.
+A decision that is the user's to make, it puts to the user itself (see "A sub-agent that asks the user" below).
 
 ## Step 1 — Decide: is a platform sub-agent needed?
 
@@ -60,6 +61,10 @@ For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in 
 
 **You may stop waiting.** If you end your turn or stop calling `await_subagents`, the platform delivers each result to this session as a new turn when its sub-agent ends — on every harness, and also after the user has left.
 So never keep a shell command or a background job alive only to wait for a sub-agent.
+
+**A sub-agent that asks the user.** A sub-agent you started with `spawn_subagent` may stop on a question for the user: `await_subagents` lists it under `needsOwnerAnswer`, with the question, its options and the default it takes when nobody answers in time.
+The user sees the question in this chat's input and answers the sub-agent there, so you cannot answer it and need not relay it: do not wait on it, and carry on with your other work.
+Once it has an answer it goes on, and its result reaches you as usual.
 
 **Stop a sub-agent you no longer need.** When another sub-agent already found the answer, the user changed the request, or you gave it the wrong task, call `stop_subagent` with its id and a short `reason` at once: it stops spending, and so does every sub-agent it started.
 A sub-agent you spawned with `keep` keeps its conversation and needs a reason; any other is removed.

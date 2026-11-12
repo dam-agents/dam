@@ -16,7 +16,10 @@ import {
   sessionTitleSchema,
 } from "agent-runtime-api";
 import type { SatelliteView, SpendStatus } from "api-server-api";
-import { skillSourcePathSchema } from "api-server-api";
+import {
+  ownerQuestionInputSchema,
+  skillSourcePathSchema,
+} from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -217,6 +220,7 @@ export interface McpSessionDeps {
   agentImage: (agentId: string) => Promise<string | null>;
   environments: OwningAgentEnvironments | null;
   keptSubAgents?: boolean;
+  subAgent?: boolean;
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
@@ -1793,6 +1797,33 @@ export function createMcpSession(
     },
   );
 
+  if (deps.subAgent)
+    server.registerTool(
+      "ask_owner",
+      {
+        description:
+          "Put a decision that is your owner's to make to them, and stop until they answer: one that changes what gets built, is costly to undo, or that the task leaves open between two readings. Decide everything else yourself. Ask once: put everything you need into one question, since each further question costs the owner another wait. When the choice is between a few fixed answers, pass each as its own option, up to eight; the owner can always type their own answer instead, so add no option such as Other and group nothing into a range that needs a second question. For an open question (a number, a name, free wording) pass no options. As default pass the answer you would take: you go on with it when nobody answers in time. Once the call is accepted, end your turn at once, with no more text and no more tool calls: this run is over, and the answer arrives as your next message in this conversation, with your files as you left them. Do not call report_result before you have the answer.",
+        inputSchema: ownerQuestionInputSchema.shape,
+      },
+      async (input) => {
+        const outcome = await deps.invocations.askOwner(
+          agentId,
+          input,
+          await reportingRun(),
+        );
+        if (!outcome.ok)
+          return errorResult(`ask_owner refused: ${outcome.errors}`);
+        return textResult(
+          JSON.stringify({
+            asked: true,
+            [RESULT_ACCEPTED_FIELD]: true,
+            answerBy: outcome.answerBy.toISOString(),
+            next: "Your question is with your owner. End your turn now, with no more text and no more tool calls. The answer arrives as your next message in this conversation.",
+          }),
+        );
+      },
+    );
+
   if (deps.spendStatus)
     registerSpendLimitsTool(server, { status: deps.spendStatus });
 
@@ -2043,6 +2074,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         : null,
       artifactLibrary,
       invocations,
+      subAgent: verified.subAgent,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
       subAgentAwaits: deps.subAgentAwaitsFor(agentId),
       requestSignal: c.req.raw.signal,

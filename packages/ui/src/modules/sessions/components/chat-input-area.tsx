@@ -2,6 +2,14 @@ import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message, VerdictPart } from "../../../types.js";
+import {
+  OwnerQuestionPrompt,
+  PostponedQuestionsLine,
+} from "../../invocations/components/owner-question-prompt.js";
+import {
+  questionKey,
+  useOwnerQuestionQueue,
+} from "../../invocations/hooks/use-owner-question-queue.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import { ChatInput, type ChatInputProps } from "./chat-input.js";
 import { EgressApprovalPrompt } from "./egress-approval-prompt.js";
@@ -19,6 +27,9 @@ export function ChatInputArea(
 ) {
   const hasPending = useHasPendingPermission();
   const setMessages = useStore((s) => s.setMessages);
+  const agentId = useStore((s) => s.selectedAgent);
+  const sessionId = useStore((s) => s.sessionId);
+  const questions = useOwnerQuestionQueue(agentId, sessionId);
 
   const appendVerdict = useCallback(
     (verdict: PermissionVerdict, toolCallId: string) => {
@@ -50,9 +61,24 @@ export function ChatInputArea(
         onResolved={appendVerdict}
       />
     );
+  if (agentId && questions.current)
+    return (
+      <OwnerQuestionPrompt
+        key={questionKey(questions.current)}
+        driverAgentId={agentId}
+        question={questions.current}
+        more={questions.more}
+        onLater={questions.later}
+        onAnswered={questions.answered}
+      />
+    );
   return (
     <>
       <EgressApprovalPrompt />
+      <PostponedQuestionsLine
+        questions={questions.postponed}
+        onAnswer={questions.resume}
+      />
       <ChatInput {...props} />
     </>
   );

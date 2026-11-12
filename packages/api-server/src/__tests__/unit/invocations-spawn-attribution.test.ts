@@ -4,7 +4,10 @@ import {
   createInvocationsService,
   UnresolvableDriverError,
 } from "../../modules/invocations/services/invocations-service.js";
-import { fakeInvocationsRepo } from "../helpers/invocations-repo.js";
+import {
+  fakeInvocationsRepo,
+  fakeOwnerQuestions,
+} from "../helpers/invocations-repo.js";
 
 interface Recorder {
   inserted: string[];
@@ -41,6 +44,7 @@ function makeService(opts: {
       running: async () => false,
     },
     reportedReap: { afterReport: () => {} },
+    questions: fakeOwnerQuestions(),
     cancel: { settled: async () => true },
     runtimeMutator: {
       bump: async () => 0,

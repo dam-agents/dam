@@ -24,6 +24,7 @@ import {
   delegationState,
   type DelegationTarget,
   delegationWaitReason,
+  questionLine,
   runningSubAgents,
   stoppedLine,
 } from "../lib/delegation-state.js";
@@ -51,7 +52,9 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   const waitReason = delegationWaitReason(node, target);
   const failed = state === "failed";
   const ownRunning = node.status === "running";
+  const stoppable = ownRunning || node.status === "asking";
   const working = ownRunning ? 0 : runningSubAgents(node);
+  const asked = questionLine(node);
   const turn = turns?.[node.id];
   const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
   const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
@@ -90,7 +93,7 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
                 ? stoppedLine(node.stopped)
                 : failed && node.errorReason
                   ? node.errorReason
-                  : (waitReason ?? subtitle(node))}
+                  : (waitReason ?? asked ?? subtitle(node))}
             </span>
           </span>
         </button>
@@ -109,7 +112,7 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
         <DelegationStatePill
           state={state}
           stop={
-            ownRunning ? (
+            stoppable ? (
               <StopSegment
                 node={node}
                 driverAgentId={driverAgentId}
@@ -146,6 +149,11 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
           {node.exitCode !== null && (
             <Field label="Exit code">
               <ToolContentBlock text={String(node.exitCode)} />
+            </Field>
+          )}
+          {node.question && (
+            <Field label="Question">
+              <ToolContentBlock text={node.question.text} />
             </Field>
           )}
           {node.status === "done" && node.script === null && (

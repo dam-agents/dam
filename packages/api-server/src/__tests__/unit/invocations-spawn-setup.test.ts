@@ -12,7 +12,10 @@ import {
 } from "../../modules/invocations/services/invocations-service.js";
 import { createSetupFailure } from "../../modules/invocations/services/setup-failure.js";
 import { inheritProvider } from "../../modules/invocations/domain/provider-inheritance.js";
-import { fakeInvocationsRepo } from "../helpers/invocations-repo.js";
+import {
+  fakeInvocationsRepo,
+  fakeOwnerQuestions,
+} from "../helpers/invocations-repo.js";
 
 // TEST_OVERVIEW: A spawn sets up its sub-agent the way a starter kit sets up an agent. The endpoint resolves the harness to its Template, or runs a given image instead, and collects the driver's provider grants; the service turns the Agent Setup into the create, queues the install ahead of the task, and gives the target the driver's provider. A failed seed or install fails the Invocation at once.
 
@@ -64,6 +67,7 @@ function makeService(opts: { failPin?: boolean } = {}) {
       running: async () => false,
     },
     reportedReap: { afterReport: () => {} },
+    questions: fakeOwnerQuestions(),
     cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,
@@ -215,6 +219,7 @@ function makeFailingSkillsService(
       running: async () => false,
     },
     reportedReap: { afterReport: () => {} },
+    questions: fakeOwnerQuestions(),
     cancel: { settled: async () => true },
     readHarnessConfigSupport: async () => null,
     scriptOutputsAvailable: true,

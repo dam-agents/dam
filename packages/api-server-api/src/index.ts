@@ -56,6 +56,10 @@ export {
   MAX_STOP_REASON_CHARS,
   stopReasonSchema,
   stopInvocationRequestSchema,
+  MAX_OWNER_ANSWER_CHARS,
+  MAX_OWNER_OPTIONS,
+  ownerAnswerSchema,
+  ownerQuestionInputSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -90,8 +94,12 @@ export type {
   InvocationHarnessConfig,
   InvocationsQueryService,
   KeptSubAgent,
+  DelegationAnswer,
   DelegationNode,
+  DelegationQuestion,
   DelegationStopped,
+  OwnerQuestion,
+  OwnerQuestionInput,
 } from "./modules/invocations/types.js";
 
 export {
@@ -829,10 +837,12 @@ export type {
   OutageAlertAffectedBy,
   OutageAlertAgent,
   OutageAlertNotice,
+  OwnerQuestionNotice,
 } from "./modules/attention/types.js";
 export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
 } from "./modules/attention/types.js";
 export type {
   CostReviewOffer,

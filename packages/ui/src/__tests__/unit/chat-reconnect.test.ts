@@ -392,6 +392,7 @@ mockModule("../../modules/spend/api/queries.js", {
 mockModule("../../modules/invocations/api/queries.js", {
   useContinuedFrom: () => undefined,
   useDelegationOwners: () => new Map(),
+  useOwnerQuestions: () => ({ data: undefined }),
 });
 mockModule("../../modules/a2ui/api/queries.js", {
   useChatFormPreferences: () => ({ data: undefined }),

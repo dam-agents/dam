@@ -441,6 +441,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agents,
       frames: delegationFrames,
       runtimeMutator,
+      wakeAgent,
     });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,
@@ -633,6 +634,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
       costReviews: () => costReviews.offers(),
+      ownerQuestions: () => invocationsQuery.waitingForOwner(),
     });
     const files = composeFilesModule(
       agentsRepo,

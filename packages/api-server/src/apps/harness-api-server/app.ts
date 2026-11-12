@@ -26,6 +26,7 @@ import {
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import { ANN_SWEEPABLE } from "../../modules/agents/infrastructure/labels.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import {
   composeSchedulesForOwner,
@@ -34,6 +35,7 @@ import {
 import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import {
   composeSubAgentAwaitMarks,
+  ASKING_IDLE_MIN,
   composeInvocationsForOwner,
   type ScriptOutputs,
   type DelegationFramesPort,
@@ -204,6 +206,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       skills: composeSkills(owner),
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
+      },
+      parkTarget: async (agentId) => {
+        await agentsRepo.patchAnnotations(agentId, { [ANN_SWEEPABLE]: null });
+        await agentsServiceFor(owner).update({
+          id: agentId,
+          hibernationTimeoutMin: ASKING_IDLE_MIN,
+        });
       },
       readStartWait: async (agentId) => {
         const wait = startWaitOf(agentsRepo.peekCached(agentId));
