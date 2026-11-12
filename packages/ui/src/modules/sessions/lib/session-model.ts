@@ -3,6 +3,7 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk";
+import { type HarnessCapability, routesSessionPairs } from "agent-runtime-api";
 import { isQualifiedModel, parseQualifiedModel } from "api-server-api";
 
 export interface SessionModelChoice {
@@ -66,4 +67,30 @@ export function withRoutedCurrent(
     return id === wanted || (!isQualifiedModel(id) && id === native);
   });
   return choice ? { ...model, current: choice.value } : model;
+}
+
+export function composerModel({
+  sessionId,
+  sessionModel,
+  chatDefaultModel,
+  carried,
+  liveModel,
+}: {
+  sessionId: string | null;
+  sessionModel: SessionModel | null;
+  chatDefaultModel: string | null | undefined;
+  carried:
+    | readonly Pick<HarnessCapability, "harnessConfig" | "sessionSettings">[]
+    | null
+    | undefined;
+  liveModel: string | null | undefined;
+}): string | null | undefined {
+  if (sessionModel)
+    return (
+      sessionModel.choices.find((c) => c.value === sessionModel.current)
+        ?.name ?? modelDisplayName(sessionModel.current)
+    );
+  if (!sessionId && chatDefaultModel && carried && routesSessionPairs(carried))
+    return modelDisplayName(chatDefaultModel);
+  return liveModel;
 }

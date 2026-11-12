@@ -48,6 +48,7 @@ import type { AgentView } from "../../../types.js";
 import {
   useChatDefault,
   useHarnessConfigCurrent,
+  useHarnessConfigStatus,
   useTryCurveBender,
 } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
@@ -131,7 +132,7 @@ import {
 } from "../hooks/use-sidebar-panels.js";
 import { curveBenderNotice } from "../lib/curve-bender.js";
 import { draftKey } from "../lib/draft-key.js";
-import { modelDisplayName } from "../lib/session-model.js";
+import { composerModel } from "../lib/session-model.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
@@ -272,15 +273,20 @@ export function ChatView() {
     sessionId && storedSessionModel?.sessionId === sessionId
       ? storedSessionModel
       : null;
-  const indicatorModel = sessionModel
-    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
-        ?.name ?? modelDisplayName(sessionModel.current))
-    : harnessCurrent?.model;
-
   const sharedCurveBender = useAppConnections().data?.find(
     (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   );
   const chatDefault = useChatDefault(sharedCurveBender ? selectedAgent : null);
+  const carried = useHarnessConfigStatus(
+    sharedCurveBender ? selectedAgent : null,
+  ).data?.harnesses;
+  const indicatorModel = composerModel({
+    sessionId,
+    sessionModel,
+    chatDefaultModel: chatDefault.data?.model,
+    carried,
+    liveModel: harnessCurrent?.model,
+  });
   const tryCurveBender = useTryCurveBender();
 
   const view = useStore((s) => s.view);
