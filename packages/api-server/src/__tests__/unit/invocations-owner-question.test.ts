@@ -13,6 +13,7 @@ import {
 } from "../helpers/invocations-repo.js";
 
 const NOW = new Date("2026-11-11T10:00:00Z");
+const DAY_MS = 24 * 60 * 60_000;
 const QUESTION = {
   question: "Fix the helper, or change the tests?",
   options: ["Fix the helper", "Change the tests"],
@@ -80,7 +81,7 @@ const running = (overrides: Partial<InvocationRow> = {}) =>
 const reporting = { run: "invocation:agent-t:1", sessionId: "sess-1" };
 
 describe("a sub-agent's question to its owner", () => {
-  test("asking ends the run, leaves the sub-agent to sleep, and waits an hour by default", async () => {
+  test("asking ends the run, leaves the sub-agent to sleep, and waits a day by default", async () => {
     const row = running();
     const { questions, park } = setup(row);
 
@@ -88,7 +89,7 @@ describe("a sub-agent's question to its owner", () => {
 
     expect(outcome).toEqual({
       ok: true,
-      answerBy: new Date(NOW.getTime() + 60 * 60_000),
+      answerBy: new Date(NOW.getTime() + DAY_MS),
     });
     expect(park).toHaveBeenCalledWith("agent-t");
     expect(row.status).toBe("asking");
@@ -184,9 +185,9 @@ describe("a sub-agent's question to its owner", () => {
         log: () => {},
       })();
 
-    expect(await deadlines(new Date(NOW.getTime() + 59 * 60_000))).toBe(0);
-    expect(await deadlines(new Date(NOW.getTime() + 61 * 60_000))).toBe(1);
-    expect(await deadlines(new Date(NOW.getTime() + 62 * 60_000))).toBe(0);
+    expect(await deadlines(new Date(NOW.getTime() + DAY_MS - 60_000))).toBe(0);
+    expect(await deadlines(new Date(NOW.getTime() + DAY_MS + 60_000))).toBe(1);
+    expect(await deadlines(new Date(NOW.getTime() + DAY_MS + 120_000))).toBe(0);
 
     expect(begun).toHaveLength(1);
     expect(begun[0]).toMatchObject({

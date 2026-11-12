@@ -191,7 +191,7 @@ export const ownerQuestionInputSchema = z.object({
     .int()
     .positive()
     .optional()
-    .describe("How long to wait for the answer; an hour when left out."),
+    .describe("How long to wait for the answer; a day when left out."),
 });
 
 export const ownerAnswerSchema = z

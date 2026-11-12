@@ -1,6 +1,6 @@
 import type { DelegationAnswer, OwnerQuestionInput } from "api-server-api";
 
-export const DEFAULT_ANSWER_WITHIN_MS = 60 * 60 * 1000;
+export const DEFAULT_ANSWER_WITHIN_MS = 24 * 60 * 60 * 1000;
 export const MIN_ANSWER_WITHIN_MS = 60 * 1000;
 
 // UNIT_BOUNDARY_DESCRIPTION: the least time a run that continues from an answer gets, so a sub-agent that asked with its time limit almost spent can still act on the answer.

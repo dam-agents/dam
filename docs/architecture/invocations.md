@@ -177,7 +177,7 @@ A stop, by the owner or by its Driver, and a deleted Driver still end it: the wa
 The owner and the Driver see no kept sub-agent in this: it is listed nowhere as kept, and it is removed after its result as before.
 
 **Only the owner answers.** The owner answers in the Driver's chat with an option or their own words, and the answer goes straight to the sub-agent: the Driver has no tool to answer or to pass an answer on.
-With no answer by the deadline, an hour by default or the time the question names, at most as long as an Environment may live, a periodic job answers with the sub-agent's own default, so no sub-agent waits forever.
+With no answer by the deadline, a day by default or the time the question names, at most as long as an Environment may live, a periodic job answers with the sub-agent's own default, so no sub-agent waits forever.
 The answer is one write under the target's lock, so of the owner's answer and the deadline's only the first counts.
 
 **The answer starts the next run.** It is a new run in the same session, with the asking run's schema and the time that run had left (five minutes at least), so the sub-agent goes on with its conversation and its files and reports its result as any run does.
