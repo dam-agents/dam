@@ -311,7 +311,7 @@ func runnerDeployment(annotations map[string]string) *appsv1.Deployment {
 	}}
 }
 
-// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll waits out its settle timeout.
+// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll settles without seeing it come back on the new pod.
 func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("rolled-agent", staleTime, nil)
