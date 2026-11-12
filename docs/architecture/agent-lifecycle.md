@@ -272,6 +272,8 @@ The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a secon
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
 At boot the api-server clears the `agent-platform.ai/disabled` mark, and the standing stop request that went with it, wherever a store still carries one — a mark written by a feature the UI no longer offers — so a former *disabled* Agent is an ordinary idle Agent that wakes on its next use.
+Before it clears an Agent, it pauses that Agent's enabled recurring schedules, so an Agent that was held while it was disabled does not start running them on its own.
+The owner resumes them by hand, and a one-time task, which cannot be paused, is left to its delivery window.
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity; a direct sleep call still stamps it without the settle clear, the only stable sleep it can have.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed memory provably covers the shortfall.

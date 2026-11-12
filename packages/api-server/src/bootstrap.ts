@@ -423,7 +423,10 @@ import {
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
-import { clearLegacyDisabledMarks } from "./modules/agents/sagas/clear-legacy-disabled.js";
+import {
+  clearLegacyDisabledMarks,
+  pauseEnabledRecurringSchedules,
+} from "./modules/agents/sagas/clear-legacy-disabled.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -743,12 +746,6 @@ export async function bootstrap() {
   const liveAgentsRepo = readsRows(config.agentStore)
     ? agentsRepo
     : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
-  void clearLegacyDisabledMarks(agentsRepo).catch((err: unknown) =>
-    getLogger().warn(
-      { reason: formatError(err) },
-      "agent.legacy_disabled.clear_failed",
-    ),
-  );
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -2620,11 +2617,22 @@ export async function bootstrap() {
   );
   periodicJobs.start();
 
-  schedulesBoot.runner.restoreAll().catch((err) => {
-    process.stderr.write(
-      `[schedules] restoreAll failed: ${(err as Error).message}\n`,
-    );
-  });
+  void clearLegacyDisabledMarks(agentsRepo, (agentId, owner) =>
+    pauseEnabledRecurringSchedules(schedulesBoot, agentId, owner),
+  )
+    .catch((err: unknown) =>
+      getLogger().warn(
+        { reason: formatError(err) },
+        "agent.legacy_disabled.cleanup_failed",
+      ),
+    )
+    .finally(() => {
+      schedulesBoot.runner.restoreAll().catch((err) => {
+        process.stderr.write(
+          `[schedules] restoreAll failed: ${(err as Error).message}\n`,
+        );
+      });
+    });
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
   );
