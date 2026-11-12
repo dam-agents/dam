@@ -1,8 +1,7 @@
-// TEST_OVERVIEW: An artifact carries the icon its Agent picked, one emoji or a
-// TEST_OVERVIEW: free Font Awesome icon name, and every page that shows the
-// TEST_OVERVIEW: artifact alone in a browser tab uses it as the tab's favicon:
-// TEST_OVERVIEW: the share page, the framed document, and the app's own page
-// TEST_OVERVIEW: through the public icon route.
+// TEST_OVERVIEW: An artifact carries the icon its Agent picked, one emoji, and
+// TEST_OVERVIEW: every page that shows the artifact alone in a browser tab uses
+// TEST_OVERVIEW: it as the tab's favicon: the share page and the framed
+// TEST_OVERVIEW: document. With no icon the share page shows the brand icon.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
@@ -11,11 +10,7 @@ import {
   createMcpSession,
   type McpSessionDeps,
 } from "../../apps/harness-api-server/mcp-endpoint.js";
-import {
-  artifactIconSvg,
-  parseArtifactIcon,
-} from "../../modules/artifact-library/domain/artifact-icon.js";
-import { createArtifactIconRoutes } from "../../modules/artifact-library/icon-routes.js";
+import { artifactIconSvg, isArtifactIcon } from "api-server-api";
 import type {
   ArtifactLibraryRepository,
   ArtifactRow,
@@ -40,49 +35,32 @@ function faviconSvg(html: string): string | null {
 }
 
 describe("the icon an agent may pick", () => {
-  it.each([
-    ["📈", "📈"],
-    [" 🗓️ ", "🗓️"],
-    ["👩‍💻", "👩‍💻"],
-    ["🇨🇿", "🇨🇿"],
-    ["chart-line", "chart-line"],
-    ["fa-list-check", "list-check"],
-    ["fa-solid fa-chart-line", "chart-line"],
-    ["line-chart", "chart-line"],
-    ["face-smile", "face-smile"],
-    ["GitHub", "github"],
-  ])("stores %j as %j", (raw, stored) => {
-    expect(parseArtifactIcon(raw)).toEqual({ ok: true, icon: stored });
-  });
-
-  // TEST_SCENARIO: The agent wrote something that is neither one emoji nor a free Font Awesome icon; the refusal names the two forms, so the agent can pick again.
-  it.each(["", "📈📊", "chart", "no-such-icon-at-all", "<script>"])(
-    "refuses %j with a reason",
-    (raw) => {
-      const parsed = parseArtifactIcon(raw);
-      expect(parsed.ok).toBe(false);
-      if (!parsed.ok) expect(parsed.reason).toMatch(/emoji|empty/);
+  it.each(["📈", "🗓️", "👩‍💻", "🇨🇿", "1️⃣", "👍🏽", "🤷🏽‍♀️", "❤️"])(
+    "takes the emoji %j",
+    (icon) => {
+      expect(isArtifactIcon(icon)).toBe(true);
     },
   );
 
-  it("draws a Font Awesome icon from its own path, with its attribution", () => {
-    const svg = artifactIconSvg("chart-line")!;
-    expect(svg).toMatch(
-      /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="0 0 512 512">/,
-    );
-    expect(svg).toContain('<path d="M64 64c');
-    expect(svg).toContain("Font Awesome Free");
-    expect(svg).toContain("prefers-color-scheme:dark");
-  });
+  // TEST_SCENARIO: The agent wrote something that is not exactly one emoji, such as two emoji, a word or markup; it is refused, so a stored icon always draws.
+  it.each(["", "📈📊", "chart-line", "a", " 📈", "<script>"])(
+    "refuses %j",
+    (raw) => {
+      expect(isArtifactIcon(raw)).toBe(false);
+    },
+  );
 
-  it("draws an emoji as text, and nothing for an unknown value", () => {
+  it("draws an emoji as text, and nothing for a value that is no icon", () => {
     expect(artifactIconSvg("📈")).toContain(">📈</text>");
     expect(artifactIconSvg("<b>")).toBeNull();
   });
 });
 
+const BRAND_ICON = "https://app.example.com/api/brand/icon.svg";
+
 const wrapperBase = {
   title: "Costs",
+  brandIconUrl: BRAND_ICON,
   brandName: "Platform",
   contentUrl: "https://content.example.com/a/s?v=1",
   slug: "s",
@@ -92,17 +70,15 @@ const wrapperBase = {
 
 describe("the favicon of an artifact's pages", () => {
   it("is the artifact's icon on its share page", () => {
-    const svg = faviconSvg(
-      renderWrapper({ ...wrapperBase, icon: "chart-line" }),
-    );
-    expect(svg).toBe(artifactIconSvg("chart-line"));
+    const svg = faviconSvg(renderWrapper({ ...wrapperBase, icon: "📊" }));
+    expect(svg).toBe(artifactIconSvg("📊"));
   });
 
-  // TEST_SCENARIO: An artifact published before icons existed, or uploaded by the user, has none; its share page names no favicon, as before.
-  it("is left out when the artifact has no icon", () => {
-    expect(
-      faviconHref(renderWrapper({ ...wrapperBase, icon: null })),
-    ).toBeNull();
+  // TEST_SCENARIO: An artifact published before icons existed, or uploaded by the user, has none; its share page shows the brand icon, as the app does.
+  it("is the brand icon when the artifact has no icon", () => {
+    expect(faviconHref(renderWrapper({ ...wrapperBase, icon: null }))).toBe(
+      BRAND_ICON,
+    );
   });
 
   it.each(["html", "jsx", "markdown", "code"] as const)(
@@ -126,24 +102,6 @@ describe("the favicon of an artifact's pages", () => {
     );
     expect(faviconHref(html)).toBeNull();
     expect(html).toContain("https://example.com/i.png");
-  });
-});
-
-describe("the app's artifact icon route", () => {
-  const routes = createArtifactIconRoutes();
-
-  it("serves a stored icon as SVG", async () => {
-    const res = await routes.request(
-      `/?icon=${encodeURIComponent("list-check")}`,
-    );
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
-    expect(await res.text()).toBe(artifactIconSvg("list-check"));
-  });
-
-  it("answers 404 for a value that is no icon", async () => {
-    expect((await routes.request("/?icon=nope-nope")).status).toBe(404);
-    expect((await routes.request("/")).status).toBe(404);
   });
 });
 
@@ -221,25 +179,33 @@ function serviceOver(rows: ArtifactRow[]) {
 }
 
 describe("the library keeps an artifact's icon", () => {
-  it("stores the icon's canonical name when an agent publishes", async () => {
-    const service = serviceOver([]);
-    const created = await service.create(
-      {
-        title: "Costs",
-        icon: "fa-line-chart",
-        content: "<p>1</p>",
-        kind: "html",
-      },
+  it("stores the icon an agent publishes with", async () => {
+    const created = await serviceOver([]).create(
+      { title: "Costs", icon: " 📈 ", content: "<p>1</p>", kind: "html" },
       { author: "agent", agentId: "agent-1" },
     );
-    expect(created.icon).toBe("chart-line");
+    expect(created.icon).toBe("📈");
+  });
+
+  // TEST_SCENARIO: An agent on an older skill, or one that leaves the icon out, still publishes; the artifact has no icon until the agent or the owner gives it one.
+  it("publishes without an icon", async () => {
+    const created = await serviceOver([]).create(
+      { title: "Costs", content: "<p>1</p>", kind: "html" },
+      { author: "agent", agentId: "agent-1" },
+    );
+    expect(created.icon).toBeNull();
   });
 
   it("refuses a publish whose icon is no icon", async () => {
     const service = serviceOver([]);
     await expect(
       service.create(
-        { title: "Costs", icon: "chart", content: "<p>1</p>", kind: "html" },
+        {
+          title: "Costs",
+          icon: "chart-line",
+          content: "<p>1</p>",
+          kind: "html",
+        },
         { author: "agent", agentId: "agent-1" },
       ),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -247,13 +213,24 @@ describe("the library keeps an artifact's icon", () => {
 
   // TEST_SCENARIO: The agent publishes a new version and names no icon; the artifact's tab keeps the icon it had.
   it("keeps the icon across a new version", async () => {
-    const rows = [row({ icon: "list-check" })];
+    const rows = [row({ icon: "✅" })];
     const updated = await serviceOver(rows).update(
       "a1",
       { content: "<p>2</p>" },
       { agentId: "agent-1" },
     );
-    expect(updated).toMatchObject({ version: 2, icon: "list-check" });
+    expect(updated).toMatchObject({ version: 2, icon: "✅" });
+  });
+
+  // TEST_SCENARIO: The owner clears a bad pick in the app; the artifact has no icon again, and its tabs show the brand icon.
+  it("clears the icon on an update with null", async () => {
+    const rows = [row({ icon: "✅" })];
+    const updated = await serviceOver(rows).update(
+      "a1",
+      { icon: null },
+      { user: true },
+    );
+    expect(updated.icon).toBeNull();
   });
 
   it("gives an artifact without an icon one on update", async () => {
@@ -289,15 +266,14 @@ async function mcpClient() {
 }
 
 describe("the agent's publish tools ask for an icon", () => {
-  // TEST_SCENARIO: The user never asks for an icon; the tool makes it as much a part of publishing as the title, so every new artifact gets one.
-  it("make icon a required field of create_artifact and tell the agent to always pick one", async () => {
+  // TEST_SCENARIO: The user never asks for an icon; the tool tells the agent to always set one, as it sets the title, and to pick one that tells the artifact from its neighbours.
+  it("tell the agent to always pick an icon, without making it required", async () => {
     const { client } = await mcpClient();
     const { tools } = await client.listTools();
     const create = tools.find((t) => t.name === "create_artifact")!;
-    expect(create.inputSchema.required).toEqual(
-      expect.arrayContaining(["title", "icon"]),
-    );
+    expect(create.inputSchema.required).not.toContain("icon");
     expect(create.description).toContain("Always set `icon`");
+    expect(create.description).toContain("tells this artifact apart");
     const update = tools.find((t) => t.name === "update_artifact")!;
     expect(update.inputSchema.required).not.toContain("icon");
     expect(update.description).toContain("`icon` is null");
@@ -307,24 +283,14 @@ describe("the agent's publish tools ask for an icon", () => {
     const { client, artifactLibrary } = await mcpClient();
     const result = await client.callTool({
       name: "create_artifact",
-      arguments: { title: "Checklist", icon: "list-check", content: "# x" },
+      arguments: { title: "Checklist", icon: "✅", content: "# x" },
     });
     expect(result.isError).toBeFalsy();
     expect(artifactLibrary.create).toHaveBeenCalledWith(
-      expect.objectContaining({ icon: "list-check" }),
+      expect.objectContaining({ icon: "✅" }),
       { author: "agent", agentId: "agent-1" },
     );
     const text = (result.content as { text: string }[])[0]!.text;
-    expect(JSON.parse(text)).toMatchObject({ icon: "list-check" });
-  });
-
-  it("refuses a create_artifact call without an icon", async () => {
-    const { client, artifactLibrary } = await mcpClient();
-    const result = await client.callTool({
-      name: "create_artifact",
-      arguments: { title: "Checklist", content: "# x" },
-    });
-    expect(result.isError).toBe(true);
-    expect(artifactLibrary.create).not.toHaveBeenCalled();
+    expect(JSON.parse(text)).toMatchObject({ icon: "✅" });
   });
 });

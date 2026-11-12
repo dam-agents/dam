@@ -680,6 +680,7 @@ describe("the share page relay", () => {
     renderWrapper({
       title: "Team dashboard",
       icon: null,
+      brandIconUrl: "https://app.example.com/api/brand/icon.svg",
       brandName: "Platform",
       contentUrl: "https://content.example.com/a/slug-a?v=1&t=tok",
       slug: "slug-a",

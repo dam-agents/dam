@@ -4,6 +4,7 @@ import {
   ARTIFACT_REQUEST_TYPE,
   ARTIFACT_RESPONSE_TYPE,
   ARTIFACT_WHOAMI_TYPE,
+  artifactIconDataUrl,
   type ArtifactKind,
 } from "api-server-api";
 import type { ArtifactApiCaller } from "agent-runtime-api";
@@ -14,10 +15,13 @@ import {
 } from "./bridge-shim.js";
 import { ARTIFACT_SIZE_REPORTER, FRAME_PRINT_BODY } from "./print-size.js";
 import { escapeHtml } from "../../../core/escape-html.js";
-import { artifactIconDataUrl } from "../domain/artifact-icon.js";
+
+function iconHref(icon: string | null | undefined): string | null {
+  return icon ? artifactIconDataUrl(icon) : null;
+}
 
 function iconLink(icon: string | null | undefined): string {
-  const href = icon ? artifactIconDataUrl(icon) : null;
+  const href = iconHref(icon);
   return href ? `<link rel="icon" href="${escapeHtml(href)}"/>` : "";
 }
 
@@ -63,6 +67,7 @@ function chromePage(title: string, body: string): string {
 export interface WrapperInput {
   title: string;
   icon: string | null;
+  brandIconUrl: string;
   brandName: string;
   contentUrl: string;
   slug: string;
@@ -170,7 +175,7 @@ export function renderWrapper(input: WrapperInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex, nofollow"/>
 <title>${escapeHtml(input.title)}</title>
-${iconLink(input.icon)}
+<link rel="icon" href="${escapeHtml(iconHref(input.icon) ?? input.brandIconUrl)}"/>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; margin: 0; }

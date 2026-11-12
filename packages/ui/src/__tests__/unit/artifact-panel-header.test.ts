@@ -189,6 +189,15 @@ describe("artifact panel top bar", () => {
     );
   });
 
+  // TEST_SCENARIO: The owner sees in the top bar which icon the Agent picked, before the title, as in the list.
+  it("shows the artifact's icon before its title", () => {
+    fake.artifact = artifact({ icon: "📊" });
+    render();
+    const text = bar().textContent ?? "";
+    expect(text.indexOf("📊")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("📊")).toBeLessThan(text.indexOf("PM dashboard"));
+  });
+
   // TEST_SCENARIO: the Share button names the visibility the artifact has now, so the state and the means to change it sit in one place.
   it("names the current visibility on Share", () => {
     fake.artifact = artifact({

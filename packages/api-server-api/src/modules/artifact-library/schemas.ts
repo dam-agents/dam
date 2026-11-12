@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
+import { ARTIFACT_ICON_RULE, isArtifactIcon } from "./icon.js";
+
 import {
   sessionChoiceReferencesSchema,
   sessionPairSchema,
@@ -71,14 +73,15 @@ const contentOrUploadRef = {
 
 const sourcePathSchema = z.string().trim().min(1).max(1024);
 
-export const ARTIFACT_ICON_MAX_LENGTH = 64;
-
-const iconSchema = z.string().trim().min(1).max(ARTIFACT_ICON_MAX_LENGTH);
+export const artifactIconSchema = z
+  .string()
+  .trim()
+  .refine(isArtifactIcon, ARTIFACT_ICON_RULE);
 
 export const artifactCreateInputSchema = z
   .object({
     title: titleSchema,
-    icon: iconSchema.optional(),
+    icon: artifactIconSchema.optional(),
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
     kind: artifactKindSchema.optional(),
@@ -99,7 +102,7 @@ export const artifactUpdateInputSchema = z
   .object({
     id: z.string().min(1),
     title: titleSchema.optional(),
-    icon: iconSchema.optional(),
+    icon: artifactIconSchema.nullish(),
     folderId: z.string().min(1).nullish(),
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),

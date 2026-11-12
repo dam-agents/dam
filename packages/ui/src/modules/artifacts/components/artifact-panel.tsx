@@ -31,6 +31,7 @@ import {
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
+import { ArtifactIcon } from "./artifact-badges.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -161,6 +162,9 @@ export function ArtifactPanel({
           title={artifact?.title}
         >
           {editor.dirty ? "● " : ""}
+          {artifact?.icon && (
+            <ArtifactIcon icon={artifact.icon} className="mr-1.5" />
+          )}
           {artifact?.title ?? "Artifact"}
         </span>
         {editor.editing ? (

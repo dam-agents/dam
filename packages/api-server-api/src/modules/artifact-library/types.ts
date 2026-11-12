@@ -100,7 +100,7 @@ export interface ArtifactCreateInput {
 
 export interface ArtifactUpdateInput {
   title?: string;
-  icon?: string;
+  icon?: string | null;
   folderId?: string | null;
   content?: string;
   uploadRef?: string;

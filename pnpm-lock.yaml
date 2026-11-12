@@ -187,12 +187,6 @@ importers:
       '@clickhouse/client':
         specifier: ^1.24.1
         version: 1.24.1
-      '@fortawesome/free-brands-svg-icons':
-        specifier: ^7.3.1
-        version: 7.3.1
-      '@fortawesome/free-solid-svg-icons':
-        specifier: ^7.3.1
-        version: 7.3.1
       '@grpc/grpc-js':
         specifier: ^1.14.6
         version: 1.14.6
@@ -1691,18 +1685,6 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
-
-  '@fortawesome/fontawesome-common-types@7.3.1':
-    resolution: {integrity: sha512-k0C0sdHmZtAo6dRDtd1Z/qcpyHbL0CKsjV8seMY/21xGhY5Wsv0XRmiI/xEEH4y2c9b1+jvgNs/3EqhV27yUEA==}
-    engines: {node: '>=6'}
-
-  '@fortawesome/free-brands-svg-icons@7.3.1':
-    resolution: {integrity: sha512-8eiNzycuFhy3mZsi5EVO8JpO3H8l7/kSCl4Gk4iUew9hJuzYFqAAD6kqgeEup3+YZ9hL+5cjjorGzrRLkYuURg==}
-    engines: {node: '>=6'}
-
-  '@fortawesome/free-solid-svg-icons@7.3.1':
-    resolution: {integrity: sha512-v0BLa0eqg7ubvVWeNSHVBs8fWH/GJicERZoJaxJ3FE/lj67VSqzoMg9pzfZVOfLMX10y0pGwQAuxoRVVH2patg==}
-    engines: {node: '>=6'}
 
   '@git-diff-view/core@0.1.8':
     resolution: {integrity: sha512-3iJH51t64EeKmfdy2ybsW7dBaHGVYzq/bFnmz3GgDDpD7DWfxLOz6iJ+PeoUmhbpXS7n27NmMppvMc0Z48nutQ==}
@@ -7638,16 +7620,6 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
 
   '@floating-ui/utils@0.2.11': {}
-
-  '@fortawesome/fontawesome-common-types@7.3.1': {}
-
-  '@fortawesome/free-brands-svg-icons@7.3.1':
-    dependencies:
-      '@fortawesome/fontawesome-common-types': 7.3.1
-
-  '@fortawesome/free-solid-svg-icons@7.3.1':
-    dependencies:
-      '@fortawesome/fontawesome-common-types': 7.3.1
 
   '@git-diff-view/core@0.1.8':
     dependencies:

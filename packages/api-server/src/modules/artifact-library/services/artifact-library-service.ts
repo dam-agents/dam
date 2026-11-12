@@ -1,6 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
-import { artifactSharingInputSchema } from "api-server-api";
+import {
+  artifactSharingInputSchema,
+  ARTIFACT_ICON_RULE,
+  isArtifactIcon,
+} from "api-server-api";
 import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
@@ -59,17 +63,16 @@ import type {
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import type { ArtifactPromptChoices } from "../infrastructure/artifact-prompt-profile.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
-import { parseArtifactIcon } from "../domain/artifact-icon.js";
 import type { ViewerPromptDelivery } from "./share-bridge-service.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 function storedIcon(raw: string): string {
-  const parsed = parseArtifactIcon(raw);
-  if (!parsed.ok)
-    throw new TRPCError({ code: "BAD_REQUEST", message: parsed.reason });
-  return parsed.icon;
+  const icon = raw.trim();
+  if (!isArtifactIcon(icon))
+    throw new TRPCError({ code: "BAD_REQUEST", message: ARTIFACT_ICON_RULE });
+  return icon;
 }
 
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
@@ -601,7 +604,8 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
-      if (input.icon !== undefined) patch.icon = storedIcon(input.icon);
+      if (input.icon !== undefined)
+        patch.icon = input.icon === null ? null : storedIcon(input.icon);
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
