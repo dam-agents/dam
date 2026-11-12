@@ -53,7 +53,12 @@ export function NewAgentDefaultPicker() {
     references: SessionChoiceReferences,
     effective = pair,
   ): void | Promise<boolean> => {
-    if (references.profileId) return save({ profileId: references.profileId });
+    /* UNIT_BOUNDARY_DESCRIPTION: the pick holds no subagent slot of its own, so a subagent changed beside a profile saves the values it runs on, the change materialized, rather than the bare reference. */
+    if (
+      references.profileId &&
+      references.platformSubagentProfileId === undefined
+    )
+      return save({ profileId: references.profileId });
     const { provider, model } = effective;
     /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker, since a new agent needs a model to start on. */
     if (provider === null || model === null)
@@ -72,7 +77,7 @@ export function NewAgentDefaultPicker() {
         agentId={null}
         carried={status.harnesses}
         defaultHarness={status.defaultHarness}
-        routed={status.modelRouter}
+        routed
         row
         onOpenChange={(open) => {
           if (!open && draft?.pair?.model === null) setDraft(null);

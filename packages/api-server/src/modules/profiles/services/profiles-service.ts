@@ -255,6 +255,8 @@ export function createProfilesService(
     resolve: ProfileResolver;
     /* UNIT_BOUNDARY_DESCRIPTION: sends an agent that points at an edited profile its new pair, or answers why it cannot take it. */
     republish: (agentId: string) => Promise<string | null>;
+    /* UNIT_BOUNDARY_DESCRIPTION: why values saved as a default could not run with their settings, as an agent's chat default checks them, or null. */
+    settingsProblem: (pair: SessionPair) => Promise<string | null>;
   },
 ): ProfilesService {
   const { repo, owner, catalog } = deps;
@@ -529,11 +531,9 @@ export function createProfilesService(
           code: "BAD_REQUEST",
           message: `unknown provider ${pair.provider}`,
         });
-      const problem = problemWith(
-        pair.harness,
-        connection.templateId,
-        pair.model,
-      );
+      const problem =
+        problemWith(pair.harness, connection.templateId, pair.model) ??
+        (await deps.settingsProblem(pair));
       if (problem)
         throw new TRPCError({ code: "BAD_REQUEST", message: problem });
       await repo.setNewAgentDefault(owner, { sessionPair: pair });

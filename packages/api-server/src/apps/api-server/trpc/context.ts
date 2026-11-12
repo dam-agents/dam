@@ -19,6 +19,7 @@ import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit
 import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
+  defaultSettingsProblem,
   createDefaultModelNoticeReader,
   createRunBoundary,
   isNoDefaultModelError,
@@ -357,6 +358,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           reconcileConnections: () => connections.reconcileManagedConnections(),
         }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
+        settingsProblem: async (pair) => {
+          const catalog = await connections.modelCatalog();
+          return defaultSettingsProblem(catalog.harnesses, catalog, pair);
+        },
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,

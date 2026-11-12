@@ -5,9 +5,6 @@ import {
   harnessConfigCatalog,
   routesByModelName,
   routesSessionPairs,
-  isPlatformSubagentSetting,
-  platformSubagentSettingsError,
-  sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
@@ -31,7 +28,7 @@ import {
   qualifiedPairModel,
   sameModelName,
   resolveSessionPair,
-  runSubagentSettings,
+  defaultSettingsProblem,
   splitPlatformSubagent,
   withoutPairApproval,
   withPlatformSubagent,
@@ -342,33 +339,16 @@ export function createHarnessConfigService(deps: {
         code: "BAD_REQUEST",
         message: `the ${pair.harness} harness cannot run on that provider`,
       });
-    const harness = carried.find((h) => h.name === pair.harness);
-    /* UNIT_BOUNDARY_DESCRIPTION: a save checks the settings a run would take, native subagent values derived by the one rule against the owner catalog the picker lists, yet it neither returns nor stores them: the default stays platform-level (D193B). */
-    const derived = runSubagentSettings(
-      harness,
+    const invalid = defaultSettingsProblem(
+      carried,
       await deps.ownerCatalog(agentId),
       pair,
-      pair.settings,
     );
-    const unsupported = Object.keys(derived).find(
-      (id) =>
-        !(isPlatformSubagentSetting(id)
-          ? harness?.platformSubagentSettings
-          : harness?.sessionSettings?.includes(id)),
-    );
-    const invalid = unsupported
-      ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
-      : (sessionSettingsError(
-          harness?.harnessConfigCatalog,
-          derived,
-          pair.model,
-        ) ??
-        platformSubagentSettingsError(
-          derived,
-          (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
-        ));
     if (invalid) throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
-    return withoutPairApproval(pair, harness?.harnessConfigCatalog);
+    return withoutPairApproval(
+      pair,
+      carried.find((h) => h.name === pair.harness)?.harnessConfigCatalog,
+    );
   }
 
   function notifyDefaultChanged(agentId: string): void {

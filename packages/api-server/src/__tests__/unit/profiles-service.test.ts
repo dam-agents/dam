@@ -146,6 +146,7 @@ function service(
   repo: ProfilesRepository,
   opts: {
     republish?: () => Promise<string | null>;
+    settingsProblem?: () => Promise<string | null>;
     agentBinding?: readonly string[] | "*";
   } = {},
 ) {
@@ -157,6 +158,7 @@ function service(
     agentBinding: opts.agentBinding ?? "*",
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
+    settingsProblem: opts.settingsProblem ?? (async () => null),
   });
 }
 
@@ -324,6 +326,28 @@ describe("the owner's profiles", () => {
       ).message,
     ).toContain("is not a curve-bender-deployment model");
     expect(state.chosen).toEqual({ sessionPair: own });
+  });
+
+  /** TEST_SCENARIO: values whose settings no run could take, checked as an agent's chat default checks them, are refused, and the pick before them stays. */
+  it("refuses values whose settings cannot run", async () => {
+    const { repo, state } = fakeRepo({ owned: [ANTHROPIC] });
+    state.chosen = { profileId: "profile-1" };
+    const svc = service(repo, {
+      settingsProblem: async () =>
+        "the claude-code harness cannot keep notASetting as a default",
+    });
+    const err = await refusal(
+      svc.setNewAgentDefault({
+        pair: {
+          harness: "claude-code",
+          provider: ANTHROPIC.id,
+          model: HAIKU,
+          settings: { notASetting: "x" },
+        },
+      }),
+    );
+    expect(err.message).toContain("cannot keep notASetting");
+    expect(state.chosen).toEqual({ profileId: "profile-1" });
   });
 
   /** TEST_SCENARIO: a key bound to some agents reads usage of those agents only — no other agent's id, channel or schedule leaks into the list or the usage answer. */

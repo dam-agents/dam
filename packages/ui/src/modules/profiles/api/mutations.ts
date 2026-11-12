@@ -14,7 +14,16 @@ export const useUpdateProfile = (opts?: { silent?: boolean }) =>
   });
 
 export const useDeleteProfile = () =>
-  useMutation({ ...trpc.profiles.delete.mutationOptions(), meta });
+  useMutation({
+    ...trpc.profiles.delete.mutationOptions(),
+    /* UNIT_BOUNDARY_DESCRIPTION: deleting the profile picked as the default for new agents takes that pick with it. */
+    meta: {
+      invalidates: [
+        ...meta.invalidates,
+        trpc.profiles.newAgentDefault.queryKey(),
+      ],
+    },
+  });
 
 export const useSetNewAgentDefault = () =>
   useMutation({

@@ -1,5 +1,5 @@
 import type { Db, DbTx } from "db";
-import type { HarnessCatalog } from "api-server-api";
+import type { HarnessCatalog, SessionPair } from "api-server-api";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
 import {
@@ -28,6 +28,7 @@ export function composeProfilesForOwner(deps: {
   sharedCurveBender: boolean;
   reconcileConnections?: () => Promise<void>;
   republish: (agentId: string) => Promise<string | null>;
+  settingsProblem: (pair: SessionPair) => Promise<string | null>;
 }) {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
   const owner = {
@@ -43,6 +44,7 @@ export function composeProfilesForOwner(deps: {
       agentBinding: deps.agentBinding,
       resolve: resolveProfile,
       republish: deps.republish,
+      settingsProblem: deps.settingsProblem,
     }),
     resolveProfile,
     newAgentDefault: async () => {

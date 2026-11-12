@@ -92,8 +92,9 @@ export const profileViewSchema = z.object({
 
 /* UNIT_BOUNDARY_DESCRIPTION: the default for new agents an owner chose in
  * Settings, a profile or values of their own, which a new agent's chat default
- * is initialised from; `base` is what a new agent starts on while they chose
- * neither, null where the install offers none. */
+ * is initialised from; `pair` holds the values, a chosen profile's too, so a
+ * picker shows what it runs on. `base` is what a new agent starts on while they
+ * chose neither, null where the install offers none. */
 export const newAgentDefaultSchema = z.object({
   profileId: z.string().nullable(),
   pair: sessionPairSchema.nullable(),

@@ -6,6 +6,7 @@ import {
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 import type { ApiContext } from "../../context.js";
 import {
@@ -55,6 +56,7 @@ export const profilesRouter = t.router({
     }),
 
   newAgentDefault: readAgentProcedure
+    .use(requireWildcardBinding)
     .output(newAgentDefaultSchema)
     .query(({ ctx }) => ctx.profiles.newAgentDefault()),
 

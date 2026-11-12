@@ -66,6 +66,12 @@ function world(user: UserIdentity) {
     delete: vi.fn(async () => undefined),
   };
   const ownProfiles = {
+    newAgentDefault: vi.fn(async () => ({
+      profileId: null,
+      pair: null,
+      base: null,
+    })),
+    setNewAgentDefault: vi.fn(async () => undefined),
     list: vi.fn(async () => [{ ...PROFILE, id: "profile-editor" }]),
     usage: vi.fn(async () => ({ agents: [], channels: [], schedules: [] })),
     create: vi.fn(async () => PROFILE),
@@ -158,6 +164,29 @@ describe("an Agent Editor and the profile set", () => {
     const listed = await w.caller.profiles.list();
     expect(listed.map((profile) => profile.id)).toEqual(["profile-editor"]);
     expect(w.madeFor).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The default for new agents spans every agent of its
+   * owner, so a key bound to some agents neither reads nor sets it, and an
+   * unbound caller reads and sets their own, never another owner's. */
+  it("keeps the default for new agents to an unbound caller's own", async () => {
+    const bound = world({ ...BOB, agentIds: [AGENT] });
+    await expect(bound.caller.profiles.newAgentDefault()).rejects.toThrow(
+      /wildcard/,
+    );
+    await expect(
+      bound.caller.profiles.setNewAgentDefault({ profileId: "profile-editor" }),
+    ).rejects.toThrow(/wildcard/);
+    expect(bound.ownProfiles.newAgentDefault).not.toHaveBeenCalled();
+    const own = world(BOB);
+    await own.caller.profiles.newAgentDefault();
+    await own.caller.profiles.setNewAgentDefault({
+      profileId: "profile-editor",
+    });
+    expect(own.ownProfiles.setNewAgentDefault).toHaveBeenCalledWith({
+      profileId: "profile-editor",
+    });
+    expect(own.madeFor).toEqual([]);
   });
 
   /** TEST_SCENARIO: Through a shared agent an editor may read the owner's

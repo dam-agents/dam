@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: Settings › Providers picks the owner's default for new agents with the agent config's picker: it shows the owner's choice, else the base default, and a pick saves a profile reference or the values it runs on; a harness picked without a model saves nothing yet.
+// TEST_OVERVIEW: Settings › Providers picks the owner's default for new agents with the agent config's picker: it shows the owner's choice, else the base default, and a pick saves a profile reference or the values it runs on, a subagent changed beside a profile included; a harness picked without a model saves nothing yet.
 import type {
   NewAgentDefaultView,
   SessionChoiceReferences,
@@ -83,6 +83,20 @@ it("shows the base default and saves a profile by reference", async () => {
     await target.onChoose(BASE, { profileId: "profile-1" });
   });
   expect(state.saved).toEqual([{ profileId: "profile-1" }]);
+});
+
+/** TEST_SCENARIO: a subagent changed beside a picked profile has no slot to live in, so the pick saves the values it runs on, the subagent included, instead of the bare reference. */
+it("saves values when a subagent changes beside a profile", async () => {
+  const target = render({ profileId: "profile-1", pair: BASE, base: BASE });
+  const withSubagent = { ...BASE, settings: { subagent_model: "cb/other" } };
+  await act(async () => {
+    await target.onChoose(
+      withSubagent,
+      { profileId: "profile-1", platformSubagentProfileId: null },
+      withSubagent,
+    );
+  });
+  expect(state.saved).toEqual([{ pair: withSubagent }]);
 });
 
 /** TEST_SCENARIO: a Custom pick saves the values a run shows (the effective pair); a harness with no model yet saves nothing. */
