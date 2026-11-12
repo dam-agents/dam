@@ -131,8 +131,8 @@ The primitive's contract: **the controller-published `Ready` condition is the au
 It single-flights concurrent waits per Agent, and bumps the same signal on every successful call, so any caller implicitly keeps the Agent warm.
 The web UI shows hibernation as no state of its own: a hibernated Agent reads as *Idle*, like a running one with nothing to do, and nobody wakes it by hand.
 Its chat, and each configuration panel that needs the running Agent (model settings, skills, a schedule's past runs), wakes it whenever the page is shown and finds it asleep, a stopped Agent included but not a disabled one or one held over its budget, and shows the ordinary start wait meanwhile.
-One sleep gets one wake: a wake already running counts as it, so a chat and a panel open together wake the Agent once, and a wake that fails leaves the Agent asleep until it is seen awake again, so a failing wake is no loop.
-An Agent that falls asleep under an open chat, as when the tab's connection dropped, is woken again once the page is visible; a hidden page wakes nothing.
+One sleep gets one wake: a wake already running counts as it, so a chat and a panel open together wake the Agent once, and a wake that fails leaves the Agent asleep until it is seen awake again, so a failing wake is no loop; the chat then says the Agent isn't running and offers a Start button.
+An Agent that falls asleep under an open chat, as when the tab's connection dropped, is woken again once the page is visible; a hidden page follows the Agent but wakes nothing, its sidebar included.
 An Agent whose last start never came up shows as an error with that start's reason and a Start button; its open retries the start once.
 Its sidebar session list wakes it once per open (the open lasts until the sidebar row closes), and offers a retry when the Agent stays asleep ([home-feed](home-feed.md)).
 An Agent still falling asleep is woken once it is asleep.

@@ -624,11 +624,15 @@ it("drops the notice when the Agent answers", () => {
   expect(placeholder(el)).toBe("Message…");
 });
 
-// TEST_SCENARIO: an Agent stopped for idleness keeps its chat, since opening it wakes it, so no takeover and no Start action appear; an Agent in error has no chat to keep, and the takeover with its Restart action appears.
+// TEST_SCENARIO: an Agent falling asleep keeps its chat; one stopped for idleness whose wake did not start, as when the wake call failed, gets the takeover that says it isn't running and starts it, with no sleep wording; an Agent in error gets the takeover with its Restart action.
 it("takes over only an Agent with no chat to keep", () => {
+  const falling = openChat("hibernating", false);
+  expect(falling.textContent).not.toContain("Start agent");
+  expect(falling.querySelector("textarea")).not.toBeNull();
   const idle = openChat("hibernated", false);
-  expect(idle.textContent).not.toContain("Start agent");
-  expect(placeholder(idle)).not.toBeNull();
+  expect(idle.textContent).toContain("The agent isn't running.");
+  expect(idle.textContent).toContain("Start agent");
+  expect(idle.textContent).not.toMatch(/sleep|Sleeping/i);
   const failed = openChat("error", false);
   expect(notice(failed)).toBeNull();
   expect(failed.textContent).toContain("The agent hit an error");

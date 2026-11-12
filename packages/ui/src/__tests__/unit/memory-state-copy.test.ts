@@ -43,7 +43,7 @@ describe("memory and idle copy", () => {
     expect(badgeLabel("hibernated", false)).toBe("Idle");
   });
 
-  // TEST_SCENARIO: an agent stopped after a start that never came up carries that failure and shows as an error, so its overlay says why it never ran; an agent stopped for idleness has no overlay sentence.
+  // TEST_SCENARIO: an agent stopped after a start that never came up carries that failure and shows as an error, so its overlay says why it never ran; an agent stopped for idleness whose wake did not start says only that it isn't running.
   it("says why a stopped agent never came up", () => {
     expect(
       overlayDescription(
@@ -71,7 +71,9 @@ describe("memory and idle copy", () => {
     ).toBe(
       "The agent's last start never finished: It stopped as it started: no space left on device. Start it to try again.",
     );
-    expect(overlayDescription("hibernated", agent({}))).toBe("");
+    expect(overlayDescription("hibernated", agent({}))).toBe(
+      "The agent isn't running.",
+    );
   });
 
   // TEST_SCENARIO: a VM refusal with no message still says memory is full and how to free it; a message of its own wins.

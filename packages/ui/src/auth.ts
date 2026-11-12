@@ -85,9 +85,11 @@ export async function getAccessToken(): Promise<string> {
   }
 
   try {
-    renewal ??= userManager.signinSilent().finally(() => {
-      renewal = null;
-    });
+    renewal ??= userManager
+      .signinSilent({ silentRequestTimeoutInSeconds: IDP_REQUEST_TIMEOUT_S })
+      .finally(() => {
+        renewal = null;
+      });
     currentUser = await renewal;
     return currentUser!.access_token;
   } catch {

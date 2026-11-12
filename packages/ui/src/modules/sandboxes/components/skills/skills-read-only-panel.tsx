@@ -13,6 +13,7 @@ import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { AgentStartingCallout } from "../../../agents/components/agent-starting-callout.js";
+import { useAutoWakeOnOpen } from "../../../agents/hooks/use-auto-wake-on-open.js";
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSourceRow } from "./skill-sources-section.js";
@@ -92,6 +93,7 @@ export function SkillsReadOnlyPanel({
     errorBySource,
   } = surface;
   const { snapshotOnCount, snapshotRows } = derived;
+  useAutoWakeOnOpen(agentId);
 
   const startButton = !disabledNotice && (
     <Button size="sm" disabled={comingUp} onClick={onStart}>

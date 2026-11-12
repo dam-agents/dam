@@ -123,10 +123,16 @@ describe("getAccessToken", () => {
     expect(oidc.signinRedirect).toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: The identity provider never answers the refresh, as when a stale connection to it hangs. The client is set up to fail such a request after a bounded wait, which the getter turns into a sign-in redirect for an expired token.
+  // TEST_SCENARIO: The identity provider never answers, as when a stale connection to it hangs. Every request to it, the refresh-token exchange included, which takes its bound from the silent sign-in's own argument rather than from the client's settings, fails after a bounded wait, and the getter turns that failure into a sign-in redirect for an expired token.
   it("bounds a renewal the identity provider never answers", async () => {
-    await signedIn({ access_token: "old", expires_in: 240 });
+    const auth = await signedIn({ access_token: "old", expires_in: 20 });
     expect(oidc.settings.requestTimeoutInSeconds).toBeGreaterThan(0);
+    oidc.user = { access_token: "old", expires_in: 0 };
+    oidc.signinSilent.mockRejectedValue(new Error("Network timed out"));
+    await expect(auth.getAccessToken()).rejects.toThrow("Session expired");
+    const [args] = oidc.signinSilent.mock.calls[0]!;
+    expect(args.silentRequestTimeoutInSeconds).toBeGreaterThan(0);
+    expect(oidc.signinRedirect).toHaveBeenCalled();
   });
 });
 

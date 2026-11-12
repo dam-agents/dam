@@ -186,10 +186,11 @@ function walk(
     "state" | "overBudget" | "disabled" | "startFailure"
   >[],
   waking = false,
+  visible: boolean[] = [],
 ): boolean[] {
   let memo = NO_OPEN_WAKE;
-  return states.map((agent) => {
-    const next = nextOpenWake(memo, "a1", agent, waking);
+  return states.map((agent, i) => {
+    const next = nextOpenWake(memo, "a1", agent, waking, visible[i] ?? true);
     memo = next.memo;
     return next.wake;
   });
@@ -236,6 +237,14 @@ describe("a view open on the agent", () => {
     expect(walk([idle, idle], true)).toEqual([false, false]);
   });
 
+  // TEST_SCENARIO: the page is hidden while the agent starts and falls asleep again; it follows the agent meanwhile and wakes it once shown.
+  it("wakes on return after a sleep while hidden", () => {
+    const up = { ...idle, state: "running" as const };
+    expect(
+      walk([idle, up, idle, idle], false, [true, false, false, true]),
+    ).toEqual([true, false, false, true]);
+  });
+
   // TEST_SCENARIO: switching to another agent is a new open, which wakes that agent.
   it("treats a switch as a new open", () => {
     const first = nextOpenWake(NO_OPEN_WAKE, "a1", idle);
@@ -259,6 +268,28 @@ describe("a hidden page", () => {
     });
     expect(wake).toHaveBeenCalledExactlyOnceWith("a1");
     view.close();
+    visibility.mockRestore();
+  });
+});
+
+describe("a sidebar row on a hidden page", () => {
+  // TEST_SCENARIO: a chat link opened in a background tab opens its agent's sidebar row; the row wakes the agent only once the tab is shown.
+  it("wakes the agent only once it is shown", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    wake.mockClear();
+    useStore.getState().setSidebarWakeDecided("a1", false);
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    const row = mountRow(true);
+    expect(wake).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(wake).toHaveBeenCalledExactlyOnceWith("a1");
+    row.render(false);
+    row.unmount();
     visibility.mockRestore();
   });
 });
