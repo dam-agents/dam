@@ -296,6 +296,8 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   To swap a provider for another one of the same alias, pass both in one update: each default on the removed provider moves to the new one when it offers the same model, and a `note:` names each default that moved (`defaultMoves` in `--json`).
   A default that cannot move gets a `warning:` and runs fail until you set a new model with `--model` (with `--kind` for a channel or scheduled default).
   `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
+  `--tool-approval ask|auto|bypass` sets how every session of the agent approves tool calls unless the session picked its own, channel turns and schedule fires included, and `default` removes it.
+  `bypass` runs every tool unasked, so set it only when the user asks for it.
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
 - `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 

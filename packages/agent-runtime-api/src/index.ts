@@ -36,6 +36,9 @@ export {
   approvalOption,
   COPILOT_AUTOPILOT,
   withoutApproval,
+  toolApprovalSchema,
+  toolApprovalChoices,
+  agentToolApprovalSetting,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,
   SUBAGENT_EFFORT_SETTING,
@@ -49,6 +52,8 @@ export {
   platformSubagentSettingsError,
   type SessionSettings,
   type SubAgentHarnessConfig,
+  type ToolApproval,
+  type ToolApprovalChoice,
 } from "./modules/harness-config/session-settings.js";
 export {
   senderSchema,

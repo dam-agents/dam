@@ -49,6 +49,7 @@ export function createSessionDefaultsPublisher(deps: {
         chat: run(saved.chat),
         channel: run(saved.channel),
         scheduled: run(saved.scheduled),
+        toolApproval: saved.toolApproval ?? null,
       };
       const at = Math.max(now(), (await lastEventAt(tx, agentId)) + 1);
       await deps.runtimeMutator.supersede(agentId, "session-defaults", tx);

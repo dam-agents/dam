@@ -1,8 +1,9 @@
-// TEST_OVERVIEW: Tool approval is its own choice, mapped onto each harness's own setting: Claude Code's permission mode (Always ask is Accept edits), Bob's approvals (no Bypass) and Copilot's mode, whose Autopilot is Auto mode. A harness with one choice or none shows no picker. Plan modes are never offered.
+// TEST_OVERVIEW: Tool approval is its own choice, mapped onto each harness's own setting: Claude Code's permission mode (Always ask is Accept edits), Bob's approvals (no Bypass) and Copilot's mode, whose Autopilot is Auto mode. A harness with one choice or none shows no picker. Plan modes are never offered. A session that picked nothing shows the agent's own tool approval, and Auto mode where the agent holds none.
 import {
   approvalOption,
   COPILOT_AUTOPILOT,
   type HarnessCapability,
+  type ToolApproval,
 } from "agent-runtime-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -51,11 +52,16 @@ const pi = harness([
   { id: "mode", category: "thought_level", values: ["low", "high"] },
 ]);
 
-const label = (capability: HarnessCapability, settings = {}) =>
+const label = (
+  capability: HarnessCapability,
+  settings = {},
+  agentApproval?: ToolApproval | null,
+) =>
   renderToStaticMarkup(
     createElement(ToolApprovalPicker, {
       capability,
       settings,
+      agentApproval,
       onChange: () => {},
     }),
   );
@@ -74,6 +80,16 @@ describe("tool approval", () => {
     expect(label(claude)).toContain("Auto mode");
     expect(label(claude, { mode: "acceptEdits" })).toContain("Always ask");
     expect(label(bob, { approvals: "auto" })).toContain("Auto mode");
+  });
+
+  /** TEST_SCENARIO: The agent holds bypass and the session picked nothing: the picker shows Bypass, the approval the session really runs on. The session's own pick still shows over it. Bob takes no approval from the agent, since its approvals are a flag of its process, so it still shows Auto mode. */
+  it("shows the agent's tool approval for a session that picked none", () => {
+    expect(label(claude, {}, "bypass")).toContain("Bypass");
+    expect(label(claude, { mode: "acceptEdits" }, "bypass")).toContain(
+      "Always ask",
+    );
+    expect(label(bob, {}, "bypass")).toContain("Auto mode");
+    expect(label(bob, {}, "ask")).toContain("Auto mode");
   });
 
   /** TEST_SCENARIO: Copilot's Autopilot is its Auto mode, and its only approval choice, so Copilot shows no picker; nor does Pi, which has none. */

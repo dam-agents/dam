@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent driving DAM sees and changes from the CLI what the agent's Providers page shows. `dam agent get` shows the granted model providers, the harnesses the runtime carries and the three Session Pair defaults, in its table and under `models` in its JSON. `dam agent update` grants and revokes provider Connections by name or id, saves a default through harnessConfig.rememberSessionPair with only the parts the flags name changed, and with --same-as-chat clears a channel or scheduled default. `dam agent models` lists the models a harness's granted providers offer, read from the api-server's model catalog.
+// TEST_OVERVIEW: An agent driving DAM sees and changes from the CLI what the agent's Providers page shows. `dam agent get` shows the granted model providers, the harnesses the runtime carries and the three Session Pair defaults, in its table and under `models` in its JSON. `dam agent update` grants and revokes provider Connections by name or id, saves a default through harnessConfig.rememberSessionPair with only the parts the flags name changed, and with --same-as-chat clears a channel or scheduled default. `dam agent models` lists the models a harness's granted providers offer, read from the api-server's model catalog. `dam agent update --tool-approval` saves the tool approval every session of the agent runs on, or removes it, and `dam agent get` shows it.
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -15,7 +15,7 @@ import {
   type SessionDefaults,
   type SessionPair,
 } from "api-server-api";
-import type { HarnessCatalogView } from "agent-runtime-api";
+import type { HarnessCatalogView, ToolApproval } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
 import { ownedAgents } from "./owned-agents.js";
@@ -89,6 +89,7 @@ describe("dam agent get / update / models (integration)", () => {
   let defaults: SessionDefaults;
   let remembered: { kind: DefaultKind; pair: SessionPair }[];
   let cleared: DefaultKind[];
+  let toolApprovals: (ToolApproval | null)[];
   let grantCalls: { grant: string[]; revoke: string[] }[];
   let catalogAgent: string | undefined;
   let rememberRefusal: string | null;
@@ -113,6 +114,7 @@ describe("dam agent get / update / models (integration)", () => {
     };
     remembered = [];
     cleared = [];
+    toolApprovals = [];
     grantCalls = [];
     catalogAgent = undefined;
     rememberRefusal = null;
@@ -213,6 +215,13 @@ describe("dam agent get / update / models (integration)", () => {
         ) => {
           cleared.push(kind);
           defaults = { ...defaults, [kind]: null };
+        },
+        setToolApproval: async (
+          _agentId: string,
+          toolApproval: ToolApproval | null,
+        ) => {
+          toolApprovals.push(toolApproval);
+          defaults = { ...defaults, toolApproval };
         },
       },
     } as unknown as ApiContext;
@@ -639,6 +648,69 @@ describe("dam agent get / update / models (integration)", () => {
     );
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toContain("this agent holds no anthropic provider");
+  });
+
+  /**
+   * TEST_SCENARIO: an owner who wants every session of the agent to run its
+   * tools unasked sets it once on the agent, and the answer shows what the
+   * agent now holds.
+   */
+  it("agent update --tool-approval saves the agent's tool approval", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--tool-approval",
+      "bypass",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(toolApprovals).toEqual(["bypass"]);
+    expect(remembered).toEqual([]);
+    expect(r.stdout).toMatch(/^TOOL APPROVAL:\s+bypass$/m);
+  });
+
+  /**
+   * TEST_SCENARIO: `default` takes the agent's tool approval away, so each
+   * harness starts its sessions on its own approval again.
+   */
+  it("agent update --tool-approval default removes it", async () => {
+    defaults = { ...defaults, toolApproval: "bypass" };
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--tool-approval",
+      "default",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(toolApprovals).toEqual([null]);
+    expect(r.stdout).toMatch(/^TOOL APPROVAL:\s+not set/m);
+  });
+
+  /**
+   * TEST_SCENARIO: a value that is no tool approval, such as a harness's own
+   * mode name, is refused before any call, with the values the flag takes.
+   */
+  it("agent update --tool-approval refuses a value it does not know", async () => {
+    const r = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--tool-approval",
+      "bypassPermissions",
+    );
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("ask");
+    expect(r.stderr).toContain("bypass");
+    expect(toolApprovals).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: an agent with a tool approval shows it beside its defaults, so nobody has to open the web app to learn why its sessions do not ask. */
+  it("agent get shows the agent's tool approval", async () => {
+    defaults = { ...defaults, toolApproval: "auto" };
+    const r = await dam("agent", "get", AGENT_ID);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/^TOOL APPROVAL:\s+auto$/m);
   });
 
   it("agent update with no change to make is invalid input", async () => {

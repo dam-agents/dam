@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -150,7 +150,7 @@ Through the owner's Slack Account Connection the Agent posts wherever the owner 
 
 ### 1.7 What the agent is handed, per case
 
-Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and no setting changes it, who the owner is (their display name, and their tag where they linked Slack in that workspace) with a note that the owner has no extra authority in messages, with several Agents who else is here and who is default, and, where channel history is on, that `read_channel_history` reads further back.
+Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, a note that a tool the permission mode refused is the mode's doing and only the agent's owner changes it, who the owner is (their display name, and their tag where they linked Slack in that workspace) with a note that the owner has no extra authority in messages, with several Agents who else is here and who is default, and, where channel history is on, that `read_channel_history` reads further back.
 **Catch-up**: what arrived since the agent's last delivered turn there, as a backlog ("act only on what is still open"); nothing when nothing is new.
 
 | Case                                         | History injected                                                                                                                                      | Extra framing                                                                                                                                                                                                                                                                                                                                                        |
