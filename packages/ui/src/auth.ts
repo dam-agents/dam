@@ -12,7 +12,7 @@ let currentUser: User | null = null;
 let renewal: Promise<User | null> | null = null;
 
 const RENEW_BEFORE_EXPIRY_S = 45;
-const IDP_REQUEST_TIMEOUT_S = 10;
+const REFRESH_TIMEOUT_S = 10;
 const INIT_RETRY_DELAYS_MS = [500, 1000, 2000];
 
 function signinExtraParams(): Record<string, string> {
@@ -49,7 +49,6 @@ async function startAuth(): Promise<User | null> {
     scope: "openid profile",
     userStore: new WebStorageStateStore({ store: sessionStorage }),
     automaticSilentRenew: true,
-    requestTimeoutInSeconds: IDP_REQUEST_TIMEOUT_S,
     fetchRequestCredentials: "include",
   });
 
@@ -86,7 +85,7 @@ export async function getAccessToken(): Promise<string> {
 
   try {
     renewal ??= userManager
-      .signinSilent({ silentRequestTimeoutInSeconds: IDP_REQUEST_TIMEOUT_S })
+      .signinSilent({ silentRequestTimeoutInSeconds: REFRESH_TIMEOUT_S })
       .finally(() => {
         renewal = null;
       });
