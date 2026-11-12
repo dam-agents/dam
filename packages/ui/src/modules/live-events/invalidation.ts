@@ -23,13 +23,19 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
       trpc.budgets.pathKey(),
       trpc.environments.list.pathKey(),
       harnessConfigOf(agentId),
+      // UNIT_BOUNDARY_DESCRIPTION: the assistant's used mark is announced on this family, so a tab that watched a channel turn use it stops greeting on its own.
+      trpc.assistants.state.queryKey(),
     ],
     schedules: () => [trpc.schedules.pathKey(), trpc.attention.pathKey()],
     harnessConfig: (agentId) => [harnessConfigOf(agentId)],
     kbShares: () => [trpc.kbShares.pathKey()],
     artifacts: () => [trpc.artifactLibrary.pathKey()],
     attention: () => [trpc.attention.pathKey()],
-    gettingStarted: () => [trpc.gettingStarted.pathKey()],
+    gettingStarted: () => [
+      trpc.gettingStarted.pathKey(),
+      // UNIT_BOUNDARY_DESCRIPTION: a first result the assistant reports is announced on this family, and it is the assistant's record that holds it.
+      trpc.assistants.state.queryKey(),
+    ],
   };
 
 interface Pass {

@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-23
+Last verified: 2026-11-10
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -66,7 +66,6 @@ That first stage only executes the share's platform-init, which is the release's
 Its guest kernel is the smolvm release's own libkrunfw, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), rebuilt with a patch that adds btrfs ([vm-runner](vm-runner.md)) and zram swap ([vm-memory](vm-memory.md)).
 The image build refuses a rebuilt kernel whose version is not the release's.
 Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
-The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a smolvm release whose kernel fails them fails the lane.
 The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
@@ -106,6 +105,8 @@ A release that changes only the loader therefore keeps the reboot key the releas
 That key is also how the first loader of this kind reaches a pod: a release staged on the node cannot hand its loader to a loader that predates the protocol, so the release that ships one declares a key of its own, and the roll that hold causes delivers it in the pod's image.
 An upgrade that changes the pod's shape along with the release rolls every runner pod once, onto the configured image, so the loader the image now carries arrives with that roll; the two are not one step, since the controller comes up first and a pod whose roll has not come yet still runs the loader its own image was built with, so a death only that loader can record goes unnamed until the roll reaches it.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
+The smolvm pins the key was declared for — its release, its libkrun and its guest kernel — sit beside it in [`packages/vm-runner/reboot-id.pins`](../../packages/vm-runner/reboot-id.pins) as a tripwire: a pin that moves fails the crate's test, so whoever moves one decides the key and re-declares the pins there.
+Nothing compares the key, and a change to `platform-init` or to the loader takes the same decision with no file to fail on.
 A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod's shape changes for another reason, which rolls it onto a release that carries a key.
 The pod roll a `reboot` hold causes does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 That roll ends the turn each busy agent is in, and the controller reports the owner and those agents when it rolls past them.

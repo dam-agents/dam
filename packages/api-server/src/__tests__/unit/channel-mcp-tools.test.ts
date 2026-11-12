@@ -15,13 +15,21 @@ import {
 import type {
   AttachmentQuery,
   AttachmentResult,
+  ChannelHistoryQuery,
   ChannelReply,
   ChannelSendResult,
   MessageReactionsResult,
+  PostEdit,
   ReactionsQuery,
   ThreadQuery,
   ThreadResult,
 } from "../../modules/channels/services/channel-manager.js";
+
+vi.mock("../../core/agent-service-client.js", () => ({
+  agentServiceClient: () => ({
+    sessions: { byRef: { query: async () => ({ sessionId: "s-web" }) } },
+  }),
+}));
 
 const { auditLines } = vi.hoisted(() => ({
   auditLines: [] as { event: string; detail: Record<string, unknown> }[],
@@ -39,15 +47,20 @@ vi.mock("../../core/security-log.js", () => ({
 async function mcpHarness(opts?: {
   postResult?: ChannelSendResult;
   replyResult?: ChannelSendResult;
+  editResult?: ChannelSendResult;
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
   attachment?: AttachmentResult | { error: string };
   artifacts?: Record<string, { title: string; shareUrl: string | null }>;
+  readsChannelHistory?: boolean;
+  sessionRef?: string;
 }) {
   const replies: ChannelReply[] = [];
+  const edits: { type: ChannelType; edit: PostEdit }[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
+  const historyQueries: ChannelHistoryQuery[] = [];
   const attachmentQueries: AttachmentQuery[] = [];
   const channelManager = {
     postMessage: vi.fn(
@@ -65,6 +78,12 @@ async function mcpHarness(opts?: {
       async (_agentId: string, _type: ChannelType, args: ChannelReply) => {
         replies.push(args);
         return opts?.replyResult ?? ({ ok: true } as ChannelSendResult);
+      },
+    ),
+    editPost: vi.fn(
+      async (_agentId: string, type: ChannelType, edit: PostEdit) => {
+        edits.push({ type, edit });
+        return opts?.editResult ?? ({ ok: true } as ChannelSendResult);
       },
     ),
     describeMessageReactions: vi.fn(
@@ -92,6 +111,22 @@ async function mcpHarness(opts?: {
         );
       },
     ),
+    readChannelHistory: vi.fn(
+      async (
+        _agentId: string,
+        _type: ChannelType,
+        query: ChannelHistoryQuery,
+      ) => {
+        historyQueries.push(query);
+        return {
+          messages: [
+            "U999 [Wed 2026-09-17 09:12 UTC, ts 1758100320.000000]: the plan",
+          ],
+          conversationId: "C-BOUND",
+          hasMore: false,
+        };
+      },
+    ),
     fetchAttachment: vi.fn(
       async (_agentId: string, _type: ChannelType, query: AttachmentQuery) => {
         attachmentQueries.push(query);
@@ -110,12 +145,15 @@ async function mcpHarness(opts?: {
 
   const session = createMcpSession("agent-1", {
     owner: "owner-1",
+    uiBaseUrl: "http://ui",
+    ...(opts?.sessionRef ? { sessionRef: opts.sessionRef } : {}),
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
     artifactLibrary: {
       get: async (id: string) => opts?.artifacts?.[id] ?? null,
     },
+    readsChannelHistory: opts?.readsChannelHistory ?? false,
   } as unknown as McpSessionDeps);
 
   const [clientTransport, serverTransport] =
@@ -128,8 +166,10 @@ async function mcpHarness(opts?: {
     client,
     posts,
     replies,
+    edits,
     reactionQueries,
     threadQueries,
+    historyQueries,
     attachmentQueries,
     channelManager,
   };
@@ -179,13 +219,97 @@ describe("outbound MCP tools — Slack unfurls (#3499)", () => {
     expect(posts).toEqual([
       {
         text: "links without cards",
-        options: { unfurlLinks: false, unfurlMedia: false },
+        options: { byAgent: true, unfurlLinks: false, unfurlMedia: false },
       },
     ]);
     expect(replies).toEqual([
       { text: "media without cards", threadTs: "1.1", unfurlMedia: false },
       { text: "Slack default previews", threadTs: "1.2" },
     ]);
+  });
+});
+
+describe("edit_post MCP tool — an agent changes its own post (#6406)", () => {
+  // TEST_SCENARIO: the agent passes the reference a posting tool returned and the whole new text; the tool hands both on for the messenger it names and records the edit, with no message-sent event, since nothing new was posted.
+  it("hands the post's reference and the whole new text to the channel", async () => {
+    const { client, edits } = await mcpHarness();
+    auditLines.length = 0;
+    const sent: ChannelMessageSent[] = [];
+    const sub = events$()
+      .pipe(ofType<ChannelMessageSent>(EventType.ChannelMessageSent))
+      .subscribe((event) => sent.push(event));
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1758100320.000100",
+        text: "step 2 of 3",
+      },
+    });
+    sub.unsubscribe();
+
+    expect(result.isError).toBeFalsy();
+    expect(edits).toEqual([
+      {
+        type: ChannelType.Slack,
+        edit: {
+          conversationId: "C-BOUND",
+          messageId: "1758100320.000100",
+          text: "step 2 of 3",
+        },
+      },
+    ]);
+    expect(auditLines).toContainEqual({
+      event: "channel.outbound",
+      detail: expect.objectContaining({ action: "edit", hasCard: false }),
+    });
+    expect(sent).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a refusal from the channel, such as another agent's post or edits that come too fast, reaches the agent as the tool's error, in the channel's own words.
+  it("returns the channel's refusal as the tool error", async () => {
+    const { client } = await mcpHarness({
+      editResult: {
+        error:
+          "Another agent wrote that post. You can change only your own posts.",
+      },
+    });
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1.1",
+        text: "rewritten",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain(
+      "You can change only your own posts",
+    );
+  });
+
+  // TEST_SCENARIO: a card that fails its check must leave the post as it was, so the edit never reaches the channel.
+  it("refuses a card that fails its check before anything changes", async () => {
+    const { client, edits } = await mcpHarness();
+
+    const result = await client.callTool({
+      name: "edit_post",
+      arguments: {
+        channel: "slack",
+        chatId: "C-BOUND",
+        ts: "1.1",
+        text: "status",
+        card: { type: "NoSuchComponent", props: {} },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(edits).toEqual([]);
   });
 });
 
@@ -407,6 +531,94 @@ describe("describe_message_reactions MCP tool", () => {
   });
 });
 
+describe("read_channel_history MCP tool", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: Channel history is an opt-in on a binding, so an agent
+   * that has it on nowhere must not be offered a tool that only refuses.
+   */
+  it("is listed only while channel history is on for one of the agent's conversations", async () => {
+    const off = await mcpHarness();
+    expect(
+      (await off.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(false);
+
+    const on = await mcpHarness({ readsChannelHistory: true });
+    expect(
+      (await on.client.listTools()).tools.some(
+        (t) => t.name === "read_channel_history",
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An agent asked about "last week" names times, not Slack
+   * timestamps, so the tool takes ISO dates and hands the worker the Slack
+   * times it pages by. The read returns message bodies, so it is logged.
+   */
+  it("turns since and until into Slack times, passes the query through, and logs what it read", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    const result = await h.client.callTool({
+      name: "read_channel_history",
+      arguments: {
+        chatId: "C-BOUND",
+        since: "2026-11-02T00:00:00Z",
+        until: "2026-11-09",
+      },
+    });
+
+    expect(h.historyQueries).toEqual([
+      {
+        conversationId: "C-BOUND",
+        since: "1793577600.000000",
+        until: "1794182400.000000",
+      },
+    ]);
+    expect(
+      JSON.parse((result.content as { text: string }[])[0]!.text),
+    ).toMatchObject({ conversationId: "C-BOUND", hasMore: false });
+    expect(auditLines).toEqual([
+      {
+        event: "channel.history_read",
+        detail: {
+          conversationId: "C-BOUND",
+          since: "2026-11-02T00:00:00Z",
+          until: "2026-11-09",
+          messages: 1,
+          hasMore: false,
+        },
+      },
+    ]);
+  });
+
+  it("refuses a time that is not an ISO 8601 date, or a range that ends before it starts, without reading anything", async () => {
+    const h = await mcpHarness({ readsChannelHistory: true });
+
+    for (const args of [
+      { since: "last tuesday" },
+      { since: "1" },
+      { since: "March 5" },
+      { since: "1969-12-31" },
+      { since: "2026-02-31" },
+      { since: "2026-11-02T09:00:00" },
+      { since: "2026-11-09", until: "2026-11-01" },
+    ]) {
+      const result = await h.client.callTool({
+        name: "read_channel_history",
+        arguments: args,
+      });
+      expect(result.isError).toBe(true);
+    }
+    expect(h.historyQueries).toEqual([]);
+  });
+});
+
 describe("read_thread MCP tool", () => {
   beforeEach(() => {
     auditLines.length = 0;
@@ -535,6 +747,87 @@ describe("fetch_message_attachment MCP tool", () => {
     expect(auditLines).toEqual([
       { event: "channel.attachment_fetch", detail: { fileId: "F0NOPE" } },
     ]);
+  });
+});
+
+describe("outbound MCP tools — channel cards", () => {
+  const actions = (button: Record<string, unknown>) => ({
+    type: "Card",
+    props: { title: "Deploys" },
+    children: [{ type: "Actions", props: {}, children: [button] }],
+  });
+
+  it("describes the card components on request, naming the tools that take a card", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    const describeTool = tools.find(
+      (t) => t.name === "describe_card_components",
+    );
+    expect(describeTool?.description).toMatch(/reply, post and start_thread/);
+    for (const name of ["reply", "post"])
+      expect(
+        tools.find((t) => t.name === name)?.inputSchema.properties,
+      ).toHaveProperty("card");
+
+    const res = (await client.callTool({
+      name: "describe_card_components",
+      arguments: {},
+    })) as { content: { text: string }[] };
+    const described = JSON.parse(res.content[0]!.text) as {
+      components: { name: string }[];
+    };
+    const names = described.components.map((c) => c.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Card",
+        "Fields",
+        "Table",
+        "Chart",
+        "LinkButton",
+      ]),
+    );
+    expect(names).not.toContain("Button");
+  });
+
+  it("passes the card the platform built to the channel", async () => {
+    const { client, posts } = await mcpHarness();
+
+    await client.callTool({
+      name: "post",
+      arguments: {
+        channel: "slack",
+        text: "This week",
+        card: actions({
+          type: "LinkButton",
+          props: { label: "Open", url: "https://example.com" },
+        }),
+      },
+    });
+
+    expect(posts[0]?.options.card).toMatchObject({
+      card: { type: "card", title: "Deploys" },
+      text: expect.stringContaining("Deploys"),
+    });
+  });
+
+  // TEST_SCENARIO: a refused card must not leave half an answer in the channel, and the agent must learn why.
+  it("refuses a card that fails its check and posts nothing", async () => {
+    const { client, replies } = await mcpHarness();
+
+    const res = (await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Approve?",
+        card: actions({
+          type: "Button",
+          props: { id: "approve", label: "Approve" },
+        }),
+      },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("describe_card_components");
+    expect(replies).toEqual([]);
   });
 });
 
@@ -680,21 +973,16 @@ describe("outbound MCP tools — the posted message", () => {
 describe("outbound MCP tools — artifact links (#5965)", () => {
   const PUBLIC_ID = "0b6f6a52-5d0e-4a4e-9b1e-1f0c2a3b4c5d";
   const PRIVATE_ID = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
-  const artifacts = {
-    [PUBLIC_ID]: {
-      title: "Weekly report",
-      shareUrl: "https://share.example/a/weekly-report",
-    },
-    [PRIVATE_ID]: { title: "Draft plan", shareUrl: null },
-  };
 
   /**
-   * TEST_SCENARIO: The reported bug. An agent posts the in-app artifact link
-   * to Slack, where it is dead text. A public artifact's link is posted as
-   * its share URL, in a reply and in a new message alike.
+   * TEST_SCENARIO: The reported bug was an in-app artifact link reaching Slack
+   * as dead text. The channel worker that sends the message owns that decision,
+   * against the one destination it resolved, so the tools hand it the text and
+   * the card exactly as the agent wrote them, app links included, and the card
+   * is checked in the form it was written.
    */
-  it("posts a public artifact's share URL in place of its in-app link", async () => {
-    const { client, replies, posts } = await mcpHarness({ artifacts });
+  it("hands the text and the card to the channel, app links untouched", async () => {
+    const { client, replies, posts } = await mcpHarness();
 
     await client.callTool({
       name: "reply",
@@ -709,62 +997,42 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
         text: `Report: platform://artifacts/${PUBLIC_ID}`,
       },
     });
-
-    expect(replies[0]?.text).toBe(
-      "See [Weekly report](https://share.example/a/weekly-report)",
-    );
-    expect(posts[0]?.text).toBe(
-      "Report: https://share.example/a/weekly-report",
-    );
-  });
-
-  /**
-   * TEST_SCENARIO: A private artifact has no link that opens outside the
-   * app. The message is not posted, and the agent is told to say that the
-   * artifact must be shared first and to send the message without the link.
-   */
-  it("refuses a message that links a private artifact", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "reply",
-      arguments: { text: `Draft: platform://artifacts/${PRIVATE_ID}` },
-    });
-
-    expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toContain(
-      "must be shared from the app",
-    );
-    expect(replies).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: A link names an id the owner has no artifact for, a
-   * deleted one or a typo. The message is not posted with a dead link.
-   */
-  it("refuses a message that links an unknown artifact", async () => {
-    const { client, posts } = await mcpHarness({ artifacts });
-
-    const res = await client.callTool({
-      name: "send_channel_message",
+    await client.callTool({
+      name: "post",
       arguments: {
         channel: ChannelType.Slack,
-        text: "platform://artifacts/does-not-exist",
+        text: "Draft",
+        card: {
+          type: "Card",
+          props: { title: "Draft" },
+          children: [
+            {
+              type: "Actions",
+              props: {},
+              children: [
+                {
+                  type: "LinkButton",
+                  props: {
+                    label: "Open",
+                    url: `platform://artifacts/${PRIVATE_ID}`,
+                  },
+                },
+              ],
+            },
+          ],
+        },
       },
     });
 
-    expect(res.isError).toBe(true);
-    expect(posts).toEqual([]);
-  });
-
-  it("posts a message without artifact links unchanged", async () => {
-    const { client, replies } = await mcpHarness({ artifacts });
-
-    await client.callTool({
-      name: "reply",
-      arguments: { text: "see https://example.com/report" },
-    });
-
-    expect(replies[0]?.text).toBe("see https://example.com/report");
+    expect(replies[0]?.text).toBe(
+      `See [Weekly report](platform://artifacts/${PUBLIC_ID})`,
+    );
+    expect(posts.map((p) => p.text)).toEqual([
+      `Report: platform://artifacts/${PUBLIC_ID}`,
+      "Draft",
+    ]);
+    expect(JSON.stringify(posts[1]?.options.card)).toContain(
+      `platform://artifacts/${PRIVATE_ID}`,
+    );
   });
 });

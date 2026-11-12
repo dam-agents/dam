@@ -82,6 +82,7 @@ type AgentReconciler struct {
 	grantProbes           sync.Map
 	noNodeResize          sync.Map
 	steppedSince          sync.Map
+	allocationWaits       sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
@@ -108,7 +109,9 @@ type AgentReconciler struct {
 	preflightDone         bool
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
-	ownerGatewayAnswered  sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: how many wide owner gateway renders this reconciler made, which no production code reads: a refused owner's reconciles are counted here, because a suppressed warning alone does not show that the render is gone.
+	ownerGatewayWideRenders atomic.Int64
+	ownerGatewayAnswered    sync.Map
 	// UNIT_BOUNDARY_DESCRIPTION: the revision a member's listener carries under the previous two-volume layout, which hashes differently because its credential root does. Readiness and cutover accept either, so a retained old-layout pod is not called stale while it serves; only a canonical answer ever authorises a repair, because the two layouts are separate publications and the canonical one is no receipt for the other.
 	ownerGatewayLegacyRevisions sync.Map
 	// UNIT_BOUNDARY_DESCRIPTION: the arrival epoch the revision the owner last published for an agent encodes. Recorded with the revision and adopted with it, so a probe answer can be matched to the epoch it is evidence about.
@@ -189,6 +192,25 @@ func (r *AgentReconciler) stampAnnotation(ctx context.Context, name, key, value,
 		return r.backend.StampReclaim(ctx, name, value, resourceVersion)
 	}
 	return r.backend.PatchAgent(ctx, name, map[string]*string{key: &value})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agent's definition is the custom resources' to write until the store's switch, and the rows' after it. Only a custom resource can name a backend at all — a row is projected from platform columns that always mean a machine — so an Agent's backend is only this controller's to judge on the custom resources.
+func (r *AgentReconciler) specFromCustomResources() bool {
+	return r.backend == nil || r.backend.SpecWritable()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusal an Agent on the removed container backend reads instead of a machine: Ready false, its reason and a message that says what to do, since only an operator's runtime migration on the earlier release moves such an Agent. Nothing is created, stopped or deleted for it, and the answer is stable, so a reconcile that repeats it writes no status twice.
+func (r *AgentReconciler) refuseContainerBackend(ctx context.Context, agent *apiv1.Agent) error {
+	msg := "still asks for the container backend, which this release removed and cannot move: a machine here would boot on a home that is not the Agent's, while the volume holding that home stays unread. Move it to the vm backend with the runtime migration of the release this install runs now, then upgrade."
+	if agent.Spec.Backend == nil {
+		msg = "names no backend, which an earlier release wrote for a container Agent: this release removed that backend and cannot move one, and a machine here would boot on a home that is not the Agent's, while the volume holding that home stays unread. Move it to the vm backend with the runtime migration of the release this install runs now, then upgrade."
+	}
+	if err := r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonContainerBackendRemoved, msg, agent.Generation)
+	}); err != nil {
+		return fmt.Errorf("agent %s: publishing the removed container backend: %w", agent.Name, err)
+	}
+	return nil
 }
 
 func (r *AgentReconciler) backendHealthy() error {
@@ -291,6 +313,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return fmt.Errorf("agent %s: %w", name, err)
 	}
 
+	// UNIT_BOUNDARY_DESCRIPTION: the container backend and its runtime migration are gone from this release, so the only thing this reconcile could do for an Agent still on it is boot a machine on a home its data is not on and leave the volume that holds the home unread. The move exists only on the release before this one, and only an operator can make it there, so the Agent is refused before anything is created, stopped or deleted for it — the fleet around it keeps reconciling, and one such Agent appearing after this controller started (a restore, the previous api-server during a rollout) is refused the same way rather than booted.
+	if r.specFromCustomResources() && !agent.Spec.IsVM() {
+		return r.refuseContainerBackend(ctx, agent)
+	}
+
 	ownerRef, err := r.childrenOwner(ctx, agent)
 	if err != nil {
 		return err
@@ -352,7 +379,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
 			}
 			if moved {
 				dropOwnPrincipal(policy)
@@ -365,7 +392,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
 			if ownerGatewayOn || onOwnerGateway {
-				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
+				admitOwnerGateway(policy, name, r.config, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
 			}
 			if moved {
 				dropOwnPrincipal(policy)
@@ -408,6 +435,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase)
 	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
+	if ready := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady); ready != nil && parkedTargetWaits(agent.Annotations, ready.Reason) {
+		running = true
+	}
 
 	lastActivity := agent.Annotations[annLastActivity]
 	overBudget := ""
@@ -582,6 +612,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		r.clearMemoryGrace(name)
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
+	startWaitSpent := r.allocationWaitSpent(name, running && machine.Reason == vmrunner.ReasonAwaitingAllocation && !holdsMemory(machine.State))
 	if machine.Reason == vmrunner.ReasonAwaitingAllocation {
 		// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
 		bootInFlight := holdsMemory(machine.State)
@@ -592,9 +623,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if r.requeue != nil {
 			r.requeue(name, vmReadinessPoll)
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
-		if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
-			if _, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
+		// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left. It also starts once this start has waited a grace in all, whatever the asks did meanwhile: each changed ask begins a grace of its own, and an ask the controller's count reads as covered is never recorded at all, so without this bound a start could wait past the wake that asked for it.
+		stepGraceOver := r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner)
+		if !bootInFlight && (startWaitSpent || stepGraceOver) {
+			if _, err := r.reclaimForAllocationWait(ctx, agent, owner); err != nil {
 				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 			}
 		}
@@ -869,6 +901,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	}
 	r.vmRunning.Delete(name)
 	r.vmAnswers.Delete(name)
+	r.allocationWaits.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)

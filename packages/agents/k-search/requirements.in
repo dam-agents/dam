@@ -1,0 +1,11 @@
+# k-search's venv as the image installs it: modal with its api-proxy-support extra, the
+# OpenAI client for the gateway endpoint K-Search calls, and KernelBench's gpu extra from the
+# commit the image pins. image.toml's uvx_args asks uv for these same three and hands it
+# requirements.txt as constraints, so the venv keeps this lock's versions.
+# Regenerate after any of those pins moves, from this directory:
+#   uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes --no-header -o requirements.txt
+# 3.12 is the Python base/image.lock names, and --universal covers both Linux architectures.
+# //packages/agents:check:k-search-lock fails when image.toml, this file and the lock disagree.
+modal[api-proxy-support]==1.6.2
+openai==2.54.0
+kernelbench[gpu] @ https://github.com/ScalingIntelligence/KernelBench/archive/423217d9fda91e0c2d67e4a43bf62f96f6d104f1.tar.gz#sha256=13daba046457c912cd37808209de2264b059d004ad708880dac996cc88019495

@@ -38,6 +38,15 @@ export function agentFooterLabel(agentName?: string): string {
   return `Sent by ${agentName?.trim() || "an agent"}`;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the address that opens one of an agent's sessions in the web chat, through the public agent page, which signs a visitor in first. */
+export function agentSessionUrl(
+  uiBaseUrl: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return `${uiBaseUrl}${PUBLIC_AGENT_PATH}${agentId}?s=${encodeURIComponent(sessionId)}`;
+}
+
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.label);
   const params = [
@@ -87,6 +96,17 @@ export function parseAgentFooter(
     if (match) return { agentId: match[1] };
   }
   return null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A post reduced to the block that ends it, which
+ * is where the platform puts the Agent Footer. An Agent's card can render a
+ * context block of its own, with any link in it, ahead of the footer, so a
+ * decision that rests on who wrote a post reads the footer from here and
+ * nowhere else in the post.
+ */
+export function closingBlock(message: SlackMessage): SlackMessage {
+  return { blocks: (message.blocks ?? []).slice(-1) };
 }
 
 export function footerMarksAmbientRound(message: SlackMessage): boolean {

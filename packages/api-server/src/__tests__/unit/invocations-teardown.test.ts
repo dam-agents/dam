@@ -1,49 +1,28 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type {
-  InvocationRow,
-  InvocationsRepository,
-} from "../../modules/invocations/infrastructure/invocations-repository.js";
+import type { InvocationRow } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import { createDelegationControl } from "../../modules/invocations/services/delegation-control.js";
+import { createDelegationStop } from "../../modules/invocations/services/delegation-stop.js";
 import type { DelegationFramesPort } from "../../modules/invocations/services/delegation-frames.js";
 import { createDriverCascade } from "../../modules/invocations/services/driver-cascade.js";
 import { createTargetCapture } from "../../modules/invocations/services/target-capture.js";
 import { createTargetReaper } from "../../modules/invocations/services/target-reaper.js";
+import {
+  fakeInvocationsRepo,
+  invocationRow,
+} from "../helpers/invocations-repo.js";
 
 function row(
   id: string,
   overrides: Partial<InvocationRow> = {},
 ): InvocationRow {
-  return {
+  return invocationRow({
     id,
     driverAgentId: "root-1",
     rootDriverId: "root-1",
-    owner: "owner-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
     resultSchema: {},
-    result: null,
-    status: "running",
-    errorReason: null,
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60_000),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
     ...overrides,
-  };
+  });
 }
 
 function fakeRepo(rows: InvocationRow[]) {
@@ -52,36 +31,36 @@ function fakeRepo(rows: InvocationRow[]) {
     markReaped: vi.fn(async (_id: string) => {}),
     markTranscriptCaptured: vi.fn(async (_id: string, _t: boolean) => {}),
     deleteReapedByRoot: vi.fn(async (_root: string) => 0),
-    fail: vi.fn(async (_id: string, _reason: string) => {}),
+    fail: vi.fn(async (_runId: string, _reason: string) => null),
+    failStopped: vi.fn(
+      async (runId: string, _reason: string, _collected: boolean) => {
+        const run = rows.find((r) => r.runId === runId);
+        if (!run || run.status !== "running") return null;
+        run.status = "failed";
+        return { cancelPending: false };
+      },
+    ),
   };
-  const repo: InvocationsRepository = {
-    insert: async () => {},
+  const repo = fakeInvocationsRepo({
     get: async (id) => byId.get(id) ?? null,
-    markStarted: async () => null,
-    failExpired: async () => false,
-    complete: async () => true,
     fail: calls.fail,
-    listExpiredRunning: async () => [],
-    listRunning: async () => [],
+    failStopped: calls.failStopped,
+    listRunningRuns: async (id) =>
+      rows.filter((r) => r.id === id && r.status === "running"),
+    listRunningRunsOf: async (ids) =>
+      rows.filter((r) => ids.includes(r.id) && r.status === "running"),
     listRunningByDriver: async (driver) =>
       rows.filter((r) => r.driverAgentId === driver && r.status === "running"),
-    listRunningAgentIds: async () => [],
-    listTargetsByOwner: async () => [],
-    listRootDriverIds: async () => [],
-    listTerminalUnreaped: async () => [],
     markReaped: calls.markReaped,
+    listUnreapedByDriver: async (driver) =>
+      rows.filter((r) => r.driverAgentId === driver && r.reapedAt === null),
     listByRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     listUnreapedByRoot: async (root) =>
       rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
-    delete: async () => {},
+    listTreeOfRoot: async (root) => rows.filter((r) => r.rootDriverId === root),
     markTranscriptCaptured: calls.markTranscriptCaptured,
-    finishScript: async () => true,
-    dropOutputStream: async () => {},
-    clearOutput: async () => {},
-    listExpiredOutputs: async () => [],
-    listScriptsByRoot: async () => [],
     deleteReapedByRoot: calls.deleteReapedByRoot,
-  };
+  });
   return { repo, calls };
 }
 
@@ -104,6 +83,7 @@ describe("the target reaper", () => {
     const reaper = createTargetReaper({
       repo,
       agentsFor: () => ({ delete: async () => {} }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await reaper.reap({ id: "agent-a", owner: "owner-1" });
@@ -120,6 +100,7 @@ describe("the target reaper", () => {
             throw new Error("k8s down");
           },
         }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await expect(
@@ -134,6 +115,7 @@ describe("the target reaper", () => {
     const reaper = createTargetReaper({
       repo,
       agentsFor: () => ({ delete: async () => {} }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => {} },
     });
     await expect(
@@ -148,10 +130,14 @@ describe("the target reaper", () => {
       repo,
       agentsFor: () =>
         ({ delete: async () => void order.push("delete") }) as never,
+      cancel: { request: async () => {} },
       capture: { capture: async () => void order.push("capture") },
     });
     await reaper.reap({ id: "agent-a", owner: "owner-1" });
-    await reaper.reap({ id: "agent-a", owner: "owner-1" }, { capture: false });
+    await reaper.reap(
+      { id: "agent-a", owner: "owner-1" },
+      { capture: false, force: true },
+    );
     expect(order).toEqual(["capture", "delete", "delete"]);
   });
 });
@@ -233,7 +219,7 @@ describe("the driver cascade", () => {
     const reaped = reaper.reap.mock.calls.map(([r]) => r.id).sort();
     expect(reaped).toEqual(["agent-a", "agent-b", "agent-c"]);
     for (const call of reaper.reap.mock.calls) {
-      expect(call).toContainEqual({ capture: false });
+      expect(call).toContainEqual({ capture: false, force: true });
     }
     expect(calls.fail.mock.calls.map(([id]) => id).sort()).toEqual([
       "agent-a",
@@ -242,10 +228,17 @@ describe("the driver cascade", () => {
     expect(calls.deleteReapedByRoot).toHaveBeenCalledWith("root-1");
   });
 
+  // TEST_SCENARIO: a deleted sub-agent that drives its own takes every child it still has: a running one is failed, and a kept one that reported and a clean slate that never ran are reaped too, since nothing else would remove them.
   test("a deleted target captures its own children and keeps the root's records", async () => {
     const { repo, calls } = fakeRepo([
       row("agent-mid"),
       row("agent-leaf", { driverAgentId: "agent-mid" }),
+      row("agent-kept", {
+        driverAgentId: "agent-mid",
+        status: "done",
+        keepUntil: new Date(Date.now() + 60_000),
+      }),
+      row("agent-slate", { driverAgentId: "agent-mid", status: "idle" }),
     ]);
     const reaper = reaperSpy();
     await createDriverCascade({
@@ -258,38 +251,75 @@ describe("the driver cascade", () => {
       "target agent deleted",
     );
     expect(calls.markReaped).toHaveBeenCalledWith("agent-mid");
-    expect(reaper.reap).toHaveBeenCalledTimes(1);
-    expect(reaper.reap.mock.calls[0]).toContainEqual({ capture: true });
+    expect(calls.fail).not.toHaveBeenCalledWith(
+      "agent-kept",
+      expect.anything(),
+    );
+    expect(reaper.reap.mock.calls.map(([r, opts]) => [r.id, opts])).toEqual([
+      ["agent-leaf", { capture: true, force: true }],
+      ["agent-kept", { capture: true, force: true }],
+      ["agent-slate", { capture: true, force: true }],
+    ]);
     expect(calls.deleteReapedByRoot).not.toHaveBeenCalled();
   });
 });
 
 describe("stopping a delegation", () => {
-  test("fails a running child of the owner's driver and reaps it", async () => {
-    const { repo, calls } = fakeRepo([row("agent-a")]);
-    const reaper = { reap: vi.fn(async () => {}) };
-    await createDelegationControl({ repo, owner: "owner-1", reaper }).stop({
-      driverAgentId: "root-1",
-      id: "agent-a",
-    });
-    expect(calls.fail).toHaveBeenCalledWith("agent-a", "stopped by the user");
-    expect(reaper.reap).toHaveBeenCalledTimes(1);
+  const control = (rows: InvocationRow[]) => {
+    const { repo, calls } = fakeRepo(rows);
+    const reaper = { reap: vi.fn(async (_row: { id: string }) => {}) };
+    const stopper = createDelegationStop({ repo, reaper });
+    return {
+      calls,
+      reaper,
+      control: createDelegationControl({ repo, owner: "owner-1", stopper }),
+    };
+  };
+
+  test("the user's stop takes every running sub-agent below the target down, kept ones too, and only the target reaches its driver", async () => {
+    const {
+      control: c,
+      calls,
+      reaper,
+    } = control([
+      row("agent-a", { runId: "run-a" }),
+      row("agent-b", { driverAgentId: "agent-a", runId: "run-b" }),
+      row("agent-c", {
+        driverAgentId: "agent-b",
+        runId: "run-c",
+        keepUntil: new Date(Date.now() + 60_000),
+      }),
+      row("agent-d", { driverAgentId: "agent-a", status: "done" }),
+    ]);
+    await c.stop({ driverAgentId: "root-1", id: "agent-a" });
+    expect(calls.failStopped.mock.calls).toEqual([
+      ["run-a", "stopped by the user", false],
+      ["run-b", "stopped by the user", true],
+      ["run-c", "stopped by the user", true],
+    ]);
+    expect(reaper.reap.mock.calls.map(([r]) => r.id)).toEqual([
+      "agent-a",
+      "agent-b",
+      "agent-c",
+    ]);
   });
 
   test("does not find a child that is another owner's or under another root", async () => {
-    const { repo, calls } = fakeRepo([
+    const {
+      control: c,
+      calls,
+      reaper,
+    } = control([
       row("agent-a", { owner: "owner-2" }),
       row("agent-b", { rootDriverId: "root-9" }),
     ]);
-    const reaper = { reap: vi.fn(async () => {}) };
-    const control = createDelegationControl({ repo, owner: "owner-1", reaper });
     await expect(
-      control.stop({ driverAgentId: "root-1", id: "agent-a" }),
+      c.stop({ driverAgentId: "root-1", id: "agent-a" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(
-      control.stop({ driverAgentId: "root-1", id: "agent-b" }),
+      c.stop({ driverAgentId: "root-1", id: "agent-b" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(calls.fail).not.toHaveBeenCalled();
+    expect(calls.failStopped).not.toHaveBeenCalled();
     expect(reaper.reap).not.toHaveBeenCalled();
   });
 });

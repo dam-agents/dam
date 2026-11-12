@@ -27,6 +27,8 @@ import { createControlAgentsRepository } from "../agent-store/agents-repository.
 import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
+import { createInheritanceRepository } from "./infrastructure/inheritance-repository.js";
+import { createChildEgressGrantsRepository } from "./infrastructure/child-egress-grants-repository.js";
 import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
 import { accessTo } from "./domain/agent-access.js";
 import { permissionsOf } from "./domain/agent-permissions.js";
@@ -108,6 +110,7 @@ export function composeAgentsModule(deps: {
     AgentsServiceDeps["readSlackLoopGuardDrops"]
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
+  childEgress?: AgentsServiceDeps["childEgress"];
   defaultProfile?: AgentsServiceDeps["defaultProfile"];
   editorEmail: string | null;
   actor?: string;
@@ -150,6 +153,8 @@ export function composeAgentsModule(deps: {
       onboardingChecklists: deps.onboardingChecklists,
       agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
+      inheritance: createInheritanceRepository(deps.db),
+      childEgress: deps.childEgress,
       defaultProfile: deps.defaultProfile,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: (agentId, agentOwner) =>
@@ -307,7 +312,9 @@ export function connectionGrantProvisioner(
     async resolveSpecGrants(sel) {
       if (sel.providerConnectionId)
         await connections.validateProviderConnection(sel.providerConnectionId);
-      await connections.validateGrantSet(sel.connectionIds);
+      await connections.validateGrantSet(sel.connectionIds, {
+        ...(sel.platform ? { platform: true } : {}),
+      });
       return {
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };
@@ -323,7 +330,9 @@ export function connectionGrantProvisioner(
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
-        await connections.setAgentConnections(agentId, sel.connectionIds);
+        await connections.setAgentConnections(agentId, sel.connectionIds, {
+          ...(sel.platform ? { platform: true } : {}),
+        });
     },
   };
 }
@@ -421,4 +430,97 @@ export function composeEditorStanding(deps: {
     if (accessTo(infra.owner, list, caller) !== "editor") return null;
     return { ownerSub: infra.owner, permissions: permissionsOf("editor") };
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the children whose connections mirror an Agent's, for the connections module to keep them in step, and the cleanup that drops a deleted Agent's inheritance record.
+export function childrenMirroringConnections(
+  db: Db,
+): (parentAgentId: string) => Promise<string[]> {
+  const repo = createInheritanceRepository(db);
+  return (parentAgentId) => repo.childrenMirroringConnections(parentAgentId);
+}
+
+export function inheritanceCleanup(db: Db): {
+  listAgentIds: () => Promise<string[]>;
+  cleanup: (agentId: string) => Promise<void>;
+} {
+  const repo = createInheritanceRepository(db);
+  return {
+    listAgentIds: () => repo.listAgentIds(),
+    cleanup: (agentId) => repo.deleteForAgent(agentId),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the nearest Agent on a child's launch chain, the child itself first, whose egress is its own (open or scoped), for the egress gate to decide its requests under; null when every Agent up the chain follows its parent, so the gate resolves the chain as it always has. A chain is walked through the inheritance records alone, which every child that can have egress of its own carries, and at most MAX_INHERITANCE_DEPTH Agents up.
+export function nearestOwnEgress(db: Db): (agentId: string) => Promise<{
+  agentId: string;
+  mode: "open" | "scoped";
+  parentAgentId: string;
+} | null> {
+  const repo = createInheritanceRepository(db);
+  return async (agentId) => {
+    let current = agentId;
+    for (let depth = 0; depth < MAX_INHERITANCE_DEPTH; depth++) {
+      const row = await repo.get(current);
+      if (!row) return null;
+      if (row.egressFrom !== "parent")
+        return {
+          agentId: current,
+          mode: row.egressFrom,
+          parentAgentId: row.parentAgentId,
+        };
+      current = row.parentAgentId;
+    }
+    return null;
+  };
+}
+
+const MAX_INHERITANCE_DEPTH = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's toggle that lets an Agent's sub-agents and Environments have network access of their own, wider than the Agent's. Only a root Agent's toggle counts: a driver anywhere down a launch chain is granted when the root of its chain is, so a child never gives its own children more than the owner allowed at the root, and a chain longer than MAX_INHERITANCE_DEPTH is never granted. Also the cleanup that drops a deleted Agent's row.
+export function childEgressGrants(db: Db): {
+  isGrantedFor(driverId: string): Promise<boolean>;
+  isGranted(agentId: string): Promise<boolean>;
+  rootOf(agentId: string): Promise<string | null>;
+  set(agentId: string, on: boolean, decidedBy: string): Promise<void>;
+  listAgentIds(): Promise<string[]>;
+  cleanup(agentId: string): Promise<void>;
+} {
+  const inheritance = createInheritanceRepository(db);
+  const grants = createChildEgressGrantsRepository(db);
+  async function rootOf(agentId: string): Promise<string | null> {
+    let current = agentId;
+    for (let depth = 0; depth < MAX_INHERITANCE_DEPTH; depth++) {
+      const row = await inheritance.get(current);
+      if (!row) return current;
+      current = row.parentAgentId;
+    }
+    return null;
+  }
+  return {
+    async isGrantedFor(driverId) {
+      const root = await rootOf(driverId);
+      return root !== null && (await grants.isGranted(root));
+    },
+    isGranted: (agentId) => grants.isGranted(agentId),
+    rootOf,
+    set: (agentId, on, decidedBy) => grants.set(agentId, on, decidedBy),
+    listAgentIds: () => grants.listAgentIds(),
+    cleanup: (agentId) => grants.deleteForAgent(agentId),
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a child's inheritance record, for a check that only its launching agent may change its open egress.
+export function inheritanceOf(db: Db): (agentId: string) => Promise<{
+  parentAgentId: string;
+  egressFrom: "parent" | "open" | "scoped";
+} | null> {
+  const repo = createInheritanceRepository(db);
+  return (agentId) => repo.get(agentId);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the children whose egress is their own, for the L7 projection to take their own rules rather than their Owning Agent's.
+export function ownEgressAgentIds(db: Db): () => Promise<Set<string>> {
+  const repo = createInheritanceRepository(db);
+  return async () => new Set(await repo.listOwnEgressAgentIds());
 }

@@ -8,9 +8,12 @@ import {
   type SecretRef,
 } from "api-server-api";
 import { parseShareString, tokenHeaderName } from "../../kb-shares/index.js";
-import type {
-  ConfigInputSpec,
-  ConnectionTemplate,
+import {
+  hostnameOf,
+  isRetiredHost,
+  operatorAppFor,
+  type ConfigInputSpec,
+  type ConnectionTemplate,
 } from "./connection-template.js";
 import {
   discoverIssuerFromResourceHost,
@@ -53,6 +56,12 @@ export interface BuildResult {
   secrets: Map<string, Record<string, string>>;
 }
 
+const GITHUB_ENTERPRISE_TEMPLATE_IDS = new Set([
+  "github-enterprise",
+  "github-enterprise-pat",
+  "github-enterprise-app",
+]);
+
 export async function buildConnection(
   template: ConnectionTemplate,
   input: ConnectionCreateInput,
@@ -63,6 +72,32 @@ export async function buildConnection(
   if (input.authKind !== template.authKind) {
     throw new Error(
       `template ${template.id} expects authKind=${template.authKind}, got ${input.authKind}`,
+    );
+  }
+
+  if (
+    GITHUB_ENTERPRISE_TEMPLATE_IDS.has(template.id) &&
+    "host" in input &&
+    input.host
+  ) {
+    const { host, port } = parseClusterEndpoint(input.host.toLowerCase());
+    if (!/^[a-z0-9.-]+$/.test(host) || !host.includes(".")) {
+      throw new Error(
+        `${input.host.trim()} is not a GitHub Enterprise hostname. Enter the host alone, e.g. github.example.com.`,
+      );
+    }
+    if (port && template.id !== "github-enterprise-pat") {
+      throw new Error(
+        `${host}:${port} names a port. A GitHub Enterprise sign-in or app installation reaches its host on port 443: enter the host alone.`,
+      );
+    }
+    input = { ...input, host: port ? `${host}:${port}` : host };
+  }
+
+  const inputHost = "host" in input ? input.host : undefined;
+  if (inputHost && isRetiredHost(template, inputHost)) {
+    throw new Error(
+      `${hostnameOf(inputHost)} is retired on this platform. Pick another GitHub Enterprise host.`,
     );
   }
 
@@ -149,11 +184,27 @@ async function buildOAuthStatic(
   const subst = (s: string | undefined): string | undefined =>
     host ? s?.replace(/\{host\}/g, host) : s;
 
-  const clientId = input.clientId ?? template.clientId;
+  const operatorApp = operatorAppFor(template, host);
+  const clientId = input.clientId ?? operatorApp.clientId;
   const authorizationUrl = subst(template.authorizationUrl);
   const tokenUrl = subst(template.tokenUrl);
   const scopes = template.scopes ?? [];
 
+  if (!clientId && template.hostApps && host) {
+    throw new Error(
+      `No GitHub app is registered for ${host}. Pick one of ${template.hostChoices?.join(", ") ?? "the listed hosts"}, or enter your own app's client ID.`,
+    );
+  }
+  if (
+    template.hostApps &&
+    host &&
+    !operatorApp.clientId &&
+    !input.clientSecret
+  ) {
+    throw new Error(
+      `${hostnameOf(host)} has no app the platform registered, so a sign-in there uses your own app: enter its client secret too.`,
+    );
+  }
   if (!clientId) throw new Error(`template ${template.id}: missing clientId`);
   if (!authorizationUrl || authorizationUrl.includes("{host}")) {
     throw new Error(
@@ -182,12 +233,9 @@ async function buildOAuthStatic(
     contributions.push(...githubEnterpriseHostContributions(host));
   }
 
-  const presetSlug =
-    typeof template.extras?.appSlug === "string"
-      ? template.extras.appSlug
-      : undefined;
+  const presetSlug = operatorApp.appSlug;
   const usesTemplateApp =
-    !input.clientId || input.clientId === template.clientId;
+    !input.clientId || input.clientId === operatorApp.clientId;
   const inputSlug =
     usesTemplateApp || input.appSlug !== presetSlug ? input.appSlug : undefined;
   const appSlug = inputSlug ?? (usesTemplateApp ? presetSlug : undefined);
@@ -274,15 +322,16 @@ async function buildOAuthDcr(
   oauthCallbackUrl: string,
   brandName: string,
 ): Promise<BuildResult> {
-  if (!input.url) {
+  const mcpUrl = template.mcpUrl ?? input.url;
+  if (!mcpUrl) {
     throw new Error(
       `template ${template.id}: dynamicRegistration requires a URL`,
     );
   }
-  const url = new URL(input.url);
+  const url = new URL(mcpUrl);
   const meta = await discoverMcpAuth(url);
   if (!meta) {
-    throw new Error(`No OAuth discovery metadata at ${input.url}`);
+    throw new Error(`No OAuth discovery metadata at ${mcpUrl}`);
   }
 
   let clientId: string;
@@ -294,7 +343,7 @@ async function buildOAuthDcr(
     const source = oauthClientSource(meta, oauthCallbackUrl);
     if (!source) {
       throw new Error(
-        `MCP server at ${input.url} supports neither dynamic client registration nor client ID metadata documents — enter a client ID registered with its authorization server`,
+        `MCP server at ${mcpUrl} supports neither dynamic client registration nor client ID metadata documents — enter a client ID registered with its authorization server`,
       );
     }
     if (source.kind === "metadata-document") {
@@ -302,7 +351,8 @@ async function buildOAuthDcr(
     } else {
       const dcr = await registerOAuthClient({
         registrationEndpoint: source.registrationEndpoint,
-        clientName: platformOAuthClientName(brandName),
+        clientName:
+          template.registrationClientName ?? platformOAuthClientName(brandName),
         redirectUris: [oauthCallbackUrl],
       });
       clientId = dcr.clientId;
@@ -326,7 +376,7 @@ async function buildOAuthDcr(
     {
       kind: "mcp-entry",
       name: template.id,
-      url: input.url,
+      url: mcpUrl,
       headers: { Authorization: "Bearer dummy-placeholder" },
     },
   ];

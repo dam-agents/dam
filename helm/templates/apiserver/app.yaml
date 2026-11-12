@@ -237,6 +237,11 @@ spec:
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL
               value: {{ include "platform.apiserver.harnessUrl" . | quote }}
+            # The api-server's own public Service, as a gateway pod reaches it.
+            # The Connection that lets an Agent drive this install names that
+            # address over HTTPS, and its gateway chain takes the request there.
+            - name: PLATFORM_APISERVER_URL
+              value: {{ include "platform.apiserver.serviceUrl" . | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -279,6 +284,10 @@ spec:
             {{- if .Values.apiServer.slackEnterpriseId }}
             - name: SLACK_ENTERPRISE_ID
               value: {{ .Values.apiServer.slackEnterpriseId | quote }}
+            {{- end }}
+            {{- with .Values.apiServer.slackEmailPairingWorkspaces }}
+            - name: SLACK_EMAIL_PAIRING_WORKSPACES
+              value: {{ toJson . | quote }}
             {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
@@ -514,6 +523,17 @@ spec:
             - name: PLATFORM_DEFAULT_GHE_APP_SLUG
               value: {{ .appSlug | quote }}
             {{- end }}
+            {{- if include "platform.apiserver.gheHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_HOSTS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GHE_HOSTS
+            {{- end }}
+            {{- with include "platform.apiserver.gheRetiredHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_RETIRED_HOSTS
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.slack }}
             {{- if .clientId }}
@@ -629,6 +649,8 @@ spec:
               value: {{ .Values.brand.title | quote }}
             - name: BRAND_VENDOR
               value: {{ .Values.brand.vendor | quote }}
+            - name: BRAND_ASSISTANT_NAME
+              value: {{ .Values.brand.assistantName | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
@@ -658,10 +680,6 @@ spec:
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
-            {{- end }}
-            {{- if .Values.links.curveBenderCommunity }}
-            - name: LINKS_CURVE_BENDER_COMMUNITY
-              value: {{ .Values.links.curveBenderCommunity | quote }}
             {{- end }}
             {{- if .Values.links.slackInstallRequest }}
             - name: LINKS_SLACK_INSTALL_REQUEST

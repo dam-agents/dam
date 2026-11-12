@@ -1,135 +1,126 @@
 import { Close } from "@carbon/icons-react";
 import { useState } from "react";
+import { match } from "ts-pattern";
 
-import {
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { getBrand } from "../../../brand.js";
 import {
   browserStorage,
   safeGetItem,
   safeSetItem,
 } from "../../../lib/safe-storage.js";
-import { useCurveBenderCommunityUrl } from "../../links/api/queries.js";
 import { CURVE_BENDER_DOCS_URL } from "../../providers/components/curve-bender-info-dialog.js";
 import { ChatColumn } from "./chat-column.js";
 
-const DISMISSED_KEY = "platform-curvebender-alert-dismissed";
+const DISMISSED_KEYS = {
+  setup: "platform-curvebender-setup-dismissed",
+  offer: "platform-curvebender-alert-dismissed",
+} as const;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the card above a new chat's composer for whichever
+ * CurveBender notice the view decided on: that variant's copy and its one
+ * action — Try now on the shared Connection, or the picker — and a close of its
+ * own, kept in this browser.
+ */
 export function CurveBenderAlert({
-  visible,
+  variant,
   onTry,
+  onPickProvider,
 }: {
-  visible: boolean;
+  variant: "setup" | "offer" | null;
   onTry: () => Promise<boolean>;
+  onPickProvider: () => void;
 }) {
-  const [dismissed, setDismissed] = useState(
-    () => safeGetItem(browserStorage, DISMISSED_KEY) !== null,
-  );
-  const [thanks, setThanks] = useState(false);
+  const [closed, setClosed] = useState<"setup" | "offer" | null>(null);
   const [trying, setTrying] = useState(false);
-  if (!visible || dismissed) return null;
+  if (!variant) return null;
+  if (
+    closed === variant ||
+    safeGetItem(browserStorage, DISMISSED_KEYS[variant]) !== null
+  )
+    return null;
+  const copy = match(variant)
+    .with(
+      "setup",
+      () =>
+        "You're set up with CurveBender, IBM-hosted open-source models. Start chatting, or switch providers anytime.",
+    )
+    .with(
+      "offer",
+      () => "You can now use CurveBender, IBM-hosted open-source models.",
+    )
+    .exhaustive();
   return (
-    <>
-      <section
-        data-testid="curve-bender-alert"
-        aria-label="CurveBender"
-        className="px-4 md:px-8"
-      >
-        <ChatColumn>
-          <div className="mb-3 flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm text-card-foreground">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-black/10">
-              <img
-                src="/icons/curve-bender-color.svg"
-                alt=""
-                className="size-6"
-              />
-            </span>
-            <p className="min-w-0 flex-1">
-              <a
-                href={CURVE_BENDER_DOCS_URL}
-                {...externalLinkProps}
-                className="font-medium text-accent underline underline-offset-2"
-              >
-                CurveBender
-              </a>{" "}
-              now provides {getBrand().name} with open-source models on IBM
-              infra.
-            </p>
-            <Button
-              variant="link"
-              size="inline"
-              className="shrink-0"
-              disabled={trying}
-              onClick={async () => {
-                setTrying(true);
-                const applied = await onTry();
-                setTrying(false);
-                setThanks(applied);
-              }}
-            >
-              Try now
-            </Button>
+    <section
+      data-testid="curve-bender-alert"
+      data-variant={variant}
+      aria-label="CurveBender"
+      className="px-4 md:px-8"
+    >
+      <ChatColumn>
+        <div className="mb-2 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground shadow-md">
+          <div className="flex items-start gap-2">
+            <img
+              src="/icons/curve-bender-color.svg"
+              alt=""
+              className="mt-1 size-4 shrink-0"
+            />
+            <p className="min-w-0 flex-1 text-base font-medium">CurveBender</p>
             <Button
               variant="ghost"
-              size="icon"
-              className="-mr-1 shrink-0 text-muted-foreground"
+              size="icon-sm"
+              className="-mr-2 -mt-1 shrink-0 text-muted-foreground"
               tooltip="Dismiss"
               aria-label="Dismiss the CurveBender notice"
               onClick={() => {
-                safeSetItem(browserStorage, DISMISSED_KEY, "1");
-                setDismissed(true);
+                safeSetItem(browserStorage, DISMISSED_KEYS[variant], "1");
+                setClosed(variant);
               }}
             >
               <Close size={16} />
             </Button>
           </div>
-        </ChatColumn>
-      </section>
-      {thanks && <CurveBenderThanksDialog onClose={() => setThanks(false)} />}
-    </>
-  );
-}
-
-function CurveBenderThanksDialog({ onClose }: { onClose: () => void }) {
-  const communityUrl = useCurveBenderCommunityUrl();
-  return (
-    <Modal onClose={onClose} size="sm">
-      <DialogHeader title="CurveBender" onClose={onClose} />
-      <DialogBody>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Thank you for trying CurveBender!
-          {communityUrl && (
-            <>
-              {" "}
-              Join{" "}
-              <a
-                href={communityUrl}
-                {...externalLinkProps}
-                className="font-medium text-accent underline underline-offset-2 hover:text-primary"
-              >
-                #curvebender-community
-              </a>{" "}
-              to learn more and share feedback.
-            </>
-          )}
-        </p>
-        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Your agent is now set to use CurveBender. Change provider anytime
-          using the picker at the bottom of the page.
-        </p>
-      </DialogBody>
-      <DialogFooter>
-        <Button variant="secondary" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </DialogFooter>
-    </Modal>
+          <p className="mt-1 text-sm">{copy}</p>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            {match(variant)
+              .with("setup", () => (
+                <Button
+                  variant="link"
+                  size="inline"
+                  className="text-sm"
+                  onClick={onPickProvider}
+                >
+                  Use a different provider
+                </Button>
+              ))
+              .with("offer", () => (
+                <Button
+                  variant="link"
+                  size="inline"
+                  className="text-sm"
+                  disabled={trying}
+                  onClick={async () => {
+                    setTrying(true);
+                    await onTry();
+                    setTrying(false);
+                  }}
+                >
+                  Try now
+                </Button>
+              ))
+              .exhaustive()}
+            <a
+              href={CURVE_BENDER_DOCS_URL}
+              {...externalLinkProps}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Learn more
+            </a>
+          </div>
+        </div>
+      </ChatColumn>
+    </section>
   );
 }

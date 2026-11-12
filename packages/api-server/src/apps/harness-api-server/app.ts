@@ -1,3 +1,4 @@
+import { childEgressWaiting } from "../../modules/approvals/compose.js";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
@@ -18,7 +19,9 @@ import type { OnboardingChecklistOps } from "../../modules/starter-kits/services
 import {
   type AgentsRepository,
   type RuntimeProgressPort,
+  hasSlackChannelHistory,
   startWaitOf,
+  inheritanceOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -55,6 +58,10 @@ import type { EgressProposals } from "../../modules/approvals/services/egress-pr
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
+import {
+  runtimeDriverSessions,
+  scriptSpawningSession,
+} from "./spawning-session.js";
 import {
   createDriverOps,
   driverDefaultModel,
@@ -113,6 +120,7 @@ export interface HarnessApiServerAppDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputs: ScriptOutputs;
+  childEgressSeeder?: NonNullable<DriverOpsDeps["childEgress"]>;
   sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
@@ -197,8 +205,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       pinDriver: async (driverAgentId) => {
         await agentsRepo.setInvocationPin(driverAgentId);
       },
-      readStartWait: async (agentId) =>
-        startWaitOf(agentsRepo.peekCached(agentId)),
+      readStartWait: async (agentId) => {
+        const wait = startWaitOf(agentsRepo.peekCached(agentId));
+        if (wait) return wait;
+        const waiting = await childEgressWaiting(db)(agentId);
+        return waiting.length > 0
+          ? `It waits for your owner to answer the network rules you set for it: ${[...new Set(waiting.map((w) => w.host))].join(", ")}.`
+          : null;
+      },
       runtimeMutator,
       wakeAgent,
       frames: deps.delegationFrames,
@@ -206,6 +220,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
+      keepMaxMs: config.environmentExpiryMaxDays * 86_400_000,
+      idleTimeoutMaxMin: config.environmentIdleTimeoutMaxMinutes,
     });
 
   const mcpArtifactLibraryFor = (owner: string) =>
@@ -269,9 +285,17 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         isSlackUnlinked: async () => false,
       }).budgets,
     scriptOutputs: deps.scriptOutputs,
+    ...(deps.childEgressSeeder
+      ? {
+          childEgress: deps.childEgressSeeder,
+          childEgressWaiting: childEgressWaiting(db),
+          inheritanceOf: inheritanceOf(db),
+        }
+      : {}),
   };
 
   const readChatFormPreferences = createChatFormPreferencesReader(db);
+  const readsChannelHistory = hasSlackChannelHistory(db);
   const app = new Hono();
   app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
@@ -300,6 +324,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
+    readsChannelHistory,
     chatFormPreferences: (owner, agentId) =>
       readChatFormPreferences(
         agentId,
@@ -313,6 +338,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       if (!agent || agent.spec.environmentOf) return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId, { manage });
     },
+    keptSubAgents: async (owner) =>
+      Boolean((await featureFlagsFor(owner)).environments),
     agentTelemetry,
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
@@ -330,6 +357,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
   mountInvocationRoutes(app, {
     readAgent: (id) => deps.agentStateCache.get(id),
+    spawningSession: scriptSpawningSession(
+      runtimeDriverSessions(config.namespace),
+    ),
     ...driverOpsDeps,
   });
   mountRuntimeTrpc(app, {

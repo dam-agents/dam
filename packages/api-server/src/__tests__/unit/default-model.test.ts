@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with nothing saved runs on the automatic model of its providers and fails only when none lists a model, and an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
+// TEST_OVERVIEW: an Agent's saved default is never guessed. A fire on an Agent with nothing saved runs on the automatic model of its providers, and fails only when it holds no model provider at all; an Agent from before per-session defaults gets its default converted once, only from what is certain about it.
 import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type {
@@ -78,6 +78,7 @@ const listed = (
   connectionId: string,
   alias: string,
   upstreamIds: string[],
+  harnesses: string[] = ["claude-code"],
 ): ProviderCatalogView =>
   ({
     connectionId,
@@ -86,7 +87,7 @@ const listed = (
     models: upstreamIds.map((upstreamId) => ({
       name: `${alias}/${upstreamId}`,
       upstreamId,
-      harnesses: ["claude-code"],
+      harnesses,
     })),
   }) as unknown as ProviderCatalogView;
 
@@ -97,17 +98,27 @@ describe("a fire on an Agent with no default model", () => {
       listed("anth", "anthropic", ["claude-sonnet-5-5", "claude-opus-5-5"]),
     ],
     chatProfileId: string | null = null,
+    over: {
+      granted?: (typeof ANTHROPIC)[];
+      chatProfilePair?: SessionPair | null;
+      onNoProvider?: (agentId: string) => void;
+    } = {},
   ) => ({
     pairRepo: {
       read: async () => saved,
-      readSaved: async () => ({ ...nothingSaved, chatProfileId }),
+      readSaved: async () => ({
+        ...nothingSaved,
+        chatProfileId,
+        chatProfilePair: over.chatProfilePair ?? null,
+      }),
       write: async () => {},
-      grantedProviders: async () => [ANTHROPIC, IBM],
+      grantedProviders: async () => over.granted ?? [ANTHROPIC, IBM],
     },
     catalog: CATALOG,
     specHarness: async () => undefined,
     getCapabilities: async () => ROUTED,
     ownerCatalog: async () => ({ providers }),
+    ...(over.onNoProvider && { onNoProvider: over.onNoProvider }),
   });
 
   // TEST_SCENARIO: nothing is saved, yet the agent holds a provider that lists models; the fire runs on the platform's preferred model for the harness there instead of failing for lack of a saved default — Claude where a provider serves it, which is what a Claude Code agent gets even beside a provider that lists DeepSeek.
@@ -173,28 +184,152 @@ describe("a fire on an Agent with no default model", () => {
     ).toMatchObject({ provider: "anth", model: "anthropic/claude-opus-5-5" });
   });
 
-  // TEST_SCENARIO: the chat default names a profile that cannot run here, which reads as no default; it is the owner's choice, so the fire is refused rather than run on the automatic model, and the person's view shows no model.
-  it("refuses a chat profile that cannot run instead of replacing it", async () => {
+  // TEST_SCENARIO: a saved model its provider still serves is the person's own pick, so it runs on it even where another provider lists the platform's preferred model.
+  it("keeps a saved model its provider still serves", async () => {
+    expect(
+      await resolveFirePair(
+        deps(
+          {
+            harness: "claude-code",
+            provider: "anth",
+            model: "anthropic/claude-sonnet-5-5",
+          },
+          [
+            listed("anth", "anthropic", [
+              "claude-sonnet-5-5",
+              "claude-opus-5-5",
+            ]),
+            listed("lite", "ibm", ["aws/claude-opus-5-5"]),
+          ],
+        ),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toEqual({
+      harness: "claude-code",
+      provider: "anth",
+      model: "anthropic/claude-sonnet-5-5",
+    });
+  });
+
+  // TEST_SCENARIO: a saved model names no provider (a bare tier word), and its provider is still held: the run takes another model of that provider rather than fail, since a provider that serves the harness can serve the run.
+  it("takes another model of the provider a saved-but-unusable model names", async () => {
+    expect(
+      await resolveFirePair(
+        deps({ harness: "claude-code", provider: "lite", model: "opus" }, [
+          listed("anth", "anthropic", ["claude-opus-5-5"]),
+          listed("lite", "ibm", ["aws/claude-sonnet-5-5"]),
+        ]),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toEqual({
+      harness: "claude-code",
+      provider: "lite",
+      model: "ibm/aws/claude-sonnet-5-5",
+    });
+  });
+
+  // TEST_SCENARIO: the chat default names a profile that cannot run, and the profile's own harness is not the agent's default one; the fallback runs on the profile's harness and its provider, so the run never moves to another harness than the one the owner picked.
+  it("runs a chat profile that cannot run on the profile's own harness", async () => {
+    expect(
+      await resolveFirePair(
+        deps(
+          null,
+          [
+            listed(
+              "lite",
+              "ibm",
+              ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+              ["pi"],
+            ),
+          ],
+          "profile-1",
+          {
+            chatProfilePair: {
+              harness: "pi",
+              provider: "gone",
+              model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+            },
+          },
+        ),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toEqual({
+      harness: "pi",
+      provider: "lite",
+      model: "ibm/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    });
+  });
+
+  // TEST_SCENARIO: the chat default's profile cannot run only for the sub-agent it lends, so its primary model is one a provider the agent holds serves; the fallback keeps that model rather than moving the owner's pick to the automatic one.
+  it("keeps a chat profile's primary model when only its subagent cannot run", async () => {
+    const piModel = "ibm/aws/claude-haiku-4-5";
+    expect(
+      await resolveFirePair(
+        deps(
+          null,
+          [
+            listed(
+              "lite",
+              "ibm",
+              [
+                "aws/claude-haiku-4-5",
+                "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+              ],
+              ["pi"],
+            ),
+          ],
+          "profile-1",
+          {
+            chatProfilePair: {
+              harness: "pi",
+              provider: "lite",
+              model: piModel,
+            },
+          },
+        ),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).toEqual({ harness: "pi", provider: "lite", model: piModel });
+  });
+
+  // TEST_SCENARIO: the chat default names a profile that cannot run here, which reads as no default; the run goes on to the automatic model of the providers the agent holds rather than refuse, and the person's view shows the model it takes.
+  it("runs a chat profile that cannot run on the automatic model", async () => {
     const refused = deps(null, undefined, "profile-1");
-    await expect(
-      resolveFirePair(refused, "a", "scheduled", {}),
-    ).rejects.toThrow(/profile this agent's default names cannot run/);
+    expect(await resolveFirePair(refused, "a", "scheduled", {})).toEqual({
+      harness: "claude-code",
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
     expect(await resolveRememberedPair(refused, "a", "chat")).toMatchObject({
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
+  });
+
+  // TEST_SCENARIO: the providers the agent holds have listed nothing for the harness yet, as a fresh catalog does; the pair keeps its harness and goes to the runtime with no model, which resolves one once a listing lands, and the fire never refuses.
+  it("leaves the model to the runtime when no provider has listed yet", async () => {
+    expect(await resolveFirePair(deps(null, []), "a", "scheduled", {})).toEqual(
+      { harness: "claude-code", provider: null, model: null },
+    );
+    expect(await resolveRememberedPair(deps(null, []), "a", "chat")).toEqual({
+      harness: "claude-code",
+      provider: null,
       model: null,
     });
   });
 
-  // TEST_SCENARIO: the only failure left is an agent whose providers list nothing it can run; the reason says to connect a model provider, not to pick a model.
-  it("fails as having no model provider when none lists a model", async () => {
-    await expect(
-      resolveFirePair(deps(null, []), "a", "scheduled", {}),
-    ).rejects.toThrow(/connect a model provider/);
-  });
-
-  // TEST_SCENARIO: a saved model whose provider is gone is the person's choice, so it is never replaced; the reason names the model.
-  it("never replaces a saved model whose provider is gone", async () => {
-    await expect(
-      resolveFirePair(
+  // TEST_SCENARIO: a saved model whose provider is gone leaves the agent's own providers to serve the run, so it takes the preferred model of another provider it holds instead of refusing.
+  it("replaces a saved model whose provider is gone with another provider's model", async () => {
+    expect(
+      await resolveFirePair(
         deps({
           harness: "claude-code",
           provider: null,
@@ -204,9 +339,42 @@ describe("a fire on an Agent with no default model", () => {
         "scheduled",
         {},
       ),
+    ).toEqual({
+      harness: "claude-code",
+      provider: "anth",
+      model: "anthropic/claude-opus-5-5",
+    });
+  });
+
+  // TEST_SCENARIO: the only failure left is an agent holding no model provider at all, where the deployment offers no shared CurveBender; the reason says to connect a model provider, never to pick a model.
+  it("fails as having no model provider when the agent holds none", async () => {
+    await expect(
+      resolveFirePair(
+        deps(null, [], null, { granted: [] }),
+        "a",
+        "scheduled",
+        {},
+      ),
     ).rejects.toThrow(
-      /no provider this agent holds serves openai\/gpt-6-1-sol/,
+      /no model provider it can run on; connect a model provider/,
     );
+  });
+
+  // TEST_SCENARIO: an agent holding no provider on a deployment with a shared CurveBender is not short of one, it is waiting for the grant, which may have gone out before this api-server knew the key; the run asks for it again and reports itself as still setting up, so the next one finds it.
+  it("asks for the shared CurveBender and reports itself as still setting up", async () => {
+    const asked: string[] = [];
+    await expect(
+      resolveFirePair(
+        deps(null, [], null, {
+          granted: [],
+          onNoProvider: (agentId) => asked.push(agentId),
+        }),
+        "a",
+        "scheduled",
+        {},
+      ),
+    ).rejects.toMatchObject({ name: "NoDefaultModelError", pending: true });
+    expect(asked).toEqual(["a"]);
   });
 
   // TEST_SCENARIO: the person's view of the default shows the model a run takes, so "Default" names it.

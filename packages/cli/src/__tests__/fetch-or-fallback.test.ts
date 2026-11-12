@@ -33,6 +33,7 @@ function makeService(
     unlockedCharacters: vi.fn(),
     customAvatarsEnabled: vi.fn(),
     runtimeFleet: vi.fn(async () => ok({ onCurrent: 0, outdated: [] })),
+    kept: vi.fn(),
   };
 }
 

@@ -1,7 +1,7 @@
+import { Information } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
 import { parentNoun } from "../lib/connection-hierarchy.js";
@@ -44,7 +44,7 @@ export function ParentConnectionBlock({
       />
       {childConnections.length > 0 ? (
         <div
-          className="mb-3 ml-6 divide-y divide-border border-l-2 border-border"
+          className="mb-1 ml-6 border-t border-border/60"
           data-testid={`connection-children-${parent.id}`}
         >
           {childConnections.map((child) => (
@@ -71,27 +71,28 @@ function NoChildrenCallout({
   onNewChild?: () => void;
 }) {
   return (
-    <Callout
-      tone="warning"
-      size="sm"
-      className="mx-4 mb-3 flex flex-wrap items-center gap-3"
+    <div
+      className="mx-4 mb-2.5 ml-10 flex flex-wrap items-center gap-x-3 gap-y-1.5"
       data-testid={`connection-parent-empty-${parent.id}`}
     >
-      <p className="min-w-0 flex-1 text-sm">
-        No agent can use this {parentNoun(parent)} yet. Make a connection from
-        it and choose what that connection reaches.
+      <p className="flex min-w-0 flex-[1_1_240px] items-start gap-1.5 text-xs text-muted-foreground">
+        <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
+        <span>
+          No agent can use this {parentNoun(parent)} yet. Make a connection from
+          it and choose what that connection reaches.
+        </span>
       </p>
       {onNewChild && (
         <Button
           variant="outline"
-          size="sm"
-          className="shrink-0"
+          size="xs"
+          className="ml-auto shrink-0"
           onClick={onNewChild}
           data-testid={`connection-choose-reach-${parent.id}`}
         >
           Choose what it reaches
         </Button>
       )}
-    </Callout>
+    </div>
   );
 }

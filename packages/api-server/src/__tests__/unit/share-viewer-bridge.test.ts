@@ -4,18 +4,21 @@
  * prompts to the share host, which checks on every call that the visitor is
  * signed in and on the viewer list, that the call comes from the share page
  * itself, by the relay token only that page holds and by its origin, and
- * that the artifact is still interactive, restricted,
- * agent-published and has its feature on. A request reaches the publishing
+ * that the artifact is still interactive, restricted and
+ * agent-published. A request reaches the publishing
  * Agent's Artifact API server; a prompt starts or continues the viewer's own
  * Session on that Agent. Every call is in the security log under the viewer.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ARTIFACT_TITLE_MAX_LENGTH } from "api-server-api";
 
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { AcpSessionLoadError } from "../../core/acp-client.js";
 import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
 import { shareSessionCookie } from "../../modules/artifact-library/domain/share-session.js";
 import {
+  ownerSessionTitle,
   viewerSessionKey,
   viewerSessionTitle,
 } from "../../modules/artifact-library/domain/viewer-bridge.js";
@@ -94,7 +97,6 @@ const relayTokens = createRelayTokenService({
 interface World {
   artifact: ArtifactRow;
   viewers: string[];
-  featureOn: boolean;
   agentAwake: boolean;
   wakeFails: boolean;
   appRequests: { agentId: string; method: string; path: string }[];
@@ -107,7 +109,6 @@ function world(overrides: Partial<World> = {}) {
   const w: World = {
     artifact: artifactRow(),
     viewers: ["alice@example.com"],
-    featureOn: true,
     agentAwake: false,
     wakeFails: false,
     appRequests: [],
@@ -141,7 +142,6 @@ function world(overrides: Partial<World> = {}) {
     recordView: () => {},
   };
   const bridge = createShareBridgeService({
-    featureOn: () => Promise.resolve(w.featureOn),
     ensureReady: () => {
       if (w.wakeFails) return Promise.reject(new Error("did not wake"));
       w.agentAwake = true;
@@ -343,26 +343,21 @@ describe("a viewer's request on a shared interactive page", () => {
 
   /**
    * TEST_SCENARIO: The owner can take the page's reach away at any time: by
-   * making it private, by publishing it as a plain page, or by turning
-   * Interactive artifacts off. Each one stops the next call, and a page with
-   * no publishing Agent never had one to reach.
+   * making it private, or by publishing it as a plain page. Each one stops
+   * the next call, and a page with no publishing Agent never had one to reach.
    */
   it.each([
-    ["private", { visibility: "private" as const }, {}, 404],
-    ["not interactive", { interactive: false }, {}, 200],
-    ["uploaded by a person", { agentId: null }, {}, 200],
-    ["feature off", {}, { featureOn: false }, 200],
-  ])(
-    "refuses when the artifact is %s",
-    async (_name, row, settings, status) => {
-      const { w, app } = world({ artifact: artifactRow(row), ...settings });
-      const res = await call(app, "/a/slug-a/request", getState);
-      expect(res.status).toBe(status);
-      expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
-      expect(w.agentAwake).toBe(false);
-      expect(w.appRequests).toEqual([]);
-    },
-  );
+    ["private", { visibility: "private" as const }, 404],
+    ["not interactive", { interactive: false }, 200],
+    ["uploaded by a person", { agentId: null }, 200],
+  ])("refuses when the artifact is %s", async (_name, row, status) => {
+    const { w, app } = world({ artifact: artifactRow(row) });
+    const res = await call(app, "/a/slug-a/request", getState);
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
+    expect(w.agentAwake).toBe(false);
+    expect(w.appRequests).toEqual([]);
+  });
 
   it("never relays for a public page", async () => {
     const { w, app } = world({
@@ -412,7 +407,7 @@ describe("a viewer's request on a shared interactive page", () => {
       path: "/secret-path",
     });
     await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" });
-    w.featureOn = false;
+    w.artifact = artifactRow({ interactive: false });
     await call(app, "/a/slug-a/request", getState);
     expect(loggedEvents()).toEqual([
       expect.objectContaining({
@@ -435,7 +430,7 @@ describe("a viewer's request on a shared interactive page", () => {
       expect.objectContaining({
         actor: "alice-sub",
         decision: "deny",
-        reason: "feature-off",
+        reason: "not-interactive",
       }),
     ]);
     expect(JSON.stringify(securityLog.mock.calls)).not.toContain("secret-path");
@@ -594,6 +589,51 @@ describe("a viewer's prompt on a shared interactive page", () => {
     expect(JSON.stringify(securityLog.mock.calls)).not.toContain("Refresh");
   });
 
+  /**
+   * TEST_SCENARIO: A team page keeps each of a viewer's conversations apart.
+   * A prompt that names its conversation goes to that viewer's own Session
+   * for it, titled with it; the security log records the name and never the
+   * prompt text.
+   */
+  it("keeps a named conversation in the viewer's own session for it", async () => {
+    const { w, app } = world();
+    const res = await call(app, "/a/slug-a/prompt", {
+      prompt: "Refresh the numbers.",
+      conversation: "thread-7",
+    });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(w.delivered).toEqual([
+      expect.objectContaining({
+        sessionKey: "artifact-conversation:a1:thread-7:alice-sub",
+        sessionTitle: "alice@example.com · Team dashboard · thread-7",
+      }),
+    ]);
+    expect(loggedEvents()).toEqual([
+      expect.objectContaining({
+        event: "artifact.viewer_prompt",
+        decision: "allow",
+        detail: expect.objectContaining({ conversation: "thread-7" }),
+      }),
+    ]);
+    expect(JSON.stringify(securityLog.mock.calls)).not.toContain("Refresh");
+  });
+
+  it.each(["", "a b", "x".repeat(65), "../other", 7])(
+    "refuses a conversation that is not a short plain key %#",
+    async (conversation) => {
+      const { w, app } = world();
+      const res = await call(app, "/a/slug-a/prompt", {
+        prompt: "Go",
+        conversation,
+      });
+      expect(await res.json()).toEqual({
+        ok: false,
+        reason: "invalid-request",
+      });
+      expect(w.delivered).toEqual([]);
+    },
+  );
+
   it("refuses a prompt from someone not on the viewer list", async () => {
     const { w, app } = world();
     const res = await call(
@@ -683,13 +723,51 @@ describe("the share page relay", () => {
   });
 });
 
+describe("viewer session keys", () => {
+  it("adds a page's conversation only to the caller's own key", () => {
+    expect(viewerSessionKey("a1", "alice-sub")).toBe("artifact:a1:alice-sub");
+    expect(viewerSessionKey("a1", "alice-sub", "t1")).toBe(
+      "artifact-conversation:a1:t1:alice-sub",
+    );
+  });
+
+  it("never lets a page's key spell another caller's Session", () => {
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f:a:b"),
+    );
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f", "a:b"),
+    );
+  });
+});
+
 describe("viewer session titles", () => {
+  it("ends with the page's conversation when it has one", () => {
+    expect(viewerSessionTitle("a@b.c", "Dash", "t-1")).toBe(
+      "a@b.c · Dash · t-1",
+    );
+    expect(ownerSessionTitle("Dash", "t-1")).toBe("Dash · t-1");
+    expect(ownerSessionTitle("Dash")).toBe("Dash");
+  });
+
   it("names the viewer first and stays within the title limit", () => {
     expect(viewerSessionTitle("a@b.c", "Dash")).toBe("a@b.c · Dash");
     const long = viewerSessionTitle("a@b.c", "x".repeat(400));
     expect(long).toHaveLength(200);
     expect(long.startsWith("a@b.c · ")).toBe(true);
     expect(long.endsWith("…")).toBe(true);
+  });
+
+  it("keeps the conversation whole when the longest title is shortened", () => {
+    const title = "x".repeat(ARTIFACT_TITLE_MAX_LENGTH);
+    const key = "k".repeat(64);
+    for (const shortened of [
+      viewerSessionTitle("a@b.c", title, key),
+      ownerSessionTitle(title, key),
+    ]) {
+      expect(shortened).toHaveLength(200);
+      expect(shortened.endsWith(`… · ${key}`)).toBe(true);
+    }
   });
 });
 
@@ -809,6 +887,39 @@ describe("delivering a viewer's prompt", () => {
     await expect(second).resolves.toEqual({ ok: true, sessionId: "s-1" });
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]!.opts).toMatchObject({ resumeSessionId: "s-1" });
+    finishTurns();
+  });
+
+  /**
+   * TEST_SCENARIO: A viewer works two conversations of one page at once. Each
+   * key opens its own Session, and a later prompt for the first continues
+   * that Session, not the second.
+   */
+  it("keeps each conversation of a viewer in its own session", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d } = delivery(acp);
+    const one = {
+      ...turn,
+      sessionKey: viewerSessionKey("a1", "alice-sub", "t1"),
+    };
+    const two = {
+      ...turn,
+      sessionKey: viewerSessionKey("a1", "alice-sub", "t2"),
+    };
+    await expect(d.deliver(one)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
+    await expect(d.deliver(two)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-2",
+    });
+    await expect(d.deliver({ ...one, prompt: "again" })).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent[2]!.opts).toMatchObject({ resumeSessionId: "s-1" });
     finishTurns();
   });
 

@@ -44,6 +44,7 @@ export interface ShareBridgeService {
     artifact: ArtifactRow,
     viewer: ShareSession,
     prompt: string,
+    conversation?: string,
   ): Promise<ViewerPromptResult>;
   refuse(
     artifact: ArtifactRow,
@@ -68,7 +69,6 @@ function viewerName(viewer: ShareSession): string {
  * with the prompt text or the request path.
  */
 export function createShareBridgeService(deps: {
-  featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
   prompts: ViewerPromptDelivery;
@@ -78,6 +78,7 @@ export function createShareBridgeService(deps: {
     viewer: ShareSession,
     kind: ViewerCallKind,
     denial: ViewerBridgeDenial | null,
+    conversation?: string,
   ): void {
     securityLog(denial === null ? "info" : "warn", `artifact.viewer_${kind}`, {
       category: "authz",
@@ -88,26 +89,34 @@ export function createShareBridgeService(deps: {
       target: artifact.id,
       ...(artifact.agentId ? { agentId: artifact.agentId } : {}),
       ...(denial === null ? {} : { reason: denial }),
-      detail: { viewerEmail: viewer.email, owner: artifact.owner },
+      detail: {
+        viewerEmail: viewer.email,
+        owner: artifact.owner,
+        ...(conversation === undefined ? {} : { conversation }),
+      },
     });
   }
 
-  async function agentFor(
+  function agentFor(
     artifact: ArtifactRow,
     viewer: ShareSession,
     kind: ViewerCallKind,
-  ): Promise<string | null> {
-    const decided = viewerBridgeAccess(
+    conversation?: string,
+  ): string | null {
+    const decided = viewerBridgeAccess(artifact);
+    log(
       artifact,
-      await deps.featureOn(artifact.owner),
+      viewer,
+      kind,
+      decided.allowed ? null : decided.denial,
+      conversation,
     );
-    log(artifact, viewer, kind, decided.allowed ? null : decided.denial);
     return decided.allowed ? decided.agentId : null;
   }
 
   return {
     async request(artifact, viewer, input) {
-      const agentId = await agentFor(artifact, viewer, "request");
+      const agentId = agentFor(artifact, viewer, "request");
       if (agentId === null) return { ok: false, reason: "not-allowed" };
       try {
         await deps.ensureReady(agentId);
@@ -120,15 +129,15 @@ export function createShareBridgeService(deps: {
       });
     },
 
-    async prompt(artifact, viewer, prompt) {
-      const agentId = await agentFor(artifact, viewer, "prompt");
+    async prompt(artifact, viewer, prompt, conversation) {
+      const agentId = agentFor(artifact, viewer, "prompt", conversation);
       if (agentId === null) return { ok: false, reason: "not-allowed" };
       const name = viewerName(viewer);
       const outcome = await deps.prompts.deliver({
         agentId,
         artifactId: artifact.id,
-        sessionKey: viewerSessionKey(artifact.id, viewer.sub),
-        sessionTitle: viewerSessionTitle(name, artifact.title),
+        sessionKey: viewerSessionKey(artifact.id, viewer.sub, conversation),
+        sessionTitle: viewerSessionTitle(name, artifact.title, conversation),
         prompt: viewerPromptText({
           viewer: name,
           artifactId: artifact.id,

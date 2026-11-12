@@ -11,6 +11,7 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: several agents connected to one Slack conversation — which one
@@ -107,6 +108,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -120,6 +122,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub: string) => hooks.termsAccepted?.(sub) ?? true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],
@@ -625,7 +628,7 @@ describe("choosing the default agent in-chat", () => {
     const h = harness(both());
     const ack = await h.command("default");
     expect(ack).toContain("`Scribe` is this channel's default agent");
-    expect(ack).toContain("• `Scribe` — default");
+    expect(ack).toContain("• `Scribe`, the default.");
     expect(ack).toContain("• `Reviewer`");
     expect(h.defaultCalls).toEqual([]);
   });
@@ -635,7 +638,9 @@ describe("choosing the default agent in-chat", () => {
       { instanceName: SCRIBE, name: "Scribe", isDefault: true },
       { instanceName: REVIEWER, name: "Reviewer", ambient: true },
     ]);
-    expect(await h.command("default")).toContain("`Reviewer` (reads along)");
+    expect(await h.command("default")).toMatch(
+      /`Reviewer`[^\n]*Reads every message here/,
+    );
   });
 
   it("changes the default when the agent's owner asks", async () => {
@@ -954,5 +959,83 @@ describe("hand-off refusals and signals the review named", () => {
     await h.channelMessage("idle chatter");
     const prompt = h.promptsFor(SCRIBE)[0]!;
     expect(prompt).not.toContain("read along here too");
+  });
+});
+
+describe("mentions that read as commands", () => {
+  /**
+   * TEST_SCENARIO: a person who types "@bot whisper ..." expects privacy, but
+   * the channel already sees the text. The Agent still gets it as a normal
+   * message, and only the person is told to use the slash form, once even
+   * when Slack reports the same message twice (an edit that adds the mention).
+   */
+  it("passes a whisper mention to the agent and tips the person privately once", async () => {
+    const h = harness(both());
+    await h.mention("<@U-BOT> whisper the build key is rotated");
+    await h.mention("<@U-BOT> whisper the build key is rotated");
+    expect(h.promptsFor(SCRIBE)[0]).toContain("the build key is rotated");
+    const ephemerals = h.gw
+      .readOutbound()
+      .filter((r) => r.kind === "ephemeral") as { text: string }[];
+    expect(ephemerals).toHaveLength(1);
+    expect(ephemerals[0]!.text).toContain(
+      "Everyone in this channel can see this message.",
+    );
+    expect(ephemerals[0]!.text).toContain("`/dam whisper`");
+  });
+
+  it("runs no command from a mention, so the agent gets it", async () => {
+    const h = harness(both());
+    await h.mention("<@U-BOT> default Reviewer");
+    expect(h.defaultCalls).toEqual([]);
+    expect(h.promptsFor(SCRIBE)).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: a sentence that only starts with a command word, a bare
+   * mention, and a mention that names an Agent (even a name two Agents share)
+   * are ordinary messages, so no tip interrupts them.
+   */
+  it("gives no tip to a mention that is not a valid command", async () => {
+    const h = harness([
+      ...both(),
+      { instanceName: "agent-whisper", name: "Whisper" },
+    ]);
+    const twins = harness([
+      ...both(),
+      { instanceName: "agent-whisper", name: "Whisper" },
+      { instanceName: "agent-whisper-2", name: "Whisper" },
+    ]);
+    await twins.mention("<@U-BOT> Whisper what do you think?");
+    expect(
+      twins.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).not.toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining("tried the `whisper` command"),
+      }),
+    );
+    await h.mention("<@U-BOT> default to the safer option", undefined, "1.1");
+    await h.mention("<@U-BOT>", undefined, "2.2");
+    await h.mention("<@U-BOT> Whisper what do you think?", undefined, "3.3");
+    expect(
+      h.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).toHaveLength(0);
+    expect(h.promptsFor("agent-whisper")).toHaveLength(1);
+  });
+
+  it("never tips an app's post", async () => {
+    const h = harness(both());
+    await h.start();
+    await h.gw.fireMention({
+      sender: { kind: "app", botId: "B-CI", name: "CI" },
+      channel: CHANNEL,
+      ts: "333.3",
+      text: "<@U-BOT> whisper the build key is rotated",
+    });
+    for (let i = 0; i < 8; i++) await tick();
+    expect(
+      h.gw.readOutbound().filter((r) => r.kind === "ephemeral"),
+    ).toHaveLength(0);
+    expect(h.promptsFor(SCRIBE)).toHaveLength(1);
   });
 });

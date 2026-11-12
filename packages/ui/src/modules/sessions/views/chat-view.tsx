@@ -79,6 +79,16 @@ import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import {
+  assistantAudienceKnown,
+  useAssistantState,
+} from "../../assistants/api/assistant-state.js";
+import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
+import {
+  useAssistantChat,
+  useAssistantGreeting,
+} from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
@@ -176,7 +186,7 @@ import {
   classicPanel,
 } from "../lib/classic-chat-layout.js";
 import { composerBlock } from "../lib/composer-block.js";
-import { sharedCurveBender } from "../lib/curve-bender.js";
+import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -346,6 +356,7 @@ export function ChatView() {
     choice,
     newSessionAgent,
     pair,
+    pairSettled,
     pairHarness,
     noProviders,
     noGrantedProvider,
@@ -361,6 +372,17 @@ export function ChatView() {
   const shared = sharedCurveBender(providers.owned);
   const routed =
     choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant record says which Agent is the assistant, and whether the account had an Agent of its own before the platform gave it one — so the notice keeps out of its chat and off an account onboarded with it, and waits for that record rather than guessing. */
+  const assistantRecord = useAssistantState();
+  const notice = curveBenderNotice({
+    sessionId,
+    shared,
+    pair,
+    pairSettled,
+    agentId: selectedAgent,
+    assistant: assistantRecord.data ?? null,
+    assistantKnown: assistantAudienceKnown(assistantRecord),
+  });
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(
@@ -399,6 +421,9 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const dialog = useStore((s) => s.dialog);
+  /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
+  const providerPromptOpen = providersModal ?? noProviders;
 
   const view = useStore((s) => s.view);
   const continuesInvocation = useStore((s) =>
@@ -419,6 +444,9 @@ export function ChatView() {
   const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
+  const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
+  const assistantChat = useAssistantChat(selectedAgent);
 
   const {
     messagesRef,
@@ -841,6 +869,13 @@ export function ChatView() {
     </>
   );
 
+  const emptyChat =
+    !loadingSession &&
+    !sessionError &&
+    conversationEmpty(messages, queuedPrompts) &&
+    continuesInvocation === undefined &&
+    copy === null;
+
   const conversation =
     sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -893,49 +928,58 @@ export function ChatView() {
                   }}
                 />
               )}
-              {!loadingSession &&
-                !sessionError &&
-                conversationEmpty(messages, queuedPrompts) &&
-                continuesInvocation === undefined &&
-                copy === null && (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center">
-                    <h2 aria-label={selectedAgentName ?? undefined}>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                        className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {agentView && (
-                          <AgentAvatar
-                            name={agentView.name}
-                            avatar={agentView.avatar}
-                            size={96}
-                            mood={avatarMood(agentDisplay?.state, agentView)}
-                            className="transition-opacity group-hover:opacity-80"
-                          />
-                        )}
-                        <span className="mt-3 flex items-center gap-2">
-                          <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
-                            {selectedAgentName}
-                          </span>
+              {emptyChat && greeting.kind === "greeting" && selectedAgent && (
+                <AssistantGreeting
+                  greeting={greeting.copy}
+                  avatar={agentView?.avatar ?? null}
+                  agentId={selectedAgent}
+                  sessionId={sessionId}
+                  onConfigure={handleConfigureSandbox}
+                  onPicked={() => textareaRef.current?.focus()}
+                />
+              )}
+              {emptyChat && greeting.kind === "loading" && (
+                <div className="flex-1" />
+              )}
+              {emptyChat && greeting.kind === "none" && (
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <h2 aria-label={selectedAgentName ?? undefined}>
+                    <button
+                      type="button"
+                      onClick={handleConfigureSandbox}
+                      aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                      className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {agentView && (
+                        <AgentAvatar
+                          name={agentView.name}
+                          avatar={agentView.avatar}
+                          size={96}
+                          mood={avatarMood(agentDisplay?.state, agentView)}
+                          className="transition-opacity group-hover:opacity-80"
+                        />
+                      )}
+                      <span className="mt-3 flex items-center gap-2">
+                        <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                          {selectedAgentName}
                         </span>
-                      </button>
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {sessionsElsewhere
-                        ? "Send a message to begin or open a new session in:"
-                        : "Send a message to begin."}
-                    </p>
-                    {agentView && (
-                      <NewSessionOptions
-                        agent={agentView}
-                        onNewTerminal={handleNewTerminal}
-                      />
-                    )}
-                    {startNotice && <div className="mt-6">{startNotice}</div>}
-                  </div>
-                )}
+                      </span>
+                    </button>
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {sessionsElsewhere
+                      ? "Send a message to begin or open a new session in:"
+                      : "Send a message to begin."}
+                  </p>
+                  {agentView && (
+                    <NewSessionOptions
+                      agent={agentView}
+                      onNewTerminal={handleNewTerminal}
+                    />
+                  )}
+                  {startNotice && <div className="mt-6">{startNotice}</div>}
+                </div>
+              )}
               {copyInView && (
                 <ContinuedFromPrelude
                   copy={copy}
@@ -1116,13 +1160,22 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
+          {assistantChat && (
+            <AssistantUnlockCelebration
+              covered={providerPromptOpen || dialog !== null}
+            />
+          )}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}
           />
           <KitUpdateBar agentId={selectedAgent} />
           <HomeVolumeBar agentId={selectedAgent} />
-          <CurveBenderAlert visible={!!shared} onTry={curveBender.tryIt} />
+          <CurveBenderAlert
+            variant={notice}
+            onTry={curveBender.tryIt}
+            onPickProvider={() => setPairPickerOpen(true)}
+          />
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
@@ -1138,6 +1191,9 @@ export function ChatView() {
             }
             channelLive={channelLive}
             harness={sendHarness ?? null}
+            emptyPlaceholder={
+              greeting.kind === "greeting" ? greeting.copy.placeholder : null
+            }
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)
@@ -1276,7 +1332,7 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
-      {(providersModal ?? noProviders) && (
+      {providerPromptOpen && (
         <ProviderSettingsModal
           agentId={newSessionAgent}
           onClose={() => setProvidersModal(false)}

@@ -50,6 +50,7 @@ type Config struct {
 	ExtAuthzHoldSeconds    int
 	IstioTrustDomain       string
 	IstioWaypointName      string
+	IstioHostProbeSNAT     []string
 	TelemetryCollectorHost string
 	TelemetryCollectorPort int
 	ObjectStoreHost        string
@@ -274,6 +275,11 @@ func LoadFromEnv() (*Config, error) {
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
+	probeSNAT, err := hostProbeSNAT(os.Getenv("PLATFORM_ISTIO_HOST_PROBE_SNAT"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.IstioHostProbeSNAT = probeSNAT
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
 	cfg.EnvironmentsDomain = strings.ToLower(strings.TrimSpace(os.Getenv("PLATFORM_ENVIRONMENTS_DOMAIN")))
 	cfg.APIServerPort = envOrDefaultInt("PLATFORM_APISERVER_PORT", 4000)
@@ -355,6 +361,28 @@ func (c *Config) TelemetryEnabled() bool { return c.TelemetryCollectorHost != ""
 
 func (c *Config) PrincipalFor(instanceID string) string {
 	return fmt.Sprintf("%s/ns/%s/sa/%s", c.IstioTrustDomain, c.Namespace, instanceID)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the sources a kubelet probe of a meshed pod arrives from. istio-cni rewrites a host probe's source to one fixed link-local address so ztunnel can tell a probe from a workload's traffic, and an owner gateway's ingress policy admits these on its health port alone — so a value that is not a range would leave that policy ungated or turn the pod never-ready. The defaults are the mesh's own, which the install must match.
+var defaultHostProbeSNAT = []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}
+
+func hostProbeSNAT(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return defaultHostProbeSNAT, nil
+	}
+	var cidrs []string
+	if err := json.Unmarshal([]byte(raw), &cidrs); err != nil {
+		return nil, fmt.Errorf("PLATFORM_ISTIO_HOST_PROBE_SNAT: invalid JSON: %w", err)
+	}
+	if len(cidrs) == 0 {
+		return nil, fmt.Errorf("PLATFORM_ISTIO_HOST_PROBE_SNAT: names no source, so the owner gateway would never turn ready")
+	}
+	for _, cidr := range cidrs {
+		if _, err := netip.ParsePrefix(cidr); err != nil {
+			return nil, fmt.Errorf("PLATFORM_ISTIO_HOST_PROBE_SNAT: entry %q is not a CIDR: %w", cidr, err)
+		}
+	}
+	return cidrs, nil
 }
 
 func decodeJSONEnv(key string, dst any) error {

@@ -11,16 +11,22 @@
   mesh control plane fails and keeps non-mesh traffic out.
 
   Shape:
-    - http (4000) from anywhere — UI, ingress controller, in-cluster.
-      Application-layer auth (Keycloak JWT) is the gate.
+    - http (4000) from anywhere — UI, ingress controller, in-cluster — and,
+      on the same port, from the agent namespace over HBONE, which the
+      ext-authz rule below already admits. An Agent's gateway ends the chain
+      of the Connection that drives this install here, and the API key that
+      chain injects is what authenticates it: a gateway whose Agents hold no
+      such Connection has no key to send. The bearer is the gate, and a few
+      routes carry none (see app.ts) — they serve no owner's data.
     - harness (4001) from the release namespace only — the waypoint Pod
       synthesised by Istio lives here. The cryptographic per-agent
       check is the per-agent AuthorizationPolicy on the harness path,
       not netpol.
-    - ext-authz (4002) from the agent namespace only — per-agent
-      Services route from gateway pods here. The cryptographic per-
-      agent check is the per-agent AuthorizationPolicy on each
-      per-agent Service.
+    - ext-authz (4002) from the release namespace, where the waypoint
+      the per-agent ext-authz Services are bound to runs, and from the
+      agent namespace, whose gateways still call a Service that is not
+      relabelled yet. The per-agent check is the AuthorizationPolicy at
+      the waypoint; auth-policy-pod-deny.yaml gates the direct path.
     - HBONE (15008) listed alongside each app port so the kernel-level
       netpol sees the right thing for ambient-routed traffic (Istio
       iptables redirect happens in NAT/MANGLE before FILTER).
@@ -60,10 +66,15 @@ spec:
         - protocol: TCP
           port: 15008  # HBONE — required for any mesh-to-mesh hop
 
-    # ext-authz — only from the agent namespace (where gateway pods dial
-    # per-agent ext-authz Services). The per-agent AuthorizationPolicy
-    # ensures only the matching agent's SA can reach its own Service.
+    # ext-authz — from the release namespace, where the waypoint the
+    # per-agent ext-authz Services are bound to runs, and from the agent
+    # namespace, whose gateways reach a Service not yet relabelled
+    # directly. The release namespace's HBONE is admitted by the harness
+    # rule too; naming it here keeps the ext-authz hop independent of it.
     - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.agentNamespace | quote }}

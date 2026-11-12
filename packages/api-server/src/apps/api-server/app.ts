@@ -89,7 +89,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
     });
     return standing && { role: "editor" as const, email, ...standing };
   };
-  const composeApiContext = createApiContextFactory(deps);
+  const contextFor = createApiContextFactory(deps);
+  /* UNIT_BOUNDARY_DESCRIPTION: every request that composes a context starts giving a person their assistant, when the install offers them one and they have accepted the Terms of Use; nothing waits for the create, so a slow store delays no page, and a person who already has it pays one read. */
+  const composeApiContext = async (user: UserIdentity, surface: string) => {
+    const ctx = contextFor(user, surface);
+    ctx.provisionAssistant();
+    return ctx;
+  };
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
     authenticatePrincipal(deps.auth.verify, token, site);

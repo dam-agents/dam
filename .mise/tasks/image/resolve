@@ -35,8 +35,9 @@
 # builds both archs like main, without workloads or the mock), GITHUB_REF
 # (gha-outputs image_archs: only a v* tag builds the IMAGES for arm64),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
-# all, which also picks up newer Debian packages and uncached tool trees). A
-# main push reuses every image whose effective source did not move.
+# all, which also picks up uncached tool trees; a newer Debian package only
+# once the week the apt base is keyed by rolls). A main push reuses every image
+# whose effective source did not move.
 # Written for bash 3.2 (macOS) — no associative arrays.
 set -euo pipefail
 
@@ -55,7 +56,7 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 # directory: the task, image:pack and image:name-layout that put them
 # together, and the base. The root config names their Debian base; a bump of
 # another tool there re-tags them too, which errs toward rebuilds.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/.mise/lib/agents-md.sh .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/cli packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # agent images; CI's `agents` build/merge matrix. The default image carries
 # every harness, whose directories are its sources and no image of their own.
@@ -133,12 +134,12 @@ own_paths() {
     ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
     api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
     # keycloak = upstream Keycloak, pinned in the root config, + the
-    # Keycloakify theme, packed onto it by image:pack. The theme build also
+    # Keycloakify theme and the Environments extension, packed onto it by image:pack. The theme build also
     # depends on dev-config and (any) lockfile change — lockfile and root
     # config bumps re-tag it even when unrelated, which errs toward rebuilds. Its source-sha tag is what the published chart
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    keycloak) echo "packages/keycloak-theme packages/keycloak-environments packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
     default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac

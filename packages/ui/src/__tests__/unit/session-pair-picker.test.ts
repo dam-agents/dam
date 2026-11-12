@@ -6,9 +6,13 @@ import { lentSubagentOfProfile, modelConstraintsFor } from "agent-runtime-api";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 import {
   act,
+  cloneElement,
   createElement,
   Fragment,
+  isValidElement,
   type PropsWithChildren,
+  type ReactElement,
+  type ReactNode,
   useState,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -253,8 +257,16 @@ vi.mock("@/components/ui/popover", () => {
 });
 
 vi.mock("@/components/ui/tooltip", () => ({
-  Tooltip: ({ children }: PropsWithChildren) =>
-    createElement(Fragment, null, children),
+  Tooltip: ({
+    children,
+    content,
+  }: PropsWithChildren<{ content: ReactNode }>) =>
+    isValidElement(children)
+      ? cloneElement(
+          children as ReactElement<{ "data-tooltip"?: string }>,
+          typeof content === "string" ? { "data-tooltip": content } : {},
+        )
+      : createElement(Fragment, null, children),
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
@@ -592,15 +604,36 @@ describe("the new session panel", () => {
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(curve.getAttribute("data-tooltip")).toContain(
+      "Doesn't offer Claude Opus 5.5 for Pi",
+    );
     expect(curve.textContent).not.toMatch(/\d+ models?/);
     expect(menuItem(node, "Manage providers")).toBeDefined();
   });
 
-  /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
+  /** TEST_SCENARIO: a provider row keeps its element and the keyboard focus when a new pick gives it a reason, so the open menu does not lose its place. */
+  it("keeps a focused provider row when its reason appears", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    const curve = menuItem(node, "Curve");
+    expect(curve.getAttribute("data-tooltip")).toBeNull();
+    act(() => curve.focus());
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    act(() => root!.render(picker()));
+    expect(menuItem(node, "Curve")).toBe(curve);
+    expect(curve.getAttribute("data-tooltip")).toContain("Doesn't offer");
+    expect(document.activeElement).toBe(curve);
+  });
+
+  /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
   it("picks a provider once, and never a greyed one", () => {
     state.chosen = {
       harness: "pi",
@@ -611,6 +644,12 @@ describe("the new session panel", () => {
     state.remember.mockReset();
     const node = mount(picker());
     act(() => menuItem(node, "Curve").click());
+    for (const key of ["Enter", " "])
+      act(() => {
+        menuItem(node, "Curve").dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
     expect(state.chosenModel).not.toHaveBeenCalled();
     expect(state.remember).not.toHaveBeenCalled();
 
@@ -619,7 +658,7 @@ describe("the new session panel", () => {
     expect(state.remember).toHaveBeenCalledTimes(1);
   });
 
-  /** TEST_SCENARIO: each field's trigger announces its label and its value; a disabled provider announces the reason when focused, and no enabled provider carries an empty tooltip or reason. */
+  /** TEST_SCENARIO: each field's trigger announces its label and its value; a disabled provider is greyed and carries its reason only as the row's tooltip, never as text in the row, and no enabled provider carries an empty tooltip or reason. */
   it("announces the value and the disabled reason", () => {
     state.chosen = {
       harness: "pi",
@@ -643,19 +682,16 @@ describe("the new session panel", () => {
 
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    const described = node.querySelector(
-      `#${curve.getAttribute("aria-describedby")}`,
-    );
-    expect(described?.textContent).toContain("Doesn't offer");
-    expect(
-      curve.querySelector(".group-focus\\:block")?.textContent ??
-        curve.textContent,
-    ).toContain("Doesn't offer");
-    expect(
-      menuItem(node, "IBM").querySelector(
-        ":scope > span [aria-describedby], .group-focus\\:block",
-      ),
-    ).toBeNull();
+    expect(curve.getAttribute("data-tooltip")).toContain("Doesn't offer");
+    expect(curve.classList).toContain("opacity-50");
+    expect(curve.classList).toContain("cursor-default");
+    expect(curve.classList).toContain("data-[highlighted]:bg-transparent");
+    expect(curve.classList).not.toContain("data-[highlighted]:bg-muted");
+    expect(curve.textContent).not.toContain("Doesn't offer");
+    const ibm = menuItem(node, "IBM");
+    expect(ibm.getAttribute("data-tooltip")).toBeNull();
+    expect(ibm.classList).not.toContain("opacity-50");
+    expect(ibm.classList).toContain("data-[highlighted]:bg-muted");
   });
 
   /** TEST_SCENARIO: picking a model from another provider takes that provider too, and a model every provider offers stays on the one already picked. */
@@ -1194,7 +1230,7 @@ describe("the saved profiles behind Use a profile", () => {
         name: "Local only",
         availability: {
           available: false,
-          reason: "CurveBender (shared) is not connected",
+          reason: "CurveBender is not connected",
           attachable: false,
         },
       }),
@@ -1942,16 +1978,14 @@ describe("a model listing's own states", () => {
     );
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${curve.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Couldn't list this provider's models.");
+    expect(curve.getAttribute("data-tooltip")).toContain(
+      "Couldn't list this provider's models.",
+    );
     const anthropic = menuItem(node, "Anthropic");
     expect(anthropic.getAttribute("aria-disabled")).toBe("true");
-    expect(
-      node.querySelector(`#${anthropic.getAttribute("aria-describedby")}`)
-        ?.textContent,
-    ).toContain("Doesn't offer Claude Opus 5.5 for Pi");
+    expect(anthropic.getAttribute("data-tooltip")).toContain(
+      "Doesn't offer Claude Opus 5.5 for Pi",
+    );
     expect(anthropic.textContent).not.toMatch(/\d+ models?/);
   });
 });
@@ -2183,7 +2217,7 @@ describe("references kept apart from effective values", () => {
     const node = mount(picker());
     const curve = menuItem(node, "Curve");
     expect(curve.getAttribute("aria-disabled")).toBeNull();
-    expect(curve.textContent).toContain(
+    expect(curve.getAttribute("data-tooltip")).toContain(
       "Couldn't refresh this provider's models; showing its last listing.",
     );
     expect(node.textContent).toContain(

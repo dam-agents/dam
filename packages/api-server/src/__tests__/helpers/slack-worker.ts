@@ -7,10 +7,13 @@ import {
   type FakeSlackChannel,
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
+import type { SlackDmBridgePort } from "../../modules/channels/infrastructure/slack.js";
+import type { SlackOwnedThreads } from "../../modules/channels/infrastructure/slack-owned-threads-repository.js";
 import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastructure/agent-workspace-files.js";
 import type { ChannelPair } from "../../modules/channels/infrastructure/channel-profile.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
 import { stubWorkspaceFiles } from "./workspace-files.js";
+import { noArtifacts } from "./artifact-links.js";
 
 export const SLACK_HARNESS_OWNER = "kc|owner-1";
 
@@ -25,13 +28,30 @@ export function slackWorkerHarness(
     agentNames?: Record<string, string>;
     channels?: FakeSlackChannel[];
     ambient?: boolean;
+    history?: boolean;
+    otherBound?: string[];
+    linkedSub?: string;
+    linkedSlackUsers?: string[];
+    sessions?: AcpSessionInfo[];
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
     workspaceFiles?: AgentWorkspaceFilesFactory;
     channelPair?: ChannelPair;
+    dmBridges?: SlackDmBridgePort;
+    ownedThreads?: SlackOwnedThreads;
+    ensureReady?: () => Promise<void>;
+    reportSession?: boolean;
+    connected?: () => boolean;
+    unbindSlackChannel?: (agentId: string, channelId: string) => Promise<void>;
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";
+  const history = { on: opts.history ?? false };
+  const historyCalls: Array<{
+    agentId: string;
+    channelId: string;
+    history: boolean;
+  }> = [];
   const agentNames = opts.agentNames ?? { "agent-1": "Helper" };
   const gw = createFakeSlackGateway();
   if (opts.channels) gw.setChannels(opts.channels);
@@ -39,9 +59,19 @@ export function slackWorkerHarness(
   const created: AcpSessionInfo[] = [];
   const baseAcp: AcpClient = {
     steer: async () => "unsupported" as const,
-    listSessions: async () => [...created],
+    listSessions: async () => [...created, ...(opts.sessions ?? [])],
     sendPrompt: async (prompt, sendOpts) => {
       prompts.push(prompt);
+      /* TEST_SCENARIO: a runtime reports the turn's session and prompt as it
+       * starts one, which is what lets a later message steer it and what a
+       * recovery nudge is watched against. */
+      if (opts.reportSession) {
+        const session =
+          "sessionId" in sendOpts && sendOpts.sessionId
+            ? String(sendOpts.sessionId)
+            : `s-${created.length + 1}`;
+        sendOpts.onSession?.(session, `p-${prompts.length}`);
+      }
       if ("platformMeta" in sendOpts && sendOpts.platformMeta) {
         created.push({
           sessionId: `s-${created.length + 1}`,
@@ -55,9 +85,11 @@ export function slackWorkerHarness(
   };
   const acp = opts.makeAcp?.(baseAcp) ?? baseAcp;
   const agents = {
-    ensureReady: async () => {},
+    ensureReady: opts.ensureReady ?? (async () => {}),
     get: async (id: string) =>
-      agentNames[id] ? { id, name: agentNames[id] } : null,
+      agentNames[id]
+        ? { id, name: agentNames[id], spec: { whispersOff: false } }
+        : null,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker({
@@ -65,26 +97,49 @@ export function slackWorkerHarness(
     ...(opts.channelPair ? { channelPair: opts.channelPair } : {}),
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => null } as never,
+    identityLinks: {
+      resolve: async () => opts.linkedSub ?? null,
+      externalUsersOf: async () => opts.linkedSlackUsers ?? [],
+      externalLinksOf: async () =>
+        (opts.linkedSlackUsers ?? []).map((externalUserId) => ({
+          externalUserId,
+          teamId: null,
+          source: "oauth" as const,
+        })),
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => SLACK_HARNESS_OWNER,
     ownerDisplayName: async () => null,
     channelRegistry: {
-      resolveSlackBindings: async () => [
-        {
-          instanceName: "agent-1",
-          owner: SLACK_HARNESS_OWNER,
-          ambient: opts.ambient ?? false,
-          isDefault: true,
-        },
-      ],
+      resolveSlackBindings: async () =>
+        opts.connected?.() === false
+          ? []
+          : [
+              {
+                instanceName: "agent-1",
+                owner: SLACK_HARNESS_OWNER,
+                ambient: opts.ambient ?? false,
+                history: history.on,
+                isDefault: true,
+              },
+            ],
       resolveSlackChannelsByInstance: async () => [
-        { id: boundChannelId, teamId: "" },
+        {
+          id: boundChannelId,
+          teamId: "",
+          ...(history.on ? { history: true as const } : {}),
+        },
+        ...(opts.otherBound ?? []).map((id) => ({ id, teamId: "" })),
       ],
     } as never,
-    unbindSlackChannel: async () => {},
+    unbindSlackChannel: opts.unbindSlackChannel ?? (async () => {}),
+    ...(opts.dmBridges ? { dmBridges: opts.dmBridges } : {}),
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async (agentId, channelId, on) => {
+      historyCalls.push({ agentId, channelId, history: on });
+      history.on = on;
+    },
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -95,11 +150,13 @@ export function slackWorkerHarness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: opts.workspaceFiles ?? stubWorkspaceFiles(),
     listWorkspaces: async () => [],
     emit: () => {},
     settleMs: opts.settleMs ?? 0,
+    ...(opts.ownedThreads ? { ownedThreads: opts.ownedThreads } : {}),
   });
 
   async function settled(done: () => boolean): Promise<boolean> {
@@ -109,5 +166,5 @@ export function slackWorkerHarness(
     return done();
   }
 
-  return { gw, prompts, created, worker, settled };
+  return { gw, prompts, created, worker, settled, history, historyCalls };
 }

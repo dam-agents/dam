@@ -93,15 +93,16 @@ func logAttr(record slog.Record, key string) slog.Value {
 }
 
 var testConfig = &config.Config{
-	Namespace:         "test-agents",
-	ReleaseNamespace:  "default",
-	ReleaseName:       "platform",
-	HarnessServerPort: 4001,
-	ExtAuthzPort:      4002,
-	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1",
-	EnvoyPort:         10000,
-	IstioTrustDomain:  "cluster.local",
-	IstioWaypointName: "apiserver-waypoint",
+	Namespace:          "test-agents",
+	ReleaseNamespace:   "default",
+	ReleaseName:        "platform",
+	HarnessServerPort:  4001,
+	ExtAuthzPort:       4002,
+	EnvoyImage:         "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1",
+	EnvoyPort:          10000,
+	IstioTrustDomain:   "cluster.local",
+	IstioWaypointName:  "apiserver-waypoint",
+	IstioHostProbeSNAT: []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"},
 	AgentBase: config.AgentBase{
 		VMIdleTimeout: config.Duration(5 * time.Minute),
 	},
@@ -111,7 +112,8 @@ var testConfig = &config.Config{
 }
 
 var testAgent = &apiv1.AgentSpec{
-	Image: "ghcr.io/myorg/agent:latest",
+	Backend: &apiv1.Backend{Type: "vm"},
+	Image:   "ghcr.io/myorg/agent:latest",
 	Mounts: []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},

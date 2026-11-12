@@ -30,11 +30,32 @@ export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
+  SlackDmBridgeState,
+  SlackDmConnectView,
+  SlackDmDisconnectView,
+  SlackDmStatusView,
 } from "./modules/channels/types.js";
+export {
+  isSlackDirectMessageId,
+  type SharedChannel,
+  sharedChannels,
+  type TelegramChatAudience,
+} from "./modules/channels/shared-conversations.js";
 
 export {
+  childConnectionsSchema,
+  type ChildConnections,
+  childEgressSchema,
+  childEgressRuleSchema,
+  OWNER_EGRESS_NOTE,
+  EGRESS_ANSWERS_NOTE,
+  type ChildEgress,
+  type ChildEgressRule,
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
+  MAX_STOP_REASON_CHARS,
+  stopReasonSchema,
+  stopInvocationRequestSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -55,6 +76,10 @@ export type {
   SpawnInvocationRequest,
   SpawnScriptInvocationRequest,
   SpawnInvocationResponse,
+  StopInvocationRequest,
+  StopInvocationResponse,
+  SetEgressResponse,
+  EgressWaiting,
   InvocationOutput,
   InvocationOutputBlob,
   InvocationOutputLink,
@@ -64,7 +89,9 @@ export type {
   InvocationsControlService,
   InvocationHarnessConfig,
   InvocationsQueryService,
+  KeptSubAgent,
   DelegationNode,
+  DelegationStopped,
 } from "./modules/invocations/types.js";
 
 export {
@@ -169,6 +196,7 @@ export type {
   BindTelegramChatResult,
   ListTelegramChatsResult,
   UnbindTelegramChatResult,
+  SlackBindingModes,
   SlackChannel,
   SlackConversationLabel,
   SlackLoopGuardDrop,
@@ -181,6 +209,8 @@ export type {
   AgentListScope,
   SetAgentEditorsResult,
   LeaveAgentResult,
+  ChildInheritance,
+  ChildEgressRuleSeed,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -456,6 +486,8 @@ export type {
 export {
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_PROMPT_MAX_LENGTH,
+  ARTIFACT_PROMPT_CONVERSATION_PATTERN,
+  artifactPromptConversationSchema,
   artifactPromptSchema,
   type ArtifactPrompt,
   ARTIFACT_REQUEST_TYPE,
@@ -499,6 +531,34 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export {
+  FEATURES_ON_BY_DEFAULT,
+  featureOnForUser,
+} from "./modules/features/modes.js";
+export type {
+  AssistantFirstResult,
+  AssistantFirstResultInput,
+  AssistantState,
+  AssistantsService,
+  FirstResultKind,
+} from "./modules/assistants/types.js";
+export {
+  assistantFirstResultInputSchema,
+  firstResultKindSchema,
+} from "./modules/assistants/schemas.js";
+export {
+  ASSISTANT_IDEAS,
+  ASSISTANT_LEARN_LINE,
+  ASSISTANT_ONBOARDING_RULES,
+  ASSISTANT_PROVIDER_LINE,
+  ASSISTANT_SETTINGS_LINK,
+  ASSISTANT_SETTINGS_SENTENCE,
+  type AssistantIdea,
+  type AssistantNames,
+  assistantGreetingOpening,
+  assistantIdeas,
+  assistantInstructions,
+} from "./modules/assistants/greeting.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
@@ -583,6 +643,7 @@ export {
   PROVIDER_TEMPLATE_IDS,
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,
@@ -693,6 +754,8 @@ export type {
 export type {
   ClusterCaProbe,
   GitHubAppInstallationProbe,
+  GitHubAppInstallationAccount,
+  GitHubAppInstallations,
   GitHubUserTokenInstallation,
   GitHubUserTokenProbe,
   GitHubUserTokenScope,
@@ -734,6 +797,7 @@ export {
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,
+  isGatewayHostname,
   secretlessConnectionCreateInputSchema,
 } from "./modules/connections/schemas.js";
 export type {
@@ -896,8 +960,15 @@ export type {
   EgressRuleUpdateInput,
   EgressRulesService,
   PlatformRuleState,
+  ChildEgressState,
 } from "./modules/egress-rules/types.js";
-export { PLATFORM_ENVIRONMENTS_SOURCE } from "./modules/egress-rules/types.js";
+export {
+  PLATFORM_ENVIRONMENTS_SOURCE,
+  CHILD_DRIVER_SOURCE,
+  isWildcardEgressRule,
+  wildcardHostReach,
+  CHILD_INHERITED_SOURCE,
+} from "./modules/egress-rules/types.js";
 export {
   EGRESS_HOST,
   egressRuleCreateInputSchema,

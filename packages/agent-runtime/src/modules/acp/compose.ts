@@ -28,7 +28,10 @@ import {
   createPlatformMcpEntryStore,
   type PlatformMcpEntryStore,
 } from "./infrastructure/platform-mcp-entry-store.js";
-import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
+import {
+  createUndeliveredPromptStore,
+  type UndeliveredPromptStore,
+} from "./infrastructure/undelivered-prompt-store.js";
 import { createContinuedFromStore } from "./infrastructure/continued-from-store.js";
 import {
   createActiveTurnStore,
@@ -61,6 +64,8 @@ import {
   type HarnessWork,
 } from "./services/harness-work.js";
 import type { KeepPolicy } from "../processes/index.js";
+import type { ModelCatalog } from "../model-catalog/index.js";
+import { automaticModelOf, modelUsableOn } from "./domain/catalog-model.js";
 import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
@@ -105,6 +110,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  onInvocationTurn?: (sessionId: string, run: string) => void;
   gitTraceEnv?: Record<string, string>;
   onTurnOutcome?: (
     sessionId: string,
@@ -116,6 +122,7 @@ export interface ComposeAcpOptions {
   onPrompt: () => void;
   beforeFirstPrompt?: (sessionId: string) => Promise<unknown>;
   providerAliases: () => string[];
+  catalog: ModelCatalog;
   aliasOfConnection: (connectionId: string) => string | null;
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
@@ -302,6 +309,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: RuntimeSessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  undeliveredPrompts: UndeliveredPromptStore;
   subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
   warmHistory: () => void;
@@ -392,6 +400,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
       ]);
     },
     modelRequired: opts.modelRequired,
+    modelUsable: (harness, model) =>
+      modelUsableOn(opts.catalog, harness, model, opts.providerAliases()),
+    automaticModel: (harness, preferAliases) =>
+      automaticModelOf(
+        opts.catalog,
+        harness,
+        preferAliases,
+        opts.providerAliases(),
+      ),
+    onCatalogChange: (listener) => opts.catalog.onChange(listener),
     envReady: () => opts.envReader.ready(),
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
@@ -518,6 +536,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        ...(opts.onInvocationTurn && {
+          onInvocationTurn: opts.onInvocationTurn,
+        }),
         agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         ...(opts.beforeFirstPrompt && {
@@ -544,9 +565,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
   });
   const triggerDriver = createTriggerSessionDriver({
     acpRuntime: runtime,
-    modelRequired: (harness) =>
-      opts.modelRequired(harness ?? opts.defaultHarness),
     modelMissing: (sessionId) => runtime.modelMissing(sessionId),
+    modelReady: (sessionId) => runtime.modelReady(sessionId),
+    log: opts.log,
   });
   reportTurn = createOnceReporter({
     driver: triggerDriver,
@@ -591,6 +612,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    undeliveredPrompts,
     subAgentSessions,
     platformMcpEntry,
     warmHistory: () => {

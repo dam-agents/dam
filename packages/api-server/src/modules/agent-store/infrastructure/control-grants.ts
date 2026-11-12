@@ -24,6 +24,7 @@ const AGENT_READ_COLUMNS = [
   "owner_sub",
   "template_id",
   "environment_of",
+  "link_from",
   "name",
   "image",
   "harness",

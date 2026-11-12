@@ -21,6 +21,7 @@ import {
   connectionCreateFromParentInputSchema,
   connectionProbeGitHubUserTokenInputSchema,
   connectionUpdateGitHubUserTokenScopeInputSchema,
+  connectionMoveToHostInputSchema,
   connectionAgentCatalogInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
@@ -72,6 +73,11 @@ export const connectionsRouter = t.router({
           : input.agentId,
       );
     }),
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the person's own create of the Connection that drives this install, one per owner: the api-server mints its key, and the install's flag decides whether they are offered it at all. */
+  createDam: manageCredentialsProcedure.mutation(({ ctx }) =>
+    ctx.connections.ensureDamConnection().then((id) => ({ id })),
+  ),
 
   get: readCredentialsProcedure
     .input(connectionIdInputSchema)
@@ -134,6 +140,12 @@ export const connectionsRouter = t.router({
       ctx.connections.createFromParent(input).then((id) => ({ id })),
     ),
 
+  githubAppInstallations: readCredentialsProcedure
+    .input(connectionProbeGitHubUserTokenInputSchema)
+    .query(({ ctx, input }) =>
+      ctx.connections.listGitHubAppInstallations(input),
+    ),
+
   probeGitHubUserTokenForConnection: manageCredentialsProcedure
     .input(connectionProbeGitHubUserTokenInputSchema)
     .mutation(({ ctx, input }) =>
@@ -146,6 +158,10 @@ export const connectionsRouter = t.router({
       ctx.connections.updateGitHubUserTokenScope(input),
     ),
 
+  moveToHost: manageCredentialsProcedure
+    .input(connectionMoveToHostInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.moveToHost(input)),
+
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.update(input.id, input)),
@@ -153,6 +169,12 @@ export const connectionsRouter = t.router({
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
+
+  rotateDam: manageCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.rotateDamConnection(input.id),
+    ),
 
   requestSecret: manageCredentialsProcedure
     .input(connectionRequestSecretInputSchema)

@@ -24,8 +24,13 @@ import {
   delegationState,
   type DelegationTarget,
   delegationWaitReason,
+  runningSubAgents,
+  stoppedLine,
 } from "../lib/delegation-state.js";
-import { DelegationStatePill } from "./delegation-state-pill.js";
+import {
+  DelegationStatePill,
+  SubAgentsWorkingPill,
+} from "./delegation-state-pill.js";
 
 interface Props {
   node: DelegationNode;
@@ -45,6 +50,8 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   const state = delegationState(node, target);
   const waitReason = delegationWaitReason(node, target);
   const failed = state === "failed";
+  const ownRunning = node.status === "running";
+  const working = ownRunning ? 0 : runningSubAgents(node);
   const turn = turns?.[node.id];
   const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
   const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
@@ -52,39 +59,66 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
 
   return (
     <div className={cn(CARD_SURFACE, "border-border px-3 mt-2")}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 min-h-[52px] py-1.5 text-left"
-      >
-        <DisclosureChevron open={open} size={12} className="shrink-0" />
-        <span
-          aria-hidden
-          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
+      <div className="flex items-center gap-2.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 min-h-[52px] py-1.5 text-left"
         >
-          <Bot size={15} />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
+          <DisclosureChevron open={open} size={12} className="shrink-0" />
           <span
-            className="truncate text-sm font-medium text-foreground"
-            title={node.prompt}
+            aria-hidden
+            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
           >
-            {delegationTitle(node)}
+            <Bot size={15} />
           </span>
-          <span
-            className={cn(
-              "truncate text-xs",
-              failed ? "text-danger" : "text-muted-foreground",
-            )}
-          >
-            {failed && node.errorReason
-              ? node.errorReason
-              : (waitReason ?? subtitle(node))}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span
+              className="truncate text-sm font-medium text-foreground"
+              title={node.prompt}
+            >
+              {delegationTitle(node)}
+            </span>
+            <span
+              className={cn(
+                "truncate text-xs",
+                failed ? "text-danger" : "text-muted-foreground",
+              )}
+            >
+              {node.stopped
+                ? stoppedLine(node.stopped)
+                : failed && node.errorReason
+                  ? node.errorReason
+                  : (waitReason ?? subtitle(node))}
+            </span>
           </span>
-        </span>
-        <DelegationStatePill state={state} />
-      </button>
+        </button>
+        {working > 0 && (
+          <SubAgentsWorkingPill
+            count={working}
+            stop={
+              <StopSegment
+                node={node}
+                driverAgentId={driverAgentId}
+                working={working}
+              />
+            }
+          />
+        )}
+        <DelegationStatePill
+          state={state}
+          stop={
+            ownRunning ? (
+              <StopSegment
+                node={node}
+                driverAgentId={driverAgentId}
+                working={null}
+              />
+            ) : undefined
+          }
+        />
+      </div>
 
       <ModelLine model={model} />
       {turn && (
@@ -123,9 +157,6 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
             {node.script === null && (
               <OpenConversation node={node} driverAgentId={driverAgentId} />
             )}
-            {node.status === "running" && (
-              <StopDelegation node={node} driverAgentId={driverAgentId} />
-            )}
           </div>
           {node.children.map((child) => (
             <DelegationCard
@@ -142,30 +173,45 @@ export function DelegationCard({ node, driverAgentId, targets, turns }: Props) {
   );
 }
 
-function StopDelegation({
+// UNIT_BOUNDARY_DESCRIPTION: the stop at the end of the pill it acts on: on the state pill while a run of its own goes, the agent and everything it started; on the sub-agents pill, where `working` counts the sub-agents it started that still run, only they.
+function StopSegment({
   node,
   driverAgentId,
+  working,
 }: {
   node: DelegationNode;
   driverAgentId: string;
+  working: number | null;
 }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const stop = useStopDelegation();
+  const subAgents = `${working} sub-agent${working === 1 ? "" : "s"}`;
+  const label = working === null ? "Stop this agent" : `Stop ${subAgents}`;
   return (
     <Button
-      variant="destructive"
-      size="xs"
+      variant="ghost"
+      size="icon-xs"
+      tooltip={label}
+      aria-label={label}
       disabled={stop.isPending}
+      className="h-auto min-h-6 rounded-none border-l border-current/20 text-inherit hover:bg-danger-light hover:text-danger"
       onClick={async () => {
-        const ok = await showConfirm(
-          "The agent is removed and the driver gets a failed result.",
-          "Stop this temporary agent?",
-          { kind: "destructive", confirmLabel: "Stop agent" },
-        );
+        const ok =
+          working === null
+            ? await showConfirm(
+                "Its work ends, and so does the work of every sub-agent it started. A kept agent keeps its files and its conversation; any other is removed, with every sub-agent it started. The driver gets a failed result.",
+                "Stop this temporary agent?",
+                { kind: "destructive", confirmLabel: "Stop agent" },
+              )
+            : await showConfirm(
+                "It runs nothing itself. The work of the sub-agents it started ends; a kept one keeps its files and its conversation, any other is removed.",
+                `Stop ${subAgents}?`,
+                { kind: "destructive", confirmLabel: `Stop ${subAgents}` },
+              );
         if (ok) stop.mutate({ driverAgentId, id: node.id });
       }}
     >
-      <StopFilledAlt size={14} /> Stop
+      <StopFilledAlt size={9} aria-hidden />
     </Button>
   );
 }

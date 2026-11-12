@@ -192,10 +192,10 @@ checksum = "sha256:0fd1eb7770598f52a21995edf6ed35fc690400fa437c2386af329519e9143
 url = "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
-version = "0.96.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.96.0", digest = "sha256:97c97ec010b5d00c343acabb6ab1838558c73a2d7ec2e11e2b91a1f82b603a36" }
+version = "0.104.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.104.0", digest = "sha256:625556a9a87c4bebb7cfde4eaeef3dddde06ff74485d94eb49871022c763c514" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
-specifiers = ["0.96.0"]
+specifiers = ["0.104.0"]
 
 [[tools."npm:@agentclientprotocol/codex-acp"]]
 version = "2.1.1"
@@ -222,10 +222,10 @@ backend = "npm:@github/copilot"
 specifiers = ["1.0.103"]
 
 [[tools."npm:@ibm/bob"]]
-version = "2.0.9"
-aube = { path = ".mise/locks/npm-ibm-bob/2.0.9", digest = "sha256:24a6297fbcda1b3e3871aaccb1adce963b3b246bf3bde24016b350f1058b7ce8" }
+version = "2.1.0"
+aube = { path = ".mise/locks/npm-ibm-bob/2.1.0", digest = "sha256:1d5d3033c29ef442daf031855896e0bbd8297c5c6ec205f2416f6841438f4a7b" }
 backend = "npm:@ibm/bob"
-specifiers = ["2.0.9"]
+specifiers = ["2.1.0"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"

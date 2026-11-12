@@ -15,6 +15,10 @@ const fake = vi.hoisted(() => ({
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
   stopAgent: vi.fn(async () => {}),
+  greeting: { kind: "none" } as
+    | { kind: "none" }
+    | { kind: "loading" }
+    | { kind: "greeting"; copy: unknown },
 }));
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -361,14 +365,20 @@ mockModule("../../modules/sessions/api/session-pair.js", {
     failed: false,
   }),
   useHarnessCatalogModels: () => ({ data: [] }),
+  useRememberedPair: () => ({ data: null, isPending: false }),
   rememberSessionPair: vi.fn(),
   attachProviderQuietly: vi.fn(),
 });
 mockModule("../../modules/sessions/api/background-work.js", {
   useSessionBackgroundWork: () => [],
 });
+mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
+  useAssistantGreeting: () => fake.greeting,
+  useAssistantChat: () => fake.greeting.kind === "greeting",
+});
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
+  useInstallCapabilities: () => ({ data: undefined, isSuccess: false }),
 });
 mockModule("../../modules/profiles/api/queries.js", {
   useProfiles: () => ({ data: [] }),
@@ -525,8 +535,77 @@ afterEach(() => {
   fake.busy = false;
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
+  fake.greeting = { kind: "none" };
   useStore.setState({ pendingPermissions: [] });
   vi.clearAllMocks();
+});
+
+function openNewChat(): HTMLElement {
+  fake.state = "running";
+  fake.operable = true;
+  fake.connectionState = "live";
+  useStore.setState({
+    selectedAgent: "a-1",
+    sessionId: null,
+    sessionMode: SessionMode.Chat,
+    messages: [],
+    drafts: {},
+    queuedPrompts: [],
+  });
+  return render();
+}
+
+function greetingCopy() {
+  return {
+    assistantName: "Dammy",
+    opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
+    provider: "You're set up with CurveBender, IBM-hosted open-source models.",
+    learn: "I learn how you work, one task at a time.",
+    settingsLink: "Agent settings",
+    ideas: [
+      {
+        label: "Artifact",
+        text: "Make my next PowerPoint deck the way I make them",
+      },
+      {
+        label: "Skill",
+        text: "Learn how my team writes tickets, then take it over",
+      },
+    ],
+    placeholder: "Message Dammy",
+  };
+}
+
+// TEST_SCENARIO: an assistant whose chat has never had a session opens on its greeting — not on the empty page with a big avatar — and the composer hints one of the tasks it offers.
+it("opens an unused assistant's chat on its greeting", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
+  expect(placeholder(el)).toBe("Message Dammy");
+});
+
+// TEST_SCENARIO: a click on one of its pills puts the labelled text in the composer of this chat and sends nothing, so no turn runs before the person acts.
+it("fills the composer from a greeting pill without sending", () => {
+  fake.greeting = { kind: "greeting", copy: greetingCopy() };
+  const el = openNewChat();
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
+  expect(task).toBeDefined();
+  act(() => task!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Artifact: Make my next PowerPoint deck the way I make them",
+  );
+  expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: while the greeting's own answers are still on their way the chat shows neither it nor the empty page, so neither flashes and is taken back a moment later.
+it("shows a blank page while it is unknown whether to greet", () => {
+  fake.greeting = { kind: "loading" };
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="assistant-greeting"]')).toBeNull();
+  expect(el.textContent).not.toContain("Send a message to begin.");
 });
 
 // TEST_SCENARIO: the Agent runs and its connection drops; the chat, its composer and the notice stay, and the takeover does not appear.

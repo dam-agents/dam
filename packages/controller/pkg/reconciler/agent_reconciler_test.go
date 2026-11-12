@@ -85,14 +85,15 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		return false, svc, nil
 	})
 	cfg := &config.Config{
-		Namespace:         "test-agents",
-		ReleaseNamespace:  "default",
-		ReleaseName:       "platform",
-		HarnessServerPort: 4001,
-		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1",
-		EnvoyPort:         10000,
-		IstioTrustDomain:  "cluster.local",
-		IstioWaypointName: "apiserver-waypoint",
+		Namespace:          "test-agents",
+		ReleaseNamespace:   "default",
+		ReleaseName:        "platform",
+		HarnessServerPort:  4001,
+		EnvoyImage:         "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.1",
+		EnvoyPort:          10000,
+		IstioTrustDomain:   "cluster.local",
+		IstioWaypointName:  "apiserver-waypoint",
+		IstioHostProbeSNAT: []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"},
 		AgentBase: config.AgentBase{
 			VMIdleTimeout: config.Duration(time.Hour),
 		},

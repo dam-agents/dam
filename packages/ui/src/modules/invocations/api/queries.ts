@@ -18,6 +18,16 @@ const LIVE_POLL_MS = 5_000;
 const IDLE_POLL_MS = 15_000;
 const MISSING_ID_POLLS = 6;
 
+export function useKeptSubAgents(driverAgentId: string | null) {
+  return useQuery({
+    ...trpc.invocations.kept.queryOptions(
+      driverAgentId ? { driverAgentId } : skipToken,
+    ),
+    staleTime: IDLE_POLL_MS,
+    refetchInterval: IDLE_POLL_MS,
+  });
+}
+
 export function useDelegationTree(
   driverAgentId: string | null,
   ids: readonly string[],

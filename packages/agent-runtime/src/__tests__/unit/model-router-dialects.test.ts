@@ -229,6 +229,7 @@ beforeAll(async () => {
   upstreamBase = base;
   const envState = envStateOn(base);
   router = composeModelRouter({
+    leaseEnv: () => ({}),
     catalog: {
       providers: () => providers,
       forHarness: (harness) => forHarness(entries, harness, HARNESSES[harness]),
@@ -371,8 +372,9 @@ describe("catalog endpoints", () => {
   /** TEST_SCENARIO: Bob reads a LiteLLM model-info under its `/inference/v1`
    * prefix; only chat-capable providers' models appear, each with the limits
    * and prices Bob uses for its own cost display. The admin API Bob also
-   * calls belongs to its own gateway and gets a JSON 404 here. */
-  it("serves Bob's model-info and refuses its admin calls", async () => {
+   * calls belongs to its own gateway, and with no Bob Shell Connection
+   * granted here it gets the router's 404. */
+  it("serves Bob's model-info and 404s its admin calls without a Bob Shell Connection", async () => {
     const r = await get("/inference/v1/model/info", "bob");
     const { data } = r.json as {
       data: { model_name: string; model_info: Record<string, unknown> }[];
@@ -465,6 +467,7 @@ describe("a reasoning effort the route refuses", () => {
     ];
     const azureEntries = azureProviders.flatMap((p) => p.entries);
     const composed = composeModelRouter({
+      leaseEnv: () => ({}),
       catalog: {
         providers: () => azureProviders,
         forHarness: (harness) =>

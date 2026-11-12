@@ -12,6 +12,10 @@ import type {
   invocationViewSchema,
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
+  setEgressResponseSchema,
+  egressWaitingSchema,
+  stopInvocationRequestSchema,
+  stopInvocationResponseSchema,
   spawnScriptInvocationRequestSchema,
 } from "./schemas.js";
 
@@ -30,7 +34,13 @@ export type InvocationOutputLink = z.infer<typeof invocationOutputLinkSchema>;
 export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
+export type SetEgressResponse = z.infer<typeof setEgressResponseSchema>;
+export type EgressWaiting = z.infer<typeof egressWaitingSchema>;
 export type InvocationView = z.infer<typeof invocationViewSchema>;
+export type StopInvocationRequest = z.infer<typeof stopInvocationRequestSchema>;
+export type StopInvocationResponse = z.infer<
+  typeof stopInvocationResponseSchema
+>;
 export type InvocationStatus = InvocationView["status"];
 export type InvocationsTreeInput = z.infer<typeof invocationsTreeInputSchema>;
 export type InvocationTranscriptInput = z.infer<
@@ -55,12 +65,19 @@ export interface InvocationTarget {
   targetAgentId: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a failed run that was stopped rather than failing: by the user, or by its driver, with the driver's reason when it gave one.
+export interface DelegationStopped {
+  by: "user" | "driver";
+  reason: string | null;
+}
+
 export interface DelegationNode {
   id: string;
   label: string | null;
   driverAgentId: string;
   status: InvocationStatus;
   errorReason: string | null;
+  stopped: DelegationStopped | null;
   result?: unknown;
   prompt: string;
   script: string | null;
@@ -71,13 +88,27 @@ export interface DelegationNode {
   requestedModel: string | null;
   createdAt: string;
   started: boolean;
+  // UNIT_BOUNDARY_DESCRIPTION: the sub-agent has not started its work because a network rule its driver set for it waits for the owner's answer; it is not working.
+  waitingForOwner?: boolean;
   completedAt: string | null;
   transcriptAvailable: boolean;
   children: DelegationNode[];
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sub-agent spawned with keep, at any depth below the agent asked about, that still exists: what to call it, where its runs stand (running while any of them runs, else as its last run ended), until when it is kept, and the kept sub-agent it sits under (null for the agent asked about itself), the nearest one still listed when the sub-agent between them was removed.
+export interface KeptSubAgent {
+  id: string;
+  label: string | null;
+  status: InvocationStatus;
+  keepUntil: string;
+  parentId: string | null;
+}
+
 export interface InvocationsQueryService {
   listTargets(): Promise<InvocationTarget[]>;
+  kept(input: {
+    driverAgentId: string;
+  }): Promise<{ subAgents: KeptSubAgent[] }>;
   tree(input: InvocationsTreeInput): Promise<{ nodes: DelegationNode[] }>;
   running(input: InvocationsRunningInput): Promise<{ nodes: DelegationNode[] }>;
   transcript(input: InvocationTranscriptInput): Promise<InvocationTranscript>;

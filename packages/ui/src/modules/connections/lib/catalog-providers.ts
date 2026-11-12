@@ -103,6 +103,7 @@ const SUBMIT_LABELS: Record<string, { label: string; external?: boolean }> = {
   "github-enterprise-pat": { label: "Create token" },
   "github-app": { label: "Connect app" },
   "github-enterprise-app": { label: "Connect app" },
+  figma: { label: "Continue to Figma", external: true },
 };
 
 export function templateSubmitLabel(

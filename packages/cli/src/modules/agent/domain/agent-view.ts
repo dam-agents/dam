@@ -22,6 +22,7 @@ export interface AgentView {
   channels: ChannelConfig[];
   starterKit?: string | null;
   defaultProvider?: AgentDefaultProvider;
+  access?: { editors: readonly string[] };
 }
 
 export function displayState(agent: AgentView): string {

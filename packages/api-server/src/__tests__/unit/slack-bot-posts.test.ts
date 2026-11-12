@@ -25,6 +25,7 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 const NAMES: Record<string, string> = { "agent-a": "Alpha", "agent-b": "Beta" };
@@ -150,6 +151,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps,
     loopGuardDrops: {
@@ -161,6 +163,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

@@ -4,9 +4,9 @@ description: >
   Write interactive HTML artifacts: buttons that send prompts to the open chat,
   and pages that share state with the agent (content both the page and the
   agent read and change) through a small HTTP server the agent runs.
-  Use
-  only when the user explicitly requests this experimental capability and has
-  enabled Interactive artifacts; ordinary artifacts do not need this skill.
+  Use when a page must act or keep state with the agent, such as a dashboard
+  whose buttons ask the agent to do something; a page with no reason to talk to
+  the agent stays plain and does not need this skill.
 ---
 
 Publish with `create_artifact({ ..., interactive: true })`.
@@ -27,17 +27,20 @@ Call it from a button click or a form handler that prevents the default submissi
 </button>
 ```
 
-The owner must enable Interactive artifacts and open the latest artifact version beside an existing chat with its publishing agent.
+The owner must open the latest artifact version beside an existing chat with its publishing agent.
 The prompt is sent as a normal chat message, using the chat's existing queue and error handling.
 To let a button work where the owner opens the page outside that chat, such as from the library or beside another agent's chat, pass `{ newSession: true }`: `platform.sendPrompt('Refresh this dashboard.', { newSession: true })`.
 Outside a chat the prompt then starts or continues the owner's own Session for this page with you, unattended, so a tool call that asks for permission is refused; in the chat it still goes into the chat.
 Without the option, a prompt sent outside the chat starts nothing, and the owner is told to open the page in your chat.
 On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
+For a page used for many separate conversations, such as one per thread or request, pass `{ conversation: "<key>" }` so each conversation gets its own Session: `platform.sendPrompt('Answer this thread.', { conversation: 'thread-42' })`.
+The key is 1 to 64 letters, digits, dots, underscores or hyphens, and the call throws on any other; a later prompt with the same key continues that Session.
+It splits only the caller's own Sessions for this page, the owner's or each viewer's, and always opens one of its own, also in your chat, unattended as above.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
 Never show a busy state, such as "Refreshing…", that waits for the prompt to end, since nothing tells the page; to show progress, keep it in your Artifact API and have the page read it with `platform.request`.
 
-Buttons do not send prompts from historical versions or while the feature is disabled, nor from library previews or another agent's chat unless they pass `{ newSession: true }`.
+Buttons do not send prompts from historical versions, nor from library previews or another agent's chat unless they pass `{ newSession: true }`.
 Keep the page readable without this capability.
 Send prompts only in response to user actions, never automatically on load or on a timer.
 Prompts must be nonempty strings of at most 16,384 characters.

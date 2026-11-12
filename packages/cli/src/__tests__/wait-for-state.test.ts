@@ -9,6 +9,7 @@ function serviceReturning(states: AgentView["state"][]): AgentService {
   return {
     list: vi.fn(),
     runtimeFleet: vi.fn(),
+    kept: vi.fn(),
     deleteAgent: vi.fn(),
     restart: vi.fn(),
     setDisabled: vi.fn(),

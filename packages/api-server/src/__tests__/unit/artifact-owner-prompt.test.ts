@@ -4,8 +4,7 @@
  * its publishing agent, may ask for a Session of its own. The server sends
  * it to the owner's own Session for that page on the publishing agent, one
  * per owner and artifact, found again on the next click, as a viewer's
- * prompt goes to theirs. The same pages are refused as for the Artifact API,
- * and while the owner has the feature off.
+ * prompt goes to theirs. The same pages are refused as for the Artifact API.
  */
 import { describe, expect, it } from "vitest";
 
@@ -64,6 +63,43 @@ describe("Artifact prompt — no chat docked", () => {
   });
 
   /**
+   * TEST_SCENARIO: A team page keeps many conversations apart, one per
+   * thread. A prompt that names its conversation goes to the owner's own
+   * Session for that conversation, titled with it; a later prompt with the
+   * same name continues it, and one with another name or none keeps its own.
+   */
+  it("should keep each of the page's conversations in its own session", async () => {
+    const world = createArtifactApiWorld();
+    const dashboard = world.publish({ by: "agent-a" });
+
+    await world.prompt(dashboard, "One", {}, "thread.1");
+    await world.prompt(dashboard, "Two", {}, "thread.2");
+    await world.prompt(dashboard, "Three", {}, "thread.1");
+    await world.prompt(dashboard, "Four");
+
+    expect(
+      world.prompts().map(({ sessionKey, sessionTitle }) => ({
+        sessionKey,
+        sessionTitle,
+      })),
+    ).toEqual([
+      {
+        sessionKey: `artifact-conversation:${dashboard}:thread.1:alice`,
+        sessionTitle: "Dashboard · thread.1",
+      },
+      {
+        sessionKey: `artifact-conversation:${dashboard}:thread.2:alice`,
+        sessionTitle: "Dashboard · thread.2",
+      },
+      {
+        sessionKey: `artifact-conversation:${dashboard}:thread.1:alice`,
+        sessionTitle: "Dashboard · thread.1",
+      },
+      { sessionKey: `artifact:${dashboard}:alice`, sessionTitle: "Dashboard" },
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: The agent is at its spend limit, or does not wake. The
    * page's owner is told why, rather than the prompt silently vanishing.
    */
@@ -112,22 +148,6 @@ describe("Artifact prompt — who may not start a session", () => {
     await expect(
       world.prompt(dashboard, "Refresh", { keyBoundTo: ["agent-b"] }),
     ).resolves.toEqual({ ok: false, reason: "not-allowed" });
-    expect(world.prompts()).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: The owner turned interactive artifacts off. The page's
-   * buttons stop reaching the agent at once, as they do in chat.
-   */
-  it("should refuse while the owner has the feature off", async () => {
-    const world = createArtifactApiWorld();
-    world.turnFeatureOff();
-    const dashboard = world.publish({ by: "agent-a" });
-
-    await expect(world.prompt(dashboard, "Refresh")).resolves.toEqual({
-      ok: false,
-      reason: "not-allowed",
-    });
     expect(world.prompts()).toEqual([]);
   });
 });

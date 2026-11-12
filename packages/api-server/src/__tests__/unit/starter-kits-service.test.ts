@@ -177,8 +177,12 @@ function makeHarness(
       async list() {
         return agent ? [agent] : [];
       },
-      async connectSlack(agentId, channel, ambient) {
-        calls.slack.push({ agentId, channel, ambient });
+      async connectSlack(agentId, channel, modes) {
+        calls.slack.push({
+          agentId,
+          channel,
+          ambient: modes?.ambient === true,
+        });
         return { ok: true, value: fakeAgent(agentId) } as never;
       },
       async announceSlackConnect() {},

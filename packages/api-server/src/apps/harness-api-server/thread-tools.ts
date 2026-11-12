@@ -8,9 +8,13 @@ import type {
   ThreadLeave,
   ThreadStart,
 } from "../../modules/channels/services/channel-manager.js";
+import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
 
 export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
+  cardOf(
+    tree: Record<string, unknown> | undefined,
+  ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
     start: ThreadStart,
@@ -26,8 +30,11 @@ export interface ThreadToolPorts {
   audit(
     action: "start" | "leave",
     outcome: { error: string } | { conversationId: string; threadTs: string },
+    detail?: { hasCard: boolean },
   ): void;
 }
+
+export const cardTreeSchema = z.record(z.string(), z.unknown());
 
 const UNIDENTIFIED =
   "this session could not be identified, so it cannot own a thread; post the message with post instead, and its replies open a session of their own.";
@@ -59,17 +66,28 @@ export function registerThreadTools(
         .describe(
           "The opening message, in standard Markdown. Say who should answer, and tag them when they should be notified.",
         ),
+      card: cardTreeSchema
+        .optional()
+        .describe(
+          "Optional card shown under the opening message. Call describe_card_components for its components.",
+        ),
     },
-    ({ channel, chatId, text }) =>
+    ({ channel, chatId, text, card: tree }) =>
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
+        const built = await ports.cardOf(tree);
+        if ("error" in built) {
+          ports.audit("start", built, { hasCard: true });
+          return errorResult(built.error);
+        }
         const result = await ports.startThread(channel, {
           sessionId,
           conversationId: chatId,
           text,
+          ...(built.card ? { card: built.card } : {}),
         });
-        ports.audit("start", result);
+        ports.audit("start", result, { hasCard: built.card !== undefined });
         if ("error" in result) return errorResult(result.error);
         return json({
           chatId: result.conversationId,

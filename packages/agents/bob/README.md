@@ -9,7 +9,7 @@ The harness ships in the default image every harness Template boots, built by `/
 
 | Component          | Source                                                        | Purpose                                                                                                                                                                                                              |
 | ------------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness            | `@ibm/bob` 2.0.9 (npm, as a mise `npm:` tool)                 | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
+| Harness            | `@ibm/bob` 2.1.0 (npm, as a mise `npm:` tool)                 | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)             | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
 | Session ref        | [`bob-mcp-file.mjs`](rootfs/usr/local/lib/bob-mcp-file.mjs)   | Preloaded into `bob acp` only: hides the file's platform MCP entry from Bob, so the per-session entry carrying the session ref is the one Bob uses (see [Session ref](#session-ref))                                 |
 | MCP startup        | [`bob-acp-patch.mjs`](rootfs/usr/local/lib/bob-acp-patch.mjs) | Preloaded into `bob acp` only: starts the servers of `mcp.json` in the background, so one that never gets ready cannot hold every chat session back (see [MCP startup](#mcp-startup))                                |
@@ -61,13 +61,13 @@ One visible side effect: Bob's own `read_file` tool, in a chat session, shows `m
 The preload takes its own `--import` out of `NODE_OPTIONS` only once the process reads the file, so a parent that merely starts the real Bob still hands it down, and it writes one line to stderr the first time it reads the file and finds nothing to hide, since the only other symptom would be anonymous platform calls.
 The Bob preloads share [`bob-preload-lib.mjs`](rootfs/usr/local/lib/bob-preload-lib.mjs): the path an fs call names, the wrapping of renames and copies, and the `NODE_OPTIONS` cleanup.
 
-The preload is written against Bob 2.0.9, which reads and writes the file through `node:fs` by that path.
+The preload is written against Bob 2.1.0, which reads and writes the file through `node:fs` by that path.
 `mise run //packages/agents:check:bob-mcp-file` fails when the image pins another Bob than the preload names, so a bump runs `mise run //packages/agents:test:bob-session-ref` with `BOB_CLI` naming the new Bob: its control scenario fails when Bob starts preferring a session's own entry, which is the moment to delete the preload, its line in `harness-chat`, and these tests; its other scenarios fail when Bob stops reading the file the way the preload expects.
 `mise run //packages/agents:test:bob-mcp-file` checks the preload itself with a fake Bob and runs in CI.
 
 ### MCP startup
 
-`bob acp` builds each session's harness as a non-interactive one, and Bob 2.0.9 ties the MCP startup mode to that flag.
+`bob acp` builds each session's harness as a non-interactive one, and Bob 2.1.0 ties the MCP startup mode to that flag.
 Left alone, a `session/new`, `session/load` or `session/resume` answers only after every server of `mcp.json` finished its first connect.
 A stdio server gets no timeout of its own: the per-server `timeout` reaches HTTP servers only, so one that never answers `initialize` holds each session for the MCP SDK's 60 s request timeout.
 Every new chat then waits a minute for its first answer, and a reopen, which also spawns Bob, ran past agent-runtime's load budget before Bob's manifest raised it, so a single broken entry, such as an `npx` server an agent added for itself, stopped every chat on the agent.
@@ -86,8 +86,9 @@ Its control scenario fails when Bob starts the servers in the background on its 
 
 Bob 2.0.6 compacts its context automatically right after a batch of tool calls, when the context passes its threshold.
 That is the steer point, where the agent-runtime cancels Bob's turn to give it a waiting message ([interrupt and continue](../../../docs/architecture/sessions.md#prompt-delivery)).
-A cancel during that compaction makes Bob replace the whole history with an empty summary, and a person's Stop at that moment did the same.
-The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that was cancelled or produced an empty summary leaves the history as it was.
+A cancel during that compaction made Bob replace the whole history with an empty summary, and a person's Stop at that moment did the same.
+Bob 2.1.0 keeps the history when the compaction was cancelled, but it still starts a compaction in a loop already cancelled and still replaces the history with an empty summary.
+The same patch therefore makes two more edits: a loop already cancelled starts no compaction, and a compaction that produced an empty summary leaves the history as it was.
 Drop them once a Bob release does both on its own.
 
 ### Send now and a running command
@@ -139,12 +140,40 @@ A prompt per `ls` is worse than no prompt at all, which is why the default stand
 Two things to know before switching: an unattended session has nobody to answer, so a request expires against agent-runtime's TTL and the tool call aborts; and one "always allow" on `execute_command` silences commands for the rest of that session anyway.
 Per-session granularity would have to come from Bob — approvals wired to its modes, or `session/set_config_option` registered in its ACP host.
 
-Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate ahead of any approval decision (the settings bootstrap opens it, or Bob would refuse every tool touching `$HOME` — skills, rules), `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
+Guardrails that stay active: `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
+
+### Outside the work directory
+
+Bob's workspace is the session's `cwd`, the work directory, while the agent's own files (instructions, kit docs, memory) live in `$HOME`.
+Bob gates a file tool call outside the workspace twice.
+`approval.outsideWorkspaceAllowed` decides whether it may run at all; the settings bootstrap sets it, or Bob would refuse every file tool that touches `$HOME`.
+A call it lets through is still protected: Bob asks about it even under `--auto-approve`, with no "always allow", unless the tool's permission group has `enableOutsideWorkspace: true` in `approval.permissionOptions`.
+A shell command that names a path outside the workspace is not protected.
+
+On auto nobody may be there to answer, so a protected call waits until its approval expires, and a scheduled session loses every read of its own notes.
+So both harness scripts preload [`bob-outside-workspace.mjs`](rootfs/usr/local/lib/bob-outside-workspace.mjs) into Bob, which opens groups in what Bob reads of its settings file:
+
+| Groups                                  | Auto-approve | Ask       |
+| --------------------------------------- | ------------ | --------- |
+| `read`, `execute`                       | open         | open      |
+| `edit`, `browser`, `mcp` and the others | open         | protected |
+
+On ask the agent's own files read like the work directory, and a file write outside it still asks every time.
+The owner's settings file can open more: a group with any entry marked `enableOutsideWorkspace: true` is open on both postures.
+It cannot close a group the posture opens, because on auto that brings the expiring approvals back; Approvals on ask is the way to make Bob ask.
+Writes to `~/.bob` and commands Bob's own safety check flags stay protected on both postures.
+
+The posture never reaches the file.
+In what Bob writes back, to the file or to its `settings.json.bak` backup, each group whose value is still the one the preload laid over gets the file's own entries back, or none, while every other change Bob saves, a group a person changes in the TUI included, lands as written.
+A `bob` started by hand, over SSH for example, runs without the preload and reads the file as it is.
+The preload comes after [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs) in `harness-chat`, so it works on the path Bob names whether or not the process has a settings copy of its own.
+`mise run //packages/agents:test:bob-outside-workspace` checks the posture, the write-back and both harness scripts; `mise run //packages/agents:check:bob-outside-workspace` fails when the image pins another Bob than the preload names, so a bump checks the protected rule and the group list again.
 
 ## Configuration
 
 `bob acp` parses only `--trust`, `--auto-approve`, `--accept-license`, `--log-level` and `--disable-{mcp,subagents}` — model, mode and cost have no flag on that surface, so they ride `~/.bob/settings/settings.json`, which `bob-settings.mjs` merge-writes from the env before either surface starts.
-Settings come from three places, in this order of precedence: the agent's **Config panel**, then the **Bob Shell provider** pins, then free-form **Configure Agent → Env**.
+Settings come from three places, in this order of precedence: the agent's **Config panel**, then free-form **Configure Agent → Env**, then the **Bob Shell provider** pins.
+The model has one more rung: the agent's default provider for Bob (`PLATFORM_BOB_DEFAULT_MODEL`, set when that provider is not Bob's own gateway) outranks a `BOB_SHELL_MODEL` from either env.
 
 Bob cannot switch a live session's model and reads one settings file per process, so every model call goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): the runtime sets `BOB_GATEWAY_URL` (the variable Bob's own client reads) to the router with a placeholder key, and the router routes each call by the model the runtime set for the session, keyed by the `X-Task-Id` Bob stamps on its calls (the root task id is the ACP session id).
 Bob stamps it on every call except the first call of a new task, which asks for the model `background`.
@@ -181,7 +210,9 @@ Two consequences worth knowing:
 
 The session picker's Model choices are the Model Catalog's view of Bob: every granted provider's chat-capable models under provider-qualified names (`ibm/aws/claude-sonnet-4-6`, `cb/rits/zai-org/glm-5-3`, `bob/premium-ide`), listed by agent-runtime per Connection and served to Bob itself as a LiteLLM-shaped `/inference/v1/model/info` on the router, the endpoint Bob reads its models and prices from.
 The Bob Shell Connection's own gateway (`BOB_DEFAULT_GATEWAY_URL`) is listed through the same catalog; its model-info's limits and prices outrank the price table.
-Bob's `/admin/v1` calls belong to its own gateway and get a 404 from the router, which Bob tolerates.
+Bob's other calls to that base URL, its profile and team budget under `/admin/v1` and its docs-search MCP server under `/rag/v1`, belong to its own gateway: the router forwards them to the Bob Shell Connection's gateway with the Connection's placeholder.
+Bob takes its team and instance from the first entry of the profile and stamps them on every call, so a general-type key without them is refused with HTTP 402; the router puts the pinned team and instance first in the profile it hands on (an agent's own env over the Connection's pin, as for every pin), and drops `region_domain`, which would otherwise make Bob move every call to that region's host.
+With no Bob Shell Connection granted those calls get a 404, which Bob tolerates only with a key that needs no team.
 
 A Bob Shell connection made before `BOB_DEFAULT_GATEWAY_URL` was added to the preset does not carry it: re-save the provider in Settings → Providers once to pick it up, otherwise the catalog lists no Bob-gateway model and the rest keeps working.
 A listing that cannot be read keeps that Connection's last known list and never empties another's.
@@ -189,25 +220,27 @@ A listing that cannot be read keeps that Connection's last known list and never 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 
 These ride on the secret's `envMappings`, so every agent granted the Bob secret inherits them automatically — no per-agent re-entry.
+A routed Connection's env stays out of a harness process, so the manifest names the five settings in `modelRouter.connectionEnv`, and the runtime lays them under the agent's own env of the Bob processes it starts, the chat process and the web terminal alike; a change on the provider recycles the chat process the way any env change does, and reaches a terminal when it is next opened.
+An SSH shell keeps the env it always had, the first provider's whole layer, so a `bob chat` started by hand follows that provider rather than these settings.
 
-| Env var                   | Translated to                            | Effect                                                                                                                                                                                             |
-| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOBSHELL_API_KEY`        | n/a (env-only)                           | API key the credential gateway swaps to the real value on the wire. Always emitted.                                                                                                                |
-| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                           | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                       |
-| `BOB_SHELL_MODEL`         | `session.model`                          | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default.                                         |
-| `BOB_CHAT_MODE`           | `session.defaultMode`                    | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
-| `BOB_MAX_COINS`           | `session.maxCost`                        | Per-task cost cap — Bob stops the task when exceeded.                                                                                                                                              |
-| `BOB_INSTANCE_ID`         | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles.               |
-| `BOB_TEAM_ID`             | `bob chat --team-id` (terminal only)     | Team ID for `general`-type API keys. Terminal-only for the same reason.                                                                                                                            |
+| Env var                   | Translated to                                    | Effect                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOBSHELL_API_KEY`        | n/a (env-only)                                   | API key the credential gateway swaps to the real value on the wire. Always emitted.                                                                                                                                                                                                                         |
+| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                                   | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                                                                                                                                |
+| `BOB_SHELL_MODEL`         | `session.model`                                  | Fallback `session.model` of a terminal session that names none, after the agent's Config panel and `PLATFORM_BOB_DEFAULT_MODEL` (set when Bob's default provider is not its own gateway); a chat session's calls carry the session's own model, which the router writes in. Empty → Bob's built-in default. |
+| `BOB_CHAT_MODE`           | `session.defaultMode`                            | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode of terminal, channel and scheduled sessions, unless the agent's Config panel sets one; a web chat carries the mode its session picker computes.                      |
+| `BOB_MAX_COINS`           | `session.maxCost`                                | Per-task cost cap for chat and terminal sessions — Bob stops the task when exceeded.                                                                                                                                                                                                                        |
+| `BOB_INSTANCE_ID`         | `--instance-id` (terminal), profile order (chat) | IBM tenant scoping. The terminal's `bob chat` takes it as a flag; `bob acp` takes no instance, so the router puts this instance first in the profile Bob reads, which is where a chat session takes its instance from.                                                                                      |
+| `BOB_TEAM_ID`             | `--team-id` (terminal), profile order (chat)     | Team ID for `general`-type API keys, the same way: a flag of the terminal's `bob chat`, first in the forwarded profile for chat sessions.                                                                                                                                                                   |
 
-Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
+Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin, in the process env and in the forwarded profile alike.
 
 ### Running against another gateway (IBM LiteLLM)
 
 Granting the **IBM ETE LiteLLM Proxy** connection lists that proxy's models in the catalog, under `ibm/…`; Curve Bender's under `cb/…`.
 Bob itself is unchanged: its `/inference/v1` prefix is compiled in, and the router folds it.
 The LiteLLM key needs model access only: the catalog lists the proxy through `/v1/models` and prices its models from the vendored LiteLLM table.
-A session's pick is a qualified name the router routes outright; the preset's `BOB_SHELL_MODEL` pin never reaches a routed Bob process.
+A session's pick is a qualified name the router routes outright; the LiteLLM preset's own `BOB_SHELL_MODEL` is not a Bob Shell setting and never reaches a Bob process.
 
 A connection's contributions are projected when it is created, so a LiteLLM connection made before the gateway env shipped carries none and lists nothing.
 Editing it does not help: the edit dialog replaces the credential and nothing else, and contributions are never recomputed.

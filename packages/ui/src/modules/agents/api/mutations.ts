@@ -230,12 +230,12 @@ export function useConnectSlack() {
   });
 }
 
-export function useSetSlackAmbient() {
+export function useSetSlackModes() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
-      errorToast: "Couldn't change ambient mode",
+      errorToast: "Couldn't change the channel's settings",
     },
   });
 }

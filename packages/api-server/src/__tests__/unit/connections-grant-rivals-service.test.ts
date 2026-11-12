@@ -93,6 +93,7 @@ function setup(
   const setPreferred = vi.fn(async () => {});
   const fanOut = vi.fn(async () => {});
   const service = createConnectionsService({
+    damConnectionOffered: async () => true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async (agentId) => agentId === AGENT,
     ownerId: OWNER,

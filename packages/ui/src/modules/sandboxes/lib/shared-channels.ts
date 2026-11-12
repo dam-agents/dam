@@ -1,41 +1,10 @@
-import type { SlackChannel } from "api-server-api";
+import type { SharedChannel } from "api-server-api";
 
-import { slackChannelLabel } from "./slack-channels.js";
-
-export interface TelegramChat {
-  title: string;
-  direct: boolean;
-}
-
-export type SharedChannel =
-  | { kind: "slack-channel"; name: string | null }
-  | { kind: "slack-group-dm" }
-  | { kind: "telegram-chat"; name: string | null }
-  | { kind: "unknown-conversation" };
-
-export const isSlackDirectMessageId = (slackChannelId: string): boolean =>
-  slackChannelId.startsWith("D");
-
-const isSlackDirectMessage = (channel: SlackChannel): boolean =>
-  channel.label?.kind === "direct-message" ||
-  isSlackDirectMessageId(channel.slackChannelId);
-
-const toSharedSlackChannel = (channel: SlackChannel): SharedChannel =>
-  channel.label?.kind === "group-direct-message"
-    ? { kind: "slack-group-dm" }
-    : { kind: "slack-channel", name: slackChannelLabel(channel) };
-
-export function sharedChannels(
-  slack: readonly SlackChannel[],
-  telegram: readonly TelegramChat[],
-): SharedChannel[] {
-  return [
-    ...slack.filter((c) => !isSlackDirectMessage(c)).map(toSharedSlackChannel),
-    ...telegram
-      .filter((c) => !c.direct)
-      .map((c): SharedChannel => ({ kind: "telegram-chat", name: c.title })),
-  ];
-}
+export {
+  isSlackDirectMessageId,
+  type SharedChannel,
+  sharedChannels,
+} from "api-server-api";
 
 const KIND_NOUN: Record<SharedChannel["kind"], [string, string]> = {
   "slack-channel": ["Slack channel", "Slack channels"],

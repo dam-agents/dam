@@ -4,7 +4,7 @@ description: Spawn platform sub-agents on DAM — fresh agents in their own sand
   Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step in a fresh sandbox.
   Its first step decides whether a platform sub-agent is needed at all.
   Hand-offs, fan-outs and long waits use the spawn_subagent and await_subagents tools; a driver SDK script (Python driver_sdk, JS driver-sdk.mjs) is only for orchestration logic that finishes in one foreground command.
-allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, Bash(python3 *), Bash(node *), Write
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__run_subagent, mcp__platform-outbound__update_subagent, mcp__platform-outbound__wake_subagent, mcp__platform-outbound__update_subagent_egress, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, Bash(python3 *), Bash(node *), Write
 ---
 
 # Spawn a sub-agent
@@ -51,6 +51,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
    A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
    For a script, it gives the exit code and the start and end of stdout and stderr.
+   A sub-agent listed under `deliveredAsTurn` has its result coming to you as a new turn, maybe after this turn ends: read it there, not again.
 4. **Save a script's output in full** with `fetch_subagent_output` and a `path`, then run the command it returns: it downloads the stream byte for byte to that file in this sandbox and checks it.
    Read the file as often as you need; the user can open it too.
    Fetch each stream once, since the platform deletes its copy after the download; one nobody fetches is deleted after seven days.
@@ -59,6 +60,10 @@ For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in 
 
 **You may stop waiting.** If you end your turn or stop calling `await_subagents`, the platform delivers each result to this session as a new turn when its sub-agent ends — on every harness, and also after the user has left.
 So never keep a shell command or a background job alive only to wait for a sub-agent.
+
+**Stop a sub-agent you no longer need.** When another sub-agent already found the answer, the user changed the request, or you gave it the wrong task, call `stop_subagent` with its id and a short `reason` at once: it stops spending, and so does every sub-agent it started.
+A sub-agent you spawned with `keep` keeps its conversation and needs a reason; any other is removed.
+Its result never comes back to you as a turn; the user sees your reason in the delegation view.
 
 **Report only what you checked.** Never tell the user that a sub-agent or a script is running unless you checked it just now.
 `await_subagents`, or the script's own output, is the source of truth.
@@ -87,7 +92,10 @@ Examples below are Python; the JS names are the camelCase equivalents (`listImag
   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
 - **Model** — one of your model providers that the harness runs on, and a model you pick (see "Choose the model per spawn").
   A spawn with no model runs on this agent's default model when it is on that default's harness; on any other harness, or with no default, it is refused.
-- **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
+- **Connections** — by default all of yours, granted and revoked with your own; `connections="none"` gives it only its model, a list of your connection ids copies just those.
+- **Egress** — by default your rules decide its requests, so what you can reach, it can reach.
+  `egress="open"` gives it rules of its own that you set, with no prompt to the user; `egress={"scoped": [hosts]}` copies your rules for those hosts, and only the user can widen them.
+  Use `open` with `connections="none"`.
 
 ## Quickstart: a sub-agent that returns a single integer
 
@@ -134,7 +142,9 @@ result = d.spawn(
 | `env`         | Environment variables (Python: a dict; JS: `[{ name, value }]`).                                                                                                                           |
 | `resources`   | `storage` (disk). CPU and memory are the owner's pool, never a spawn's choice; an omitted disk comes from the harness's defaults.                                                          |
 | `skills`      | External skills to install: `[{"source": <skill source url>, "name": ...}]`.                                                                                                               |
-| `connections` | Connection ids to grant, a subset of your own.                                                                                                                                             |
+| `connections` | `"parent"` (default, all of yours, kept in step), `"none"`, or ids of your own copied once.                                                                                                |
+| `egress`      | `"parent"` (default), `"open"` / `{"open": [rules]}`, or `{"scoped": [hosts]}`; see above.                                                                                                 |
+| `keep`        | Keep it after its result, asleep, until `keep_for_ms` (a day by default), to enter or run in it again.                                                                                     |
 | `image`       | A custom image to run instead of the harness's default one.                                                                                                                                |
 | `label`       | Names the sub-agent in your script's log lines.                                                                                                                                            |
 | `ttl_ms`      | Deadline, ~1 min..6 h, default ~60 min. See below.                                                                                                                                         |
@@ -227,10 +237,31 @@ The server validates the result against JSON Schema.
 {"verdict": d.s.enum(["passed", "continue"])}  # enum field
 ```
 
+## Work inside a sub-agent
+
+When the work needs files you prepare, or several steps in one machine, spawn a **clean slate** and work in it yourself:
+
+```python
+import driver_sdk as d
+
+sub = d.spawn_slate(harness="claude-code", keep=True)   # boots, runs nothing
+# from a shell: scp ./data.csv sub-<id>:  and  ssh sub-<id> 'pip install -r req.txt'
+out = sub.run_script("python3 analyse.py data.csv")      # a command, on its files
+n = sub.run("How many rows are in ~/data.csv?", d.s("integer"))  # a model run
+# scp sub-<id>:report.html .   then run again, or let it go at its keep expiry
+```
+
+With the tools: `spawn_subagent` with neither prompt nor script, then `ssh sub-<id>` and `scp`, then `run_subagent`, then `await_subagents`.
+Without `keep` a sub-agent is removed after its first result; with it, `update_subagent` keeps it longer.
+`ssh sub-<id>` wakes a sleeping one.
+Its own Environments go with it when it is removed.
+
 ## Fan-out and compute
 
 - Spawns past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.
 - In a script, run parallel spawns from threads (Python) or `Promise.all` (JS); a wide or long fan-out belongs to the tools.
+- **Stop the spawns a script no longer needs**, as soon as it knows: pass `cancel=threading.Event()` to `spawn` or `spawn_script` and `set()` it, which raises `Stopped` (`cancel_reason="why"` gives the user your reason); in JS pass `signal` from an `AbortController` and `abort("why")`, which throws `Stopped`.
+  `sub.stop("why")` stops a clean slate or a kept sub-agent.
 - **You stay awake while your sub-agents run.** The platform keeps this agent from hibernating while any sub-agent it spawned is still running.
 
 ## Things to know

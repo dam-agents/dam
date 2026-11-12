@@ -2,6 +2,7 @@ import { z } from "zod";
 import { agentSetupSeedSchema, agentSetupShape } from "../agents/setup.js";
 import { templateHarnessSchema } from "../templates/schemas.js";
 import { agentConfigOptionsSchema } from "../harness-config/schemas.js";
+import { egressHostSchema } from "../egress-rules/schemas.js";
 
 export const DEFAULT_INVOCATION_TTL_MS = 60 * 60 * 1000;
 export const MIN_INVOCATION_TTL_MS = 60 * 1000;
@@ -25,10 +26,42 @@ export const invocationHarnessConfigSchema = z
     { message: "harnessConfig needs a model, a mode or configOptions" },
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: which of the launching agent's connections a child holds: `parent`, all of them, kept in step with the parent's own for as long as the child lives, revokes included; `none`; or the ids named, each one of the parent's own, copied once at launch.
+export const childConnectionsSchema = z.union([
+  z.literal("parent"),
+  z.literal("none"),
+  z.array(z.string().min(1)),
+]);
+export type ChildConnections = z.infer<typeof childConnectionsSchema>;
+
+export const childEgressRuleSchema = z.object({
+  host: egressHostSchema,
+  port: z.number().int().min(1).max(65535).optional(),
+  method: z.string().min(1).optional(),
+  pathPattern: z.string().min(1).optional(),
+  verdict: z.enum(["allow", "deny"]),
+});
+export type ChildEgressRule = z.infer<typeof childEgressRuleSchema>;
+
+// UNIT_BOUNDARY_DESCRIPTION: whose egress rules decide a child's requests: `parent`, the root's, live; `open` (or `{ open: rules }`), rules of its own that the launching agent sets, with no prompt to the user and a host outside them denied; or `{ scoped: hosts }`, its own rules copied once from the parent's for those hosts (or all of them), widened only by the user's approval.
+export const childEgressSchema = z.union([
+  z.literal("parent"),
+  z.literal("open"),
+  z.object({ open: z.array(childEgressRuleSchema).max(200) }),
+  z.object({
+    scoped: z.union([z.literal("all"), z.array(z.string().min(1)).max(200)]),
+  }),
+]);
+export type ChildEgress = z.infer<typeof childEgressSchema>;
+
 const spawnTargetShape = {
   harness: templateHarnessSchema.optional(),
   image: z.string().min(1).optional(),
-  connections: z.array(z.string().min(1)).optional(),
+  connections: childConnectionsSchema.optional(),
+  egress: childEgressSchema.optional(),
+  keep: z.boolean().optional(),
+  keepForMs: z.number().int().min(60_000).optional(),
+  idleTimeoutMin: z.number().int().min(1).optional(),
   label: z.string().min(1).max(100).optional(),
   ttlMs: z
     .number()
@@ -63,6 +96,22 @@ export const spawnInvocationRequestSchema = refineSpawnTarget(
   }),
 );
 
+export const MAX_STOP_REASON_CHARS = 500;
+
+export const stopReasonSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_STOP_REASON_CHARS);
+
+export const stopInvocationRequestSchema = z.object({
+  reason: stopReasonSchema.optional(),
+});
+
+export const stopInvocationResponseSchema = z.object({
+  stopped: z.boolean(),
+});
+
 export const MAX_INVOCATION_SCRIPT_CHARS = 64 * 1024;
 
 export const spawnScriptInvocationRequestSchema = refineSpawnTarget(
@@ -72,9 +121,25 @@ export const spawnScriptInvocationRequestSchema = refineSpawnTarget(
   }),
 );
 
-export const spawnInvocationResponseSchema = z.object({
+// UNIT_BOUNDARY_DESCRIPTION: a rule of a child's open egress that its driver could not set itself, waiting for the owner's verdict: the host, and the id of the request the owner answers.
+export const egressWaitingSchema = z.object({
+  host: z.string().min(1),
   id: z.string().min(1),
 });
+
+export const spawnInvocationResponseSchema = z.object({
+  id: z.string().min(1),
+  egressWaitingForOwner: z.array(egressWaitingSchema).optional(),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: what replacing an open child's egress rules did not set: the rules that wait for the owner's approval, and the hosts the owner blocked on the child.
+export const setEgressResponseSchema = z.object({
+  waitingForOwner: z.array(egressWaitingSchema),
+  blockedByOwner: z.array(z.object({ host: z.string().min(1) })),
+});
+
+export const OWNER_EGRESS_NOTE =
+  "these rules were not set: each is your owner's to approve, and waits for their verdict (egress_proposal status with its id). Until then only your other rules apply, and a request to these hosts is denied. A rule waits when it allows a wildcard host (* or *.example.com), or lets through a request your own rules do not allow while your owner has not let your sub-agents and Environments have network access of their own";
 
 export const INVOCATION_OUTPUT_STREAMS = ["stdout", "stderr"] as const;
 
@@ -91,13 +156,27 @@ export const invocationOutputSchema = z.object({
 });
 
 export const invocationViewSchema = z.object({
-  status: z.enum(["running", "done", "failed"]),
+  run: z.string().optional(),
+  session: z.string().optional(),
+  keepUntil: z.string().optional(),
+  removed: z.literal(true).optional(),
+  status: z.enum(["idle", "running", "done", "failed"]),
   result: z.unknown(),
   errorReason: z.string().optional(),
   exitCode: z.number().int().optional(),
   output: invocationOutputSchema.optional(),
   waiting: z.string().optional(),
+  egress: z
+    .object({
+      allowed: z.array(z.string()),
+      declined: z.array(z.string()),
+      note: z.string(),
+    })
+    .optional(),
 });
+
+export const EGRESS_ANSWERS_NOTE =
+  "your owner answered the network rules you set for it that had to wait. It reaches only what its rules allow: a request to any other host, a declined one included, is refused by closing the connection, with no response and no refusal header, so such a failure is the rule and not a network fault";
 
 export const invocationOutputLinkSchema = invocationOutputBlobSchema.extend({
   url: z.string().min(1),
@@ -108,6 +187,10 @@ export const INVOCATIONS_TREE_MAX_IDS = 200;
 export const invocationsTreeInputSchema = z.object({
   driverAgentId: z.string().min(1),
   ids: z.array(z.string().min(1)).min(1).max(INVOCATIONS_TREE_MAX_IDS),
+});
+
+export const invocationsKeptInputSchema = z.object({
+  driverAgentId: z.string().min(1),
 });
 
 export const invocationsRunningInputSchema = z.object({

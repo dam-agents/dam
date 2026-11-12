@@ -7,8 +7,10 @@ import { FULL_ACCESS_LABEL, fullAccessLine } from "../lib/github-access.js";
 
 export function FullAccessMark({
   connection,
+  status,
 }: {
   connection: Pick<ConnectionView, "id" | "authKind" | "fullAccess">;
+  status?: string;
 }) {
   if (!connection.fullAccess) return null;
   return (
@@ -20,6 +22,7 @@ export function FullAccessMark({
     >
       <WarningAlt size={12} aria-hidden />
       {FULL_ACCESS_LABEL}
+      {status && ` · ${status}`}
     </Badge>
   );
 }

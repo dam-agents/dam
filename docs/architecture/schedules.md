@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-04
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -177,7 +177,7 @@ The schedule↔session link is agent-owned: schedule sessions are typed (`schedu
 A one-time task that continues its scheduling session opens no session of its own, so the session it continued records the schedule on itself, and a schedule's sessions are the ones it opened plus the ones it continued.
 That is how the schedules tab reaches the chat a check-back ran in.
 The list is not the session's `scheduleId`: a chat continued by several tasks belongs to each of them, and stays a chat.
-Boot recovery moves that binding when it re-runs a continuous schedule's cut first turn in a fresh session, so the next fire continues the session that holds the work instead of one it retired.
+Boot recovery moves that binding when it re-runs a continuous schedule's cut first turn in a fresh session — only when the harness never stored the cut one — so the next fire continues the session that holds the work instead of one it retired.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
 Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session.
 Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.
@@ -197,17 +197,18 @@ Its form opens on the profile the agent's most recently created schedule runs on
 The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
 The form saves an own pick only with a model; a schedule that keeps no choice of its own, and so follows the agent's model for schedules, is the one exception, and its form shows that default's values as a hint, not as a selection.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
-A profile that cannot run on the agent fails the fire with its reason, and the run is never reported as following the agent's default.
+A profile that cannot run on the agent leaves the fire on the pair it resolves, the agent's scheduled default, and the schedule's row still names the reason its profile cannot run.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
 The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
 A schedule row names the profile it runs on, or its own choices where it carries them, in the picker's summary.
-Its details read the same, or the reason its profile cannot run, never the chat default the fire would not fall back to.
-With no default model saved, a fire runs on the [automatic model](harness-config.md#session-settings); with no model to run on, or a saved model on a provider the agent no longer holds, it fails with the `no-default-model` reason on its first attempt, with no retry, and Run Now refuses with it.
+Its details read the same, or the reason its profile cannot run beside the values the fire falls back to.
+With no default model saved, a fire runs on the [automatic model](harness-config.md#session-settings), and so does a saved model on a provider the agent no longer holds.
+An agent holding no model provider at all is still setting up while the deployment's shared CurveBender is granted to it, so the fire is retried and Run Now says so; where the deployment offers no shared one, the `no-default-model` reason ends the attempt at once, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.
 A save that fails names the reason.
-A fire whose choices no longer hold, because a provider was revoked or a model left the list, is refused with that reason rather than running on a substitute.
+A fire checks the harness and the settings it carries, never the model its resolved pair already settled: a schedule whose model lost its provider, or left the list, fires on the fallback rather than refusing every occurrence.
 A one-time task that continues its scheduling session keeps that session's choices.
 An agent creating a schedule names the same choices through its tools.
 

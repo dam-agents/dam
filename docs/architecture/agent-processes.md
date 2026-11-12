@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-26
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -123,7 +123,7 @@ A [starter kit](starter-kits.md) may declare some: the platform sends them once 
 openrc evaluates `command_args` once more when it starts the service, so each declared argument is quoted for that pass and reaches the program as the kit wrote it.
 
 OpenRC itself does the work.
-platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
+platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
 Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
 The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
 A service gets the environment the pod service gets: openrc keeps `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment it starts in, and adds every variable of `~/.config/rc/profile.env` it left unset.

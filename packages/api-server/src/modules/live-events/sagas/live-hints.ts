@@ -40,7 +40,10 @@ export function hintFor(event: DomainEvent): {
     case EventType.ApprovalResolved:
       return {
         ownerSub: event.ownerSub,
-        hint: { topic: "approvals", agentId: event.agentId },
+        hint: {
+          topic: "approvals",
+          agentId: event.forAgentId ?? event.agentId,
+        },
       };
     case EventType.ScheduleFired:
     case EventType.ScheduleCreated:
@@ -97,6 +100,13 @@ export function hintFor(event: DomainEvent): {
     case EventType.AvatarUnlocked:
     case EventType.GettingStartedReset:
       return { ownerSub: event.ownerSub, hint: { topic: "gettingStarted" } };
+    case EventType.AssistantFirstResultRecorded:
+      return { ownerSub: event.owner, hint: { topic: "gettingStarted" } };
+    case EventType.AssistantUsed:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "agents", agentId: event.agentId },
+      };
     case EventType.UserAuthenticated:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:

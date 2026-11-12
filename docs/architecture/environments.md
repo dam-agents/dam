@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-05
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -20,7 +20,7 @@ So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owni
 It is created with nothing that would let it act as its Owning Agent:
 
 - **No harness.** The machine is told it is an Environment (`PLATFORM_ENVIRONMENT_OF`, set after the owner's own secret, so neither an ordinary Agent's secret can make it one nor the reverse); its runtime starts no chat harness and no session-history workers, and refuses chat and terminal connections.
-- **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
+- **No connections** by default, no default model provider, and no egress preset: it holds no credential unless the Owning Agent creates it with its own connections: all of them (`connections: parent`), held in step with the Owning Agent's, or the ones it names, copied once; one whose egress is open holds none.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints and its expiry.
@@ -50,29 +50,36 @@ People and Agents sit in tables of their own, so an email never matches an Agent
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
   Deleting an Owning Agent deletes its Environments through the same cleanup, and the periodic sweep of agent artifacts catches any left behind.
 
+An Environment is a sub-agent with the Environment preset: `create_environment` and `spawn_subagent` build their Agent through one launch, with what every child shares (the agent that may link in, no default provider of the owner's, no egress preset) in one place, and each keeps its own record ([invocations](invocations.md#spawning)).
+
 ## The Environment Link
 
 The Owning Agent reaches each of its Environments over SSH, joined by their [VM runner](vm-runner.md) through a vsock port of each machine, never through the api-server or the pod network.
-The link is one-way: only the Owning Agent's machine can open it, the runner joins it only to an Environment that names that machine as its owner, and nothing in an Environment can open a connection back.
+The link is one-way: only the Owning Agent's machine can open it, the runner joins it only to an Environment that accepts from that machine (its `linkFrom`, the Owning Agent), and nothing in an Environment can open a connection back.
+The same link takes a driver into its own sub-agent, as `ssh sub-<id>`, which wakes a sleeping one first ([invocations](invocations.md#spawning)); an Environment is the one kind of machine that never dials.
 
 - **`ssh env-<name>`** works from the Owning Agent with nothing to set up: the image's SSH config sends every `env-*` host through `platform-env proxy`, which finds the Environment by name with the `list_environments` tool, wakes it with `wake_environment` when it sleeps, and opens the link.
   `scp`, `ssh -L` and streaming an image in, `docker save IMAGE | ssh env-<name> k3s ctr images import -`, work as with any host.
-- **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
-- **On the Environment**, an openrc service of the image, `platform-env`, runs `socat` on the vsock port, which hands each connection to a short script that trusts the key and runs `sshd -i`; it starts only on a machine that is an Environment.
+- **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it for that connection alone; only the Owning Agent reaches the link, so the link itself is the authorization.
+- **On the Environment**, the machine's own init, platform-init, listens on the vsock port, whatever the image, and starts one process for each connection that trusts the key and serves SSH itself, with sftp, so `scp` works on an image without OpenSSH; it listens only on a machine that is an Environment.
+  A command runs as root, the `agent` login, in the image's login shell for root, or `/bin/sh`.
   A shell gets what an openrc service gets of the machine's environment: the image's tool `PATH`, the gateway and CA settings, so `docker` and `k3s` pull as they do at boot, the image's `XDG_RUNTIME_DIR`, where `rc-service --user` finds the agent's own services, and `MISE_SYSTEM_DATA_DIR`, where a login shell's mise finds the image's tools.
-- **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
+  The image has to provide only a shell for commands to run in.
+- **An open link keeps both machines awake.** The proxy on the agent and the process platform-init starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and so does every command it runs, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
-The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
+The agent's side is a small Python helper, since Node has no vsock, and carries the bytes with `socat`.
 
 ## Network access
 
 An Environment runs the app its agent built, which reaches registries, mirrors and models, and it runs untrusted code for visitors, so it never carries the Owning Agent's credentials.
 
-- **Egress follows the Owning Agent's rules.** The egress gate resolves an Environment to its Owning Agent, of the same owner, and decides by the Owning Agent's rules: a host the agent may reach, the Environment may reach; a host denied stays denied.
+- **Egress follows the Owning Agent's rules**, unless the Owning Agent created it with egress of its own ([detached egress](security-and-credentials.md)).
+  The egress gate resolves an Environment to its Owning Agent, of the same owner, and decides by the Owning Agent's rules: a host the agent may reach, the Environment may reach; a host denied stays denied.
   The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
-- **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
-- **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
-  A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
+- **A new host** of one that follows the Owning Agent's rules files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
+  One with rules of its own is decided as any [detached](security-and-credentials.md) child is.
+- **Connections.** An Environment holds none, all of the Owning Agent's when created with them, mirrored as a sub-agent's are, or a subset copied once ([invocations](invocations.md#spawning)); their credentials are injected by its own gateway, while its egress is decided under the Owning Agent.
+  A mirroring one follows every later grant and revoke on the Owning Agent, a new provider included; the others keep what they were created with, and a newly connected provider is never attached to an Environment on its own.
 
 ## Agents at the gate
 
@@ -126,6 +133,17 @@ The api-server names the declared ports on every request, so a port the Environm
 - **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
   So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
   Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
+  When an endpoint has no session while the one a page loads from still does, because its step of the sign-in never landed or its session ended first, that page load sends the browser through the endpoints that miss one and back to the page.
+  It does so once per session in five minutes, so a step that keeps failing never loops, and never for a frame or a script's call.
+  Without it the app would stay broken: its own address still has a session, so no page load goes through the front door again.
+- **A person's own OAuth client signs in with their platform account** — an MCP client in an IDE, a desktop app or a CLI, any client of the MCP authorization standard.
+  A request with no session, no Agent Key and no bearer token that is not a page load gets a 401 whose `WWW-Authenticate` names `<address>/.well-known/oauth-protected-resource` and the scopes `environments offline_access` (RFC 9728); a page load keeps the redirect to the front door.
+  The gate answers that path itself on every endpoint, before the app, and the same path suffixed with a path: `resource` is the endpoint's address exactly as a client compares it (`<scheme>://<address>.<environments domain>`, the port only when the install's URL has one, no trailing slash), `authorization_servers` the realm's public issuer; the app can no longer serve that path.
+  The client then registers itself with Keycloak (RFC 7591), signs the person in there with PKCE, and asks for a token naming the address as its `resource` (RFC 8707); Keycloak's `keycloak-environments` extension makes that address the token's only audience and keeps it on every refresh, and the person allows the client once on Keycloak's consent page.
+  A bearer JWT whose issuer is one of the platform's is checked at the gate: RS256 against the realm's keys, that issuer, an audience of exactly this endpoint's address and nothing else, and its expiry; then the same rule a browser session gets, read from the lists at that request — the owner by `sub`, anyone else by an `email` the token marks verified.
+  A token that fails gets a 401 with `error="invalid_token"`, a valid token whose person is not on the lists a 403; a token for one Environment opens no other, and none opens the platform's API, whose audience it never names.
+  The same holds for a WebSocket upgrade, and the relay drops the token before the app as it drops every platform token.
+  An Agent Key request is unchanged.
 - **The address checks again on every request**, by its session and the lists as they stand, so a person taken off either list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
   Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out and the loading page's status and retry, which never reach the app.
@@ -134,14 +152,17 @@ The api-server names the declared ports on every request, so a port the Environm
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
   A CORS preflight from another endpoint of the same Environment carries no cookie, so the gate answers it itself, allowing the method and headers asked for with credentials; the call that follows is checked as any other, and its answer is the app's.
   A refusal of a call from another endpoint carries CORS headers for that endpoint, so its page reads the status instead of a network error.
+  A script's call with no session gets a plain-text 401, never the sign-in redirect or an HTML page its script would read as data; only a page load is sent to the front door, and an install that serves OAuth clients adds the `WWW-Authenticate` header below.
 - **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret), passes on every cookie the app set itself, and never lets the app set the platform's.
   An `Authorization` header reaches the app unless it is a platform credential: a platform API key, a bearer token that names the platform's identity provider as its issuer or names none, or a bearer value that is not one token, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
-- **Wake.** A request to a sleeping Environment starts its wake and never waits for it.
+- **Wake.** A request to a sleeping Environment starts its wake; only a request with a valid token waits for it, up to a minute until the machine runs, then goes on, and past that gets the 503 below, so a connected client's call answers instead of failing.
+  Every other request never waits.
   While the machine wakes, a page load (a `GET` navigation) gets the loading page below, and every other request — a script's call, an API client, a WebSocket — a plain 503 with `Retry-After`, never the page and never a 200, so a health check or a monitor does not read the Environment as up and a client that expects JSON gets no HTML.
 - **The app answers for itself.** Once the machine runs, every request but a page load goes to the app as it is, whatever its answer: the gate never stands in for a script, a stylesheet or an API call of an app that is up.
-  The one exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.
+  The gate's own paths are the exceptions: `/.platform/` and the resource metadata at `/.well-known/oauth-protected-resource`.
+  The other exception is nothing at all on the port, which the runtime marks on its own 502; that request gets the plain 503 too.
 - **When a page load waits.** A page load to a running machine gets the loading page instead of the app's answer only while nothing behind the endpoint can answer it: nothing listens on the port, or, for an endpoint without a readiness path, a proxy in front of the app answers 502, 503 or 504, as a bridge or a k3s ingress does before the app behind it is up.
   An endpoint may declare a readiness path (`ready: "/healthz"` on create, or set by endpoint name on update); a page load to it waits until that path answers 2xx or 3xx, for an app that answers before it can serve.
   The gate keeps a "not ready" for a few seconds, so a burst of page loads costs one probe, and a "ready" until a relay finds nothing listening or the Environment wakes again.
@@ -180,13 +201,14 @@ Nothing in the create asks for nesting: the Environment's machine nests through 
 An install that turns either off gives its Environments no `/dev/kvm`.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
-Beside the chart it installs two pieces the gate needs, and two the Environment's disk needs:
+Beside the chart it installs two pieces the gate needs, two the Environment's disk needs, and one its nested machines need:
 
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
-- **No image garbage collection and no disk eviction** in its k3s: the Environment's own storage guard preallocates most of its disk, so the kubelet would read it as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
+- **No image garbage collection and no disk eviction** in its k3s: the Environment's own disk is held to the room its owner's storage has left ([VM storage](vm-storage.md)), so whenever that storage runs short the kubelet would read the disk as nearly full, delete the images the install just put in and evict its pods; nothing there pulls an image back.
   Its hard eviction keeps memory alone, since its eviction manager deletes images under its disk thresholds whatever the collection thresholds say; the guard and the VM runner hold the disk.
 - **The VM runner's node directories on its home disk, after every restart too**: its root is an overlay, where the runner pod cannot mount them, so the install bind-mounts them from the home disk and leaves a boot service that mounts them again before k3s starts, so a VM agent starts after the Environment sleeps and wakes with no new install.
+- **Transparent huge pages `always`, after every restart too**: the kernel's default is `madvise`, and the runner does not advise guest RAM, so a nested machine's boot often outlasts the VM runner's 30 s window; the install sets `always`, fails when the kernel keeps `madvise`, and leaves a boot service that sets it again before k3s starts.
 
 `--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 

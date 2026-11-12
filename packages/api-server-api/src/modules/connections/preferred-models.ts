@@ -4,8 +4,8 @@
  * and never which of them to prefer. A routed harness never sees a preset's
  * env, so nothing else names the classifier's model, and a provider whose ids
  * carry no tier word (CurveBender, the built-in one) has no tier to guess
- * from: an agent that picked no model would run on the newest id the provider
- * happens to list, and a classifier call on the session's own work model.
+ * from: an agent that picked no model would run on the id the provider happens
+ * to list first, and a classifier call on the session's own work model.
  *
  * Entries are read in three groups: the harness's own, then those that name
  * no harness, then another harness's. So the `work` list reads: the harness's
@@ -156,7 +156,7 @@ export interface ProviderListing {
  * another harness's model ahead of them; a caller that names no harness reads
  * the harness-agnostic entries first, as an unrouted image's own harness and a
  * catalogue lookup do. The listing's own order breaks a tie inside one
- * provider, since a provider lists its models newest first. Null when no
+ * provider, as discovery lists them. Null when no
  * provider lists anything the list answers with, which leaves the caller its
  * own last resort.
  */

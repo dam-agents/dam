@@ -1,4 +1,4 @@
-import type { FeatureId } from "api-server-api";
+import type { Brand, FeatureId } from "api-server-api";
 import { type ReactNode, useId } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -7,12 +7,15 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
   useInstallCapabilities,
   useSetFeature,
 } from "../api/queries.js";
+import { assistantFeatureRow } from "../lib/assistant-feature-row.js";
+import { damConnectionFeatureRow } from "../lib/dam-connection-feature-row.js";
 import { isFeatureOffered } from "../lib/visible-features.js";
 
 interface FeatureRow {
@@ -21,13 +24,16 @@ interface FeatureRow {
   description: ReactNode;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the Connection that drives the install and the assistant last, both built from the brand. */
+function featureRows(brand: Brand): FeatureRow[] {
+  return [
+    ...FEATURE_ROWS,
+    damConnectionFeatureRow(brand),
+    assistantFeatureRow(brand),
+  ];
+}
+
 const FEATURE_ROWS: FeatureRow[] = [
-  {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Let buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
-  },
   {
     id: "advanced-connections",
     label: "Advanced connections",
@@ -60,15 +66,21 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     id: "environments",
-    label: "Environments",
+    label: "Environments and kept sub-agents",
     description:
-      "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
+      "Let your agents run sandboxes of their own and keep them: Environments for other people and agents to open, such as one per pull request, and sub-agents kept after their result, which your agent can enter, give more work, run in parallel and continue a conversation with. Both sleep when unused and expire.",
   },
   {
     id: "hermes",
     label: "Hermes harness",
     description:
       "Offer Nous Research's Hermes Agent beside the other harnesses when you start a session, open a terminal or pick an agent's defaults, on agents whose image carries it.",
+  },
+  {
+    id: "github-enterprise-hosts",
+    label: "GitHub Enterprise hosts",
+    description:
+      "Pick which GitHub Enterprise host to connect to, and move a GitHub Enterprise sign-in to another host, on an install that offers more than one.",
   },
 ];
 
@@ -115,6 +127,11 @@ export function FeaturesTab() {
   const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
+  const brand = getBrand();
+  const offeredRows = featureRows(brand).filter((row) =>
+    isFeatureOffered(row.id, install),
+  );
+
   return (
     <div>
       <PageHeader
@@ -123,18 +140,16 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.filter((row) => isFeatureOffered(row.id, install)).map(
-          (row) => (
-            <FeatureRowCard
-              key={row.id}
-              row={row}
-              enabled={flags?.[row.id] ?? false}
-              onToggle={(enabled) =>
-                setFeature.mutate({ feature: row.id, enabled })
-              }
-            />
-          ),
-        )}
+        {offeredRows.map((row) => (
+          <FeatureRowCard
+            key={row.id}
+            row={row}
+            enabled={flags?.[row.id] ?? false}
+            onToggle={(enabled) =>
+              setFeature.mutate({ feature: row.id, enabled })
+            }
+          />
+        ))}
       </div>
 
       <SectionLabel spaced className="mt-8">

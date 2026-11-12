@@ -71,6 +71,7 @@ import type { SecretStore } from "../secret-store/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
+import type { DamKeyPort } from "./domain/dam-connection.js";
 
 export interface SecretRequestStores {
   pending: TtlStore<PendingSecretRequest>;
@@ -97,6 +98,8 @@ export interface ComposeConnectionsAtBootOpts {
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
   curveBenderDeployment?: boolean;
+  damBaseUrl?: string;
+  brandName?: string;
   e2eEnabled?: boolean;
 }
 
@@ -106,6 +109,8 @@ export function composeConnectionsAtBoot(
   const templates = createConnectionTemplateRegistry(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+      ...(opts.damBaseUrl ? { damBaseUrl: opts.damBaseUrl } : {}),
+      ...(opts.brandName ? { brandName: opts.brandName } : {}),
       curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
@@ -254,6 +259,8 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
+  damKey: DamKeyPort;
+  damConnectionOffered: () => Promise<boolean>;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog: ProviderModelCatalog;
@@ -261,6 +268,7 @@ export function composeConnectionsForOwner(opts: {
     connectionId: string;
     harness: string;
   } | null>;
+  mirroredChildren?: (agentId: string) => Promise<string[]>;
 }): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -295,6 +303,9 @@ export function composeConnectionsForOwner(opts: {
 
   return createConnectionsService({
     ownerId: opts.ownerId,
+    ...(opts.mirroredChildren
+      ? { mirroredChildren: opts.mirroredChildren }
+      : {}),
     templates: opts.templates,
     repo,
     secretStore: opts.secretStore,
@@ -308,6 +319,8 @@ export function composeConnectionsForOwner(opts: {
     credentialProbe: createCredentialProbe(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
+    damKey: opts.damKey,
+    damConnectionOffered: opts.damConnectionOffered,
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),

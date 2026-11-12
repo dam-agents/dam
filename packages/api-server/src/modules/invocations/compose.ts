@@ -16,6 +16,7 @@ import {
   type SpawnSessions,
 } from "./services/spawn-sessions.js";
 import { createDelegationControl } from "./services/delegation-control.js";
+import { createDelegationStop } from "./services/delegation-stop.js";
 import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
@@ -39,6 +40,7 @@ import {
   createTargetReaper,
   type TargetReaper,
 } from "./services/target-reaper.js";
+import { createRunCancel, type RunCancel } from "./services/run-cancel.js";
 import {
   createReportedTargetReap,
   type OpenCalls,
@@ -47,6 +49,7 @@ import {
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import { createInvocationStart } from "./services/invocation-start.js";
+import { createInvocationEgressHold } from "./services/invocation-egress-hold.js";
 import {
   createScriptOutputs,
   type OutputBlobStore,
@@ -64,15 +67,25 @@ import {
   type SubAgentOutcomeDeliveryDeps,
 } from "./services/outcome-delivery.js";
 
+function composeCancel(
+  repo: InvocationsRepository,
+  agentsFor: (owner: string) => AgentsService,
+  runtimeMutator: RuntimeMutator,
+): RunCancel {
+  return createRunCancel({ repo, agentsFor, runtimeMutator });
+}
+
 function composeReaper(
   repo: InvocationsRepository,
   agentsFor: (owner: string) => AgentsService,
   frames: DelegationFramesPort,
+  runtimeMutator: RuntimeMutator,
 ): TargetReaper {
   return createTargetReaper({
     repo,
     agentsFor,
     capture: createTargetCapture({ repo, frames }),
+    cancel: composeCancel(repo, agentsFor, runtimeMutator),
   });
 }
 
@@ -81,9 +94,10 @@ function composeReportedReap(
   agentsFor: (owner: string) => AgentsService,
   frames: DelegationFramesPort,
   openCalls: OpenCalls,
+  runtimeMutator: RuntimeMutator,
 ): ReportedTargetReap {
   return createReportedTargetReap({
-    reaper: composeReaper(repo, agentsFor, frames),
+    reaper: composeReaper(repo, agentsFor, frames, runtimeMutator),
     capture: createTargetCapture({ repo, frames }),
     openCalls,
   });
@@ -103,19 +117,30 @@ export function composeInvocationsForOwner(opts: {
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
+  keepMaxMs: number;
+  idleTimeoutMaxMin: number;
 }): InvocationsService {
   const repo = createInvocationsRepository(opts.db);
+  const reaper = composeReaper(
+    repo,
+    () => opts.agents,
+    opts.frames,
+    opts.runtimeMutator,
+  );
   return createInvocationsService({
     owner: opts.owner,
     repo,
     agents: opts.agents,
     driverResolution: createDriverResolution({ repo }),
-    reaper: composeReaper(repo, () => opts.agents, opts.frames),
+    reaper,
+    stopper: createDelegationStop({ repo, reaper }),
+    cancel: composeCancel(repo, () => opts.agents, opts.runtimeMutator),
     reportedReap: composeReportedReap(
       repo,
       () => opts.agents,
       opts.frames,
       opts.openCalls,
+      opts.runtimeMutator,
     ),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
@@ -125,6 +150,8 @@ export function composeInvocationsForOwner(opts: {
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
     ...(opts.readStartWait ? { readStartWait: opts.readStartWait } : {}),
+    keepMaxMs: opts.keepMaxMs,
+    idleTimeoutMaxMin: opts.idleTimeoutMaxMin,
   });
 }
 
@@ -132,11 +159,15 @@ export function composeInvocationsQueryForOwner(opts: {
   db: Db;
   owner: string;
   frames: DelegationFramesPort;
+  egressWaitingAmong?: (agentIds: readonly string[]) => Promise<Set<string>>;
 }): InvocationsQueryService {
   return createDelegationsQuery({
     repo: createInvocationsRepository(opts.db),
     owner: opts.owner,
     frames: opts.frames,
+    ...(opts.egressWaitingAmong && {
+      egressWaitingAmong: opts.egressWaitingAmong,
+    }),
   });
 }
 
@@ -145,12 +176,21 @@ export function composeInvocationsControlForOwner(opts: {
   owner: string;
   agents: AgentsService;
   frames: DelegationFramesPort;
+  runtimeMutator: RuntimeMutator;
 }): InvocationsControlService {
   const repo = createInvocationsRepository(opts.db);
   return createDelegationControl({
     repo,
     owner: opts.owner,
-    reaper: composeReaper(repo, () => opts.agents, opts.frames),
+    stopper: createDelegationStop({
+      repo,
+      reaper: composeReaper(
+        repo,
+        () => opts.agents,
+        opts.frames,
+        opts.runtimeMutator,
+      ),
+    }),
   });
 }
 
@@ -166,16 +206,24 @@ export function composeInvocationLivenessSweep(opts: {
   batchSize: number;
   frames: DelegationFramesPort;
   openCalls: OpenCalls;
+  runtimeMutator: RuntimeMutator;
 }): InvocationLivenessSweep {
   const repo = createInvocationsRepository(opts.db);
   return createInvocationLivenessSweep({
     repo,
-    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reaper: composeReaper(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.runtimeMutator,
+    ),
+    cancel: composeCancel(repo, opts.agentsFor, opts.runtimeMutator),
     reportedReap: composeReportedReap(
       repo,
       opts.agentsFor,
       opts.frames,
       opts.openCalls,
+      opts.runtimeMutator,
     ),
     readTargetRestart: opts.readTargetRestart,
     readStartWait: opts.readStartWait,
@@ -199,7 +247,7 @@ export function composeSubAgentOutcomeDelivery(
 
 export interface SubAgentAwaitMarks {
   markAwaited(ids: string[], until: Date): Promise<void>;
-  markCollected(ids: string[]): Promise<void>;
+  collect(ids: string[]): Promise<{ inTurn: string[] }>;
 }
 
 export function composeSubAgentAwaitMarks(
@@ -208,7 +256,7 @@ export function composeSubAgentAwaitMarks(
   const repo = createSubAgentOutcomesRepository(db);
   return (driverAgentId) => ({
     markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
-    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
+    collect: (ids) => repo.collect(driverAgentId, ids),
   });
 }
 
@@ -230,6 +278,24 @@ export function createInvocationStartAdapter(
   return createInvocationStart({ repo: createInvocationsRepository(db), log });
 }
 
+export function createInvocationEgressHoldAdapter(
+  db: Db,
+  waitingRules: (agentId: string) => Promise<readonly unknown[]>,
+): ReturnType<typeof createInvocationEgressHold> {
+  return createInvocationEgressHold({
+    repo: createInvocationsRepository(db),
+    waitingRules,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: records the owner's answer to a child's waiting network rule on the child's invocation, for the approvals context to call when a verdict lands.
+export function recordEgressAnswerAdapter(
+  db: Db,
+): InvocationsRepository["recordEgressAnswer"] {
+  const repo = createInvocationsRepository(db);
+  return (id, answer) => repo.recordEgressAnswer(id, answer);
+}
+
 export function createInvocationTasksAdapter(db: Db): InvocationTasks {
   return createInvocationTasks(db);
 }
@@ -239,11 +305,17 @@ export function createInvocationsCleanupHook(opts: {
   agentsFor: (owner: string) => AgentsService;
   frames: DelegationFramesPort;
   outputs: ScriptOutputs;
+  runtimeMutator: RuntimeMutator;
 }): (agentId: string) => Promise<void> {
   const repo = createInvocationsRepository(opts.db);
   return createDriverCascade({
     repo,
-    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reaper: composeReaper(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.runtimeMutator,
+    ),
     outputs: opts.outputs,
   });
 }
@@ -253,12 +325,18 @@ export function composeScriptOutputs(opts: {
   agentsFor: (owner: string) => AgentsService;
   frames: DelegationFramesPort;
   store: OutputBlobStore;
+  runtimeMutator: RuntimeMutator;
 }): ScriptOutputs {
   const repo = createInvocationsRepository(opts.db);
   return createScriptOutputs({
     repo,
     store: opts.store,
-    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reaper: composeReaper(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.runtimeMutator,
+    ),
   });
 }
 
@@ -266,12 +344,35 @@ export function createInvocationSetupFailure(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   frames: DelegationFramesPort;
-}): (agentId: string, step: string, reason: string) => Promise<string> {
+  runtimeMutator: RuntimeMutator;
+}): (
+  agentId: string,
+  step: string,
+  reason: string,
+  runId?: string,
+  sessionId?: string,
+) => Promise<string> {
   const repo = createInvocationsRepository(opts.db);
   return createSetupFailure({
     repo,
-    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    reaper: composeReaper(
+      repo,
+      opts.agentsFor,
+      opts.frames,
+      opts.runtimeMutator,
+    ),
   });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a target's answer to a request to end one of its runs: confirmed, the run's cancel mark clears and the session it ended is the run's; any other answer leaves the mark for the liveness sweep.
+export function createInvocationCancelOutcome(
+  db: Db,
+): (runId: string, ended: boolean, sessionId?: string) => Promise<void> {
+  const repo = createInvocationsRepository(db);
+  return async (runId, ended, sessionId) => {
+    if (sessionId) await repo.setRunSession(runId, sessionId);
+    if (ended) await repo.clearCancel(runId);
+  };
 }
 
 export function composeInvocationPinReconciler(opts: {

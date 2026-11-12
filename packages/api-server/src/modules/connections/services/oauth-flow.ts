@@ -7,7 +7,10 @@ import type {
 } from "api-server-api";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
-import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
+import {
+  isRetiredHost,
+  type ConnectionTemplateRegistry,
+} from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
 import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
@@ -78,12 +81,18 @@ export function createOAuthFlowService(deps: {
             "This connection is renewed by the GitHub sign-in it was made from. Sign in again on the sign-in.",
         });
       }
+      const template = deps.templates.get(conn.templateId);
+      if (template && isRetiredHost(template, conn.auth.host)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${conn.auth.host} is retired on this platform. Move this sign-in to another GitHub Enterprise host, then authorize it there.`,
+        });
+      }
       const provider = await oauthProviderForSignIn({
         ...deps,
         conn,
         auth: conn.auth,
       });
-      const template = deps.templates.get(conn.templateId);
       const alias =
         template?.authKind === "oauth"
           ? template.localhostCallbackAlias

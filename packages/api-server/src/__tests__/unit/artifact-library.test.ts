@@ -300,7 +300,6 @@ const fakeArtifacts = stubArtifacts();
 function idleAgentApiDeps(): {
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: () => Promise<boolean>;
   prompts: ViewerPromptDelivery;
 } {
   return {
@@ -308,7 +307,6 @@ function idleAgentApiDeps(): {
     agentApi: {
       request: () => Promise.reject(new Error("agent api not expected")),
     },
-    featureOn: () => Promise.resolve(true),
     prompts: {
       deliver: () => Promise.reject(new Error("prompt not expected")),
     },

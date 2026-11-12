@@ -428,6 +428,80 @@ describe("the auto-mode classifier env", () => {
   });
 });
 
+describe("the preferred work model env", () => {
+  const pi: ModelRouterBinding = {
+    dialects: ["openai-responses", "openai-chat", "anthropic-messages"],
+    preferredModelEnv: "PLATFORM_PREFERRED_MODEL",
+  };
+
+  /** TEST_SCENARIO: Pi's terminal can start with no model, and the router lists Haiku first; the variable names the platform's preferred work model among the providers serving Pi, by its router name, so Pi starts on Opus 5.5 rather than on the catalog's first model. */
+  it("names the preferred work model, not the first listed", () => {
+    const env = routerEnvFor({
+      harness: "pi",
+      binding: pi,
+      providers: [
+        provider(ibm, [
+          entry(ibm, "aws/claude-haiku-5-5", 200_000),
+          entry(ibm, "aws/claude-opus-5-5", 200_000),
+        ]),
+      ],
+      port: 1,
+    });
+    expect(env.PLATFORM_PREFERRED_MODEL).toBe("ibm/aws/claude-opus-5-5");
+  });
+
+  /** TEST_SCENARIO: The list reads for the harness asking: Opus 5.5 is Claude Code's own model, so Pi, which carries none, takes DeepSeek V4.1 Flash where both are listed, the model a run with no saved default takes on Pi. */
+  it("picks the model the list prefers for that harness", () => {
+    const providers = [
+      provider(ibm, [entry(ibm, "aws/claude-opus-5-5", 200_000)]),
+      provider(cb, [entry(cb, CB_WORK, 1_048_576)]),
+    ];
+    expect(
+      routerEnvFor({ harness: "pi", binding: pi, providers, port: 1 })
+        .PLATFORM_PREFERRED_MODEL,
+    ).toBe(`cb/${CB_WORK}`);
+    expect(
+      routerEnvFor({ harness: "claude-code", binding: pi, providers, port: 1 })
+        .PLATFORM_PREFERRED_MODEL,
+    ).toBe("ibm/aws/claude-opus-5-5");
+  });
+
+  /** TEST_SCENARIO: The list's order beats the providers' own, so a preferred model on the second provider wins over a non-preferred one on the first; a listing with none of the list's models, and a harness whose manifest names no variable, set nothing. */
+  it("follows the list across providers, and stays out of the way", () => {
+    expect(
+      routerEnvFor({
+        harness: "pi",
+        binding: pi,
+        providers: [
+          provider(ibm, [entry(ibm, "aws/claude-haiku-5-5", 200_000)]),
+          provider(cb, [entry(cb, CB_WORK, 1_048_576)]),
+        ],
+        port: 1,
+      }).PLATFORM_PREFERRED_MODEL,
+    ).toBe(`cb/${CB_WORK}`);
+    expect(
+      routerEnvFor({
+        harness: "pi",
+        binding: pi,
+        providers: [
+          provider(ibm, [entry(ibm, "aws/claude-haiku-5-5", 200_000)]),
+        ],
+        port: 1,
+      }),
+    ).not.toHaveProperty("PLATFORM_PREFERRED_MODEL");
+    expect(
+      routerEnvFor({
+        harness: "pi",
+        binding: { ...pi, preferredModelEnv: undefined },
+        providers: [
+          provider(ibm, [entry(ibm, "aws/claude-opus-5-5", 200_000)]),
+        ],
+        port: 1,
+      }),
+    ).not.toHaveProperty("PLATFORM_PREFERRED_MODEL");
+  });
+});
+
 describe("servedModels", () => {
   /** TEST_SCENARIO: Every model the harness may run on appears once, named as the router resolves it, with the window its Connection declares or null, so the harness's settings file can carry one window per model; a model the harness is never offered and a provider that does not serve it take no part. */
   it("lists each served model with its window, by its router name", () => {

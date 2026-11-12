@@ -1,5 +1,6 @@
 import { t } from "./trpc.js";
 import { agentsRouter } from "./modules/agents/router.js";
+import { assistantsRouter } from "./modules/assistants/router.js";
 import { apiKeysRouter } from "./modules/api-keys/router.js";
 import { artifactLibraryRouter } from "./modules/artifact-library/router.js";
 import { budgetsRouter } from "./modules/budgets/router.js";
@@ -42,6 +43,7 @@ export const appRouter = t.router({
   templates: templatesRouter,
   repos: reposRouter,
   agents: agentsRouter,
+  assistants: assistantsRouter,
   schedules: schedulesRouter,
   channels: channelsRouter,
   connections: connectionsRouter,
