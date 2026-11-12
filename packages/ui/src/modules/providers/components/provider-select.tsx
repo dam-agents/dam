@@ -51,7 +51,7 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  const { choices, autoSelect } = useMemo(
+  const { choices, autoSelect, sharedOffered } = useMemo(
     () => providerChoices(rows, { itemByType, shared }, preferShared),
     [rows, itemByType, shared, preferShared],
   );
@@ -98,7 +98,8 @@ export function ProviderSelect({
     icon: <CardIcon provider={c.type} size="sm" />,
     triggerIcon: <CardIcon provider={c.type} />,
     badge:
-      c.choice === recommended ? (
+      c.choice ===
+      (sharedOffered ? CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID : recommended) ? (
         <Badge variant="muted">Recommended</Badge>
       ) : undefined,
     triggerBadge: c.item ? (

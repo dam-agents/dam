@@ -71,6 +71,7 @@ interface ProviderChoiceRow extends ProviderRowDef {
  * the own-key row; the own-key row stays only while the person holds an own
  * key, as on Settings / Providers. Auto-select takes the first choice the
  * person holds, or the shared one when the form asks for it.
+ * sharedOffered says the shared CurveBender is among the choices.
  */
 export function providerChoices(
   rows: readonly ProviderRowDef[],
@@ -79,7 +80,11 @@ export function providerChoices(
     shared: ProviderItem | undefined;
   },
   preferShared: boolean,
-): { choices: ProviderChoiceRow[]; autoSelect: ProviderItem | undefined } {
+): {
+  choices: ProviderChoiceRow[];
+  autoSelect: ProviderItem | undefined;
+  sharedOffered: boolean;
+} {
   const { itemByType, shared } = items;
   const choices = rows.flatMap((row): ProviderChoiceRow[] => {
     const own = { ...row, choice: row.type, item: itemByType.get(row.type) };
@@ -99,5 +104,6 @@ export function providerChoices(
     autoSelect:
       (preferShared ? sharedOffered : undefined) ??
       choices.find((c) => c.item)?.item,
+    sharedOffered: sharedOffered !== undefined,
   };
 }
