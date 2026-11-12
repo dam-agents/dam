@@ -155,12 +155,67 @@ export const invocationOutputSchema = z.object({
   stderr: invocationOutputBlobSchema.optional(),
 });
 
+export const MAX_OWNER_QUESTION_CHARS = 1_000;
+export const MAX_OWNER_OPTION_CHARS = 80;
+export const MAX_OWNER_DEFAULT_CHARS = 200;
+export const MAX_OWNER_OPTIONS = 8;
+export const MAX_OWNER_ANSWER_CHARS = 2_000;
+
+// UNIT_BOUNDARY_DESCRIPTION: what a sub-agent asks its owner: the question, the answers it offers as buttons when the choice is between a few fixed ones (none for an open question, which the owner answers in their own words), what it goes on with when nobody answers in time, and optionally how long it waits for the answer.
+export const ownerQuestionInputSchema = z.object({
+  question: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_OWNER_QUESTION_CHARS)
+    .describe(
+      "One question, with what the owner needs to decide it. Ask everything you need in this one question: each further question costs the owner another wait.",
+    ),
+  options: z
+    .array(z.string().trim().min(1).max(MAX_OWNER_OPTION_CHARS))
+    .max(MAX_OWNER_OPTIONS)
+    .optional()
+    .describe(
+      "Each answer the owner can pick with one click: every real choice as its own option. Up to eight are shown, so with five to eight choices list them all: do not cut the list to four. Leave it out for an open question (a number, a name, free wording). The owner can always type their own answer instead, so never add an option such as Other, and never group choices into one option or a range that would need a second question.",
+    ),
+  default: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_OWNER_DEFAULT_CHARS)
+    .describe(
+      "What you go on with when nobody answers in time: one of the options, written the same, or, with no options, the answer you would take.",
+    ),
+  answerWithinMinutes: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("How long to wait for the answer; an hour when left out."),
+});
+
+export const ownerAnswerSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_OWNER_ANSWER_CHARS);
+
+// UNIT_BOUNDARY_DESCRIPTION: a question a sub-agent's run ended on, as its driver reads it: `told` once a wait of the driver's handed it over.
+export const invocationQuestionSchema = z.object({
+  text: z.string(),
+  options: z.array(z.string()),
+  default: z.string(),
+  answerBy: z.string(),
+  told: z.boolean(),
+});
+
 export const invocationViewSchema = z.object({
   run: z.string().optional(),
   session: z.string().optional(),
   keepUntil: z.string().optional(),
   removed: z.literal(true).optional(),
-  status: z.enum(["idle", "running", "done", "failed"]),
+  status: z.enum(["idle", "running", "done", "failed", "asking"]),
+  question: invocationQuestionSchema.optional(),
   result: z.unknown(),
   errorReason: z.string().optional(),
   exitCode: z.number().int().optional(),
@@ -204,3 +259,11 @@ export const invocationTranscriptInputSchema = z.object({
 });
 
 export const invocationStopInputSchema = invocationTranscriptInputSchema;
+
+export const invocationsQuestionsInputSchema = invocationsRunningInputSchema;
+
+export const invocationAnswerInputSchema = z.object({
+  driverAgentId: z.string().min(1),
+  id: z.string().min(1),
+  answer: ownerAnswerSchema,
+});

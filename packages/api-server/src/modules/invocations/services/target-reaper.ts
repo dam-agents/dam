@@ -17,15 +17,16 @@ export interface TargetReaper {
  * it unawaited: a delete or mark that fails leaves the row unreaped for the
  * liveness sweep to retry, and a delete that finds no Agent still marks the
  * row, because the target is gone either way. A kept target is left until
- * its keep expiry, and a target with a run still running until that run
- * ends, unless the reap is forced because its driver is being deleted; a run
+ * its keep expiry, a target with a run still running until that run
+ * ends, and one that waits for its owner's answer until the answer starts its
+ * next run, unless the reap is forced because its driver is being deleted; a run
  * of a kept target that ended while its work may still run is ended on its
  * own.
  */
 export function createTargetReaper(deps: {
   repo: Pick<
     InvocationsRepository,
-    "get" | "getRun" | "hasRunning" | "markReaped"
+    "get" | "getRun" | "hasRunning" | "hasAsking" | "markReaped"
   >;
   agentsFor: (owner: string) => AgentsService;
   capture: TargetCapture;
@@ -46,6 +47,7 @@ export function createTargetReaper(deps: {
           return;
         }
         if (await deps.repo.hasRunning(row.id).catch(() => false)) return;
+        if (await deps.repo.hasAsking(row.id).catch(() => false)) return;
       }
       if (opts?.capture !== false) await deps.capture.capture(row);
       try {

@@ -5,11 +5,13 @@ import { useWaitingApprovals } from "../../home/hooks/use-waiting-approvals.js";
 import type { SidePanelTabProps } from "../components/side-panel-bar.js";
 
 export function useAppSidePanelTabs(): Pick<SidePanelTabProps, "badges"> {
+  const attention = useAttention().data;
   const waiting =
     useWaitingApprovals().length +
     useDefaultModelNotices().waiting.length +
     useOutageAlerts().waiting.length +
-    ((useAttention().data?.costReviews.length ?? 0) > 0 ? 1 : 0);
+    (attention?.ownerQuestions.length ?? 0) +
+    ((attention?.costReviews.length ?? 0) > 0 ? 1 : 0);
   return {
     badges: {
       approvals: {

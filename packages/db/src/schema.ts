@@ -1498,6 +1498,24 @@ export const invocationRuns = pgTable(
     /* UNIT_BOUNDARY_DESCRIPTION: the outcome went to its driver whole in a sub-agent-outcome turn, not as an await_subagents answer, so a later wait points to that turn instead of repeating the result; a turn that carried it trimmed leaves it false, so a wait still returns it in full. */
     deliveredInTurn: boolean("delivered_in_turn").notNull().default(false),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a run that ended by asking its owner asked: the question, the options it offers, the one it takes when nobody answers in time, and how much of its time limit was left, which the run that continues from the answer gets. Null for a run that asked nothing. */
+    question: jsonb("question").$type<{
+      text: string;
+      options: string[];
+      defaultOption: string;
+      remainingMs: number;
+    }>(),
+    answerBy: timestamp("answer_by", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the run that continues this one's work from the answer to its question, in the same session; a driver that waits on this run by its id reads that one. */
+    continuedBy: text("continued_by"),
+    /* UNIT_BOUNDARY_DESCRIPTION: the answer this run continues from, on the run an answer started: the question, what was answered, who answered (the owner, or nobody, so the default was taken) and the time the question had to be answered by. */
+    answer: jsonb("answer").$type<{
+      question: string;
+      text: string;
+      by: "owner" | "default";
+      at: string;
+      answerBy: string;
+    }>(),
   },
   (table) => [
     index("invocation_runs_invocation_idx").on(
@@ -1518,6 +1536,9 @@ export const invocationRuns = pgTable(
     index("invocation_runs_cancel_idx")
       .on(table.invocationId)
       .where(sql`${table.cancelPending}`),
+    index("invocation_runs_asking_idx")
+      .on(table.answerBy)
+      .where(sql`${table.status} = 'asking'`),
   ],
 );
 

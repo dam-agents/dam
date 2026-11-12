@@ -11,7 +11,7 @@ In an Agent's chat the bell sits in the chat's top bar and opens that same drawe
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts) and the [cost review offer](#cost-review-offer) are read beside them.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts), [sub-agent questions](#sub-agent-questions) and the [cost review offer](#cost-review-offer) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -140,6 +140,13 @@ A dismissal is per owner and on the server, and names the provider's template, t
 A dismissal is dropped once its alert is gone.
 The banner on Home does not count an outage alert, because the provider status banner already names a live outage on every page but the chat.
 A new or recovered alert reaches open tabs through the attention hint.
+
+## Sub-agent questions
+
+The bell also lists each question a sub-agent of the owner's [waits on](invocations.md#asking-the-owner), and counts it: who asks, the question, and the time it waits until.
+The card does not take the answer and cannot be dismissed; it opens the chat of the Agent the sub-agent works for, in the Session that started it, whose input takes the answer.
+That Session shows as waiting in Activity and in the Agent's session list, like one with an approval.
+A question asked or answered reaches open tabs through the attention hint.
 
 ## Cost review offer
 

@@ -53,6 +53,23 @@ export interface OutageAlertNotice {
   agents: OutageAlertAgent[];
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a question a sub-agent waits on, told to its
+ * owner wherever they are: the sub-agent and what to call it, the question,
+ * the time it waits until, and the Agent and Session whose chat puts the
+ * question to the owner, where they answer it. The Session is null when the
+ * sub-agent's start recorded none.
+ */
+export interface OwnerQuestionNotice {
+  id: string;
+  title: string;
+  text: string;
+  askedAt: string;
+  answerBy: string;
+  agentId: string;
+  sessionId: string | null;
+}
+
 export interface AttentionItem {
   agentId: string;
   sessionId: string;
@@ -81,6 +98,7 @@ export interface AttentionList {
   defaultModels: DefaultModelNotice[];
   outageAlerts: OutageAlertNotice[];
   costReviews: CostReviewOffer[];
+  ownerQuestions: OwnerQuestionNotice[];
 }
 
 export interface AttentionListCursor {

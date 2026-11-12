@@ -8,6 +8,7 @@ import {
   type CostReviewOffer,
   type DefaultModelNotice,
   type OutageAlertNotice,
+  type OwnerQuestionNotice,
   type SessionMode,
   type SessionType,
 } from "api-server-api";
@@ -65,27 +66,38 @@ export function createAttentionService(deps: {
   defaultModelNotices: () => Promise<DefaultModelNotice[]>;
   outageAlerts: () => Promise<OutageAlertNotice[]>;
   costReviews: () => Promise<CostReviewOffer[]>;
+  ownerQuestions?: () => Promise<OwnerQuestionNotice[]>;
   log: (message: string) => void;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, allDismissals, notices, alerts, costReviews] =
-        await Promise.all([
-          deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
-          deps.repo.listDismissals(deps.ownerSub),
-          deps.defaultModelNotices().catch((err: Error) => {
-            deps.log(`[attention] default-model notices: ${err.message}`);
-            return null;
-          }),
-          deps.outageAlerts().catch((err: Error) => {
-            deps.log(`[attention] outage alerts: ${err.message}`);
-            return null;
-          }),
-          deps.costReviews().catch((err: Error) => {
-            deps.log(`[attention] cost reviews: ${err.message}`);
-            return [];
-          }),
-        ]);
+      const [
+        records,
+        allDismissals,
+        notices,
+        alerts,
+        costReviews,
+        ownerQuestions,
+      ] = await Promise.all([
+        deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
+        deps.repo.listDismissals(deps.ownerSub),
+        deps.defaultModelNotices().catch((err: Error) => {
+          deps.log(`[attention] default-model notices: ${err.message}`);
+          return null;
+        }),
+        deps.outageAlerts().catch((err: Error) => {
+          deps.log(`[attention] outage alerts: ${err.message}`);
+          return null;
+        }),
+        deps.costReviews().catch((err: Error) => {
+          deps.log(`[attention] cost reviews: ${err.message}`);
+          return [];
+        }),
+        (deps.ownerQuestions?.() ?? Promise.resolve([])).catch((err: Error) => {
+          deps.log(`[attention] sub-agent questions: ${err.message}`);
+          return [];
+        }),
+      ]);
       const resolved = [
         ...staleDismissals(allDismissals, "default-model", notices),
         ...staleDismissals(allDismissals, "outage-alert", alerts),
@@ -102,6 +114,7 @@ export function createAttentionService(deps: {
         defaultModels: notices ?? [],
         outageAlerts: alerts ?? [],
         costReviews,
+        ownerQuestions,
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
