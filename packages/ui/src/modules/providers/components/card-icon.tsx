@@ -59,6 +59,12 @@ const STYLES: Record<
     tile: "bg-white",
     mark: "size-4/5",
   },
+  "curve-bender-cloud-gateway": {
+    Icon: CurveBenderIcon,
+    Mark: CurveBenderColorIcon,
+    tile: "bg-white",
+    mark: "size-4/5",
+  },
   bob: {
     Icon: BobIcon,
     Mark: BobHead,

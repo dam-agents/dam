@@ -1,4 +1,11 @@
-import type { ProviderAlias } from "../connections/providers.js";
+import {
+  CLOUD_GATEWAY_ENDPOINT_ENV,
+  CLOUD_GATEWAY_KEY_ENV,
+} from "../connections/cloud-gateway.js";
+import {
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+  type ProviderAlias,
+} from "../connections/providers.js";
 import type { ModelDialect, ModelPrices } from "./catalog-entry.js";
 import type { ModelDiscoverySpec } from "./discovery.js";
 
@@ -13,12 +20,15 @@ const ALL_DIALECTS: readonly ModelDialect[] = [
  * Model Router only when the provider serves a dialect the harness's
  * manifest lists. Bedrock is empty: it has paths and a stream of its own, so
  * a harness process on it stays in the harness's own Bedrock mode and the
- * router passes its calls on unchanged.
+ * router passes its calls on unchanged. The IBM Cloud Gateway's project
+ * endpoint is OpenAI-compatible for chat completions only, so Claude Code
+ * (Messages) and Codex (Responses) never see its models.
  */
 export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
   {
     ibm: ALL_DIALECTS,
     cb: ALL_DIALECTS,
+    cbgw: ["openai-chat"],
     anthropic: ["anthropic-messages"],
     openai: ["openai-chat", "openai-responses"],
     bedrock: [],
@@ -59,7 +69,9 @@ export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
  * route, so the LiteLLM proxies are read through `/v1/models` and take their
  * metadata from the price table; Bob's gateway is the one provider-sourced
  * listing. The catalog shows the platform's self-hosted vLLM at no cost; the
- * spend meter prices its calls with the operator's price instead. Null for
+ * spend meter prices its calls with the operator's price instead. The IBM
+ * Cloud Gateway's endpoint is a project's base URL with its version in it, so
+ * its OpenAI model list sits right under it. Null for
  * a template the router does not serve (Bedrock). A listing may name the only
  * harnesses it serves: Bob's gateway serves the Bob harness alone, as a
  * subscription token serves Claude Code alone.
@@ -75,6 +87,16 @@ export function listingForTemplate(
         spec: {
           urlEnv: ["OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],
           tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+          shape: "openai-models",
+        },
+      };
+    case CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID:
+      return {
+        spec: {
+          urlEnv: [CLOUD_GATEWAY_ENDPOINT_ENV],
+          tokenEnv: [CLOUD_GATEWAY_KEY_ENV],
+          credentialHeader: "authorization",
+          path: "/models",
           shape: "openai-models",
         },
       };

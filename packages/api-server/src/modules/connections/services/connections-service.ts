@@ -601,7 +601,7 @@ export function createConnectionsService(deps: {
     const template = deps.templates.get(conn.templateId);
     const specs =
       template?.authKind === "header" ? (template.configInputs ?? []) : [];
-    if (specs.length === 0 || specs.some((s) => s.inputName === "region")) {
+    if (specs.length === 0 || specs.some((s) => s.decidesHost)) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message:

@@ -63,6 +63,10 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     description: CURVE_BENDER_DESCRIPTION,
   },
   {
+    type: "curve-bender-cloud-gateway",
+    description: "CurveBender through your team's IBM Cloud Gateway project",
+  },
+  {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,
   },

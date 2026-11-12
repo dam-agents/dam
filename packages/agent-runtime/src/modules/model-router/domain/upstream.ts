@@ -1,3 +1,8 @@
+import {
+  CLOUD_GATEWAY_ENDPOINT_ENV,
+  CLOUD_GATEWAY_KEY_ENV,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+} from "api-server-api";
 import type { ModelDialect } from "../../model-catalog/index.js";
 
 export interface UpstreamCredential {
@@ -8,6 +13,7 @@ export interface UpstreamCredential {
 export interface UpstreamWire {
   root: string;
   credential: UpstreamCredential | null;
+  versionedRoot?: true;
 }
 
 const DIALECT_PATHS: Record<ModelDialect, string> = {
@@ -23,8 +29,10 @@ const stripV1 = (base: string): string =>
  * UNIT_BOUNDARY_DESCRIPTION: the credential header must be in the exact form
  * the Connection claims at the credential gateway, carrying the layer's
  * placeholder, so Envoy names the Connection and injects its real key; the
- * router never sees a secret. Null for a template the router does not
- * serve.
+ * router never sees a secret. A versioned root already carries the API
+ * version in its own path, as the IBM Cloud Gateway's project endpoint
+ * does, so the dialect's path goes under it without its `/v1`. Null for a
+ * template the router does not serve.
  */
 export function upstreamWireOf(
   template: string,
@@ -44,6 +52,16 @@ export function upstreamWireOf(
             root: stripV1(base),
             credential:
               bearer("OPENAI_API_KEY") ?? bearer("ANTHROPIC_AUTH_TOKEN"),
+          }
+        : null;
+    }
+    case CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID: {
+      const base = env[CLOUD_GATEWAY_ENDPOINT_ENV];
+      return base
+        ? {
+            root: base.replace(/\/+$/, ""),
+            credential: bearer(CLOUD_GATEWAY_KEY_ENV),
+            versionedRoot: true,
           }
         : null;
     }
@@ -93,5 +111,8 @@ export function upstreamUrl(
   const suffix = path.startsWith(dialectPath)
     ? path.slice(dialectPath.length)
     : "";
-  return `${wire.root}${dialectPath}${suffix}${search}`;
+  const upstreamPath = wire.versionedRoot
+    ? dialectPath.replace(/^\/v1/, "")
+    : dialectPath;
+  return `${wire.root}${upstreamPath}${suffix}${search}`;
 }

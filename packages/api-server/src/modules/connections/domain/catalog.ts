@@ -6,6 +6,10 @@ import {
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+  CLOUD_GATEWAY_ENDPOINT_ENV,
+  CLOUD_GATEWAY_ENDPOINT_PATTERN,
+  cloudGatewayEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
@@ -316,6 +320,39 @@ const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
   contributions: curveBenderContributions(CURVE_BENDER_DEPLOYMENT_PATHS),
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: CurveBender's models reached through a team's
+ * IBM Cloud Gateway project rather than CurveBender's own proxy. The user's
+ * project endpoint decides the host and the path the key is injected on, so
+ * the template names no host of its own (the build derives them from the
+ * endpoint).
+ */
+const CURVE_BENDER_CLOUD_GATEWAY: HeaderConnectionTemplate = {
+  id: CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+  name: "CurveBender (IBM Cloud Gateway)",
+  category: "app",
+  isCustom: false,
+  description:
+    "CurveBender's open-source models through your team's IBM Cloud Gateway project.",
+  iconSlug: "ibm",
+  authKind: "header",
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: envContributions(cloudGatewayEnvMappings()),
+  configInputs: [
+    {
+      inputName: "endpoint",
+      envName: CLOUD_GATEWAY_ENDPOINT_ENV,
+      label: "Project endpoint",
+      hint: "Your project's inference endpoint, e.g. https://us-east.rhai.ibm.com/v1/projects/<project-id>/inference.",
+      pattern: CLOUD_GATEWAY_ENDPOINT_PATTERN,
+      patternHint:
+        "https://<region>.rhai.ibm.com/v1/projects/<project-id>/inference",
+      decidesHost: true,
+    },
+  ],
+};
+
 const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
 
 const BOB: HeaderConnectionTemplate = {
@@ -402,6 +439,7 @@ const BEDROCK: HeaderConnectionTemplate = {
       hint: "The AWS region the key's models are served from, e.g. us-east-1.",
       pattern: BEDROCK_REGION_PATTERN,
       patternHint: "an AWS region, e.g. us-east-1",
+      decidesHost: true,
     },
     {
       inputName: "model",
@@ -1076,6 +1114,7 @@ export function buildCatalog(
     OPENAI,
     IBM_LITELLM,
     CURVE_BENDER,
+    CURVE_BENDER_CLOUD_GATEWAY,
     BOB,
     BEDROCK,
     S3_COMPATIBLE,

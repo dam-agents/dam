@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import {
   BEDROCK_TEMPLATE_ID,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+  parseCloudGatewayEndpoint,
   SHARED_KB_TEMPLATE_ID,
+  type CloudGatewayEndpoint,
   type ConnectionAuthConfig,
   type ConnectionCreateInput,
   type Contribution,
@@ -734,6 +737,46 @@ function bedrockControlContributions(
   ];
 }
 
+function cloudGatewayEndpointOf(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Pick<
+    Extract<ConnectionCreateInput, { authKind: "header" }>,
+    "configInputs"
+  >,
+): CloudGatewayEndpoint {
+  const spec = template.configInputs?.find((c) => c.inputName === "endpoint");
+  const label = spec?.label ?? "Project endpoint";
+  const raw = input.configInputs?.endpoint?.trim();
+  if (!raw) throw new Error(`${label}: required`);
+  const endpoint = parseCloudGatewayEndpoint(raw);
+  if (!endpoint) {
+    throw new Error(
+      `${label}: "${raw}" is not an IBM Cloud Gateway project endpoint; expected ${spec?.patternHint ?? "https://<region>.rhai.ibm.com/v1/projects/<project-id>/inference"}`,
+    );
+  }
+  return endpoint;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the key goes to the project's inference path on
+ * the region's gateway host and nowhere else on that host, so it carries the
+ * egress rule as well: the router's chat calls and the model listing both sit
+ * under that path.
+ */
+function cloudGatewayContribution(
+  endpoint: CloudGatewayEndpoint,
+  headerName: string,
+  valueFormat: string,
+): Contribution {
+  return {
+    kind: "egress-inject",
+    host: endpoint.host,
+    pathPattern: `${endpoint.path}/*`,
+    headerName,
+    valueFormat,
+  };
+}
+
 export function headerTarget(
   template: Extract<ConnectionTemplate, { authKind: "header" }>,
   input: Omit<Extract<ConnectionCreateInput, { authKind: "header" }>, "value">,
@@ -747,7 +790,12 @@ export function headerTarget(
     template.id === BEDROCK_TEMPLATE_ID
       ? bedrockRegionOf(template, input)
       : undefined;
+  const gatewayEndpoint =
+    template.id === CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID
+      ? cloudGatewayEndpointOf(template, input)
+      : undefined;
   const rawHost =
+    gatewayEndpoint?.host ??
     input.host ??
     template.host ??
     (bedrockRegion ? bedrockRuntimeHost(bedrockRegion) : undefined);
@@ -783,6 +831,12 @@ export function headerTarget(
     );
   }
 
+  if (gatewayEndpoint) {
+    contributions.push(
+      cloudGatewayContribution(gatewayEndpoint, headerName, valueFormat),
+    );
+  }
+
   appendHostTarget(contributions, {
     host,
     port,
@@ -793,10 +847,10 @@ export function headerTarget(
   });
 
   contributions.push(
-    ...configInputContributions(
-      template.configInputs ?? [],
-      input.configInputs ?? {},
-    ),
+    ...configInputContributions(template.configInputs ?? [], {
+      ...input.configInputs,
+      ...(gatewayEndpoint ? { endpoint: gatewayEndpoint.url } : {}),
+    }),
   );
   return { headerName, valueFormat, caPem, contributions };
 }

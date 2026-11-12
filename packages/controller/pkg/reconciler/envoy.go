@@ -167,7 +167,7 @@ func (c envoyHostChain) ConnectionIDs() []string {
 /* UNIT_BOUNDARY_DESCRIPTION: the template of the Connection that drives this install as its owner. Its credential is injected on the install's own host, which no other Connection may name (the api-server refuses one), but a Secret written before that rule, or by another path, could still share the host: a chain carrying this credential therefore takes its upstream port and its upstream CA from this credential alone, never from a peer, so the install's key is only ever sent to the address the install published. */
 const damConnectionTemplate = "dam"
 
-var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock"}
+var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "curve-bender-cloud-gateway", "bob", "bedrock"}
 
 func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
 	out := map[string]string{}

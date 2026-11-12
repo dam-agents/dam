@@ -1,7 +1,13 @@
 import type { HarnessView } from "../templates/types.js";
 
 export type ProviderPresetType =
-  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
+  | "anthropic"
+  | "ibm-litellm"
+  | "curve-bender"
+  | "curve-bender-cloud-gateway"
+  | "openai"
+  | "bob"
+  | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -25,6 +31,8 @@ export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 export const CURVE_BENDER_HOST = "litellm.cb.ete.res.ibm.com";
 export const CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID = "curve-bender-deployment";
+export const CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID =
+  "curve-bender-cloud-gateway";
 
 export const BOB_INFERENCE_PREFIX_REWRITE = {
   prefix: "/inference/v1/",
@@ -188,11 +196,12 @@ export interface ProviderPresetMode {
 }
 
 export type ProviderAlias =
-  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob";
+  "ibm" | "cb" | "cbgw" | "anthropic" | "openai" | "bedrock" | "bob";
 
 export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "ibm",
   "cb",
+  "cbgw",
   "anthropic",
   "openai",
   "bedrock",
@@ -259,6 +268,19 @@ export const PROVIDERS = {
       },
     ],
   },
+  "curve-bender-cloud-gateway": {
+    id: "curve-bender-cloud-gateway",
+    alias: "cbgw",
+    displayName: "CurveBender (IBM Cloud Gateway)",
+    shortName: "CurveBender gateway",
+    modes: [
+      {
+        key: "api-key",
+        label: "Gateway key",
+        templateId: CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+      },
+    ],
+  },
   openai: {
     id: "openai",
     alias: "openai",
@@ -293,6 +315,7 @@ export const KEY_CHECK_TEMPLATE_IDS = [
   "openai",
   "ibm-litellm",
   "curve-bender",
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
   "bob",
   "bedrock",
 ] as const;

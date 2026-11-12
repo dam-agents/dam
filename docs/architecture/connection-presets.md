@@ -163,6 +163,13 @@ The scope is not evidence that the key itself is limited: the operator must stil
 Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
 Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
+## App preset: CurveBender through the IBM Cloud Gateway
+
+CurveBender's models through a team's IBM Cloud Gateway project instead of CurveBender's proxy, connected with the user's gateway key and project endpoint.
+It is its own provider, alias `cbgw`: it serves other model ids, and chat completions only, so only Pi, Bob, Copilot and Hermes run on it.
+The endpoint must be HTTPS on one region under `rhai.ibm.com` with a project's inference path, because it decides where the key goes: the gateway injects the key on that host under that path alone, and a new endpoint means connecting again.
+The key check, the [model catalog](harness-config.md#the-model-catalog) and the [owner model catalog](owner-model-catalog.md) read the project's model list; a 401 there refuses the key, and a failed listing reads as unavailable.
+
 ## App preset: AWS Bedrock
 
 Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API key**.

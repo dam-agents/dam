@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-30
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -88,7 +88,7 @@ The api-server looks up a price by the call's provider and model, and the first 
 - **An estimate** for a model with no price: the highest price of its model family among the provider's prices, else the provider's highest price, marked "estimated", so DAM never counts low.
 
 A reply can name its model differently from the request, for example without a routing prefix or with a release date, so the lookup also matches on the model's own name.
-OpenAI and Bedrock have no public prices in DAM yet: without an operator price, their calls keep their tokens and cost nothing, so a spend limit does not stop them.
+OpenAI, Bedrock and Curve Bender through the IBM Cloud Gateway have no public prices in DAM yet: without an operator price, their calls keep their tokens and cost nothing, so a spend limit does not stop them.
 
 **How a cost is computed.** The rules follow LiteLLM's own cost rules, so DAM's cost equals LiteLLM's for the same counts.
 A price sets input, output, cache reads, five-minute and one-hour cache writes, and web searches.
@@ -214,18 +214,18 @@ It is deleted with its Connection, with every agent's Connection limit on it.
 
 Both kinds of Connection limit use the Connection's unit:
 
-| Connection                         | Unit               | Counts in the agent limit, own limit and ceiling |
-| ---------------------------------- | ------------------ | ------------------------------------------------ |
-| An Anthropic key, IBM LiteLLM      | dollars            | yes                                              |
-| The Claude subscription            | list-price dollars | no                                               |
-| Bob                                | Bobcoins           | no                                               |
-| Curve Bender                       | free               | no limit applies                                 |
-| OpenAI, Bedrock                    | dollars, unpriced  | only with an operator price; no Connection limit |
-| Any Connection that is not metered | —                  | no limit applies                                 |
+| Connection                                                  | Unit               | Counts in the agent limit, own limit and ceiling |
+| ----------------------------------------------------------- | ------------------ | ------------------------------------------------ |
+| An Anthropic key, IBM LiteLLM                               | dollars            | yes                                              |
+| The Claude subscription                                     | list-price dollars | no                                               |
+| Bob                                                         | Bobcoins           | no                                               |
+| Curve Bender                                                | free               | no limit applies                                 |
+| OpenAI, Bedrock, Curve Bender through the IBM Cloud Gateway | dollars, unpriced  | only with an operator price; no Connection limit |
+| Any Connection that is not metered                          | —                  | no limit applies                                 |
 
 So the Claude subscription and Bob are limited only by their Connection limits, for one agent or for all agents.
 An agent's Connection limit needs a Connection that is granted to the agent; a limit for all agents needs a Connection that the owner holds.
-OpenAI and Bedrock calls take no Connection limit yet, because DAM does not price them.
+OpenAI, Bedrock and IBM Cloud Gateway calls take no Connection limit yet, because DAM does not price them.
 
 **Soft.** At a limit, the gate refuses the call and asks the owner whether to continue; it never holds the call.
 At 80% of a limit, its state changes to a warning, and nothing else happens.

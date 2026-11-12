@@ -1,6 +1,7 @@
-import type {
-  ConnectionCreateInput,
-  ConnectionUpdateInput,
+import {
+  type ConnectionCreateInput,
+  type ConnectionUpdateInput,
+  CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
 } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { AnthropicForm } from "./anthropic/form.js";
 import { type Mode, MODES } from "./anthropic/modes.js";
 import { BedrockForm } from "./bedrock/form.js";
 import { BobForm } from "./bob/form.js";
+import { CloudGatewayForm } from "./cloud-gateway/form.js";
 import { LiteLlmProxyForm } from "./litellm-proxy/form.js";
 import { OpenAIForm } from "./openai/form.js";
 import {
@@ -157,6 +159,24 @@ export function ProviderConnectDialog({
                 authKind: "header",
                 value,
                 configInputs: bedrockConfigInputs(pins),
+              },
+            })
+          }
+        />
+      )}
+      {provider === "curve-bender-cloud-gateway" && (
+        <CloudGatewayForm
+          variant={variant}
+          onCancel={dismiss}
+          onSave={({ value, endpoint }) =>
+            persist({
+              value,
+              createInput: {
+                templateId: CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+                name: CURVE_BENDER_CLOUD_GATEWAY_TEMPLATE_ID,
+                authKind: "header",
+                value,
+                configInputs: { endpoint },
               },
             })
           }

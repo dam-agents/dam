@@ -29,6 +29,7 @@ describe("provider harness compatibility", () => {
       "curve-bender",
       ["claude-code", "codex", "pi", "bob", "copilot", "hermes"],
     ],
+    ["curve-bender-cloud-gateway", ["pi", "bob", "copilot", "hermes"]],
     ["anthropic", ["claude-code", "pi"]],
     ["anthropic-oauth", ["claude-code"]],
     ["openai", ["codex", "pi", "copilot", "hermes"]],

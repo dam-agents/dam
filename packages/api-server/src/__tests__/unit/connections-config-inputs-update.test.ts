@@ -12,7 +12,8 @@ import { configureLogger } from "../../core/logger.js";
  * TEST_OVERVIEW: a provider connection's settings (the Bob pins) change in
  * place without re-entering its key. The stored key stays as it is, the new
  * settings replace the old ones, and the agents that use the connection pick
- * them up.
+ * them up. A setting that decides where the key is sent (the IBM Cloud
+ * Gateway's project endpoint) does not change in place.
  */
 
 configureLogger({ level: "error", write: () => {} });
@@ -132,6 +133,30 @@ describe("connection settings update", () => {
       svc.update(id, { value: "new-key", configInputs: { maxCost: "-1" } }),
     ).rejects.toThrow(/Max cost/);
     expect(secretWrites).toEqual([]);
+    expect(rows.get(id)).toBe(before);
+  });
+
+  // TEST_SCENARIO: the project endpoint decides the host and path the gateway injects the key on, so moving it in place would send the stored key to a host it was never checked against; the change is refused and the Connection is left as it was.
+  it("refuses to move a gateway endpoint in place", async () => {
+    const { svc, rows } = makeService();
+    const id = await svc.createFromTemplate({
+      templateId: "curve-bender-cloud-gateway",
+      name: "gateway",
+      authKind: "header",
+      value: "gw-key",
+      configInputs: {
+        endpoint: "https://us-east.rhai.ibm.com/v1/projects/p-1/inference",
+      },
+    });
+    const before = rows.get(id);
+
+    await expect(
+      svc.update(id, {
+        configInputs: {
+          endpoint: "https://eu-de.rhai.ibm.com/v1/projects/p-2/inference",
+        },
+      }),
+    ).rejects.toThrow(/cannot be changed in place/);
     expect(rows.get(id)).toBe(before);
   });
 });
