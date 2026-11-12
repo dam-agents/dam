@@ -18,9 +18,10 @@ flowchart LR
 ```
 
 - **Identity.** Some calls go *back into* the platform on the agent's behalf — the gateway pod talks to the api-server's harness (the channel the agent's LLM uses) and to a per-instance `ext-authz` service that approves outgoing requests.
-  Both of those have to be authorized: only the gateway from the matching instance is allowed in.
+  The harness has to be authorized: only the gateway from the matching instance is allowed in.
   Istio's identity service (`istiod`) gives each gateway pod a digital ID card — a SPIFFE certificate, signed by the cluster and impossible to forge.
-  The doors on those api-server endpoints check the ID and admit only the right one, so one instance can never call another instance's harness or ext-authz.
+  The harness door checks the ID and admits only the right one, so one instance can never call another instance's harness.
+  The `ext-authz` door admits gateways from the agent namespace and trusts the instance a gateway names: gateways are platform code.
 
 - **Boundary.** The agent runs in its own microVM — a small virtual machine with its own kernel, its own filesystem and its own network, sharing nothing with anyone else.
   Each one is booted by smolvm on its owner's runner pod, so the agent has no roommate it could share memory or a network namespace with.
@@ -72,13 +73,12 @@ flowchart LR
   gw -->|"egress on allow<br/>(credential injected if configured)"| ext
 ```
 
-Two AuthorizationPolicies sit at the doors that matter: the harness path on the api-server, and the per-instance `ext-authz` service.
-Each one only admits the gateway whose SPIFFE ID belongs to the right instance, so one instance can never call another instance's harness or ext-authz — the address resolves, but the call never lands.
+An AuthorizationPolicy sits at the harness path on the api-server.
+It only admits the gateway whose SPIFFE ID belongs to the right instance, so one instance can never call another instance's harness — the address resolves, but the call never lands.
 The gateway pod itself has no AuthorizationPolicy in front of it; the agent → gateway hop is gated by the machine's own network, which reaches only its gateway, and by two NetworkPolicies, one at each end: the runner's reaches only its owner's gateways, and the gateway's admits only its owner's runner.
 
 On top of that, every outgoing request through the gateway runs through a second gate.
-Envoy (the program running inside the gateway pod) makes a gRPC `ext-authz` Check to the api-server before forwarding the request, with the calling instance proven by the ServiceAccount on the connection and by the instance address it calls, which the mesh checks together.
-For now one shortcut stays open: a direct call to the api-server from the instances' namespace skips that check, and a later change closes it.
+Envoy (the program running inside the gateway pod) makes a gRPC `ext-authz` Check to the api-server before forwarding the request, naming its instance by the address it dials.
 The api-server looks the request up against the instance's egress rules and answers one of three things:
 
 - **Allow** — forward the request and, if a credential is configured for the destination host, stamp it on just before it leaves.
@@ -94,11 +94,11 @@ The api-server looks the request up against the instance's egress rules and answ
 | Agent steals an upstream token                                                            | Tokens live only in the gateway pod; Envoy injects them on the wire and the agent never sees a real one                                                                                                                                                                                    |
 | Agent escalates via its ServiceAccount token                                              | The machine is a guest, not a pod, and holds no ServiceAccount token; the gateway pod mounts none either (`automountServiceAccountToken: false`) — `istiod` issues its SPIFFE workload cert without one                                                                                    |
 | Agent reaches a peer instance's gateway                                                   | The machine's network reaches only its own gateway's address; even an escaped guest reaches only its owner's gateways, by the runner's NetworkPolicy                                                                                                                                       |
-| Gateway calls a peer instance's harness or `ext-authz`                                    | AuthorizationPolicies on each api-server endpoint only admit the matching instance's gateway SPIFFE principal; for `ext-authz`, also only the instance's own address, with one direct path still open until a later change                                                                 |
+| Gateway calls a peer instance's harness                                                   | The harness AuthorizationPolicy only admits the matching instance's gateway SPIFFE principal                                                                                                                                                                                               |
 | Agent bypasses the proxy to call external hosts directly                                  | The machine's network admits only its gateway; the runner's NetworkPolicy enforces the same shape at the kernel independently                                                                                                                                                              |
 | Agent exfiltrates data through cluster DNS                                                | The gateway's resolver answers every name with the gateway's own address and forwards no query; the runner admits no DNS port at all                                                                                                                                                       |
 | Route-confusion exfil through the gateway                                                 | Per-host Envoy filter chains pinned to each credential's host, with SAN-bound upstream TLS validation                                                                                                                                                                                      |
-| Direct pod-IP bypass of the api-server                                                    | Pod-level DENY AuthorizationPolicy admits only the waypoint's SA (harness) or a per-instance SA (`ext-authz`)                                                                                                                                                                              |
+| Direct pod-IP bypass of the api-server                                                    | Pod-level DENY AuthorizationPolicy admits only the waypoint's SA (harness) or a source in the agent namespace (`ext-authz`)                                                                                                                                                                |
 | Agent exploits a kernel bug (the late-2025 runc CVEs; Linux kernel LPEs like "Copy Fail") | A kernel exploit lands in the agent's own guest kernel, not the host's. Getting further needs a hypervisor escape too, which lands as an unprivileged user in the owner's runner pod: that owner's other agents, never another owner's — see [Security boundary](#security-boundary) above |
 
 ## See also

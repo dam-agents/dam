@@ -15,14 +15,9 @@ Per-port DENY:
   - Harness port: deny anything that isn't the waypoint principal.
     Istio names the waypoint SA after the Gateway resource, so the
     principal is `<td>/ns/<release-ns>/sa/<waypoint-name>`.
-  - ext-authz port: a migration bridge. A caller already routed
-    through the waypoint arrives as the waypoint principal, while a
-    Service not yet relabelled still reaches the pod as its gateway's
-    own principal from the agent namespace. Both admissions sit in one
-    source entry because fields there are AND-ed, so only a source that
-    is neither is denied. A later release narrows this to the waypoint
-    principal alone once every ext-authz Service is bound (tracked in
-    #6416).
+  - ext-authz port: deny anything that isn't sourced in the agent
+    namespace. Nothing checks which agent the caller is: the
+    gateway is trusted platform code that names its own.
   - Public HTTP port (Keycloak-JWT-gated): no DENY rule. Traffic from
     Traefik (kube-system) and any other peer is allowed; application-
     layer auth is the gate. Adding an ns-based DENY here would block
@@ -67,13 +62,8 @@ spec:
         - source:
             notPrincipals:
               - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
-    # ext-authz port: the migration bridge. A waypoint-routed caller
-    # arrives as the waypoint principal; a Service not yet relabelled
-    # still reaches the pod as its gateway's principal from the agent
-    # namespace. The two admissions are in ONE source entry because its
-    # fields are AND-ed: this denies only a source that is neither. Split
-    # into two rules they would OR and deny every caller. A later release
-    # narrows this to the waypoint principal alone (tracked in #6416).
+    # ext-authz port: only sources in the agent namespace are admitted.
+    # The gateway is trusted to name its own agent.
     - to:
         - operation:
             ports:
@@ -82,5 +72,3 @@ spec:
         - source:
             notNamespaces:
               - {{ .Values.agentNamespace | quote }}
-            notPrincipals:
-              - "{{ .Values.istio.trustDomain }}/ns/{{ .Release.Namespace }}/sa/{{ .Values.istio.waypointName }}"
