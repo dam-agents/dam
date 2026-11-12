@@ -15,6 +15,7 @@ import type {
   CatalogProvider,
   ModelMetadata,
 } from "../../modules/model-catalog/index.js";
+import { refusesThinking } from "../../modules/model-router/domain/replay.js";
 import {
   createModelRouter,
   HARNESS_HEADER,
@@ -25,6 +26,7 @@ import {
 const SESSION = "x-test-session";
 const FOREIGN = "x".repeat(32);
 const CLAUDE = "claude-signed";
+const FOREIGN_REDACTED = "y".repeat(32);
 
 const seen: { messages: { role: string; content: unknown }[] }[] = [];
 const calls: ModelCallRecord[] = [];
@@ -37,6 +39,20 @@ beforeAll(async () => {
     for await (const c of req) chunks.push(c as Buffer);
     const raw = Buffer.concat(chunks).toString();
     seen.push(JSON.parse(raw) as (typeof seen)[number]);
+    if (raw.includes(FOREIGN_REDACTED)) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            message:
+              "messages.1.content.0: Invalid `data` in `redacted_thinking` block",
+          },
+        }),
+      );
+      return;
+    }
     if (raw.includes(FOREIGN)) {
       res.writeHead(400, { "content-type": "application/json" });
       res.end(
@@ -214,6 +230,63 @@ describe("thinking blocks in a Messages history", () => {
       user("more"),
     ]);
     expect(calls.map((c) => c.status)).toEqual([400, 200]);
+  });
+
+  /** TEST_SCENARIO: a GPT model behind a proxy answers with a redacted
+   * thinking block, which Claude refuses in other words than a signed one.
+   * That refusal is answered the same way, so the person sees a reply and
+   * not the provider's error. */
+  it("answers the refusal of a redacted block another model wrote", async () => {
+    const r = await post("from-gpt", [
+      user("start on GPT"),
+      assistant(
+        { type: "redacted_thinking", data: FOREIGN_REDACTED },
+        text("a"),
+      ),
+      user("now on Claude"),
+      assistant(thinking(CLAUDE), text("b")),
+      user("more"),
+    ]);
+    expect(r.status).toBe(200);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.messages).toEqual([
+      user("start on GPT"),
+      assistant(text("a")),
+      user("now on Claude"),
+      assistant(thinking(CLAUDE), text("b")),
+      user("more"),
+    ]);
+  });
+
+  /** TEST_SCENARIO: the three refusals Anthropic gave when probed with a
+   * block another model wrote are recognized; an error about thinking that
+   * removing blocks cannot fix is not, so it costs no second call. */
+  it("recognizes only the refusals that removing thinking answers", () => {
+    expect(
+      refusesThinking(
+        "messages.1.content.0: Invalid `signature` in `thinking` block",
+      ),
+    ).toBe(true);
+    expect(
+      refusesThinking(
+        "messages.2.content.0.thinking.signature: Field required",
+      ),
+    ).toBe(true);
+    expect(
+      refusesThinking(
+        "messages.1.content.0: Invalid `data` in `redacted_thinking` block",
+      ),
+    ).toBe(true);
+    expect(
+      refusesThinking(
+        "thinking.budget_tokens: Input should be less than max_tokens",
+      ),
+    ).toBe(false);
+    expect(
+      refusesThinking(
+        "Expected `thinking` or `redacted_thinking`, but found `tool_use`",
+      ),
+    ).toBe(false);
   });
 
   /** TEST_SCENARIO: the next turn of that Session carries the same history

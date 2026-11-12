@@ -9,13 +9,16 @@ const isObject = (v: unknown): v is Json =>
 const THINKING = new Set(["thinking", "redacted_thinking"]);
 
 const REFUSES_THINKING =
-  /invalid `?signature`? in `?thinking`? block|thinking\.signature: field required/i;
+  /invalid `?(?:signature|data)`? in `?(?:redacted_)?thinking`? block|(?:redacted_)?thinking\.(?:signature|data): field required/i;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: whether a provider's error says a thinking block
  * in the history is not one a Claude model wrote: Anthropic answers a block
- * with a foreign signature with "Invalid `signature` in `thinking` block" and
- * one with none with "thinking.signature: Field required".
+ * with a foreign signature with "Invalid `signature` in `thinking` block",
+ * one with none with "thinking.signature: Field required", and the redacted
+ * block a GPT model returns behind the proxies with "Invalid `data` in
+ * `redacted_thinking` block". Any other error about thinking, such as a
+ * budget one, is not answered by removing blocks and does not match.
  */
 export function refusesThinking(text: string): boolean {
   return REFUSES_THINKING.test(text);
