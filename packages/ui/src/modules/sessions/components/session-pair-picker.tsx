@@ -835,6 +835,7 @@ export function SessionPairPicker(props: Props) {
         <ToolApprovalPicker
           capability={capability}
           settings={settings}
+          agentApproval={saved?.toolApproval}
           onChange={(changes) => {
             if (!agentId) return;
             setPair(agentId, {

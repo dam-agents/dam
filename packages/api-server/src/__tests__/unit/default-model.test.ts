@@ -830,6 +830,7 @@ describe("the one-time default conversion", () => {
         }),
         write: async () => {},
         clear: async () => {},
+        writeToolApproval: async () => {},
         writeIfEmpty: async (_id, pair, note) => {
           if (saved?.model) return false;
           saved = pair;

@@ -34,6 +34,7 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
+  useSessionDefaults,
 } from "../api/session-pair.js";
 import { keepOpenWhileDialog } from "../hooks/use-connect-on-pick.js";
 import {
@@ -96,6 +97,7 @@ export function ModelIndicator({
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
+  const agentApproval = useSessionDefaults(agentId).data?.toolApproval;
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
@@ -372,6 +374,7 @@ export function ModelIndicator({
       <ToolApprovalPicker
         capability={capability}
         settings={settings}
+        agentApproval={agentApproval}
         onChange={onToolApproval}
       />
     </div>
