@@ -1510,7 +1510,7 @@ export function createAgentsService(deps: {
           spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
         if (requestedTemplate === DEFAULT_TEMPLATE_ID)
           spec.harness ??= await defaultTemplateHarness(
-            input.providerConnectionId,
+            input.noDefaultProvider ? undefined : input.providerConnectionId,
             newDefault?.harness,
           );
         templateId = requestedTemplate;
@@ -1550,10 +1550,11 @@ export function createAgentsService(deps: {
         spec.requireConnectionAddress = true;
 
       const providerConnectionId = input.providerConnectionId;
-      /* UNIT_BOUNDARY_DESCRIPTION: a create that names its provider, or the model it starts on, chose for itself, so the default for new agents decides only where it names that same provider and the create names no model. */
+      /* UNIT_BOUNDARY_DESCRIPTION: a create that names its provider, or the model it starts on, chose for itself, so the default for new agents decides only where it names that same provider and the create names no model; a sub-agent's inherited provider is the platform's choice, not its caller's, and keeps the rule it had. */
       const startsOnDefault =
         newDefault?.harness === spec.harness &&
         (providerConnectionId === undefined ||
+          input.noDefaultProvider === true ||
           providerConnectionId === newDefault?.connectionId) &&
         input.model === undefined &&
         input.settings === undefined
