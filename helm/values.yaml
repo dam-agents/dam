@@ -2362,7 +2362,6 @@ starterKits:
       evox: { enabled: false }
       k-search: { enabled: false }
       spotlights: { enabled: true }
-      software-developer: { enabled: false }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into
