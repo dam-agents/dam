@@ -34,6 +34,9 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake: fake.wake }),
 }));
+vi.mock("../../modules/home/api/queries.js", () => ({
+  useAttention: () => ({ data: undefined }),
+}));
 vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForAgent: () => ({ data: [] }),
 }));
