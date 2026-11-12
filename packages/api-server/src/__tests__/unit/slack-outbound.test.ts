@@ -834,7 +834,9 @@ describe("slack outbound — a private artifact's link", () => {
   };
 
   const refused = {
-    error: expect.stringContaining("must be shared from the app"),
+    error: expect.stringContaining(
+      "must be shared before people here can open it",
+    ),
   };
 
   /**

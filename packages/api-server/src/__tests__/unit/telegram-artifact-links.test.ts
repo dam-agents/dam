@@ -81,7 +81,9 @@ describe("a private artifact's link in a Telegram message", () => {
     const h = await posted(`Draft: platform://artifacts/${PRIVATE}`);
 
     expect(h.posted).toMatchObject({
-      error: expect.stringContaining("must be shared from the app"),
+      error: expect.stringContaining(
+        "must be shared before people here can open it",
+      ),
     });
     expect(h.posts).toEqual([]);
   });

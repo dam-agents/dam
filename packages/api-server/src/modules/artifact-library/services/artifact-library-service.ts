@@ -1,6 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
-import { artifactSharingInputSchema } from "api-server-api";
+import {
+  artifactSharingInputSchema,
+  VIEWER_ALLOWLIST_MAX,
+} from "api-server-api";
 import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
@@ -39,6 +42,12 @@ import {
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
+import {
+  nextViewerAllowlist,
+  widensInteractiveAudience,
+  type ViewerAllowlistChange,
+  type ViewerAllowlistRefusal,
+} from "../domain/viewer-allowlist.js";
 import {
   ownerPromptText,
   ownerSessionTitle,
@@ -162,6 +171,37 @@ function agentApiAccess(
   if (agentIds !== "*" && !agentIds.includes(row.agentId))
     return { allowed: false, denial: "agent-not-bound" };
   return { allowed: true, agentId: row.agentId };
+}
+
+type SharingAuthority = "share-dialog" | "named-viewers" | "public-or-private";
+
+function sharingAuthority(surface: ArtifactSurface): SharingAuthority {
+  return match(surface)
+    .with("ui", () => "share-dialog" as const)
+    .with("cli", () => "named-viewers" as const)
+    .with("mcp", () => "named-viewers" as const)
+    .with("system", () => "public-or-private" as const)
+    .with("other", () => "public-or-private" as const)
+    .exhaustive();
+}
+
+function viewerAllowlistRefusalMessage(
+  refusal: ViewerAllowlistRefusal,
+): string {
+  return match(refusal)
+    .with(
+      "replace-and-edit",
+      () => "pass the whole viewer list, or emails to add and remove, not both",
+    )
+    .with(
+      "added-and-removed",
+      () => "an email cannot be both added and removed",
+    )
+    .with(
+      "over-cap",
+      () => `an artifact has at most ${VIEWER_ALLOWLIST_MAX} viewers`,
+    )
+    .exhaustive();
 }
 
 function hasShareLink(visibility: ArtifactVisibility): boolean {
@@ -311,26 +351,57 @@ export function createArtifactLibraryService(
 
   function requireSharingPermission(
     before: ArtifactRow,
-    input: ArtifactSharingInput,
+    visibility: ArtifactVisibility | undefined,
+    existing: readonly string[],
+    next: readonly string[] | undefined,
   ): void {
-    const mayManageRestricted = match(surface)
-      .with("ui", () => true)
-      .with("cli", () => false)
-      .with("mcp", () => false)
-      .with("system", () => false)
-      .with("other", () => false)
+    match(sharingAuthority(surface))
+      .with("share-dialog", () => {})
+      .with("named-viewers", () => {
+        if (
+          visibility === "public" &&
+          before.visibility !== "public" &&
+          (before.visibility === "restricted" || existing.length > 0)
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This artifact is restricted to named viewers, or keeps their list while private. Only the owner opens it to anyone with the link, in the app's Share dialog. Adding or removing viewers or making it private works here.",
+          });
+        if (widensInteractiveAudience(before, visibility, existing, next))
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This page can talk to your agent: its viewers can send the agent prompts and change its data. Only the owner shares it with named people, in the app's Share dialog. Removing viewers or making it private works here.",
+          });
+      })
+      .with("public-or-private", () => {
+        if (before.visibility === "restricted")
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Restricted by the owner. Change sharing in the app, or with `dam artifact share` after `dam login`; an API key cannot change it.",
+          });
+        if (visibility === "restricted" || next !== undefined)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Restricted sharing is set by the owner in the app, or with `dam artifact share` after `dam login`; an API key cannot set it.",
+          });
+      })
       .exhaustive();
-    if (mayManageRestricted) return;
-    if (before.visibility === "restricted")
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Restricted by the owner. Change sharing in the app.",
-      });
-    if (input.visibility === "restricted" || input.viewers !== undefined)
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Restricted sharing is set by the owner in the app.",
-      });
+  }
+
+  function viewerAllowlistFor(
+    existing: readonly string[],
+    change: ViewerAllowlistChange,
+  ): string[] | undefined {
+    const next = nextViewerAllowlist(existing, change, VIEWER_ALLOWLIST_MAX);
+    if (next.ok) return next.value;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: viewerAllowlistRefusalMessage(next.error),
+    });
   }
 
   async function resolveRef(
@@ -661,14 +732,14 @@ export function createArtifactLibraryService(
         id,
         owner,
         patch,
-        parsed.viewers,
-        (before) => {
+        (before, existing) => {
           if (!inScope(before))
             throw new TRPCError({
               code: "NOT_FOUND",
               message: "artifact not found",
             });
-          requireSharingPermission(before, parsed);
+          const next = viewerAllowlistFor(existing, parsed);
+          requireSharingPermission(before, parsed.visibility, existing, next);
           if (before.interactive && parsed.visibility === "public") {
             throw new TRPCError({
               code: "PRECONDITION_FAILED",
@@ -676,6 +747,7 @@ export function createArtifactLibraryService(
                 "this page can talk to your agent, so it cannot be public — share it with named people in the app instead",
             });
           }
+          return next;
         },
       );
       if (!change) throw new TRPCError({ code: "NOT_FOUND" });

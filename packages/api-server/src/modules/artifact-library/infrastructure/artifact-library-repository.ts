@@ -168,8 +168,10 @@ export interface ArtifactLibraryRepository {
     id: string,
     owner: string,
     patch: SharingPatch,
-    viewers: string[] | undefined,
-    authorize: (before: ArtifactRow) => void,
+    nextViewers: (
+      before: ArtifactRow,
+      viewers: string[],
+    ) => string[] | undefined,
   ): Promise<SharingChange | null>;
 
   insertFolder(
@@ -530,7 +532,7 @@ export function createArtifactLibraryRepository(
       return byArtifact;
     },
 
-    async updateSharing(id, owner, patch, viewers, authorize) {
+    async updateSharing(id, owner, patch, nextViewers) {
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select(artifactColumns)
@@ -540,14 +542,14 @@ export function createArtifactLibraryRepository(
           )
           .for("update");
         if (!before) return null;
-        authorize(before);
+        const existing = await selectViewers(tx, id);
+        const viewers = nextViewers(before, existing);
         const [after] = await tx
           .update(artifactsTable)
           .set({ ...patch, updatedAt: new Date() })
           .where(eq(artifactsTable.id, id))
           .returning(artifactColumns);
         if (viewers !== undefined) {
-          const existing = await selectViewers(tx, id);
           const removed = existing.filter((email) => !viewers.includes(email));
           const added = viewers.filter((email) => !existing.includes(email));
           if (removed.length > 0) {
