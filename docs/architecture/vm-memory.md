@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for their agents, which have no size of their own.
@@ -176,7 +176,7 @@ For ten minutes after the owner's runner pod started — the time Kubernetes kee
 The 90% pass holds the same window, so it hibernates nobody for the floors of a wave either; the runner's pressure signal does not hold it, since the kernel's working set is what kills a machine and a machine near the limit is not a wave.
 The window is a bound on how long the platform waits rather than a promise of room: past it a refusal is the refusal it was before, the owner's idle agents are the room the start has left, and the message says what frees it.
 It knows only that the owner's runner restarted, never which machines are warming, so it misses a guest the runner's own health prober restarted on its own, and a wave that outlasts the ten minutes; the runner-reported warm-up it would take to see either is not part of this rule.
-No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
+No other owner's agent is touched, and an agent hibernated this way is an ordinary idle one to its owner ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, in one usage read for the owner rather than a status read per machine, and that read is what pressure is judged from and what moves the request between reconciles.
 A read that fails leaves the last figures in place, as a failed status read of one machine did, and the pass goes on: a measured machine counts at its last use, and a machine never measured at its warm-up floor, or its size when that is smaller, as it does on any pass; a pass under the runner's pressure signal needs no figures at all, since its need is the kernel's working set.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.

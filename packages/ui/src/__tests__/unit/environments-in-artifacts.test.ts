@@ -169,7 +169,7 @@ describe("Environments in the Artifacts list", () => {
         (r) =>
           r.querySelector('[data-testid="environment-state"]')?.textContent,
       ),
-    ).toEqual(["Running", "Sleeping"]);
+    ).toEqual(["Running", "Idle"]);
     expect(rows[0]!.textContent).toContain("dev");
     expect(rows[1]!.textContent).toContain("qa");
     const links = [
@@ -316,11 +316,11 @@ describe("Environments in the Artifacts list", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a machine starting, sleeping or in any other state reads as one of four words, so the badge never shows a raw state.
+  // TEST_SCENARIO: a machine starting, stopped for idleness or in any other state reads as one of four words, so the badge never shows a raw state.
   it("names the state in plain words", () => {
     expect(
       ["running", "starting", "hibernated", "error"].map(environmentStateLabel),
-    ).toEqual(["Running", "Starting", "Sleeping", "Not running"]);
+    ).toEqual(["Running", "Starting", "Idle", "Not running"]);
   });
 });
 

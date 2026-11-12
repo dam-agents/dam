@@ -1480,7 +1480,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
+    body: "The agent didn't answer. It may still be starting — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",

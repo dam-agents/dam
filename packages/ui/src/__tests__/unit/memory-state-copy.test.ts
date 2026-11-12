@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a user reads about an agent refused for memory or storage, or put to sleep: the badge says "Waiting for memory" rather than "Over budget", an agent refused a start reads "Can't start" rather than "Error" on its badge and overlay, the row's state word takes its colour from what the agent is doing, a sleeping agent reads "Falling asleep" then "Sleeping", the overlay falls back to the VM memory sentence when the refusal carries no message of its own, and an agent put to sleep after a start that never came up says why.
+// TEST_OVERVIEW: what a user reads about an agent refused for memory or storage, or stopped while idle: the badge says "Waiting for memory" rather than "Over budget", an agent refused a start reads "Can't start" rather than "Error" on its badge and overlay, the row's state word takes its colour from what the agent is doing, an agent stopped while idle reads "Idle" like a running idle one, the overlay falls back to the VM memory sentence when the refusal carries no message of its own, and an agent stopped after a start that never came up says why.
 import { describe, expect, it } from "vitest";
 
 import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
@@ -12,7 +12,7 @@ import type { AgentView } from "../../types.js";
 const agent = (over: Partial<AgentView>) =>
   ({ workspaceFailures: [], ...over }) as AgentView;
 
-describe("memory and sleep copy", () => {
+describe("memory and idle copy", () => {
   // TEST_SCENARIO: an agent refused for its owner's memory waits for it, which is no budget of its own.
   it("labels a refused agent as waiting for memory", () => {
     expect(badgeLabel("over_budget", false)).toBe("Waiting for memory");
@@ -25,7 +25,7 @@ describe("memory and sleep copy", () => {
     expect(badgeLabel("running", true)).toBe("Running");
   });
 
-  // TEST_SCENARIO: the row's state word is green at work or holding background work, blue when idle, red when failed or refused, and the line's own colour when sleeping or starting.
+  // TEST_SCENARIO: the row's state word is green at work or holding background work, blue when idle, running or stopped, red when failed or refused, and the line's own colour when starting.
   it("colours the row's state word by what the agent is doing", () => {
     expect(statusTone("running", true, 0)).toBe(STATUS_TONE.working);
     expect(statusTone("running", undefined, 0)).toBe(STATUS_TONE.working);
@@ -33,21 +33,21 @@ describe("memory and sleep copy", () => {
     expect(statusTone("running", false, 2)).toBe(STATUS_TONE.working);
     expect(statusTone("error", undefined, 0)).toBe(STATUS_TONE.failed);
     expect(statusTone("over_budget", undefined, 0)).toBe(STATUS_TONE.waiting);
-    expect(statusTone("hibernated", undefined, 0)).toBe("");
+    expect(statusTone("hibernated", undefined, 0)).toBe(STATUS_TONE.idle);
     expect(statusTone("starting", undefined, 0)).toBe("");
   });
 
-  // TEST_SCENARIO: an agent going to sleep and one asleep use the same word.
-  it("calls a sleeping agent falling asleep, then sleeping", () => {
-    expect(badgeLabel("hibernating", false)).toBe("Falling asleep");
-    expect(badgeLabel("hibernated", false)).toBe("Sleeping");
+  // TEST_SCENARIO: an agent stopping or stopped for idleness reads as idle; hibernation is no state the person acts on.
+  it("calls an agent stopped for idleness idle", () => {
+    expect(badgeLabel("hibernating", false)).toBe("Idle");
+    expect(badgeLabel("hibernated", false)).toBe("Idle");
   });
 
-  // TEST_SCENARIO: an agent that was put to sleep after a start that never came up carries that failure, so its overlay says why it never ran instead of only that it sleeps; an agent with no failed start keeps the sleeping sentence.
-  it("says why a slept agent never came up", () => {
+  // TEST_SCENARIO: an agent stopped after a start that never came up carries that failure and shows as an error, so its overlay says why it never ran; an agent stopped for idleness has no overlay sentence.
+  it("says why a stopped agent never came up", () => {
     expect(
       overlayDescription(
-        "hibernated",
+        "error",
         agent({
           startFailure: {
             reason: "NeverReady",
@@ -56,11 +56,11 @@ describe("memory and sleep copy", () => {
         }),
       ),
     ).toBe(
-      "The agent is asleep, but its last start never finished: the machine ran for 2m0s without answering. Start it to try again.",
+      "The agent's last start never finished: the machine ran for 2m0s without answering. Start it to try again.",
     );
     expect(
       overlayDescription(
-        "hibernated",
+        "error",
         agent({
           startFailure: {
             reason: "BootFailed",
@@ -69,11 +69,9 @@ describe("memory and sleep copy", () => {
         }),
       ),
     ).toBe(
-      "The agent is asleep, but its last start never finished: It stopped as it started: no space left on device. Start it to try again.",
+      "The agent's last start never finished: It stopped as it started: no space left on device. Start it to try again.",
     );
-    expect(overlayDescription("hibernated", agent({}))).toBe(
-      "The agent is sleeping. Wake it to pick up where you left off.",
-    );
+    expect(overlayDescription("hibernated", agent({}))).toBe("");
   });
 
   // TEST_SCENARIO: a VM refusal with no message still says memory is full and how to free it; a message of its own wins.

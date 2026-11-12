@@ -10,18 +10,24 @@ import * as auth from "../../auth.js";
  * that is close to expiry rather than reuse it. The silent-renew timer
  * normally does this first, but a background tab throttles that timer. A
  * failed renewal must not send the user to the login page while the old
- * token still works. Sign-in setup on page load retries a failed fetch, so a
- * network blip does not leave a blank page.
+ * token still works. A renewal the identity provider never answers fails
+ * after a bounded wait, so it ends in a sign-in redirect rather than holding
+ * every connection on a token that never comes. Sign-in setup on page load
+ * retries a failed fetch, so a network blip does not leave a blank page.
  */
 
 const oidc = vi.hoisted(() => ({
   user: null as { access_token: string; expires_in?: number } | null,
   signinSilent: vi.fn(),
   signinRedirect: vi.fn(),
+  settings: {} as { requestTimeoutInSeconds?: number },
 }));
 
 vi.mock("oidc-client-ts", () => ({
   UserManager: class {
+    constructor(settings: { requestTimeoutInSeconds?: number }) {
+      oidc.settings = settings;
+    }
     getUser = async () =>
       oidc.user && { ...oidc.user, expired: (oidc.user.expires_in ?? 1) <= 0 };
     signinSilent = oidc.signinSilent;
@@ -115,6 +121,12 @@ describe("getAccessToken", () => {
     oidc.signinSilent.mockRejectedValue(new Error("login_required"));
     await expect(auth.getAccessToken()).rejects.toThrow("Session expired");
     expect(oidc.signinRedirect).toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: The identity provider never answers the refresh, as when a stale connection to it hangs. The client is set up to fail such a request after a bounded wait, which the getter turns into a sign-in redirect for an expired token.
+  it("bounds a renewal the identity provider never answers", async () => {
+    await signedIn({ access_token: "old", expires_in: 240 });
+    expect(oidc.settings.requestTimeoutInSeconds).toBeGreaterThan(0);
   });
 });
 

@@ -12,7 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { AgentSleepingCallout } from "../../../agents/components/agent-sleeping-callout.js";
+import { AgentStartingCallout } from "../../../agents/components/agent-starting-callout.js";
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSourceRow } from "./skill-sources-section.js";
@@ -60,6 +60,7 @@ function SnapshotRow({
 }
 
 export function SkillsReadOnlyPanel({
+  agentId,
   surface,
   derived,
   mode,
@@ -70,6 +71,7 @@ export function SkillsReadOnlyPanel({
   onRemove,
   onManageConnections,
 }: {
+  agentId: string | null;
   surface: SkillsSurface;
   derived: SkillsDerivations;
   mode: "never-run" | "stopped";
@@ -111,10 +113,13 @@ export function SkillsReadOnlyPanel({
             recorded to show. Start it once and this page fills in.
           </Notice>
         ) : (
-          <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
-            — its skills are read-only until it wakes. Wake the agent to change
-            them.
-          </AgentSleepingCallout>
+          <AgentStartingCallout
+            agentId={agentId}
+            comingUp={comingUp}
+            onStart={onStart}
+          >
+            — its skills are read-only until it is running.
+          </AgentStartingCallout>
         ))}
 
       {mode === "never-run" ? (

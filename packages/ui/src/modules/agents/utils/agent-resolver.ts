@@ -23,7 +23,9 @@ export function resolveAgentDisplay(
       ? "starting"
       : agent.overBudget
         ? "over_budget"
-        : agent.state;
+        : agent.state === "hibernated" && agent.startFailure
+          ? "error"
+          : agent.state;
   const clickable =
     !restarting && (agent.state === "running" || agent.state === "hibernated");
   const slowStart =

@@ -41,7 +41,7 @@ export function AgentManagementActions({
       title: agent.disabled ? "Enable agent" : "Disable agent",
       description: agent.disabled
         ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
-        : "Stop the agent and keep it asleep.",
+        : "Stop the agent and keep it stopped until you enable it.",
       button: {
         label: agent.disabled ? "Enable" : "Disable",
         disabled: management.disabling,
@@ -59,7 +59,7 @@ export function AgentManagementActions({
           : agent.disabled
             ? "The agent is disabled. Enable it to restart it."
             : display.powerAction === "start"
-              ? "The agent is not running. It starts fresh when it wakes."
+              ? "The agent is not running. It starts fresh the next time it is used."
               : "The agent is starting. You can restart it once it runs.",
       button: {
         label: "Restart",

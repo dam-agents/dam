@@ -9,7 +9,6 @@ import { useUpdateAgent } from "../../agents/api/mutations.js";
 import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
-import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
@@ -64,7 +63,6 @@ export function usePaletteActions({
   const toggleChanges = useToggleChanges();
   const { denyAll } = useDenyApprovals();
   const management = useAgentManagement();
-  const { wake } = useWakeAgent();
   const updateAgent = useUpdateAgent();
   const actWhenAwake = useActWhenAwake(chatAgentId ?? "");
   const confirmDeleteSession = useConfirmDeleteSession();
@@ -115,7 +113,6 @@ export function usePaletteActions({
           ? {}
           : { avatar: resolveCharacter(agent.name, agent.avatar) }),
       }),
-    wake: (agentId) => void wake(agentId),
     restart: (agent) => void management.restart(agent),
     toggleDisabled: (agent) => void management.toggleDisabled(agent),
     deleteAgent: (agent) => void management.remove(agent),

@@ -25,7 +25,6 @@ import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
 
 const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
-  hibernated: Asleep,
   disabled: Asleep,
   error: Warning,
   over_budget: Warning,
@@ -34,15 +33,15 @@ const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
 export function takesOverChat(state: AgentDisplayState | null): boolean {
   return match(state)
     .with(null, () => true)
-    .with("starting", "preparing_workspace", "running", () => false)
     .with(
+      "starting",
+      "preparing_workspace",
+      "running",
       "hibernating",
       "hibernated",
-      "over_budget",
-      "error",
-      "disabled",
-      () => true,
+      () => false,
     )
+    .with("over_budget", "error", "disabled", () => true)
     .exhaustive();
 }
 

@@ -5,11 +5,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { useAutoWakeOnOpen } from "../../modules/agents/hooks/use-auto-wake-on-open.js";
 import { useAutoWakeOnSidebarOpen } from "../../modules/agents/hooks/use-auto-wake-on-sidebar-open.js";
-import { nextAutoWake } from "../../modules/agents/lib/auto-wake.js";
+import {
+  nextAutoWake,
+  nextOpenWake,
+  NO_OPEN_WAKE,
+} from "../../modules/agents/lib/auto-wake.js";
 import { useStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 
-// TEST_OVERVIEW: opening a sleeping agent's chat or its sidebar session list wakes it once per open, and a wake already running counts as that open's wake. A sidebar open lasts until its row closes, so a sidebar that mounts again does not wake the agent again. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken.
+// TEST_OVERVIEW: opening a sleeping agent's sidebar session list wakes it once per open, and a wake already running counts as that open's wake. A sidebar open lasts until its row closes, so a sidebar that mounts again does not wake the agent again. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken. A view open on the agent (its chat, a page that needs it running) wakes it each time it finds it asleep, once per sleep, and retries a failed start only once per open.
 
 const wake = vi.hoisted(() => vi.fn());
 vi.mock("../../modules/agents/api/queries.js", () => ({
@@ -167,5 +171,94 @@ describe("a sidebar row's open", () => {
     again.render(true);
     expect(wake).toHaveBeenCalledTimes(2);
     again.unmount();
+  });
+});
+
+const idle = {
+  state: "hibernated" as const,
+  overBudget: false,
+  disabled: false,
+};
+
+function walk(
+  states: Pick<
+    AgentView,
+    "state" | "overBudget" | "disabled" | "startFailure"
+  >[],
+  waking = false,
+): boolean[] {
+  let memo = NO_OPEN_WAKE;
+  return states.map((agent) => {
+    const next = nextOpenWake(memo, "a1", agent, waking);
+    memo = next.memo;
+    return next.wake;
+  });
+}
+
+describe("a view open on the agent", () => {
+  // TEST_SCENARIO: the agent falls asleep while its chat stays open, as when the tab's connection dropped; the view wakes it again once it finds it asleep.
+  it("wakes the agent each time it falls asleep", () => {
+    const up = { ...idle, state: "running" as const };
+    expect(walk([idle, idle, up, idle, idle])).toEqual([
+      true,
+      false,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  // TEST_SCENARIO: the wake's call fails and the agent never leaves asleep; the view does not ask again, so a failing wake is no loop.
+  it("asks once per sleep", () => {
+    expect(walk([idle, idle, idle])).toEqual([true, false, false]);
+  });
+
+  // TEST_SCENARIO: the agent's last start never came up; the open retries it once, and a retry that fails again is not retried until the next open.
+  it("retries a failed start once per open", () => {
+    const starting = { ...idle, state: "starting" as const };
+    const failed = {
+      ...idle,
+      startFailure: { reason: "NeverReady", message: "no answer" },
+    };
+    expect(walk([failed, starting, failed, starting, failed])).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  // TEST_SCENARIO: a disabled or over-budget agent is never woken, and a wake already running counts as the view's own.
+  it("leaves disabled, over-budget and already-waking agents alone", () => {
+    expect(walk([{ ...idle, disabled: true }])).toEqual([false]);
+    expect(walk([{ ...idle, overBudget: true }])).toEqual([false]);
+    expect(walk([idle, idle], true)).toEqual([false, false]);
+  });
+
+  // TEST_SCENARIO: switching to another agent is a new open, which wakes that agent.
+  it("treats a switch as a new open", () => {
+    const first = nextOpenWake(NO_OPEN_WAKE, "a1", idle);
+    expect(nextOpenWake(first.memo, "a2", idle).wake).toBe(true);
+  });
+});
+
+describe("a hidden page", () => {
+  // TEST_SCENARIO: the chat is open in a background tab; nothing is woken until the tab is shown again.
+  it("wakes the agent only once it is shown", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    wake.mockClear();
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    const view = openView();
+    expect(wake).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(wake).toHaveBeenCalledExactlyOnceWith("a1");
+    view.close();
+    visibility.mockRestore();
   });
 });

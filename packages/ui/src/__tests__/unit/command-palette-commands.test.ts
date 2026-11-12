@@ -166,35 +166,30 @@ describe("agent commands", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a sleeping agent offers wake and no restart; a disabled one offers enable.
+  // TEST_SCENARIO: an agent stopped for idleness offers no wake, since opening it wakes it, and no restart; a disabled one offers enable.
   it("offers lifecycle tasks by the agent's state", () => {
     const sleepy = owned("z", "Zed", { state: "hibernated" });
     const off = owned("o", "Off", { state: "hibernated", disabled: true });
     const names = titles(
       input({ agents: [sleepy, off], ownAgents: [sleepy, off] }),
     );
-    expect(names).toContain("agent Zed: wake");
+    expect(names).not.toContain("agent Zed: wake");
     expect(names).not.toContain("agent Zed: restart");
     expect(names).toContain("agent Zed: disable");
     expect(names).toContain("agent Off: enable");
     expect(names).not.toContain("agent Off: wake");
   });
 
-  // TEST_SCENARIO: right after a restart or wake is clicked the server still reports the old state, so neither is offered again until the app stops showing the agent as restarting.
-  it("offers no second restart or wake while one is settling", () => {
-    const sleepy = owned("z", "Zed", { state: "hibernated" });
+  // TEST_SCENARIO: right after a restart is clicked the server still reports the old state, so it is not offered again until the app stops showing the agent as restarting.
+  it("offers no second restart while one is settling", () => {
     const names = titles(
       input({
-        agents: [alice, sleepy],
-        ownAgents: [alice, sleepy],
-        restarting: new Map([
-          ["alice", {}],
-          ["z", {}],
-        ]),
+        agents: [alice],
+        ownAgents: [alice],
+        restarting: new Map([["alice", {}]]),
       }),
     );
     expect(names).not.toContain("agent Alice: restart");
-    expect(names).not.toContain("agent Zed: wake");
   });
 
   // TEST_SCENARIO: delete is marked destructive and only runs through the action that holds the confirmation.
