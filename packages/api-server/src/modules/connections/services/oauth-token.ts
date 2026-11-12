@@ -3,6 +3,7 @@ import type {
   ConnectionAuthConfig,
   GitHubUserTokenScope,
 } from "api-server-api";
+import { TRPCError } from "@trpc/server";
 import type {
   OAuthEngine,
   OAuthProvider,
@@ -12,6 +13,7 @@ import {
   operatorAppFor,
   type ConnectionTemplateRegistry,
 } from "../domain/connection-template.js";
+import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { earliestExpiry } from "../domain/github-user-token-scope.js";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -61,6 +63,11 @@ export async function oauthProviderFor(opts: {
     template?.authKind === "oauth" && template.scopes?.length
       ? template.scopes
       : undefined;
+  const dynamicMcp =
+    template?.authKind === "oauth" && template.dynamicRegistration === true;
+  const scopes = dynamicMcp
+    ? (auth.requestedScopes ?? auth.scopes)
+    : (templateScopes ?? auth.scopes);
   const clientSecret = await resolveOAuthClientSecret(opts);
   return {
     id: `connection:${conn.id}:${conn.templateId}`,
@@ -68,9 +75,59 @@ export async function oauthProviderFor(opts: {
     tokenEndpoint: auth.tokenUrl,
     clientId: auth.clientId,
     ...(clientSecret ? { clientSecret } : {}),
-    scopes: templateScopes ?? auth.scopes,
+    scopes,
+    ...(auth.resource ? { resource: auth.resource } : {}),
     ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
     ...(auth.extraAuthParams ? { extraAuthParams: auth.extraAuthParams } : {}),
+  };
+}
+
+export async function oauthProviderForSignIn(opts: {
+  conn: Connection;
+  auth: OAuthAuth;
+  templates: ConnectionTemplateRegistry;
+  secretStore: SecretStore;
+}): Promise<OAuthProvider> {
+  const provider = await oauthProviderFor(opts);
+  const template = opts.templates.get(opts.conn.templateId);
+  if (template?.authKind !== "oauth" || !template.dynamicRegistration)
+    return provider;
+  const url = opts.conn.inputs.url;
+  if (typeof url !== "string")
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "MCP connection has no endpoint to rediscover",
+    });
+  const metadata = await discoverMcpAuth(new URL(url));
+  if (!metadata)
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "MCP OAuth metadata could not be rediscovered; try signing in again later",
+    });
+  if (
+    metadata.authorizationEndpoint !== provider.authorizationUrl ||
+    metadata.tokenEndpoint !== provider.tokenEndpoint
+  )
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "MCP authorization server changed; create a new connection to sign in",
+    });
+  if (metadata.source === "authorization-server")
+    return opts.auth.resource
+      ? provider
+      : { ...provider, scopes: template.scopes ?? [] };
+  if (opts.auth.resource && metadata.resource !== opts.auth.resource)
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "MCP resource metadata changed; try signing in again later or create a new connection",
+    });
+  return {
+    ...provider,
+    scopes: metadata.scopes ?? template.scopes ?? [],
+    resource: metadata.resource,
   };
 }
 

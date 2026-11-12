@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -213,6 +213,7 @@ That is an accepted limit rather than a guarded one — the reply is a refusal t
 ## Connection presets
 
 What each shipped template gives an Agent, and what a grant of it materializes, is on [connection presets](connection-presets.md).
+How a custom MCP server's OAuth client, scopes and resource identifier are found is on [MCP connections](mcp-connections.md).
 
 ## Built-in contributions
 
