@@ -738,7 +738,9 @@ describe("appendInterruptedNotice", () => {
     });
     expect(out[1].parts[0]).toMatchObject({
       kind: "text",
-      text: expect.stringContaining("put to sleep"),
+      text: expect.stringContaining(
+        "when the agent was stopped, restarted or moved",
+      ),
     });
     expect(out[1].parts[0]).not.toMatchObject({
       text: expect.stringContaining("memory"),

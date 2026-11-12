@@ -433,7 +433,7 @@ const vmAwaitingWarmUpMessage = "Your VM agents are still starting up after thei
 // UNIT_BOUNDARY_DESCRIPTION: is doing, and the wait ends as a refusal with
 // UNIT_BOUNDARY_DESCRIPTION: vmMemoryFullMessage once nothing has freed room for it
 // UNIT_BOUNDARY_DESCRIPTION: inside memoryReclaimWait.
-const vmAwaitingMemoryMessage = "Your VM agents' memory is full, so an idle agent of yours is being put to sleep to make room. This one starts on its own in a moment."
+const vmAwaitingMemoryMessage = "Your VM agents' memory is full, so the platform is making room from an idle agent of yours. This one starts on its own in a moment."
 
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and

@@ -60,12 +60,8 @@ export interface AgentsRepository {
   ): Promise<AgentSpecWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
-  wake(
-    id: string,
-  ): Promise<
-    Result<InfraAgent, { type: "AgentNotFound" } | { type: "AgentDisabled" }>
-  >;
-  setDisabled(id: string, disabled: boolean): Promise<InfraAgent | null>;
+  wake(id: string): Promise<Result<InfraAgent, { type: "AgentNotFound" }>>;
+  clearLegacyDisabled(id: string): Promise<boolean>;
   requestStop(id: string): Promise<InfraAgent | null>;
   requestSleep(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
@@ -133,14 +129,13 @@ export function createAgentsRepository(
 ): AgentsRepository {
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
-  const patchUnlessDisabled = async (
+  const patchActivity = async (
     id: string,
     annotations: Record<string, string>,
   ) => {
     for (let attempt = 0; ; attempt++) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      if (obj.metadata?.annotations?.[DISABLED_KEY]) return "disabled" as const;
       try {
         await k8s.patchCustomObject(AGENTS_PLURAL, id, {
           metadata: {
@@ -196,7 +191,7 @@ export function createAgentsRepository(
     }
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read.
+  // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read. `disabledStamp` exists only to clear the legacy disabled mark, which nothing writes any more.
   async function stopAgent(
     id: string,
     opts: { stamp?: string; disabledStamp?: string; idle?: boolean } = {},
@@ -328,25 +323,24 @@ export function createAgentsRepository(
     },
 
     async wake(id) {
-      const woke = await patchUnlessDisabled(id, {
+      const woke = await patchActivity(id, {
         [LAST_ACTIVITY_KEY]: new Date().toISOString(),
         [STOP_REQUESTED_KEY]: "",
       });
-      if (woke === "disabled") return err({ type: "AgentDisabled" });
-      const reread = woke && (await k8s.getCustomObject(AGENTS_PLURAL, id));
+      if (woke === null) return err({ type: "AgentNotFound" });
+      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
       return reread
         ? ok(parseInfraAgent(reread))
         : err({ type: "AgentNotFound" });
     },
 
-    async setDisabled(id, disabled) {
-      const stamp = disabled ? new Date().toISOString() : "";
+    async clearLegacyDisabled(id) {
       const stopped = await stopAgent(id, {
-        stamp,
-        disabledStamp: stamp,
+        stamp: "",
+        disabledStamp: "",
         idle: true,
       });
-      return stopped?.agent ?? null;
+      return stopped !== null;
     },
 
     async requestStop(id) {
@@ -356,8 +350,6 @@ export function createAgentsRepository(
     async requestSleep(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      if (obj.metadata?.annotations?.[DISABLED_KEY])
-        return parseInfraAgent(obj);
       const stopped = await stopAgent(id, { idle: true }, obj);
       if (!stopped) return null;
       const { agent: infra, stamp: sleepStamp } = stopped;
@@ -487,11 +479,11 @@ export function createAgentsRepository(
 
     async wakeIfHibernated(id) {
       const written = new Date().toISOString();
-      const woke = await patchUnlessDisabled(id, {
+      const woke = await patchActivity(id, {
         [LAST_ACTIVITY_KEY]: written,
         [STOP_REQUESTED_KEY]: "",
       });
-      if (woke === null || woke === "disabled") return null;
+      if (woke === null) return null;
       return {
         previous: woke.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
         written,

@@ -423,6 +423,7 @@ import {
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
 import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
+import { clearLegacyDisabledMarks } from "./modules/agents/sagas/clear-legacy-disabled.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -742,6 +743,12 @@ export async function bootstrap() {
   const liveAgentsRepo = readsRows(config.agentStore)
     ? agentsRepo
     : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
+  void clearLegacyDisabledMarks(agentsRepo).catch((err: unknown) =>
+    getLogger().warn(
+      { reason: formatError(err) },
+      "agent.legacy_disabled.clear_failed",
+    ),
+  );
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -2315,8 +2322,6 @@ export async function bootstrap() {
       );
     },
     spendHold,
-    agentDisabled: async (agentId) =>
-      (await agentsRepo.get(agentId))?.disabled === true,
   });
 
   const outageAlerts = composeOutageAlerts({
@@ -2325,9 +2330,7 @@ export async function bootstrap() {
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
-      return agent?.owner
-        ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
-        : null;
+      return agent?.owner ? { ownerSub: agent.owner, name: agent.name } : null;
     },
     sessionCategories: (agentIds, sessionIds) =>
       sessionDirectory.categorize(agentIds, sessionIds),
@@ -2339,10 +2342,7 @@ export async function bootstrap() {
   const spendAlertsSaga = startSpendAlerts({
     redis: sharedRedis,
     notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
-    agentName: async (agentId) => {
-      const agent = await agentsRepo.get(agentId);
-      return agent && !agent.disabled ? agent.name : null;
-    },
+    agentName: async (agentId) => (await agentsRepo.get(agentId))?.name ?? null,
     connectionNames: (ownerSub) => spendAlertsConnectionNames.namesOf(ownerSub),
     sessionCategories: (agentIds, sessionIds) =>
       sessionDirectory.categorize(agentIds, sessionIds),

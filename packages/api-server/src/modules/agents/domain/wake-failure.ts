@@ -68,7 +68,7 @@ export function classifyWakeFailure(
       kind: "over-budget",
       message:
         s.overBudgetMessage ||
-        "starting this agent would exceed your compute budget — disable agents you aren't using to free room",
+        "starting this agent would exceed your compute budget — delete an agent you no longer use to free room",
     };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {

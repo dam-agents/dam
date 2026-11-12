@@ -82,7 +82,6 @@ export interface PaletteActions {
   toggleChanges: (agentId: string, open: boolean) => void;
   renameAgent: (agent: AgentView, name: string) => unknown;
   restart: (agent: AgentView) => void;
-  toggleDisabled: (agent: AgentView) => void;
   deleteAgent: (agent: AgentView) => void;
   leave: (agent: AgentView) => void;
   copy: (text: string, what: string) => void;

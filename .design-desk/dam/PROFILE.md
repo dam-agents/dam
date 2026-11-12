@@ -74,12 +74,12 @@ A flag can change more than layout: even an icon (the Artifacts destination's) c
 Never draw an icon by hand or use a letter tile for an agent.
 Render these with `<ui-component>`:
 
-| Part                       | File (under `packages/ui/src/`)                     | Export, props                                                                                                                                                             |
-| -------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| An agent's avatar          | `modules/agents/components/avatar/agent-avatar.tsx` | `AgentAvatar`, `{name, size, mood}`: `awake`, also when hibernated: the UI shows no sleep state; `disabled` when disabled (see `avatarMood()`)                            |
-| The brand mark             | `components/brand-logo.tsx`                         | `BrandLogo`                                                                                                                                                               |
-| Harness and provider marks | `components/brand-icons.tsx`                        | `ClaudeIcon`, `CodexIcon`, `PiIcon`, `BobFilledIcon`, … (harness tiles in `components/harness-icons.tsx`, provider marks in `modules/providers/components/card-icon.tsx`) |
-| Icons                      | `@carbon/icons-react`                               | `<ui-icon name="…">` with the name the code imports                                                                                                                       |
+| Part                       | File (under `packages/ui/src/`)                     | Export, props                                                                                                                                                               |
+| -------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| An agent's avatar          | `modules/agents/components/avatar/agent-avatar.tsx` | `AgentAvatar`, `{name, size, mood}`: `awake` for every live agent, also when hibernated: the UI shows no sleep state; `disabled` (grey) only where a deleted agent is drawn |
+| The brand mark             | `components/brand-logo.tsx`                         | `BrandLogo`                                                                                                                                                                 |
+| Harness and provider marks | `components/brand-icons.tsx`                        | `ClaudeIcon`, `CodexIcon`, `PiIcon`, `BobFilledIcon`, … (harness tiles in `components/harness-icons.tsx`, provider marks in `modules/providers/components/card-icon.tsx`)   |
+| Icons                      | `@carbon/icons-react`                               | `<ui-icon name="…">` with the name the code imports                                                                                                                         |
 
 For a new action with no icon yet, use the icon the app already uses for the closest action, and say so.
 Menus are portalled to the page body by the review bar; dialogs reuse `confirm-dialog.tsx`'s markup.

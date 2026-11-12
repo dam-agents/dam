@@ -921,7 +921,7 @@ export function createTelegramWorker(deps: {
             })
           : null;
       failureTemplateId = outage?.templateId ?? undefined;
-      const sleeping = isAgentStoppedError(err) && !err.disabled;
+      const sleeping = isAgentStoppedError(err);
       if (!ambientTurn && !sleeping)
         await thread
           .post(

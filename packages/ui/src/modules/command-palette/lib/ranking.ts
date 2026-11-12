@@ -40,7 +40,6 @@ export const RANKING = {
     restart: 0.3,
     denyAll: 0.3,
     rare: 0.3,
-    disable: 0.25,
     logOut: 0.15,
     destructive: 0.1,
   },

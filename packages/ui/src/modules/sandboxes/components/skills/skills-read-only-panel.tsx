@@ -66,7 +66,6 @@ export function SkillsReadOnlyPanel({
   derived,
   mode,
   comingUp,
-  disabledNotice,
   onStart,
   onAddSource,
   onRemove,
@@ -77,7 +76,6 @@ export function SkillsReadOnlyPanel({
   derived: SkillsDerivations;
   mode: "never-run" | "stopped";
   comingUp: boolean;
-  disabledNotice?: ReactNode;
   onStart: () => void;
   onAddSource?: () => void;
   onRemove?: (source: SkillSource) => void;
@@ -95,7 +93,7 @@ export function SkillsReadOnlyPanel({
   const { snapshotOnCount, snapshotRows } = derived;
   useAutoWakeOnOpen(agentId);
 
-  const startButton = !disabledNotice && (
+  const startButton = (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
       {comingUp ? <Spinner size={14} /> : <Play size={14} />}
       {comingUp ? "Starting…" : "Start agent"}
@@ -104,25 +102,24 @@ export function SkillsReadOnlyPanel({
 
   return (
     <div className="flex flex-col gap-8">
-      {disabledNotice ??
-        (mode === "never-run" ? (
-          <Notice
-            icon={Information}
-            title="This agent hasn’t run yet"
-            action={startButton}
-          >
-            — its skills are resolved when it starts, so there&rsquo;s nothing
-            recorded to show. Start it once and this page fills in.
-          </Notice>
-        ) : (
-          <AgentStartingCallout
-            agentId={agentId}
-            comingUp={comingUp}
-            onStart={onStart}
-          >
-            — its skills are read-only until it is running.
-          </AgentStartingCallout>
-        ))}
+      {mode === "never-run" ? (
+        <Notice
+          icon={Information}
+          title="This agent hasn’t run yet"
+          action={startButton}
+        >
+          — its skills are resolved when it starts, so there&rsquo;s nothing
+          recorded to show. Start it once and this page fills in.
+        </Notice>
+      ) : (
+        <AgentStartingCallout
+          agentId={agentId}
+          comingUp={comingUp}
+          onStart={onStart}
+        >
+          — its skills are read-only until it is running.
+        </AgentStartingCallout>
+      )}
 
       {mode === "never-run" ? (
         <section>

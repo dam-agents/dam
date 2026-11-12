@@ -1,18 +1,14 @@
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  useDeleteAgent,
-  useLeaveAgent,
-  useSetAgentDisabled,
-} from "../../agents/api/mutations.js";
+import { useDeleteAgent, useLeaveAgent } from "../../agents/api/mutations.js";
 import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the management tasks of an Agent, each behind
- * the confirmation it has wherever it is offered: disable, restart, delete,
- * and leave for an Agent Editor. The agent's General and People sections and
+ * the confirmation it has wherever it is offered: restart, delete, and leave
+ * for an Agent Editor. The agent's General and People sections and
  * the command palette run the same tasks.
  */
 export function useAgentManagement() {
@@ -20,26 +16,12 @@ export function useAgentManagement() {
   const showConfirm = useStore((s) => s.showConfirm);
   const confirmDelete = useConfirmDeleteAgent();
   const deleteAgent = useDeleteAgent();
-  const setDisabled = useSetAgentDisabled();
   const leaveAgent = useLeaveAgent();
   const { restart } = useRestartAgent();
 
   return {
-    disabling: setDisabled.isPending,
     deleting: deleteAgent.isPending,
     leaving: leaveAgent.isPending,
-    toggleDisabled: async (agent: AgentView) => {
-      if (
-        !agent.disabled &&
-        !(await showConfirm(
-          "The agent stops now, and Slack, Telegram, schedules and SSH won't wake it until you enable it again.",
-          "Disable agent?",
-          { confirmLabel: "Disable" },
-        ))
-      )
-        return;
-      setDisabled.mutate({ id: agent.id, disabled: !agent.disabled });
-    },
     restart: async (agent: AgentView) => {
       if (
         await showConfirm(

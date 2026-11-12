@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
@@ -59,7 +58,6 @@ export function ClassicChatIdentity({
         <EditableAgentIdentity
           agent={agent}
           avatarSize={32}
-          mood={avatarMood(display?.state, agent)}
           nameClassName="text-sm font-bold text-foreground"
         />
       ) : (

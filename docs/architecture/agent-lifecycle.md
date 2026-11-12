@@ -130,7 +130,7 @@ Every caller that sends work to an Agent — the api-server's ACP relay, channel
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this Agent?"** The primitive pokes activity by bumping the Agent's activity — the `agent-platform.ai/last-activity` annotation before the switch, the `last_activity_at` signals row with the token that changes with it after it — and the controller is woken by the store's change feed, or by the informer on the custom resources, so the reconciler starts any Agent with recent activity.
 It single-flights concurrent waits per Agent, and bumps the same signal on every successful call, so any caller implicitly keeps the Agent warm.
 The web UI shows hibernation as no state of its own: a hibernated Agent reads as *Idle*, like a running one with nothing to do, and nobody wakes it by hand.
-Its chat, and each configuration panel that needs the running Agent (model settings, skills, a schedule's past runs), wakes it whenever the page is shown and finds it asleep, a stopped Agent included but not a disabled one or one held over its budget, and shows the ordinary start wait meanwhile.
+Its chat, and each configuration panel that needs the running Agent (model settings, skills, a schedule's past runs), wakes it whenever the page is shown and finds it asleep, a stopped Agent included but not one held over its budget, and shows the ordinary start wait meanwhile.
 One sleep gets one wake: a wake already running counts as it, so a chat and a panel open together wake the Agent once, and a wake that fails leaves the Agent asleep until it is seen awake again, so a failing wake is no loop; the chat then says the Agent isn't running and offers a Start button.
 An Agent that falls asleep under an open chat, as when the tab's connection dropped, is woken again once the page is visible; a hidden page follows the Agent but wakes nothing, its sidebar included.
 An Agent whose last start never came up shows as an error with that start's reason and a Start button; its open retries the start once.
@@ -263,7 +263,7 @@ Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cac
 Only the temporary folders are emptied on every boot, and a root an image of another root generation boots over is discarded, so what must outlast both belongs under `$HOME` ([vm storage](vm-storage.md#the-disk)).
 
 **Sleep.** A scale-down on request, built to free room in its owner's [memory pool](vm-memory.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The UI shows no sleep state and offers no Sleep action: an Agent the user wants down without waiting for the idle timeout is [disabled](#disable) instead, and the api-server keeps the sleep call for other clients.
+The UI shows no sleep state and offers no Sleep action: the api-server keeps the sleep call for other clients, and the UI simply uses an Agent, which wakes it.
 The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler stops the machine and its gateway immediately, bypassing the busy probe — sleep may interrupt work by design.
 While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the Agent before it lands.
 An explicit wake and a schedule fire clear it at any time, back through the budget gate.
@@ -271,19 +271,8 @@ The api-server clears the stamp itself once the Agent settles Hibernated (a sett
 The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
+At boot the api-server clears the `agent-platform.ai/disabled` mark, and the standing stop request that went with it, wherever a store still carries one — a mark written by a feature the UI no longer offers — so a former *disabled* Agent is an ordinary idle Agent that wakes on its next use.
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity; a direct sleep call still stamps it without the settle clear, the only stable sleep it can have.
-
-### Disable
-
-A **disabled** Agent is a sleeping Agent that nothing wakes until its owner enables it: no chat, terminal, SSH, Slack or Telegram message, schedule fire or Invocation outcome starts it.
-The owner disables and enables it from the Agent's *General* page, or with `dam agent disable` and `dam agent enable` ([CLI](cli.md#agent-lifecycle)).
-Disabling stamps `agent-platform.ai/disabled` together with the stop request, clears the session and Invocation pins, and stales `last-activity`, so the controller scales the Agent down exactly as for a sleep; the controller never reads the disabled mark itself.
-The settle-watcher never runs, so the stop request stands for as long as the Agent is disabled.
-Every path that would clear the stop request — an explicit wake, a schedule poke, a workspace retry — first reads the disabled mark and writes nothing when it is set; the write names the version it read, so a disable landing in between makes it conflict and read again rather than undo the disable.
-An explicit wake answers with a typed *disabled* error, and `ensureReady` fails with the *stopped* error, which carries whether the Agent is disabled so a channel can tell its sender to ask the owner to enable it.
-A recurring schedule fire is held, reading `held: agent disabled`, and a one-time task due meanwhile is recorded missed ([schedules](schedules.md)).
-Enabling clears both marks and leaves `last-activity` stale, so the Agent stays asleep until its next use wakes it.
-A sleep asked of a disabled Agent writes nothing, so its settle-watcher never runs and cannot clear the standing stop request.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed memory provably covers the shortfall.
 The floor it reads is half a minute rather than the three the background passes keep — none at all for an Agent whose machine began holding memory inside that half minute, since a machine woken to answer one request and left idle is the room it holds — and an Agent whose machine is booting or is itself waiting for room is never its victim.

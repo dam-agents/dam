@@ -125,7 +125,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <SandboxSectionNav
           sections={sections}
-          header={<SandboxIdentity agent={agent} display={display} />}
+          header={<SandboxIdentity agent={agent} />}
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}

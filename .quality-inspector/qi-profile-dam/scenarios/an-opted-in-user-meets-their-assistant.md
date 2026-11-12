@@ -60,7 +60,7 @@ And no greeting and no first tasks are shown
 
 Given Dammy in the owner's list
 When the owner opens its Manage section
-Then Disable and Delete are offered as they are on any other agent, and its name can be edited from its identity
+Then Restart and Delete are offered as they are on any other agent, and its name can be edited from its identity
 When they rename it and open Settings → Experimental features
 Then the *Onboarding progress* card at the bottom of the tab still offers its reset, and the tab offers no second one under the assistant's row
 

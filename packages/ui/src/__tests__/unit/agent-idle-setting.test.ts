@@ -32,7 +32,6 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
         {
           id: "agent-dev",
           name: "dam",
-          disabled: false,
           env: [],
           hibernationTimeoutMin: state.hibernationTimeoutMin,
           access: {
@@ -48,7 +47,6 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetAgentDisabled: () => ({ mutate: vi.fn(), isPending: false }),
   useLeaveAgent: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateAgent: () => ({ mutate: vi.fn(), isPending: false }),
 }));
@@ -97,7 +95,7 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
 const { SandboxHomeView } =
   await import("../../modules/sandboxes/views/sandbox-home-view.js");
 
-// TEST_SCENARIO: the General section renders its actions but no idle-sleep field, for an Agent on the install's default, one that never sleeps, and one with a window the old menu had no option for.
+// TEST_SCENARIO: the General section renders its lifecycle actions but no idle-sleep field and no disable action, for an Agent on the install's default, one that never sleeps, and one with a window the old menu had no option for.
 it("offers no idle-sleep setting on the agent's General section", () => {
   for (const minutes of [5, 0, 15, 42]) {
     state.hibernationTimeoutMin = minutes;
@@ -108,7 +106,8 @@ it("offers no idle-sleep setting on the agent's General section", () => {
         createElement(SandboxHomeView),
       ),
     );
-    expect(html).toContain("Disable agent");
+    expect(html).toContain("Restart agent");
+    expect(html).not.toContain("Disable agent");
     expect(html).not.toMatch(/sleep after|idle for/i);
     expect(html).not.toContain("sleep-after-idle");
   }

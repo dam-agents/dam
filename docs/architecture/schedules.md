@@ -54,7 +54,6 @@ When a fire is due:
 
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
 The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
-A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
 A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
 That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
 
@@ -93,7 +92,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence.
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
-  Neither the onboarding hold nor the disabled hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; a task due while its Agent is disabled waits out the enable inside its delivery window.
+  The onboarding hold does not apply — a hold guards a cadence, and skipping a single occurrence would lose the task outright.
   A [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) only delays it the same way: the fire records nothing and re-arms for the next UTC midnight, when the limit starts again, and the owner setting or continuing a limit re-arms it at once.
   A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
@@ -243,7 +242,7 @@ The runtime cannot tell the two apart, which is the point — a check that allow
 What it does not do is behave like an occurrence:
 
 - **The cadence is untouched.** No next occurrence is computed and none is armed, so trying a schedule out never shifts when it next fires — and the fire carries an identity of its own rather than an occurrence's, so the Agent's per-fire dedup cannot conflate it with the occurrence it lands beside.
-- **Quiet hours do not suppress it, and neither does being disabled.** Both govern *occurrences*; this run was asked for by hand.
+- **Quiet hours do not suppress it.** They govern *occurrences*; this run was asked for by hand.
   A paused schedule is also the one most likely to be under construction, and enabling it just to try it would move its next occurrence — the thing the action exists to avoid.
 - **A run that happens stamps the last-run pair** like any other, because that stamp means *the last fire that actually ran* and is what the next Precheck's "anything new since last time?"
   measures from — a manual run that did the work must not leave the next check to find it again.

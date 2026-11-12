@@ -74,13 +74,13 @@ A machine the runner had room for but the node has not yet granted the runner po
 The pod's limit is the owner's whole pool, and what the node has allocated the pod follows the machines' use, so a start can wait a few seconds for the resize that covers it ([vm-memory](vm-memory.md)).
 A start still waiting after a minute is published under `MachineAllocationUnreadable` instead, which names the node that never reported the grant and is retried at the parked tick; no budget is to blame, so the page says so rather than offering a bigger pool, and a wake fails on it at once rather than at its timeout.
 It reads as a start in progress, not as a refusal: the Agent carries `AwaitingAllocation` on `Ready` instead, its sentence says the agent is waiting for the node and starts on its own once it does, no refusal is announced, and a wake waits for it the way it waits for any start in progress.
-No idle agent is hibernated while the node is still enacting that resize: nothing the owner disables frees memory the node has not handed over, and the controller asks the node for it in the reconcile that saw the wait.
+No idle agent is hibernated while the node is still enacting that resize: deleting an Agent frees no memory the node has not handed over, and the controller asks the node for it in the reconcile that saw the wait.
 A deferred or refused resize lands on nothing, so from then on nothing is pending and the wait ends on its own the way an `OverBudget` park does: the owner's idle agents are hibernated for the room the node did grant, and the start is retried at the machine watch's few seconds with the parked tick under it, so one that outlasts the wait still comes back.
 
 A runner that has just restarted is refused under a reason of its own instead: for ten minutes after the owner's runner pod started, a refusal for room is the machines the restart is bringing back holding the pool at their warm-up floors rather than the owner's memory being full ([vm-memory](vm-memory.md)).
 The Agent then carries `AwaitingWarmUp` on `Ready`, its sentence names the wave, and the owner's idle agents are left alone until the window is over, which the 90% pass holds to as well.
 Past the window it is an `OverBudget` refusal again, hibernating idle agents under the same rules as above.
-A refusal that hibernated one of those agents is published as `AwaitingMemory` instead, and reads as a start in progress: the memory the agent it put to sleep holds frees within seconds, so the owner is told the platform is making room rather than asked to disable an agent.
+A refusal that hibernated one of those agents is published as `AwaitingMemory` instead, and reads as a start in progress: the memory the agent it put to sleep holds frees within seconds, so the owner is told the platform is making room rather than asked to delete an agent.
 A refusal that hibernated nobody is published that way for twenty seconds first, so a peer going idle a moment later is reclaimed rather than refused in the second the owner takes to read it; the grace is kept per start in the controller's memory and spent once, so a retry of the same refusal reads the refusal.
 That wait lasts the minute after the last agent a reclaim hibernated for the start; past it the start is an `OverBudget` refusal with the message that says what frees it.
 
@@ -100,7 +100,7 @@ Once storage reaches the warning level, or an agent reports its own disk full, a
 An agent whose own disk is full says so on its row — its writes are failing while it keeps running — so the owner sees which agent to open where they go to free space.
 CPU's bar is a use against the owner's CPU pool too — their UserBudget's `cpu`, else the install's default, which the budget endpoint carries beside the runner's figures — with each running agent's CPU as a segment, and what the runner and the machines' I/O used beyond them as the last; not against the runner's own limit, which moves with the machines running.
 Its colour is still its congestion's, since agents can wait for a CPU on a bar short of full, and the meter's spoken value names the congestion beside the use; with no pool to read the bar falls back to the congestion's fill.
-The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU from moderate congestion, which agents use the most, and also, at any congestion, which agent uses nine tenths or more of the vCPUs its machine gets (`virtualization.runner.machineCPUs`), since that agent is slow however empty the pool is — and at critical what the platform does: idle agents are put to sleep for memory, and new agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — delete agents no longer in use or have them clean their disks, or, for CPU from moderate congestion, which agents use the most, and also, at any congestion, which agent uses nine tenths or more of the vCPUs its machine gets (`virtualization.runner.machineCPUs`), since that agent is slow however empty the pool is — and at critical what the platform does: idle agents are put to sleep for memory, and new agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room.
 First-time users with no agents see none of it.
@@ -157,7 +157,7 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 ## Freeing room
 
-Users free capacity by [disabling](agent-lifecycle.md#disable) an agent they aren't using or letting it hibernate — and, for a start they are blocked on, the controller frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
+Users free capacity by [deleting](agent-lifecycle.md#delete) an agent they no longer use or letting it hibernate — and, for a start they are blocked on, the controller frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Storage is freed only by deleting an agent or having it delete files, since a stopped machine keeps its disk.
 
 ## Resource alerts

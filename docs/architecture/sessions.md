@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Session inside the machine
 
@@ -271,7 +271,7 @@ There is no append-only log, no fan-out, and no `session/resume` — terminal se
 A terminal viewer whose connection drops connects again to the same session by itself; `dam chat` and the web terminal follow one set of rules from the contract package.
 It reconnects only after a connection that carried a frame, so a first connect that fails is reported at once.
 A drop is transient when the socket is lost, the relay goes away or restarts, the upgrade meets a server error, or the relay loses the agent's end of the connection.
-The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, disabled, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
+The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
 The relay closes for those last ones with an "agent not ready" reason, which is how a viewer tells them apart from a lost agent connection.
 Attempts back off at 1, 2, 5, 10 and then every 30 seconds, as `dam run` does, and stop two minutes after the drop of the last connection that carried a frame.
 A reconnect never asks for a reset and never wakes the Agent: it only waits out a wake asked for elsewhere, so a retry can neither kill the session it is trying to reach nor wake an Agent its owner put to sleep meanwhile.

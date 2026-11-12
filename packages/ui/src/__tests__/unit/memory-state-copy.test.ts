@@ -79,7 +79,7 @@ describe("memory and idle copy", () => {
   // TEST_SCENARIO: a VM refusal with no message still says memory is full and how to free it; a message of its own wins.
   it("falls back to the VM memory sentence", () => {
     expect(overlayDescription("over_budget", agent({}))).toBe(
-      "Your VM agents' memory is full. It starts once room frees up — or disable an agent you aren't using.",
+      "Your VM agents' memory is full. It starts once room frees up — or delete an agent you no longer use.",
     );
     expect(
       overlayDescription(

@@ -63,7 +63,7 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 		message   string
 	}{
 		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, retried: true, message: "waiting for the node"},
-		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonAwaitingMemory, reclaimed: true, retried: true, message: "put to sleep to make room"},
+		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonAwaitingMemory, reclaimed: true, retried: true, message: "making room from an idle agent"},
 	} {
 		agent := vmAgentCR()
 		r, node, requeued := setupVMReconciler(t, agent)

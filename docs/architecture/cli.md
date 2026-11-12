@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -122,7 +122,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
-- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
   A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
@@ -227,8 +227,6 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
   **Delete** removes the Agent, and the controller tears down its owned resources (the gateway StatefulSet, the Services and the NetworkPolicies) and deletes the machine and its disk, the same path the UI's delete uses.
   **Restart** stamps a restart revision; the controller restarts the machine on the current spec, and its disk survives.
-  **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
-  `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   The create then prints a `Provider:` line naming the one granted and what chose it (`defaultProvider` in `--json`), so a caller sees a provider it did not expect.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.

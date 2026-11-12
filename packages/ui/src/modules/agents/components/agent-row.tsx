@@ -19,7 +19,7 @@ import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -73,7 +73,6 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">

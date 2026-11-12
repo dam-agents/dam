@@ -31,10 +31,7 @@ function mockModule(path: string, exports: Record<string, unknown>): void {
 
 const components = new Map<string, string[]>();
 for (const [path, names] of [
-  [
-    "../../modules/agents/components/avatar/agent-avatar.js",
-    ["AgentAvatar", "avatarMood"],
-  ],
+  ["../../modules/agents/components/avatar/agent-avatar.js", ["AgentAvatar"]],
   [
     "../../modules/agents/components/agent-start-notice.js",
     ["AgentStartNotice", "hasStartNotice"],
@@ -323,7 +320,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     id: "a-1",
     name: "Code Guardian",
     state: fake.state,
-    disabled: false,
     overBudget: false,
     features: { liveUpdates: true },
     access: { role: "owner", editors: [], permissions: [] },
