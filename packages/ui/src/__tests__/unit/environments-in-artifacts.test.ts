@@ -155,7 +155,7 @@ function renderGroup(environments: EnvironmentView[], showAgent = true) {
 }
 
 describe("Environments in the Artifacts list", () => {
-  // TEST_SCENARIO: AC-1 — each Environment is a row of the Environments group, with its name, whether it runs, its agent, and a link to its first address that opens a new tab.
+  // TEST_SCENARIO: AC-1 — each Environment is a row of the Environments group, with its name, whether it runs, its agent, and a link per address that opens a new tab.
   it("shows a row per Environment with its state, agent and link", () => {
     const doc = renderGroup([demo, other]);
 
@@ -177,12 +177,13 @@ describe("Environments in the Artifacts list", () => {
     ];
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "https://app-demo-1.env.example.com",
+      "https://auth-demo-1.env.example.com",
     ]);
     for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
   });
 
-  // TEST_SCENARIO: #6182 — a row with four addresses shows one link inline, so the name, state and deletion chip keep their room and clip rather than run under the links; the row's menu opens every address in a new tab.
-  it("keeps a four-address row readable and opens each address from its menu", () => {
+  // TEST_SCENARIO: #6230 — a row with four addresses keeps its name, state and deletion chip on the first line and shows every address, by name, on a line under it. The line is open when the list opens; the row's chevron hides it and shows it again, its tooltip says which, and the row's menu lists no address.
+  it("shows four addresses under the row, and folds them with the chevron", () => {
     const names = ["app", "keycloak", "share", "content"];
     const busy = environment("busy", "agent-dev", {
       endpoints: names.map((name, i) => ({
@@ -200,36 +201,99 @@ describe("Environments in the Artifacts list", () => {
       }),
     );
     const row = doc.querySelector('[data-testid="environment-row"]')!;
+    const toggle = () =>
+      row.querySelector('[data-testid="environment-addresses-toggle"]')!;
+    const addresses = () =>
+      row.querySelector('[data-testid="environment-addresses"]');
+    const press = () =>
+      act(() => {
+        toggle().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    const tooltipOnFocus = () => {
+      act(() => (toggle() as HTMLElement).blur());
+      act(() => (toggle() as HTMLElement).focus());
+      return doc.querySelector('[role="tooltip"]')?.textContent;
+    };
 
-    const inline = [
-      ...row.querySelectorAll('[data-testid="environment-link"]'),
-    ];
-    expect(inline.map((a) => a.textContent)).toEqual(["app"]);
     const label = row.querySelector(
       '[data-testid="environment-state"]',
     )!.parentElement!;
-    expect(label.className).toContain("overflow-hidden");
     expect(label.textContent).toContain("busy");
+    expect(label.querySelector('[data-testid="environment-link"]')).toBeNull();
+    const links = [
+      ...addresses()!.querySelectorAll<HTMLAnchorElement>(
+        '[data-testid="environment-link"]',
+      ),
+    ];
+    expect(
+      links.map((a) => [
+        a.textContent,
+        a.getAttribute("href"),
+        a.getAttribute("aria-label"),
+        a.getAttribute("target"),
+      ]),
+    ).toEqual(
+      names.map((name) => [
+        name,
+        `https://${name}-busy.env.example.com`,
+        `Open ${name} of busy`,
+        "_blank",
+      ]),
+    );
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(toggle().getAttribute("aria-label")).toBe(
+      "Hide the addresses of busy",
+    );
+    expect(tooltipOnFocus()).toBe("Hide addresses");
+
+    press();
+    expect(addresses()).toBeNull();
+    expect(row.querySelector('[data-testid="environment-link"]')).toBeNull();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(toggle().getAttribute("aria-label")).toBe(
+      "Show the addresses of busy",
+    );
+    expect(tooltipOnFocus()).toBe("Show addresses");
+
+    press();
+    expect(
+      addresses()!.querySelectorAll('[data-testid="environment-link"]'),
+    ).toHaveLength(4);
 
     act(() => {
       row
         .querySelector('[data-testid="environment-actions"]')!
         .dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     });
-    const opened = [
-      ...doc.querySelectorAll<HTMLAnchorElement>(
-        '[data-testid="environment-menu-link"]',
+    expect(
+      [...doc.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent),
+    ).toEqual(["Share", "Set expiration", "Keep awake", "Delete Environment"]);
+  });
+
+  // TEST_SCENARIO: #6230 — a row with one address keeps its link on the row, with no name and no chevron; a row with no address has no link, no chevron and no line under it.
+  it("keeps one address on the row, and adds nothing for none", () => {
+    const single = environment("single", "agent-dev", {
+      endpoints: [
+        { name: "app", port: 4444, url: "https://app-single.env.example.com" },
+      ],
+    });
+    const bare = environment("bare", "agent-dev", { endpoints: [] });
+    const rows = [
+      ...renderGroup([single, bare]).querySelectorAll(
+        '[data-testid="environment-row"]',
       ),
     ];
-    expect(opened.map((a) => [a.textContent, a.getAttribute("href")])).toEqual(
-      names.map((name) => [
-        `Open ${name}`,
-        `https://${name}-busy.env.example.com`,
-      ]),
-    );
-    for (const a of opened) {
-      expect(a.getAttribute("role")).toBe("menuitem");
-      expect(a.getAttribute("target")).toBe("_blank");
+    const count = (row: Element, testId: string) =>
+      row.querySelectorAll(`[data-testid="${testId}"]`).length;
+
+    expect(count(rows[0]!, "environment-link")).toBe(1);
+    expect(
+      rows[0]!.querySelector('[data-testid="environment-link"]')!.textContent,
+    ).toBe("");
+    expect(count(rows[1]!, "environment-link")).toBe(0);
+    for (const row of rows) {
+      expect(count(row, "environment-addresses-toggle")).toBe(0);
+      expect(count(row, "environment-addresses")).toBe(0);
     }
   });
 

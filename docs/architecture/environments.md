@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-11-09
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -227,7 +227,8 @@ In the app, behind the feature:
 
 - **The Artifacts list** has an **Environments** group above its folders, which only the owner sees, as with artifacts, and only while there is one to show (see [artifact library](artifact-library.md#ui-surfaces)).
   In an Agent's chat it starts on that Agent's Environments; anywhere else it lists every one, each naming its agent; a search finds them by name.
-  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `kept` for one with no expiry, `awake` for one that never sleeps, its agent, and a link per address that opens a new tab.
+  A row looks like an artifact's: the sharing icon that opens its Share dialog, its name, a running, starting or sleeping badge, when it is deleted, or `kept` for one with no expiry, `awake` for one that never sleeps, its agent, and the link of its one address, which opens a new tab.
+  An Environment with two or more addresses shows them on a line under the row, each link by its address's name; the line is open when the list opens, and a chevron on the row hides it and shows it again.
   Its menu has the artifact's delete-after control for the expiry, with **Keep until deleted**, whose text says what the chosen value does; **Keep awake** or **Let it sleep when idle**; and Delete.
   The owner's `extend` takes `never` for no expiry.
 - **The Share dialog** of an Environment says when it is kept with no expiry and when it is kept awake, and who opens it through its agent — the owner, the agent's editors, and how many the agent's page names, counted, never listed — links to that page, and edits the Environment's own members: people by email, and Agents by id.
