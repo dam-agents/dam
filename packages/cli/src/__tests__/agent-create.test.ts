@@ -126,6 +126,11 @@ describe("dam agent create provider selection (#3786)", () => {
       'Provider: My provider (conn-provider), from your default for new agents, profile "Default": anthropic/claude-opus-5-5 on pi.',
     ],
     [
+      "default" as const,
+      { name: null, model: "cb/some-model", harness: "pi" },
+      "Provider: My provider (conn-provider), from your default for new agents: cb/some-model on pi. Change that default in Settings › Providers",
+    ],
+    [
       "harness" as const,
       null,
       "Provider: My provider (conn-provider), the first of yours its harness runs on",

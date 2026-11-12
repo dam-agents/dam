@@ -50,7 +50,6 @@ const PROFILE = {
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   subagent: null,
   settings: {},
-  newAgentDefault: true,
   createdAt: "2026-10-20T00:00:00.000Z",
   updatedAt: "2026-10-20T00:00:00.000Z",
   usage: { agents: 1, channels: 0, schedules: 0 },

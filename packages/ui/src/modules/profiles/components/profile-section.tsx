@@ -11,7 +11,6 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -39,7 +38,6 @@ import {
 import {
   useCreateProfile,
   useDeleteProfile,
-  useSetDefaultProfile,
   useUpdateProfile,
 } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
@@ -60,7 +58,6 @@ export function ProfileSection({
 } = {}) {
   const { data: profiles = [], isPending } = useProfiles();
   const remove = useDeleteProfile();
-  const setDefault = useSetDefaultProfile();
   const showConfirm = useStore((s) => s.showConfirm);
   const showAlert = useStore((s) => s.showAlert);
   const agents = useAgents().data;
@@ -100,12 +97,7 @@ export function ProfileSection({
           New profile
         </Button>
       </SectionHeader>
-      {creating && (
-        <NewProfileDialog
-          from={profiles.find((p) => p.newAgentDefault) ?? profiles[0] ?? null}
-          onClose={() => setCreating(false)}
-        />
-      )}
+      {creating && <NewProfileDialog onClose={() => setCreating(false)} />}
       {renaming && (
         <RenameProfileDialog
           profile={renaming}
@@ -129,17 +121,6 @@ export function ProfileSection({
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-foreground">
                   {profile.name}
-                  {profile.newAgentDefault && (
-                    <Badge
-                      variant="muted"
-                      size="sm"
-                      title="Default for new agents"
-                      className="ml-2 align-middle"
-                    >
-                      Default
-                      <span className="sr-only"> for new agents</span>
-                    </Badge>
-                  )}
                 </p>
                 <ProfileValues
                   profile={profile}
@@ -167,20 +148,12 @@ export function ProfileSection({
                 >
                   Rename
                 </DropdownMenuItem>
-                {!profile.newAgentDefault && (
-                  <DropdownMenuItem
-                    disabled={setDefault.isPending}
-                    onSelect={() => setDefault.mutate({ id: profile.id })}
-                  >
-                    Set as default
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem
                   tone="danger"
-                  disabled={profile.newAgentDefault || remove.isPending}
+                  disabled={remove.isPending}
                   onSelect={() => void confirmDelete(profile)}
                 >
-                  {profile.newAgentDefault ? "Can't remove default" : "Delete"}
+                  Delete
                 </DropdownMenuItem>
               </RowActionsMenu>
             </li>
@@ -288,33 +261,19 @@ function ProfileValues({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a profile made in Settings: a name and the same
- * Custom screen every pick uses, listing every provider the owner holds,
- * starting from the default profile's values.
+ * Custom screen every pick uses, listing every provider the owner holds.
  */
-function NewProfileDialog({
-  from,
-  onClose,
-}: {
-  from: ProfileWithUsage | null;
-  onClose: () => void;
-}) {
+function NewProfileDialog({ onClose }: { onClose: () => void }) {
   const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
   const providers = useProviderConnections(null);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const create = useCreateProfile();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pair, setPair] = useState<SessionPair | null>(
-    from &&
-      profileEditPair(
-        from,
-        providers.owned.find((p) => p.templateId === from.providerTemplate)
-          ?.id ?? null,
-      ),
-  );
-  const providerTemplate =
-    providers.owned.find((p) => p.id === pair?.provider)?.templateId ??
-    (pair?.model === from?.model ? from?.providerTemplate : undefined);
+  const [pair, setPair] = useState<SessionPair | null>(null);
+  const providerTemplate = providers.owned.find(
+    (p) => p.id === pair?.provider,
+  )?.templateId;
   const save = () => {
     const trimmed = name.trim();
     if (trimmed === "") return setError("Give the profile a name.");

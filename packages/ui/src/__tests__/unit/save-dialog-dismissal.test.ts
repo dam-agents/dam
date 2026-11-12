@@ -38,7 +38,6 @@ vi.mock("../../modules/profiles/api/mutations.js", () => ({
   useCreateProfile: () => ({ isPending: state.pending, mutate: state.mutate }),
   useUpdateProfile: () => ({ isPending: state.pending, mutate: state.mutate }),
   useDeleteProfile: () => ({}),
-  useSetDefaultProfile: () => ({}),
 }));
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useCreateConnection: () => ({

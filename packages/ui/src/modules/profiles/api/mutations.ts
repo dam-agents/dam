@@ -16,5 +16,8 @@ export const useUpdateProfile = (opts?: { silent?: boolean }) =>
 export const useDeleteProfile = () =>
   useMutation({ ...trpc.profiles.delete.mutationOptions(), meta });
 
-export const useSetDefaultProfile = () =>
-  useMutation({ ...trpc.profiles.setDefault.mutationOptions(), meta });
+export const useSetNewAgentDefault = () =>
+  useMutation({
+    ...trpc.profiles.setNewAgentDefault.mutationOptions(),
+    meta: { invalidates: [trpc.profiles.newAgentDefault.queryKey()] },
+  });

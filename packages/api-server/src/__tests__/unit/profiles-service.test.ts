@@ -1,9 +1,10 @@
-// TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. An owner with no profile is seeded one Default where the install names it, and every owner has one default for new agents, which a new agent starts on and which cannot be deleted; a profile in use cannot be deleted; an edit no referencing agent can run is put back.
+// TEST_OVERVIEW: Profiles are an owner's named presets. A profile names a provider template, so whether it runs on an agent follows from the agent's grants: its own Connection of the template, else an owner's one it may be granted, never one replacing a rival of the same alias. No profile is made for an owner, and no profile is a default: the owner's default for new agents is a profile or values of their own, which a new agent's chat default is initialised from, else the base default (Pi on the shared CurveBender's work model, saved as values); any profile not in use can be deleted; an edit no referencing agent can run is put back.
 import { TRPCError } from "@trpc/server";
-import type {
-  AliasedConnection,
-  HarnessCatalog,
-  OwnerModelCatalogView,
+import {
+  CURVE_BENDER_WORK_MODEL,
+  type AliasedConnection,
+  type HarnessCatalog,
+  type SessionPair,
 } from "api-server-api";
 import { createDb, type Db } from "db";
 import { describe, expect, it } from "vitest";
@@ -14,7 +15,7 @@ import {
   type ProfilesRepository,
 } from "../../modules/profiles/infrastructure/profiles-repository.js";
 import {
-  bindDefaultProfile,
+  bindNewAgentDefault,
   createProfilesService,
   newAgentDefault,
   profileResolver,
@@ -54,7 +55,6 @@ const profile = (overrides: Partial<ProfileRow> = {}): ProfileRow => ({
   id: "profile-1",
   owner: "owner-1",
   name: "Default",
-  seed: "seeded-default",
   harness: "claude-code",
   providerTemplate: "curve-bender-deployment",
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
@@ -82,12 +82,13 @@ function fakeRepo(
   } = {},
 ) {
   const rows = opts.rows ?? [profile()];
-  const state: { defaultId?: string } = {};
+  const state: {
+    chosen?: { profileId: string } | { sessionPair: SessionPair };
+  } = {};
   const writes = {
     scopes: [] as (readonly string[] | undefined)[],
-    seeds: 0,
     updates: [] as Partial<ProfileRow>[],
-    binds: [] as string[],
+    binds: [] as [string, unknown][],
   };
   const repo = {
     references: async (_owner: string, agentIds?: readonly string[]) => {
@@ -99,13 +100,19 @@ function fakeRepo(
       rows.find(
         (r) => r.id === id && (owner === undefined || r.owner === owner),
       ) ?? null,
-    defaultOf: async () => rows.find((r) => r.id === state.defaultId) ?? null,
-    setDefault: async (
+    newAgentDefaultOf: async () => {
+      const chosen = state.chosen;
+      if (!chosen) return null;
+      if ("sessionPair" in chosen)
+        return { profile: null, pair: chosen.sessionPair };
+      const row = rows.find((r) => r.id === chosen.profileId);
+      return row ? { profile: row, pair: null } : null;
+    },
+    setNewAgentDefault: async (
       _owner: string,
-      id: string,
-      { onlyIfNone = false } = {},
+      chosen: { profileId: string } | { sessionPair: SessionPair },
     ) => {
-      if (!onlyIfNone || state.defaultId === undefined) state.defaultId = id;
+      state.chosen = chosen;
     },
     insert: async () => rows[0]!,
     update: async (
@@ -125,12 +132,8 @@ function fakeRepo(
       return rows[i];
     },
     deleteIfUnused: async () => opts.references ?? ("deleted" as const),
-    seed: async (_owner: string, seed: Partial<ProfileRow>) => {
-      writes.seeds += 1;
-      rows.push(profile({ ...seed, id: "profile-seeded" }));
-    },
-    bindChatProfile: async (_owner: string, agentId: string) => {
-      writes.binds.push(agentId);
+    bindChatDefault: async (_owner: string, agentId: string, chat: unknown) => {
+      writes.binds.push([agentId, chat]);
       return true;
     },
     ownerConnections: async () => opts.owned ?? [SHARED],
@@ -142,8 +145,6 @@ function fakeRepo(
 function service(
   repo: ProfilesRepository,
   opts: {
-    seed?: { harness: string; model: string } | null;
-    ownerCatalog?: () => Promise<OwnerModelCatalogView>;
     republish?: () => Promise<string | null>;
     agentBinding?: readonly string[] | "*";
   } = {},
@@ -152,11 +153,7 @@ function service(
     repo,
     owner: "owner-1",
     catalog,
-    seed:
-      opts.seed === undefined
-        ? { harness: "pi", model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017" }
-        : opts.seed,
-    ...(opts.ownerCatalog && { ownerCatalog: opts.ownerCatalog }),
+    sharedCurveBender: true,
     agentBinding: opts.agentBinding ?? "*",
     resolve: profileResolver(repo),
     republish: opts.republish ?? (async () => null),
@@ -281,111 +278,52 @@ describe("what a profile runs on, for one agent", () => {
 });
 
 describe("the owner's profiles", () => {
-  /** TEST_SCENARIO: an owner with no profile is given "Default" on the seed the install names, marked as the default for new agents; an install that names none seeds nothing, so a later configuration still seeds (QA D7). */
-  it("seeds Default for an owner with no profile, where the install names one", async () => {
-    const served = fakeRepo({ rows: [] });
-    const listed = await service(served.repo).list();
-    expect(served.writes.seeds).toBe(1);
-    expect(listed).toEqual([
-      expect.objectContaining({
-        name: "Default",
-        harness: "pi",
-        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-        newAgentDefault: true,
-      }),
-    ]);
-    const unserved = fakeRepo({ rows: [] });
-    await service(unserved.repo, { seed: null }).list();
-    expect(unserved.writes.seeds).toBe(0);
+  /** TEST_SCENARIO: reading an owner's profiles makes none, so an owner who saved none has none. */
+  it("gives an owner no profile", async () => {
+    const empty = fakeRepo({ rows: [] });
+    expect(await service(empty.repo).list()).toEqual([]);
   });
 
-  /** TEST_SCENARIO: on an install without the shared CurveBender, an owner's first provider that has listed its models gives "Default": the install's default harness where it runs, and the model the platform prefers for work on that harness — Claude for the default harness here, over the DeepSeek the same provider lists — rather than the newest it lists; with no provider listed yet, nothing is seeded and the next read tries again. */
-  it("seeds Default from the first listed provider without the shared CurveBender", async () => {
-    const model = (upstreamId: string, harnesses: string[]) => ({
-      name: `ibm/${upstreamId}`,
-      upstreamId,
-      contextWindow: null,
-      maxOutputTokens: null,
-      reasoning: null,
-      vision: null,
-      prices: null,
-      source: { limits: "none" as const, prices: "none" as const },
-      harnesses,
-    });
-    const listing = (status: "listed" | "unavailable") => async () =>
-      ({
-        defaultHarness: "claude-code",
-        modelRouter: true,
-        harnesses: [],
-        providers: [
-          {
-            connectionId: "conn-ibm",
-            alias: "ibm",
-            template: "ibm-litellm",
-            displayName: "IBM",
-            status,
-            listedAt: null,
-            harnesses: ["claude-code", "pi"],
-            models: [
-              model("aws/claude-sonnet-6", ["claude-code", "pi"]),
-              model("aws/claude-opus-5-5", ["claude-code", "pi"]),
-              model("azure/DeepSeek-V4.1-Flash", ["claude-code", "pi"]),
-            ],
-          },
-        ],
-      }) as OwnerModelCatalogView;
-    const waiting = fakeRepo({ rows: [] });
-    await service(waiting.repo, {
-      seed: null,
-      ownerCatalog: listing("unavailable"),
-    }).list();
-    expect(waiting.writes.seeds).toBe(0);
-    const listed = fakeRepo({ rows: [] });
-    const profiles = await service(listed.repo, {
-      seed: null,
-      ownerCatalog: listing("listed"),
-    }).list();
-    expect(profiles).toEqual([
-      expect.objectContaining({
-        name: "Default",
-        harness: "claude-code",
-        providerTemplate: "ibm-litellm",
-        model: "ibm/aws/claude-opus-5-5",
-        newAgentDefault: true,
-      }),
-    ]);
-  });
-
-  /** TEST_SCENARIO: an owner who already has profiles gets no "Default"; their oldest becomes the default for new agents. */
-  it("marks the oldest profile of an owner who has some", async () => {
-    const { repo, writes } = fakeRepo({
-      rows: [
-        profile({ id: "old", name: "Old" }),
-        profile({ id: "new", name: "New" }),
-      ],
-    });
-    const listed = await service(repo).list();
-    expect(writes.seeds).toBe(0);
-    expect(listed.map((p) => [p.id, p.newAgentDefault])).toEqual([
-      ["old", true],
-      ["new", false],
-    ]);
-  });
-
-  /** TEST_SCENARIO: the default for new agents cannot be deleted, and the refusal says how to move it; once another profile is the default, it can. */
-  it("refuses to delete the default until another one is set", async () => {
-    const { repo } = fakeRepo({
-      rows: [
-        profile({ id: "old", name: "Old" }),
-        profile({ id: "new", name: "New" }),
-      ],
-    });
+  /** TEST_SCENARIO: the default for new agents is a profile the owner holds or values of their own that can run: a provider Connection they hold, a harness that runs on it and a model of that provider; while they chose neither, the read names the base default on their shared CurveBender. */
+  it("sets the default for new agents to a profile or values of the owner's own", async () => {
+    const { repo, state } = fakeRepo({ owned: [SHARED, ANTHROPIC] });
     const svc = service(repo);
-    await svc.list();
-    const err = await refusal(svc.delete("old"));
-    expect(err.message).toContain("Make another profile the default first");
-    await svc.setDefault("new");
-    await expect(svc.delete("old")).resolves.toBeUndefined();
+    expect(await svc.newAgentDefault()).toEqual({
+      profileId: null,
+      pair: null,
+      base: null,
+    });
+    await svc.setNewAgentDefault({ profileId: "profile-1" });
+    expect(await svc.newAgentDefault()).toMatchObject({
+      profileId: "profile-1",
+      pair: { harness: "claude-code", provider: SHARED.id },
+    });
+    const own = {
+      harness: "claude-code",
+      provider: ANTHROPIC.id,
+      model: HAIKU,
+    };
+    await svc.setNewAgentDefault({ pair: own });
+    expect(state.chosen).toEqual({ sessionPair: own });
+    expect(
+      (await refusal(svc.setNewAgentDefault({ profileId: "profile-other" })))
+        .code,
+    ).toBe("NOT_FOUND");
+    expect(
+      (
+        await refusal(
+          svc.setNewAgentDefault({ pair: { ...own, provider: "conn-gone" } }),
+        )
+      ).message,
+    ).toContain("unknown provider");
+    expect(
+      (
+        await refusal(
+          svc.setNewAgentDefault({ pair: { ...own, provider: SHARED.id } }),
+        )
+      ).message,
+    ).toContain("is not a curve-bender-deployment model");
+    expect(state.chosen).toEqual({ sessionPair: own });
   });
 
   /** TEST_SCENARIO: a key bound to some agents reads usage of those agents only — no other agent's id, channel or schedule leaks into the list or the usage answer. */
@@ -587,16 +525,35 @@ function agentsTableDb(granted: readonly AliasedConnection[]) {
 }
 
 describe("a new agent's default", () => {
+  const withPi: Pick<HarnessCatalog, "default" | "harnesses"> = {
+    ...catalog,
+    harnesses: [
+      ...catalog.harnesses,
+      {
+        name: "pi",
+        displayName: "Pi",
+        providers: ["curve-bender"],
+        tags: [],
+        experimental: false,
+      },
+    ],
+  };
   const owner = (repo: ProfilesRepository) => ({
     repo,
     owner: "owner-1",
-    catalog,
-    seed: null,
+    catalog: withPi,
+    sharedCurveBender: true,
   });
+  const BASE_PAIR = {
+    harness: "pi",
+    provider: SHARED.id,
+    model: `cb/${CURVE_BENDER_WORK_MODEL}`,
+  };
 
-  /** TEST_SCENARIO: a new agent is granted the owner's Connection of the default profile's template, and once it holds it, its chat default is that profile; a Connection the owner holds reconciles nothing. */
-  it("starts a new agent on the default profile", async () => {
-    const { repo, writes } = fakeRepo();
+  /** TEST_SCENARIO: a new agent of an owner whose default for new agents is a profile is granted the owner's Connection of its template, and once it holds it, its chat default is that profile; a Connection the owner holds reconciles nothing. */
+  it("starts a new agent on the profile its owner chose", async () => {
+    const { repo, writes, state } = fakeRepo();
+    state.chosen = { profileId: "profile-1" };
     let reconciled = 0;
     const chosen = await newAgentDefault({
       ...owner(repo),
@@ -605,42 +562,101 @@ describe("a new agent's default", () => {
       },
     });
     expect(chosen).toMatchObject({
-      profile: { id: "profile-1", harness: "claude-code" },
+      profile: { id: "profile-1" },
+      pair: { harness: "claude-code" },
       connectionId: SHARED.id,
     });
     expect(reconciled).toBe(0);
-    await bindDefaultProfile(owner(repo), "agent-1", chosen!.profile);
-    expect(writes.binds).toEqual(["agent-1"]);
+    await bindNewAgentDefault(owner(repo), "agent-1", chosen!);
+    expect(writes.binds).toEqual([
+      ["agent-1", { sessionProfile: "profile-1" }],
+    ]);
+  });
+
+  /** TEST_SCENARIO: an owner with no default profile starts a new agent on the base default: Pi on the shared CurveBender's work model, which its chat default holds as values, the way a Custom pick saves it, never as a profile. */
+  it("starts a new agent on the base default, saved as values", async () => {
+    const { repo, writes } = fakeRepo();
+    const chosen = await newAgentDefault(owner(repo));
+    expect(chosen).toEqual({
+      profile: null,
+      pair: BASE_PAIR,
+      connectionId: SHARED.id,
+    });
+    await bindNewAgentDefault(owner(repo), "agent-1", chosen!);
+    expect(writes.binds).toEqual([["agent-1", { sessionPair: BASE_PAIR }]]);
+  });
+
+  /** TEST_SCENARIO: values the owner chose initialise a new agent's chat default as they are, on the Connection they name; once the owner no longer holds that Connection, the base default takes their place. */
+  it("starts a new agent on the owner's own values, else the base default", async () => {
+    const own = {
+      harness: "claude-code",
+      provider: ANTHROPIC.id,
+      model: HAIKU,
+    };
+    const held = fakeRepo({ owned: [SHARED, ANTHROPIC] });
+    held.state.chosen = { sessionPair: own };
+    const chosen = await newAgentDefault(owner(held.repo));
+    expect(chosen).toEqual({
+      profile: null,
+      pair: own,
+      connectionId: ANTHROPIC.id,
+    });
+    const gone = fakeRepo({ owned: [SHARED] });
+    gone.state.chosen = { sessionPair: own };
+    expect(await newAgentDefault(owner(gone.repo))).toMatchObject({
+      pair: BASE_PAIR,
+    });
+  });
+
+  /** TEST_SCENARIO: an install without the shared CurveBender, or whose catalog has no Pi, has no base default, so the harness's provider order and the first hello's conversion decide. */
+  it("has no base default without the shared CurveBender or Pi", async () => {
+    const { repo } = fakeRepo();
+    expect(
+      await newAgentDefault({ ...owner(repo), sharedCurveBender: false }),
+    ).toBeNull();
+    expect(await newAgentDefault({ ...owner(repo), catalog })).toBeNull();
   });
 
   /** TEST_SCENARIO: a create that named another provider keeps it, and the agent's first hello converts its default as before; the binder says why. */
-  it("binds nothing to an agent without the profile's provider", async () => {
+  it("binds nothing to an agent without the default's provider", async () => {
     const { repo, writes } = fakeRepo({ granted: [OWN_KEY] });
-    expect(await bindDefaultProfile(owner(repo), "agent-1", profile())).toMatch(
-      /holds no curve-bender-deployment Connection/,
+    const chosen = (await newAgentDefault(owner(repo)))!;
+    expect(await bindNewAgentDefault(owner(repo), "agent-1", chosen)).toMatch(
+      /does not hold Connection conn-shared/,
     );
     expect(writes.binds).toEqual([]);
   });
 
-  /** TEST_SCENARIO: the agent's row is written by the agent-created saga, which can run after the create returns, so the bind through the real repository still leaves the new agent's chat default on the profile when that row does not exist yet (QA R1: an UPDATE of the missing row bound nothing). */
+  /** TEST_SCENARIO: the agent's row is written by the agent-created saga, which can run after the create returns, so the bind through the real repository still leaves the new agent's chat default on the profile, or on the base default's values, when that row does not exist yet (QA R1: an UPDATE of the missing row bound nothing). */
   it("binds a new agent whose row the saga has not written yet", async () => {
     const { db, agentRows } = agentsTableDb([SHARED]);
     const repo = createProfilesRepository(db, {
       hashSub: (raw: string) => raw,
     } as never);
+    const start = { pair: BASE_PAIR, connectionId: SHARED.id };
     expect(
-      await bindDefaultProfile(owner(repo), "agent-new", profile()),
+      await bindNewAgentDefault(owner(repo), "agent-new", {
+        ...start,
+        profile: profile(),
+      }),
     ).toBeNull();
     expect(agentRows.get("agent-new")).toBe("profile-1");
+    expect(
+      await bindNewAgentDefault(owner(repo), "agent-base", {
+        ...start,
+        profile: null,
+      }),
+    ).toBeNull();
+    expect(JSON.parse(String(agentRows.get("agent-base")))).toEqual(BASE_PAIR);
   });
 
-  /** TEST_SCENARIO: an owner who holds no Connection of the default profile's template has nothing to grant, so the harness's provider order decides. */
+  /** TEST_SCENARIO: an owner who holds no Connection of the default's template has nothing to grant, so the harness's provider order decides. */
   it("offers nothing without a Connection of the template", async () => {
     const { repo } = fakeRepo({ owned: [OWN_KEY] });
     expect(await newAgentDefault(owner(repo))).toBeNull();
   });
 
-  /** TEST_SCENARIO: the deployment-owned CurveBender comes from a Connection listing or a boot sweep over owners who already hold one, neither of which a first create through the CLI or API runs, so that create reconciles it and still starts on "Default": Pi on that Connection. */
+  /** TEST_SCENARIO: the deployment-owned CurveBender comes from a Connection listing or a boot sweep over owners who already hold one, neither of which a first create through the CLI or API runs, so that create reconciles it and still starts on the base default: Pi on that Connection. */
   it("starts an owner's first agent on Pi over the shared CurveBender it has not listed yet", async () => {
     const owned: AliasedConnection[] = [];
     const { repo } = fakeRepo({ rows: [], owned, granted: [] });
@@ -648,21 +664,14 @@ describe("a new agent's default", () => {
     expect(
       await newAgentDefault({
         ...owner(repo),
-        seed: {
-          harness: "pi",
-          model: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-        },
         reconcileConnections: async () => {
           reconciled += 1;
           owned.push(SHARED);
         },
       }),
-    ).toMatchObject({
-      profile: {
-        harness: "pi",
-        providerTemplate: "curve-bender-deployment",
-        model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
-      },
+    ).toEqual({
+      profile: null,
+      pair: BASE_PAIR,
       connectionId: SHARED.id,
     });
     expect(reconciled).toBe(1);

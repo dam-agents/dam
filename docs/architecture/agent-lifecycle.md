@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -73,7 +73,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's mounts, storage size and the trusted egress preset — or, for a kit that declares any of them, the kit's — and shares its owner's [memory pool](vm-memory.md) instead of holding a size of its own.
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the harness of the owner's [default for new agents](profiles.md#the-default-for-new-agents) (their pick, else the base default), else the install's default harness, and grants one provider Connection of the caller's that the harness runs on: the default's provider when the caller holds an active one the harness runs on, else the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
 A create that grants a provider it was not named answers which one and what chose it — the default, a starter kit's or Template's providers list, or the harness's provider order — and the CLI prints it; one that grants none, or an Environment, answers nothing.
 One, not every fitting one, so the [default](harness-config.md#session-settings) its runtime saves at its first `hello` sits on that provider and is the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
