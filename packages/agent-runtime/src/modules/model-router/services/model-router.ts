@@ -37,6 +37,11 @@ import {
   SESSION_HEADER,
   type SessionHandle,
 } from "../domain/session-of.js";
+import {
+  refusesThinking,
+  verifiesThinking,
+  withoutEarlierThinking,
+} from "../domain/replay.js";
 import { resolveTarget } from "../domain/resolve-target.js";
 import {
   classifierModelOnSessionProvider,
@@ -188,6 +193,7 @@ export const RES_DROP = new Set([
  * so the router adds `x-should-retry: false` where the provider set none.
  */
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 422]);
+const FOREIGN_THINKING_SESSIONS = 1000;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a stamp the gateway's meter accepts: at most 128
@@ -237,10 +243,13 @@ const keep = keepHeaders;
  * to a catalog entry and forwards the call to that provider Connection's host
  * with the Connection's credential placeholder, which Envoy swaps for the
  * key; the client's own credential never leaves the pod. No retries, since
- * a second model call is a second bill, but one: a model that refuses a call
+ * a second model call is a second bill, but two: a model that refuses a call
  * for its images gets it once more with each image as a text note, and the
  * router keeps the model as text-only, so later calls go without them from
- * the start.
+ * the start; and a Claude model that refuses a call for a thinking block
+ * another model wrote gets it once more without the earlier thinking, and the
+ * router keeps how long that Session's history was, so its later calls leave
+ * the thinking out of that part from the start and keep it in the rest.
  */
 export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
@@ -248,6 +257,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   let port = wantPort;
   const sessionModels = new Map<string, SessionModelChoice>();
   const textOnlyModels = new Set<string>();
+  const foreignThinking = new Map<string, number>();
   const choiceOf = (sessionId: string): SessionModelChoice | null =>
     sessionModels.get(sessionId) ?? deps.sessionModelOf?.(sessionId) ?? null;
 
@@ -395,7 +405,20 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const imageless = (): Record<string, unknown> | null =>
       withoutImages(prepared, dialect, imageNote(entry.upstreamId));
     const known = textOnlyModels.has(modelKey) ? imageless() : null;
-    let sent = known ?? prepared;
+    const checksThinking = verifiesThinking({
+      dialect,
+      upstreamId: entry.upstreamId,
+    });
+    const thinkingKey = handle?.sessionId ?? null;
+    const foreignUpTo =
+      checksThinking && thinkingKey !== null
+        ? (foreignThinking.get(thinkingKey) ?? 0)
+        : 0;
+    const imagesFitted = known ?? prepared;
+    let sent =
+      (foreignUpTo > 0
+        ? withoutEarlierThinking(imagesFitted, foreignUpTo)
+        : null) ?? imagesFitted;
     const outgoing = () =>
       Buffer.from(JSON.stringify({ ...sent, model: entry.upstreamId }));
     const headers: Record<string, string> = {
@@ -496,12 +519,29 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         !upstream.headers.has(PLATFORM_REFUSAL_HEADER)
       ) {
         refusalText = await upstream.text().catch(() => "");
-        const retry =
+        const imagesOut =
           known === null && refusesImages(refusalText) ? imageless() : null;
+        const history = Array.isArray(imagesFitted.messages)
+          ? imagesFitted.messages.length
+          : 0;
+        const thinkingOut =
+          imagesOut === null && checksThinking && refusesThinking(refusalText)
+            ? withoutEarlierThinking(imagesFitted, history)
+            : null;
+        const retry = imagesOut ?? thinkingOut;
         if (retry) {
-          textOnlyModels.add(modelKey);
+          if (imagesOut) textOnlyModels.add(modelKey);
+          else if (thinkingKey !== null) {
+            foreignThinking.delete(thinkingKey);
+            foreignThinking.set(thinkingKey, history);
+            if (foreignThinking.size > FOREIGN_THINKING_SESSIONS)
+              for (const oldest of foreignThinking.keys()) {
+                foreignThinking.delete(oldest);
+                break;
+              }
+          }
           deps.log(
-            `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: the model takes no images, sent again without them`,
+            `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${imagesOut ? "the model takes no images, sent again without them" : "the history holds thinking another model wrote, sent again without the earlier thinking"}`,
           );
           upstreamHeaders = upstream.headers;
           report(upstream.status, null);
