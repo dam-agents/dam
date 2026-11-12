@@ -119,6 +119,7 @@ export function SkillsSurface({
           <SkillSourcesSkeleton />
         ) : (
           <SkillsReadOnlyPanel
+            agentId={agentId}
             surface={surface}
             derived={derived}
             mode={ran ? "stopped" : "never-run"}

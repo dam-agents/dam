@@ -3,6 +3,7 @@ import { Play } from "@carbon/icons-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
+import { useAutoWakeOnOpen } from "../hooks/use-auto-wake-on-open.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 
 export function WakeToEditButton({
@@ -12,6 +13,7 @@ export function WakeToEditButton({
   agentId: string;
   comingUp: boolean;
 }) {
+  useAutoWakeOnOpen(agentId);
   const wakeAgent = useWakeAgent();
   if (comingUp)
     return (

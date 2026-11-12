@@ -30,7 +30,6 @@ export const RANKING = {
     approvalsPanel: 0.5,
     checklist: 0.4,
     browseKits: 0.5,
-    wake: 0.5,
     openKit: 0.4,
     terminal: 0.4,
     rename: 0.4,

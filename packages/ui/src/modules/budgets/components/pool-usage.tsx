@@ -57,7 +57,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         warning={poolWarning(
           memory.level,
           "Disable agents you aren't using to free up memory.",
-          "Idle agents are put to sleep automatically to make room.",
+          "Idle agents stop automatically to make room.",
           slackLogin,
         )}
       />

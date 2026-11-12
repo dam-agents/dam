@@ -1,6 +1,5 @@
 import {
   AddComment,
-  Awake,
   Branch,
   Chat,
   Copy,
@@ -49,11 +48,6 @@ export function agentCommands(
     });
   const ref = cliAgentRef(agent, input.ownAgents);
   const settling = input.restarting.has(agent.id);
-  const asleep =
-    agent.state === "hibernated" &&
-    !agent.disabled &&
-    !agent.overBudget &&
-    !settling;
   const session = inChat ? input.openSession : null;
 
   return [
@@ -193,18 +187,6 @@ export function agentCommands(
       : []),
     ...(may("lifecycle")
       ? [
-          ...(asleep
-            ? [
-                of({
-                  id: "wake",
-                  label: "wake",
-                  keywords: ["start"],
-                  icon: Awake,
-                  prior: PRIOR.wake,
-                  run: () => act.wake(agent.id),
-                }),
-              ]
-            : []),
           ...(agent.state === "running" && !agent.disabled && !settling
             ? [
                 of({

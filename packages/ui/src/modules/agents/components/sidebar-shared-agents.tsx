@@ -109,7 +109,7 @@ export function SidebarSharedAgents({
           aria-expanded={showFolded}
           className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
+          {showFolded ? "Show less" : `See all (${folded.length} more)`}
         </button>
       )}
     </section>

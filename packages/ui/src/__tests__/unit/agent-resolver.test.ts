@@ -85,6 +85,19 @@ describe("resolveAgentDisplay", () => {
     expect(out.state).toBe("disabled");
     expect(out.powerAction).toBe(null);
   });
+
+  // TEST_SCENARIO: an agent stopped after a start that never came up shows as an error with its Start action, not as an idle agent, so the failed start stays visible.
+  test("a stopped agent whose last start failed shows as an error", () => {
+    const out = resolveAgentDisplay(
+      {
+        ...agent("a", "hibernated"),
+        startFailure: { reason: "NeverReady", message: "no answer" },
+      },
+      new Set(),
+    );
+    expect(out.state).toBe("error");
+    expect(out.powerAction).toBe("start");
+  });
 });
 
 describe("transitionRestartingAgents", () => {

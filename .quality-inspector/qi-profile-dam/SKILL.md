@@ -29,12 +29,13 @@ Builds published before these accounts were added have only `qa-owner`; there an
 
 ## Vocabulary a user sees
 
-- **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
+- **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
-- **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
-- **Asleep** — an agent hibernated after being idle for the install's idle timeout (5 minutes by default; the UI has no setting for it), shown in the owner's list of agents.
-  While waiting for an agent to fall asleep, watch only that list: opening its chat may wake it.
+- **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and starts an agent that stopped while idle.
+- **Idle** — what the owner's list of agents says of an agent with nothing to do, whether it still runs or has stopped after the install's idle timeout (5 minutes by default; the UI has no setting for it).
+  The UI shows no sleep state and no button to wake an agent: opening an agent's chat, or a page that needs it running, starts it, with a short "starting" wait at most.
+  While waiting for an agent to stop, watch only that list: opening its chat starts it.
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the experimental feature `damConnection` is on for it.
