@@ -939,3 +939,15 @@ helm template platform . "${COMMON[@]}" \
   --set agentStore.cutover.acknowledged=true \
   --set agentStore.contract.emptyArchive=true >/dev/null \
   || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }
+# The api-server pod-DENY on the ext-authz port keeps the upgrade bridge in
+# one source entry: the agent namespace or the waypoint principal. Two
+# separate rules would OR and deny every caller.
+pod_deny=$(helm template platform . "${COMMON[@]}" \
+  --show-only templates/apiserver/auth-policy-pod-deny.yaml | yq -o=json)
+jq -e --arg principal "cluster.local/ns/default/sa/apiserver-waypoint" --arg agents "platform-agents" '
+  [.spec.rules[] | select(any(.to[]?; any(.operation.ports[]?; . == "4002")))] as $ext
+  | ($ext | length) == 1
+  and ($ext[0].from | length) == 1
+  and $ext[0].from[0].source.notNamespaces == [$agents]
+  and $ext[0].from[0].source.notPrincipals == [$principal]' <<<"$pod_deny" >/dev/null ||
+  { echo "the api-server pod-DENY on ext-authz is not the one-source upgrade bridge: $pod_deny" >&2; exit 1; }

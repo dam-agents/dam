@@ -30,9 +30,10 @@ func TestBuildExtAuthzService_SelectorUsesInstanceLabel_NotFullname(t *testing.T
 // TEST_SCENARIO: an upgrade from a release that bound ext-authz Services to the api-server waypoint unbinds them; a bound Service puts every agent's waypoint policy into its own chain, which crash-looped prod's waypoint.
 func TestApplyExtAuthzService_UnbindsAServiceBoundToTheWaypoint(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{ReleaseNamespace: "default", ReleaseName: "dam-platform", APIServerInstanceLabel: "dam", ExtAuthzPort: 4002}
+	cfg := &config.Config{ReleaseNamespace: "default", ReleaseName: "dam-platform", APIServerInstanceLabel: "dam", ExtAuthzPort: 4002, IstioWaypointName: "apiserver-waypoint"}
 	bound := BuildExtAuthzService("inst-1", cfg)
-	bound.Labels["istio.io/use-waypoint"] = "apiserver-waypoint"
+	bound.Labels["istio.io/use-waypoint"] = cfg.IstioWaypointName
+	bound.Spec.ClusterIP = "10.43.0.10"
 	r := &AgentReconciler{config: cfg, client: fake.NewSimpleClientset(bound)}
 
 	require.NoError(t, r.applyExtAuthzService(ctx, BuildExtAuthzService("inst-1", cfg)))
@@ -40,4 +41,5 @@ func TestApplyExtAuthzService_UnbindsAServiceBoundToTheWaypoint(t *testing.T) {
 	got, err := r.client.CoreV1().Services("default").Get(ctx, bound.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.NotContains(t, got.Labels, "istio.io/use-waypoint")
+	assert.Equal(t, "10.43.0.10", got.Spec.ClusterIP, "unbinding keeps the Service's address")
 }
