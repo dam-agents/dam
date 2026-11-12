@@ -625,12 +625,19 @@ it("drops the notice when the Agent answers", () => {
   expect(placeholder(el)).toBe("Message…");
 });
 
-// TEST_SCENARIO: the Agent is asleep, so there is no chat to keep and the takeover with its Start action appears.
-it("takes over an Agent with no chat to keep", () => {
-  const el = openChat("hibernated", false);
-  expect(notice(el)).toBeNull();
-  expect(el.textContent).toContain("The agent is sleeping.");
-  expect(el.textContent).toContain("Start agent");
+// TEST_SCENARIO: an Agent falling asleep keeps its chat; one stopped for idleness whose wake did not start, as when the wake call failed, gets the takeover that says it isn't running and starts it, with no sleep wording; an Agent in error gets the takeover with its Restart action.
+it("takes over only an Agent with no chat to keep", () => {
+  const falling = openChat("hibernating", false);
+  expect(falling.textContent).not.toContain("Start agent");
+  expect(falling.querySelector("textarea")).not.toBeNull();
+  const idle = openChat("hibernated", false);
+  expect(idle.textContent).toContain("The agent isn't running.");
+  expect(idle.textContent).toContain("Start agent");
+  expect(idle.textContent).not.toMatch(/sleep|Sleeping/i);
+  const failed = openChat("error", false);
+  expect(notice(failed)).toBeNull();
+  expect(failed.textContent).toContain("The agent hit an error");
+  expect(failed.textContent).toContain("Restart agent");
 });
 
 // TEST_SCENARIO: a send typed during a reconnect stays in the draft and never reaches the Agent, so a Stop can never finalize a bubble whose message still goes out.

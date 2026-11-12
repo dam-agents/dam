@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -235,6 +235,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **Providers, harnesses and defaults** are the agent's Providers section: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying, the Session Pair defaults and the profile the chat default names ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections, saves or clears a default and names a profile with `--profile`, through the same procedures the web app calls, so the server keeps every rule about which pair is valid; `--kind channel` and `--kind scheduled` write that kind's own pair, the one its page's picker shows, and `--same-as-chat` clears it, so the kind follows the chat default again; `models` lists a harness's model catalog from the agent-runtime.
   An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
+  `update --tool-approval ask|auto|bypass` saves the agent's tool approval, which every session that picked none runs on, and `default` removes it; `get` shows it ([tool approval](tool-approval.md#the-agents-tool-approval)).
   Revoking a provider changes only the grants on the server, so `update --remove-provider` then moves each saved default that named the revoked Connection to a granted provider of the same alias that offers its model, and warns about each default it cannot move; a default the same `update` sets is left as set.
   A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
 - **Name and avatar** are the identity the web app edits in place: `update --name` renames through the same procedure, with the server's name rules, and `--avatar`, `--avatar-file` and `--avatar-default` pick a character or an emoji, upload an image through the same endpoint and limits as the picker, or go back to the default ([agent avatars](agent-avatars.md)); `create` takes the avatar flags too.

@@ -594,6 +594,7 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     channelSessionPair: jsonb("channel_session_pair"),
     scheduledSessionPair: jsonb("scheduled_session_pair"),
+    toolApproval: text("tool_approval"),
     sessionProfile: text("session_profile").references(() => profiles.id, {
       onDelete: "restrict",
     }),

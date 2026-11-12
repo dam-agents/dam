@@ -461,15 +461,18 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const settingInput = (sessionId: string) => {
         const model = runtime.sessionChoice(sessionId).model;
         const meta = sessionMetadata.get(sessionId)?.meta;
+        const unattended = UNATTENDED_TYPES.has(meta?.type ?? "");
         return {
           sessionId,
           harness,
           model,
           native: pair.native !== undefined,
+          agentApproval: runtime.defaults()?.toolApproval ?? null,
+          unattended,
           settings: {
             ...manifestDefaults(harness, "session", model),
-            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session runs on the default tool approval; only a chat session picks its own. */
-            ...(UNATTENDED_TYPES.has(meta?.type ?? "")
+            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session keeps no tool approval of its own, so it runs on the agent's, or on the default one; only a chat session picks its own. */
+            ...(unattended
               ? withoutApproval(harness?.catalog, meta?.settings)
               : meta?.settings),
           },

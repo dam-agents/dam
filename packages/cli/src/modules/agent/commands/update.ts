@@ -1,4 +1,5 @@
 import { Command, Option } from "commander";
+import { toolApprovalSchema, type ToolApproval } from "agent-runtime-api";
 import {
   agentUpdateInputSchema,
   type ConnectionView,
@@ -58,9 +59,12 @@ interface UpdateOpts extends AvatarOpts {
   settingsDefault?: boolean;
   kind: DefaultKind;
   sameAsChat?: boolean;
+  toolApproval?: ToolApproval | typeof TOOL_APPROVAL_UNSET;
   server?: string;
   json?: boolean;
 }
+
+const TOOL_APPROVAL_UNSET = "default";
 
 function invalid(message: string): never {
   process.stderr.write(`error: ${message}\n`);
@@ -154,6 +158,12 @@ export function buildUpdateCommand(deps: {
       "--same-as-chat",
       "with --kind channel or scheduled: drop that legacy default, so it follows the chat default again",
     )
+    .addOption(
+      new Option(
+        "--tool-approval <approval>",
+        "how every session of the agent approves tool calls unless the session picked its own: ask, auto, bypass (run every tool unasked), or default to remove it",
+      ).choices([...toolApprovalSchema.options, TOOL_APPROVAL_UNSET]),
+    )
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -171,7 +181,8 @@ export function buildUpdateCommand(deps: {
         "  dam agent update my-agent --harness codex --model openai/gpt-5.5 --setting effort=high\n" +
         '  dam agent update my-agent --provider "My provider" --remove-provider conn-123\n' +
         "  dam agent update my-agent --kind scheduled --model ibm/gpt-5-mini\n" +
-        "  dam agent update my-agent --kind scheduled --same-as-chat\n",
+        "  dam agent update my-agent --kind scheduled --same-as-chat\n" +
+        "  dam agent update my-agent --tool-approval bypass\n",
     )
     .action(async (ref: string, opts: UpdateOpts) => {
       let settings: Record<string, string> | undefined;
@@ -211,10 +222,11 @@ export function buildUpdateCommand(deps: {
         !providersGiven &&
         !opts.sameAsChat &&
         !identityGiven &&
-        opts.profile === undefined
+        opts.profile === undefined &&
+        opts.toolApproval === undefined
       )
         invalid(
-          "nothing to change: pass --name, --avatar, --avatar-file, --avatar-default, --provider, --remove-provider, --profile, --harness, --model, --setting or --same-as-chat",
+          "nothing to change: pass --name, --avatar, --avatar-file, --avatar-default, --provider, --remove-provider, --profile, --harness, --model, --setting, --same-as-chat or --tool-approval",
         );
 
       const host = await resolveActiveHost(deps, opts.server);
@@ -309,6 +321,14 @@ export function buildUpdateCommand(deps: {
           );
         const remembered = await svc.rememberDefault(agent.id, opts.kind, pair);
         exitOnServiceError(remembered, host);
+      }
+
+      if (opts.toolApproval !== undefined) {
+        const set = await svc.setToolApproval(
+          agent.id,
+          opts.toolApproval === TOOL_APPROVAL_UNSET ? null : opts.toolApproval,
+        );
+        exitOnServiceError(set, host);
       }
 
       const setHere = new Set<DefaultKind>(

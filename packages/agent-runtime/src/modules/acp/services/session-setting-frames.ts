@@ -1,5 +1,10 @@
 import { parseQualifiedModel } from "api-server-api";
-import { startModeFor, type HarnessConfigCatalog } from "agent-runtime-api";
+import {
+  agentToolApprovalSetting,
+  startModeFor,
+  type HarnessConfigCatalog,
+  type ToolApproval,
+} from "agent-runtime-api";
 import type { SessionSettingBinding } from "../../runtime-channel/manifest.js";
 import type { SessionSettingFrame } from "./acp-runtime/acp-runtime.js";
 
@@ -19,6 +24,8 @@ export interface SessionSettingInput {
   model: string | null;
   native: boolean;
   harness?: SessionHarness;
+  agentApproval?: ToolApproval | null;
+  unattended?: boolean;
 }
 
 /**
@@ -27,19 +34,24 @@ export interface SessionSettingInput {
  * on no mode of its own. A harness that does not opt in keeps its own sources
  * of a start mode — a thinking level, a pinned persona — so the runtime names
  * none. Where it does opt in, the catalog's default for the model the session
- * runs on applies, never a mode the agent's config file names: a permission
- * mode is tool approval, which is only ever a session's own pick.
+ * runs on applies, never a mode the agent's config file names. The agent's
+ * own tool approval comes before either, on any harness that keeps approval
+ * in its mode, where the session's model can use it and, for a choice that
+ * asks, where a person is there to answer.
  */
 export function derivedMode(input: SessionSettingInput): string | null {
-  const { settings, model, harness } = input;
+  const { settings, harness } = input;
   const mode = modeSettingOf(harness);
-  if (mode === undefined || !mode.derive || settings[mode.id] !== undefined)
-    return null;
-  return startModeFor(
+  if (mode === undefined || settings[mode.id] !== undefined) return null;
+  const model = input.model ?? harness?.configured().model ?? null;
+  const approval = agentToolApprovalSetting(
     harness?.catalog,
-    model ?? harness?.configured().model ?? null,
-    mode.id,
+    input.agentApproval,
+    { model, unattended: input.unattended === true },
   );
+  if (approval?.id === mode.id) return approval.value;
+  if (!mode.derive) return null;
+  return startModeFor(harness?.catalog, model, mode.id);
 }
 
 /**

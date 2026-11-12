@@ -1,34 +1,24 @@
-// TEST_OVERVIEW: An avatar's mood follows the agent's state: awake while it runs, asleep while it sleeps or falls asleep, and disabled — asleep and grey — while its owner has disabled it, whatever its pod does.
+// TEST_OVERVIEW: An avatar is awake whatever the agent's machine does, stopped for idleness or by a stop request included, since that is no state the person acts on; it is disabled — asleep and grey — only while its owner has disabled the agent, whatever its pod does.
 import { describe, expect, it } from "vitest";
 
 import { avatarMood } from "../../modules/agents/components/avatar/agent-avatar.js";
 
-const agent = (over: { stopRequested?: boolean; disabled?: boolean } = {}) => ({
-  stopRequested: false,
+const agent = (over: { disabled?: boolean } = {}) => ({
   disabled: false,
   ...over,
 });
 
 describe("avatarMood", () => {
-  // TEST_SCENARIO: a running agent is awake, and a hibernated or hibernating one is asleep.
-  it("reads awake or asleep from the lifecycle state", () => {
+  // TEST_SCENARIO: a running agent, and one stopped or stopping for idleness, is awake.
+  it("reads awake whatever the machine does", () => {
     expect(avatarMood("running", agent())).toBe("awake");
-    expect(avatarMood("hibernated", agent())).toBe("asleep");
-    expect(avatarMood("hibernating", agent())).toBe("asleep");
+    expect(avatarMood("hibernated", agent())).toBe("awake");
+    expect(avatarMood("hibernating", agent())).toBe("awake");
   });
 
-  // TEST_SCENARIO: a standing stop request means the agent is going down, so it already reads asleep.
-  it("reads asleep while a stop request stands", () => {
-    expect(avatarMood("running", agent({ stopRequested: true }))).toBe(
-      "asleep",
-    );
-  });
-
-  // TEST_SCENARIO: disabled wins over every state, since a disabled agent carries a stop request too and must read grey, not just asleep.
+  // TEST_SCENARIO: a disabled agent reads disabled in every state.
   it("reads disabled before anything else", () => {
-    expect(
-      avatarMood("running", agent({ stopRequested: true, disabled: true })),
-    ).toBe("disabled");
+    expect(avatarMood("running", agent({ disabled: true }))).toBe("disabled");
     expect(avatarMood("disabled", null)).toBe("disabled");
   });
 });

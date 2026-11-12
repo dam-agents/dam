@@ -1,4 +1,10 @@
-import { Asleep, Play, Restart, Warning } from "@carbon/icons-react";
+import {
+  Asleep,
+  Information,
+  Play,
+  Restart,
+  Warning,
+} from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -25,7 +31,7 @@ import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
 
 const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
-  hibernated: Asleep,
+  hibernated: Information,
   disabled: Asleep,
   error: Warning,
   over_budget: Warning,
@@ -34,15 +40,14 @@ const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
 export function takesOverChat(state: AgentDisplayState | null): boolean {
   return match(state)
     .with(null, () => true)
-    .with("starting", "preparing_workspace", "running", () => false)
     .with(
+      "starting",
+      "preparing_workspace",
+      "running",
       "hibernating",
-      "hibernated",
-      "over_budget",
-      "error",
-      "disabled",
-      () => true,
+      () => false,
     )
+    .with("hibernated", "over_budget", "error", "disabled", () => true)
     .exhaustive();
 }
 
@@ -99,7 +104,7 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        {state !== "starting" && (
+        {state !== "starting" && state !== "hibernated" && (
           <StatusBadge
             state={state}
             refused={isStartRefusal(agent.podTerminationCode)}

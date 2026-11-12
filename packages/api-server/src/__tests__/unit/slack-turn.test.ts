@@ -1179,7 +1179,9 @@ describe("slack turn — contract framing and attendance", () => {
     expect(prompt).toContain("don't retry the same host in a loop");
     expect(prompt).toContain("<permission-check>");
     expect(prompt).toContain("every tool but the platform's own");
-    expect(prompt).toContain("default tool approval, which no setting changes");
+    expect(prompt).toContain(
+      "the agent's tool approval, which only the agent's owner changes",
+    );
   });
 
   it("scopes the reply contract to the message it arrives with", async () => {

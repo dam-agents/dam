@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-11-04
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -134,11 +134,11 @@ The floor that read is held to is the one that chose the victim, so a peer freed
 The other victims are still reclaimed, since the room the start needs is freed by whichever of them holds it.
 A victim left running counts nothing as room made: only the machines a reclaim actually put to sleep earn the start its wait.
 
-Reclaiming is **announced, not asked**.
+Reclaiming is **neither asked nor announced**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
-The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was put to sleep automatically to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
-A deliberate touch outdates the mark, and the message with it.
-A Sleep removes the mark, since it stales last activity behind it, so an agent its user put to sleep never reads as put to sleep automatically; disabling an agent clears the mark outright.
+The victim lands in ordinary `Hibernated` state, which the web UI shows as idle like any other, and its next use wakes it, so there is nothing for the owner to act on.
+While its reclaim mark stands the api-server still reads it off the Agent; a deliberate touch outdates the mark.
+A Sleep removes the mark, since it stales last activity behind it; disabling an agent clears the mark outright.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream

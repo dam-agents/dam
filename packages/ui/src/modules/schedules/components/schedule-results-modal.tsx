@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/format-time";
 
 import type { Schedule, SessionView } from "../../../types.js";
 import { useAgentRunState } from "../../agents/api/queries.js";
-import { AgentSleepingCallout } from "../../agents/components/agent-sleeping-callout.js";
+import { AgentStartingCallout } from "../../agents/components/agent-starting-callout.js";
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useScheduleSessions } from "../api/queries.js";
@@ -91,12 +91,13 @@ export function ScheduleResultsModal({
         <OutcomeBlock schedule={schedule} />
         {stopped && (
           <div className="px-5 py-4 md:px-6">
-            <AgentSleepingCallout
+            <AgentStartingCallout
+              agentId={agentId}
               comingUp={comingUp}
               onStart={() => wakeAgent.wake(agentId)}
             >
-              — Wake the agent to see runs.
-            </AgentSleepingCallout>
+              — its past runs show once it is running.
+            </AgentStartingCallout>
           </div>
         )}
         {!stopped && sessionsQuery.isError && (

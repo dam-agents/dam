@@ -1,5 +1,5 @@
 {
-  "id": "8511e00a-2d1d-4769-8468-c2350a255c63",
+  "id": "cee09c8f-8536-43e0-b584-e2fe4b8e8d14",
   "prevId": "ca57f415-f849-4390-932b-5eae256ebc11",
   "version": "7",
   "dialect": "postgresql",
@@ -1296,6 +1296,12 @@
         "scheduled_session_pair": {
           "name": "scheduled_session_pair",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tool_approval": {
+          "name": "tool_approval",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -4141,12 +4147,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "slug": {
           "name": "slug",
