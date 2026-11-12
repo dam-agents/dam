@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-30
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -59,7 +59,7 @@ For each count the highest value wins, so a repeated or forged object can only r
 A reply that reports the passes of one call apart, such as a compaction pass and an answer pass, counts the sum of the passes, because the provider bills each pass.
 It keeps the raw counts with the dialect and leaves their meaning to pricing: input, output, cache reads, cache writes and their five-minute and one-hour parts, cached tokens, web searches, Bob credits, the service tier, the speed, the inference geography and the reply's model.
 
-**The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address that only this agent's gateway can reach.
+**The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address the controller gives only this agent's gateway.
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
 It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figures when the reply has them, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
