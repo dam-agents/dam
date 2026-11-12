@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -79,7 +79,7 @@ The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 The general sign-in page scrolls: its first screen holds the sign-in form, and the sections below it say what an agent does, where it works, what users say and what developers and DevOps get, ending in a second sign-in form.
 The shared-artifact sign-in keeps the short single-screen layout.
-The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+The first screen's heading is what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page rolls from the first through three others picked at random back to the first, where it stays.
 The page's "Read the docs" links point at the install's documentation site, the chart's `links.docs` value, and its community channel link is the `keycloak.login.community` value; both reach the theme the same way, and a value set empty, or a docs value that is not an http(s) URL, hides that link.
 The testimonials the page shows are rows in the platform's database, which only an [operator](#identity) changes, from the Operator settings page or `dam login-testimonials`, so a change reaches the page within a minute, with no redeploy.
 The page fetches them from the api-server's public `/api/public/login-testimonials`, which a browser may read only from Keycloak's origin; their photos are uploaded and served as [agent avatars](agent-avatars.md#custom-avatars) are.
