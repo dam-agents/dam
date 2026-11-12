@@ -1002,6 +1002,9 @@ export async function bootstrap() {
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
   const resolveAgentName = async (agentId: string) =>
     (await agentsRepo.getLive(agentId, undefined))?.name ?? null;
+  const resolveWebSearchControl = async (agentId: string) =>
+    (await agentsRepo.getLive(agentId, undefined))?.spec.webSearchControl ===
+    true;
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
@@ -1019,6 +1022,7 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
+    resolveWebSearchControl,
     resolveEvent: async (agentId, event) => {
       const paired = await resolveInitializationPair(agentId, event);
       const released = paired && (await holdForEgress(agentId, paired));

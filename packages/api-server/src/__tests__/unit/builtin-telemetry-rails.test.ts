@@ -15,7 +15,12 @@ const builtin = createBuiltinContributions({
 
 const envOf = (harnesses: string[]) =>
   builtin
-    .for("a1", { agentName: null, sharedKnowledgeBases: false, harnesses })
+    .for("a1", {
+      agentName: null,
+      webSearchControl: false,
+      sharedKnowledgeBases: false,
+      harnesses,
+    })
     .filter((c) => c.kind === "env");
 
 describe("builtin telemetry rails", () => {

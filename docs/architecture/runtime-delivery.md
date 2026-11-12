@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-11-09
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -111,7 +111,7 @@ sequenceDiagram
   WK->>PG: record the outcome, stamp the settled events
 ```
 
-The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry and the agent's display name (`PLATFORM_AGENT_NAME`) always, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
+The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry and the agent's display name (`PLATFORM_AGENT_NAME`) always, `PLATFORM_WEB_SEARCH_CONTROL` while the agent's [web search control](web-search-control.md#the-harnesss-own-question) is on, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
 
 ### `applyState` — state and events delivery (server → agent)
 

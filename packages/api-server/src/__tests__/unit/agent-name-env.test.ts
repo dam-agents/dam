@@ -25,7 +25,12 @@ const builtin = createBuiltinContributions({
 
 const envOf = (agentName: string | null) =>
   builtin
-    .for("a1", { agentName, sharedKnowledgeBases: false, harnesses: [] })
+    .for("a1", {
+      agentName,
+      webSearchControl: false,
+      sharedKnowledgeBases: false,
+      harnesses: [],
+    })
     .filter((c) => c.kind === "env");
 
 function setup() {

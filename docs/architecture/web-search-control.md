@@ -1,6 +1,6 @@
 # Web search control
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -54,6 +54,17 @@ Allow once sends the call on to the gate's other checks, and deny refuses it.
 Always allow and always deny write the agent's web search rule, also on an approval whose hold already ended; the owner changes or clears the rule under Web search in the agent's Network settings.
 The rule stays when the setting turns off and answers again when it turns back on, so the Network settings show a stored rule while the setting is off too, and the warning before turning the setting on names it.
 
+## The harness's own question
+
+Claude Code asks for its own permission to use its search tool before it sends the search request, so in "Ask for approvals" the owner would be asked twice.
+An agent with the setting on carries `PLATFORM_WEB_SEARCH_CONTROL=1` in its machine's env, a [built-in contribution](runtime-delivery.md), and the Claude Code image's managed settings hold a hook that allows the search tool when that variable is set.
+So with the setting on, the gateway's question is the only one, in every Tool approval mode, and the settings card says so; other tools still follow Tool approval.
+With the setting off the variable is absent, the hook says nothing, and Claude Code asks as before.
+Turning the setting on or off pushes the agent's runtime state, and the harness restarts on the new env as for any env change.
+The hook is a convenience, not the control: an agent that changes its own settings changes only who asks first, never what the gateway holds.
+
+## What an allowed search does
+
 An allowed search still runs at the provider: the platform approves it but does not run it.
 The IBM LiteLLM proxy lets the model search again with queries it writes after reading the first results, up to two more by its default, and reports only the first, so the approval says that an allowed search may run up to two more queries.
 
@@ -67,7 +78,6 @@ Every refusal carries the platform's refusal header, and the spend ledger drops 
 
 ## Limits
 
-- Claude Code asks for its own permission to use its search tool before it sends the search request, so in its asking modes the owner can be asked twice.
 - The IBM LiteLLM proxy ignores the domains a search asks to be limited to, and reports no searches in its usage, so the spend meter counts none.
 - It covers the model calls of the agent's model-provider Connections; a model API the agent reaches with a key of its own, through an egress rule, is governed by that rule alone.
 - Reading every body costs the agent's model calls a buffer and a parse in the api-server, which is why the setting is off by default.

@@ -23,7 +23,7 @@ import {
 } from "../lib/rule-choice.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and the agent's one web search rule, which answers every search without asking once the switch is on. The rule shows while the switch is off too when one is stored, and turning the switch on names it, because a stored rule answers in place of the hold the switch promises. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own.
+ * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and the agent's one web search rule, which answers every search without asking once the switch is on. The rule shows while the switch is off too when one is stored, and turning the switch on names it, because a stored rule answers in place of the hold the switch promises. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own, and says that Claude Code stops asking about a search while the switch is on, because the chat's Tool approval no longer decides it.
  */
 export function WebSearchControlCard({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -64,7 +64,9 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
             Hold each web search the agent&apos;s model makes for your approval,
             in the chat and on Home, before it runs. Covers{" "}
             {WEB_SEARCH_HARNESSES_COVERED}. Does not cover{" "}
-            {WEB_SEARCH_HARNESSES_NOT_COVERED}.
+            {WEB_SEARCH_HARNESSES_NOT_COVERED}. While this is on, Claude Code
+            does not ask about a web search itself, whatever the chat&apos;s
+            Tool approval. Other tools still follow Tool approval.
           </>
         }
         control={

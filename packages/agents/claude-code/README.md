@@ -22,6 +22,10 @@ Files a user attaches to a message, and files a channel brings in, land under `~
 `managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
 The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
 
+An agent with [web search control](../../../docs/architecture/web-search-control.md#the-harnesss-own-question) on is asked about each search by its gateway, so Claude Code does not ask a second time.
+`managed-settings.json` holds a `PreToolUse` hook on `WebSearch` that allows the tool when `PLATFORM_WEB_SEARCH_CONTROL` is set, which the platform sets only for such an agent.
+With the variable unset the hook prints nothing, and Claude Code asks about a search as its permission mode says.
+
 ## User settings
 
 [`sync-claude-settings.mjs`](rootfs/usr/local/lib/sync-claude-settings.mjs) writes the platform's own keys into `~/.claude/settings.json`: the `OTEL_*` telemetry variables of the rail the agent was given, and the `report-background-work.mjs` entry it owns in `hooks.Stop` and `hooks.SubagentStop`.

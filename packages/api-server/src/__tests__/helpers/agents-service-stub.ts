@@ -16,6 +16,7 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
 export function stubAgentsService(
   stored: (id: string) => Record<string, unknown> = () => ({}),
 ) {
+  const pushRuntimeState = vi.fn(async () => {});
   const patchSpec = vi.fn(
     async (
       id: string,
@@ -73,7 +74,7 @@ export function stubAgentsService(
     readTemplateSpec: async () => null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({
       bump: async () => 1,
-      enqueueAfterCommit: async () => {},
+      enqueueAfterCommit: pushRuntimeState,
     }),
     contributionsProgress: unused(),
     agentServiceStatus: unused(),
@@ -91,5 +92,5 @@ export function stubAgentsService(
     editorEmail: null,
     resolveUserEmail: async () => null,
   });
-  return { agents, persist, patchSpec };
+  return { agents, persist, patchSpec, pushRuntimeState };
 }

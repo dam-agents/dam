@@ -1709,10 +1709,13 @@ export function createAgentsService(deps: {
           input.name,
         );
         if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
-        if (refreshed || renamed) {
+        if (refreshed || renamed || input.webSearchControl !== undefined) {
           await deps.runtimeMutator.bump(input.id, []);
           await deps.runtimeMutator.enqueueAfterCommit(input.id);
         }
+      } else if (input.webSearchControl !== undefined) {
+        await deps.runtimeMutator.bump(input.id, []);
+        await deps.runtimeMutator.enqueueAfterCommit(input.id);
       }
 
       if (

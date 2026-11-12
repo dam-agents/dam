@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the agent's Web search control card never hides a stored web search rule. While the control is off, a stored rule still shows with its choice and says it applies once the control is on, because the gate reads that rule before any hold; with no rule stored, the off card shows only the switch.
+// TEST_OVERVIEW: the agent's Web search control card never hides a stored web search rule. While the control is off, a stored rule still shows with its choice and says it applies once the control is on, because the gate reads that rule before any hold; with no rule stored, the off card shows only the switch. The card also says what the control changes in Claude Code's own asking.
 import { AGENT_PERMISSIONS, type WebSearchVerdict } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -60,5 +60,14 @@ describe("the Web search control card while the control is off", () => {
   // TEST_SCENARIO: with no rule stored, nothing answers in place of the hold, so the off card shows the switch alone.
   it("shows only the switch when no rule is stored", () => {
     expect(render(null)).not.toContain("When the agent searches");
+  });
+
+  // TEST_SCENARIO: with the control on, Claude Code allows its search tool in every Tool approval mode and the gateway asks instead; the card says so before the owner turns the switch, and that other tools keep following Tool approval.
+  it("says that Claude Code stops asking about a search", () => {
+    const html = render(null);
+    expect(html).toContain(
+      "Claude Code does not ask about a web search itself",
+    );
+    expect(html).toContain("Other tools still follow Tool approval.");
   });
 });

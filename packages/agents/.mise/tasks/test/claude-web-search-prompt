@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code skips its own question about a web search only for an agent with Web search control on"
+//MISE sources=["claude-code/rootfs/etc/claude-code/managed-settings.json", "../api-server/src/modules/runtime-delivery/services/builtin-contributions.ts", ".mise/tasks/test/claude-web-search-prompt"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+
+const settings = JSON.parse(read("claude-code/rootfs/etc/claude-code/managed-settings.json"));
+const entry = settings.hooks.PreToolUse.find((e) => e.matcher === "WebSearch");
+const command = entry.hooks[0].command;
+
+const run = (env) => {
+  const r = spawnSync("sh", ["-c", command], { env: { PATH: process.env.PATH, ...env }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout.trim();
+};
+
+// TEST_SCENARIO: an agent with Web search control on has PLATFORM_WEB_SEARCH_CONTROL set. The gateway asks its owner about every search, so the hook allows the tool and Claude Code does not ask a second time.
+assert.deepEqual(JSON.parse(run({ PLATFORM_WEB_SEARCH_CONTROL: "1" })), {
+  hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+});
+
+// TEST_SCENARIO: an agent with the control off has no such variable. The hook says nothing, so Claude Code decides as it did before: it asks in "Ask for approvals".
+assert.equal(run({}), "");
+
+// TEST_SCENARIO: the hook answers for the search tool alone, and no rule allows that tool for every agent, because an agent with the control off must keep Claude Code's question.
+assert.equal(settings.hooks.PreToolUse.filter((e) => /WebSearch/.test(e.matcher)).length, 1);
+assert.ok(!settings.permissions.allow.includes("WebSearch"));
+
+// TEST_SCENARIO: the api-server sets the variable under the name the hook reads, so a rename on one side fails here.
+assert.match(
+  read("../api-server/src/modules/runtime-delivery/services/builtin-contributions.ts"),
+  /WEB_SEARCH_CONTROL_ENV = "PLATFORM_WEB_SEARCH_CONTROL"/,
+);
+assert.match(command, /\$PLATFORM_WEB_SEARCH_CONTROL\b/);
+
+console.log("claude-web-search-prompt: ok");

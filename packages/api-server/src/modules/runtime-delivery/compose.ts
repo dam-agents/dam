@@ -129,6 +129,7 @@ export interface ComposeRuntimeDeliveryOpts {
   telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
   resolveAgentName: (agentId: string) => Promise<string | null>;
+  resolveWebSearchControl: (agentId: string) => Promise<boolean>;
   resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
   /* UNIT_BOUNDARY_DESCRIPTION: the install's brand, so the skill the DAM Connection carries is read as this install writes it now. */
@@ -153,6 +154,7 @@ export function composeRuntimeDelivery(
     brandName: opts.brandName,
     builtin,
     agentName: opts.resolveAgentName,
+    webSearchControl: opts.resolveWebSearchControl,
     egressDenies: (agentId) => async (host, method, path) =>
       (await egressRules.match(agentId, host, 443, true, method, path))
         ?.verdict === "deny",
