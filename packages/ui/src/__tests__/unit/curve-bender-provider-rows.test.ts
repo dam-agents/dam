@@ -92,13 +92,16 @@ describe("CurveBender on Settings › Providers", () => {
     expect(html).toContain(
       "All Acme users are set up with CurveBender, IBM-hosted open-source models.",
     );
-    expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
-    expect(html).toContain('target="_blank"');
-    expect(html).toMatch(
+    const externalLink = (href: string, text: string) =>
       new RegExp(
-        `These models are currently only approved for <a href="${CURVE_BENDER_RESTRICTIONS_URL}"[^>]*>restricted use cases</a>\\.`,
-      ),
+        `<a href="${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" target="_blank" rel="noopener noreferrer" class="[^"]*">${text}</a>`,
+      );
+    expect(html).toMatch(externalLink(CURVE_BENDER_DOCS_URL, "Learn more"));
+    expect(html).toMatch(
+      externalLink(CURVE_BENDER_RESTRICTIONS_URL, "restricted use cases"),
     );
+    expect(html).toContain("These models are currently only approved for <a ");
+    expect(html).toContain(">restricted use cases</a>.");
     expect(html).toContain("Close");
   });
 

@@ -45,6 +45,7 @@ function expectRestriction() {
   );
   expect(link?.getAttribute("href")).toBe(CURVE_BENDER_RESTRICTIONS_URL);
   expect(link?.getAttribute("target")).toBe("_blank");
+  expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
 }
 
 function button(label: string) {
@@ -107,6 +108,7 @@ describe("the CurveBender notice", () => {
     );
     expect(learnMore?.getAttribute("href")).toBe(DOCS_URL);
     expect(learnMore?.getAttribute("target")).toBe("_blank");
+    expect(learnMore?.getAttribute("rel")).toBe("noopener noreferrer");
     expectRestriction();
     await click(button("Use a different provider"));
     expect(onPickProvider).toHaveBeenCalledTimes(1);
