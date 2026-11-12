@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An Agent sleeps after the install's idle timeout, and the UI offers no per-agent setting for it: the agent's General section shows no "Sleep after being idle for" field, and no surface shows an "Always on" tag, because every agent sleeps.
+// TEST_OVERVIEW: An Agent stops on its own after the install's idle timeout, and the UI offers no per-agent setting for it: the agent's General section shows no "Sleep after being idle for" field, and no surface shows an "Always on" tag, because no agent is kept running.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
