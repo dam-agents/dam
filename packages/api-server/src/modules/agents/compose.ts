@@ -111,7 +111,7 @@ export function composeAgentsModule(deps: {
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
   childEgress?: AgentsServiceDeps["childEgress"];
-  defaultProfile?: AgentsServiceDeps["defaultProfile"];
+  newAgentDefault?: AgentsServiceDeps["newAgentDefault"];
   editorEmail: string | null;
   actor?: string;
   resolveUserEmail: (sub: string) => Promise<string | null>;
@@ -155,7 +155,7 @@ export function composeAgentsModule(deps: {
       grantProvisioner: deps.grantProvisioner,
       inheritance: createInheritanceRepository(deps.db),
       childEgress: deps.childEgress,
-      defaultProfile: deps.defaultProfile,
+      newAgentDefault: deps.newAgentDefault,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: (agentId, agentOwner) =>
         listChannelsByAgent(deps.db, agentOwner)(agentId),

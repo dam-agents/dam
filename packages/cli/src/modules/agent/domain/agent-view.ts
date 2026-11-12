@@ -30,9 +30,10 @@ export function displayState(agent: AgentView): string {
 }
 
 const HARNESS_ORDER = "the first of yours its harness runs on";
-/* UNIT_BOUNDARY_DESCRIPTION: one reason per source; `profile` reaches this table only without its profile, which no server sends. */
+/* UNIT_BOUNDARY_DESCRIPTION: one reason per source; `profile` and `default` reach this table only without their pick, which no server sends. */
 const PROVIDER_REASON: Record<AgentDefaultProvider["source"], string> = {
   profile: HARNESS_ORDER,
+  default: HARNESS_ORDER,
   kit: "the first of the starter kit's providers you hold",
   template: "the first of its template's providers you hold",
   harness: HARNESS_ORDER,
@@ -45,7 +46,7 @@ export function defaultProviderLine(
 ): string {
   const provider = name ? `${name} (${connectionId})` : connectionId;
   if (profile)
-    return `  Provider: ${provider}, from your default for new agents, profile "${profile.name}": ${profile.model} on ${profile.harness}. Change that default in Settings › Providers › Profiles, or pass --provider.`;
+    return `  Provider: ${provider}, from your default for new agents${profile.name === null ? "" : `, profile "${profile.name}"`}: ${profile.model} on ${profile.harness}. Change that default in Settings › Providers, or pass --provider.`;
   const why = PROVIDER_REASON[source] ?? HARNESS_ORDER;
   return `  Provider: ${provider}, ${why}; your default for new agents does not apply to it.`;
 }

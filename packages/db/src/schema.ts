@@ -527,9 +527,6 @@ export const profiles = pgTable(
     id: text("id").primaryKey(),
     owner: text("owner").notNull(),
     name: text("name").notNull(),
-    /* UNIT_BOUNDARY_DESCRIPTION: marks the one profile the platform seeds for
-     * an owner, which is never seeded again after a rename or a delete. */
-    seed: text("seed"),
     harness: text("harness").notNull(),
     providerTemplate: text("provider_template").notNull(),
     model: text("model").notNull(),
@@ -549,9 +546,6 @@ export const profiles = pgTable(
   },
   (table) => [
     uniqueIndex("profiles_owner_name_idx").on(table.owner, table.name),
-    uniqueIndex("profiles_owner_seed_idx")
-      .on(table.owner, table.seed)
-      .where(sql`${table.seed} is not null`),
     index("profiles_owner_idx").on(table.owner),
     check(
       "profiles_subagent_xor_template",
@@ -560,25 +554,26 @@ export const profiles = pgTable(
   ],
 );
 
-/* UNIT_BOUNDARY_DESCRIPTION: one row per owner, written the first time the
- * owner's profiles are listed. It is what keeps a renamed or deleted seeded
- * profile from being seeded again. */
-export const profileSeeds = pgTable("profile_seeds", {
-  owner: text("owner").primaryKey(),
-  seededAt: timestamp("seeded_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* UNIT_BOUNDARY_DESCRIPTION: each owner's one default for new agents; the
- * restrictive foreign key keeps that profile from being deleted while it is
- * the default. */
-export const profileDefaults = pgTable("profile_defaults", {
-  owner: text("owner").primaryKey(),
-  profileId: text("profile_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "restrict" }),
-});
+/* UNIT_BOUNDARY_DESCRIPTION: the default for new agents an owner chose, a
+ * profile or values of their own, never both; a new agent's chat default is
+ * initialised from it. Deleting the profile removes the row, and new agents
+ * then start on the base default. */
+export const newAgentDefaults = pgTable(
+  "profile_defaults",
+  {
+    owner: text("owner").primaryKey(),
+    profileId: text("profile_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    sessionPair: jsonb("session_pair"),
+  },
+  (table) => [
+    check(
+      "profile_defaults_profile_xor_pair",
+      sql`(${table.profileId} is null) <> (${table.sessionPair} is null)`,
+    ),
+  ],
+);
 
 export const agents = pgTable(
   "agents",

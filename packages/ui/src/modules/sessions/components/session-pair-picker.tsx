@@ -238,7 +238,10 @@ export function SessionPairPicker(props: Props) {
   );
   const chosen = edit || target ? null : picked;
   const [fromProfile, setFromProfile] = usePickedProfile(agentId ?? "");
-  const { data: profiles = [] } = useProfiles(agentId);
+  /* UNIT_BOUNDARY_DESCRIPTION: with no agent, only a target lists profiles: the owner's default for new agents may name one, a profile's own editor may not. */
+  const { data: profiles = [] } = useProfiles(
+    agentId ?? (target ? undefined : null),
+  );
   const setPair = useStore((s) => s.setNextSessionPair);
 
   const connections = useProviderConnections(agentId);

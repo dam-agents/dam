@@ -146,7 +146,6 @@ const profile = (
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
   settings: {},
   subagent: null,
-  newAgentDefault: true,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,
@@ -216,12 +215,12 @@ beforeEach(() => {
 });
 
 describe("what a new schedule or channel starts on", () => {
-  /** TEST_SCENARIO: the newest sibling's profile wins over the chat profile; one the owner no longer holds is passed over, and with none left the owner's default for new agents answers. */
-  it("takes the newest sibling's profile, then the chat profile, then the default for new agents", () => {
-    const profiles = [profile(), profile({ id: "p2", newAgentDefault: false })];
+  /** TEST_SCENARIO: the newest sibling's profile wins over the chat profile; one the owner no longer holds is passed over, and with none left no profile is preset, so it follows the agent's default. */
+  it("takes the newest sibling's profile, then the chat profile, else none", () => {
+    const profiles = [profile(), profile({ id: "p2" })];
     expect(defaultProfileId(profiles, ["p2", "p1"])).toBe("p2");
     expect(defaultProfileId(profiles, ["gone", "p2"])).toBe("p2");
-    expect(defaultProfileId(profiles, [null, undefined])).toBe("p1");
+    expect(defaultProfileId(profiles, [null, undefined])).toBe(null);
     expect(defaultProfileId([], ["gone"])).toBe(null);
   });
 });

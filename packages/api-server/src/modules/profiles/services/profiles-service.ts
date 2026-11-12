@@ -4,7 +4,7 @@ import {
   aliasForProviderType,
   aliasForTemplateId,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  DEFAULT_PROFILE_UNDELETABLE,
+  CURVE_BENDER_WORK_MODEL,
   displayNameForTemplate,
   harnessFits,
   parseQualifiedModel,
@@ -12,8 +12,6 @@ import {
   providerAliasConflict,
   providerTypeForTemplateId,
   type HarnessCatalog,
-  type OwnerModelCatalogView,
-  preferredModelOf,
   type ProfileCreateInput,
   type ProfilesService,
   type ProfileWithUsage,
@@ -25,7 +23,6 @@ import {
   type ProfileReferences,
   type ProfileRow,
   type ProfilesRepository,
-  type ProfileWrite,
 } from "../infrastructure/profiles-repository.js";
 
 export interface ResolvedProfile {
@@ -140,120 +137,114 @@ interface OwnerDeps {
   repo: ProfilesRepository;
   owner: string;
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
-  /* UNIT_BOUNDARY_DESCRIPTION: the "Default" an owner with no profile is given, on the deployment's shared CurveBender: the harness and the upstream model the install names. Null where the install serves no shared CurveBender or names no seed; then "Default" comes from the owner's first provider instead. */
-  seed: { harness: string; model: string } | null;
-  /* UNIT_BOUNDARY_DESCRIPTION: the owner's providers with their models, which an install without the shared CurveBender seeds "Default" from. */
-  ownerCatalog?: () => Promise<OwnerModelCatalogView>;
+  /* UNIT_BOUNDARY_DESCRIPTION: the install serves the shared CurveBender, so a new agent of an owner with no default profile starts on the base default. */
+  sharedCurveBender: boolean;
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the base default a new agent's chat default is initialised with when its owner has no default profile: Pi on the shared CurveBender's work model, saved as values, never as a profile. */
+export const BASE_DEFAULT = {
+  harness: "pi",
+  providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${CURVE_BENDER_WORK_MODEL}`,
+};
+
+export interface NewAgentDefault {
+  /** UNIT_BOUNDARY_DESCRIPTION: the profile the owner chose, or null for values: their own or the base default's. */
+  profile: ProfileRow | null;
+  /** UNIT_BOUNDARY_DESCRIPTION: the pair a new agent's chat default is initialised with when it holds no profile; it names the Connection below. */
+  pair: SessionPair & { model: string };
+  connectionId: string;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: "Default" from the owner's first provider that
- * has listed its models: the install's default harness where that provider
- * runs it, else the first harness it runs, and the model the platform prefers
- * for work, else the first it lists for that harness. Null while no provider
- * has listed, so the next read tries again.
- */
-export function firstProviderDefault(
-  catalog: OwnerModelCatalogView,
-): Omit<ProfileWrite, "name" | "settings"> | null {
-  for (const provider of catalog.providers) {
-    if (provider.status !== "listed") continue;
-    const harness = provider.harnesses.includes(catalog.defaultHarness)
-      ? catalog.defaultHarness
-      : provider.harnesses[0];
-    const models = provider.models.filter(
-      (m) => harness !== undefined && m.harnesses.includes(harness),
-    );
-    const preferred = preferredModelOf(
-      "work",
-      [{ alias: provider.alias, listed: models.map((m) => m.upstreamId) }],
-      harness,
-    );
-    const model =
-      models.find((m) => m.upstreamId === preferred?.upstreamId) ?? models[0];
-    if (harness && model)
-      return {
-        harness,
-        providerTemplate: provider.template,
-        model: model.name,
-      };
-  }
-  return null;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: every owner has one default for new agents once
- * they hold a profile. An owner with none is first given "Default", where the
- * install names one; otherwise their oldest profile becomes it.
- */
-async function ensureDefault(deps: OwnerDeps): Promise<ProfileRow | null> {
-  const current = await deps.repo.defaultOf(deps.owner);
-  if (current) return current;
-  let [oldest] = await deps.repo.list(deps.owner);
-  if (!oldest) {
-    const pair = deps.seed
-      ? {
-          harness: deps.seed.harness,
-          providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-          model: `${aliasForTemplateId(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!}/${deps.seed.model}`,
-        }
-      : deps.ownerCatalog && firstProviderDefault(await deps.ownerCatalog());
-    if (pair) {
-      await deps.repo.seed(deps.owner, {
-        name: "Default",
-        settings: {},
-        ...pair,
-      });
-      [oldest] = await deps.repo.list(deps.owner);
-    }
-  }
-  if (!oldest) return null;
-  await deps.repo.setDefault(deps.owner, oldest.id, { onlyIfNone: true });
-  return deps.repo.defaultOf(deps.owner);
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the owner's default
- * for new agents, with the owner's oldest Connection of its template, which
+ * UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the default for new
+ * agents the owner chose, a profile or their own values, else the base
+ * default where the install serves the shared CurveBender and runs Pi; a
+ * choice whose provider the owner no longer holds falls to the base default
+ * too. A profile runs on the owner's oldest Connection of its template, which
  * the Agent is granted in place of the harness's provider order. The
  * deployment-owned Connections come from the owner's Connection listing or a
  * boot sweep over owners who already hold one, so a default naming one
  * reconciles them first; a first create through the CLI or API would
- * otherwise find none. Null while the owner holds no profile or no such
- * Connection, which leaves the new Agent to that order and its first hello's
- * conversion.
+ * otherwise find none. Null while there is no default or no such Connection,
+ * which leaves the new Agent to that order and its first hello's conversion.
  */
 export async function newAgentDefault(
   deps: OwnerDeps & { reconcileConnections?: () => Promise<void> },
-): Promise<{ profile: ProfileRow; connectionId: string } | null> {
-  const profile = await ensureDefault(deps);
-  const connectionOf = async () =>
-    profile &&
-    (await deps.repo.ownerConnections(deps.owner)).find(
-      (c) => c.templateId === profile.providerTemplate,
-    );
-  let connection = await connectionOf();
-  const deploymentOwned =
-    profile?.providerTemplate === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
-  if (!connection && deploymentOwned && deps.reconcileConnections) {
-    await deps.reconcileConnections();
-    connection = await connectionOf();
+): Promise<NewAgentDefault | null> {
+  let owned = await deps.repo.ownerConnections(deps.owner);
+  const ofTemplate = async (templateId: string) => {
+    let connection = owned.find((c) => c.templateId === templateId);
+    if (
+      !connection &&
+      templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID &&
+      deps.reconcileConnections
+    ) {
+      await deps.reconcileConnections();
+      owned = await deps.repo.ownerConnections(deps.owner);
+      connection = owned.find((c) => c.templateId === templateId);
+    }
+    return connection;
+  };
+  const chosen = await deps.repo.newAgentDefaultOf(deps.owner);
+  if (chosen?.profile) {
+    const { profile } = chosen;
+    const connection = await ofTemplate(profile.providerTemplate);
+    if (connection)
+      return {
+        profile,
+        pair: {
+          harness: profile.harness,
+          provider: connection.id,
+          model: profile.model,
+        },
+        connectionId: connection.id,
+      };
   }
-  return profile && connection
-    ? { profile, connectionId: connection.id }
+  const own = chosen?.pair;
+  if (own?.provider && own.model && owned.some((c) => c.id === own.provider))
+    return {
+      profile: null,
+      pair: { ...own, model: own.model },
+      connectionId: own.provider,
+    };
+  const base = baseDefault(deps);
+  const connection = base && (await ofTemplate(base.providerTemplate));
+  return base && connection
+    ? {
+        profile: null,
+        pair: {
+          harness: base.harness,
+          provider: connection.id,
+          model: base.model,
+        },
+        connectionId: connection.id,
+      }
     : null;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: a new Agent's chat default is the default profile once it holds a Connection of that profile's template; a create that named another provider keeps its first hello's conversion. Answers why it did not bind, null when it did. */
-export async function bindDefaultProfile(
-  deps: OwnerDeps,
+const baseDefault = (deps: Pick<OwnerDeps, "catalog" | "sharedCurveBender">) =>
+  deps.sharedCurveBender &&
+  deps.catalog.harnesses.some((h) => h.name === BASE_DEFAULT.harness)
+    ? BASE_DEFAULT
+    : null;
+
+/** UNIT_BOUNDARY_DESCRIPTION: a new Agent's chat default is initialised from its default once it holds that default's Connection: the profile, else the values; a create that named another provider keeps its first hello's conversion. Answers why it did not bind, null when it did. */
+export async function bindNewAgentDefault(
+  deps: Pick<OwnerDeps, "repo" | "owner">,
   agentId: string,
-  profile: ProfileRow,
+  start: NewAgentDefault,
 ): Promise<string | null> {
   const granted = await deps.repo.agentConnections(deps.owner, agentId);
-  if (!granted.some((c) => c.templateId === profile.providerTemplate))
-    return `the agent holds no ${profile.providerTemplate} Connection`;
-  return (await deps.repo.bindChatProfile(deps.owner, agentId, profile.id))
+  if (!granted.some((c) => c.id === start.connectionId))
+    return `the agent does not hold Connection ${start.connectionId}`;
+  return (await deps.repo.bindChatDefault(
+    deps.owner,
+    agentId,
+    start.profile
+      ? { sessionProfile: start.profile.id }
+      : { sessionPair: start.pair },
+  ))
     ? null
     : "the agent already holds a chat default";
 }
@@ -264,6 +255,8 @@ export function createProfilesService(
     resolve: ProfileResolver;
     /* UNIT_BOUNDARY_DESCRIPTION: sends an agent that points at an edited profile its new pair, or answers why it cannot take it. */
     republish: (agentId: string) => Promise<string | null>;
+    /* UNIT_BOUNDARY_DESCRIPTION: why values saved as a default could not run with their settings, as an agent's chat default checks them, or null. */
+    settingsProblem: (pair: SessionPair) => Promise<string | null>;
   },
 ): ProfilesService {
   const { repo, owner, catalog } = deps;
@@ -322,7 +315,6 @@ export function createProfilesService(
   function view(
     row: ProfileRow,
     refs: ProfileReferences,
-    defaultId: string | undefined,
     availability: ProfileWithUsage["availability"] = null,
   ): ProfileWithUsage {
     return {
@@ -339,7 +331,6 @@ export function createProfilesService(
             }
           : null,
       settings: row.settings,
-      newAgentDefault: row.id === defaultId,
       usage: {
         agents: refs.agents.filter(
           (a) => a.chat === row.id || a.platform === row.id,
@@ -369,7 +360,6 @@ export function createProfilesService(
 
   return {
     async list(input) {
-      const defaultId = (await ensureDefault(deps))?.id;
       const [rows, refs] = await Promise.all([
         repo.list(owner),
         repo.references(owner, agentIds),
@@ -377,9 +367,9 @@ export function createProfilesService(
       const agentId = input?.agentId;
       return Promise.all(
         rows.map(async (row) => {
-          if (agentId === undefined) return view(row, refs, defaultId);
+          if (agentId === undefined) return view(row, refs);
           const resolved = await deps.resolve({ profileId: row.id, agentId });
-          return view(row, refs, defaultId, {
+          return view(row, refs, {
             available: !resolved?.unavailable || resolved.attachable,
             reason: resolved?.unavailable ?? null,
             attachable: resolved?.attachable ?? false,
@@ -411,8 +401,6 @@ export function createProfilesService(
     },
 
     async create(input) {
-      /* UNIT_BOUNDARY_DESCRIPTION: seeded first, so a user-made "Default" cannot take the seed's name. */
-      const defaultId = (await ensureDefault(deps))?.id;
       const columns = subagentColumns(input.subagent);
       validate({ ...input, ...columns });
       const row = await repo
@@ -427,11 +415,7 @@ export function createProfilesService(
         .catch((err: unknown) => {
           throw duplicate(err, input.name);
         });
-      return view(
-        row,
-        await repo.references(owner, agentIds, row.id),
-        defaultId ?? (await ensureDefault(deps))?.id,
-      );
+      return view(row, await repo.references(owner, agentIds, row.id));
     },
 
     async update({ id, agentId: _agentId, subagent, ...patch }) {
@@ -498,24 +482,64 @@ export function createProfilesService(
       }
       if (rejected.length > 0)
         getLogger().warn({ profileId: id, rejected }, "profile edit rejected");
-      return view(
-        await owned(id),
-        await repo.references(owner, agentIds, id),
-        (await repo.defaultOf(owner))?.id,
-      );
+      return view(await owned(id), await repo.references(owner, agentIds, id));
     },
 
-    async setDefault(id) {
-      await owned(id);
-      await repo.setDefault(owner, id);
+    async newAgentDefault() {
+      const [chosen, connections] = await Promise.all([
+        repo.newAgentDefaultOf(owner),
+        repo.ownerConnections(owner),
+      ]);
+      const base = baseDefault(deps);
+      const shared =
+        base && connections.find((c) => c.templateId === base.providerTemplate);
+      const profile = chosen?.profile;
+      return {
+        profileId: profile?.id ?? null,
+        /* UNIT_BOUNDARY_DESCRIPTION: a profile's values on the owner's oldest Connection of its template, so a picker shows what the reference runs on. */
+        pair: profile
+          ? {
+              harness: profile.harness,
+              provider:
+                connections.find(
+                  (c) => c.templateId === profile.providerTemplate,
+                )?.id ?? null,
+              model: profile.model,
+              ...(Object.keys(profile.settings).length > 0 && {
+                settings: profile.settings,
+              }),
+            }
+          : (chosen?.pair ?? null),
+        base:
+          base && shared
+            ? { harness: base.harness, provider: shared.id, model: base.model }
+            : null,
+      };
+    },
+
+    async setNewAgentDefault(input) {
+      if ("profileId" in input) {
+        await owned(input.profileId);
+        return repo.setNewAgentDefault(owner, { profileId: input.profileId });
+      }
+      const { pair } = input;
+      const connection = (await repo.ownerConnections(owner)).find(
+        (c) => c.id === pair.provider,
+      );
+      if (!connection)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `unknown provider ${pair.provider}`,
+        });
+      const problem =
+        problemWith(pair.harness, connection.templateId, pair.model) ??
+        (await deps.settingsProblem(pair));
+      if (problem)
+        throw new TRPCError({ code: "BAD_REQUEST", message: problem });
+      await repo.setNewAgentDefault(owner, { sessionPair: pair });
     },
 
     async delete(id) {
-      if ((await repo.defaultOf(owner))?.id === id)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: DEFAULT_PROFILE_UNDELETABLE,
-        });
       const outcome = await repo.deleteIfUnused(owner, id, agentIds);
       if (outcome === "missing")
         throw new TRPCError({

@@ -619,9 +619,9 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
-  /** UNIT_BOUNDARY_DESCRIPTION: the owner's default for new agents: its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while the owner has none to offer. */
-  defaultProfile?: () => Promise<{
-    name: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on: the owner's default profile (its name), else the base default (no name); its harness, the Connection a new Agent on that harness is granted in place of the harness's provider order, and the binding of the Agent's chat default to it, which answers why it did not bind; null while there is none to offer. */
+  newAgentDefault?: () => Promise<{
+    name: string | null;
     model: string;
     harness: string;
     connectionId: string;
@@ -1336,16 +1336,16 @@ export function createAgentsService(deps: {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
-      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model or its providers and an Environment decide their own default, so the owner's default profile stays out of them. */
-      const profileDefault =
-        deps.defaultProfile &&
+      /* UNIT_BOUNDARY_DESCRIPTION: a kit that names its model or its providers and an Environment decide their own default, so the default for new agents stays out of them. */
+      const newDefault =
+        deps.newAgentDefault &&
         input.starterKitDefaultModel === undefined &&
         input.starterKitProviders === undefined &&
         input.environmentOf === undefined
-          ? await deps.defaultProfile().catch((err: unknown) => {
+          ? await deps.newAgentDefault().catch((err: unknown) => {
               getLogger().warn(
                 { err },
-                "agent create: the default profile could not be read; the harness's provider order decides",
+                "agent create: the default for new agents could not be read; the harness's provider order decides",
               );
               return null;
             })
@@ -1382,7 +1382,7 @@ export function createAgentsService(deps: {
         if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
           spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
         if (requestedTemplate === DEFAULT_TEMPLATE_ID)
-          spec.harness ??= profileDefault?.harness ?? deps.defaultHarness;
+          spec.harness ??= newDefault?.harness ?? deps.defaultHarness;
         templateId = requestedTemplate;
         templateProviders = tmpl.spec.providers;
       } else {
@@ -1420,8 +1420,8 @@ export function createAgentsService(deps: {
         spec.requireConnectionAddress = true;
 
       const providerConnectionId = input.providerConnectionId;
-      const startsOnProfile =
-        profileDefault?.harness === spec.harness ? profileDefault : null;
+      const startsOnDefault =
+        newDefault?.harness === spec.harness ? newDefault : null;
       const ordered =
         providerConnectionId === undefined &&
         templateId !== undefined &&
@@ -1440,10 +1440,10 @@ export function createAgentsService(deps: {
             )) ?? null)
           : null;
       const orderedProviders = ordered?.ids ?? [];
-      /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default profile's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
+      /* UNIT_BOUNDARY_DESCRIPTION: one provider either way (#5578): the default's in place of the first in harness order, so the chat default exists before the first hello and the onboarding turn has a model. */
       const defaultProviders =
-        orderedProviders.length > 0 && startsOnProfile
-          ? [startsOnProfile.connectionId]
+        orderedProviders.length > 0 && startsOnDefault
+          ? [startsOnDefault.connectionId]
           : orderedProviders;
       const grantSel = {
         connectionIds: Array.from(
@@ -1587,8 +1587,8 @@ export function createAgentsService(deps: {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
-      if (startsOnProfile) {
-        const missed = await startsOnProfile
+      if (startsOnDefault) {
+        const missed = await startsOnDefault
           .bind(infra.id)
           .catch((err: unknown) =>
             err instanceof Error ? err.message : String(err),
@@ -1596,7 +1596,7 @@ export function createAgentsService(deps: {
         if (missed)
           getLogger().warn(
             { agentId: infra.id, reason: missed },
-            "agent create: the new agent does not start on the default profile; its first hello converts the default instead",
+            "agent create: the new agent does not start on the default for new agents; its first hello converts the default instead",
           );
       }
 
@@ -1614,12 +1614,16 @@ export function createAgentsService(deps: {
       if (defaultProviders[0] !== undefined)
         agent.defaultProvider = {
           connectionId: defaultProviders[0],
-          source: startsOnProfile ? "profile" : (ordered?.source ?? "harness"),
-          profile: startsOnProfile
+          source: startsOnDefault
+            ? startsOnDefault.name === null
+              ? "default"
+              : "profile"
+            : (ordered?.source ?? "harness"),
+          profile: startsOnDefault
             ? {
-                name: startsOnProfile.name,
-                model: startsOnProfile.model,
-                harness: startsOnProfile.harness,
+                name: startsOnDefault.name,
+                model: startsOnDefault.model,
+                harness: startsOnDefault.harness,
               }
             : null,
         };

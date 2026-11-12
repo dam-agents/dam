@@ -1,13 +1,13 @@
 # Profiles
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
 A **profile** is one owner's named harness, provider template, model, platform sub-agent and settings, usable on all their agents.
 It names the kind of provider, not one Connection, so it runs on whatever Connection of that template the agent holds; a rival Connection of the same alias never stands in for it.
 Profiles are saved from a chat's model picker (Save as a profile, or on a pick that came from or matches one Update beside Save as a new profile) or made with New profile in Settings › Providers › Profiles, and edited in a chat or in that list, whose rows open the same picker on its Custom selection, listing models from the [owner catalog](owner-model-catalog.md).
-Every list of profiles, in Settings and in each picker, shows the default for new agents first, then the most used (the agents, channels, schedules and interactive pages that name one), then by name.
+Every list of profiles, in Settings and in each picker, shows the most used first (the agents, channels, schedules and interactive pages that name one), then by name.
 Custom selection is one screen wherever a pick is made: a new or running chat's primary model, a channel's and a schedule's, and a profile in Settings; none of them holds tool approval.
 A channel and a schedule pick in the chat's own picker, both slots in it.
 A subagent is a model and the provider it runs on, under **More options**, or **Same as agent**, which lets the harness pick; a profile carries a subagent the same way, and its picker offers it beside the model.
@@ -29,12 +29,14 @@ A profile in use cannot be deleted, and the refusal names what uses it.
 
 ## The default for new agents
 
-Each owner has exactly one **default for new agents**, which cannot be deleted while it is; another profile is made the default first, from its row in Settings.
-An owner with no profile is given "Default" on the deployment's shared CurveBender, with the harness and model the install sets under `apiServer.defaultProfile`.
-A new agent whose default names the shared CurveBender, for an owner who holds none of it yet, reconciles the deployment-owned Connections before it starts, so the first create on an account that never listed Connections still starts on it.
-An install without the shared CurveBender, or with either value empty, gives "Default" from the owner's first provider once it has listed its models: the install's default harness where that provider runs it, else the first harness it runs, and the model the platform prefers for work on that harness, else the first it lists.
-An owner who already has profiles gets no "Default"; their oldest becomes the default.
-A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order, and its chat default is the profile.
-The default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model, an Environment and an agent on another harness keep the provider order and the first-hello conversion, and a kit that lists its providers takes the first of them the owner holds, else the provider order.
+Each owner has one **default for new agents**, picked in Settings › Providers with the same picker an agent's Providers page shows: a profile, or values of their own (harness, one of their provider Connections and a model), the way a Custom pick saves them.
+It is the top layer: a new agent's chat default is initialised from it, and from then on the agent's own chat default decides what its new chats run on; nothing reads the owner's default at run time.
+No profile is a default and none is made for an owner, so every profile not in use can be deleted.
+While the owner picked nothing, the **base default** applies: Pi on the owner's shared CurveBender Connection, with the CurveBender work model (DeepSeek), as values.
+A picked profile that is deleted takes the pick with it, and values whose Connection the owner no longer holds give way to the base default at the next create.
+The base default exists only where the install serves the shared CurveBender and its catalog has Pi; elsewhere a new agent of an owner who picked nothing boots the install's default harness on the first provider in its order, and its first `hello` converts its default ([harness configuration](harness-config.md#session-settings)).
+A new agent on the default template takes the default's harness unless its create names one, and then, on that harness, is granted the default's provider alone in place of the harness's provider order; its chat default is the profile, or the values.
+A default naming the shared CurveBender, for an owner who holds none of it yet, reconciles the deployment-owned Connections before the agent starts, so the first create on an account that never listed Connections still starts on it.
+The chat default exists before the agent's first `hello`, so a starter kit's onboarding turn has a model to run on; a kit that names its own model, an Environment and an agent on another harness keep the provider order and the first-hello conversion, and a kit that lists its providers takes the first of them the owner holds, else the provider order.
 A create that cannot start the agent on the default logs why, and the agent falls back to that conversion.
-A create that names no provider answers which one it granted and what chose it — the default (with its name, model and harness), the starter kit's providers list, the Template's providers list, or the harness's provider order; the CLI prints it, so a caller sees a provider it did not expect.
+A create that names no provider answers which one it granted and what chose it — the default (a profile with its name, or values, with the model and harness), the starter kit's providers list, the Template's providers list, or the harness's provider order; the CLI prints it, so a caller sees a provider it did not expect.
