@@ -23,6 +23,7 @@ import {
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { artifactMissing } from "../lib/load-failure.js";
+import { ArtifactIcon } from "./artifact-badges.js";
 import {
   ArtifactBarActions,
   ArtifactPanelMenu,
@@ -31,7 +32,6 @@ import {
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
-import { ArtifactIcon } from "./artifact-badges.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
