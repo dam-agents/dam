@@ -80,15 +80,22 @@ it("shows the base default and saves a profile by reference", async () => {
   const target = render({ profileId: null, pair: null, base: BASE });
   expect(target.slots).toMatchObject({ profileId: null, pair: BASE });
   await act(async () => {
-    await target.onChoose(BASE, { profileId: "profile-1" });
+    await target.onChoose(BASE, {
+      profileId: "profile-1",
+      platformSubagentProfileId: null,
+    });
   });
   expect(state.saved).toEqual([{ profileId: "profile-1" }]);
 });
 
-/** TEST_SCENARIO: a subagent changed beside a picked profile has no slot to live in, so the pick saves the values it runs on, the subagent included, instead of the bare reference. */
+/** TEST_SCENARIO: a subagent of its own changed beside a picked profile has no slot to live in, so the pick saves the values it runs on, the subagent included, on the profile's Connection when the change names none. */
 it("saves values when a subagent changes beside a profile", async () => {
   const target = render({ profileId: "profile-1", pair: BASE, base: BASE });
-  const withSubagent = { ...BASE, settings: { subagent_model: "cb/other" } };
+  const withSubagent = {
+    ...BASE,
+    provider: null,
+    settings: { "platformSubagent.model": "cb/other" },
+  };
   await act(async () => {
     await target.onChoose(
       withSubagent,
@@ -96,7 +103,9 @@ it("saves values when a subagent changes beside a profile", async () => {
       withSubagent,
     );
   });
-  expect(state.saved).toEqual([{ pair: withSubagent }]);
+  expect(state.saved).toEqual([
+    { pair: { ...withSubagent, provider: BASE.provider } },
+  ]);
 });
 
 /** TEST_SCENARIO: a Custom pick saves the values a run shows (the effective pair); a harness with no model yet saves nothing. */

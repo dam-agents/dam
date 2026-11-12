@@ -53,13 +53,17 @@ export function NewAgentDefaultPicker() {
     references: SessionChoiceReferences,
     effective = pair,
   ): void | Promise<boolean> => {
-    /* UNIT_BOUNDARY_DESCRIPTION: the pick holds no subagent slot of its own, so a subagent changed beside a profile saves the values it runs on, the change materialized, rather than the bare reference. */
+    /* UNIT_BOUNDARY_DESCRIPTION: the pick holds no subagent slot of its own: a profile pick that leaves the subagent to the profile saves the reference, so a later edit of the profile reaches new agents; a subagent of its own beside a profile saves the values it runs on, the change materialized. */
+    const next = nextSlots(slots, pair, references);
     if (
-      references.profileId &&
-      references.platformSubagentProfileId === undefined
+      next.profileId &&
+      !next.platformSubagentProfileId &&
+      !next.platformSubagentSettings
     )
-      return save({ profileId: references.profileId });
-    const { provider, model } = effective;
+      return save({ profileId: next.profileId });
+    /* UNIT_BOUNDARY_DESCRIPTION: a subagent change beside a profile may carry no provider of its own; the profile's runs on the Connection the slots already show. */
+    const provider = effective.provider ?? slots.pair?.provider ?? null;
+    const { model } = effective;
     /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker, since a new agent needs a model to start on. */
     if (provider === null || model === null)
       return setDraft(nextSlots(slots, effective, { profileId: null }));
