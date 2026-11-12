@@ -8,6 +8,7 @@ import {
   CURVE_BENDER_DOCS_URL,
   CurveBenderInfoDialog,
 } from "../../modules/providers/components/curve-bender-info-dialog.js";
+import { CURVE_BENDER_RESTRICTIONS_URL } from "../../modules/providers/components/curve-bender-restriction.js";
 import { ProviderSection } from "../../modules/providers/components/provider-section.js";
 
 type Item = { id: string; conn: { templateId: string } };
@@ -144,7 +145,7 @@ describe("CurveBender provider rows", () => {
     expect(render()).toContain(`aria-label="Edit ${CUSTOM}"`);
   });
 
-  // TEST_SCENARIO: the explainer is read-only: it says every user of this deployment is set up with CurveBender and links its docs in a new tab, and its only control is Close.
+  // TEST_SCENARIO: the explainer is read-only: it says every user of this deployment is set up with CurveBender and links its docs in a new tab, states that the models are approved for restricted use cases only with that phrase linking the legal page, and its only control is Close.
   it("explains the deployment integration without a form", () => {
     const html = renderToStaticMarkup(
       createElement(CurveBenderInfoDialog, { onClose: () => {} }),
@@ -152,9 +153,16 @@ describe("CurveBender provider rows", () => {
     expect(html).toContain(
       "All Acme users are set up with CurveBender, IBM-hosted open-source models.",
     );
-    expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
-    expect(html).toContain('target="_blank"');
-    expect(html).toContain('rel="noopener noreferrer"');
+    const externalLink = (href: string, text: string) =>
+      new RegExp(
+        `<a href="${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" target="_blank" rel="noopener noreferrer" class="[^"]*">${text}</a>`,
+      );
+    expect(html).toMatch(externalLink(CURVE_BENDER_DOCS_URL, "Learn more"));
+    expect(html).toMatch(
+      externalLink(CURVE_BENDER_RESTRICTIONS_URL, "restricted use cases"),
+    );
+    expect(html).toContain("These models are currently only approved for <a ");
+    expect(html).toContain(">restricted use cases</a>.");
     expect(html).toMatch(/<button[^>]*>Close<\/button>/);
     expect(html).not.toContain("<input");
   });
