@@ -243,12 +243,11 @@ A CLI terminal is covered by both checks like a UI terminal; a CLI SSH session i
 What none of them hold for is unkept work: a job detached with a plain `nohup`, anything a non-reporting harness leaves running.
 It survives the user leaving, but for it `active-session` is clear, `last-activity` ages out, the runtime reports `idle`, both checks agree, and the controller hibernates the machine **mid-job, killing the work**.
 
-**The per-agent hibernation timeout.** For work nobody keeps, the platform lets an operator *budget* instead.
-Each Agent carries an optional timeout override: unset inherits the install's default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never sleeps.
-A Template can seed this override — a workload whose real work runs off-session ships *never-hibernate* — and a client that asks for one at create still wins.
+**One idle timeout for every Agent.** A regular Agent sleeps on the install's idle timeout and has no window of its own: work that must outlive a session is [kept](agent-processes.md#keeping-work), and holds the Agent awake only while it runs.
+The create and update a client sends, a Template and a starter kit all ignore an idle override, and the store cleared the ones regular Agents carried before.
+Two kinds of Agent the platform makes still carry an override, set by their own create and keep calls: an [Environment](environments.md) (its idle timeout, `never` included) and an [Invocation](invocations.md) target, whose sleeping between runs its driver decides.
+An override's unset inherits the install's default, a positive value is an idle window in minutes, and `0` disables hibernation.
 The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for waking and hibernating.
-The UI offers no setting: an Agent reads the install's default, and an override still counts where one exists — a Template or starter kit seed — read with `0` included.
-An Agent that never sleeps carries an *Always on* tag.
 The override is a Go duration, and the api-server runs a port of Go's own parser rather than a lookalike: the whole grammar — a sign, a leading dot, an empty fraction, either microsecond spelling — the same float64 fraction step that makes `0.9999999999999999ns` one nanosecond, and the same int64 nanosecond overflow that rejects `2562048h`.
 A nonpositive duration is never-hibernate for every reader, and a positive window under a minute shows as one minute where the platform counts minutes.
 One golden document of real `time.ParseDuration` answers holds the controller and the api-server to the same acceptance and the same minutes.

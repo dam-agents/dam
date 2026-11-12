@@ -14,7 +14,6 @@ import { StopProcessMenuItem } from "./stop-process-menu-item.js";
 interface Props {
   agentId: string;
   row: ProcessRow;
-  alwaysOn: boolean;
   outputOpen: boolean;
   onToggleOutput: () => void;
 }
@@ -22,7 +21,6 @@ interface Props {
 export function ProcessActionsMenu({
   agentId,
   row,
-  alwaysOn,
   outputOpen,
   onToggleOutput,
 }: Props) {
@@ -49,7 +47,7 @@ export function ProcessActionsMenu({
       )}
       {row.kind !== "turn" && (
         <>
-          <KeepMenuItem agentId={agentId} row={row} alwaysOn={alwaysOn} />
+          <KeepMenuItem agentId={agentId} row={row} />
           <DropdownMenuSeparator />
         </>
       )}

@@ -215,6 +215,8 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
   environmentOf?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: an idle window of the Agent's own, in minutes, 0 never sleeping. Only an Environment and a sub-agent carry one; a regular Agent sleeps on the install's idle timeout, so the create's schema does not carry it. */
+  hibernationTimeoutMin?: number;
   linkFrom?: string;
   inheritance?: ChildInheritance;
   /* UNIT_BOUNDARY_DESCRIPTION: the home instructions this Agent starts with, in place of the template every other Agent gets — the assistant's standing behaviour, which tells it what the platform greeted its owner with. Only the provisioning that names it writes it, and only once. */

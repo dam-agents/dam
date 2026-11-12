@@ -17,7 +17,6 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   starterKit: null,
   starterKitOnboarded: null,
   image: "x:latest",
-  hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
   grantedSecretIds: [],

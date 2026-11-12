@@ -31,6 +31,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { type KeepAwake, keepAwake } from "../../lib/keep-awake.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -75,6 +76,7 @@ const KILLS = [
 let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
+let keeping: KeepAwake | undefined;
 const marker = `home-survives-${randomUUID()}`;
 const synced = `home-synced-${randomUUID()}`;
 let claimFilled = false;
@@ -270,9 +272,8 @@ test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await acceptTerms(api);
-  agentId = await createAgentOn(api, "e2e-boot-matrix", harnessName, {
-    neverIdle: true,
-  });
+  agentId = await createAgentOn(api, "e2e-boot-matrix", harnessName);
+  keeping = keepAwake(() => api.agents.wake.mutate({ id: agentId }));
   await waitAgentState(api, agentId, "running");
   await writeHomeFile(token, agentId, markerPath, marker);
   await expectHomeFile(token, agentId, markerPath, marker, {
@@ -399,6 +400,7 @@ function stopFillerAndClear(): string {
 }
 
 test.afterAll(async () => {
+  keeping?.stop();
   if (!agentId) return;
   try {
     if (claimFilled) {

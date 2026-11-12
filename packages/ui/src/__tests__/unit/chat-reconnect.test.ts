@@ -333,7 +333,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     startFailure: null,
     podTerminationReason: null,
     podTerminationCode: null,
-    hibernationTimeoutMin: 5,
     avatar: null,
     templateUpdate: null,
     unsupportedContributionKinds: [],

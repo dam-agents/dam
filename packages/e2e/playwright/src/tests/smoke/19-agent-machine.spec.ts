@@ -23,6 +23,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { type KeepAwake, keepAwake } from "../../lib/keep-awake.js";
 
 const markerPath = "e2e-backend-marker.txt";
 const prScope = process.env.E2E_SCOPE === "pr";
@@ -33,6 +34,8 @@ let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 let agentName = "";
+let keeping: KeepAwake | undefined;
+const wake = () => api.agents.wake.mutate({ id: agentId });
 const marker = `home-survives-${randomUUID()}`;
 const probeService = "e2e-probe";
 const probeStopped = `/home/agent/${probeService}.stopped`;
@@ -55,12 +58,12 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await acceptTerms(api);
   agentName = "e2e-vm-lifecycle";
-  agentId = await createAgentOn(api, agentName, harnessName, {
-    neverIdle: true,
-  });
+  agentId = await createAgentOn(api, agentName, harnessName);
+  keeping = keepAwake(wake);
 });
 
 test.afterAll(async () => {
+  keeping?.stop();
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
@@ -274,10 +277,12 @@ test("takes a scheduled fire", async () => {
 // TEST_SCENARIO: sleep hibernates the agent, and wake brings it back: a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(300_000);
+  keeping?.stop();
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
-  await api.agents.wake.mutate({ id: agentId });
+  await wake();
   await waitAgentState(api, agentId, "running");
+  keeping = keepAwake(wake);
   await expectHomeFile(token, agentId, markerPath, marker);
   const guest = inGuest(
     agentId,
