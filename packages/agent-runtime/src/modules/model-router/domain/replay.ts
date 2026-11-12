@@ -9,7 +9,9 @@ const isObject = (v: unknown): v is Json =>
 const THINKING = new Set(["thinking", "redacted_thinking"]);
 
 const withoutThinking = (blocks: unknown[]): unknown[] =>
-  blocks.filter((block) => !isObject(block) || !THINKING.has(String(block.type)));
+  blocks.filter(
+    (block) => !isObject(block) || !THINKING.has(String(block.type)),
+  );
 
 const TOOL_CALLS = new Set([
   "function_call",
