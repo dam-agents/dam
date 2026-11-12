@@ -251,7 +251,7 @@ export function ApprovalsDrawer({ onClose }: { onClose: () => void }) {
       <SideDrawerHeader title="Approvals" onClose={requestClose}>
         <DenyAllButton view={view} />
       </SideDrawerHeader>
-      <ApprovalsList view={view} onNavigate={requestClose} />
+      <ApprovalsList view={view} onNavigate={onClose} />
     </SideDrawer>
   );
 }

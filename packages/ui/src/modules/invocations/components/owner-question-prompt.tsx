@@ -4,6 +4,7 @@ import { type KeyboardEvent, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
@@ -126,7 +127,10 @@ export function OwnerQuestionPrompt({
             <Button
               variant="ghost"
               size="icon"
-              className={`-mr-2 shrink-0 mb-[9px] ${typed ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+              className={cn(
+                "-mr-2 mb-[9px] shrink-0 disabled:opacity-40",
+                typed ? "text-foreground" : "text-muted-foreground",
+              )}
               onClick={() => send(typed)}
               disabled={typed === "" || answer.isPending}
               aria-label="Send answer"
