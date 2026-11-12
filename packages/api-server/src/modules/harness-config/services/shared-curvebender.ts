@@ -55,7 +55,12 @@ export function createSharedCurveBenderGrant(deps: {
       if (
         saved?.model &&
         savedOn &&
-        harnessFits(deps.catalog, saved.harness, savedOn.type, savedOn.templateId)
+        harnessFits(
+          deps.catalog,
+          saved.harness,
+          savedOn.type,
+          savedOn.templateId,
+        )
       )
         return;
       const harness =

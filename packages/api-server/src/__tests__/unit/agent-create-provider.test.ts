@@ -167,7 +167,9 @@ function setup(
   );
   const providerHarnesses = vi.fn(
     async (ids: readonly string[]): Promise<Map<string, string[]>> =>
-      new Map(ids.flatMap((id) => (id === dam.id ? [] : [[id, ["claude-code"]]]))),
+      new Map(
+        ids.flatMap((id) => (id === dam.id ? [] : [[id, ["claude-code"]]])),
+      ),
   );
   const pick = vi.fn(
     async (_harness: string, _connectionId: string): Promise<string | null> =>
@@ -561,7 +563,10 @@ describe("the default profile a new agent starts on", () => {
   /** TEST_SCENARIO: A model the granted providers cannot run is refused
    * before anything is written, so a failed create leaves nothing behind. */
   it("refuses a model the check refuses before any writes", async () => {
-    const { caller, persist, applyGrants, check } = setup([provider], templates);
+    const { caller, persist, applyGrants, check } = setup(
+      [provider],
+      templates,
+    );
     check.mockRejectedValue(
       Object.assign(new Error("the new agent holds no cb provider"), {
         code: "BAD_REQUEST",

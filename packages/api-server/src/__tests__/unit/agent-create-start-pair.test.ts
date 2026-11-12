@@ -95,15 +95,39 @@ describe("the chat default a create names", () => {
   });
 
   it.each([
-    ["a bare model name", "claude-code", "claude-opus-5-5", ["conn-anthropic"], "name the model with its provider"],
-    ["a provider the create does not grant", "claude-code", "anthropic/claude-opus-5-5", ["conn-cb"], "holds no anthropic provider"],
-    ["a harness the provider cannot run", "pi", "anthropic/claude-opus-5-5", ["conn-anthropic"], "the pi harness cannot run on Anthropic"],
-    ["a model the provider does not list", "claude-code", "anthropic/claude-nope", ["conn-anthropic"], "lists no claude-nope"],
+    [
+      "a bare model name",
+      "claude-code",
+      "claude-opus-5-5",
+      ["conn-anthropic"],
+      "name the model with its provider",
+    ],
+    [
+      "a provider the create does not grant",
+      "claude-code",
+      "anthropic/claude-opus-5-5",
+      ["conn-cb"],
+      "holds no anthropic provider",
+    ],
+    [
+      "a harness the provider cannot run",
+      "pi",
+      "anthropic/claude-opus-5-5",
+      ["conn-anthropic"],
+      "the pi harness cannot run on Anthropic",
+    ],
+    [
+      "a model the provider does not list",
+      "claude-code",
+      "anthropic/claude-nope",
+      ["conn-anthropic"],
+      "lists no claude-nope",
+    ],
   ])("refuses %s", async (_label, harness, model, granted, reason) => {
     const { startPair } = setup();
-    await expect(
-      startPair.check({ harness, model }, granted),
-    ).rejects.toThrow(reason);
+    await expect(startPair.check({ harness, model }, granted)).rejects.toThrow(
+      reason,
+    );
   });
 
   /** TEST_SCENARIO: A provider that has not listed yet cannot say no, so its model is taken as named; the first run checks it against the listing. */
@@ -136,9 +160,9 @@ describe("the chat default a create names", () => {
   /** TEST_SCENARIO: A create that names only its provider starts on the model the platform prefers among those it lists for the harness, and on none while it has listed nothing. */
   it("picks a listed model of the named provider", async () => {
     const { startPair } = setup();
-    expect(
-      await startPair.pick("claude-code", "conn-anthropic"),
-    ).toMatch(/^anthropic\/claude-/);
+    expect(await startPair.pick("claude-code", "conn-anthropic")).toMatch(
+      /^anthropic\/claude-/,
+    );
     expect(await startPair.pick("claude-code", "conn-cb")).toBeNull();
     expect(await startPair.pick("pi", "conn-anthropic")).toBeNull();
   });
