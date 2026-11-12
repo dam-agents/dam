@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -14,7 +14,7 @@ Three rules carry the security model:
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the *kernel* by per-pair NetworkPolicies at both ends; the gateway → api-server hops (harness and ext-authz) are gated at the *mesh* by per-Agent Istio AuthorizationPolicies on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
    The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:    none`) so the kernel sees real destinations rather than HBONE tunnelled to ztunnel; its only admitted intra-cluster destination is the paired gateway pod on the Envoy proxy port.
    The gateway pod stays in ambient; istiod stamps it with a SPIFFE workload cert whose SA name equals the Agent name.
-   Two per-Agent AuthorizationPolicies enforce the gateway-originated boundary cryptographically: the api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`; the per-Agent ext-authz Service, bound to the waypoint, ALLOWs only the matching SA on that agent's own authority.
+   Two per-Agent AuthorizationPolicies enforce the gateway-originated boundary cryptographically: the api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`; the per-Agent ext-authz Service ALLOWs only the matching SA.
 
 Workspace contents are explicitly outside the trust boundary — see the security note on [persistence](persistence.md).
 
@@ -62,7 +62,7 @@ Enforcement is layered:
   agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary; kubelet probes are node-originated and unaffected.
 - **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).
   This is the destination-side egress gate; no NetworkPolicies on Postgres / Redis / Keycloak / the harness or ext-authz Services are needed because the agent has no admitted route to any of them.
-- **Mesh AuthorizationPolicy** gates the gateway-originated hops by the gateway pod's SPIFFE principal: harness via the api-server's waypoint, ext-authz on the waypoint-bound per-Agent Service.
+- **Mesh AuthorizationPolicy** gates the gateway-originated hops by the gateway pod's SPIFFE principal: harness via the api-server's waypoint, ext-authz on the per-Agent Service.
   The agent has no SPIFFE identity in this model.
 
 The agent pod has no service account token (`automountServiceAccountToken: false`), and there is no co-located sidecar to share a network or PID namespace with.
@@ -248,8 +248,7 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 ## HITL ext_authz
 
 Each credentialed request goes through an ext_authz Check call against the api-server.
-Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`), bound to the waypoint by `istio.io/use-waypoint`.
-The waypoint ALLOWs only the matching SA principal, on that Service's own gRPC authority, so a Check that comes through the waypoint carries a proven Agent.
+Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service ALLOWs only the matching SA principal, so by the time a Check arrives the calling Agent is already proven cryptographically.
 The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
 An invocation sub-agent's request is decided by its driver's rules, and an [Environment](environments.md#network-access)'s by its Owning Agent's; its approval is filed as the Owning Agent's and names the Environment.
 
@@ -349,9 +348,9 @@ The agent and the gateway are gated by different mechanisms — they live on opp
   The harness Service is `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
   A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
 - **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
-  The waypoint enforces the Service's AuthorizationPolicy, which ALLOWs only the matching SA principal on its own gRPC `:authority`.
-  The api-server derives Agent ID from the gRPC `:authority`.
-- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't the waypoint's SA, closing the harness direct pod-IP bypass; its ext-authz rule also admits the agent namespace during the migration, so a direct pod-IP call from there is not yet refused.
+  The AuthorizationPolicy on each Service ALLOWs only the matching SA principal.
+  The destination Service is cryptographically pinned to the calling Agent; the api-server derives Agent ID from the gRPC `:authority`.
+- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a per-Agent SA from the agent namespace (ext-authz), closing the direct pod-IP bypass.
 
 NetworkPolicy is the security boundary for the agent's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
 Each pod's gate matches its threat model: the agent runs untrusted code and is held at the kernel layer; the gateway is platform-controlled and its identity flows through the mesh.
@@ -365,7 +364,7 @@ What changes in the boundaries:
   A ClusterIP carries nothing on an undeclared port, measured on OVN-Kubernetes and k3s, so a guest that has not escaped reaches no sibling's listener.
   SNI, Host, headers and source address are never identity: every machine's traffic arrives from the runner.
 - **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; the runner's egress names the owner gateway on that range.
-- **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal; the ext-authz one on that agent's Service alone.
+- **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.
 - **Blast radius.** One owner gateway process holds every credential granted to any of the owner's vm Agents, where a per-agent gateway holds one agent's.
