@@ -1,9 +1,5 @@
 import type { LibraryArtifact } from "api-server-api";
-import {
-  ARTIFACT_ICON_RULE,
-  ARTIFACT_TITLE_MAX_LENGTH,
-  isArtifactIcon,
-} from "api-server-api";
+import { ARTIFACT_TITLE_MAX_LENGTH, isArtifactIcon } from "api-server-api";
 import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
@@ -80,7 +76,7 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
         <FormField
           label="Icon"
           hint="One emoji. It marks the artifact in the list and in its browser tab."
-          error={iconValid ? undefined : ARTIFACT_ICON_RULE}
+          error={iconValid ? undefined : "Use exactly one emoji, such as 📈."}
         >
           <Input
             value={icon}
