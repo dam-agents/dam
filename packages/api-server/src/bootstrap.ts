@@ -265,6 +265,7 @@ import {
 } from "./apps/api-server/admission/auth.js";
 import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
+import { readAgentSkill } from "./apps/api-server/routes/agent-discovery.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
@@ -995,6 +996,13 @@ export async function bootstrap() {
     },
   );
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill this image carries, the one the api-server serves to a person's own agent; the DAM Connection writes these same files into an Agent. */
+  const damSkill = (readAgentSkill(config.agentSkillPath)?.files ?? []).map(
+    (file) => ({
+      path: file.path,
+      content: new TextDecoder().decode(file.bytes),
+    }),
+  );
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
   const resolveAgentName = async (agentId: string) =>
@@ -1003,7 +1011,7 @@ export async function bootstrap() {
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
-    brandName: config.brand.name,
+    damSkill,
     bullConnection,
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
@@ -1203,6 +1211,7 @@ export async function bootstrap() {
     shareBaseUrl: config.shareBaseUrl,
     damBaseUrl: config.apiserverUrl,
     brandName: config.brand.name,
+    damSkill,
     curveBenderDeployment: config.curveBenderDeployment !== null,
     e2eEnabled: config.e2eEnabled,
     secretStore,
