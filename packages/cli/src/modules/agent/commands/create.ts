@@ -2,7 +2,12 @@ import { Command } from "commander";
 import { agentCreateInputSchema, PROVIDER_TEMPLATE_IDS } from "api-server-api";
 import { CONNECTION_ID_PREFIX } from "../../connection/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { defaultProviderLine, type AgentView } from "../domain/agent-view.js";
+import {
+  defaultProviderLine,
+  startsOnLines,
+  type AgentView,
+} from "../domain/agent-view.js";
+import { parseSettingFlags } from "../../shared/setting-flags.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
@@ -49,6 +54,9 @@ interface CreateOpts extends AvatarOpts {
   skipSchedule: string[];
   template?: string;
   provider?: string;
+  harness?: string;
+  model?: string;
+  setting: string[];
   description?: string;
   env?: string[];
   wait?: boolean;
@@ -112,7 +120,21 @@ export function buildCreateCommand(deps: {
   return addAvatarOptions(cmd, "start with")
     .option(
       "--provider <id-or-name>",
-      "model-provider connection id or unique name (default: your preferred provider, the one `dam connection list --providers` marks: your default for new agents' provider, else the first your harness runs on; the output names the one granted)",
+      "model-provider connection id or unique name; the agent holds that provider alone and starts on a harness it runs (default: your preferred provider, the one `dam connection list --providers` marks: your default for new agents' provider, else the first your harness runs on; the output names the one granted)",
+    )
+    .option(
+      "--harness <name>",
+      "harness the agent's sessions start on (default: with --provider, one that provider runs, your default for new agents' harness first; else your default's harness, else the install's)",
+    )
+    .option(
+      "--model <model>",
+      "model the agent's chat default starts on, as <provider>/<model id>, on a provider it is granted (default: with --provider, the platform's preferred model of that provider for the harness)",
+    )
+    .option(
+      "--setting <id=value>",
+      "a per-session setting the chat default keeps, e.g. effort=high (repeatable; needs --model)",
+      collect,
+      [] as string[],
     )
     .option(
       "--env <KEY=VAL>",
@@ -130,7 +152,7 @@ export function buildCreateCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw Agent JSON instead of the default summary, with defaultProvider { connectionId, source: profile|kit|template|harness, profile: { name, model, harness } | null } when no --provider was named; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
+      "emit raw Agent JSON instead of the default summary, with startsOn { harness, model (null: the automatic model), providers: [{ connectionId, source: named|profile|kit|template|harness, harnesses }] } and, when no --provider was named, defaultProvider { connectionId, source: profile|kit|template|harness, profile: { name, model, harness } | null }; with --kit, { agent, kit, skills, skillsError, steps }, each step { kind, required, what, note?, command, done }, done null when not checked",
     )
     .addHelpText(
       "after",
@@ -139,6 +161,7 @@ export function buildCreateCommand(deps: {
         "Examples:",
         "  dam agent create my-agent",
         '  dam agent create my-agent --provider "My provider" --wait',
+        "  dam agent create my-agent --provider conn-123 --harness claude-code --model anthropic/claude-opus-5-5 --setting effort=high",
         '  dam agent create my-agent --template default --provider conn-123 --description "Coding helper"',
         "  dam agent create my-agent --avatar spark",
         "  dam agent create researcher --kit spotlights --connection github --json",
@@ -152,14 +175,12 @@ export function buildCreateCommand(deps: {
 
 type CreateDeps = Parameters<typeof buildCreateCommand>[0];
 
-async function connectionName(
-  trpc: TrpcClient,
-  connectionId: string,
-): Promise<string | undefined> {
+/* UNIT_BOUNDARY_DESCRIPTION: the names the summary prints beside each id; a key without credential reads gets none, and the ids alone. */
+async function connectionNames(trpc: TrpcClient): Promise<Map<string, string>> {
   const connections = await trpcCall(() => trpc.connections.list.query());
-  return connections.ok
-    ? connections.value.find((c) => c.id === connectionId)?.name
-    : undefined;
+  return new Map(
+    connections.ok ? connections.value.map((c) => [c.id, c.name]) : [],
+  );
 }
 
 async function runCreate(
@@ -193,6 +214,9 @@ async function runCreate(
   if (opts.kit !== undefined) {
     const notWithKit = [
       opts.provider !== undefined && "--provider",
+      opts.harness !== undefined && "--harness",
+      opts.model !== undefined && "--model",
+      opts.setting.length > 0 && "--setting",
       opts.description !== undefined && "--description",
       (opts.env ?? []).length > 0 && "--env",
     ].filter((f): f is string => f !== false);
@@ -202,6 +226,20 @@ async function runCreate(
       );
       process.exit(EXIT_INVALID_INPUT);
     }
+  }
+
+  let settings: Record<string, string> | undefined;
+  try {
+    settings = parseSettingFlags(opts.setting);
+  } catch (e) {
+    process.stderr.write(`error: ${(e as Error).message}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  if (settings !== undefined && opts.model === undefined) {
+    process.stderr.write(
+      "error: --setting goes with --model, the model the settings belong to\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   const envResult = parseEnvFlag(opts.env ?? []);
@@ -295,6 +333,9 @@ async function runCreate(
       connectionIds: [providerConnectionId],
       providerConnectionId,
     }),
+    ...(opts.harness !== undefined && { harness: opts.harness }),
+    ...(opts.model !== undefined && { model: opts.model }),
+    ...(settings !== undefined && { settings }),
     description: opts.description,
     ...(avatar != null && { avatar }),
     env: env.length > 0 ? env : undefined,
@@ -335,9 +376,21 @@ async function runCreate(
         refreshContext: "after wait timeout",
       })
     : agent;
-  const created = agent.defaultProvider
-    ? { ...finalAgent, defaultProvider: agent.defaultProvider }
-    : finalAgent;
+  const created: AgentView = {
+    ...finalAgent,
+    ...(agent.defaultProvider && { defaultProvider: agent.defaultProvider }),
+    ...(agent.startsOn && { startsOn: agent.startsOn }),
+  };
+  const names =
+    !opts.json && (created.defaultProvider || created.startsOn)
+      ? await connectionNames(trpc)
+      : new Map<string, string>();
+  const started = created.startsOn
+    ? startsOnLines(created.startsOn, {
+        agentName: created.name,
+        nameOf: (id) => names.get(id),
+      })
+    : { out: [], err: [] };
 
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(created)}\n`);
@@ -349,9 +402,11 @@ async function runCreate(
       process.stdout.write(
         `${defaultProviderLine(
           created.defaultProvider,
-          await connectionName(trpc, created.defaultProvider.connectionId),
+          names.get(created.defaultProvider.connectionId),
         )}\n`,
       );
+    for (const line of started.out) process.stdout.write(`${line}\n`);
   }
+  for (const line of started.err) process.stderr.write(`${line}\n`);
   process.exit(EXIT_SUCCESS);
 }

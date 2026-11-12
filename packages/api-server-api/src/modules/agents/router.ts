@@ -147,6 +147,7 @@ export const agentsRouter = t.router({
         ...(agent.defaultProvider && {
           defaultProvider: agent.defaultProvider,
         }),
+        ...(agent.startsOn && { startsOn: agent.startsOn }),
       };
     }),
 

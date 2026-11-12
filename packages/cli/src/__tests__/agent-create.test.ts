@@ -309,6 +309,117 @@ describe("dam agent create provider selection (#3786)", () => {
   });
 });
 
+describe("dam agent create --harness, --model and what it starts on (#6527)", () => {
+  beforeEach(() => {
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${code}`);
+    });
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  const startsOn = (harness: string, runs: string[]) => ({
+    harness,
+    model: "anthropic/claude-mythos-5-2",
+    providers: [
+      { connectionId: provider.id, source: "named", harnesses: runs },
+    ],
+  });
+
+  /** TEST_SCENARIO: The harness, model and settings a create names go to the
+   * server in the one create, with the same meaning as on update. */
+  it("sends --harness, --model and --setting with the create", async () => {
+    const { run, create } = setup();
+    await run(
+      [
+        "--provider",
+        provider.id,
+        "--harness",
+        "claude-code",
+        "--model",
+        "anthropic/claude-mythos-5-2",
+        "--setting",
+        "effort=high",
+      ],
+      EXIT_SUCCESS,
+    );
+    expect(create).toHaveBeenCalledWith({
+      name: "via cli",
+      templateId: "claude-code",
+      connectionIds: [provider.id],
+      providerConnectionId: provider.id,
+      harness: "claude-code",
+      model: "anthropic/claude-mythos-5-2",
+      settings: { effort: "high" },
+    });
+  });
+
+  it.each([
+    [["--setting", "effort"], "--setting takes id=value"],
+    [["--setting", "effort=high"], "--setting goes with --model"],
+  ])("refuses %o before creating", async (args, message) => {
+    const { run, create } = setup();
+    await run(args, EXIT_INVALID_INPUT);
+    expect(create).not.toHaveBeenCalled();
+    expect(process.stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining(message),
+    );
+  });
+
+  /** TEST_SCENARIO: The summary names the provider the user named and the
+   * harness and model the agent starts on, and --json carries the same under
+   * startsOn, so the driving agent needs no second command. */
+  it("says what the agent starts on, in text and --json", async () => {
+    const { run, create } = setup();
+    const answer = {
+      ...agent,
+      startsOn: startsOn("claude-code", ["claude-code"]),
+    };
+    create.mockResolvedValue(answer);
+    await run(["--provider", provider.id], EXIT_SUCCESS);
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      "  Provider: My provider (conn-provider), the one you named; it runs claude-code.\n",
+    );
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      "  Starts on: claude-code, anthropic/claude-mythos-5-2.\n",
+    );
+    expect(process.stderr.write).not.toHaveBeenCalledWith(
+      expect.stringContaining("warning:"),
+    );
+    await run(["--provider", provider.id, "--json"], EXIT_SUCCESS);
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      `${JSON.stringify(answer)}\n`,
+    );
+  });
+
+  /** TEST_SCENARIO: An agent that starts on a harness no provider the user
+   * named runs is warned about, with the command that fixes it, in text and
+   * under --json alike. */
+  it.each([[[]], [["--json"]]])(
+    "warns when no named provider runs the harness (%o)",
+    async (extra) => {
+      const { run, create } = setup();
+      create.mockResolvedValue({
+        ...agent,
+        startsOn: startsOn("pi", ["claude-code"]),
+      });
+      await run(["--provider", provider.id, ...extra], EXIT_SUCCESS);
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "warning: no provider you named runs pi, the harness the agent starts on",
+        ),
+      );
+      expect(process.stderr.write).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "dam agent update via cli --harness claude-code --model <provider>/<model id>",
+        ),
+      );
+    },
+  );
+});
+
 describe("dam agent create --wait on a refused start (#4760)", () => {
   const shortfall =
     "the owner's VM runner has 512 MiB free and this machine needs 2048 MiB";

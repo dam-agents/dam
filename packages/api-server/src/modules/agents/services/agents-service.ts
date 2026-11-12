@@ -7,6 +7,7 @@ import {
   isProtectedAgentEnvName,
   type Agent,
   type AgentDefaultProvider,
+  type AgentStart,
   type AgentsService,
   type AgentWithAccess,
   type AgentCreateInput,
@@ -28,6 +29,7 @@ import {
   type ConnectSlackResult,
   type SlackBindingModes,
   type UnbindTelegramChatResult,
+  type SessionPair,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
   type TemplateUpdate,
@@ -656,6 +658,23 @@ export function createAgentsService(deps: {
       agentId: string,
       sel: { connectionIds: string[]; platform?: boolean },
     ): Promise<void>;
+    /* UNIT_BOUNDARY_DESCRIPTION: the harnesses of the catalog each of the given model-provider Connections runs, in catalog order; a Connection that is no provider is absent. */
+    providerHarnesses(
+      connectionIds: readonly string[],
+    ): Promise<Map<string, string[]>>;
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets before the new Agent's first hello: the model it picks on a provider for a harness (null while that provider has not listed one), the check of a pair the create names against the Connections it grants, and the save. */
+  startPair?: {
+    pick(harness: string, connectionId: string): Promise<string | null>;
+    check(
+      pair: {
+        harness: string;
+        model: string;
+        settings?: Record<string, string>;
+      },
+      grantedConnectionIds: readonly string[],
+    ): Promise<SessionPair>;
+    save(agentId: string, pair: SessionPair): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (
@@ -755,6 +774,114 @@ export function createAgentsService(deps: {
         code: "CONFLICT",
         message: `you already have an agent named "${name}"`,
       });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the harness the default Template boots a create on that names none: one the provider it names runs, the default for new agents' harness first, then the install's, then the provider's first in catalog order; without a named provider, the default's harness, else the install's. */
+  async function defaultTemplateHarness(
+    providerConnectionId: string | undefined,
+    profileHarness: string | undefined,
+  ): Promise<string | undefined> {
+    const fallback = profileHarness ?? deps.defaultHarness;
+    if (providerConnectionId === undefined || !deps.grantProvisioner)
+      return fallback;
+    const runs =
+      (
+        await deps.grantProvisioner
+          .providerHarnesses([providerConnectionId])
+          .catch(() => new Map<string, string[]>())
+      ).get(providerConnectionId) ?? [];
+    return (
+      [profileHarness, deps.defaultHarness, ...runs].find(
+        (h): h is string => h !== undefined && runs.includes(h),
+      ) ?? fallback
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets itself, checked before anything is written: the model it names, else, for a Template create that names its provider, that provider's preferred model for the harness. Null leaves the default to the default for new agents or to the first hello's conversion. */
+  async function chatDefaultAtCreate(
+    input: AgentCreateInput,
+    harness: string | null,
+    namedProvider: string | undefined,
+    grantedConnectionIds: readonly string[],
+    fromTemplate: boolean,
+  ): Promise<SessionPair | null> {
+    const asked = input.model !== undefined || input.settings !== undefined;
+    if (asked && !deps.startPair)
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "this server cannot set the model a new agent starts on; create it, then set the model with an update",
+      });
+    if (asked && harness === null)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "a create that names its model or settings names its harness or a Template too",
+      });
+    if (!deps.startPair || harness === null) return null;
+    const picked =
+      input.model === undefined &&
+      namedProvider !== undefined &&
+      fromTemplate &&
+      !input.noDefaultProvider
+        ? await deps.startPair
+            .pick(harness, namedProvider)
+            .catch((err: unknown) => {
+              getLogger().warn(
+                { err },
+                "agent create: the named provider's models could not be read; the first hello converts the default instead",
+              );
+              return null;
+            })
+        : null;
+    const model = input.model ?? picked;
+    if (model === null) {
+      if (input.settings !== undefined)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "name the model the settings go with",
+        });
+      return null;
+    }
+    if (input.model === undefined && input.settings === undefined)
+      return { harness, provider: namedProvider ?? null, model };
+    return deps.startPair.check(
+      {
+        harness,
+        model,
+        ...(input.settings !== undefined && { settings: input.settings }),
+      },
+      grantedConnectionIds,
+    );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: what a create answers its Agent starts on: its harness, its chat default's model, and each model provider it was granted with what chose it and the harnesses it runs, so a caller sees a provider that cannot run the harness without asking again. */
+  async function startsOnOf(
+    harness: string | null,
+    model: string | null,
+    grantedConnectionIds: readonly string[],
+    named: ReadonlySet<string>,
+    defaultProvider: AgentDefaultProvider | undefined,
+  ): Promise<AgentStart> {
+    const runs = await deps
+      .grantProvisioner!.providerHarnesses(grantedConnectionIds)
+      .catch(() => new Map<string, string[]>());
+    return {
+      harness,
+      model,
+      providers: grantedConnectionIds.flatMap((connectionId) => {
+        const harnesses = runs.get(connectionId);
+        if (!harnesses) return [];
+        const source: AgentStart["providers"][number]["source"] = named.has(
+          connectionId,
+        )
+          ? "named"
+          : defaultProvider?.connectionId === connectionId
+            ? defaultProvider.source
+            : "harness";
+        return [{ connectionId, source, harnesses }];
+      }),
+    };
   }
 
   async function safeStatus(id: string): Promise<ContributionsStatus> {
@@ -1382,7 +1509,10 @@ export function createAgentsService(deps: {
         if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
           spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
         if (requestedTemplate === DEFAULT_TEMPLATE_ID)
-          spec.harness ??= newDefault?.harness ?? deps.defaultHarness;
+          spec.harness ??= await defaultTemplateHarness(
+            input.providerConnectionId,
+            newDefault?.harness,
+          );
         templateId = requestedTemplate;
         templateProviders = tmpl.spec.providers;
       } else {
@@ -1420,8 +1550,15 @@ export function createAgentsService(deps: {
         spec.requireConnectionAddress = true;
 
       const providerConnectionId = input.providerConnectionId;
+      /* UNIT_BOUNDARY_DESCRIPTION: a create that names its provider, or the model it starts on, chose for itself, so the default for new agents decides only where it names that same provider and the create names no model. */
       const startsOnDefault =
-        newDefault?.harness === spec.harness ? newDefault : null;
+        newDefault?.harness === spec.harness &&
+        (providerConnectionId === undefined ||
+          providerConnectionId === newDefault?.connectionId) &&
+        input.model === undefined &&
+        input.settings === undefined
+          ? newDefault
+          : null;
       const ordered =
         providerConnectionId === undefined &&
         templateId !== undefined &&
@@ -1469,6 +1606,15 @@ export function createAgentsService(deps: {
         if (g.grantedConnectionIds.length)
           spec.grantedConnectionIds = g.grantedConnectionIds;
       }
+      const startHarness =
+        typeof spec.harness === "string" ? spec.harness : null;
+      const startPair = await chatDefaultAtCreate(
+        input,
+        startHarness,
+        startsOnDefault === null ? providerConnectionId : undefined,
+        grantSel.connectionIds,
+        templateId !== undefined,
+      );
 
       if (deps.owner === undefined) {
         throw new TRPCError({
@@ -1587,12 +1733,30 @@ export function createAgentsService(deps: {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
 
+      let startModel: string | null = startsOnDefault?.model ?? null;
+      if (startPair) {
+        startModel = await deps
+          .startPair!.save(infra.id, startPair)
+          .then(() => startPair.model)
+          .catch((err: unknown) => {
+            getLogger().warn(
+              {
+                agentId: infra.id,
+                reason: err instanceof Error ? err.message : String(err),
+              },
+              "agent create: the chat default the create named was not saved; its first hello converts the default instead",
+            );
+            return null;
+          });
+      }
+
       if (startsOnDefault) {
         const missed = await startsOnDefault
           .bind(infra.id)
           .catch((err: unknown) =>
             err instanceof Error ? err.message : String(err),
           );
+        if (missed) startModel = null;
         if (missed)
           getLogger().warn(
             { agentId: infra.id, reason: missed },
@@ -1627,6 +1791,22 @@ export function createAgentsService(deps: {
               }
             : null,
         };
+      if (
+        deps.grantProvisioner &&
+        templateId !== undefined &&
+        !input.noDefaultProvider &&
+        spec.environmentOf === undefined
+      )
+        agent.startsOn = await startsOnOf(
+          startHarness,
+          startModel,
+          grantSel.connectionIds,
+          new Set([
+            ...(input.connectionIds ?? []),
+            ...(providerConnectionId ? [providerConnectionId] : []),
+          ]),
+          agent.defaultProvider,
+        );
       securityLog("info", "agent.create", {
         category: "resource",
         actor: deps.actor ?? null,

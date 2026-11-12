@@ -1,6 +1,10 @@
 import { routesByModelName } from "agent-runtime-api";
-import { aliasForProviderType } from "api-server-api";
-import type { HarnessCatalog, OwnerModelCatalogView } from "api-server-api";
+import { aliasForProviderType, harnessFits } from "api-server-api";
+import type {
+  HarnessCatalog,
+  OwnerModelCatalogView,
+  SessionPair,
+} from "api-server-api";
 import { formatError } from "../../../core/format-error.js";
 import {
   automaticModel,
@@ -15,7 +19,9 @@ import { defaultHarnessOf } from "./harness-config-service.js";
  * write and a running run cannot wait for it to reach the Agent. Nothing is
  * usable when no provider the Agent holds lists a model for its harness, as
  * the automatic model reads the same catalog; an Agent holding a CurveBender
- * already keeps it, since both spell the one `cb` alias. The grant repeats
+ * already keeps it, since both spell the one `cb` alias, and so does one whose
+ * chat default names a provider it holds that runs the default's harness,
+ * as a create that names its provider and model saves before any listing. The grant repeats
  * safely and no default is saved, so the run picks the CurveBender up as it
  * picks up any provider. Every failure is logged and swallowed: a hello is no
  * place to fail.
@@ -29,6 +35,7 @@ export function createSharedCurveBenderGrant(deps: {
     agentId: string,
   ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   grantedProviders: (agentId: string) => Promise<GrantedProvider[]>;
+  chatDefault: (agentId: string) => Promise<SessionPair | null>;
   grant: (agentId: string) => Promise<boolean>;
   publishDefaults: (agentId: string) => Promise<void>;
   log: (msg: string) => void;
@@ -36,13 +43,21 @@ export function createSharedCurveBenderGrant(deps: {
   return async (agentId) => {
     if (!deps.enabled) return;
     try {
-      const [capabilities, catalog, granted] = await Promise.all([
+      const [capabilities, catalog, granted, saved] = await Promise.all([
         deps.getCapabilities(agentId),
         deps.ownerCatalog(agentId),
         deps.grantedProviders(agentId),
+        deps.chatDefault(agentId),
       ]);
       if (!routesByModelName(capabilities)) return;
       if (granted.some((p) => aliasForProviderType(p.type) === "cb")) return;
+      const savedOn = granted.find((p) => p.id === saved?.provider);
+      if (
+        saved?.model &&
+        savedOn &&
+        harnessFits(deps.catalog, saved.harness, savedOn.type, savedOn.templateId)
+      )
+        return;
       const harness =
         defaultHarnessOf(capabilities) ??
         (await deps.specHarness(agentId)) ??

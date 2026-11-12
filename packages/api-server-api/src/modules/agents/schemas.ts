@@ -1,3 +1,4 @@
+import { sessionSettingsSchema } from "agent-runtime-api";
 import { harnessFamilySchema } from "../templates/schemas.js";
 import { z } from "zod";
 import {
@@ -81,6 +82,9 @@ export const agentCreateInputSchema = z.object({
   templateId: z.string().optional(),
   image: z.string().optional(),
   harness: harnessFamilySchema.optional(),
+  // UNIT_BOUNDARY_DESCRIPTION: the chat default the new Agent starts on, as `<provider>/<model id>` and the per-session settings that default keeps, checked against the providers it is granted rather than against a runtime that has not said hello yet.
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
   description: z.string().optional(),
   avatar: avatarSchema.optional(),
   env: z.array(envVarSchema).max(64).optional(),

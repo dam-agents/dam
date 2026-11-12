@@ -20,6 +20,7 @@ import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
   defaultSettingsProblem,
+  composeStartPair,
   createDefaultModelNoticeReader,
   createRunBoundary,
   isNoDefaultModelError,
@@ -420,6 +421,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
       newAgentDefault,
+      startPair: composeStartPair({
+        db,
+        subPseudonymizer,
+        owner: user.sub,
+        ownerCatalog: () => connections.modelCatalog(),
+      }),
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;

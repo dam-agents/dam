@@ -195,6 +195,7 @@ export interface Agent {
   onboardingSteps?: OnboardingStep[];
   features: RuntimeFeatures;
   defaultProvider?: AgentDefaultProvider;
+  startsOn?: AgentStart;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the provider a create that named none was granted, and why. `source` names what chose it: the owner's default profile when the agent starts on it, or the base default when the owner chose none (`profile` then holds what it starts on, with no name for the base default), else the starter kit's providers list, else the providers its Template lists for a harness the catalog does not know, else the first the harness runs on in its provider order; `profile` is null for all but the first two. Only the create's own answer carries it. */
@@ -202,6 +203,17 @@ export interface AgentDefaultProvider {
   connectionId: string;
   source: "profile" | "default" | "kit" | "template" | "harness";
   profile: { name: string | null; model: string; harness: string } | null;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, as its create decided it: the harness its sessions start on, the model of its chat default (null while its first start picks it), and every model-provider Connection it was granted with what chose each — `named` for one the create named, else the `source` of its default provider — and the harnesses each runs. Only the create's own answer carries it, and only for a Template create. */
+export interface AgentStart {
+  harness: string | null;
+  model: string | null;
+  providers: {
+    connectionId: string;
+    source: "named" | AgentDefaultProvider["source"];
+    harnesses: string[];
+  }[];
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
