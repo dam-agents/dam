@@ -149,7 +149,7 @@ It keeps off the assistant's chats, and off the accounts onboarded with the assi
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
-The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on the default profile while the user holds none.
+The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on it as the [default for new agents](profiles.md#the-default-for-new-agents) while the user holds none.
 It follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.

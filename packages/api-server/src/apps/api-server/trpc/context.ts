@@ -19,6 +19,7 @@ import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit
 import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
+  defaultSettingsProblem,
   createDefaultModelNoticeReader,
   createRunBoundary,
   isNoDefaultModelError,
@@ -264,7 +265,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ),
       damConnectionOffered,
       newAgentProvider: async () => {
-        const chosen = await defaultProfile();
+        const chosen = await newAgentDefault();
         return chosen
           ? { connectionId: chosen.connectionId, harness: chosen.harness }
           : null;
@@ -344,20 +345,23 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
-    const { profiles, resolveProfile, defaultProfile } =
+    const { profiles, resolveProfile, newAgentDefault } =
       composeProfilesForOwner({
         db,
         subPseudonymizer,
         owner: user.sub,
         agentBinding: user.agentIds,
         catalog: harnesses,
-        seed: config.curveBenderDeployment && config.defaultProfileSeed,
-        ownerCatalog: () => connections.modelCatalog(),
+        sharedCurveBender: config.curveBenderDeployment !== null,
         // UNIT_BOUNDARY_DESCRIPTION: the deployment owns that Connection only while its key is set, so only then does a create reconcile it.
         ...(config.curveBenderDeployment && {
           reconcileConnections: () => connections.reconcileManagedConnections(),
         }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
+        settingsProblem: async (pair) => {
+          const catalog = await connections.modelCatalog();
+          return defaultSettingsProblem(catalog.harnesses, catalog, pair);
+        },
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -415,7 +419,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       contributionsProgress,
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
-      defaultProfile,
+      newAgentDefault,
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;

@@ -1037,6 +1037,20 @@
       "when": 1794406276560,
       "tag": "0147_backfill_slack_untagged_reply_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1794479839869,
+      "tag": "0148_unmark_seeded_default_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1794480062000,
+      "tag": "0149_new_agent_defaults",
+      "breakpoints": true
     }
   ]
 }

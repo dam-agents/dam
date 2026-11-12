@@ -440,7 +440,6 @@ const profile = (
   model: "cb/rits/zai-org/glm-5-3",
   settings: {},
   subagent: null,
-  newAgentDefault: false,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: false },
   ...overrides,

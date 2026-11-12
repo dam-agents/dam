@@ -156,9 +156,9 @@ function setup(
     }> => ({ ids: [], source: "harness" }),
   );
   const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
-  const defaultProfile = vi.fn(
+  const newAgentDefault = vi.fn(
     async (): Promise<{
-      name: string;
+      name: string | null;
       model: string;
       harness: string;
       connectionId: string;
@@ -195,7 +195,7 @@ function setup(
       defaultProviders,
       applyAfterCreate: applyGrants,
     },
-    defaultProfile,
+    newAgentDefault,
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},
@@ -230,7 +230,7 @@ function setup(
     writeEnv,
     runtimeBump,
     defaultProviders,
-    defaultProfile,
+    newAgentDefault,
     bind,
     connections,
     agents,
@@ -353,11 +353,11 @@ describe("the default profile a new agent starts on", () => {
    * and the agent's chat default is bound to it, so a default exists before
    * the first hello and the onboarding turn has a model to run on (#5578). */
   it("starts on the default profile, with its provider alone", async () => {
-    const { caller, defaultProfile, defaultProviders, bind, persist } = setup(
+    const { caller, newAgentDefault, defaultProviders, bind, persist } = setup(
       [provider],
       templates,
     );
-    defaultProfile.mockResolvedValue(onPi(bind));
+    newAgentDefault.mockResolvedValue(onPi(bind));
     defaultProviders.mockResolvedValue({
       ids: ["conn-first-in-order"],
       source: "harness",
@@ -373,15 +373,39 @@ describe("the default profile a new agent starts on", () => {
     });
   });
 
+  /** TEST_SCENARIO: An owner who chose no profile as their default for new
+   * agents starts a new agent on values (the base default or their own): its
+   * one provider and chat default come from them as from a profile, and the
+   * answer says the default chose it, with no profile name. */
+  it("starts on the base default and says so", async () => {
+    const { caller, newAgentDefault, defaultProviders, bind } = setup(
+      [provider],
+      templates,
+    );
+    newAgentDefault.mockResolvedValue({ ...onPi(bind), name: null });
+    defaultProviders.mockResolvedValue({
+      ids: ["conn-first-in-order"],
+      source: "harness",
+    });
+    const created = await caller.agents.create(byTemplate);
+    expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
+    expect(bind).toHaveBeenCalledWith(created.id);
+    expect(created.defaultProvider).toEqual({
+      connectionId: "conn-profile",
+      source: "default",
+      profile: { name: null, model: "cb/some-model", harness: "pi" },
+    });
+  });
+
   /** TEST_SCENARIO: A create that names its harness keeps it; a default
    * profile on another harness leaves the provider order and the first-hello
    * conversion as before. */
   it("leaves an agent on another harness to the provider order", async () => {
-    const { caller, defaultProfile, defaultProviders, bind } = setup(
+    const { caller, newAgentDefault, defaultProviders, bind } = setup(
       [provider],
       templates,
     );
-    defaultProfile.mockResolvedValue(onPi(bind));
+    newAgentDefault.mockResolvedValue(onPi(bind));
     defaultProviders.mockResolvedValue({
       ids: ["conn-first-in-order"],
       source: "harness",
@@ -402,8 +426,8 @@ describe("the default profile a new agent starts on", () => {
   /** TEST_SCENARIO: A create that names its provider chose it, so the answer
    * carries no default provider to explain (#6142). */
   it("says nothing of a default when the create names its provider", async () => {
-    const { caller, defaultProfile, bind } = setup([provider], templates);
-    defaultProfile.mockResolvedValue(onPi(bind));
+    const { caller, newAgentDefault, bind } = setup([provider], templates);
+    newAgentDefault.mockResolvedValue(onPi(bind));
     const created = await caller.agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
@@ -416,7 +440,7 @@ describe("the default profile a new agent starts on", () => {
    * default, and an Environment never starts a session, so neither asks for
    * the default profile. */
   it("stays out of a kit that names the model and of an environment", async () => {
-    const { agents, defaultProfile } = setup([provider], templates);
+    const { agents, newAgentDefault } = setup([provider], templates);
     await agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
@@ -428,7 +452,7 @@ describe("the default profile a new agent starts on", () => {
       providerConnectionId: provider.id,
       environmentOf: "agent-root",
     });
-    expect(defaultProfile).not.toHaveBeenCalled();
+    expect(newAgentDefault).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: A kit that lists its providers decides the agent's
@@ -436,7 +460,7 @@ describe("the default profile a new agent starts on", () => {
    * out, the provider order hears the kit's list, and the answer says the
    * kit's list chose, not the harness order (#6142). */
   it("leaves a kit that lists its providers to that list", async () => {
-    const { agents, defaultProfile, defaultProviders } = setup(
+    const { agents, newAgentDefault, defaultProviders } = setup(
       [provider],
       templates,
     );
@@ -445,7 +469,7 @@ describe("the default profile a new agent starts on", () => {
       ...byTemplate,
       starterKitProviders: ["ibm-litellm"],
     });
-    expect(defaultProfile).not.toHaveBeenCalled();
+    expect(newAgentDefault).not.toHaveBeenCalled();
     expect(defaultProviders).toHaveBeenCalledWith([], {
       harness: "claude-code",
       preferred: ["ibm-litellm"],
@@ -474,11 +498,11 @@ describe("the default profile a new agent starts on", () => {
       const level = getLogger().level as LogLevel;
       configureLogger({ level: "warn", write: (line) => lines.push(line) });
       try {
-        const { caller, defaultProfile, bind, persist } = setup(
+        const { caller, newAgentDefault, bind, persist } = setup(
           [provider],
           templates,
         );
-        defaultProfile.mockResolvedValue(onPi(bind));
+        newAgentDefault.mockResolvedValue(onPi(bind));
         bind.mockImplementationOnce(outcome);
         await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
           name: "test-agent",
@@ -487,7 +511,7 @@ describe("the default profile a new agent starts on", () => {
         expect(
           lines
             .map((line) => JSON.parse(line) as { reason?: string; msg: string })
-            .find((entry) => entry.msg.includes("default profile")),
+            .find((entry) => entry.msg.includes("default for new agents")),
         ).toMatchObject({ reason });
       } finally {
         configureLogger({ level });

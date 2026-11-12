@@ -16,6 +16,7 @@ import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { NewAgentDefaultPicker } from "../../profiles/components/new-agent-default-picker.js";
 import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
@@ -171,6 +172,7 @@ export function SettingsView() {
                 description="Connect an LLM provider to give agents access to its models."
               />
 
+              <NewAgentDefaultPicker />
               <section className="mb-8">
                 <ProviderSection />
               </section>

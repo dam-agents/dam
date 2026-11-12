@@ -696,14 +696,12 @@ export type { DefaultAccountKindId } from "./modules/connections/preference-grou
 export type {
   ProfilesService,
   ProfileWithUsage,
+  NewAgentDefaultView,
   ProfileUsage,
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export {
-  DEFAULT_PROFILE_UNDELETABLE,
-  PROFILE_NAME_MAX_LENGTH,
-} from "./modules/profiles/schemas.js";
+export { PROFILE_NAME_MAX_LENGTH } from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,

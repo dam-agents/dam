@@ -59,7 +59,6 @@ vi.mock("../../modules/profiles/api/queries.js", () => ({
       {
         id: "p1",
         name: "Fast review",
-        newAgentDefault: false,
         harness: "claude-code",
         providerTemplate: "anthropic",
         model: "claude-opus-5-5",
@@ -79,7 +78,6 @@ vi.mock("../../modules/profiles/api/mutations.js", () => ({
     reset: () => (state.error = null),
   }),
   useDeleteProfile: () => ({}),
-  useSetDefaultProfile: () => ({}),
 }));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useProviderConnections: () => ({ owned: [] }),
