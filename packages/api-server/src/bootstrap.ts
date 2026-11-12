@@ -2617,9 +2617,11 @@ export async function bootstrap() {
   );
   periodicJobs.start();
 
-  void clearLegacyDisabledMarks(agentsRepo, (agentId, owner) =>
-    pauseEnabledRecurringSchedules(schedulesBoot, agentId, owner),
-  )
+  const clearLegacyDisabled = () =>
+    clearLegacyDisabledMarks(agentsRepo, (agentId, owner) =>
+      pauseEnabledRecurringSchedules(schedulesBoot, agentId, owner),
+    );
+  void clearLegacyDisabled()
     .catch((err: unknown) =>
       getLogger().warn(
         { reason: formatError(err) },
@@ -2633,6 +2635,11 @@ export async function bootstrap() {
         );
       });
     });
+  await periodicJobs.register(
+    "agent-legacy-disabled-cleanup",
+    10 * 60_000,
+    () => clearLegacyDisabled().then(() => undefined),
+  );
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
   );

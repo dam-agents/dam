@@ -167,24 +167,68 @@ async function main(): Promise<void> {
   const stillOnTwo = await repo.getLive(AGENT, OWNER);
   check("the refused write did not land", stillOnTwo?.spec.image === "agent:2");
 
-  // TEST_SCENARIO: A legacy disabled mark is cleared together with the stop request that stands with it, and the Agent wakes on its next use.
-  await repo.requestStop(AGENT);
-  await repo.patchAnnotation(
-    AGENT,
-    "agent-platform.ai/disabled",
-    new Date().toISOString(),
-  );
-  check("the legacy mark stands", (await repo.get(AGENT))?.disabled === true);
+  // TEST_SCENARIO: A legacy disabled mark is cleared with the stop request a disable stamped with it, and nothing else: an activity stamp and the pins a wake or a sleep wrote since are left alone, and the Agent wakes on its next use.
+  await repo.patchAnnotation(AGENT, "agent-platform.ai/active-session", "true");
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET disabled_at = '2026-10-15T10:00:00Z',
+           stop_requested_at = '2026-10-15T10:00:00Z',
+           stop_request_token = gen_random_uuid()
+     WHERE agent_id = ${AGENT}
+  `);
+  const marked = await repo.get(AGENT);
+  check("the legacy mark stands", marked?.disabled === true);
+  const activityBefore = (
+    await db.execute<{ activity: string | null }>(
+      sql`SELECT last_activity_at::text AS activity FROM control.agent_signals WHERE agent_id = ${AGENT}`,
+    )
+  )[0] as unknown as { activity: string | null } | undefined;
   check("clearing it reports a write", await repo.clearLegacyDisabled(AGENT));
   const cleared = await repo.get(AGENT);
+  const signals = (
+    (await db.execute<{ activity: string | null; pinned: boolean | null }>(
+      sql`SELECT last_activity_at::text AS activity, session_pinned AS pinned
+            FROM control.agent_signals WHERE agent_id = ${AGENT}`,
+    )) as unknown as Array<{ activity: string | null; pinned: boolean | null }>
+  )[0];
   check(
-    "the mark and its stop request are gone",
+    "the mark and the stop request it stamped are gone",
     cleared?.disabled === false && cleared.stopRequested === false,
     JSON.stringify({
       disabled: cleared?.disabled,
       stopRequested: cleared?.stopRequested,
     }),
   );
+  check(
+    "the activity stamp and the pin are untouched",
+    signals?.activity === (activityBefore?.activity ?? null) &&
+      signals?.pinned === true,
+    JSON.stringify({ activity: signals?.activity, pinned: signals?.pinned }),
+  );
+  const second = await repo.clearLegacyDisabled(AGENT);
+  check("a second clear changes nothing", second === false, String(second));
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET disabled_at = '2026-10-15T10:00:00Z',
+           stop_requested_at = '2026-10-15T11:00:00Z'
+     WHERE agent_id = ${AGENT}
+  `);
+  await repo.clearLegacyDisabled(AGENT);
+  const later = await repo.get(AGENT);
+  check(
+    "a stop request stamped after the mark survives",
+    later?.disabled === false && later.stopRequested === true,
+    JSON.stringify({
+      disabled: later?.disabled,
+      stopRequested: later?.stopRequested,
+    }),
+  );
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET stop_requested_at = NULL, stop_request_token = NULL,
+           disabled_at = NULL, session_pinned = false
+     WHERE agent_id = ${AGENT}
+  `);
   const wokeEnabled = await repo.wake(AGENT);
   check("a wake after clearing lands", wokeEnabled.ok);
 
@@ -992,10 +1036,7 @@ async function absorbChecks(): Promise<void> {
     freshVerdict.ok ? "" : freshVerdict.reason,
   );
   const withoutTheClaim = contractVerdict(await factsAt(false));
-  check(
-    "the gate refuses an unclaimed empty archive",
-    !withoutTheClaim.ok,
-  );
+  check("the gate refuses an unclaimed empty archive", !withoutTheClaim.ok);
 
   await db.execute(sql`DELETE FROM control.agents`);
   await db.execute(sql`DELETE FROM control.user_budgets`);

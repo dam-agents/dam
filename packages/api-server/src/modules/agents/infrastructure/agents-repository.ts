@@ -191,10 +191,10 @@ export function createAgentsRepository(
     }
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read. `disabledStamp` exists only to clear the legacy disabled mark, which nothing writes any more.
+  // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read.
   async function stopAgent(
     id: string,
-    opts: { stamp?: string; disabledStamp?: string; idle?: boolean } = {},
+    opts: { stamp?: string; idle?: boolean } = {},
     live?: KubeObject,
   ): Promise<{ agent: InfraAgent; stamp: string } | null> {
     const obj = live ?? (await k8s.getCustomObject(AGENTS_PLURAL, id));
@@ -203,9 +203,6 @@ export function createAgentsRepository(
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
       metadata: {
         annotations: {
-          ...(opts.disabledStamp !== undefined && {
-            [DISABLED_KEY]: opts.disabledStamp,
-          }),
           [STOP_REQUESTED_KEY]: stamp,
           [ACTIVE_SESSION_KEY]: "",
           [INVOCATIONS_ACTIVE_KEY]: "",
@@ -334,13 +331,32 @@ export function createAgentsRepository(
         : err({ type: "AgentNotFound" });
     },
 
+    // UNIT_BOUNDARY_DESCRIPTION: only the legacy marks are touched, because a stop request, a pin or an activity stamp written since the disable is a newer fact this cleanup did not see. A disable wrote the mark and the stop request with the same stamp, so the stop request goes only while it still carries that stamp; the write names the resourceVersion it was decided from, and a conflict re-reads rather than overwriting.
     async clearLegacyDisabled(id) {
-      const stopped = await stopAgent(id, {
-        stamp: "",
-        disabledStamp: "",
-        idle: true,
-      });
-      return stopped !== null;
+      for (let attempt = 0; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        const annotations = obj?.metadata?.annotations;
+        const disabledStamp = annotations?.[DISABLED_KEY];
+        if (!obj || !disabledStamp) return false;
+        try {
+          await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: {
+              resourceVersion: obj.metadata?.resourceVersion,
+              annotations: {
+                [DISABLED_KEY]: "",
+                ...(annotations[STOP_REQUESTED_KEY] === disabledStamp && {
+                  [STOP_REQUESTED_KEY]: "",
+                }),
+              },
+            },
+          });
+          return true;
+        } catch (e) {
+          if (isConflict(e) && attempt < PIN_CONFLICT_RETRIES) continue;
+          if (isNotFound(e)) return false;
+          throw e;
+        }
+      }
     },
 
     async requestStop(id) {

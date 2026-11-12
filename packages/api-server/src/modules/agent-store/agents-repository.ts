@@ -550,22 +550,23 @@ export function createControlAgentsRepository(
         : err({ type: "AgentNotFound" as const });
     },
 
+    // UNIT_BOUNDARY_DESCRIPTION: only the legacy marks are cleared, and only the stop request a disable wrote: a disable stamped the mark and the stop request with the same instant, so the stop columns go only while they still carry it, since anything newer — a stop, a pin, an activity stamp — is a fact this cleanup did not see. The statement's own predicate is the mark, so a second clear, or one racing another replica, changes no row; the signals row's own trigger rotates the version and notifies the controller, as for every signal write.
     async clearLegacyDisabled(id) {
-      const now = new Date();
+      const stopIsLegacy = sql`${controlAgentSignals.stopRequestedAt} = ${controlAgentSignals.disabledAt}`;
       const cleared = await db
         .update(controlAgentSignals)
         .set({
           disabledAt: null,
-          stopRequestedAt: null,
-          stopRequestToken: null,
-          sessionPinned: false,
-          invocationPinned: false,
-          invocationPinVersion: sql`${controlAgentSignals.invocationPinVersion} + 1`,
-          lastActivityAt: STALE_ACTIVITY,
-          lastActivityToken: null,
-          updatedAt: now,
+          stopRequestedAt: sql`CASE WHEN ${stopIsLegacy} THEN NULL ELSE ${controlAgentSignals.stopRequestedAt} END`,
+          stopRequestToken: sql`CASE WHEN ${stopIsLegacy} THEN NULL ELSE ${controlAgentSignals.stopRequestToken} END`,
+          updatedAt: new Date(),
         })
-        .where(eq(controlAgentSignals.agentId, id))
+        .where(
+          and(
+            eq(controlAgentSignals.agentId, id),
+            isNotNull(controlAgentSignals.disabledAt),
+          ),
+        )
         .returning({ agentId: controlAgentSignals.agentId });
       return cleared.length > 0;
     },
