@@ -92,7 +92,8 @@ function deepseekEffort(body: Json, upstreamId: string): Json {
  * assistant thinking blocks are dropped (the last message keeps them for a
  * tool loop in flight); turned into text instead, they put the model's
  * reasoning into visible replies, which Anthropic's safeguards refuse as
- * reasoning extraction. A proxied Responses target refuses encrypted
+ * reasoning extraction. An earlier message that held nothing else leaves
+ * with its blocks, since the Messages API refuses an empty `content`. A proxied Responses target refuses encrypted
  * reasoning items, `client_metadata`, and tool items without a tool config;
  * OpenAI itself refuses only reasoning items with a non-empty `content`.
  */
@@ -114,19 +115,19 @@ export function applyReplayRules(
         -1,
       );
       let changed = false;
-      const rewritten = messages.map((m, i) => {
+      const rewritten = messages.flatMap((m, i) => {
         if (
           !isObject(m) ||
           m.role !== "assistant" ||
           i === lastAssistant ||
           !Array.isArray(m.content)
         )
-          return m;
+          return [m];
         const original: unknown[] = m.content;
         const content = withoutThinking(original);
-        if (content.length === original.length) return m;
+        if (content.length === original.length) return [m];
         changed = true;
-        return { ...m, content };
+        return content.length > 0 ? [{ ...m, content }] : [];
       });
       return changed ? { ...body, messages: rewritten } : body;
     }

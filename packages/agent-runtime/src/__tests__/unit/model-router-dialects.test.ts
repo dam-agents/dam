@@ -893,6 +893,40 @@ describe("replay rules", () => {
     expect(noAssistant.messages).toHaveLength(1);
   });
 
+  /** TEST_SCENARIO: An interrupted turn leaves an assistant message that
+   * holds only a thinking block. On a later call to a Claude model that
+   * message is gone, not sent with an empty `content`, which the Messages API
+   * refuses. */
+  it("drops an earlier assistant message that held only thinking", () => {
+    const out = applyReplayRules(
+      {
+        messages: [
+          { role: "user", content: "hi" },
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "plan", signature: "x".repeat(32) },
+            ],
+          },
+          { role: "user", content: "again" },
+          { role: "assistant", content: [{ type: "text", text: "a" }] },
+          { role: "user", content: "more" },
+        ],
+      },
+      {
+        dialect: "anthropic-messages",
+        alias: "anthropic",
+        upstreamId: "claude-opus-5-5",
+      },
+    );
+    expect(out.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "again" },
+      { role: "assistant", content: [{ type: "text", text: "a" }] },
+      { role: "user", content: "more" },
+    ]);
+  });
+
   /** TEST_SCENARIO: A Responses body with a Curve Bender bridge reasoning
    * item (non-empty content) and an OpenAI encrypted item reaches OpenAI with
    * only the encrypted one, and any other target with no reasoning item. */
