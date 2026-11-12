@@ -11,11 +11,12 @@ import {
   safeSetItem,
 } from "../../../lib/safe-storage.js";
 import { CURVE_BENDER_DOCS_URL } from "../../providers/components/curve-bender-info-dialog.js";
+import { CurveBenderRestriction } from "../../providers/components/curve-bender-restriction.js";
 import { ChatColumn } from "./chat-column.js";
 
 const DISMISSED_KEYS = {
-  setup: "platform-curvebender-setup-dismissed",
-  offer: "platform-curvebender-alert-dismissed",
+  setup: "platform-curvebender-restricted-setup-dismissed",
+  offer: "platform-curvebender-restricted-offer-dismissed",
 } as const;
 
 /**
@@ -83,6 +84,7 @@ export function CurveBenderAlert({
             </Button>
           </div>
           <p className="mt-1 text-sm">{copy}</p>
+          <CurveBenderRestriction className="mt-1" />
           <div className="mt-2 flex items-center justify-between gap-3">
             {match(variant)
               .with("setup", () => (

@@ -9,6 +9,7 @@ import {
   CURVE_BENDER_DOCS_URL,
   CurveBenderInfoDialog,
 } from "../../modules/providers/components/curve-bender-info-dialog.js";
+import { CURVE_BENDER_RESTRICTIONS_URL } from "../../modules/providers/components/curve-bender-restriction.js";
 import { ProviderSection } from "../../modules/providers/components/provider-section.js";
 
 const state = vi.hoisted(() => ({
@@ -83,7 +84,7 @@ describe("CurveBender on Settings › Providers", () => {
     expect(count(html, "CurveBender custom key")).toBe(1);
   });
 
-  // TEST_SCENARIO: the shared row's explainer names the brand, links the docs in a new tab, and offers only Close.
+  // TEST_SCENARIO: the shared row's explainer names the brand, links the docs in a new tab, states that the models are approved for restricted use cases only with that phrase linking the legal page, and offers only Close.
   it("explains the shared Connection", () => {
     const html = renderToStaticMarkup(
       createElement(CurveBenderInfoDialog, { onClose: () => {} }),
@@ -93,6 +94,11 @@ describe("CurveBender on Settings › Providers", () => {
     );
     expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
     expect(html).toContain('target="_blank"');
+    expect(html).toMatch(
+      new RegExp(
+        `These models are currently only approved for <a href="${CURVE_BENDER_RESTRICTIONS_URL}"[^>]*>restricted use cases</a>\\.`,
+      ),
+    );
     expect(html).toContain("Close");
   });
 

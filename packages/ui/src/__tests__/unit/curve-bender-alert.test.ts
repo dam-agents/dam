@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The CurveBender notice above a new chat's composer has two variants. "setup" says the chat already runs on the shared CurveBender and offers the picker, "offer" offers Try now; each closes on its own and stays closed in this browser.
+// TEST_OVERVIEW: The CurveBender notice above a new chat's composer has two variants. "setup" says the chat already runs on the shared CurveBender and offers the picker, "offer" offers Try now; both state that the models are approved for restricted use cases only, linking that phrase to the legal page. Each closes on its own and stays closed in this browser.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,8 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 const { CurveBenderAlert } =
   await import("../../modules/sessions/components/curve-bender-alert.js");
+const { CURVE_BENDER_RESTRICTIONS_URL } =
+  await import("../../modules/providers/components/curve-bender-restriction.js");
 
 const DOCS_URL =
   "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/";
@@ -32,6 +34,17 @@ function render(variant: Variant, onTry = async () => true) {
     ),
   );
   return { onTry: tryIt, onPickProvider };
+}
+
+function expectRestriction() {
+  expect(container.textContent).toContain(
+    "These models are currently only approved for restricted use cases.",
+  );
+  const link = [...container.querySelectorAll("a")].find(
+    (a) => a.textContent === "restricted use cases",
+  );
+  expect(link?.getAttribute("href")).toBe(CURVE_BENDER_RESTRICTIONS_URL);
+  expect(link?.getAttribute("target")).toBe("_blank");
 }
 
 function button(label: string) {
@@ -94,6 +107,7 @@ describe("the CurveBender notice", () => {
     );
     expect(learnMore?.getAttribute("href")).toBe(DOCS_URL);
     expect(learnMore?.getAttribute("target")).toBe("_blank");
+    expectRestriction();
     await click(button("Use a different provider"));
     expect(onPickProvider).toHaveBeenCalledTimes(1);
     expect(onTry).not.toHaveBeenCalled();
@@ -119,6 +133,7 @@ describe("the CurveBender notice", () => {
       (a) => a.textContent === "Learn more",
     );
     expect(learnMore?.getAttribute("href")).toBe(DOCS_URL);
+    expectRestriction();
     expect(button("Try now").disabled).toBe(false);
     await click(button("Try now"));
     expect(onTry).toHaveBeenCalledTimes(1);
@@ -150,6 +165,16 @@ describe("the CurveBender notice", () => {
     expect(
       container.querySelector('[data-testid="curve-bender-alert"]'),
     ).toBeNull();
+  });
+
+  // TEST_SCENARIO: a person who closed the notice before it stated the restriction sees it again, so nobody keeps using CurveBender without having read the statement.
+  it("shows the restriction to those who closed the earlier notice", () => {
+    localStorage.setItem("platform-curvebender-setup-dismissed", "1");
+    localStorage.setItem("platform-curvebender-alert-dismissed", "1");
+    render("setup");
+    expectRestriction();
+    remount("offer");
+    expectRestriction();
   });
 
   // TEST_SCENARIO: an existing chat, or an install without the shared provider, has no variant and so shows nothing.
