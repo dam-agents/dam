@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
-import { unlink, type FileHandle } from "node:fs/promises";
+import { statfs, unlink, type FileHandle } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { SATELLITE_FILE_MAX_BYTES, type SatelliteTool } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 import {
-  MAX_TRANSFER_BYTES,
   openInRoot,
   pathSegments,
   publishInRoot,
@@ -18,11 +17,22 @@ import type { FileTransfer } from "./file-transfer.js";
 export const DOWNLOAD_TOOL = "download";
 export const UPLOAD_TOOL = "upload";
 
+const FREE_SPACE_HEADROOM_BYTES = 1024 ** 3;
+
+async function freeBytesAt(dir: string): Promise<number | null> {
+  try {
+    const info = await statfs(dir);
+    return info.bavail * info.bsize;
+  } catch {
+    return null;
+  }
+}
+
 const REFUSALS: Record<Refusal, string> = {
   outside: "is not a place inside the directory this satellite exposes",
   "not-a-file":
     "is not a regular file — it is a link, a directory, or something that is not a file",
-  "too-large": `is over the ${MAX_TRANSFER_BYTES} byte transfer limit`,
+  "too-large": `is over the ${SATELLITE_FILE_MAX_BYTES} byte transfer limit`,
   exists: "already exists on this machine — pass overwrite: true to replace it",
   "no-such-file": "does not exist on this machine",
   "not-writable": "cannot be written here",
@@ -96,7 +106,7 @@ function downloadTool(root: string): SatelliteTool {
       `Copy one file from ${root} on this machine into your own workspace.`,
       "The contents do not come back in the result: you get the workspace path the file landed at, its size and its sha256, and you open, grep or hash it with your own tools.",
       "path is relative to the directory this machine exposes. A link is refused at any point on the way, even one that points back inside; so is anything that is not a regular file.",
-      `Files up to ${Math.round(MAX_TRANSFER_BYTES / (1024 * 1024))} MB.`,
+      `Files up to ${SATELLITE_FILE_MAX_BYTES / 1024 ** 3} GiB.`,
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -122,7 +132,7 @@ function uploadTool(root: string): SatelliteTool {
       `Copy one file from your workspace to ${root} on this machine.`,
       "path is where it lands, relative to the directory this machine exposes; a missing directory on the way is created, and workspacePath is the file in your own workspace.",
       "An existing file is refused unless overwrite is true.",
-      `Files up to ${Math.round(MAX_TRANSFER_BYTES / (1024 * 1024))} MB.`,
+      `Files up to ${SATELLITE_FILE_MAX_BYTES / 1024 ** 3} GiB.`,
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -166,8 +176,10 @@ export function createFilesBackend(input: {
   allowUpload: boolean;
   transfer: FileTransfer;
   maxBytes?: number;
+  freeBytes?: (dir: string) => Promise<number | null>;
 }): SatelliteBackend {
   const cap = input.maxBytes ?? SATELLITE_FILE_MAX_BYTES;
+  const freeBytes = input.freeBytes ?? freeBytesAt;
   const running = new Map<number, AbortController>();
 
   function chunks(handle: FileHandle, signal: AbortSignal): Readable {
@@ -260,6 +272,15 @@ export function createFilesBackend(input: {
         token,
         signal,
       });
+      const free = await freeBytes(input.root);
+      const needed = incoming.size + FREE_SPACE_HEADROOM_BYTES;
+      if (free !== null && needed > free) {
+        incoming.stream.destroy();
+        await discardStaged(staged.staged);
+        return failed(
+          "the directory this machine exposes does not have room for this file — it needs the file's size plus 1 GiB free",
+        );
+      }
       for await (const chunk of incoming.stream) {
         const part = chunk as Buffer;
         bytes += part.length;

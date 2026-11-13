@@ -38,8 +38,6 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
  * The upgrade path for all three is a native `linkat`/`renameat`/`openat2`.
  */
 
-export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
-
 export function platformRefusal(): string | null {
   return process.platform === "win32"
     ? "a files satellite needs a POSIX machine — this build cannot confine a path on Windows"

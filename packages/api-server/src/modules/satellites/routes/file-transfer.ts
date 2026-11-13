@@ -210,7 +210,10 @@ export function createSatelliteFileRoutes(deps: {
         })
         .catch(() => ({ ok: false as const, reason: "aborted" as const }));
       if (received > cap) return c.json({ error: "transfer_too_large" }, 413);
-      if (!staged.ok) return c.json({ error: "workspace_refused" }, 409);
+      if (!staged.ok)
+        return staged.reason === "no-space"
+          ? c.json({ error: "no_space" }, 507)
+          : c.json({ error: "workspace_refused" }, 409);
 
       if (!(await spend(c.get("user").sub, job, token, "download")))
         return c.json({ error: "no_running_job" }, 409);

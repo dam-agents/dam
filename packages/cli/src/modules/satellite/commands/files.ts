@@ -56,9 +56,9 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "read, e.g. ~/work rather than ~. Without --upload the agent can read but\n" +
         "never write; with it, a file already there is replaced only when the\n" +
         "agent's call asks to overwrite.\n" +
-        "One transfer carries at most 50 MB, which is the agent's own per-file\n" +
-        "limit. Changing what is exposed means restarting: there is no file to\n" +
-        "re-read. First interrupt drains, second kills running jobs.\n",
+        "One transfer carries at most 5 GiB. Changing what is exposed means\n" +
+        "restarting: there is no file to re-read. First interrupt drains, second\n" +
+        "kills running jobs.\n",
     )
     .action(async (opts: Opts) => {
       const unsupported = platformRefusal();

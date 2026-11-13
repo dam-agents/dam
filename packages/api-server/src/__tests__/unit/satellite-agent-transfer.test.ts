@@ -17,6 +17,8 @@ const seen: {
   body: Buffer;
 }[] = [];
 
+const silent: { stage: number; publish: number } = { stage: 0, publish: 0 };
+
 let server: Server;
 
 vi.mock("../../modules/agents/infrastructure/k8s.js", () => ({
@@ -39,15 +41,21 @@ beforeAll(async () => {
     req.on("end", () => {
       entry.ended = true;
       entry.body = Buffer.concat(chunks);
-      res
-        .writeHead(200, { "content-type": "application/json" })
-        .end(
-          JSON.stringify(
-            entry.path.startsWith("/api/transfer/stage")
-              ? { id: "c".repeat(32) }
-              : { path: "/home/agent/x" },
-          ),
-        );
+      const answer = () =>
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(
+            JSON.stringify(
+              entry.path.startsWith("/api/transfer/stage")
+                ? { id: "c".repeat(32) }
+                : { path: "/home/agent/x" },
+            ),
+          );
+      const wait = entry.path.startsWith("/api/transfer/stage")
+        ? silent.stage
+        : silent.publish;
+      if (wait === 0) answer();
+      else setTimeout(answer, wait);
     });
     req.on("aborted", () => {
       entry.aborted = true;
@@ -120,5 +128,43 @@ describe("the relay to the workspace", () => {
         path: ".dam/satellite-files/laptop-1/note",
       }),
     ).toEqual({ ok: true, path: "/home/agent/x" });
+  });
+});
+
+describe("the time the relay waits", () => {
+  /**
+   * TEST_SCENARIO: After the last byte the workspace re-reads the staged file to
+   * compare its hash, and that read-back sends nothing, so a stage request that
+   * used the transfer timeout would be torn down on a large file. Stage must
+   * outlast the silence; publish and read keep the shorter timeout.
+   */
+  it("lets a stage sit silent past the transfer timeout, and no other request", async () => {
+    expect(transfer.TRANSFER_TIMEOUT_MS).toBe(60_000);
+    expect(transfer.STAGE_IDLE_TIMEOUT_MS).toBe(10 * 60_000);
+
+    const patient = transfer.createAgentTransfer("agent-1", "ns", {
+      transferMs: 50,
+      stageMs: 1000,
+    });
+    silent.stage = 200;
+    silent.publish = 200;
+
+    expect(
+      await patient.stage({
+        body: Readable.from([Buffer.from("hello")]),
+        path: ".dam/satellite-files/laptop-1/note",
+        declaredBytes: 5,
+      }),
+    ).toEqual({ ok: true, id: "c".repeat(32) });
+
+    expect(
+      await patient.publish({
+        id: "c".repeat(32),
+        path: ".dam/satellite-files/laptop-1/note",
+      }),
+    ).toEqual({ ok: false, reason: "refused" });
+
+    silent.stage = 0;
+    silent.publish = 0;
   });
 });

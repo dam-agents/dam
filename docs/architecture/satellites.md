@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-04
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -259,9 +259,12 @@ The Agent's own workspace is treated as untrusted in exactly the same way, becau
 The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
 Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
 
-**One transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
+**One transfer carries at most 5 GiB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
 A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
 Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
+Before it stages a byte the workspace end refuses a file whose declared size plus 1 GiB of headroom does not fit in the free space of the Agent's workspace, answering HTTP 507 `no_space`.
+In the upload direction the machine makes the same check against the directory it exposes, so a file it cannot hold is refused before it is written.
+A file that landed under `.dam/satellite-files/` stays there until the Agent or its owner deletes it: the platform never sweeps a file an Agent may still use.
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 
 ## Trust boundary

@@ -41,7 +41,6 @@ vi.mock("node:fs/promises", async (original) => {
 import type { TokenProvider } from "../modules/auth/index.js";
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
 import {
-  MAX_TRANSFER_BYTES,
   pathSegments,
   pinRoot,
 } from "../modules/satellite/services/confined-files.js";
@@ -731,12 +730,5 @@ describe("the requests the platform receives", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow("the job this transfer belongs to is no longer running");
-  });
-});
-
-describe("the cap the satellite declares", () => {
-  it("is the same one the platform enforces", () => {
-    expect(MAX_TRANSFER_BYTES).toBe(50 * 1024 * 1024);
-    expect(MAX_TRANSFER_BYTES).toBe(50 * 1024 * 1024);
   });
 });

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { statfs } from "node:fs/promises";
 import type http from "node:http";
+import { SATELLITE_FILE_MAX_BYTES } from "api-server-api";
 import {
   createStaged,
   discardStaged,
-  MAX_TRANSFER_BYTES,
   openConfined,
   openStaged,
   publishStaged,
@@ -16,6 +17,16 @@ import {
 const STAGING_MAX_AGE_MS = 10 * 60_000;
 const SWEEP_EVERY_MS = 60_000;
 const BODY_INACTIVITY_MS = 30_000;
+const FREE_SPACE_HEADROOM_BYTES = 1024 ** 3;
+
+async function freeBytesAt(dir: string): Promise<number | null> {
+  try {
+    const info = await statfs(dir);
+    return info.bavail * info.bsize;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The workspace end of one satellite file transfer,
@@ -36,8 +47,10 @@ export function createTransferHandlers(deps: {
   log: (msg: string) => void;
   reserved: readonly string[];
   cap?: number;
+  freeBytes?: (dir: string) => Promise<number | null>;
 }) {
-  const cap = deps.cap ?? MAX_TRANSFER_BYTES;
+  const cap = deps.cap ?? SATELLITE_FILE_MAX_BYTES;
+  const freeBytes = deps.freeBytes ?? freeBytesAt;
   let lastSweep = 0;
 
   const segmentsOf = (relative: unknown): string[] | null =>
@@ -94,6 +107,16 @@ export function createTransferHandlers(deps: {
     if (Date.now() - lastSweep > SWEEP_EVERY_MS) {
       lastSweep = Date.now();
       void sweepStaging(deps.root, STAGING_MAX_AGE_MS).catch(() => {});
+    }
+
+    if (declared > 0) {
+      const free = await freeBytes(deps.root);
+      const needed = declared + FREE_SPACE_HEADROOM_BYTES;
+      if (free !== null && needed > free) {
+        deps.log(`stage refused: ${needed} bytes needed, ${free} free`);
+        req.resume();
+        return reply(res, 507, { error: "no_space", free, needed });
+      }
     }
 
     const created = await createStaged(deps.root, destination);
