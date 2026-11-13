@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+//MISE description="Test that a reopened Pi chat comes back with its thinking and each tool step's own title, through the patched pi-acp"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/bin/harness-chat", "pi-agent/rootfs/usr/local/share/pi-platform/**", "pi-agent/image.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/pi-replay", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient } from "../../../test-lib/acp-client.mjs";
+
+// TEST_OVERVIEW: The real pi-acp, patched as harness-chat loads it, drives the real Pi against a fake Model Router serving the Messages dialect. The first model request answers with a thinking block, a text block and two tool calls — a bash command and a write — which Pi runs, and the second ends the turn. `session/load` must then replay what the live turn showed: the thinking as a thought chunk, the bash step titled with its command, and the write step with the file it wrote.
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const share = join(root, "rootfs/usr/local/share/pi-platform");
+const modules = join(share, "extensions/pi-dynamic-providers/node_modules");
+const cli = join(modules, "@earendil-works/pi-coding-agent/dist/cli.js");
+const piAcp = join(modules, "pi-acp/dist/index.js");
+const home = mkdtempSync(join(tmpdir(), "pi-replay-"));
+const work = join(home, "work");
+const MODEL = "cb/claude-sonnet-4-5";
+const THOUGHT = "Check what the work directory holds.";
+const COMMAND = "echo replay-me";
+const FILE = "notes.txt";
+
+const message = (content, stopReason) => ({
+  id: "msg_1",
+  type: "message",
+  role: "assistant",
+  model: MODEL,
+  content,
+  stop_reason: stopReason,
+  stop_sequence: null,
+  usage: { input_tokens: 10, output_tokens: 5 },
+});
+const streamed = (msg) => {
+  const events = [
+    { type: "message_start", message: { ...msg, content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } },
+  ];
+  for (const [index, block] of msg.content.entries()) {
+    const { type, ...rest } = block;
+    events.push({ type: "content_block_start", index, content_block: { ...block, ...(type === "text" && { text: "" }), ...(type === "thinking" && { thinking: "" }), ...(type === "tool_use" && { input: {} }) } });
+    const delta =
+      type === "text" ? { type: "text_delta", text: rest.text }
+      : type === "thinking" ? { type: "thinking_delta", thinking: rest.thinking }
+      : { type: "input_json_delta", partial_json: JSON.stringify(rest.input) };
+    events.push({ type: "content_block_delta", index, delta });
+    events.push({ type: "content_block_stop", index });
+  }
+  events.push({ type: "message_delta", delta: { stop_reason: msg.stop_reason, stop_sequence: null }, usage: { output_tokens: 5 } });
+  events.push({ type: "message_stop" });
+  return events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join("");
+};
+
+let requests = 0;
+const router = createServer(async (req, res) => {
+  const path = new URL(req.url, "http://127.0.0.1").pathname.replace(/^\/v1\/v1\//, "/v1/");
+  if (req.method === "GET" && path === "/v1/models") {
+    const metadata = { alias: "cb", upstreamId: "claude-sonnet-4-5", dialects: ["anthropic-messages"], contextWindow: 200000, maxOutputTokens: 8192, reasoning: true, vision: true, cacheControl: null, thinkingFormat: null, prices: null };
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ data: [{ id: MODEL, object: "model", owned_by: "cb", display_name: "claude-sonnet-4-5", description: "cb", metadata }], has_more: false }));
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  const first = requests++ === 0;
+  const reply = first
+    ? message(
+        [
+          { type: "thinking", thinking: THOUGHT, signature: "sig-1" },
+          { type: "text", text: "Working on it." },
+          { type: "tool_use", id: "toolu_bash", name: "bash", input: { command: COMMAND } },
+          { type: "tool_use", id: "toolu_write", name: "write", input: { path: FILE, content: "hello\n" } },
+        ],
+        "tool_use",
+      )
+    : message([{ type: "text", text: "Done." }], "end_turn");
+  if (body?.stream !== true) {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify(reply));
+  }
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  res.end(streamed(reply));
+});
+
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+
+const shared = join(home, ".pi/agent");
+mkdirSync(shared, { recursive: true });
+mkdirSync(work);
+writeFileSync(join(shared, "settings.json"), JSON.stringify({ packages: [] }));
+writeFileSync(join(shared, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+writeFileSync(join(home, "bin/pi-acp"), `#!/bin/sh\nexec '${process.execPath}' '${piAcp}' "$@"\n`, { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${join(share, "extensions")}`);
+writeFileSync(join(home, "pi-platform"), wrapper, { mode: 0o755 });
+const harnessChat = readFileSync(join(root, "rootfs/usr/local/bin/harness-chat"), "utf8").replaceAll("/usr/local/share/pi-platform/", `${share}/`);
+writeFileSync(join(home, "harness-chat"), harnessChat, { mode: 0o755 });
+
+const env = {
+  PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+  PI_ACP_PI_COMMAND: join(home, "pi-platform"),
+  PLATFORM_MODEL_ROUTER_URL: `http://127.0.0.1:${router.address().port}`, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL: MODEL,
+};
+const stderr = [];
+const updates = [];
+const acp = acpClient("/bin/sh", [join(home, "harness-chat")], {
+  env,
+  cwd: work,
+  name: "pi-acp",
+  log: (line) => stderr.push(line),
+  onRequest: () => ({}),
+  onNotification: (method, params) => {
+    if (method === "session/update") updates.push(params.update);
+  },
+});
+
+const titles = () => {
+  const byCall = new Map();
+  for (const u of updates) {
+    if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") continue;
+    if (u.title) byCall.set(u.toolCallId, u.title);
+  }
+  return [...byCall.values()];
+};
+const thoughts = () => updates.filter((u) => u.sessionUpdate === "agent_thought_chunk").map((u) => u.content.text).join("");
+
+try {
+  await acp.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } } }, 60_000);
+  assert.equal(stderr.some((line) => line.includes("pi-acp-patch: not applied")), false, stderr.join("\n"));
+  const session = await acp.request("session/new", { cwd: work, mcpServers: [] });
+
+  // TEST_SCENARIO: a turn whose first reply thinks, then runs a bash command and writes a file.
+  const turn = await acp.request("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "Do the work." }] }, 120_000);
+  assert.equal(turn.stopReason, "end_turn");
+  assert.ok(existsSync(join(work, FILE)), "the write step ran");
+  assert.match(thoughts(), new RegExp(THOUGHT));
+  assert.deepEqual(titles(), [COMMAND, FILE]);
+
+  // TEST_SCENARIO: the chat reopened replays the same thinking and the same step titles.
+  await acp.request("session/close", { sessionId: session.sessionId });
+  updates.length = 0;
+  await acp.request("session/load", { sessionId: session.sessionId, cwd: work, mcpServers: [] }, 120_000);
+  assert.match(thoughts(), new RegExp(THOUGHT), "the replayed session kept no thinking");
+  assert.deepEqual(titles(), [COMMAND, FILE], "the replayed steps lost their command or their file");
+  console.log("a reopened chat replays its thinking and its steps' own titles");
+} finally {
+  await acp.close();
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}

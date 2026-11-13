@@ -98,6 +98,9 @@ export function ToolChip({ chip }: { chip: T }) {
           >
             {chip.title}
           </span>
+          {chip.status === "cancelled" && (
+            <span className="shrink-0 text-2xs italic">cancelled</span>
+          )}
         </span>
       }
       onToggle={() => setOpen((o) => !o)}
