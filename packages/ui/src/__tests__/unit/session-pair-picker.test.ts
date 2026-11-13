@@ -1029,6 +1029,28 @@ describe("the new session panel", () => {
     });
   });
 
+  /** TEST_SCENARIO: a subagent pick drops another harness's key too (`mode=high` on Claude Code), keeping the settings the harness offers beside the subagent it writes. */
+  it("drops another harness's key on a subagent pick", () => {
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: {
+        mode: "high",
+        effort: "high",
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "ibm/aws/claude-opus-5-5",
+      },
+    };
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
+    expect((lastCall(state.chosenModel)[1] as SessionPair).settings).toEqual({
+      effort: "high",
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "ibm/aws/claude-haiku-5-5",
+    });
+  });
+
   /** TEST_SCENARIO: no provider at all warns in place of the panel, and an agent that has not reported its harnesses yet shows a loader. */
   it("warns in place of the picker when no provider is connected", () => {
     state.noProviders = true;
