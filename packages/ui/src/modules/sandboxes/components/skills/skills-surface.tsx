@@ -32,6 +32,7 @@ export function SkillsSurface({
   canPublish,
   compact = false,
   hideSwitches = false,
+  onOpenModal,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -43,12 +44,16 @@ export function SkillsSurface({
   compact?: boolean;
   /** UNIT_BOUNDARY_DESCRIPTION: the + menu's read-only state for a viewer who may not change skills: the same groups, with no switches. */
   hideSwitches?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: where the compact surface's dialogs open: the + menu draws them after it closes, so none is drawn under the menu or closed with it. */
+  onOpenModal?: (modal: SkillsModal) => void;
 }) {
   const isError = agentState === "error";
   const openAgentSettings = useStore((s) => s.openAgentSettings);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
+  const showModal = (modal: SkillsModal) =>
+    onOpenModal ? onOpenModal(modal) : setOpenModal(modal);
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -76,13 +81,13 @@ export function SkillsSurface({
   } = derived;
 
   const openAddSource = () =>
-    setOpenModal({ kind: "add-source", mode: "github", files: [] });
+    showModal({ kind: "add-source", mode: "github", files: [] });
   const manageConnections = agentId
     ? () => openAgentSettings(agentId, "connections")
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
-  const dropEnabled = !readOnly && !!agentId;
+  const dropEnabled = !readOnly && !hideSwitches && !!agentId;
   const surfaceDropProps = dropEnabled
     ? {
         onDragOver: (e: DragEvent<HTMLDivElement>) => {
@@ -99,7 +104,7 @@ export function SkillsSurface({
           setPageDrag(false);
           const files = [...e.dataTransfer.files];
           if (files.length > 0)
-            setOpenModal({ kind: "add-source", mode: "upload", files });
+            showModal({ kind: "add-source", mode: "upload", files });
         },
       }
     : {};
@@ -164,7 +169,7 @@ export function SkillsSurface({
                           ? undefined
                           : "Turn on at least one skill from a source to save a set"
                     }
-                    onClick={() => setOpenModal({ kind: "save-set" })}
+                    onClick={() => showModal({ kind: "save-set" })}
                   >
                     <Save size={16} /> Save as skill set…
                   </Button>
@@ -182,7 +187,7 @@ export function SkillsSurface({
                 canPublish={publishableSources.length > 0}
                 onPublish={
                   canPublish
-                    ? (skill) => setOpenModal({ kind: "publish", skill })
+                    ? (skill) => showModal({ kind: "publish", skill })
                     : undefined
                 }
                 onDownload={(skill) => void downloadStandalone(skill)}
@@ -194,16 +199,18 @@ export function SkillsSurface({
                 }
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
                 trackTargets={trackTargets}
                 hideRowActions={compact}
-                emptyState={compact ? <CompactSkillsEmpty /> : undefined}
+                emptyState={
+                  compact && !hideSwitches ? <CompactSkillsEmpty /> : undefined
+                }
                 onUpload={
                   !compact && dropEnabled
                     ? () =>
-                        setOpenModal({
+                        showModal({
                           kind: "add-source",
                           mode: "upload",
                           files: [],
@@ -220,7 +227,7 @@ export function SkillsSurface({
               onAddSource={
                 managesLibrary
                   ? () =>
-                      setOpenModal({
+                      showModal({
                         kind: "add-source",
                         mode: "github",
                         files: [],
@@ -228,9 +235,9 @@ export function SkillsSurface({
                   : undefined
               }
               onOpenSkill={(source, skill) =>
-                setOpenModal({ kind: "render", source, skill })
+                showModal({ kind: "render", source, skill })
               }
-              onAddSets={() => setOpenModal({ kind: "add-sets" })}
+              onAddSets={() => showModal({ kind: "add-sets" })}
               onToggleAll={(src, on, scope) =>
                 void toggleAllWithConfirm(src, on, scope)
               }
@@ -255,7 +262,7 @@ export function SkillsSurface({
                 skills={shownPlatform}
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
                 onOpenSection={
@@ -271,7 +278,7 @@ export function SkillsSurface({
                 skills={shownBuiltIn}
                 onOpenSkill={
                   agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    ? (skill) => showModal({ kind: "render-local", skill })
                     : undefined
                 }
               />
@@ -287,7 +294,7 @@ export function SkillsSurface({
         derived={derived}
         onPublish={
           canPublish
-            ? (skill) => setOpenModal({ kind: "publish", skill })
+            ? (skill) => showModal({ kind: "publish", skill })
             : undefined
         }
         onDeleteLocal={(skill, pub) =>

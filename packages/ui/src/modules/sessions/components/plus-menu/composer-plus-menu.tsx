@@ -121,6 +121,9 @@ export function ComposerPlusMenu({
                         onManage={manage("skills")}
                         onAddSource={openDialog({ kind: "add-skill-source" })}
                         onDescribe={describe(DESCRIBE_PROMPTS.skills)}
+                        onOpenModal={(modal) =>
+                          openDialog({ kind: "skills", modal })()
+                        }
                       />
                     ))
                     .with("schedules", () => (

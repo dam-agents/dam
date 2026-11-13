@@ -110,6 +110,7 @@ import { DockedProcessesPanel } from "../../processes/components/docked-processe
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { useToggleProcesses } from "../../processes/hooks/use-toggle-processes.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
@@ -295,13 +296,13 @@ export function ChatView() {
   const dock = useStore((s) => s.dock);
   const openBrowser = useOpenBrowser();
   const closeBrowser = useStore((s) => s.setOpenBrowser);
-  const setDock = useStore((s) => s.setDock);
   const chatSections = useChatSections();
   const filesSectionOpen =
     chatSections.find((x) => x.id === "files")?.open ?? false;
   const artifactsSectionOpen =
     chatSections.find((x) => x.id === "artifacts")?.open ?? false;
   const toggleChanges = useToggleChanges();
+  const toggleProcesses = useToggleProcesses();
   const processesEnabled = useProcessesEnabled();
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
@@ -811,7 +812,7 @@ export function ChatView() {
     setPhoneHiddenDock(null);
     if (classicTab !== null) setSidePanelTab(null);
   };
-  const classicToggle = (item: "browser" | "changes") =>
+  const classicToggle = (item: "browser" | "changes" | "processes") =>
     classicDockToggle({
       docked: docked[item],
       front: dockedTab === item,
@@ -820,6 +821,14 @@ export function ChatView() {
     });
   const browserToggle = classicToggle("browser");
   const changesToggle = classicToggle("changes");
+  const processesToggle = classicToggle("processes");
+  /* UNIT_BOUNDARY_DESCRIPTION: the running count and the agent menu's Processes go through the same toggle as the browser and changes: a dock hidden on a phone comes back to view, and opening asks to discard an unsaved draft first. The running count only shows the processes; it never takes them away. */
+  const showProcesses = () => {
+    if (!selectedAgent) return;
+    if (processesToggle.click === "reveal") revealDock();
+    else if (processesToggle.click === "open")
+      void toggleProcesses(selectedAgent);
+  };
   /* UNIT_BOUNDARY_DESCRIPTION: every way into the Agent's settings from its chat — the top bar's name and wrench, a reply's agent name, the empty chat's avatar, the greeting's link, and the model pickers' provider links at the Providers section — opens the same modal over the chat; the modal links to the full page. */
   const handleConfigureSandbox = useCallback(
     () => openSettings("setup"),
@@ -1405,13 +1414,12 @@ export function ChatView() {
             processes={
               processesEnabled && selectedAgent
                 ? {
-                    open: docked.processes,
-                    onToggle: () =>
-                      setDock(
-                        docked.processes
-                          ? null
-                          : { kind: "processes", agentId: selectedAgent },
-                      ),
+                    open: processesToggle.pressed,
+                    onToggle: () => {
+                      if (processesToggle.click === "close")
+                        void toggleProcesses(null);
+                      else showProcesses();
+                    },
                   }
                 : null
             }
@@ -1431,7 +1439,12 @@ export function ChatView() {
         }
         status={
           <>
-            {processesEnabled && <ProcessesIndicator agentId={selectedAgent} />}
+            {processesEnabled && (
+              <ProcessesIndicator
+                agentId={selectedAgent}
+                onOpen={showProcesses}
+              />
+            )}
             <ChatHeaderStatus
               selectedAgent={selectedAgent}
               agent={agentView}

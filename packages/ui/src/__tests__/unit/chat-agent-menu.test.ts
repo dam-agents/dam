@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The chat's agent menu, as the design's chat refresh draws it: the Agent's avatar, name and state dot are one button that opens Rename, Artifacts and File tree (checked while open), Git Changes, Add editors and Agent settings; Browser and Processes join the same menu, checked the same way, for an Agent that has them, since the design has no other way to open them. Rename opens the Rename agent dialog, Add editors the settings' People, Agent settings their General. The running count docks the Agent's processes beside the conversation.
+// TEST_OVERVIEW: The chat's agent menu, as the design's chat refresh draws it: the Agent's avatar, name and state dot are one button that opens Rename, Artifacts and File tree (checked while open), Git Changes, Add editors and Agent settings; Browser and Processes join the same menu, checked the same way, for an Agent that has them, since the design has no other way to open them. Rename opens the Rename agent dialog, Add editors the settings' People, Agent settings their General. The running count shows the Agent's processes through the chat's toggle, and docking them asks first to discard an unsaved draft the dock holds.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +38,8 @@ const { ClassicChatIdentity } =
   await import("../../modules/sessions/components/classic-chat-identity.js");
 const { ProcessesIndicator } =
   await import("../../modules/processes/components/processes-indicator.js");
+const { useToggleProcesses } =
+  await import("../../modules/processes/hooks/use-toggle-processes.js");
 const { useStore } = await import("../../store.js");
 
 const ALPHA = {
@@ -216,15 +218,47 @@ describe("the agent menu", () => {
 });
 
 describe("the running count", () => {
-  // TEST_SCENARIO: the running count, as the design draws it, docks the Agent's processes beside the conversation.
-  it("docks the Agent's processes", () => {
-    render(createElement(ProcessesIndicator, { agentId: "agent-a" }));
+  // TEST_SCENARIO: the running count, as the design draws it, shows the Agent's processes through the chat's toggle.
+  it("shows the Agent's processes", () => {
+    const onOpen = vi.fn();
+    render(createElement(ProcessesIndicator, { agentId: "agent-a", onOpen }));
     const button = host.querySelector<HTMLButtonElement>(
       '[data-testid="processes-indicator"]',
     )!;
     expect(button.textContent).toContain("3 running");
     expect(button.textContent).toContain("1 keeping it awake");
     act(() => button.click());
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("docking the processes", () => {
+  function Probe() {
+    probe.toggle = useToggleProcesses();
+    return null;
+  }
+  const probe: { toggle: ((id: string | null) => Promise<void>) | null } = {
+    toggle: null,
+  };
+
+  // TEST_SCENARIO: an unsaved file or artifact holds the dock and the person keeps it, so the processes do not replace it; once they discard it, the processes dock.
+  it("asks before replacing an unsaved draft", async () => {
+    const answers = [false, true];
+    useStore.setState({
+      dock: { kind: "file", path: "/a.txt" },
+      confirmDockDiscard: async () => answers.shift() ?? true,
+    });
+    render(createElement(Probe));
+    await act(async () => {
+      await probe.toggle!("agent-a");
+    });
+    expect(useStore.getState().dock).toEqual({
+      kind: "file",
+      path: "/a.txt",
+    });
+    await act(async () => {
+      await probe.toggle!("agent-a");
+    });
     expect(useStore.getState().dock).toEqual({
       kind: "processes",
       agentId: "agent-a",

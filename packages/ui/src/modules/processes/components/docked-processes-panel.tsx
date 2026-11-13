@@ -1,9 +1,6 @@
-import { Close } from "@carbon/icons-react";
-
-import { Button } from "@/components/ui/button";
-
 import { useStore } from "../../../store.js";
 import { useAgentReach } from "../../agents/api/queries.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useProcesses } from "../api/queries.js";
 import { summarizeProcesses } from "../lib/process-summary.js";
 import { ProcessesSectionBody } from "./processes-panel.js";
@@ -38,16 +35,9 @@ export function DockedProcessesPanel({ agentId }: { agentId: string }) {
             />
           )}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => setDock(null)}
-        >
-          <Close size={16} />
-        </Button>
+        <span className="flex shrink-0 max-md:hidden">
+          <SidePanelCloseButton onClose={() => setDock(null)} />
+        </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <ProcessesSectionBody

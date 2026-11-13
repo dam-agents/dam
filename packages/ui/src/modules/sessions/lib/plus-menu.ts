@@ -1,4 +1,5 @@
 import type { Schedule } from "../../../types.js";
+import type { SkillsModal } from "../../sandboxes/components/skills/skills-modals.js";
 
 export type PlusMenuPanel = "skills" | "schedules" | "connections";
 
@@ -7,7 +8,8 @@ export type PlusMenuDialog =
   | { kind: "add-skill-source" }
   | { kind: "add-schedule" }
   | { kind: "edit-schedule"; schedule: Schedule }
-  | { kind: "add-connection" };
+  | { kind: "add-connection" }
+  | { kind: "skills"; modal: SkillsModal };
 
 export const DESCRIBE_PROMPTS = {
   skills: "Create a skill that...",

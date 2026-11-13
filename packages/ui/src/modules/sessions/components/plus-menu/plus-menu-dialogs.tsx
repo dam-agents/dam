@@ -3,7 +3,13 @@ import { match } from "ts-pattern";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { routeToPath } from "../../../platform/lib/routes.js";
 import { AddSkillSourceModal } from "../../../sandboxes/components/skills/add-skill-source-modal.js";
+import {
+  type SkillsModal,
+  SkillsModals,
+} from "../../../sandboxes/components/skills/skills-modals.js";
 import { useAgentConnectionGrants } from "../../../sandboxes/hooks/use-agent-connection-grants.js";
+import { useSkillsConfirms } from "../../../sandboxes/hooks/use-skills-confirms.js";
+import { useSkillsDerivations } from "../../../sandboxes/hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../../sandboxes/hooks/use-skills-surface.js";
 import { ScheduleFormModal } from "../../../schedules/forms/schedule-form-modal.js";
 import type { PlusMenuDialog } from "../../lib/plus-menu.js";
@@ -38,6 +44,9 @@ export function PlusMenuDialogs({
         onClose={onClose}
       />
     ))
+    .with({ kind: "skills" }, ({ modal }) => (
+      <SkillsModalDialog agentId={agentId} modal={modal} onClose={onClose} />
+    ))
     .with({ kind: "add-connection" }, () => (
       <AddConnectionDialog agentId={agentId} onClose={onClose} />
     ))
@@ -64,6 +73,36 @@ function AddSkillSourceDialog({
       onCreate={surface.createSource}
       onCreateSkills={surface.createLocalSkills}
       mode="github"
+    />
+  );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a dialog the compact Skills list asked for — a skill's preview, or the upload a dropped file starts — drawn with the Agent's own skills state, as the Skills section draws it. */
+function SkillsModalDialog({
+  agentId,
+  modal,
+  onClose,
+}: {
+  agentId: string;
+  modal: SkillsModal;
+  onClose: () => void;
+}) {
+  const surface = useSkillsSurface(agentId, {
+    readOnly: false,
+    isError: false,
+  });
+  const derived = useSkillsDerivations(surface, { readOnly: false, query: "" });
+  const { deleteStandaloneWithConfirm } = useSkillsConfirms(surface, derived);
+  return (
+    <SkillsModals
+      open={modal}
+      agentId={agentId}
+      surface={surface}
+      derived={derived}
+      onDeleteLocal={(skill, pub) =>
+        void deleteStandaloneWithConfirm(skill, pub)
+      }
+      onClose={onClose}
     />
   );
 }

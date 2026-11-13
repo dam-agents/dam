@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAgent } from "../../../agents/api/queries.js";
 import { useOperableState } from "../../../agents/hooks/use-operable-state.js";
 import { holds } from "../../../agents/lib/agent-permissions.js";
+import type { SkillsModal } from "../../../sandboxes/components/skills/skills-modals.js";
 import { SkillsSurface } from "../../../sandboxes/components/skills/skills-surface.js";
 import { DescribeButton, PlusMenuPanelFrame } from "./plus-menu-panel.js";
 
@@ -23,12 +24,14 @@ export function SkillsQuickPanel({
   onManage,
   onAddSource,
   onDescribe,
+  onOpenModal,
 }: {
   agentId: string;
   onBack: () => void;
   onManage?: () => void;
   onAddSource: () => void;
   onDescribe: () => void;
+  onOpenModal: (modal: SkillsModal) => void;
 }) {
   const agent = useAgent(agentId);
   const { operable, comingUp } = useOperableState(agentId);
@@ -64,6 +67,7 @@ export function SkillsQuickPanel({
         canPublish={false}
         compact
         hideSwitches={!!agent && !changes}
+        onOpenModal={onOpenModal}
       />
     </PlusMenuPanelFrame>
   );

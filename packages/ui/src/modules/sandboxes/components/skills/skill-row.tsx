@@ -57,7 +57,7 @@ export function SkillRow({
           </p>
         )}
       </div>
-      {hasDrift && (
+      {hasDrift && !hideSwitch && (
         <Tooltip content={DRIFT_HINT}>
           {}
           <Button
@@ -72,7 +72,7 @@ export function SkillRow({
           </Button>
         </Tooltip>
       )}
-      {hasDrift && compareUrl && (
+      {hasDrift && !hideSwitch && compareUrl && (
         <Tooltip content="Open on GitHub">
           <a
             href={compareUrl}
