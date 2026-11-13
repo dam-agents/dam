@@ -82,6 +82,7 @@ export function SandboxProvidersSection({
                       ? void grant(p.id)
                       : void showConfirm(
                           <DetachProviderMessage
+                            agentId={agentId}
                             name={p.name}
                             usage={usage(p)}
                           />,

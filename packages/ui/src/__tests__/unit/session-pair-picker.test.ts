@@ -283,6 +283,7 @@ vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
   useProviderUsage: () => () => ({
     kinds: [],
     schedules: [],
+    turnedOffSchedules: 0,
     pages: [],
     profiles: [],
   }),
