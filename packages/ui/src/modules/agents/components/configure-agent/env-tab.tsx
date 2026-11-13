@@ -159,7 +159,7 @@ export function EnvTab({
           tooltip="Remove"
           onClick={() =>
             void showConfirm(
-              "The agent stops seeing it. It cannot be recovered.",
+              "The agent no longer sees it, and it cannot be recovered.",
               `Remove variable “${v.name}”?`,
               { kind: "destructive", confirmLabel: "Remove variable" },
             ).then(

@@ -68,7 +68,7 @@ export function profileDetailRows(
       ? [{ label: effort.name, value: effortName }]
       : []),
     {
-      label: "Sub-agents",
+      label: "Subagents",
       value:
         subagent === null
           ? "Same as agent"
