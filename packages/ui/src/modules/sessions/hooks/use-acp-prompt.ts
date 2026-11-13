@@ -22,12 +22,14 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { untilAgentOperable } from "../../agents/api/queries.js";
 import { LEFT_BEFORE_START } from "../../agents/lib/agent-start.js";
+import { removeQueuedPrompt } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
 import { harnessOfSession } from "../api/session-pair.js";
-import { draftKey } from "../lib/draft-key.js";
+import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
+import { holdQueuedPrompts } from "../lib/stop-queue.js";
 import {
   forgetUndelivered,
   rememberUndelivered,
@@ -455,6 +457,15 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       finalizeLocally();
       return;
     }
+    if (selectedAgent) {
+      const key = draftKey(selectedAgent, sid);
+      const held = await holdQueuedPrompts({
+        queue: useStore.getState().queuedPrompts,
+        draft: useStore.getState().drafts[key] ?? EMPTY_DRAFT,
+        remove: (promptId) => removeQueuedPrompt(selectedAgent, sid, promptId),
+      });
+      if (held) useStore.getState().setDraft(key, held);
+    }
     try {
       await conn.agent.notify("session/cancel", { sessionId: sid });
     } catch {
@@ -478,7 +489,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         ),
       );
     }, STOP_SETTLE_MS);
-  }, [engagedSessionIdRef, connectionRef, setMessages]);
+  }, [selectedAgent, engagedSessionIdRef, connectionRef, setMessages]);
 
   return { sendPrompt, stopAgent };
 }
