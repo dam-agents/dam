@@ -465,7 +465,7 @@ func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []str
 	return ready
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll or mid-hand-off, read from the Deployments' annotations alone. Every owner's roll decision reads this under one lock, so it calls no runner: a hung runner would hold that lock for a call timeout and stall every owner's agent starts. Whether a runner's machines came back, or its runner took a new release, is asked on that owner's own turn (settleRunnerRoll, settleRunnerHandoff), which clears the annotations. A roll that has settled by its annotations alone — its new pod is ready and it had no machines to wait for — has them removed here, so the next pass reads it as settled. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped, or its place has been held past `rollout.stalledTimeout` beside a ready peer on its pod shape (runnerRollGivenUp), which releases it and keeps the stalled mark until its pod is ready.
+// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll or mid-hand-off, read from the Deployments' annotations alone. Every owner's roll decision reads this under one lock, so it calls no runner: a hung runner would hold that lock for a call timeout and stall every owner's agent starts. Whether a runner's machines came back, or its runner took a new release, is asked on that owner's own turn (settleRunnerRoll, settleRunnerHandoff), which clears the annotations. A roll that has settled by its annotations alone — its new pod is ready and it had no machines to wait for — has them removed here, so the next pass reads it as settled. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine that never comes back, for a cause the owner's turn cannot read off its Agent, must not stall every other owner's upgrade. A machine whose Agent stopped during the roll is dropped from the wait on the owner's turn instead (agentLeftTheRoll), without waiting for the timeout. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped, or its place has been held past `rollout.stalledTimeout` beside a ready peer on its pod shape (runnerRollGivenUp), which releases it and keeps the stalled mark until its pod is ready.
 func (r *AgentReconciler) runnersMidRoll(ctx context.Context) (rolling []string, total int, err error) {
 	if !r.runnerRoll.at.IsZero() && time.Since(r.runnerRoll.at) < r.rollViewTTL {
 		return r.runnerRoll.rolling, r.runnerRoll.total, nil
@@ -621,7 +621,7 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	return podReady && dep.Annotations[annRunnerAwaiting] == "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent, and gives the wait up at `rollout.settleTimeout` whatever the pod is doing. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. The timeout is checked here and not only where a place in the roll is asked for: a runner already on its configured pod asks for no place, so a wait it never finishes would otherwise outlive the timeout that bounds it — and that wait is what pins its machines awake. A pod that never became ready keeps its place, since its release goes no further, and is marked stalled; the mark is also what stops the pin, so a broken release cannot hold the owner's machines up for good.
+// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or its Agent no longer asks it to run (agentLeftTheRoll), and gives the wait up at `rollout.settleTimeout` whatever the pod is doing. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. The timeout is checked here and not only where a place in the roll is asked for: a runner already on its configured pod asks for no place, so a wait it never finishes would otherwise outlive the timeout that bounds it — and that wait is what pins its machines awake. A pod that never became ready keeps its place, since its release goes no further, and is marked stalled; the mark is also what stops the pin, so a broken release cannot hold the owner's machines up for good.
 func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, dep *appsv1.Deployment) *appsv1.Deployment {
 	awaiting := dep.Annotations[annRunnerAwaiting]
 	rolledAt, err := time.Parse(time.RFC3339, dep.Annotations[annRunnerRolledAt])
@@ -676,7 +676,7 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 		if st, err := client.Status(ctx, id); err == nil && st.Ready {
 			continue
 		}
-		if _, err := r.backend.Get(ctx, id); k8serrors.IsNotFound(err) {
+		if r.agentLeftTheRoll(ctx, id) {
 			continue
 		}
 		return dep
@@ -685,6 +685,23 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 		return updated
 	}
 	return dep
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a machine the roll waits on will not come back because its Agent no longer asks it to: the Agent is gone, a stop was asked of it, or its hibernation is published and nothing has woken it since. It is read off the Agent and never off the runner: right after the pod rolls, the new runner has booted no machine yet, so every machine reads stopped or absent there, and a roll that counted that as settled would end before any machine came back. A hand-off can read the runner instead, since its machines keep running in place. A hibernated Agent that has been woken again asks to run, so its machine is waited for like any other. An Agent that cannot be read is waited for, and the settle timeout bounds that wait.
+func (r *AgentReconciler) agentLeftTheRoll(ctx context.Context, id string) bool {
+	agent, err := r.backend.Get(ctx, id)
+	if k8serrors.IsNotFound(err) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	annotations := agent.GetAnnotations()
+	if annotations[annStopRequested] != "" {
+		return true
+	}
+	idleTimeout := effectiveIdleTimeout(hibernationOverride(agent), r.config.AgentBase)
+	return hibernationPublished(agent) && !shouldRun(annotations, idleTimeout, time.Now().UTC())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: clears the three annotations that record a roll, in the one write that ends the wait, so the pin a roll holds on its machines lasts exactly as long as the wait. Nothing else clears them on this path: the kept view is dropped beside it, since a runner that stops being mid-roll frees its place.
