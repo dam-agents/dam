@@ -7,6 +7,7 @@ import {
   ANN_AGENT_KIND,
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
+  ANN_IMAGE_OUTDATED,
   ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
   ANN_KIT_UPDATE_PENDING,
@@ -130,6 +131,7 @@ const KNOWN_ANNOTATIONS = new Set([
   ANN_AGENT_KIND,
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
+  ANN_IMAGE_OUTDATED,
   ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
   ANN_KIT_UPDATE_PENDING,
@@ -549,6 +551,7 @@ export function rowsFromResource(
           .filter((root) => root !== ""),
         imageUpdateFrom: nullable(annotations[ANN_IMAGE_UPDATE_FROM]),
         imageUpdateRefused: nullable(annotations[ANN_IMAGE_UPDATE_REFUSED]),
+        imageOutdated: nullable(annotations[ANN_IMAGE_OUTDATED]),
         generation: Number(metadata.generation ?? 1),
         createdAt:
           parseTime(metadata.creationTimestamp) ?? new Date(switchedAt),
@@ -644,6 +647,7 @@ export function resourceFromRows(
   );
   put(ANN_IMAGE_UPDATE_FROM, agent.imageUpdateFrom ?? undefined);
   put(ANN_IMAGE_UPDATE_REFUSED, agent.imageUpdateRefused ?? undefined);
+  put(ANN_IMAGE_OUTDATED, agent.imageOutdated ?? undefined);
   if (kit) {
     put(ANN_STARTER_KIT, kit.starterKit ?? undefined);
     put(ANN_STARTER_KIT_ONBOARDED, TIME_OF(kit.onboardedAt));

@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -152,6 +152,10 @@ A hibernated, stopped or over-budget Agent moves at once and takes the image on 
 That wake costs nothing extra for the default image: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
+One that is still on the old image a day after its Template moved on does not wait for a hibernation that may never come: it restarts once nobody is using it, by the idle checker's own signals — no open connection, no Invocation pin — and its machine reporting idle, so a turn, a terminal, kept work or an open Link still holds the restart off.
+It drops the hour of quiet and nothing else, so an Agent that holds a connection or an Invocation pin for longer than a day keeps its image.
+The day counts from when the new image became that Agent's target, which the job records against the image, so a restart or another deploy does not restart the clock.
+A record for an image the Agent does not run counts for nothing until a Template names that image again.
 An Agent that never hibernates — an [Environment](environments.md) set to `never`, or every Agent on an install whose default never hibernates — is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its machine reporting idle, which covers a running turn, a live terminal, kept background work and an open Environment Link ([what counts as activity](agent-lifecycle.md#hibernate)).
 The job re-reads each Agent before deciding, probes the machine after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
 A prompt arriving in the seconds between the write and the machine's restart is the one window it cannot close.

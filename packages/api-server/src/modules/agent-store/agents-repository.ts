@@ -21,6 +21,7 @@ import {
   ANN_AGENT_KIND,
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
+  ANN_IMAGE_OUTDATED,
   ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
   ANN_KIT_UPDATE_PENDING,
@@ -184,6 +185,9 @@ export function createControlAgentsRepository(
           break;
         case ANN_IMAGE_UPDATE_REFUSED:
           agents.imageUpdateRefused = value;
+          break;
+        case ANN_IMAGE_OUTDATED:
+          agents.imageOutdated = value;
           break;
         case ANN_STARTER_KIT:
           putKit("starterKit", value);

@@ -68,6 +68,7 @@ export const controlAgents = control.table(
     kbShareRoots: text("kb_share_roots").array(),
     imageUpdateFrom: text("image_update_from"),
     imageUpdateRefused: text("image_update_refused"),
+    imageOutdated: text("image_outdated"),
     generation: bigint("generation", { mode: "number" }).notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

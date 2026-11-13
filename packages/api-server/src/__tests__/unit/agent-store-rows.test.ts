@@ -44,6 +44,10 @@ const stored: KubeObject = {
         nudgedAt: "2026-10-23T00:30:00Z",
       }),
       "agent-platform.ai/image-update-from": "agent:0",
+      "agent-platform.ai/image-outdated": JSON.stringify({
+        image: "agent:1",
+        at: "2026-10-24T09:00:00Z",
+      }),
       "agent-platform.ai/machine-up-at": "2026-10-24T09:00:00Z",
       "agent-platform.ai/runner-oom-kill": "runner-2",
     },
@@ -105,6 +109,7 @@ describe("an Agent crossing to rows and back", () => {
       starterKit: "python-service",
       starterKitDefaultModel: "claude",
       imageUpdateFrom: "agent:0",
+      imageOutdated: { image: "agent:1", at: "2026-10-24T09:00:00Z" },
       podRestarts: 2,
       podRestartReason: "OOMKilled",
     });

@@ -58,8 +58,13 @@ import {
   ANN_KIT_UPDATE_SKIPPED,
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
+  ANN_IMAGE_OUTDATED,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  imageOutdatedSchema,
+  type ImageOutdated,
+} from "../domain/template-update.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
 
@@ -117,6 +122,7 @@ export interface InfraAgent {
   kitUpdateSkipped?: string;
   imageUpdateFrom?: string;
   imageUpdateRefused?: string;
+  imageOutdated?: ImageOutdated;
   specStart?: "ready" | "failed";
   readySince?: Date;
   hibernatedSince?: Date;
@@ -328,6 +334,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_IMAGE_UPDATE_REFUSED]
       ? { imageUpdateRefused: annotations[ANN_IMAGE_UPDATE_REFUSED] }
       : {}),
+    ...jsonAnnotation(
+      "imageOutdated",
+      imageOutdatedSchema,
+      annotations[ANN_IMAGE_OUTDATED],
+    ),
     ...(specStart ? { specStart } : {}),
     ...(readySince ? { readySince } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),

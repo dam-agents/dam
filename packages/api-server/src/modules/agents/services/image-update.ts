@@ -5,9 +5,11 @@ import type {
 } from "../infrastructure/agents-repository.js";
 import type { InfraAgent } from "../infrastructure/agent-mappers.js";
 import {
+  ANN_IMAGE_OUTDATED,
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
 } from "../infrastructure/labels.js";
+import { outdatedSince } from "../domain/template-update.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 import { NODE_FAULT_REASONS } from "../domain/wake-failure.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -16,12 +18,15 @@ import { executeTemplateUpgrade } from "./agents-service.js";
 // UNIT_BOUNDARY_DESCRIPTION: how long an always-on Agent must go without activity before it is restarted onto its Template's current image. It stands in for the idle timeout such an Agent does not have, so a user who just stepped away is not restarted under them.
 const ALWAYS_ON_QUIET_MS = 60 * 60_000;
 
+// UNIT_BOUNDARY_DESCRIPTION: how long an Agent may stay on an image its Template has left before the platform restarts it onto the new one. Waiting for a hibernation moves an Agent that sleeps and nothing else: one that keeps waking, or that is always-on, would keep the old image until someone restarted it by hand. The restart keeps the idle checker's "nobody is using this" rules — no open connection, no Invocation pin — and adds the runtime's own idle report, so it never cuts a turn, a terminal, kept work or an open Link short. An Agent that holds a connection, a pin or kept work for longer than this keeps its image, which is the accepted ceiling.
+const FORCE_UPDATE_AFTER_MS = 24 * 60 * 60_000;
+
 // UNIT_BOUNDARY_DESCRIPTION: how long an Agent must stay ready on the new image before the move counts as proven. A container that crashes some seconds after it first becomes ready, or a guest that answers and then goes quiet, is ready for a moment between the exits that the controller reports as StartFailed, so a single ready read must not end the move first. A ready read without a readable transition time starts the hold at the first tick that sees it, and the hold restarts whenever the Agent reads not ready, so the move is neither proven at once nor held forever.
 const READY_HOLD_MS = 5 * 60_000;
 
 export type ImageMove = "now" | "if-service-idle";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its runtime reports idle, the same signals the idle checker reads.
+// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent that has been on the old image for FORCE_UPDATE_AFTER_MS moves at the first moment nobody is using it, even when it is not an always-on Agent: no connection is open, no Invocation pins it, and its runtime reports idle, which is how an Agent that keeps waking but never hibernates still reaches the new image. The hour of quiet the always-on rule asks for is what it drops; the rest is the idle checker's own rule. Any other running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its runtime reports idle.
 export function imageMove(
   agent: InfraAgent,
   templateImage: string,
@@ -35,6 +40,10 @@ export function imageMove(
   )
     return null;
   if (agent.hibernated || agent.overBudget) return "now";
+  const since = outdatedSince(agent.imageOutdated, templateImage);
+  const overdue =
+    since !== undefined &&
+    now.getTime() - since.getTime() >= FORCE_UPDATE_AFTER_MS;
   const alwaysOn =
     resolveEffectiveHibernationTimeoutMin(
       agent.spec.hibernationTimeout,
@@ -43,7 +52,10 @@ export function imageMove(
   const quiet =
     !!agent.quietSince &&
     now.getTime() - agent.quietSince.getTime() >= ALWAYS_ON_QUIET_MS;
-  return agent.ready && alwaysOn && quiet && !agent.stopRequested
+  const unpinned = !!agent.quietSince;
+  return agent.ready &&
+    !agent.stopRequested &&
+    ((overdue && unpinned) || (alwaysOn && quiet))
     ? "if-service-idle"
     : null;
 }
@@ -52,7 +64,7 @@ export interface ImageUpdate {
   tick(): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. Eligibility is decided again on a live read, the runtime is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run. A start the node refused instead — its runner cannot reach the image cache, so no image at all can be fetched there — holds the move: nothing is moved back or recorded as refused, since the image is not what failed and would fail the same way on the image it came from, and the reason is logged once per move, keyed on the annotation that records the move rather than on the start state the platform rewrites under it, so the upgrade is seen waiting rather than silently dropped.
+// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. An Agent it leaves where it is gets the moment it met the new image recorded against that image, so the day that ends the wait counts from the image's arrival rather than from a restart. Eligibility is decided again on a live read, the runtime is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run. A start the node refused instead — its runner cannot reach the image cache, so no image at all can be fetched there — holds the move: nothing is moved back or recorded as refused, since the image is not what failed and would fail the same way on the image it came from, and the reason is logged once per move, keyed on the annotation that records the move rather than on the start state the platform rewrites under it, so the upgrade is seen waiting rather than silently dropped.
 export function createImageUpdate(deps: {
   listAgents: () => Promise<InfraAgent[]>;
   getAgent: (id: string) => Promise<InfraAgent | null>;
@@ -61,6 +73,10 @@ export function createImageUpdate(deps: {
     id: string,
     write: AgentSpecWrite,
   ) => Promise<AgentSpecWriteResult>;
+  patchAnnotations: (
+    id: string,
+    annotations: Record<string, string | null>,
+  ) => Promise<void>;
   agentServiceIsIdle: (id: string) => Promise<boolean>;
   idleTimeoutMinutes: number;
   log: (message: string) => void;
@@ -109,6 +125,25 @@ export function createImageUpdate(deps: {
     if (!result.ok && result.error.type !== "AgentNotFound")
       deps.log(`[image-update] ${id} refused: ${result.error.type}`);
     return result.ok;
+  }
+
+  async function recordOutdated(
+    agent: InfraAgent,
+    templateImage: string,
+  ): Promise<void> {
+    if (
+      !agent.spec.image ||
+      agent.spec.image === templateImage ||
+      agent.imageUpdateRefused === templateImage ||
+      agent.imageOutdated?.image === templateImage
+    )
+      return;
+    await deps.patchAnnotations(agent.id, {
+      [ANN_IMAGE_OUTDATED]: JSON.stringify({
+        image: templateImage,
+        at: new Date().toISOString(),
+      }),
+    });
   }
 
   async function settle(id: string): Promise<void> {
@@ -182,7 +217,11 @@ export function createImageUpdate(deps: {
           }
           const templateImage =
             agent.templateId && (await templateImageOf(agent.templateId));
-          if (!templateImage || !moveOf(agent, templateImage)) continue;
+          if (!templateImage) continue;
+          if (!moveOf(agent, templateImage)) {
+            await recordOutdated(agent, templateImage);
+            continue;
+          }
           if (await migrate(agent.id, templateImage)) migrated += 1;
         } catch (e) {
           deps.log(

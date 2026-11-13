@@ -2845,6 +2845,8 @@ export async function bootstrap() {
     readTemplateSpec: templatesRepo.readSpec,
     writeSpec: (id, write) =>
       liveAgentsRepo.writeAgentSpec(id, undefined, write),
+    patchAnnotations: (id, annotations) =>
+      liveAgentsRepo.patchAnnotations(id, annotations),
     agentServiceIsIdle: (id) => agentServiceIsIdle(id, config.namespace),
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),

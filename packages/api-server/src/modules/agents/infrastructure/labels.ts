@@ -46,6 +46,7 @@ export const ANN_RUNNER_OOM_RECOVERED = "agent-platform.ai/runner-oom-over";
 export const ANN_IMAGE_UPDATE_FROM = "agent-platform.ai/image-update-from";
 export const ANN_IMAGE_UPDATE_REFUSED =
   "agent-platform.ai/image-update-refused";
+export const ANN_IMAGE_OUTDATED = "agent-platform.ai/image-outdated";
 
 export const READY_REASON_HIBERNATED = "Hibernated";
 export const READY_REASON_OVER_BUDGET = "OverBudget";

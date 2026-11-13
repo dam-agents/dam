@@ -28,8 +28,11 @@ const DEFAULT_IMAGE = "quay.io/dam-agents/default:abc";
 const OLD_DEFAULT_IMAGE = "quay.io/dam-agents/default:old";
 const FROM = "agent-platform.ai/image-update-from";
 const REFUSED = "agent-platform.ai/image-update-refused";
+const OUTDATED = "agent-platform.ai/image-outdated";
 const NOW = new Date("2026-10-12T12:00:00Z");
 const TWO_HOURS_AGO = new Date("2026-10-12T10:00:00Z");
+const A_DAY_AGO = new Date(NOW.getTime() - 25 * 60 * 60_000);
+const JUST_UNDER_A_DAY_AGO = new Date(NOW.getTime() - (24 * 60 - 1) * 60_000);
 const IDLE_MIN = 60;
 
 function agent(overrides?: Partial<InfraAgent>): InfraAgent {
@@ -101,6 +104,9 @@ function update(
       value: { ...a, spec: { ...a.spec, ...write.spec } },
     };
   });
+  const patchAnnotations = vi.fn(
+    async (_id: string, _annotations: Record<string, string | null>) => {},
+  );
   const log = vi.fn();
   const agentServiceIsIdle = vi.fn(
     opts?.agentServiceIsIdle ?? (async () => true),
@@ -111,12 +117,23 @@ function update(
       opts?.live ? opts.live(id) : (byId.get(id) ?? null),
     readTemplateSpec: opts?.readTemplateSpec ?? knownTemplates,
     writeSpec,
+    patchAnnotations,
     agentServiceIsIdle,
     idleTimeoutMinutes: IDLE_MIN,
     log,
   }).tick;
-  return { tick, writeSpec, agentServiceIsIdle, log };
+  return { tick, writeSpec, patchAnnotations, agentServiceIsIdle, log };
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the writes that move an agent, as opposed to the one that records when it went out of date.
+const moves = (m: ReturnType<typeof update>) =>
+  m.writeSpec.mock.calls.filter(([, write]) => write.spec !== undefined);
+
+// TEST_SCENARIO: a stamp as the agent carries it, for an image it does not run
+const outdated = (at: Date, image = DEFAULT_IMAGE) => ({
+  image,
+  at: at.toISOString(),
+});
 
 describe("imageMove", () => {
   it.each([
@@ -225,6 +242,98 @@ describe("imageMove", () => {
   ])("leaves an always-on agent with %s alone", (_, quietSince) => {
     expect(
       move(alwaysOn(quietSince ? { quietSince } : { quietSince: undefined })),
+    ).toBeNull();
+  });
+
+  // TEST_SCENARIO: an agent that keeps waking often enough not to hibernate
+  // TEST_SCENARIO: never reaches the new image by waiting for a sleep, so once
+  // TEST_SCENARIO: it has been out of date for a day it restarts at the first
+  // TEST_SCENARIO: moment nobody is using it, quiet for a minute or not, always-on or not.
+  it("moves an agent out of date for a day at its first idle moment", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: new Date("2026-10-12T11:59:00Z"),
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ),
+    ).toBe("if-service-idle");
+  });
+
+  it("leaves a running agent alone until the day is over", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          imageOutdated: outdated(JUST_UNDER_A_DAY_AGO),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  // TEST_SCENARIO: the day drops the hour of quiet the always-on rule asks for,
+  // TEST_SCENARIO: not the idle checker's rule that nobody is using the agent: a
+  // TEST_SCENARIO: CLI session or a Driver's Invocation holds a connection the
+  // TEST_SCENARIO: machine cannot see, so the restart waits for it too.
+  it("waits while a connection or an Invocation pin holds the agent", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: undefined,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  // TEST_SCENARIO: the day counts from the image this agent met, so a stamp
+  // TEST_SCENARIO: recorded for a target the template has since left says nothing.
+  it("counts a stamp only for the image it names", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          imageOutdated: outdated(
+            A_DAY_AGO,
+            "quay.io/dam-agents/default:between",
+          ),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("restarts a stale agent for the day only once it is running", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: false,
+          quietSince: TWO_HOURS_AGO,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("restarts a stale agent for the day only when no stop was asked for", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          stopRequested: true,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ),
     ).toBeNull();
   });
 });
@@ -344,14 +453,14 @@ describe("image update tick", () => {
     async (_, agentServiceIsIdle) => {
       const m = update([alwaysOn()], { agentServiceIsIdle });
       await m.tick();
-      expect(m.writeSpec).not.toHaveBeenCalled();
+      expect(moves(m)).toHaveLength(0);
     },
   );
 
   it("skips running agents that hibernate", async () => {
     const m = update([agent({ hibernated: false, ready: true })]);
     await m.tick();
-    expect(m.writeSpec).not.toHaveBeenCalled();
+    expect(moves(m)).toHaveLength(0);
   });
 
   // TEST_SCENARIO: the listing comes from a cache; an agent that woke since
@@ -361,7 +470,7 @@ describe("image update tick", () => {
       live: () => agent({ hibernated: false, ready: true }),
     });
     await m.tick();
-    expect(m.writeSpec).not.toHaveBeenCalled();
+    expect(moves(m)).toHaveLength(0);
   });
 
   // TEST_SCENARIO: the template's image changed between the listing and the
@@ -650,6 +759,130 @@ describe("image update tick", () => {
     expect(holds).toHaveLength(2);
   });
 
+  // TEST_SCENARIO: the forced restart counts from when the image arrived, not
+  // TEST_SCENARIO: from the agent's creation or its last restart, so the moment
+  // TEST_SCENARIO: is recorded, against the image it was recorded for.
+  it("records when an agent went out of date", async () => {
+    vi.useFakeTimers({ now: NOW });
+    try {
+      const m = update([agent({ hibernated: false, ready: true })]);
+      await m.tick();
+      expect(moves(m)).toHaveLength(0);
+      expect(m.patchAnnotations).toHaveBeenCalledOnce();
+      const [id, annotations] = m.patchAnnotations.mock.calls[0]!;
+      expect(id).toBe("agent-1");
+      expect(Object.keys(annotations)).toEqual([OUTDATED]);
+      expect(JSON.parse(annotations[OUTDATED]!)).toEqual({
+        image: DEFAULT_IMAGE,
+        at: NOW.toISOString(),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("records the moment once, not on every tick", async () => {
+    const listed = [agent({ hibernated: false, ready: true })];
+    const m = update(listed, { live: () => listed[0]! });
+    await m.tick();
+    const stamp = m.patchAnnotations.mock.calls[0]![1][OUTDATED]!;
+    listed[0] = { ...listed[0]!, imageOutdated: JSON.parse(stamp) };
+    await m.tick();
+    expect(m.patchAnnotations).toHaveBeenCalledOnce();
+  });
+
+  // TEST_SCENARIO: a second deploy moves the template again; the day counts
+  // TEST_SCENARIO: from the new image's arrival, not from the first one's.
+  it("records a new target when the template moves again", async () => {
+    const m = update([
+      agent({
+        hibernated: false,
+        ready: true,
+        imageOutdated: outdated(
+          A_DAY_AGO,
+          "quay.io/dam-agents/default:between",
+        ),
+      }),
+    ]);
+    await m.tick();
+    const stamp = JSON.parse(m.patchAnnotations.mock.calls[0]![1][OUTDATED]!);
+    expect(stamp.image).toBe(DEFAULT_IMAGE);
+  });
+
+  // TEST_SCENARIO: the day is over, but a turn is running: the restart waits
+  // TEST_SCENARIO: for it to finish, and no longer.
+  it("waits out a turn on an agent out of date for a day, then restarts it", async () => {
+    vi.useFakeTimers({ now: NOW });
+    try {
+      let idle = false;
+      const listed = [
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ];
+      const m = update(listed, {
+        agentServiceIsIdle: async () => idle,
+        live: () => listed[0]!,
+      });
+      await m.tick();
+      expect(m.writeSpec).not.toHaveBeenCalled();
+      idle = true;
+      await m.tick();
+      expect(m.writeSpec).toHaveBeenCalledWith("agent-1", {
+        spec: { image: DEFAULT_IMAGE },
+        annotations: { [FROM]: OLD_DEFAULT_IMAGE },
+        resourceVersion: "7",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: a CLI session or an Invocation pin is a connection the
+  // TEST_SCENARIO: machine cannot see, so the day does not cut it; the agent
+  // TEST_SCENARIO: waits for the person or the Driver to let go.
+  it("keeps an agent held by a connection through the day", async () => {
+    vi.useFakeTimers({ now: NOW });
+    try {
+      const m = update([
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: undefined,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ]);
+      await m.tick();
+      expect(m.writeSpec).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: an image the agent could not start on is not tried again,
+  // TEST_SCENARIO: however long it stays out of date.
+  it("leaves a rolled-back agent alone for good", async () => {
+    vi.useFakeTimers({ now: NOW });
+    try {
+      const m = update([
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          imageUpdateRefused: DEFAULT_IMAGE,
+          imageOutdated: outdated(A_DAY_AGO),
+        }),
+      ]);
+      await m.tick();
+      expect(m.writeSpec).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("waits while a moved agent has not started on its new image", async () => {
     const m = update([
       agent({
@@ -701,6 +934,18 @@ describe("parseInfraAgent", () => {
     const parsed = parse({ [FROM]: "a:1", [REFUSED]: "a:2" });
     expect(parsed.imageUpdateFrom).toBe("a:1");
     expect(parsed.imageUpdateRefused).toBe("a:2");
+  });
+
+  it("reads the stamp of when the agent went out of date", () => {
+    expect(
+      parse({
+        [OUTDATED]: JSON.stringify({
+          image: "a:2",
+          at: "2026-10-12T10:00:00Z",
+        }),
+      }).imageOutdated,
+    ).toEqual({ image: "a:2", at: "2026-10-12T10:00:00Z" });
+    expect(parse({ [OUTDATED]: "not json" }).imageOutdated).toBeUndefined();
   });
 
   // TEST_SCENARIO: a condition the controller wrote for an older spec says
