@@ -22,7 +22,7 @@ export interface FileTransfer {
     sequence: number;
     token: string;
     bytes: Readable;
-    declaredBytes: number;
+    declaredBytes?: number;
     signal: AbortSignal;
   }): Promise<SatelliteFileWritten>;
   receive(input: {
@@ -36,7 +36,10 @@ const REFUSALS: Record<string, string> = {
   no_running_job: "the job this transfer belongs to is no longer running",
   not_the_claimant: "this machine is not the claim that is running this job",
   wrong_direction: "this tool does not move files that way",
-  transfer_too_large: "the file is over the transfer limit",
+  transfer_too_large:
+    "the file is over the transfer limit (the platform or the agent may be older than this CLI and still limit a transfer to 50 MB)",
+  no_space:
+    "the agent's workspace does not have room for this file — it needs the file's size plus 1 GiB free",
   not_found: "the agent's workspace has no such file",
   already_there: "the agent's workspace already has a file at that path",
   workspace_refused: "the agent's workspace refused the file",
@@ -88,7 +91,9 @@ export function createFileTransfer(deps: {
         headers: {
           ...(await auth()),
           "content-type": "application/octet-stream",
-          "content-length": String(declaredBytes),
+          ...(declaredBytes === undefined
+            ? {}
+            : { "content-length": String(declaredBytes) }),
           "x-dam-claim": token,
         },
         body: Readable.toWeb(bytes) as ReadableStream<Uint8Array>,

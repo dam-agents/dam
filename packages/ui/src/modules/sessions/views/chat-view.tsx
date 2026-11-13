@@ -898,13 +898,15 @@ export function ChatView() {
 
   const notices = (
     <>
-      {channelBlock !== null && agentDisplay?.state === "running" && (
-        <AgentReconnectingNotice
-          name={selectedAgentName ?? "the agent"}
-          state={channelBlock}
-          onRetry={loadingSession ? undefined : retryChannel}
-        />
-      )}
+      {channelBlock !== null &&
+        !sessionError &&
+        agentDisplay?.state === "running" && (
+          <AgentReconnectingNotice
+            name={selectedAgentName ?? "the agent"}
+            state={channelBlock}
+            onRetry={loadingSession ? undefined : retryChannel}
+          />
+        )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />

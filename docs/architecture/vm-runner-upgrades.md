@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -34,7 +34,7 @@ The node is read through the node read grant the chart adds; an install without 
 A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
-Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
+Before it takes a place in the roll, the controller asks each of the owner's ready machines whether its agent's status says idle, all at once, and an agent that does not answer counts as idle, since a machine the roll reboots comes back: the idle checker never takes a silence that way.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 **A runner that cannot reach its node's image cache does not wait out the idle wait.** Such a runner boots only the trees its own machines already hold, so every image its owner has not booted yet is refused ([vm-image-cache](vm-image-cache.md)), and the image update job holds each upgrade rather than moving an Agent back.

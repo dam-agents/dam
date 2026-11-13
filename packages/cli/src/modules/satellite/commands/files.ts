@@ -50,7 +50,14 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "agent's workspace and the agent gets its path, size and sha256, and an\n" +
         "upload comes from a path in that workspace.\n" +
         "A download copies the whole file or a slice of it, with offset and\n" +
-        "length, so a file bigger than the limit still moves in pieces.\n\n" +
+        "length, so a file bigger than the limit still moves in pieces.\n" +
+        "A directory comes down as one uncompressed tar of its regular files,\n" +
+        "named after the directory; the agent unpacks it with\n" +
+        "`tar -xf <path> -C <dir>`. Links, special files and hard-linked files\n" +
+        "are left out and named in the result.\n" +
+        "With --upload, `unpack: true` turns one tar from the agent's workspace\n" +
+        "into one new directory on this machine: it must not exist yet, and\n" +
+        "nothing is published unless every entry arrives.\n\n" +
         "  dam satellite files --name laptop --root ~/work\n" +
         "  dam satellite files --name laptop --root ~/work --upload\n\n" +
         "--root is the whole allowlist: every path is resolved inside it, and an\n" +
@@ -60,8 +67,8 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "read, e.g. ~/work rather than ~. Without --upload the agent can read but\n" +
         "never write; with it, a file already there is replaced only when the\n" +
         "agent's call asks to overwrite.\n" +
-        "One transfer carries at most 50 MB, which is the agent's own per-file\n" +
-        "limit; a slice under that limit still copies from a larger file.\n" +
+        "One transfer carries at most 5 GiB; a slice under that limit still\n" +
+        "copies from a larger file.\n" +
         "A listing stops at 10 levels deep, 5000 entries or 20 seconds, and says\n" +
         "on its last line that it stopped there.\n" +
         "Changing what is exposed means restarting: there is no file to\n" +

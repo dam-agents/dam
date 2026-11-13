@@ -4,6 +4,8 @@ import type {
 } from "api-server-api/chat-forms";
 import { createContext, useContext } from "react";
 
+import type { SentBack } from "../lib/sent-back.js";
+
 export interface A2uiConversationState {
   conversation: A2uiConversation;
   sessionKey: string;
@@ -13,6 +15,7 @@ export interface A2uiConversationState {
   answeredCalls: ReadonlySet<string>;
   pendingResponses: readonly FunctionResponse[];
   autoRepliesPaused: boolean;
+  sentBack?: ReadonlyMap<string, SentBack>;
 }
 
 const A2uiConversationContext = createContext<A2uiConversationState | null>(

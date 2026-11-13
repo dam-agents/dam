@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -213,10 +213,14 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to bring it up, so bringing it up and taking it down can never disagree.
    The Agent stays awake while `active-session` is set, or while `last-activity` falls within the idle timeout.
-   The gate fails open — a missing or unparseable stamp keeps it running — so hibernation only ever follows a *positive* idle signal, never absent data.
+   The gate fails open — a missing or unparseable stamp keeps it running — so it never hibernates an Agent on absent data.
 2. **agent-runtime's live `idle` flag** — before taking it down, the checker probes the machine.
    The runtime is authoritative about its own idleness and reports one boolean; the controller reads nothing more into it.
-   An unreachable machine counts as *not busy*, which permits hibernation.
+   A probe that does not answer is neither answer, and it never permits hibernation on its own: a working guest that misses three seconds is exactly the turn the sweep must not end.
+   A silence is read against the readiness the runner's own prober publishes: a machine that reads ready is answering the runner, so what failed is the sweep's own path to it, and the Agent keeps its machine, while a machine that does not read ready is down, still coming up or failed to start, and hibernates on its silence as it always did.
+   KNOWN CEILING: a machine that reads ready and that the controller's probe never reaches is not hibernated by this path, so it holds its CPU and memory until it stops reading ready, an operator stops it, or the path recovers.
+   A guest that stops answering is not that case, since its runner restarts it within about a minute.
+   The sweeps that spare such a machine are logged once the silence has lasted, and the way out of the ceiling is a durable running-turn signal in the store, which the sweep could read instead of asking the guest.
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss.
 The names below are the annotation forms the controller reads on a custom resource; after the switch the same signals are columns on the Agent's signals row (`session_pinned`, `last_activity_at` with its token, `invocation_pinned`), and the store's change feed is what tells the controller they moved.

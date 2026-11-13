@@ -12,6 +12,7 @@ import type {
   PromptBlock,
   QueuedPrompt,
 } from "api-server-api";
+import { chatFormFixAttemptOf } from "api-server-api/chat-forms";
 
 import type {
   Message,
@@ -172,6 +173,7 @@ function applyUpdateOf(
         model: update.model,
         stopped: update.stopReason === "cancelled",
         stoppedAtOutputLimit: isOutputLimitStop(update.stopReason),
+        chatFormFix: update.chatFormFix,
       };
       return update.turnId === undefined
         ? closeActiveAssistant(messages, end)
@@ -656,6 +658,17 @@ export function hasAgentContent(m: Message): boolean {
   return m.parts.some((p) => p.kind !== "verdict");
 }
 
+function markTurnSentBack(messages: Message[], attempt: number): Message[] {
+  let turnStart = messages.length;
+  while (turnStart > 0 && messages[turnStart - 1].role !== "user")
+    turnStart -= 1;
+  return messages.map((m, i) =>
+    i >= turnStart && m.role === "assistant" && !m.notice
+      ? { ...m, chatFormFix: attempt }
+      : m,
+  );
+}
+
 function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
@@ -668,7 +681,10 @@ function handleUserChunk(
 
   let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
+    const fix = chatFormFixAttemptOf(u.content.text);
     const txt = stripPlumbing(u.content.text);
+    if (fix !== null && !txt && !queued)
+      return markTurnSentBack(closeActiveAssistant(messages), fix);
     if (INTERRUPT_MARKER_RE.test(txt))
       return markLastReplyStopped(closeActiveAssistant(messages));
     if (txt) bubbles = parseUserText(txt);
@@ -952,10 +968,14 @@ function closeTurn(
   if (last === -1) return messages;
   const toolStatus = endedToolStatus(end);
   return messages.map((m, i) => {
-    const settled =
+    const tools =
       toolStatus !== null && owned(m)
         ? { ...m, parts: settleRunningTools(m.parts, toolStatus) }
         : m;
+    const settled =
+      end.chatFormFix !== undefined && owned(m)
+        ? { ...tools, chatFormFix: end.chatFormFix }
+        : tools;
     if (i === last)
       return {
         ...settled,
@@ -1062,6 +1082,7 @@ interface ReplyClose {
   model?: string;
   stopped?: boolean;
   stoppedAtOutputLimit?: boolean;
+  chatFormFix?: number;
 }
 
 function closeActiveAssistant(
@@ -1073,6 +1094,7 @@ function closeActiveAssistant(
     model,
     stopped = false,
     stoppedAtOutputLimit,
+    chatFormFix,
   }: ReplyClose = {},
 ): Message[] {
   const i = activeReplyIndex(messages);
@@ -1090,6 +1112,7 @@ function closeActiveAssistant(
           ...(stopped && { stopped: true }),
           ...(stoppedAtOutputLimit &&
             hasAgentContent(x) && { stoppedAtOutputLimit }),
+          ...(chatFormFix !== undefined && { chatFormFix }),
           ...(toolStatus !== null && {
             parts: settleRunningTools(x.parts, toolStatus),
           }),

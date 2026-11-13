@@ -47,7 +47,7 @@ export function ScheduleActionsMenu({
     if (
       await showConfirm(
         "It stops running and cannot be recovered.",
-        `Delete “${name}”?`,
+        `Delete schedule “${name}”?`,
         { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )

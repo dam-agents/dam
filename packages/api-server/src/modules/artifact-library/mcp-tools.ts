@@ -7,6 +7,7 @@ import {
 } from "api-server-api";
 
 import { toAgentArtifact } from "./agent-artifact.js";
+import { effectiveContentType } from "./domain/artifact-kind.js";
 import { securityLog } from "../../core/security-log.js";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
@@ -136,7 +137,7 @@ export function registerArtifactLibraryTools(
         const ticket = await lib.createUploadUrl(file_name);
         return json({
           ...ticket,
-          instructions: `PUT the raw file as the request body, e.g.: curl -X PUT --data-binary @${file_name} '${ticket.url}' — then pass upload_ref to create_artifact / update_artifact.`,
+          instructions: `PUT the raw file as the request body, naming its media type so the library can preview it, e.g.: curl -X PUT -H 'Content-Type: ${effectiveContentType(file_name, "")}' --data-binary @${file_name} '${ticket.url}' — then pass upload_ref to create_artifact / update_artifact.`,
         });
       }),
   );

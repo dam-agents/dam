@@ -326,6 +326,7 @@ class ConversationBuilder {
   private apply(message: A2uiMessage, index: number) {
     if ("createSurface" in message)
       return this.create(message.createSurface, index);
+    if (!this.block.closed) return;
     if ("updateComponents" in message) {
       const { surfaceId, components } = message.updateComponents;
       const draft = this.existing(surfaceId, index);
@@ -358,10 +359,8 @@ class ConversationBuilder {
       this.outcome.closed.push(draft.id);
       return;
     }
-    if ("callRendererFunction" in message) {
-      if (this.block.closed)
-        this.callRendererFunction(message.callRendererFunction);
-    }
+    if ("callRendererFunction" in message)
+      this.callRendererFunction(message.callRendererFunction);
   }
 
   private create(

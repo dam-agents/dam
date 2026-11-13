@@ -109,6 +109,8 @@ type Props = CommonProps &
           slots: SessionChoiceSlots;
           label: string;
           placeholder: string;
+          /** UNIT_BOUNDARY_DESCRIPTION: what this pick follows while it holds no model, whose Connection the panel shows and whose model a fresh pick starts on. */
+          defaultPair?: SessionPair | null;
           /** UNIT_BOUNDARY_DESCRIPTION: the agent's own default, which this pick follows while neither primary slot is set: a switch on the panel, the values read-only while it is on, and its values copied into the pick when it is switched off. */
           agentDefault?: {
             /** UNIT_BOUNDARY_DESCRIPTION: what the pick follows, a sentence the row card reads under "Use agent default" and the list's first row repeats; with no default set it says so. */
@@ -331,10 +333,14 @@ export function SessionPairPicker(props: Props) {
   const lentSubagent = referenceProfile
     ? lentSubagentOfProfile(referenceProfile)
     : null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile names a provider template, so the panel and a pick from it name the Connection of that template the destination holds, not the first one that lists the model. */
   const targetPrimary = referenceProfile
     ? {
         harness: referenceProfile.harness,
-        provider: null,
+        provider:
+          providers.granted.find(
+            (p) => p.templateId === referenceProfile.providerTemplate,
+          )?.id ?? null,
         model: referenceProfile.model,
         settings: referenceProfile.settings,
       }
@@ -549,8 +555,8 @@ export function SessionPairPicker(props: Props) {
     providerTemplate: providers.owned.find(
       (p) =>
         p.id ===
-        (findModel(groups, pair?.model ?? null)?.group.connectionId ??
-          pair?.provider),
+        (pair?.provider ??
+          findModel(groups, pair?.model ?? null)?.group.connectionId),
     )?.templateId,
     subagent: subagentFor(
       pair,
@@ -689,10 +695,10 @@ export function SessionPairPicker(props: Props) {
         : undefined;
     const profileProvider =
       explicitProvider ??
-      findModel(groups, profile.model)?.group.connectionId ??
-      connectionId ??
       providers.granted.find((p) => p.templateId === profile.providerTemplate)
         ?.id ??
+      findModel(groups, profile.model)?.group.connectionId ??
+      connectionId ??
       null;
     const values = {
       ...profileValues(pair, profile, profileCapability),
@@ -708,6 +714,7 @@ export function SessionPairPicker(props: Props) {
       harnesses={names}
       pair={pair}
       defaultHarness={defaultHarness}
+      defaultPair={target?.defaultPair ?? null}
       profiles={edit ? undefined : profiles}
       selectedProfileId={primary?.id ?? null}
       {...(!edit && {
@@ -966,7 +973,7 @@ function HarnessList({
             onClick={() => onPick(h.name)}
             className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
           >
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" aria-hidden="true">
               <HarnessIcons harnesses={[h.name]} size="xs" />
             </span>
             {h.displayName}

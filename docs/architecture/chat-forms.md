@@ -17,7 +17,7 @@ The first users are [Kit Onboarding and Kit Update](starter-kits.md): the questi
 ## The conversation is the transport
 
 No tool carries a form and there is no side channel.
-Everything travels inside the Session Transcript:
+Everything travels inside the Session Transcript, the platform's own check included:
 
 ```mermaid
 sequenceDiagram
@@ -41,10 +41,16 @@ sequenceDiagram
   It names the catalogs, components, functions and rules, with worked examples.
   Where the context supports one, it asks the agent to preselect a recommended answer, mark it and say why; matters of taste, values only the user knows and risky choices stay empty.
   The chat shows a label's trailing `(Recommended)` as a muted tag.
+- **The platform's check.** The agent's runtime checks the reply to every prompt turn whose prompt announced the renderer capabilities, when the turn ends, with the same `checkChatForm` code as the check tool and the agent's chat form settings from the announcement.
+  A turn the user stopped, one that failed, and one with another prompt already waiting behind it are left alone.
+  A reply that fails goes back to the agent without the user acting: the turn's `platform/turnEnded` carries `chatFormFix` with the attempt number, and the runtime sends the Session a new prompt wrapped in a `<chat-form-check attempt="N">` tag, holding the problems as renderer error messages and the capabilities.
+  The prompt asks the agent to send the whole reply again and to create every surface again, since none of the failed ones reached the user.
+  The count lives in the tag, so a restart keeps it: after two failed fixes the third prompt asks for plain text and announces no capabilities, so its reply is not checked and the loop ends.
+  The chat hides the whole tag, so the user sees no message of their own; the blocks of a reply marked with `chatFormFix` are left out of the replay and show that the agent is fixing the form, and once a later reply arrives, that the agent answered again below.
+  A transcript loaded from the harness carries no `platform/turnEnded`, so there the chat marks the reply from the `<chat-form-check>` prompt that follows it.
 - **The check tool.** While the owner has the feature on and the agent's forms are not off, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
-  It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before the user sees it.
-  The skill and the tool's description require the agent to check every reply with a block and to send only a reply the tool answered `ok` for; without the tool, the agent asks in plain text.
-  The chat does not verify that a block was checked.
+  It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before it sends it.
+  It is optional: the platform's check catches what it does not, and the tool only saves that round trip.
   A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked, plus the children of a `root` the reply replaces, which the reply must send itself; agent function calls are checked, not run.
   A dynamic value that is not a literal, a `{"@path": "…"}` binding or a `{"@call": "…"}` call fails with a message that names those shapes, and an object with only a `path` key is reported as a mistyped binding.
   Each literal `regex` pattern is compiled the way the chat's renderer (`@a2ui/web_core`) compiles it — no flags, at most 256 characters, no catastrophic backtracking — because a pattern it rejects makes the field's check fail in the chat.
@@ -85,8 +91,9 @@ The chat replays every block of the session in order, so a surface outlives the 
 - Reloading the session rebuilds every surface from the loaded part of the transcript.
   An update to a surface whose creating reply is not loaded yet shows as a surface-not-found error.
 
-While a reply streams, the chat renders the complete part of the block and shows placeholders for components still being written.
-Validation errors are reported only once the block is complete.
+While a reply streams, the chat shows only that a form is being prepared, since the platform may still send the finished block back.
+Its updates and deletions of earlier surfaces wait for the finished reply too.
+A block is drawn, and its validation errors reported, once the reply is finished.
 A block that a finished reply never closes counts as complete, so its errors show.
 
 ## Locking the chat input
@@ -110,7 +117,7 @@ The form check reports such a block, so an agent writes only 1.0.
 The components form a tree: a component with two parents, or one that is its own ancestor, is an error.
 A surface that would render more than 2,000 elements, list templates included, is reported and not shown.
 
-Errors are listed under the block, each with a machine-readable code and the location in the block, and a button that forwards them to the agent as renderer error messages.
+A block the platform's check did not send back (for example because the user had already sent another message) lists its errors under the block, each with a machine-readable code and the location in the block, and a button that forwards them to the agent as renderer error messages.
 The agent fixes the block and sends it again; the forwarded errors carry the renderer capabilities, like any other renderer message.
 A second button asks the agent for plain text instead and carries no capabilities.
 After a second failed block for the same question, the skill tells the agent to ask in plain text.

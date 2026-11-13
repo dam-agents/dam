@@ -6,7 +6,7 @@ Given a fresh platform and the owner signed in, with Settings → Experimental f
 When they look at the rows
 Then the second-to-last row is labelled *DAM connection* and described as *Let your agents act as you on DAM through a connection.
 Turning this off leaves the connections you already made working.*
-And the last row is labelled *Dammy* and described as *Smart assistant that can control DAM for you*
+And the last row is labelled *Dammy* and described as *An assistant that can control DAM for you.*
 When they switch the assistant's row on and open their agent list
 Then Dammy is there as an ordinary agent, with its own avatar
 And it holds the *DAM connection*, which its Connections page lists as *Acts as you on DAM*

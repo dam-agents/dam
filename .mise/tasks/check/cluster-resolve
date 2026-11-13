@@ -149,6 +149,13 @@ values_set() { # <values> <install name> <port>
     traefik_values_set "$1" "$2" "$3"
   )
 }
+values_timeout() { # <values> <install name>
+  (
+    # shellcheck disable=SC1090
+    CLUSTER_RESOLVE_ONLY=1 . "$LIB"
+    traefik_values_timeout "$1" "$2"
+  )
+}
 same() { # <what> <got> <want>
   [ "$2" = "$3" ] || { echo "FAIL: $1: got '$2', want '$3'" >&2; fail=1; }
 }
@@ -166,6 +173,14 @@ same "the rewrite keeps the default install" "$(values_port "$after" "")" 4444
 same "the rewrite keeps another install" "$(values_port "$after" sidebar)" 4402
 same "the rewrite lists the install once" \
   "$(printf '%s' "$after" | yq -r '[.ports[] | .exposedPort] | sort | join(" ")' 2>/dev/null)" "4402 4403 4444"
+same "the install's entrypoint turns off Traefik's 60 s read timeout" \
+  "$(printf '%s' "$after" | yq -r '.ports[] | select(.exposedPort == 4403) | .transport.respondingTimeouts.readTimeout' 2>/dev/null)" "0s"
+same "an entrypoint recorded before it carried the timeout reads as not upgraded" \
+  "$(values_timeout "$before" fix-profile-rename-m)" ""
+same "the rewritten entrypoint reads as upgraded" \
+  "$(values_timeout "$after" fix-profile-rename-m)" "0s"
+same "the default install's own entry is left as it was" \
+  "$(printf '%s' "$after" | yq -r '.ports.platform.transport // "none"' 2>/dev/null)" "none"
 
 # --- every task that declares flags declares both --------------------------
 # mise validates a declared task's flags before the script runs, so a task that

@@ -28,6 +28,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
 
 import { sanitizeEnvVars } from "../../../../components/env-vars-editor.js";
+import { useStore } from "../../../../store.js";
 import {
   type AgentView,
   type EnvVar,
@@ -74,6 +75,7 @@ export function EnvTab({
   panelHeading?: string;
 }) {
   const updateAgent = useSetAgentEnv();
+  const showConfirm = useStore((s) => s.showConfirm);
   const { data: apps = [] } = useAgentPageConnections(agent.id);
   const { data: agentConnections } = useAgentConnections(agent.id);
   const pendingEnv = updateAgent.isPending
@@ -155,7 +157,15 @@ export function EnvTab({
         <RemoveButton
           label={`Remove ${v.name}`}
           tooltip="Remove"
-          onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
+          onClick={() =>
+            void showConfirm(
+              "The agent no longer sees it, and it cannot be recovered.",
+              `Remove variable “${v.name}”?`,
+              { kind: "destructive", confirmLabel: "Remove variable" },
+            ).then(
+              (ok) => ok && setEnvVars(envVars.filter((_, idx) => idx !== i)),
+            )
+          }
           disabled={saving}
         />
       </div>

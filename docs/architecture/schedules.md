@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -113,6 +113,7 @@ If that session is gone by then, *continue* runs the task in a fresh session ins
 An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply.
 Since an agent may create one from any Session, a scheduled one included (a retry, the next check-back), a buggy task could schedule itself without end; agent-created one-time schedules are therefore bounded by how many may wait at once and how many may be created in an hour, both deployment settings.
 Users are not bound by them.
+The web UI's schedule form offers one, beside Repeat, only with the `one-time-tasks` [experimental feature](features.md) on; without it the schedules list still shows each one-time task, as a row that can be deleted but not edited, so its owner can see and cancel work that will wake the Agent.
 A starter kit cannot declare one: an absolute moment means nothing in a kit applied at any time.
 
 ## Precheck
@@ -195,6 +196,7 @@ A new schedule names a **profile** rather than its own choices: one harness, mod
 Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else none, so it follows the agent's default, and picks in the chat's own picker panel for a schedule with a reason of its own.
 The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
 The form saves an own pick only with a model; a schedule that keeps no choice of its own, and so follows the agent's model for schedules, is the one exception, and its form shows that default's values as a hint, not as a selection.
+The panel names the default's Connection while nothing is picked, and a harness or provider picked there starts on the default's model where the new harness and Connection offer it, as a profile's panel does.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent leaves the fire on the pair it resolves, the agent's scheduled default, and the schedule's row still names the reason its profile cannot run.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.

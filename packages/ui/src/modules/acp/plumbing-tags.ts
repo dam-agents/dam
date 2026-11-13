@@ -16,6 +16,7 @@ export const PLUMBING_TAGS = [
   "turn-undelivered",
   "turn-interrupted",
   "turn-continued",
+  "chat-form-check",
   "system-reminder",
   "task-notification",
   "agent-message",
