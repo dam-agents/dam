@@ -20,6 +20,7 @@ const MODAL_SIZE = {
 
 interface ModalProps {
   size?: keyof typeof MODAL_SIZE;
+  widthClass?: string;
   heightClass?: string;
   onClose?: () => void;
   children: ReactNode;
@@ -27,6 +28,7 @@ interface ModalProps {
 
 export function Modal({
   size = "md",
+  widthClass,
   heightClass,
   onClose,
   children,
@@ -55,7 +57,7 @@ export function Modal({
           aria-modal="true"
           aria-labelledby={labelId}
           className={cn(
-            MODAL_SIZE[size],
+            widthClass ?? MODAL_SIZE[size],
             "max-w-full",
             heightClass,
             MODAL_PANEL,

@@ -47,7 +47,7 @@ export function KitLinkDialog({
   const invalid = touched && link.trim() !== "" && slug === null;
 
   return (
-    <Modal size="sm" onClose={onClose}>
+    <Modal widthClass="w-[520px]" onClose={onClose}>
       <form
         className="contents"
         onSubmit={(event) => {
@@ -65,7 +65,7 @@ export function KitLinkDialog({
           divided={false}
           className="pb-0 md:pb-0"
         />
-        <DialogBody>
+        <DialogBody className="pt-2.5 md:pt-2.5">
           <Input
             value={link}
             onChange={(e) => setLink(e.target.value)}
@@ -91,7 +91,7 @@ export function KitLinkDialog({
           ) : (
             <p
               id="kit-link-hint"
-              className="mt-2 text-sm text-muted-foreground"
+              className="mt-2 text-[13px] text-muted-foreground"
             >
               A public GitHub repository with a kit.yaml.
             </p>
