@@ -211,10 +211,11 @@ It warns and never asks, since an agent usually drives it, and a read it cannot 
 
 A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
 Every agent image builds the CLI of its commit and puts `dam` on the PATH, with no configuration of its own.
-The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
+The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the `dam` skill the api-server serves into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
 The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
 That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).
-Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — send their credential in a WebSocket's query string rather than in the header the Connection injects, so they are the person's own and fail from inside an Agent; the in-agent skill says so rather than leaving the Agent to guess.
+Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket, and send its credential both in the query string a browser needs and in the `Authorization: Bearer` header, which the relays read first: the gateway swaps the real key in only for that header, so from inside an Agent these doors act as the owner like every other command, and `dam run` prompts the Agent itself or another of the owner's Agents, waking it when it sleeps.
+The Connection's chain takes WebSocket upgrades for that reason.
 Version skew is accepted, as for the served skill: an image and a server come from the same build, and the CLI has to work against a newer server anyway.
 
 The agent reaches the deployment only through the CLI, never through the API directly.

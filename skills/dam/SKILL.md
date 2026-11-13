@@ -5,6 +5,7 @@ description: >
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
   Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
   Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
+  A DAM agent that holds the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task the user picks or asks for, since it links the assistant's onboarding guide.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -37,6 +38,20 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 7. **Say who can act as the user.**
    Anyone who can steer a DAM agent uses every connection and satellite it holds.
    Before you bind a channel, grant a connection or satellite, or widen what an agent reaches, check the agent as the [security advisory](references/security-advisory.md) says: choose the safer set-up it names, and tell the user what each change shares.
+
+## Inside a DAM agent
+
+When you are a DAM agent yourself, and `DAM_SERVER` and `DAM_TOKEN` are set in your environment, the CLI is already set up: skip [Set up](#set-up).
+`dam` is on your PATH, built from the same commit as the server, and this skill came with it, so it matches the CLI.
+`DAM_TOKEN` is a placeholder that your machine's network gateway swaps for the user's real credential on the way out: it works, and it is not a secret you can see.
+Never run `dam auth login` there.
+
+Every command acts as the user who owns you, yourself included: `dam run`, `dam session show --follow` and `dam ssh connect` work from inside an agent as they do from the user's machine.
+To prompt yourself or another of the user's agents, use `dam run <agent> -p "<prompt>" --json`; a sleeping agent wakes for it.
+To run a command on another agent, use `dam ssh connect <agent> -- <command>`.
+You have no terminal, so `dam chat` and an interactive `dam ssh connect` shell are not for you ([Without a terminal](#without-a-terminal)).
+
+If the user's instructions say you are the personal assistant this DAM install gave them, also read [the personal assistant's guide](references/personal-assistant.md) before you start on a task they pick or ask for.
 
 ## Set up
 
@@ -169,7 +184,8 @@ Your shell has no terminal attached, and the CLI behaves accordingly:
   `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
   `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
   `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
-- `dam chat <agent>` attaches to the agent's interactive session and `dam agent create-interactive` walks through a form; both need a terminal, so offer the command to the user instead.
+- `dam chat <agent>` attaches to the agent's interactive session, `dam ssh connect <agent>` without a command opens a shell, and `dam agent create-interactive` walks through a form; they need a terminal, so offer the command to the user instead.
+  `dam run` and `dam ssh connect <agent> -- <command>` are the ways in that need none.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
 
 ## Common tasks

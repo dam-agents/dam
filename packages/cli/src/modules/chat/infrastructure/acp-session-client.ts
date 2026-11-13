@@ -7,7 +7,7 @@ import {
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { WebSocket } from "ws";
 
-import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsClientOptions } from "../../shared/ws-proxy.js";
 import { wsUrl } from "../../shared/ws-url.js";
 
 const TIMEOUT_MS = 120_000;
@@ -34,7 +34,7 @@ export interface ListedSession {
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
+    const ws = new WebSocket(url, wsClientOptions(url));
     ws.on("open", () => {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {

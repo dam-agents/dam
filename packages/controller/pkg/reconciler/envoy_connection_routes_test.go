@@ -332,6 +332,16 @@ func httpFilterNamesForHost(t *testing.T, doc map[string]any, host string) []str
 
 func httpFiltersForHost(t *testing.T, doc map[string]any, host string) []map[string]any {
 	t.Helper()
+	httpFilters, _ := hcmForHost(t, doc, host)["http_filters"].([]any)
+	out := make([]map[string]any, 0, len(httpFilters))
+	for _, f := range httpFilters {
+		out = append(out, f.(map[string]any))
+	}
+	return out
+}
+
+func hcmForHost(t *testing.T, doc map[string]any, host string) map[string]any {
+	t.Helper()
 	for _, fc := range internalFilterChains(t, doc) {
 		match, _ := fc["filter_chain_match"].(map[string]any)
 		serverNames, _ := match["server_names"].([]any)
@@ -341,12 +351,7 @@ func httpFiltersForHost(t *testing.T, doc map[string]any, host string) []map[str
 		filters, _ := fc["filters"].([]any)
 		require.NotEmpty(t, filters)
 		hcm, _ := filters[0].(map[string]any)["typed_config"].(map[string]any)
-		httpFilters, _ := hcm["http_filters"].([]any)
-		out := make([]map[string]any, 0, len(httpFilters))
-		for _, f := range httpFilters {
-			out = append(out, f.(map[string]any))
-		}
-		return out
+		return hcm
 	}
 	require.FailNow(t, "no terminating chain for "+host)
 	return nil
@@ -1052,6 +1057,9 @@ func TestRenderEnvoyBootstrap_DamChainPinsTheApiServerService(t *testing.T) {
 			"only the API paths the CLI uses are routed, got %q", prefix)
 	}
 	assert.NotContains(t, fmt.Sprint(routes), `/api/messagesX`, "and nothing beyond them")
+
+	// TEST_SCENARIO: `dam run`, `dam chat` and `dam ssh` from inside an Agent open a WebSocket to the install's relays, with the key the gateway puts in the upgrade's header; the chain takes the upgrade, though the DAM Connection's Secret never asked for it.
+	assert.Contains(t, toEv(hcmForHost(t, doc, host)["upgrade_configs"]), ev{"upgrade_type": "websocket"})
 
 	leaf := BuildEnvoyLeafCertificate("agent-a", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), []corev1.Secret{dam}, nil)
 	assert.Equal(t, []string{host}, leaf.Spec.DNSNames, "the leaf covers the name the Agent dials")

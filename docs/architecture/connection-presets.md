@@ -94,7 +94,8 @@ Every key is written to a ledger before anything uses it and taken out only once
 A delete revokes every key the Connection names and every key still queued under it, and a revoke the key store could not complete fails the delete and removes nothing; the delete and a rotation of one Connection take the same lock, so neither acts on a key the other has just replaced.
 The Agent holds only placeholders: `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
 
-Its contributions are that Service's name allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.
+Its contributions are that Service's name allowed under `/api/*` and injected under `/api/`, and the `dam` skill the api-server image carries — the files it serves a person's own agent ([CLI](cli.md#agent-skill)), `SKILL.md` and the pages beside it, never a second text — as one `file` contribution each, so an Agent that holds the Connection reads it and one that does not never does.
+The Agent's runtime state is built with the files the install ships now rather than the ones the Connection was made with, so an upgrade reaches every Agent without a write; what the in-agent case needs, the personal assistant's onboarding guide included, is said in that skill.
 
 **Which host.** The name is the api-server's own public Service, as the api-server learns it from `PLATFORM_APISERVER_URL`: the Agent dials it over HTTPS, its gateway terminates that TLS with the install's own leaf and [takes the request to that Service inside the cluster](credential-gateway.md#the-chain-to-the-installs-own-service).
 So the route needs no public address of its own and works on every install, a plain-HTTP localhost one included — the leaf covers the name, and the DNS answer the machine gets for it is its gateway's, as for any host.
@@ -106,7 +107,7 @@ Nothing mints a replacement by itself, so a key revoked on purpose stays revoked
 **Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too, and each surface that decides it says so.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
-The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.
+The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket and send their credential in the header this Connection injects as well as in its query string, so they work from inside an Agent too: `dam run` there prompts the Agent itself or another of the owner's Agents ([CLI](cli.md)).
 
 ## App preset: IBM LiteLLM proxy
 
