@@ -45,19 +45,19 @@ export function NewSessionOptions({
             <TerminalHarnessMenu agentId={agent.id} onOpen={onNewTerminal}>
               <LauncherTile
                 icon={<Terminal size={18} />}
-                title="Browser Terminal"
+                title="Web terminal"
                 description="Interactive session in this tab"
               />
             </TerminalHarnessMenu>
             <LauncherTile
               icon={<Terminal size={18} />}
-              title="Local Terminal"
-              description="SSH into the agent from your machine"
+              title="CLI and SSH"
+              description="Use the agent from your own terminal or over SSH"
               onClick={() => setLocal("terminal")}
             />
             <LauncherTile
               icon={<Code size={18} />}
-              title="VS Code / Zed"
+              title="VS Code and Zed"
               description="Open workspace in your local editor"
               onClick={() => setLocal("ide")}
             />
@@ -66,7 +66,7 @@ export function NewSessionOptions({
         {channels && available.slack && (
           <LauncherTile
             icon={<SlackColorIcon aria-hidden width={18} height={18} />}
-            title="Slack Channel"
+            title="Slack"
             description="Mention the agent in a connected channel"
             onClick={() => setMessenger("slack")}
           />
@@ -74,7 +74,7 @@ export function NewSessionOptions({
         {channels && available.telegram && (
           <LauncherTile
             icon={<TelegramColorIcon aria-hidden width={18} height={18} />}
-            title="Telegram Chat"
+            title="Telegram"
             description="Message the agent from a Telegram chat"
             onClick={() => setMessenger("telegram")}
           />
@@ -114,7 +114,7 @@ function LocalCommandDialog({
     <Modal size="sm" onClose={onClose}>
       <DialogHeader
         title={
-          target === "terminal" ? "Open in Terminal" : "Open in VS Code / Zed"
+          target === "terminal" ? "Open in Terminal" : "Open in VS Code or Zed"
         }
         onClose={onClose}
         subtitle={

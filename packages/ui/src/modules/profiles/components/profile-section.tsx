@@ -83,10 +83,14 @@ export function ProfileSection({
       );
       return;
     }
-    void showConfirm("It cannot be recovered.", `Delete “${profile.name}”?`, {
-      kind: "destructive",
-      confirmLabel: "Delete",
-    }).then((ok) => ok && remove.mutate({ id: profile.id }));
+    void showConfirm(
+      "It cannot be recovered.",
+      `Delete profile “${profile.name}”?`,
+      {
+        kind: "destructive",
+        confirmLabel: "Delete profile",
+      },
+    ).then((ok) => ok && remove.mutate({ id: profile.id }));
   };
 
   return (
