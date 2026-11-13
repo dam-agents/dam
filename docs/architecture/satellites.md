@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-04
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -20,7 +20,7 @@ Three verbs start a worker, and **nothing above it can tell them apart**:
   Without `--name` it is named after the server it starts — the first word past a package runner such as `npx` or `uvx`, less scope, version and path — or the host it forwards to.
 - `dam satellite shell "…"` — a **Command Surface**: permitted command shapes, one usage line each, which becomes a one-tool MCP server whose single `run` tool takes the command to run.
   Without `--name` it is named after the one command every pattern permits, or called `user@hostname` when they differ; either is folded into the name contract.
-- `dam satellite files --root <dir>` — one directory on the machine, offered as a `download` tool, and with `--upload` an `upload` tool beside it (see [Files](#files-between-the-machine-and-the-agent)).
+- `dam satellite files --root <dir>` — one directory on the machine, offered as `list` and `stat` tools, a `download` tool, and with `--upload` an `upload` tool beside them (see [Files](#files-between-the-machine-and-the-agent)).
   Without `--name` it is named after the directory.
 
 Separate verbs rather than one flag because each is a different thing to set up, not another way of saying the same thing, and an explicit verb cannot be misread the way a selector flag can.
@@ -226,12 +226,21 @@ So a file travels on **its own request, in the direction the queue cannot go** �
 
 `dam satellite files --root <dir>` exposes one directory on the machine as a **transfer surface**:
 
-- `download` copies one file **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
+- `download` copies one file, or a slice of one, **into the Agent's workspace**, and the Agent is told only the path the file landed at, its size and its sha256.
   It reads the file with its own tools, never through the model's context.
 - `upload`, offered only when the worker was started with `--upload`, copies one file **from the Agent's workspace onto the machine**.
   It is the same request in reverse, and it never replaces a file that is already there unless the call says to.
+- `list` reports what a directory holds, and `stat` reports one path's facts, neither moving a byte.
+  They are how an Agent finds a file it was never told the name of.
+- `download` takes an optional `offset` and `length`, so a part of a file moves without moving the file.
+  A negative `offset` counts back from the end, which is how the tail of a growing log is read.
+  The slice lands under the file's own name in the same per-Job directory, and the result adds the `offset` it came from and the file's `fileSize` so pieces can be joined in order.
+- `stat` with `sha256` hashes the whole file **on the machine** and moves nothing, which is how an Agent checks a file that arrived in pieces.
+  It reads exactly the size one `fstat` on the verified descriptor reported, and refuses if fewer bytes come back, or if a second `fstat` afterwards shows a different size or mtime, so the size and the digest always describe the same bytes.
+  On a network mount every byte of that read crosses the link, so the tool's description says it is slow on a big file.
 
 Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
+`list` and `stat` declare no direction, because they move nothing and authorise no transfer at all.
 A Satellite replaces its tool list every time it connects, so the direction cannot be read again later: a manifest that points the tool the other way must not reinterpret a Job the Agent already made.
 A Job whose tool moved no file, or moves them the other way, authorises nothing.
 
@@ -249,6 +258,9 @@ The directory is the whole allowlist on the machine, and every path is opened wi
   `/` and the home directory are refused as roots.
 - Each directory on the way must be a real one, and the file is opened without following a link, without blocking on a FIFO, and then compared with the path it was opened by — same device and inode, a regular file, one link.
   A `..`, an absolute path, a link at any point, a hard link out and a special file are all refused.
+- `list` walks the same way: every directory on the way is proved, a directory is entered only after it was proved again, and a link is listed as a link and never followed.
+  Its target is never printed, because a target can name a path the root does not cover, and the entries behind it are never read.
+  A hard link is listed — its metadata is all that is shown — because the one-link rule exists to keep a transfer from reading through a name someone else holds.
 - Read-only unless the user passed `--upload`.
   A write is staged beside its destination under an exclusive name, verified before a byte is written, and published **inside the destination directory's inode**: the process steps into that directory, proves it is the one that was checked, and names both files relatively, so renaming a path on top of it cannot steer the step.
   It never writes through a link, and it never replaces a file with more than one link.
@@ -259,10 +271,21 @@ The Agent's own workspace is treated as untrusted in exactly the same way, becau
 The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
 Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
 
-**One transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
+**A transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
 A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
 Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
+The limit is measured against **what one call copies**, not against the file.
+A ranged `download` sends the slice, declares the slice's length and reports the slice's sha256, so a file of any size moves in pieces an Agent asks for; without `offset` and `length` a file over the limit is refused and the Agent is told to pass them.
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
+What lands under `.dam/satellite-files/` in the Agent's workspace stays there: Platform never removes it, so the Agent is told to delete what it no longer needs.
+
+**A listing is bounded four ways**, because a machine's directory can be a network mount where every `stat` is a remote round trip: `depth` at most 10 levels, `limit` at most 5000 entries, a 20 second wall clock per call, and an output budget under the 1 MiB one Job result may carry.
+A bound that cut the answer short adds a last line saying which bound it was, so an Agent sees a partial answer rather than a short one.
+The clock and the cancellation signal are checked after every filesystem call, not only before one, but a call already in flight is not interrupted: a listing can overrun the budget by one stalled operation on a mount that stopped answering.
+`glob` filters the entries printed while every directory the depth allows is still walked, and the paths are relative to the directory that was listed.
+A printed path is a JSON string, so a name carrying a tab, a newline or a quote cannot be mistaken for a column or a line.
+Entries come in filesystem order, not sorted.
+A listing within that budget that is still larger than one message is spilled into a workspace file by the same rule as any other result, so a big directory costs the Agent a path instead of its context.
 
 ## Trust boundary
 
