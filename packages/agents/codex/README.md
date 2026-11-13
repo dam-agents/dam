@@ -35,7 +35,9 @@ Neither reaches a platform sub-agent, which follows the session's platform sub-a
 Codex fetches `model_catalog_url` only with `[features] api_key_model_discovery = true`, an under-development flag that is off by default; a pin bump must re-check it in `codex-rs/core/src/features.rs`.
 With it, Codex's `/model` picker and codex-acp's `model/list` hold exactly the served catalog: the models of every granted provider the agent can reach, never the built-in OpenAI slugs.
 Codex's deserializer drops a catalog whose entries carry no `model_messages.instructions_template`, and it refuses a catalog response over its body limit, which the full instructions on every model exceed once an agent holds an OpenAI key (over seventy models).
-So each entry carries a one-line template, and [`config.toml`](rootfs/etc/codex/config.toml) sets `model_instructions_file` to [`model-instructions.md`](rootfs/etc/codex/model-instructions.md), which wins over any entry's template: Codex's own instructions, copied verbatim from the pinned release's bundled `gpt-5.5` entry (`codex-rs/core/models.json`), which a pin bump re-copies.
+So each entry carries a one-line template, and [`config.toml`](rootfs/etc/codex/config.toml) sets `model_instructions_file` to [`model-instructions.md`](rootfs/etc/codex/model-instructions.md), which wins over any entry's template: Codex's own instructions, copied from the pinned release's bundled `gpt-5.5` entry (`codex-rs/core/models.json`), which a pin bump re-copies.
+That entry opens by telling the model it is "a coding agent based on GPT-5", which the router's models are not: QA saw 3 of 3 DeepSeek sessions on dam-dev answer that they were GPT-5 trained by OpenAI while the chip and Usage said DeepSeek.
+So the file's opening lines are the platform's own, and `check:codex-model-identity` fails if a re-copy brings the GPT-5 claim back.
 [`image.toml`](image.toml) pins codex-acp 2.1.1 and the Codex it bundles.
 
 ### Model selection
