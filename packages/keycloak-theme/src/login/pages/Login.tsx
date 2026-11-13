@@ -297,7 +297,7 @@ function ScrollPage({
                 className="text-foreground text-5xl leading-[0.95] font-light -tracking-[0.04em] motion-safe:animate-fade-in md:text-7xl"
               >
                 {splitMeaningLines(nameMeaning ?? brand).map((line) => (
-                  <span key={line} className="block">
+                  <span key={line} className="block whitespace-nowrap">
                     {line}{" "}
                   </span>
                 ))}
