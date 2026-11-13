@@ -22,6 +22,7 @@ const home = mkdtempSync(join(tmpdir(), "pi-replay-"));
 const work = join(home, "work");
 const MODEL = "cb/claude-sonnet-4-5";
 const THOUGHT = "Check what the work directory holds.";
+const REDACTED = "[Reasoning redacted]";
 const COMMAND = "echo replay-me";
 const FILE = "notes.txt";
 
@@ -45,8 +46,9 @@ const streamed = (msg) => {
     const delta =
       type === "text" ? { type: "text_delta", text: rest.text }
       : type === "thinking" ? { type: "thinking_delta", thinking: rest.thinking }
-      : { type: "input_json_delta", partial_json: JSON.stringify(rest.input) };
-    events.push({ type: "content_block_delta", index, delta });
+      : type === "tool_use" ? { type: "input_json_delta", partial_json: JSON.stringify(rest.input) }
+      : null;
+    if (delta) events.push({ type: "content_block_delta", index, delta });
     events.push({ type: "content_block_stop", index });
   }
   events.push({ type: "message_delta", delta: { stop_reason: msg.stop_reason, stop_sequence: null }, usage: { output_tokens: 5 } });
@@ -70,6 +72,7 @@ const router = createServer(async (req, res) => {
     ? message(
         [
           { type: "thinking", thinking: THOUGHT, signature: "sig-1" },
+          { type: "redacted_thinking", data: "opaque-redacted-payload" },
           { type: "text", text: "Working on it." },
           { type: "tool_use", id: "toolu_bash", name: "bash", input: { command: COMMAND } },
           { type: "tool_use", id: "toolu_write", name: "write", input: { path: FILE, content: "hello\n" } },
@@ -139,14 +142,16 @@ try {
   const turn = await acp.request("session/prompt", { sessionId: session.sessionId, prompt: [{ type: "text", text: "Do the work." }] }, 120_000);
   assert.equal(turn.stopReason, "end_turn");
   assert.ok(existsSync(join(work, FILE)), "the write step ran");
-  assert.match(thoughts(), new RegExp(THOUGHT));
+  assert.ok(thoughts().includes(THOUGHT), "the live turn showed no thinking");
+  assert.equal(thoughts().includes(REDACTED), false, "the live turn showed a redacted thought");
   assert.deepEqual(titles(), [COMMAND, FILE]);
 
   // TEST_SCENARIO: the chat reopened replays the same thinking and the same step titles.
   await acp.request("session/close", { sessionId: session.sessionId });
   updates.length = 0;
   await acp.request("session/load", { sessionId: session.sessionId, cwd: work, mcpServers: [] }, 120_000);
-  assert.match(thoughts(), new RegExp(THOUGHT), "the replayed session kept no thinking");
+  assert.ok(thoughts().includes(THOUGHT), "the replayed session kept no thinking");
+  assert.equal(thoughts().includes(REDACTED), false, "a redacted thought was replayed");
   assert.deepEqual(titles(), [COMMAND, FILE], "the replayed steps lost their command or their file");
   console.log("a reopened chat replays its thinking and its steps' own titles");
 } finally {

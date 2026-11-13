@@ -231,11 +231,6 @@ function callArguments(message, messages) {
   return argumentsByCall.get(message?.toolCallId);
 }
 
-function replayedBashCommand(message, messages) {
-  const command = callArguments(message, messages)?.command;
-  return typeof command === "string" && command.trim() ? command : undefined;
-}
-
 function fileTitle(toolName, args, cwd) {
   if (toolName !== "write" && toolName !== "edit") return undefined;
   const path = args?.path;
@@ -249,7 +244,7 @@ async function replayThinking(agent, sessionId, message) {
   for (const block of message.content) {
     if (block?.type !== "thinking" || typeof block.thinking !== "string")
       continue;
-    if (!block.thinking.trim()) continue;
+    if (!block.thinking.trim() || block.redacted) continue;
     await agent.conn.sessionUpdate({
       sessionId,
       update: {
@@ -379,7 +374,7 @@ const edits = [
   },
   {
     find: "              title: bashCommand(m) ?? toolName,\n",
-    replace: `              title: bashCommand(m) ?? ${HELPERS}.replayedBashCommand(m, messages) ?? toolName,\n`,
+    replace: `              title: bashCommand(m) ?? bashCommand(${HELPERS}.callArguments(m, messages)) ?? toolName,\n`,
     count: 1,
   },
   {
@@ -389,6 +384,33 @@ const edits = [
     replace:
       `            title: ${HELPERS}.fileTitle(toolName, ${HELPERS}.callArguments(m, messages), params.cwd) ?? toolName,\n` +
       '            kind: toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "edit" : "other",\n',
+    count: 1,
+  },
+  {
+    find:
+      "                title: toolName,\n" +
+      "                kind: toToolKind(toolName),\n" +
+      "                status,\n",
+    replace:
+      `                title: ${HELPERS}.fileTitle(toolName, rawInput, this.cwd) ?? toolName,\n` +
+      "                kind: toToolKind(toolName),\n" +
+      "                status,\n",
+    count: 1,
+  },
+  {
+    find:
+      '                sessionUpdate: "tool_call_update",\n' +
+      "                toolCallId,\n" +
+      "                status,\n" +
+      "                locations,\n" +
+      "                rawInput\n",
+    replace:
+      '                sessionUpdate: "tool_call_update",\n' +
+      "                toolCallId,\n" +
+      `                title: ${HELPERS}.fileTitle(toolName, rawInput, this.cwd),\n` +
+      "                status,\n" +
+      "                locations,\n" +
+      "                rawInput\n",
     count: 1,
   },
   {
@@ -513,7 +535,6 @@ globalThis[Symbol.for("platform.pi-acp-patch")] = {
   piEnv,
   rememberSessionRef,
   replayThinking,
-  replayedBashCommand,
   trackRun,
   runStarted,
   extMethod,
