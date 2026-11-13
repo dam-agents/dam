@@ -860,12 +860,12 @@ describe("replay rules", () => {
       ],
     },
   ];
-  /** TEST_SCENARIO: A Messages body carrying a GLM-made thinking block in a
-   * prior turn reaches a Claude model without that block, and with no
-   * `<thinking>` text in its place; the last assistant message keeps its
-   * blocks; a GLM target gets the body as is. */
-  it("drops prior-turn thinking for a Claude target only", () => {
-    const out = applyReplayRules(
+  /** TEST_SCENARIO: A Messages history reaches a Claude model and a GLM
+   * model as the harness wrote it, thinking blocks included: removing them
+   * from every call loses the model's reasoning and stops the provider's
+   * prompt cache from matching. */
+  it("leaves the thinking blocks of a Messages history in place", () => {
+    const claude = applyReplayRules(
       { messages: history },
       {
         dialect: "anthropic-messages",
@@ -873,10 +873,7 @@ describe("replay rules", () => {
         upstreamId: "aws/claude-opus-4-8",
       },
     );
-    const messages = out.messages as { content: unknown }[];
-    expect(messages[1]!.content).toEqual([{ type: "text", text: "a" }]);
-    expect(JSON.stringify(out)).not.toContain("<thinking>");
-    expect(messages[3]!.content).toEqual(history[3]!.content);
+    expect(claude.messages).toBe(history);
     const glm = applyReplayRules(
       { messages: history },
       {
@@ -886,45 +883,6 @@ describe("replay rules", () => {
       },
     );
     expect(glm.messages).toBe(history);
-    const noAssistant = applyReplayRules(
-      { messages: [{ role: "user", content: "x" }] },
-      { dialect: "anthropic-messages", alias: "ibm", upstreamId: "claude-x" },
-    );
-    expect(noAssistant.messages).toHaveLength(1);
-  });
-
-  /** TEST_SCENARIO: An interrupted turn leaves an assistant message that
-   * holds only a thinking block. On a later call to a Claude model that
-   * message is gone, not sent with an empty `content`, which the Messages API
-   * refuses. */
-  it("drops an earlier assistant message that held only thinking", () => {
-    const out = applyReplayRules(
-      {
-        messages: [
-          { role: "user", content: "hi" },
-          {
-            role: "assistant",
-            content: [
-              { type: "thinking", thinking: "plan", signature: "x".repeat(32) },
-            ],
-          },
-          { role: "user", content: "again" },
-          { role: "assistant", content: [{ type: "text", text: "a" }] },
-          { role: "user", content: "more" },
-        ],
-      },
-      {
-        dialect: "anthropic-messages",
-        alias: "anthropic",
-        upstreamId: "claude-opus-5-5",
-      },
-    );
-    expect(out.messages).toEqual([
-      { role: "user", content: "hi" },
-      { role: "user", content: "again" },
-      { role: "assistant", content: [{ type: "text", text: "a" }] },
-      { role: "user", content: "more" },
-    ]);
   });
 
   /** TEST_SCENARIO: A Responses body with a Curve Bender bridge reasoning
