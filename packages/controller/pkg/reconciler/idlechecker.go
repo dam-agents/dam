@@ -31,6 +31,8 @@ const (
 	minIdleCheckInterval = 15 * time.Second
 	maxIdleCheckInterval = 5 * time.Minute
 	vmStartHold          = 15 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how many sweeps in a row an agent may leave the busy probe unanswered while its machine reads ready before the sweep says so out loud. KNOWN CEILING: a machine the runner's own prober reports ready that the controller's probe never reaches is never hibernated by this path, so it holds its CPU and memory until the machine stops reading ready, an operator stops it, or the path recovers. A guest that stops answering is not that case: the runner restarts it within about a minute, and a restarted machine does not read ready until it answers. So what this spares is the controller's own path to a healthy machine — the same Service the api-server's relay uses — and an outage there shows up as relays failing as well. The upgrade path is a durable "turn running" signal in the store, a pin the api-server's relay writes while a session reports a turn, which the sweep could read instead of asking the guest at all.
+	silentProbeWarnAfter = 10
 )
 
 type IdleChecker struct {
@@ -43,10 +45,10 @@ type IdleChecker struct {
 	ownerLocks              map[string]*sync.Mutex
 	ownerLocksMu            sync.Mutex
 	shortestObservedTimeout atomic.Int64
-	// UNIT_BOUNDARY_DESCRIPTION: the runtime's own idle flag and whether it answered at all, which the sweep has to tell apart: an answer of idle is agreement that the agent is quiet and hibernates it at once, while an answer of busy is agreement that it is at work. Silence is neither.
+	// UNIT_BOUNDARY_DESCRIPTION: the runtime's own idle flag and whether it answered at all, which the sweep has to tell apart: only an answer of idle proves an agent quiet, and an answer of busy proves it at work, while a probe that does not answer proves nothing and must never be the reason a machine goes down.
 	idleProbe func(ctx context.Context, agentName string) (idle, answered bool)
-	// UNIT_BOUNDARY_DESCRIPTION: the agents the last sweep found silent, so a probe that did not come back is asked a second time before it counts as quiet: one three-second timeout against a working guest ends a turn whose only protection is that answer. The sweep rebuilds it, so an agent that answered, or that ran again, needs two fresh silences.
-	unanswered map[string]struct{}
+	// UNIT_BOUNDARY_DESCRIPTION: the sweeps in a row an agent has left its busy probe unanswered, kept only to make a guest that stopped answering visible in the log: no count reaches a hibernation, and the map is rebuilt on every sweep, so an answer clears it.
+	unanswered map[string]int
 }
 
 func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
@@ -142,8 +144,8 @@ func (c *IdleChecker) check(ctx context.Context) {
 	ctx, finish := telemetry.StartPass(ctx, "idle check")
 	var passErr error
 	defer func() { finish(passErr) }()
-	// UNIT_BOUNDARY_DESCRIPTION: the silences this pass sees, which replace the ones the last pass kept: a pass that did not run, like one that hibernated nothing, forgets them, so an agent is only hibernated on two silences this sweep and the one before it can stand behind.
-	unanswered := map[string]struct{}{}
+	// UNIT_BOUNDARY_DESCRIPTION: the silences this pass saw, keyed by agent, which replace the last pass's: a pass that did not run forgets them, so the count is consecutive sweeps and nothing else.
+	unanswered := map[string]int{}
 	defer func() { c.unanswered = unanswered }()
 	start := time.Now()
 	// UNIT_BOUNDARY_DESCRIPTION: a store that cannot answer lately cannot say who went quiet. A sweep that hibernated from a stale fleet is exactly the decision this gate exists for, so the pass does nothing and the next one asks again.
@@ -189,7 +191,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		// UNIT_BOUNDARY_DESCRIPTION: an answer of idle is the runtime agreeing it is quiet, and an answer of busy is it agreeing it is at work; a probe that does not answer is neither, so it spares the agent once and a second sweep that also gets no answer takes it down. A machine that is down still hibernates, one sweep later, and a working guest that misses one probe keeps its turn.
+		// UNIT_BOUNDARY_DESCRIPTION: only what the runtime and the runner answer can take a machine down. An answer of idle is the runtime proving the agent quiet and hibernates it; a probe that does not answer proves nothing and never permits hibernation, since a working guest that misses three seconds is exactly the turn this sweep must not end. A silence is then read against the runner's own report of the machine: a machine that is stopped or gone answers no probe, so it hibernates on that report, and one the runner still calls running holds its machine and is logged when the silence lasts.
 		idle, answered := c.idleProbe(ctx, name)
 		if answered && !idle {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
@@ -197,12 +199,21 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 		why := "the busy probe answered idle"
 		if !answered {
-			if _, spared := c.unanswered[name]; !spared {
-				unanswered[name] = struct{}{}
-				slog.Info("idle checker: not hibernating, the busy probe did not answer; the next sweep decides", "agent", name)
+			// UNIT_BOUNDARY_DESCRIPTION: a silence is read against the readiness the runner's own prober publishes, the same condition the sweep already holds, so this costs no call: a machine that reads ready is answering the runner, and the sweep's own path to it is what failed, so the agent keeps its machine; a machine that does not read ready is down, still coming up, or failed to start, and its silence is its state — it hibernates, as it did before.
+			_, podReady, _ := vmStartConditions(agent)
+			if podReady != nil && podReady["status"] == string(metav1.ConditionTrue) {
+				n := unanswered[name] + 1
+				unanswered[name] = n
+				if n == 1 {
+					slog.Info("idle checker: not hibernating, the busy probe did not answer while the machine reads ready", "agent", name)
+				}
+				// UNIT_BOUNDARY_DESCRIPTION: at the threshold and then at each doubling of it, so a machine spared for hours does not fill the log.
+				if m := n / silentProbeWarnAfter; n%silentProbeWarnAfter == 0 && m&(m-1) == 0 {
+					slog.Warn("idle checker: an agent has left its busy probe unanswered while its machine reads ready, and it stays up", "agent", name, "sweeps", n)
+				}
 				continue
 			}
-			why = "the busy probe did not answer twice"
+			why = "the busy probe did not answer and the machine does not read ready"
 		}
 
 		hibernated += c.hibernateIdle(ctx, agent, name, why)
