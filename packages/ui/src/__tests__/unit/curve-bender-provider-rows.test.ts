@@ -8,7 +8,6 @@ import {
   CURVE_BENDER_DOCS_URL,
   CurveBenderInfoDialog,
 } from "../../modules/providers/components/curve-bender-info-dialog.js";
-import { CURVE_BENDER_RESTRICTIONS_URL } from "../../modules/providers/components/curve-bender-restriction.js";
 import { ProviderSection } from "../../modules/providers/components/provider-section.js";
 
 type Item = { id: string; conn: { templateId: string } };
@@ -159,7 +158,10 @@ describe("CurveBender provider rows", () => {
       );
     expect(html).toMatch(externalLink(CURVE_BENDER_DOCS_URL, "Learn more"));
     expect(html).toMatch(
-      externalLink(CURVE_BENDER_RESTRICTIONS_URL, "restricted use cases"),
+      externalLink(
+        "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/getting-started/model-usage-guidance/",
+        "restricted use cases",
+      ),
     );
     expect(html).toContain("These models are currently only approved for <a ");
     expect(html).toContain(">restricted use cases</a>.");

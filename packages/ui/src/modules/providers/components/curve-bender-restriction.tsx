@@ -2,7 +2,7 @@ import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 export const CURVE_BENDER_RESTRICTIONS_URL =
-  "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/";
+  "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/getting-started/model-usage-guidance/";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the statement that CurveBender's models are
