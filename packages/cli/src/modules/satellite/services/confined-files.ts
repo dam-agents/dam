@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import {
   linkSync,
   lstatSync,
+  mkdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -259,6 +260,7 @@ export interface Facts {
   kind: FileKind;
   size: number | null;
   mtimeMs: number;
+  nlink: number;
 }
 
 /**
@@ -286,6 +288,7 @@ export async function lstatInRoot(
       kind,
       size: kind === "file" ? info.size : null,
       mtimeMs: info.mtimeMs,
+      nlink: info.nlink,
     },
   };
 }
@@ -368,6 +371,7 @@ export async function listInRoot(
               kind,
               size: kind === "file" ? info.size : null,
               mtimeMs: info.mtimeMs,
+              nlink: info.nlink,
             },
           ]
         : [],
@@ -395,6 +399,7 @@ export async function listInRoot(
           kind,
           size: kind === "file" ? found.size : null,
           mtimeMs: found.mtimeMs,
+          nlink: found.nlink,
         });
         if (entries.length > options.limit) {
           cut = "limit";
@@ -628,13 +633,15 @@ export interface StagedDir {
  * UNIT_BOUNDARY_DESCRIPTION: An empty directory beside the name a directory
  * upload will land as, created exclusively, so a destination that already exists
  * is refused before any byte is received and the whole tree can be unpacked
- * beside it and published in one step. It sits in the parent the walk proved, and
- * that proof is kept for the publish and the cleanup.
+ * beside it and published in one step. The parent is proved before it is used,
+ * and the creation and the proof of the new directory happen in one synchronous
+ * step inside that parent's inode, so a parent swapped for a link cannot make
+ * this create or remove anything somewhere else.
  *
- * The ceilings, stated: a same-user local process can race the destination's
- * `lstat` and the cleanup's recursive remove — it can already write there, so it
- * gains nothing #6216's threat model does not already grant it. Node exposes no
- * `renameat2`/`openat2`, which is the upgrade path for both.
+ * The ceiling, stated: a same-user local process can race the destination's
+ * `lstat` and the cleanup's recursive remove, which gains it nothing it did not
+ * already have over a directory it can write to. Node exposes no `openat2`,
+ * which is the upgrade path for both.
  */
 export async function stageDirInRoot(
   root: string,
@@ -647,31 +654,30 @@ export async function stageDirInRoot(
   if ((await lstat(join(parent.path, name)).catch(() => null)) !== null)
     return { ok: false, reason: "exists" };
 
+  if (!(await realDirectory(parent.path)))
+    return { ok: false, reason: "outside" };
   const parentInfo = await lstat(parent.path).catch(() => null);
-  if (parentInfo === null) return { ok: false, reason: "outside" };
+  if (parentInfo === null || !parentInfo.isDirectory())
+    return { ok: false, reason: "outside" };
+  const proved = { dev: parentInfo.dev, ino: parentInfo.ino };
 
-  const path = join(
-    parent.path,
-    `.${name}.incoming-${randomBytes(6).toString("hex")}`,
-  );
-  try {
-    await mkdir(path, { mode: 0o700 });
-  } catch {
+  const staging = `.${name}.incoming-${randomBytes(6).toString("hex")}`;
+  const made = insideDirectory(parent.path, proved, () => {
+    mkdirSync(staging, { mode: 0o700 });
+    const info = lstatSync(staging, { throwIfNoEntry: false });
+    if (info === undefined || !info.isDirectory()) return null;
+    return { dev: info.dev, ino: info.ino };
+  });
+  if (!made.ok || made.value === null)
     return { ok: false, reason: "not-writable" };
-  }
-  const info = await lstat(path).catch(() => null);
-  if (info === null || !(await realDirectory(path))) {
-    rmSync(path, { recursive: true, force: true });
-    return { ok: false, reason: "not-writable" };
-  }
   return {
     ok: true,
     staged: {
-      path,
+      path: join(parent.path, staging),
       name,
       dir: parent.path,
-      proved: { dev: parentInfo.dev, ino: parentInfo.ino },
-      inode: { dev: info.dev, ino: info.ino },
+      proved,
+      inode: made.value,
     },
   };
 }

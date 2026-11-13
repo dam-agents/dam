@@ -12,9 +12,50 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Readable } from "node:stream";
-import { afterEach, beforeAll, afterAll, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  afterAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+const hooks = vi.hoisted(() => ({
+  failChmod: false,
+  cancelOnSync: false,
+  cancel: null as null | (() => void),
+  handles: [] as { fd: number }[],
+}));
+
+vi.mock("node:fs/promises", async (original) => {
+  const fs = await original<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    async open(...args: Parameters<typeof fs.open>) {
+      const handle = await fs.open(...args);
+      hooks.handles.push(handle as unknown as { fd: number });
+      if (hooks.failChmod)
+        handle.chmod = (async () => {
+          throw new Error("the mode could not be set");
+        }) as typeof handle.chmod;
+      if (hooks.cancelOnSync) {
+        const sync = handle.sync.bind(handle);
+        handle.sync = (async () => {
+          await sync();
+          if (hooks.cancelOnSync) {
+            hooks.cancelOnSync = false;
+            hooks.cancel?.();
+          }
+        }) as typeof handle.sync;
+      }
+      return handle;
+    },
+  };
+});
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
 import {
   discardDirInRoot,
@@ -95,6 +136,30 @@ async function upload(
     transferToken: CLAIM_TOKEN,
   });
   return { outcome, transfer };
+}
+
+function expectAllClosed(): void {
+  expect(hooks.handles.map((handle) => handle.fd)).toEqual(
+    hooks.handles.map(() => -1),
+  );
+  hooks.handles.length = 0;
+}
+
+function tarOfDirectoryWithSize(size: number): Buffer {
+  const header = Buffer.alloc(512);
+  header.write("d/", 0, "ascii");
+  header.write("0000755\0", 100, "ascii");
+  header.write("0000000\0", 108, "ascii");
+  header.write("0000000\0", 116, "ascii");
+  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124, "ascii");
+  header.write("00000000000\0", 136, "ascii");
+  header.fill(0x20, 148, 156);
+  header[156] = 0x35;
+  header.write("ustar\0" + "00", 257, "ascii");
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+  return Buffer.concat([header, Buffer.alloc(512), Buffer.alloc(1024)]);
 }
 
 async function staging(dirToCheck: string): Promise<string[]> {
@@ -270,8 +335,8 @@ describe("a directory upload", () => {
 
   it("refuses a tar with more entries than the limit and leaves nothing", async () => {
     const tar = await tarOf(
-      Array.from({ length: 10_001 }, () => ({
-        name: "d",
+      Array.from({ length: 10_001 }, (_, index) => ({
+        name: `d${index}/`,
         type: "directory" as const,
       })),
     );
@@ -363,6 +428,105 @@ describe("a directory upload", () => {
     expect(outcome.status).toBe("cancelled");
     expect(await exists(join(root, "tree"))).toBe(false);
     expect(await staging(root)).toEqual([]);
+  });
+
+  it("refuses a directory entry that appears twice", async () => {
+    const tar = await tarOf([
+      { name: "d/", type: "directory" },
+      { name: "d/", type: "directory" },
+    ]);
+    const { outcome } = await upload(tar);
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.blocked).toBe(true);
+    expect(done.output).toContain('"d"');
+    expect(done.output).toContain("appears twice");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+  });
+
+  it("refuses a directory entry that declares a size", async () => {
+    const { outcome } = await upload(tarOfDirectoryWithSize(10));
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.blocked).toBe(true);
+    expect(done.output).toContain("declares 10 bytes");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+  });
+
+  it("refuses a body that holds no archive at all", async () => {
+    const { outcome } = await upload(Buffer.alloc(0));
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.output).toContain("empty");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+  });
+
+  it("makes an empty directory from an empty but well-formed tar", async () => {
+    const tar = Buffer.alloc(1024);
+    const { outcome } = await upload(tar);
+
+    expect(jsonOf(outcome)).toEqual({
+      path: "tree",
+      files: 0,
+      dirs: 0,
+      bytes: 0,
+      sha256: sha256(tar),
+    });
+    expect(await readdir(join(root, "tree"))).toEqual([]);
+  });
+
+  it("shortens the entry name it names in a refusal", async () => {
+    const long = "n".repeat(200_000);
+    const { outcome } = await upload(await tarOf([{ name: long, body: "x" }]));
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.blocked).toBe(true);
+    expect(done.output.length).toBeLessThan(2000);
+    expect(done.output).toContain("…");
+    expect(await exists(join(root, "tree"))).toBe(false);
+  });
+
+  it("closes a staged file when its mode cannot be set", async () => {
+    hooks.failChmod = true;
+    const { outcome } = await upload(await tarOf([{ name: "x", body: "x" }]));
+    hooks.failChmod = false;
+
+    expect(finished(outcome).output).toContain("could not set the mode");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+    expectAllClosed();
+  });
+
+  it("publishes nothing when the job is cancelled while a file is verified", async () => {
+    let backend: ReturnType<typeof backendOf> | null = null;
+    const transfer = fakeFilesTransfer({
+      receives: await tarOf([{ name: "x", body: "x".repeat(1024) }]),
+    });
+    sequence += 1;
+    hooks.cancelOnSync = true;
+    hooks.cancel = () => backend?.cancel(sequence);
+    backend = backendOf({ transfer });
+
+    const outcome = await backend.call({
+      sequence,
+      tool: UPLOAD_TOOL,
+      args: { path: "tree", workspacePath: "out/tree.tar", unpack: true },
+      transferToken: CLAIM_TOKEN,
+    });
+    hooks.cancelOnSync = false;
+    hooks.cancel = null;
+
+    expect(outcome.status).toBe("cancelled");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+    expectAllClosed();
   });
 
   it("refuses an existing destination before receiving anything", async () => {
@@ -459,6 +623,28 @@ describe("a single-file upload next to the directory tools", () => {
 });
 
 describe("publishing and discarding an unpacked directory", () => {
+  it("removes nothing when the parent was swapped after the staging directory was created", async () => {
+    const created = await stageDirInRoot(root, ["tree"]);
+    if (!created.ok) throw new Error("staging failed");
+    const staged = created.staged;
+    const stagingName = basename(staged.path);
+
+    const moved = `${root}-moved`;
+    await rename(root, moved);
+    await mkdir(root);
+    await mkdir(join(root, stagingName));
+    await writeFile(join(root, stagingName, "foreign.txt"), "keep me");
+
+    expect(await publishDirInRoot(root, staged)).toBe("outside");
+    await discardDirInRoot(staged);
+
+    expect(await readFile(join(root, stagingName, "foreign.txt"), "utf8")).toBe(
+      "keep me",
+    );
+    expect(await exists(join(root, "tree"))).toBe(false);
+    await rm(moved, { recursive: true, force: true });
+  });
+
   it("publishes nothing and removes nothing when the staging directory was swapped", async () => {
     const created = await stageDirInRoot(root, ["tree"]);
     if (!created.ok) throw new Error("staging failed");

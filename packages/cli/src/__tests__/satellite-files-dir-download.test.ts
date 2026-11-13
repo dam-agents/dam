@@ -28,6 +28,7 @@ import {
 
 const hooks = vi.hoisted(() => ({
   shrink: null as null | string,
+  handles: [] as { fd: number }[],
 }));
 
 vi.mock("node:fs/promises", async (original) => {
@@ -36,6 +37,7 @@ vi.mock("node:fs/promises", async (original) => {
     ...fs,
     async open(...args: Parameters<typeof fs.open>) {
       const handle = await fs.open(...args);
+      hooks.handles.push(handle as unknown as { fd: number });
       if (hooks.shrink === null || hooks.shrink !== args[0]) return handle;
       const target = hooks.shrink;
       hooks.shrink = null;
@@ -48,6 +50,13 @@ vi.mock("node:fs/promises", async (original) => {
     },
   };
 });
+
+function expectAllClosed(): void {
+  expect(hooks.handles.map((handle) => handle.fd)).toEqual(
+    hooks.handles.map(() => -1),
+  );
+  hooks.handles.length = 0;
+}
 
 /**
  * TEST_OVERVIEW: A directory download moves a whole tree as one uncompressed tar
@@ -189,15 +198,94 @@ describe("a directory download", () => {
     ).toEqual([]);
   });
 
-  it("says in the worker log that a directory comes down as a tar", async () => {
+  /**
+   * TEST_SCENARIO: The worker calls describeCall while the Job already holds a
+   * concurrency slot, so anything it throws leaks that slot. A name one segment
+   * long is accepted by the path check and is longer than a filesystem allows, so
+   * the description must come from the arguments alone and touch no files.
+   */
+  it("describes a call from its arguments only, however long the name is", () => {
     const backend = backendOf(fakeFilesTransfer());
+    const long = "a".repeat(300);
 
-    expect(backend.describeCall(DOWNLOAD_TOOL, { path: "docs" })).toBe(
-      "download docs/ (tar)",
+    expect(backend.describeCall(DOWNLOAD_TOOL, { path: long })).toBe(
+      `download ${long}`,
     );
-    expect(backend.describeCall(DOWNLOAD_TOOL, { path: "docs/a.txt" })).toBe(
-      "download docs/a.txt",
+    expect(
+      backend.describeCall(DOWNLOAD_TOOL, { path: "docs/a.txt", offset: 3 }),
+    ).toBe("download docs/a.txt [offset 3+end]");
+  });
+
+  it("closes a file it opened when the transfer gives up before reading it", async () => {
+    const transfer = fakeFilesTransfer();
+    transfer.send = () => Promise.reject(new Error("the platform refused it"));
+    const { outcome } = await callWith("docs", { transfer });
+
+    expect(finished(outcome).isError).toBe(true);
+    expectAllClosed();
+  });
+
+  it("leaves hard-linked files out of the precheck and names them", async () => {
+    const linked = join(root, "linked");
+    await mkdir(linked);
+    await writeFile(join(linked, "big.img"), "x".repeat(4096));
+    await link(join(linked, "big.img"), join(linked, "big2.img"));
+
+    const { outcome, transfer } = await callWith("linked", { maxBytes: 1024 });
+    const result = jsonOf(outcome);
+
+    expect(result.files).toBe(0);
+    expect((result.skipped as string[]).sort()).toEqual([
+      "big.img (hard link)",
+      "big2.img (hard link)",
+    ]);
+    expect(
+      await tarEntriesOf(transfer.sent[0]?.bytes ?? Buffer.alloc(0)),
+    ).toEqual([]);
+  });
+
+  it("keeps the skipped list inside its byte budget", async () => {
+    let deep = join(root, "long");
+    for (let level = 0; level < 20; level++) deep = join(deep, "d".repeat(35));
+    await mkdir(deep, { recursive: true });
+    for (let index = 0; index < 30; index++)
+      await symlink(join(deep, "nothing"), join(deep, `link-${index}`));
+
+    const skipped = jsonOf(await callWith("long").then((it) => it.outcome))
+      .skipped as string[];
+
+    expect(skipped.length).toBeLessThan(30);
+    expect(Buffer.byteLength(JSON.stringify(skipped))).toBeLessThan(17 * 1024);
+    expect(skipped.at(-1)).toMatch(/… and \d+ more$/);
+  });
+
+  it("counts the tar's own framing against the cap before a byte moves", async () => {
+    const small = join(root, "small");
+    await mkdir(small);
+    await writeFile(join(small, "five"), "12345");
+
+    const { outcome, transfer } = await callWith("small", { maxBytes: 600 });
+
+    expect(finished(outcome).isError).toBe(true);
+    expect(finished(outcome).output).toContain(
+      "over the 600 byte transfer limit",
     );
+    expect(transfer.sent).toHaveLength(0);
+  });
+
+  it("counts the tar's framing against the cap while it streams, even past the estimate", async () => {
+    const named = join(root, "named");
+    await mkdir(named);
+    await writeFile(join(named, "x".repeat(120)), "hello");
+
+    const { outcome, transfer } = await callWith("named", { maxBytes: 2500 });
+
+    expect(finished(outcome).isError).toBe(true);
+    expect(finished(outcome).output).toContain(
+      "over the 2500 byte transfer limit",
+    );
+    expect(transfer.sent).toHaveLength(0);
+    expectAllClosed();
   });
 
   it("refuses a directory whose files total over the cap before a byte moves", async () => {
