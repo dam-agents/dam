@@ -123,19 +123,11 @@ export function ClassicChatLayout({
     return () => ro.disconnect();
   }, [columnsEl]);
   const panelRef = useRef<HTMLDivElement>(null);
-  const sections: SidebarPanel[] = useChatSections().map(({ id, open }) => ({
-    id,
-    open,
-  }));
-  const panelStack = useSidebarPanels([
-    ...sections,
-    ...(processesEnabled
-      ? [{ id: "processes" as const, open: processesSectionOpen }]
-      : []),
-  ]);
-  /* UNIT_BOUNDARY_DESCRIPTION: Processes stays in the column as on main, folding from its header, so the column shows while the Agent's processes are on even with Files and Artifacts closed. */
+  const sections: SidebarPanel[] = useChatSections(processesEnabled).map(
+    ({ id, open }) => ({ id, open }),
+  );
+  const panelStack = useSidebarPanels(sections);
   const column = sectionsColumn(sections, desktop);
-  const columnOpen = column.open || processesEnabled;
   const shows = (id: SidebarPanelId) => column.shown.includes(id);
   const sectionControls = (open: boolean, setOpen: (open: boolean) => void) =>
     desktop
@@ -145,7 +137,7 @@ export function ClassicChatLayout({
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const { panelFills, panelMaxW, panelW } = classicColumns({
     columnsW,
-    leftW: columnOpen ? leftW : 0,
+    leftW: column.open ? leftW : 0,
     savedPanelW: rightW,
     panelOpen: panel !== null,
     panelMaximized: maximized,
@@ -161,7 +153,7 @@ export function ClassicChatLayout({
           style={leftPanelWidth}
           className={cn(
             "@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1",
-            columnOpen && "md:border-r md:border-b md:border-border",
+            column.open && "md:border-r md:border-b md:border-border",
           )}
         >
           <MobileMenuButton />
@@ -180,7 +172,7 @@ export function ClassicChatLayout({
             "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",
             mobileScreen === "chat" ? "hidden md:flex" : "flex",
             mobileScreen === "files" && "max-md:!w-full",
-            (maximized || !columnOpen) && "md:!hidden",
+            (maximized || !column.open) && "md:!hidden",
           )}
         >
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
@@ -196,7 +188,7 @@ export function ClassicChatLayout({
               {agentName}
             </span>
           </div>
-          {desktop && columnOpen && notices}
+          {desktop && column.open && notices}
           <SidePanelCloseScope value={false}>
             {shows("files") && (
               <FilesPanel
@@ -221,22 +213,23 @@ export function ClassicChatLayout({
                 />
               </>
             )}
-            {processesEnabled && (
+            {shows("processes") && (
               <>
                 <PanelDivider stack={panelStack} below="processes" />
                 <ProcessesPanel
                   agentId={agentId}
                   open={processesSectionOpen}
-                  onToggle={() =>
-                    setProcessesSectionOpen(!processesSectionOpen)
-                  }
+                  {...sectionControls(
+                    processesSectionOpen,
+                    setProcessesSectionOpen,
+                  )}
                   {...panelStack.panelProps("processes")}
                 />
               </>
             )}
           </SidePanelCloseScope>
         </div>
-        {!maximized && columnOpen && (
+        {!maximized && column.open && (
           <ResizeHandle
             side="left"
             label="Resize sections"
@@ -256,7 +249,7 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {(!desktop || !columnOpen) && notices}
+          {(!desktop || !column.open) && notices}
           {children}
         </div>
 

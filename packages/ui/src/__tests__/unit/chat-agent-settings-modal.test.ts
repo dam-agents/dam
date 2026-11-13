@@ -194,6 +194,29 @@ describe("the top bar's avatar and name", () => {
     );
     expect(onConfigure).toHaveBeenCalledTimes(1);
   });
+
+  // TEST_SCENARIO: the browser and changes buttons are the same 8×8 toggle as the sections' toggles, a pressed one drawn as the neutral square.
+  it("draw the browser and changes buttons as the sections' toggles", () => {
+    render(
+      createElement(ClassicChatToolbar, {
+        agentId: ALPHA.id,
+        canOpenBrowser: true,
+        canShowChanges: true,
+        browserOpen: true,
+        changesOpen: false,
+        onToggleBrowser: () => {},
+        onToggleChanges: () => {},
+        onConfigure: () => {},
+      }),
+    );
+    for (const label of ["Open browser", "Show changes"]) {
+      const button = host.querySelector<HTMLButtonElement>(
+        `[aria-label="${label}"]`,
+      )!;
+      expect(button.className).toContain("h-8 w-8");
+      expect(button.className).toContain("aria-pressed:bg-muted");
+    }
+  });
 });
 
 describe("the settings modal", () => {

@@ -10,6 +10,7 @@ interface Props {
   agentId: string | null;
   open: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -19,6 +20,7 @@ export function ProcessesPanel({
   agentId,
   open,
   onToggle,
+  onClose,
   className,
   style,
   ref,
@@ -34,6 +36,7 @@ export function ProcessesPanel({
       title="Processes"
       open={open}
       onToggle={onToggle}
+      onClose={onClose}
       className={className}
       headerClassName="border-t border-border"
       style={style}

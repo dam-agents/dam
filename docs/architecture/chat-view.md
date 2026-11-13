@@ -12,8 +12,9 @@ None of it adds a rule of its own: every switch it shows is the call the Agent's
 
 An Agent's chat gives the conversation the room by default.
 Its Files and Artifacts sections start closed; their icons in the chat's top bar open them in a column beside the conversation, stacked when several are open, and the browser keeps each choice as a preference of the person, not of the Agent.
-The top bar has, right after the Agent's name, a toggle for Files and one for Artifacts, so a section closed with its X always opens again; an open one is the design's neutral square, and the browser, changes and settings buttons follow, where they were before.
-Processes stays in the column as before, folding from its header.
+The top bar has, right after the Agent's name, a toggle for Files, one for Artifacts, and one for Processes while the Agent's processes are on, so a section closed with its X always opens again; Processes starts closed too, though the design does not draw it, so every section behaves the same.
+The browser, changes and settings buttons follow, where they were before, drawn as the same toggle: an open one is the design's neutral square.
+*Show changes* appears only once the Agent has answered that it has a repository, so it never shows and then goes.
 A new chat's empty composer has focus and shows example prompts in place of its placeholder, one at a time, to show what an Agent can be asked; Tab puts the one showing in.
 The examples are the design's list, the same for every Agent.
 A chat with a conversation, or an assistant's greeting with a first task of its own, keeps the ordinary placeholder.

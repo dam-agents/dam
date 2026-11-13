@@ -126,7 +126,7 @@ export function usePaletteInput(): PaletteInput {
       ? dock?.kind === "browser" && dock.agentId === chatAgent.id
       : null,
     changesOpen:
-      chatAgent && hasGitRepositories(changeSets) !== false
+      chatAgent && hasGitRepositories(changeSets) === true
         ? dock?.kind === "changes" && dock.agentId === chatAgent.id
         : null,
     theme,

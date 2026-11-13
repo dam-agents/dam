@@ -1352,6 +1352,7 @@ export function ChatView() {
             name={selectedAgentName}
             display={agentDisplay}
             onConfigure={handleConfigureSandbox}
+            processesEnabled={processesEnabled}
             actions={
               <ClassicChatToolbar
                 agentId={selectedAgent}

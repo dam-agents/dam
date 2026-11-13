@@ -31,6 +31,8 @@ Builds published before these accounts were added have only `qa-owner`; there an
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
   In the chat's top bar, *Show files* (a folder) and *Show artifacts* (a diagram), right after the agent's name, open its Files and Artifacts sections beside the conversation, stacked when several are open; both start closed for an account that never opened them, and each stays as the account last left it.
+  With the agent's processes on, *Show processes* opens the Processes section the same way; it starts closed too.
+  *Show changes* appears only once the agent has a repository; it never shows first and then goes.
   A new chat's empty message box shows example prompts one after another, with a *Tab* hint; Tab puts the one showing in the box, and the box's placeholder (its accessible name) is still *Message…*.
   The agent's avatar and name at the start of the chat's top bar are one button, *<name> settings*, with the tooltip *Agent settings*, that opens the agent's settings in a dialog over the chat; its banner shows the agent's avatar and name, and its General section starts with the agent's rename and avatar picker.
   Every wrench, *Agent settings* — the chat's top bar, an agent's row in the sidebar, an agent card on Home — opens the same dialog over whatever is on screen, with no chat needed behind it.

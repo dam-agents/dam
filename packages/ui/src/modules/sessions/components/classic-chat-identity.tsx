@@ -5,6 +5,7 @@ import {
   Document,
   Folder,
   Globe,
+  Process,
   Tools,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
@@ -18,23 +19,22 @@ import type { AgentView } from "../../../types.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import {
-  type ChatSectionId,
-  useChatSections,
-} from "../hooks/use-chat-sections.js";
+import { useChatSections } from "../hooks/use-chat-sections.js";
+import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { AgentSettingsButton } from "./agent-settings-button.js";
 
 /* UNIT_BOUNDARY_DESCRIPTION: the design's toggle: an 8×8 rounded square with muted ink and no background while closed, and the neutral muted square of a selected row while open; never the accent. */
 const TOGGLE =
   "h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground";
 
-/* UNIT_BOUNDARY_DESCRIPTION: the toggles' icons as the design draws them; Artifacts uses the design's glyph here only, so it never reads as Files' folder beside it. */
+/* UNIT_BOUNDARY_DESCRIPTION: the toggles' icons: Files and Artifacts as the design draws them, Artifacts with the design's glyph here only, so it never reads as Files' folder beside it; Processes, which the design does not draw, the same way with its own icon. */
 const SECTION_TOGGLES: Record<
-  ChatSectionId,
+  SidebarPanelId,
   { label: string; Icon: CarbonIconType }
 > = {
   files: { label: "Show files", Icon: Folder },
   artifacts: { label: "Show artifacts", Icon: Diagram },
+  processes: { label: "Show processes", Icon: Process },
 };
 
 /**
@@ -42,7 +42,7 @@ const SECTION_TOGGLES: Record<
  * draws it: the Agent's state dot, its avatar and name, which open its
  * settings over the chat, the Shared badge of a Shared Agent, and right after
  * the name the toggles of the sections beside the conversation (Files,
- * Artifacts) on a desktop, and at the end
+ * Artifacts, and Processes when they are on) on a desktop, and at the end
  * of the same area, where main has them, the browser, changes and settings
  * buttons. The buttons never shrink: on a narrow top bar the name truncates
  * first, so no button is cut off.
@@ -52,16 +52,18 @@ export function ClassicChatIdentity({
   name,
   display,
   onConfigure,
+  processesEnabled = false,
   actions,
 }: {
   agent: AgentView | null;
   name: string | null;
   display: AgentDisplay | null;
   onConfigure: () => void;
+  processesEnabled?: boolean;
   /** UNIT_BOUNDARY_DESCRIPTION: the top bar's buttons, drawn after the name and its toggles, where main has them. */
   actions?: ReactNode;
 }) {
-  const sections = useChatSections();
+  const sections = useChatSections(processesEnabled);
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <span
@@ -142,6 +144,7 @@ export function ClassicChatToolbar({
           aria-label="Open browser"
           tooltip="Open browser"
           aria-pressed={browserOpen}
+          className={TOGGLE}
           onClick={onToggleBrowser}
         >
           <Globe size={16} />
@@ -154,6 +157,7 @@ export function ClassicChatToolbar({
           aria-label="Show changes"
           tooltip="Show changes"
           aria-pressed={changesOpen}
+          className={TOGGLE}
           onClick={onToggleChanges}
         >
           <Branch size={16} />
