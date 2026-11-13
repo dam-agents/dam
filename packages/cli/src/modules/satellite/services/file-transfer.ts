@@ -22,7 +22,7 @@ export interface FileTransfer {
     sequence: number;
     token: string;
     bytes: Readable;
-    declaredBytes: number;
+    declaredBytes?: number;
     signal: AbortSignal;
   }): Promise<SatelliteFileWritten>;
   receive(input: {
@@ -91,7 +91,9 @@ export function createFileTransfer(deps: {
         headers: {
           ...(await auth()),
           "content-type": "application/octet-stream",
-          "content-length": String(declaredBytes),
+          ...(declaredBytes === undefined
+            ? {}
+            : { "content-length": String(declaredBytes) }),
           "x-dam-claim": token,
         },
         body: Readable.toWeb(bytes) as ReadableStream<Uint8Array>,
