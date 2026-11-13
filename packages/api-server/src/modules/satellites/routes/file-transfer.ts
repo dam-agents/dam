@@ -213,7 +213,9 @@ export function createSatelliteFileRoutes(deps: {
       if (!staged.ok)
         return staged.reason === "no-space"
           ? c.json({ error: "no_space" }, 507)
-          : c.json({ error: "workspace_refused" }, 409);
+          : staged.reason === "too-large"
+            ? c.json({ error: "transfer_too_large" }, 413)
+            : c.json({ error: "workspace_refused" }, 409);
 
       if (!(await spend(c.get("user").sub, job, token, "download")))
         return c.json({ error: "no_running_job" }, 409);

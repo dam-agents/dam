@@ -272,7 +272,7 @@ export function createFilesBackend(input: {
         token,
         signal,
       });
-      const free = await freeBytes(input.root);
+      const free = await freeBytes(staged.staged.dir);
       const needed = incoming.size + FREE_SPACE_HEADROOM_BYTES;
       if (free !== null && needed > free) {
         incoming.stream.destroy();

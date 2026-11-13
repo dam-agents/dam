@@ -18,7 +18,8 @@ export interface AgentTransfer {
     path: string;
     declaredBytes: number | undefined;
   }): Promise<
-    { ok: true; id: string } | { ok: false; reason: "aborted" | "no-space" }
+    | { ok: true; id: string }
+    | { ok: false; reason: "aborted" | "no-space" | "too-large" }
   >;
   publish(input: {
     id: string;
@@ -39,11 +40,14 @@ export const TRANSFER_TIMEOUT_MS = 60_000;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: How long a stage request may sit silent on the
  * wire. The workspace answers only after it has re-read the whole staged file
- * to compare its hash, and that read-back sends nothing: at 8 MB/s a 5 GiB file
- * takes about eleven minutes, so the ceiling is a workspace disk slower than
- * that on a file that large. Publish and read stay on the transfer timeout.
+ * to compare its hash, and that read-back sends nothing: a 5 GiB file needs a
+ * workspace disk faster than about 20 MB/s to answer inside this. It stays under
+ * the CLI's own ceiling — the native fetch it sends with gives up after 5 minutes
+ * of silence waiting for headers — so the api-server's refusal is the one the
+ * agent reads. The upgrade path is a CLI dispatcher with a longer headers
+ * timeout, which is what would let this wait cover a slower disk.
  */
-export const STAGE_IDLE_TIMEOUT_MS = 10 * 60_000;
+export const STAGE_IDLE_TIMEOUT_MS = 270_000;
 
 async function body(res: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -129,6 +133,8 @@ export function createAgentTransfer(
         const parsed = await body(res);
         if (res.statusCode === 507 && parsed.error === "no_space")
           return { ok: false as const, reason: "no-space" as const };
+        if (res.statusCode === 413 && parsed.error === "transfer_too_large")
+          return { ok: false as const, reason: "too-large" as const };
         return res.statusCode === 200 && typeof parsed.id === "string"
           ? { ok: true as const, id: parsed.id }
           : { ok: false as const, reason: "aborted" as const };

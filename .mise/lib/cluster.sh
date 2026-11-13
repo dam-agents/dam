@@ -201,10 +201,20 @@ traefik_values_port() {
     yq -r '.ports[env(ENTRY)].exposedPort // .ports[env(LEGACY)].exposedPort // ""' <<<"$1" 2>/dev/null
 }
 
+# traefik_values_timeout <values> <install name>: the readTimeout that install's
+# entrypoint records, under either name, or empty when it records none.
+traefik_values_timeout() {
+  ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" \
+    yq -r '.ports[env(ENTRY)].transport.respondingTimeouts.readTimeout // .ports[env(LEGACY)].transport.respondingTimeouts.readTimeout // ""' <<<"$1" 2>/dev/null
+}
+
 # traefik_values_set <values> <install name> <port> [insecure]: those values with
 # that install's entrypoint on that port, and no entry left under the name it had
 # before, so an install made under the old scheme is rewritten rather than listed
 # twice — twice would claim two ports and make two Service ports of one name.
+# The entrypoint also turns off Traefik's readTimeout, which defaults to 60 s for
+# a whole request including its body: a 5 GiB transfer, and `dam import` through
+# the same entrypoint, would otherwise be cut off mid-body.
 traefik_values_set() {
   local out
   out="$(ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" PORT="$3" yq -r '
@@ -212,7 +222,8 @@ traefik_values_set() {
       "port": (env(PORT) | tonumber),
       "expose": {"default": true},
       "exposedPort": (env(PORT) | tonumber),
-      "protocol": "TCP"
+      "protocol": "TCP",
+      "transport": {"respondingTimeouts": {"readTimeout": "0s"}}
     })' <<<"$1")" || return 1
   [ "${4:-}" = insecure ] || { printf '%s' "$out"; return 0; }
   ENTRY="$(traefik_entrypoint_name "$2")" \
@@ -246,7 +257,9 @@ install_url() {
 # Environment's); a named install takes the first port of the range no entrypoint
 # names yet, and keeps it on the next run. An install whose port is recorded
 # under the name its entrypoint had before the 15-character limit is migrated:
-# the write drops that entry, so the config never holds both.
+# the write drops that entry, so the config never holds both. An install recorded
+# before its entrypoint turned Traefik's readTimeout off is rewritten once, so a
+# cluster made earlier gets the timeout without being torn down.
 traefik_entrypoint_port() {
   local fixed="${1:-}" insecure="${2:-}" values json port used p i
   for i in $(seq 1 20); do
@@ -257,8 +270,12 @@ traefik_entrypoint_port() {
     if [ -n "$port" ]; then
       # This install's already. A fixed port that agrees with the record needs no
       # write; one that differs is the caller moving the install (a changed
-      # `port` value, an Environment's backchannel port) and wins, below.
-      if [ -z "$fixed" ] || [ "$fixed" = "$port" ]; then printf '%s' "$port"; return 0; fi
+      # `port` value, an Environment's backchannel port) and wins, below. A record
+      # made before the entrypoint carried its timeout is written again, once.
+      if { [ -z "$fixed" ] || [ "$fixed" = "$port" ]; } &&
+        [ "$(traefik_values_timeout "$values" "$CLUSTER_INSTALL")" = "0s" ]; then
+        printf '%s' "$port"; return 0
+      fi
     fi
     if [ -n "$fixed" ]; then
       port="$fixed"

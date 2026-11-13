@@ -19,6 +19,10 @@ const seen: {
 
 const silent: { stage: number; publish: number } = { stage: 0, publish: 0 };
 
+const refusal: { stage: { status: number; error: string } | null } = {
+  stage: null,
+};
+
 let server: Server;
 
 vi.mock("../../modules/agents/infrastructure/k8s.js", () => ({
@@ -41,7 +45,18 @@ beforeAll(async () => {
     req.on("end", () => {
       entry.ended = true;
       entry.body = Buffer.concat(chunks);
-      const answer = () =>
+      const answer = () => {
+        if (
+          entry.path.startsWith("/api/transfer/stage") &&
+          refusal.stage !== null
+        ) {
+          res
+            .writeHead(refusal.stage.status, {
+              "content-type": "application/json",
+            })
+            .end(JSON.stringify({ error: refusal.stage.error }));
+          return;
+        }
         res
           .writeHead(200, { "content-type": "application/json" })
           .end(
@@ -51,6 +66,7 @@ beforeAll(async () => {
                 : { path: "/home/agent/x" },
             ),
           );
+      };
       const wait = entry.path.startsWith("/api/transfer/stage")
         ? silent.stage
         : silent.publish;
@@ -129,6 +145,27 @@ describe("the relay to the workspace", () => {
       }),
     ).toEqual({ ok: true, path: "/home/agent/x" });
   });
+
+  /**
+   * TEST_SCENARIO: A workspace older than the platform still cuts a transfer at
+   * 50 MB and answers 413. That answer must reach the machine as an over-limit
+   * refusal rather than a generic workspace refusal, because the two tell the
+   * agent to do different things.
+   */
+  it("keeps an older workspace's over-limit answer as its own reason", async () => {
+    refusal.stage = { status: 413, error: "transfer_too_large" };
+    try {
+      expect(
+        await transfer.createAgentTransfer("agent-1", "ns").stage({
+          body: Readable.from([Buffer.from("hello")]),
+          path: ".dam/satellite-files/laptop-1/note",
+          declaredBytes: 5,
+        }),
+      ).toEqual({ ok: false, reason: "too-large" });
+    } finally {
+      refusal.stage = null;
+    }
+  });
 });
 
 describe("the time the relay waits", () => {
@@ -140,7 +177,7 @@ describe("the time the relay waits", () => {
    */
   it("lets a stage sit silent past the transfer timeout, and no other request", async () => {
     expect(transfer.TRANSFER_TIMEOUT_MS).toBe(60_000);
-    expect(transfer.STAGE_IDLE_TIMEOUT_MS).toBe(10 * 60_000);
+    expect(transfer.STAGE_IDLE_TIMEOUT_MS).toBe(270_000);
 
     const patient = transfer.createAgentTransfer("agent-1", "ns", {
       transferMs: 50,

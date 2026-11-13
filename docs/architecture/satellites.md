@@ -262,8 +262,9 @@ Cleanup of an abandoned stage is confined the same way, and it removes only an e
 **One transfer carries at most 5 GiB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
 A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
 Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
-Before it stages a byte the workspace end refuses a file whose declared size plus 1 GiB of headroom does not fit in the free space of the Agent's workspace, answering HTTP 507 `no_space`.
-In the upload direction the machine makes the same check against the directory it exposes, so a file it cannot hold is refused before it is written.
+Before it stages a byte the workspace end refuses a file whose declared size plus 1 GiB of headroom does not fit in the free space of the directory the file lands in, answering HTTP 507 `no_space`.
+That check is best effort rather than a reservation: it reads the size the body declares, and nothing is measured when a body declares no length or the filesystem cannot be measured.
+In the upload direction the machine makes the same check against the directory the file lands in, so a file it cannot hold is refused before it is written.
 A file that landed under `.dam/satellite-files/` stays there until the Agent or its owner deletes it: the platform never sweeps a file an Agent may still use.
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 

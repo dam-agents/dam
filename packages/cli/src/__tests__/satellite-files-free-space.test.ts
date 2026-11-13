@@ -83,18 +83,25 @@ describe("the free space an upload needs on the machine", () => {
    * published file.
    */
   it("refuses a file it cannot hold, leaving nothing staged", async () => {
+    const measured: string[] = [];
     const backend = createFilesBackend({
       root,
       allowUpload: true,
       transfer: fakeTransfer(Buffer.from("payload")),
-      freeBytes: async () => GIB,
+      freeBytes: async (at) => {
+        measured.push(at);
+        return GIB;
+      },
     });
 
     const outcome = outcomeOf(
       await backend.call({
         sequence: 1,
         tool: UPLOAD_TOOL,
-        args: { path: "landing.bin", workspacePath: "work/landing.bin" },
+        args: {
+          path: "dumps/landing.bin",
+          workspacePath: "work/landing.bin",
+        },
         transferToken: TOKEN,
       }),
     );
@@ -102,7 +109,8 @@ describe("the free space an upload needs on the machine", () => {
     expect(outcome.isError).toBe(true);
     expect(outcome.output).toContain("does not have room for this file");
     expect(outcome.output).toContain("plus 1 GiB free");
-    expect(await readdir(root)).toEqual([]);
+    expect(measured).toEqual([join(root, "dumps")]);
+    expect(await readdir(join(root, "dumps"))).toEqual([]);
   });
 
   it("takes the same upload when the headroom fits", async () => {
@@ -117,13 +125,16 @@ describe("the free space an upload needs on the machine", () => {
       await backend.call({
         sequence: 2,
         tool: UPLOAD_TOOL,
-        args: { path: "landing.bin", workspacePath: "work/landing.bin" },
+        args: {
+          path: "dumps/landing.bin",
+          workspacePath: "work/landing.bin",
+        },
         transferToken: TOKEN,
       }),
     );
 
     expect(outcome.isError).toBe(false);
-    expect(await readdir(root)).toEqual(["landing.bin"]);
+    expect(await readdir(join(root, "dumps"))).toEqual(["landing.bin"]);
   });
 });
 

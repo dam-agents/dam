@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SATELLITE_FILE_MAX_BYTES } from "api-server-api";
-import { STAGING_PREFIX } from "../../modules/transfer/confined.js";
+import {
+  stagedDigest,
+  STAGING_PREFIX,
+} from "../../modules/transfer/confined.js";
 import { createTransferHandlers } from "../../modules/transfer/http.js";
 
 /**
@@ -85,12 +88,17 @@ describe("the free space a stage needs on the agent", () => {
   /**
    * TEST_SCENARIO: A five byte body lands on a filesystem with just enough room
    * for the headroom and not for the file, so the file plus its 1 GiB of headroom
-   * does not fit. The stage must be refused before anything is created, with the
+   * does not fit. The stage must be refused before a byte is written, with the
    * space it needs and the space it has, because the agent can then free a
-   * directory and try again.
+   * directory and try again. The filesystem measured is the one the file lands
+   * on, which a mount under the workspace root makes a different one.
    */
-  it("refuses a body it cannot hold, and creates no stage", async () => {
-    handlers = stageHandlers(async () => GIB + 4);
+  it("refuses a body it cannot hold, and leaves no stage", async () => {
+    const measured: string[] = [];
+    handlers = stageHandlers(async (at) => {
+      measured.push(at);
+      return GIB + 4;
+    });
 
     const answer = await stage({ declared: 5, body: Buffer.from("hello") });
 
@@ -100,7 +108,8 @@ describe("the free space a stage needs on the agent", () => {
       free: GIB + 4,
       needed: GIB + 5,
     });
-    await expect(readdir(join(dir, LANDED))).rejects.toThrow();
+    expect(measured).toEqual([join(dir, LANDED)]);
+    expect(await readdir(join(dir, LANDED))).toEqual([]);
   });
 
   it("stages the same body when the headroom fits", async () => {
@@ -113,6 +122,30 @@ describe("the free space a stage needs on the agent", () => {
     const staged = await readdir(join(dir, LANDED));
     expect(staged).toHaveLength(1);
     expect(staged[0]?.startsWith(STAGING_PREFIX)).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: Verifying a large file reads it back in silence after the
+   * last byte arrived, and the body's inactivity timer runs on the socket, which
+   * outlives that byte. A timer still armed kills a connection that is working,
+   * so the answer must arrive after a verification longer than the timer.
+   */
+  it("answers after a verification that outlasts the body's idle timer", async () => {
+    handlers = createTransferHandlers({
+      root: dir,
+      reserved: [],
+      log: () => {},
+      bodyInactivityMs: 20,
+      verify: async (staged) => {
+        await new Promise((settle) => setTimeout(settle, 250));
+        return stagedDigest(staged);
+      },
+    });
+
+    const answer = await stage({ declared: 5, body: Buffer.from("hello") });
+
+    expect(answer.status).toBe(200);
+    expect(typeof answer.json.id).toBe("string");
   });
 
   /**
