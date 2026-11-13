@@ -10,9 +10,9 @@ export function buildConversation(
   blocks: readonly BlockInput[],
 ): A2uiConversation {
   return build(blocks, {
-    callFunction: (call) =>
+    callFunction: (call, model) =>
       callFunction(call, {
-        model: {},
+        model,
         scope: "",
         indexes: [],
         catalogId: call.catalogId,
