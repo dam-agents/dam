@@ -159,7 +159,7 @@ describe("createS3ArtifactStore", () => {
     const parsedBrowser = new URL(browser!);
     expect(parsedBrowser.host).toBe("public-view:8333");
     expect(parsedBrowser.searchParams.get("response-content-disposition")).toBe(
-      'attachment; filename="c.bin"',
+      `attachment; filename="c.bin"; filename*=UTF-8''c.bin`,
     );
 
     const agent = await store.presignDownload("exp/agent/u/c.bin", {

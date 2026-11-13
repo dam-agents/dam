@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
+import { contentDisposition } from "../../core/content-disposition.js";
 import { downloadFileName } from "./domain/artifact-kind.js";
 import { stagingKey } from "./domain/storage-key.js";
 import { parseVersion } from "./viewer/authorize.js";
@@ -109,7 +110,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       headers: {
         "Content-Type": ref.contentType || "application/octet-stream",
         "Content-Length": String(blob.sizeBytes),
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": contentDisposition(filename),
       },
     });
   });

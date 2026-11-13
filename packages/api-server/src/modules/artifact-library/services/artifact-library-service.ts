@@ -36,6 +36,7 @@ import {
   defaultFileName,
   detectKind,
   downloadFileName,
+  effectiveContentType,
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
@@ -182,7 +183,7 @@ export function toLibraryArtifact(
     title: row.title,
     slug: row.slug,
     kind: row.kind as ArtifactKind,
-    contentType: row.contentType,
+    contentType: effectiveContentType(row.fileName, row.contentType),
     fileName: row.fileName,
     sizeBytes: row.sizeBytes,
     version: row.version,
@@ -349,7 +350,7 @@ export function createArtifactLibraryService(
       return {
         storageRef: row.storageRef,
         fileName: row.fileName,
-        contentType: row.contentType,
+        contentType: effectiveContentType(row.fileName, row.contentType),
         sizeBytes: row.sizeBytes,
         version: row.version,
       };
@@ -359,7 +360,7 @@ export function createArtifactLibraryService(
     return {
       storageRef: past.storageRef,
       fileName: row.fileName,
-      contentType: past.contentType,
+      contentType: effectiveContentType(row.fileName, past.contentType),
       sizeBytes: past.sizeBytes,
       version: past.version,
     };

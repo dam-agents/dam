@@ -1,9 +1,19 @@
 import { getAccessToken } from "../../../auth.js";
+import { getErrorMessage } from "../../../lib/errors.js";
+import { emitToast } from "../../../lib/toast.js";
 
-function filenameFromDisposition(header: string | null): string | null {
+export function filenameFromDisposition(header: string | null): string | null {
   if (!header) return null;
-  const match = /filename="?([^"]+)"?/.exec(header);
-  return match?.[1] ?? null;
+  const extended = /filename\*=UTF-8''([^;]+)/i.exec(header)?.[1];
+  if (extended) {
+    try {
+      return decodeURIComponent(extended);
+    } catch {
+      return extended;
+    }
+  }
+  const match = /filename="([^"]*)"|filename=([^;\s]+)/i.exec(header);
+  return match?.[1] ?? match?.[2] ?? null;
 }
 
 function isDirectDownload(body: unknown): body is { url: string } {
@@ -62,30 +72,34 @@ export async function downloadArtifact(
   id: string,
   version?: number,
 ): Promise<void> {
-  const token = await getAccessToken();
-  const query = version !== undefined ? `?v=${version}` : "";
-  const response = await fetch(
-    `/api/artifact-library/${encodeURIComponent(id)}/download${query}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!response.ok) {
-    throw new Error(`Download failed (${response.status})`);
-  }
-
-  if (response.headers.get("Content-Type")?.includes("application/json")) {
-    const body: unknown = await response.json();
-    if (!isDirectDownload(body)) {
-      throw new Error("Download failed (malformed direct-download response)");
+  try {
+    const token = await getAccessToken();
+    const query = version !== undefined ? `?v=${version}` : "";
+    const response = await fetch(
+      `/api/artifact-library/${encodeURIComponent(id)}/download${query}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok) {
+      throw new Error(`Download failed (${response.status})`);
     }
-    saveAs(body.url);
-    return;
-  }
 
-  const blob = await response.blob();
-  const filename =
-    filenameFromDisposition(response.headers.get("Content-Disposition")) ??
-    "artifact";
-  const url = URL.createObjectURL(blob);
-  saveAs(url, filename);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+    if (response.headers.get("Content-Type")?.includes("application/json")) {
+      const body: unknown = await response.json();
+      if (!isDirectDownload(body)) {
+        throw new Error("Download failed (malformed direct-download response)");
+      }
+      saveAs(body.url);
+      return;
+    }
+
+    const blob = await response.blob();
+    const filename =
+      filenameFromDisposition(response.headers.get("Content-Disposition")) ??
+      "artifact";
+    const url = URL.createObjectURL(blob);
+    saveAs(url, filename);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (err) {
+    emitToast({ kind: "error", message: getErrorMessage(err) });
+  }
 }

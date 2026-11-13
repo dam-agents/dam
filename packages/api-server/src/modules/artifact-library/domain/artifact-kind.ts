@@ -139,6 +139,36 @@ export function isTextKind(kind: ArtifactKind): boolean {
   return kind !== "binary";
 }
 
+const GENERIC_CONTENT_TYPES = new Set([
+  "",
+  "application/octet-stream",
+  "application/x-www-form-urlencoded",
+  "binary/octet-stream",
+]);
+
+const INLINE_SAFE_CONTENT_TYPE_BY_EXTENSION = new Map<string, string>([
+  ["png", "image/png"],
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
+  ["gif", "image/gif"],
+  ["webp", "image/webp"],
+  ["avif", "image/avif"],
+  ["bmp", "image/bmp"],
+  ["ico", "image/x-icon"],
+  ["tif", "image/tiff"],
+  ["tiff", "image/tiff"],
+  ["pdf", "application/pdf"],
+]);
+
+export function effectiveContentType(fileName: string, stored: string): string {
+  const mime = (stored.split(";")[0] ?? "").trim().toLowerCase();
+  if (!GENERIC_CONTENT_TYPES.has(mime)) return stored;
+  const fromExtension = INLINE_SAFE_CONTENT_TYPE_BY_EXTENSION.get(
+    extensionOf(fileName),
+  );
+  return fromExtension ?? "application/octet-stream";
+}
+
 export function downloadFileName(name: string): string {
   const cleaned = name.replace(/[\r\n"\\]/g, "").trim();
   return cleaned.length > 0 ? cleaned : "artifact";
