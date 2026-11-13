@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 
-import { Markdown } from "../../../components/markdown.js";
 import { useStore } from "../../../store.js";
 import { ActivityBlock } from "./activity-block.js";
 
@@ -72,7 +71,7 @@ export function ThoughtBlock({
         />
       }
     >
-      <Markdown>{text}</Markdown>
+      <div className="whitespace-pre-wrap break-words">{text}</div>
     </ActivityBlock>
   );
 }

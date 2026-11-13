@@ -17,6 +17,7 @@ if (pinned === undefined || pinned !== patched) {
       "If that release keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
       "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
       "reports a reply cut at the output limit as max_tokens, " +
+      "replays a session's thinking and its tool calls' arguments, names a file step after its file, " +
       "fails a turn whose model request failed (https://github.com/svkozak/pi-acp/issues/135), " +
       "writes no retry notice into the reply, " +
       "hands pi the session ref of session/new and session/load " +
