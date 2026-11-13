@@ -83,7 +83,7 @@ describe("CurveBender on Settings › Providers", () => {
     expect(count(html, "CurveBender custom key")).toBe(1);
   });
 
-  // TEST_SCENARIO: the shared row's explainer names the brand, links the docs in a new tab, and offers only Close.
+  // TEST_SCENARIO: the shared row's explainer names the brand, links the docs in a new tab, states that the models are approved for restricted use cases only with that phrase linking the legal page, and offers only Close.
   it("explains the shared Connection", () => {
     const html = renderToStaticMarkup(
       createElement(CurveBenderInfoDialog, { onClose: () => {} }),
@@ -91,8 +91,19 @@ describe("CurveBender on Settings › Providers", () => {
     expect(html).toContain(
       "All Acme users are set up with CurveBender, IBM-hosted open-source models.",
     );
-    expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
-    expect(html).toContain('target="_blank"');
+    const externalLink = (href: string, text: string) =>
+      new RegExp(
+        `<a href="${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" target="_blank" rel="noopener noreferrer" class="[^"]*">${text}</a>`,
+      );
+    expect(html).toMatch(externalLink(CURVE_BENDER_DOCS_URL, "Learn more"));
+    expect(html).toMatch(
+      externalLink(
+        "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/getting-started/model-usage-guidance/",
+        "restricted use cases",
+      ),
+    );
+    expect(html).toContain("These models are currently only approved for <a ");
+    expect(html).toContain(">restricted use cases</a>.");
     expect(html).toContain("Close");
   });
 
