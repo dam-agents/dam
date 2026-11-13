@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-11-01
+Last verified: 2026-11-09
 
 ## Overview
 
@@ -59,6 +59,7 @@ A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's
 A tab the user selects comes to the front at once, and the runtime then selects it in agent-browser too (`agent-browser tab <target id>`, in agent-browser's queue), so the agent's next command acts on the page the user sees.
 agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
 Chromium starts with a New Tab page of its own, which agent-browser never takes as its tab, opening one of its own beside it; the runtime closes that start-up page when its connection opens, while another tab is open, so a fresh browser has one tab for the panel and the agent alike.
+Chromium reports that page as `chrome://newtab/`, `chrome://new-tab-page/` or `chrome://new-tab-page-third-party/`, from one start to the next, and the runtime knows it under each address.
 Chromium is not given a start-up address instead, as it then reopens the last session's tabs beside it on every launch.
 What the agent only reads — a snapshot, a screenshot, a script — changes neither.
 
