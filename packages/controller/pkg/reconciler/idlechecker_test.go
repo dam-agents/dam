@@ -52,7 +52,7 @@ func newIdleChecker(t *testing.T, timeout time.Duration, agents []*apiv1.Agent, 
 	}
 	client := fake.NewSimpleClientset(sts...)
 	checker := NewIdleChecker(client, newFakeDynamic(dynObjs...), idleCheckerCfg(timeout))
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 	return checker, client
 }
 
@@ -112,13 +112,132 @@ func TestIdleChecker_SkipsBusyAgent(t *testing.T) {
 	agent := idleAgentCR("busy-agent", staleTime, nil)
 	ss := agentStatefulSet("busy-agent", 1)
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-	checker.busyProbe = func(context.Context, string) bool { return true }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, true }
 
 	checker.check(context.Background())
 
 	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "busy-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "busy agent must stay running even when idle by activity")
+}
+
+// TEST_SCENARIO: The busy probe is a three-second HTTP call against a guest that may be busy enough to miss it, and a turn nobody holds can be protected by nothing else. One sweep that gets no answer must therefore leave the machine up and ask again, not hibernate it: a probe that answers busy on the second sweep spares the turn for good.
+func TestIdleChecker_SparesAnAgentTheBusyProbeDidNotAnswerOnce(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("quiet-agent", staleTime, nil)
+	ss := agentStatefulSet("quiet-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "quiet-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "one unanswered probe is no evidence that the agent is quiet")
+
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, true }
+	checker.check(context.Background())
+
+	gotSS, err = client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "quiet-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "a probe that answers busy spares the agent for as long as it keeps answering")
+}
+
+// TEST_SCENARIO: The two silences have to be consecutive: an answer of busy between them says the agent was at work, so the silence after it is a first one again and spares the agent. A count that is never cleared would pass the two tests beside this one and still hibernate a working turn.
+func TestIdleChecker_ABusyAnswerBetweenTwoSilencesStartsTheCountOver(t *testing.T) {
+	ctx := context.Background()
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("flapping-agent", staleTime, nil)
+	ss := agentStatefulSet("flapping-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	replicas := func() int32 {
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "flapping-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "the first silence spares the agent")
+
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, true }
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "an answered busy spares it and clears the silence")
+
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "the silence after an answer is a first one, so it spares the agent again")
+
+	checker.check(ctx)
+	assert.Equal(t, int32(0), replicas(), "and the silence after that hibernates it")
+}
+
+// TEST_SCENARIO: An agent that is down cannot be probed either, and it must still hibernate rather than hold the fleet up. Two sweeps that both get no answer are the evidence that it is quiet, so the second one hibernates it.
+func TestIdleChecker_HibernatesAnAgentTheBusyProbeDidNotAnswerTwice(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("down-agent", staleTime, nil)
+	ss := agentStatefulSet("down-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+
+	checker.check(context.Background())
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "down-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "an agent that did not answer twice hibernates, one sweep later than an idle answer would")
+}
+
+// TEST_SCENARIO: The silence a sweep remembers belongs to one sweep, so anything that makes the agent run again starts the count over: the next silence is a first one again and spares it, rather than hibernating on a silence from before the agent was used.
+func TestIdleChecker_TheSparedSilenceIsForgottenWhenTheAgentRunsAgain(t *testing.T) {
+	ctx := context.Background()
+	stale := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := withHibernationTimeout(idleAgentCR("used-agent", stale, nil), time.Minute)
+	ss := agentStatefulSet("used-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+
+	setLastActivity := func(at time.Time) {
+		raw, err := checker.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "used-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		raw.SetAnnotations(map[string]string{annLastActivity: at.UTC().Format(time.RFC3339)})
+		_, err = checker.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, raw, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+	replicas := func() int32 {
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "used-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "the first silence spares the agent")
+
+	setLastActivity(time.Now())
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "an agent used again is not a candidate, and its silence is forgotten")
+
+	setLastActivity(time.Now().Add(-2 * time.Hour))
+	checker.check(ctx)
+	assert.Equal(t, int32(1), replicas(), "the first silence since the agent ran spares it again")
+
+	checker.check(ctx)
+	assert.Equal(t, int32(0), replicas(), "and the second silence since it ran hibernates it")
+}
+
+// TEST_SCENARIO: An answer of idle is the runtime agreeing that the agent is quiet, so it needs no second sweep to believe it: the probe's only job is to catch work the activity stamp cannot see, and a machine that says it is idle is that work being over.
+func TestIdleChecker_HibernatesAnAgentThatAnsweredIdleAtOnce(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("idle-agent", staleTime, nil)
+	ss := agentStatefulSet("idle-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "an answered idle hibernates on the first sweep")
 }
 
 // TEST_SCENARIO: Hibernating an agent already scaled to zero leaves it there.
@@ -152,7 +271,7 @@ func TestIdleChecker_SkipsAgentAtZeroAndReportedHibernated(t *testing.T) {
 	ss := agentStatefulSet("sleeping-agent", 0)
 	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
 	probed := false
-	checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 
 	checker.check(context.Background())
 
@@ -378,13 +497,13 @@ func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T
 	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
 	require.NoError(t, err)
 	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine).WithOwnerLock(r.OwnerLock)
-	checker.busyProbe = func(context.Context, string) bool {
+	checker.idleProbe = func(context.Context, string) (bool, bool) {
 		changeRunnerPod(r)
 		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)
 		require.Equal(t, "my-agent", dep.Annotations[annRunnerAwaiting])
-		return false
+		return true, true
 	}
 
 	checker.check(ctx)
@@ -467,7 +586,7 @@ func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
 	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
 	require.NoError(t, err)
 	checker := NewIdleChecker(r.client, r.dynamic, r.config)
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 
 	checker.check(ctx)
 
@@ -542,7 +661,7 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 			checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", tt.replicas))
 			checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 			probed := false
-			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 
 			checker.check(context.Background())
 
@@ -567,7 +686,7 @@ func TestIdleChecker_HoldsASweepableAgentParkedForRoom(t *testing.T) {
 			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonAwaitingMemory}}
 			checker, _ := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 0))
 			probed := false
-			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 
 			checker.check(context.Background())
 

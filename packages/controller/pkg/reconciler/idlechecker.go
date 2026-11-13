@@ -42,8 +42,11 @@ type IdleChecker struct {
 	ownerLock               func(owner string) *sync.Mutex
 	ownerLocks              map[string]*sync.Mutex
 	ownerLocksMu            sync.Mutex
-	busyProbe               func(ctx context.Context, agentName string) bool
 	shortestObservedTimeout atomic.Int64
+	// UNIT_BOUNDARY_DESCRIPTION: the runtime's own idle flag and whether it answered at all, which the sweep has to tell apart: an answer of idle is agreement that the agent is quiet and hibernates it at once, while an answer of busy is agreement that it is at work. Silence is neither.
+	idleProbe func(ctx context.Context, agentName string) (idle, answered bool)
+	// UNIT_BOUNDARY_DESCRIPTION: the agents the last sweep found silent, so a probe that did not come back is asked a second time before it counts as quiet: one three-second timeout against a working guest ends a turn whose only protection is that answer. The sweep rebuilds it, so an agent that answered, or that ran again, needs two fresh silences.
+	unanswered map[string]struct{}
 }
 
 func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
@@ -82,9 +85,8 @@ func (c *IdleChecker) WithAgentBackend(backend AgentBackend) *IdleChecker {
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg,
 		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
-	c.busyProbe = func(ctx context.Context, name string) bool {
-		idle, answered := agentIdleStatus(ctx, c.config.Namespace, name)
-		return answered && !idle
+	c.idleProbe = func(ctx context.Context, name string) (bool, bool) {
+		return agentIdleStatus(ctx, c.config.Namespace, name)
 	}
 	return c
 }
@@ -140,6 +142,9 @@ func (c *IdleChecker) check(ctx context.Context) {
 	ctx, finish := telemetry.StartPass(ctx, "idle check")
 	var passErr error
 	defer func() { finish(passErr) }()
+	// UNIT_BOUNDARY_DESCRIPTION: the silences this pass sees, which replace the ones the last pass kept: a pass that did not run, like one that hibernated nothing, forgets them, so an agent is only hibernated on two silences this sweep and the one before it can stand behind.
+	unanswered := map[string]struct{}{}
+	defer func() { c.unanswered = unanswered }()
 	start := time.Now()
 	// UNIT_BOUNDARY_DESCRIPTION: a store that cannot answer lately cannot say who went quiet. A sweep that hibernated from a stale fleet is exactly the decision this gate exists for, so the pass does nothing and the next one asks again.
 	if err := c.backend.Healthy(); err != nil {
@@ -184,12 +189,23 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if c.busyProbe(ctx, name) {
+		// UNIT_BOUNDARY_DESCRIPTION: an answer of idle is the runtime agreeing it is quiet, and an answer of busy is it agreeing it is at work; a probe that does not answer is neither, so it spares the agent once and a second sweep that also gets no answer takes it down. A machine that is down still hibernates, one sweep later, and a working guest that misses one probe keeps its turn.
+		idle, answered := c.idleProbe(ctx, name)
+		if answered && !idle {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
 		}
+		why := "the busy probe answered idle"
+		if !answered {
+			if _, spared := c.unanswered[name]; !spared {
+				unanswered[name] = struct{}{}
+				slog.Info("idle checker: not hibernating, the busy probe did not answer; the next sweep decides", "agent", name)
+				continue
+			}
+			why = "the busy probe did not answer twice"
+		}
 
-		hibernated += c.hibernateIdle(ctx, agent, name)
+		hibernated += c.hibernateIdle(ctx, agent, name, why)
 	}
 	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
@@ -197,7 +213,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hibernates one idle Agent, unless a runner roll started since the sweep read which machines are pinned. The owner's lock is the one a roll start takes, so holding it here makes the pin read and the halt one decision: a roll that begins while the pod is being probed is seen by the read inside the lock, and the machine it waits on is left up. The probe stays outside the lock, so the lock is never held for its three seconds.
-func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Unstructured, name string) int {
+func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Unstructured, name, why string) int {
 	owner := agent.GetLabels()[envoyOwnerLabel]
 	lock := c.lockOf(owner)
 	lock.Lock()
@@ -211,7 +227,7 @@ func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Uns
 		slog.Info("idle checker: skipping a machine a runner roll waits on", "agent", name)
 		return 0
 	}
-	slog.Info("hibernating idle agent", "agent", name)
+	slog.Info("hibernating idle agent", "agent", name, "why", why)
 	if err := c.hibernate(ctx, owner, name); err != nil {
 		slog.Error("idle checker: hibernating", "agent", name, "error", err)
 		return 0
@@ -358,7 +374,7 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. The idle checker and a runner roll take a silence as idle, so an agent that is down still hibernates and a stuck guest does not hold up the roll that would replace it; a reclaim does not, since a guest saturated by a long turn is silent too.
+// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. A runner roll takes a silence as idle, so a stuck guest does not hold up the roll that would replace it; the idle checker asks twice, since a working guest that misses one probe is not an idle one; and a reclaim does not take it at all, since a guest saturated by a long turn is silent too.
 func agentIdleStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
