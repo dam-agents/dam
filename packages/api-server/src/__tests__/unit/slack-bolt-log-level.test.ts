@@ -20,6 +20,7 @@ vi.mock("@slack/bolt", async (importOriginal) => ({
     event() {}
     command() {}
     view() {}
+    action() {}
     error() {}
     async start() {}
     async stop() {}

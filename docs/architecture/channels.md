@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -265,7 +265,7 @@ The differences are transport, identity model, and where the bot token comes fro
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
-  `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
+  `login`/`logout` stay working but are not listed in the usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.
@@ -283,6 +283,7 @@ The differences are transport, identity model, and where the bot token comes fro
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **The command menu.** `/platform` with no text answers with a private menu of the commands as buttons ([slack-commands](slack-commands.md)).
 - **Command look-alikes.** Commands run only from `/platform`; every mention reaches an Agent, `@bot whisper …` included, which opens no whisper.
   A person whose mention reads as a valid command also gets an ephemeral tip naming the `/platform` form; a mention opening with an Agent's name, and an Agent's or app's post, get none.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
