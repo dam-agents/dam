@@ -22,10 +22,13 @@ vi.mock("../../modules/sessions/components/egress-approval-prompt.js", () => ({
 vi.mock("../../modules/sessions/components/chat-input.js", () => ({
   ChatInput: () => createElement("textarea", { "data-testid": "chat-input" }),
 }));
-vi.mock("../../modules/invocations/components/owner-question-prompt.js", () => ({
-  OwnerQuestionPrompt: () => null,
-  PostponedQuestionsLine: () => null,
-}));
+vi.mock(
+  "../../modules/invocations/components/owner-question-prompt.js",
+  () => ({
+    OwnerQuestionPrompt: () => null,
+    PostponedQuestionsLine: () => null,
+  }),
+);
 vi.mock("../../modules/invocations/hooks/use-owner-question-queue.js", () => ({
   questionKey: () => "q",
   useOwnerQuestionQueue: () => ({
