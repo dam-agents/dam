@@ -127,11 +127,39 @@ const type = (value: string) =>
     input().dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-// TEST_SCENARIO: the panel opens on the default for new agents — its harness, provider and model — so a profile made without another reason runs what a new agent runs.
+// TEST_SCENARIO: the panel opens on the default for new agents — its harness, provider and model — and saves it with one pick: a name.
 it("opens on the owner's default for new agents", () => {
   expect(state.picker?.pair).toEqual(defaultPair);
   expect(state.picker?.defaultPair).toEqual(defaultPair);
   expect(state.picker?.defaultHarness).toBe("pi");
+  type("Fast review");
+  act(() => button("Save profile").click());
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: "Fast review",
+      harness: "pi",
+      providerTemplate: "curve-bender-deployment",
+      model: defaultPair.model,
+    }),
+    expect.anything(),
+  );
+});
+
+// TEST_SCENARIO: a default whose Connection the owner no longer holds gives way to the base default, so the panel never opens on a profile that cannot be saved.
+it("falls back to the base default when the owner lost the Connection", () => {
+  const base: SessionPair = {
+    harness: "claude-code",
+    provider: "own",
+    model: "cb/aws/claude-opus-5-5",
+  };
+  state.default = {
+    profileId: null,
+    pair: { ...defaultPair, provider: "gone" },
+    base,
+  };
+  act(() => root.render(createElement(ProfileSection)));
+  act(() => button("New profile").click());
+  expect(state.picker?.pair).toEqual(base);
 });
 
 // TEST_SCENARIO: the name error is shown on Save and clears the moment a name is typed, so it never outlives what it asks for.

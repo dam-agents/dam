@@ -276,7 +276,13 @@ function NewProfileDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<SessionPair | null>(null);
-  const defaultPair = chosen ? (chosen.pair ?? chosen.base) : null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's default, and, while it names a
+   * Connection the owner no longer holds, the base default in its place: a
+   * profile cannot be made on a Connection that is gone. */
+  const held =
+    !!chosen?.pair &&
+    providers.owned.some((p) => p.id === chosen.pair?.provider);
+  const defaultPair = chosen ? (held ? chosen.pair : chosen.base) : null;
   const pair = draft ?? defaultPair;
   const providerTemplate = providers.owned.find(
     (p) => p.id === pair?.provider,

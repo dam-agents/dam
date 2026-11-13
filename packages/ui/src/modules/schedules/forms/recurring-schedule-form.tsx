@@ -137,6 +137,7 @@ export function RecurringScheduleForm({
       namePlaceholder="e.g. Daily brief"
       deleteCopy={{
         body: "It stops running and cannot be recovered.",
+        noun: "schedule",
         confirmLabel: "Delete schedule",
         buttonLabel: "Delete",
       }}

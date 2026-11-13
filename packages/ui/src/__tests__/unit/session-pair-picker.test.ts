@@ -327,12 +327,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "claude-code",
           displayName: "Claude Code",
-          providers: ["ibm-litellm", "anthropic"],
+          providers: ["ibm-litellm", "curve-bender", "anthropic", "bedrock"],
         },
         {
           name: "codex",
           displayName: "Codex",
-          providers: ["ibm-litellm"],
+          providers: ["ibm-litellm", "curve-bender", "openai"],
         },
       ],
     },
@@ -1465,21 +1465,39 @@ describe("a pick that follows a default", () => {
     );
   });
 
-  /** TEST_SCENARIO: a pair's own Connection is what the Provider row shows, even where another Connection of the same alias lists the same model name; with the picked one the row agrees with what a save stores. */
+  /** TEST_SCENARIO: a pair's own Connection is what the Provider row shows, even where another Connection of the same alias lists the same model name, so a pick reads back as the Connection it was made on. */
   it("reads a pair's provider beside its twin", () => {
     state.catalog = twoCurveCatalog();
     state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: glm };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: a harness switch whose current Connection cannot run the new harness lands on the default's Connection, not the first one that can, so a pick never moves to the own-key twin by accident. */
+  it("keeps the default's Connection when the current one cannot run the harness", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared, { id: "oai", name: "OpenAI", type: "openai" }];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
+      },
+      defaultPair: { harness: "codex", provider: "shared", model: deepseek },
+    });
     const node = mount(
       picker({
-        target: targetOf({
-          slots: {
-            ...emptySlots,
-            pair: { harness: "pi", provider: "shared", model: glm },
-          },
-        }),
+        target,
+        defaultHarness: "codex",
+        carried: [...carried, { ...carried[0]!, name: "codex" }, claudeCode],
       }),
     );
-    expect(providerRow(node)?.textContent).toBe("Shared");
+    pickMenu(node, "Harness", "Claude Code");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ harness: "claude-code", provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   /** TEST_SCENARIO: a harness switch takes the default's model where the new harness offers it, not the first model the harness lists. */
@@ -1490,10 +1508,19 @@ describe("a pick that follows a default", () => {
     const target = targetOf({
       defaultPair: { harness: "pi", provider: "shared", model: deepseek },
     });
-    const node = mount(picker({ target, carried: [...carried, claudeCode] }));
-    pickMenu(node, "Harness", "Claude Code");
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
     expect(target.onChoose).toHaveBeenCalledWith(
-      expect.objectContaining({ harness: "claude-code", model: deepseek }),
+      expect.objectContaining({
+        harness: "codex",
+        provider: "shared",
+        model: deepseek,
+      }),
       expect.anything(),
       expect.anything(),
     );

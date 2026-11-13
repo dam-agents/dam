@@ -965,7 +965,7 @@ function HarnessList({
             onClick={() => onPick(h.name)}
             className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
           >
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" aria-hidden="true">
               <HarnessIcons harnesses={[h.name]} size="xs" />
             </span>
             {h.displayName}

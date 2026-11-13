@@ -36,6 +36,8 @@ type DialogValues = FieldValues & {
 
 interface DeleteCopy {
   body: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the kind the dialog names in its title: a recurring schedule is a schedule, a one-time task is a task, and both forms share this dialog. */
+  noun: string;
   confirmLabel: string;
   buttonLabel: string;
 }
@@ -116,7 +118,7 @@ export function ScheduleDialog<T extends DialogValues>({
     if (!existing) return;
     const confirmed = await showConfirm(
       deleteCopy.body,
-      `Delete schedule “${existing.name}”?`,
+      `Delete ${deleteCopy.noun} “${existing.name}”?`,
       { kind: "destructive", confirmLabel: deleteCopy.confirmLabel },
     );
     if (!confirmed) return;
