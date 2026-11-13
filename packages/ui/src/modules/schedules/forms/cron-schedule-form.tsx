@@ -34,11 +34,7 @@ import {
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
-import {
-  customChoiceError,
-  scheduleChoices,
-  scheduleInheritsChoices,
-} from "./schedule-form-schema.js";
+import { customChoiceError, scheduleChoices } from "./schedule-form-schema.js";
 
 interface Props {
   agentId: string;
@@ -132,7 +128,7 @@ export function CronScheduleForm({
 
   const routed = useHarnessConfigStatus(agentId).data?.modelRouter ?? false;
   const onSubmit = handleSubmit((v) => {
-    const missing = customChoiceError(v, existing, routed);
+    const missing = customChoiceError(v, routed);
     if (missing) return setError("model", { message: missing });
     const draft = draftOf(v);
     updateSchedule.mutate(
@@ -222,7 +218,6 @@ export function CronScheduleForm({
           agentId={agentId}
           control={control}
           migrationNote={existing.migrationNote}
-          inheritChoice={scheduleInheritsChoices(existing)}
         />
 
         <ScheduleRowGroup label="Options">

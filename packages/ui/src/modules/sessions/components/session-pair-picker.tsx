@@ -107,6 +107,8 @@ type Props = CommonProps &
           slots: SessionChoiceSlots;
           label: string;
           placeholder: string;
+          /** UNIT_BOUNDARY_DESCRIPTION: what this pick follows while it holds no model, whose Connection the panel shows and whose model a fresh pick starts on. */
+          defaultPair?: SessionPair | null;
           /** UNIT_BOUNDARY_DESCRIPTION: the agent's own default, which this pick follows while neither primary slot is set: a switch on the panel, the values read-only while it is on, and its values copied into the pick when it is switched off. */
           agentDefault?: {
             /** UNIT_BOUNDARY_DESCRIPTION: what the pick follows, a sentence the row card reads under "Use agent default" and the list's first row repeats; with no default set it says so. */
@@ -704,6 +706,7 @@ export function SessionPairPicker(props: Props) {
       harnesses={names}
       pair={pair}
       defaultHarness={defaultHarness}
+      defaultPair={target?.defaultPair ?? null}
       profiles={edit ? undefined : profiles}
       selectedProfileId={primary?.id ?? null}
       {...(!edit && {

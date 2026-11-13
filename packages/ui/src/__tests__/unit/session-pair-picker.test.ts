@@ -1383,6 +1383,123 @@ describe("a config page's picker", () => {
   });
 });
 
+describe("a pick that follows a default", () => {
+  const deepseek = "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash";
+  const glm = "cb/rits/zai-org/glm-5-3";
+  const shared = {
+    id: "shared",
+    name: "Shared",
+    type: "curve-bender",
+    templateId: "curve-bender-deployment",
+  };
+  const twoCurveCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+    ],
+  });
+  const emptySlots = {
+    profileId: null,
+    pair: null,
+    platformSubagentProfileId: null,
+    platformSubagentSettings: null,
+  };
+  const targetOf = (overrides: Record<string, unknown> = {}) => ({
+    slots: emptySlots,
+    label: "Schedule harness and model",
+    placeholder: "The agent's model for schedules",
+    defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    onChoose: vi.fn(),
+    ...overrides,
+  });
+  const providerRow = (node: ParentNode) =>
+    node.querySelector<HTMLElement>('[aria-label^="Provider:"]');
+
+  /** TEST_SCENARIO: with nothing picked, the panel's Provider row names the Connection the default runs on, not the first one that runs the harness (QA: two CurveBender Connections list one alias). */
+  it("shows the default's provider while no model is picked", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(picker({ target: targetOf() }));
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a provider with no model picked starts on the default's model, which both Connections offer, not on the menu's first model. */
+  it("starts a picked provider on the default's model", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    pickMenu(node, "Provider", "Curve");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "pi",
+        provider: "curve",
+        model: deepseek,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a pair's own Connection is what the Provider row shows, even where another Connection of the same alias lists the same model name; with the picked one the row agrees with what a save stores. */
+  it("reads a pair's provider beside its twin", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(
+      picker({
+        target: targetOf({
+          slots: {
+            ...emptySlots,
+            pair: { harness: "pi", provider: "shared", model: glm },
+          },
+        }),
+      }),
+    );
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: a harness switch takes the default's model where the new harness offers it, not the first model the harness lists. */
+  it("takes the default's model on a harness switch", () => {
+    state.catalog = twoCurveCatalog();
+    state.owned = [shared];
+    state.granted = [shared];
+    const target = targetOf({
+      defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    });
+    const node = mount(picker({ target, carried: [...carried, claudeCode] }));
+    pickMenu(node, "Harness", "Claude Code");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ harness: "claude-code", model: deepseek }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+});
+
 describe("an open session's picker", () => {
   const session = (props: Record<string, unknown> = {}) =>
     createElement(ModelIndicator, {

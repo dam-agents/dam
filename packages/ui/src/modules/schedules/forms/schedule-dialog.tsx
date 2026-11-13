@@ -20,10 +20,7 @@ import {
   ScheduleChoicesField,
   ScheduleSessionTitleField,
 } from "./schedule-fields.js";
-import {
-  customChoiceError,
-  scheduleInheritsChoices,
-} from "./schedule-form-schema.js";
+import { customChoiceError } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
@@ -130,8 +127,7 @@ export function ScheduleDialog<T extends DialogValues>({
   return (
     <form
       onSubmit={handleSubmit((values) => {
-        const missing =
-          showSessionFields && customChoiceError(values, existing, routed);
+        const missing = showSessionFields && customChoiceError(values, routed);
         if (missing) return fields.setError("model", { message: missing });
         onValid(values as T);
       })}
@@ -167,7 +163,6 @@ export function ScheduleDialog<T extends DialogValues>({
               agentId={agentId}
               control={control}
               migrationNote={existing?.migrationNote ?? null}
-              inheritChoice={scheduleInheritsChoices(existing)}
             />
             {afterChoices}
             <ScheduleSessionTitleField

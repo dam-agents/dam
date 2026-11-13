@@ -108,6 +108,7 @@ export function SessionModelPicker({
   onManageProfiles,
   onEditProfile,
   profileHarness,
+  defaultPair,
   agentDefault,
   saveAsProfile,
   onLeaveProfiles,
@@ -130,6 +131,8 @@ export function SessionModelPicker({
   onEditProfile?: (profile: ProfileWithUsage) => void;
   /** UNIT_BOUNDARY_DESCRIPTION: an open session offers only the profiles that run on its harness, and says so when none does. */
   profileHarness?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: what this pick follows while it holds no model: a fresh pick shows that default's Provider when it runs the harness, and starts on that default's model when the harness and the Connection offer it. */
+  defaultPair?: SessionPair | null;
   onManageProfiles?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: a channel or a schedule follows the agent's default until it is switched off, which copies the default's values into its own pick. */
   agentDefault?: {
@@ -222,12 +225,12 @@ export function SessionModelPicker({
     entry === null
       ? providerId !== undefined && runsHarness(harness, providerId)
       : entry.options.some((o) => o.group.connectionId === providerId);
-  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option whose own model name the pair holds; an unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option on the pair's own Connection, even where another Connection of the same alias lists the same model name. */
   const currentOption =
-    currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options.find(
       (o) => o.group.connectionId === pair?.provider,
     ) ??
+    currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options[0];
   const aliasProvider =
     model !== null ? providerOfModel(model, owned) : undefined;
@@ -237,7 +240,12 @@ export function SessionModelPicker({
   const provider =
     owned.find((p) => p.id === providerId) ??
     (model === null
-      ? owned.find((p) => runsHarness(harness, p.id))
+      ? (owned.find(
+          (p) =>
+            defaultPair?.harness === harness &&
+            p.id === defaultPair.provider &&
+            runsHarness(harness, p.id),
+        ) ?? owned.find((p) => runsHarness(harness, p.id)))
       : undefined);
   const subOption =
     subEntry?.options.find((o) => o.group.connectionId === subProvider) ??
@@ -378,6 +386,23 @@ export function SessionModelPicker({
     allEntries.find((entry) =>
       entry.options.some((o) => o.group.connectionId === providerId),
     ) ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick with no model starts on the model the default it follows names, when the harness's listing and this Connection offer it. */
+  const inheritedEntry = (
+    entries: readonly Entry[],
+    providerId: string | undefined,
+  ): Entry | null => {
+    const inherited = defaultPair?.model ?? null;
+    if (inherited === null) return null;
+    return (
+      entries.find((entry) =>
+        entry.options.some(
+          (o) =>
+            sameModel(o.model.name, inherited) &&
+            (providerId === undefined || o.group.connectionId === providerId),
+        ),
+      ) ?? null
+    );
+  };
   const changeProvider = (providerId: string) => {
     if (currentEntry) {
       const option = currentEntry.options.find(
@@ -385,12 +410,13 @@ export function SessionModelPicker({
       );
       if (option) return pickOption(option);
     }
-    const first = firstEntryOf(providerId);
+    const first =
+      inheritedEntry(allEntries, providerId) ?? firstEntryOf(providerId);
     if (first === null)
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
     const nextProvider =
@@ -403,12 +429,13 @@ export function SessionModelPicker({
       ...nextEntries.families.flatMap((section) => section.expanded),
       ...nextEntries.other.models,
     ];
-    const kept =
+    const current =
       model === null
-        ? null
-        : (offered.find((entry) =>
+        ? undefined
+        : offered.find((entry) =>
             entry.options.some((o) => sameModel(o.model.name, model)),
-          ) ?? null);
+          );
+    const kept = current ?? inheritedEntry(offered, undefined);
     const keptOption =
       kept?.options.find((o) => o.group.connectionId === nextProvider?.id) ??
       kept?.options[0];

@@ -261,16 +261,23 @@ function ProfileValues({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a profile made in Settings: a name and the same
- * Custom screen every pick uses, listing every provider the owner holds.
+ * Custom screen every pick uses, listing every provider the owner holds. It
+ * opens on the owner's default for new agents, which is what a profile made
+ * without a reason of its own should run.
  */
 function NewProfileDialog({ onClose }: { onClose: () => void }) {
   const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
+  const { data: chosen } = useQuery(
+    trpc.profiles.newAgentDefault.queryOptions(),
+  );
   const providers = useProviderConnections(null);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const create = useCreateProfile();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pair, setPair] = useState<SessionPair | null>(null);
+  const [draft, setDraft] = useState<SessionPair | null>(null);
+  const defaultPair = chosen ? (chosen.pair ?? chosen.base) : null;
+  const pair = draft ?? defaultPair;
   const providerTemplate = providers.owned.find(
     (p) => p.id === pair?.provider,
   )?.templateId;
@@ -307,7 +314,10 @@ function NewProfileDialog({ onClose }: { onClose: () => void }) {
             aria-label="Profile name"
             placeholder="e.g. Fast review"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
           />
         </FormField>
         <div className="mt-3 flex flex-col gap-2 rounded-md border border-border p-1 text-sm">
@@ -318,7 +328,8 @@ function NewProfileDialog({ onClose }: { onClose: () => void }) {
               harnesses={status.harnesses.map((h) => h.name)}
               pair={pair}
               defaultHarness={status.defaultHarness}
-              onChoose={setPair}
+              defaultPair={defaultPair}
+              onChoose={setDraft}
               onManageProviders={() => {
                 if (create.isPending) return;
                 onClose();
