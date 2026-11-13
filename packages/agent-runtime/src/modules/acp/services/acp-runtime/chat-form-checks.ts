@@ -20,9 +20,9 @@ export interface ChatFormTurnEnd {
 }
 
 export interface ChatFormChecks {
-  start(sessionId: string, prompt: unknown): void;
-  text(sessionId: string, text: string): void;
-  end(sessionId: string, end: ChatFormTurnEnd): ChatFormFix | null;
+  start(sessionId: string, turnId: string, prompt: unknown): void;
+  text(turnId: string, text: string): void;
+  end(turnId: string, end: ChatFormTurnEnd): ChatFormFix | null;
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -53,26 +53,31 @@ function promptText(prompt: unknown): string {
 export function createChatFormChecks(): ChatFormChecks {
   const turns = new Map<
     string,
-    { announcement: ChatFormAnnouncement; reply: string; cut: boolean }
+    {
+      sessionId: string;
+      announcement: ChatFormAnnouncement;
+      reply: string;
+      cut: boolean;
+    }
   >();
 
   return {
-    start(sessionId, prompt) {
+    start(sessionId, turnId, prompt) {
       const announcement = chatFormAnnouncementOf(promptText(prompt));
-      if (announcement === null) turns.delete(sessionId);
-      else turns.set(sessionId, { announcement, reply: "", cut: false });
+      if (announcement !== null)
+        turns.set(turnId, { sessionId, announcement, reply: "", cut: false });
     },
 
-    text(sessionId, text) {
-      const turn = turns.get(sessionId);
+    text(turnId, text) {
+      const turn = turns.get(turnId);
       if (turn === undefined || turn.cut) return;
       if (turn.reply.length + text.length > REPLY_TEXT_CAP) turn.cut = true;
       else turn.reply += text;
     },
 
-    end(sessionId, end) {
-      const turn = turns.get(sessionId);
-      turns.delete(sessionId);
+    end(turnId, end) {
+      const turn = turns.get(turnId);
+      turns.delete(turnId);
       if (turn === undefined || turn.cut) return null;
       if (end.failed || end.nextPromptWaiting) return null;
       if (end.stopReason !== "end_turn") return null;
@@ -88,7 +93,8 @@ export function createChatFormChecks(): ChatFormChecks {
     },
 
     forget(sessionId) {
-      turns.delete(sessionId);
+      for (const [turnId, turn] of turns)
+        if (turn.sessionId === sessionId) turns.delete(turnId);
     },
 
     clear() {

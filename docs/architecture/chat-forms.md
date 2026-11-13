@@ -47,6 +47,7 @@ sequenceDiagram
   The prompt asks the agent to send the whole reply again and to create every surface again, since none of the failed ones reached the user.
   The count lives in the tag, so a restart keeps it: after two failed fixes the third prompt asks for plain text and announces no capabilities, so its reply is not checked and the loop ends.
   The chat hides the whole tag, so the user sees no message of their own; the blocks of a reply marked with `chatFormFix` are left out of the replay and show that the agent is fixing the form, and once a later reply arrives, that the agent answered again below.
+  A transcript loaded from the harness carries no `platform/turnEnded`, so there the chat marks the reply from the `<chat-form-check>` prompt that follows it.
 - **The check tool.** While the owner has the feature on and the agent's forms are not off, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
   It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before it sends it.
   It is optional: the platform's check catches what it does not, and the tool only saves that round trip.
@@ -90,6 +91,7 @@ The chat replays every block of the session in order, so a surface outlives the 
   An update to a surface whose creating reply is not loaded yet shows as a surface-not-found error.
 
 While a reply streams, the chat shows only that a form is being prepared, since the platform may still send the finished block back.
+Its updates and deletions of earlier surfaces wait for the finished reply too.
 A block is drawn, and its validation errors reported, once the reply is finished.
 A block that a finished reply never closes counts as complete, so its errors show.
 

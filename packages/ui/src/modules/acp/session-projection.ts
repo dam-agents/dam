@@ -12,6 +12,7 @@ import type {
   PromptBlock,
   QueuedPrompt,
 } from "api-server-api";
+import { chatFormFixAttemptOf } from "api-server-api/chat-forms";
 
 import type {
   Message,
@@ -657,6 +658,17 @@ export function hasAgentContent(m: Message): boolean {
   return m.parts.some((p) => p.kind !== "verdict");
 }
 
+function markTurnSentBack(messages: Message[], attempt: number): Message[] {
+  let turnStart = messages.length;
+  while (turnStart > 0 && messages[turnStart - 1].role !== "user")
+    turnStart -= 1;
+  return messages.map((m, i) =>
+    i >= turnStart && m.role === "assistant" && !m.notice
+      ? { ...m, chatFormFix: attempt }
+      : m,
+  );
+}
+
 function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
@@ -669,7 +681,10 @@ function handleUserChunk(
 
   let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
+    const fix = chatFormFixAttemptOf(u.content.text);
     const txt = stripPlumbing(u.content.text);
+    if (fix !== null && !txt && !queued)
+      return markTurnSentBack(closeActiveAssistant(messages), fix);
     if (INTERRUPT_MARKER_RE.test(txt))
       return markLastReplyStopped(closeActiveAssistant(messages));
     if (txt) bubbles = parseUserText(txt);

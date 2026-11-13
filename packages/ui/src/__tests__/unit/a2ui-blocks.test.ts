@@ -134,6 +134,33 @@ describe("A2UI v1.0", () => {
     );
   });
 
+  // TEST_SCENARIO: a streaming reply is not checked yet, so it must not change or close a surface an earlier reply shows; it applies once it is complete.
+  test("applies a streaming block's updates to earlier surfaces only once it closes", () => {
+    const update = JSON.stringify([
+      {
+        version: "v1.0",
+        updateDataModel: { surfaceId: "pick", path: "/title", value: "Other" },
+      },
+      { version: "v1.0", deleteSurface: { surfaceId: "pick" } },
+    ]);
+    const earlier = { key: "a", messageId: "m1", source: CREATE, closed: true };
+
+    const streaming = buildConversation([
+      earlier,
+      { key: "b", messageId: "m2", source: update, closed: false },
+    ]);
+    const finished = buildConversation([
+      earlier,
+      { key: "b", messageId: "m2", source: update, closed: true },
+    ]);
+
+    expect(streaming.surfaces.get("pick")?.deleted).toBe(false);
+    expect(streaming.surfaces.get("pick")?.dataModel).toEqual({
+      title: "Pick changes",
+    });
+    expect(finished.surfaces.get("pick")?.deleted).toBe(true);
+  });
+
   // TEST_SCENARIO: an agent that shares one child id between parents gets an error, and the node count stops at its limit instead of following the exponential fan-out.
   test("rejects a shared child and caps the rendered node count", () => {
     const components = [

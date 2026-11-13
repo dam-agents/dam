@@ -480,7 +480,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);
       localCommandEchoes.start(sessionId, typed);
-      chatFormChecks.start(sessionId, typed);
+      const turnId = promptScheduler.activeTurnId(sessionId);
+      if (turnId !== null) chatFormChecks.start(sessionId, turnId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -2411,15 +2412,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const error = extractTurnError(frame);
           const model = turnModels.get(sid);
           turnModels.delete(sid);
-          const chatFormFix = turnEnded
-            ? chatFormChecks.end(sid, {
-                stopReason,
-                failed: lost || error !== undefined,
-                nextPromptWaiting:
-                  promptScheduler.hasTurnInFlight(sid) ||
-                  promptScheduler.snapshot(sid).length > 0,
-              })
-            : null;
+          const chatFormFix =
+            turnEnded && turnId !== null
+              ? chatFormChecks.end(turnId, {
+                  stopReason,
+                  failed: lost || error !== undefined,
+                  nextPromptWaiting:
+                    promptScheduler.hasTurnInFlight(sid) ||
+                    promptScheduler.snapshot(sid).length > 0,
+                })
+              : null;
           transcript.append(
             sid,
             JSON.stringify(
@@ -2535,7 +2537,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const update = sessionUpdateKind(frame);
         const promptTurn = promptScheduler.activeTurnId(sessionId);
         if (text !== null && promptTurn !== null)
-          chatFormChecks.text(sessionId, text);
+          chatFormChecks.text(promptTurn, text);
         transcript.append(
           sessionId,
           logged,

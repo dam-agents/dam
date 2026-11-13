@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 
 import { collectBlocks } from "../../modules/a2ui/lib/collect-blocks.js";
 import { sentBackBlocks } from "../../modules/a2ui/lib/sent-back.js";
+import { applyUpdate } from "../../modules/acp/session-projection.js";
+import type { AcpUpdate } from "../../modules/acp/types.js";
 import type { Message } from "../../types.js";
 
 const BLOCK = "Pick one:\n<a2ui-json>\n[]\n</a2ui-json>";
@@ -34,5 +36,21 @@ describe("A2UI sent back for a fix", () => {
       "fixed",
     ]);
     expect(sentBackBlocks(messages).get("broken:0:0")).toBe("replaced");
+  });
+
+  // TEST_SCENARIO: a cold load replays the harness transcript, which has no turn-end notice; the fix prompt that follows the reply is the only sign it was sent back.
+  test("marks a reply sent back when its fix prompt follows on a cold load", () => {
+    const streamed = { ...reply("broken", BLOCK), streaming: true };
+    const loaded = applyUpdate([streamed], {
+      sessionUpdate: "user_message_chunk",
+      messageId: "fix",
+      content: {
+        type: "text",
+        text: '<chat-form-check attempt="1">\nFix it\n</chat-form-check>',
+      },
+    } as AcpUpdate);
+
+    expect(loaded.map((m) => m.id)).toEqual(["broken"]);
+    expect(sentBackBlocks(loaded).get("broken:0:0")).toBe("fixing");
   });
 });

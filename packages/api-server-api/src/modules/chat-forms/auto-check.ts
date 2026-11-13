@@ -40,6 +40,11 @@ function announcedPreferences(body: string): ChatFormPreferences | undefined {
     : readChatFormPreferences(preferences);
 }
 
+export function chatFormFixAttemptOf(prompt: string): number | null {
+  const attempt = ATTEMPT_RE.exec(prompt)?.[1];
+  return attempt === undefined ? null : Number(attempt);
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: reads a prompt the way the runtime decides whether to check the reply to it: only a prompt that announces the renderer capabilities lets the agent send a form, and a prompt the platform sent back with form errors names its attempt, so the count needs no state that a restart would lose.
 export function chatFormAnnouncementOf(
   prompt: string,
@@ -48,11 +53,10 @@ export function chatFormAnnouncementOf(
     (block) => block.tag === "capabilities",
   );
   if (capabilities === undefined) return null;
-  const attempt = ATTEMPT_RE.exec(prompt)?.[1];
   const preferences = announcedPreferences(capabilities.body);
   return {
     ...(preferences !== undefined && { preferences }),
-    fixAttempt: attempt === undefined ? 0 : Number(attempt),
+    fixAttempt: chatFormFixAttemptOf(prompt) ?? 0,
   };
 }
 

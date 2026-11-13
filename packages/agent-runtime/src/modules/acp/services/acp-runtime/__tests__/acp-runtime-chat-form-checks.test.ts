@@ -84,6 +84,29 @@ describe("acp-runtime: chat form checks", () => {
   });
 
   /**
+   * TEST_SCENARIO: the prompt with the capabilities waited in the queue and
+   * started the moment the turn ahead of it ended. The end of the turn ahead
+   * must not drop the check of the queued one.
+   */
+  it("should check a queued turn that starts as the turn ahead ends", () => {
+    const fixes: string[] = [];
+    const world = createWorld({ onChatFormFix: (_, fix) => fixes.push(fix) });
+    const client = world.connect();
+    client.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    client.send(frames.prompt(2, SESSION, "First"));
+    client.send(
+      frames.prompt(3, SESSION, `Set it up\n\n${chatFormCapabilities()}`),
+    );
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    world.harness().emit(frames.agentMessage(SESSION, BROKEN_REPLY, "m-2"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0]).toContain('<chat-form-check attempt="1">');
+  });
+
+  /**
    * TEST_SCENARIO: a channel turn never announces the capabilities, so a
    * block in its reply is only text there and must not be sent back.
    */
