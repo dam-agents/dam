@@ -535,6 +535,7 @@ describe("slack reply / react tools", () => {
 
     h.gw.setMessage("C1", {
       ts: posted.ts,
+      user: "U-BOT",
       threadTs: "1.1",
       text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
       ...(sent.blocks ? { blocks: sent.blocks } : {}),

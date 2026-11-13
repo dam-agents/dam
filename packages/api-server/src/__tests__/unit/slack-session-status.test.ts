@@ -48,6 +48,7 @@ async function startedGateway() {
     appToken: "xapp-test",
     commandName: "/platform",
     onCredentialRejected: async () => {},
+    companionAppIds: new Set<string>(),
   });
   await gateway.start({} as SlackGatewayHandlers);
   return gateway;
