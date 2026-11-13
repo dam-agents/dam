@@ -13,19 +13,15 @@ import { ProcessGroup } from "./process-group.js";
 interface Props {
   agentId: string;
   list: ProcessListData;
-  alwaysOn: boolean;
 }
 
-export function ProcessList({ agentId, list, alwaysOn }: Props) {
+export function ProcessList({ agentId, list }: Props) {
   const now = useNow(1_000);
   const openOutputKey = useStore((s) =>
     s.dock?.kind === "process-output" ? s.dock.key : null,
   );
   const toggleOutput = useToggleProcessOutput();
-  const groups = useMemo(
-    () => groupProcesses(list.running, alwaysOn),
-    [list.running, alwaysOn],
-  );
+  const groups = useMemo(() => groupProcesses(list.running), [list.running]);
   const onOpenOutput = (key: string) => void toggleOutput(key);
   const startupItems = list.startupItems ?? [];
 
@@ -47,7 +43,6 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
             key={group.id}
             agentId={agentId}
             group={group}
-            alwaysOn={alwaysOn}
             now={now}
             openOutputKey={openOutputKey}
             onOpenOutput={onOpenOutput}

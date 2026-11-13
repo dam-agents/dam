@@ -240,6 +240,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
+  const withOrigin = <T extends SlackMessage>(message: T): T =>
+    message.origin === undefined &&
+    botUserId !== null &&
+    message.user === botUserId
+      ? { ...message, origin: "own" }
+      : message;
   const fileBytes = new Map<string, Buffer>();
   const fileInfos = new Map<string, SlackFileInfo>();
 
@@ -285,6 +291,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       messagesByRef.set(`${args.channel}:${ts}`, {
         ts,
         text: args.text,
+        origin: "own",
         ...(botUserId ? { user: botUserId } : {}),
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
         ...(args.blocks ? { blocks: args.blocks } : {}),
@@ -359,11 +366,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      return threadPageOf(history, args, modelsThreads);
+      const page = threadPageOf(history, args, modelsThreads);
+      return { ...page, messages: page.messages.map(withOrigin) };
     },
 
     async getMessage(args) {
-      return messagesByRef.get(`${args.channel}:${args.ts}`) ?? null;
+      const found = messagesByRef.get(`${args.channel}:${args.ts}`);
+      return found ? withOrigin(found) : null;
     },
 
     async getChannelHistory(args) {
@@ -373,7 +382,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         modelsThreads,
       ).reverse();
       return {
-        messages: newestFirst.slice(0, args.limit),
+        messages: newestFirst.slice(0, args.limit).map(withOrigin),
         hasMore: newestFirst.length > args.limit,
       };
     },
@@ -394,6 +403,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       messagesByRef.set(`${args.channelId}:${ts}`, {
         ts,
         text: text ?? "",
+        origin: "own",
         ...(botUserId ? { user: botUserId } : {}),
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
         ...(args.blocks ? { blocks: args.blocks } : {}),

@@ -6,10 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
@@ -19,7 +16,7 @@ import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -73,7 +70,6 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -153,7 +149,6 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
-        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <Button
           variant="ghost"
           size="icon-sm"

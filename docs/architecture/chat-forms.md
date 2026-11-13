@@ -5,7 +5,7 @@ Last verified: 2026-11-12
 ## Overview
 
 An agent can put interactive UI into its reply in the web chat — a form, a set of choices, a card, a list built from data, tabs, a dialog, a callout, a diff.
-The format is [A2UI](https://a2ui.org) v1.0: the agent describes the UI as data against a component **catalog**, and the chat renders it with the app's own components.
+The format is [A2UI](https://a2ui.org) 1.0: the agent describes the UI as data against a component **catalog**, and the chat renders it with the app's own components.
 Nothing the agent sends runs as code in the browser.
 The user's answer goes back to the agent as text in their next prompt.
 
@@ -54,6 +54,7 @@ sequenceDiagram
   A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked, plus the children of a `root` the reply replaces, which the reply must send itself; agent function calls are checked, not run.
   A dynamic value that is not a literal, a `{"@path": "…"}` binding or a `{"@call": "…"}` call fails with a message that names those shapes, and an object with only a `path` key is reported as a mistyped binding.
   Each literal `regex` pattern is compiled the way the chat's renderer (`@a2ui/web_core`) compiles it — no flags, at most 256 characters, no catastrophic backtracking — because a pattern it rejects makes the field's check fail in the chat.
+  It must also hold to the A2UI 1.0 regex dialect: valid in Unicode mode, with no backreferences, lookbehind, named groups, property or control escapes, legacy octal escapes or inline flags.
   The tool takes the attempt number and refuses a fourth: after the third failed check the skill and the tool's answer both tell the agent to ask in plain text.
   The count travels in the call, because the endpoint keeps no state between requests.
 
@@ -109,7 +110,10 @@ Sending the form, or any newer reply, ends the lock.
 
 Two catalogs are supported: the A2UI **basic catalog** (layout, text, media, inputs, buttons, tabs, dialogs) and the **platform catalog**, a superset that adds callouts, badges, switches, code blocks and diffs.
 A component resolves through its own catalog identifier, else the surface's default; a component that resolves nowhere, or is not in its catalog, is not rendered.
-Messages and components are validated strictly against the v1.0 schema, so an unknown component or property is an error rather than a guess.
+Messages and components are validated strictly against the 1.0 schema, so an unknown component or property is an error rather than a guess.
+A component's envelope fields carry the `@` sigil (`@catalogId`, `@accessibility`, `@metadata`, `@checks`), its id is a UAX #31 identifier (`userCard`, not `user-card`), and a TextField has a value.
+The chat still replays blocks written in the `v1.0` draft that preceded the release — bare envelope fields, any non-empty id, a TextField without a value — so conversations from before the release keep their forms.
+The form check reports such a block, so an agent writes only 1.0.
 The components form a tree: a component with two parents, or one that is its own ancestor, is an error.
 A surface that would render more than 2,000 elements, list templates included, is reported and not shown.
 

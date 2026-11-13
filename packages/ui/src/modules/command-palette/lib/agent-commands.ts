@@ -6,7 +6,6 @@ import {
   Edit,
   Exit,
   Globe,
-  Power,
   Restart,
   Terminal,
   Tools,
@@ -187,7 +186,7 @@ export function agentCommands(
       : []),
     ...(may("lifecycle")
       ? [
-          ...(agent.state === "running" && !agent.disabled && !settling
+          ...(agent.state === "running" && !settling
             ? [
                 of({
                   id: "restart",
@@ -198,13 +197,6 @@ export function agentCommands(
                 }),
               ]
             : []),
-          of({
-            id: "toggle-disabled",
-            label: agent.disabled ? "enable" : "disable",
-            icon: Power,
-            prior: PRIOR.disable,
-            run: () => act.toggleDisabled(agent),
-          }),
         ]
       : []),
     ...(may("delete")

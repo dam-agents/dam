@@ -613,7 +613,7 @@ export function appendInterruptedNotice(
   return appendNotice(
     messages,
     turn.interruptedByStop
-      ? "This conversation was interrupted when the agent was stopped (put to sleep, restarted or moved) and is resuming automatically — the agent will pick the task back up."
+      ? "This conversation was interrupted when the agent was stopped, restarted or moved, and is resuming automatically — the agent will pick the task back up."
       : "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
   );
 }

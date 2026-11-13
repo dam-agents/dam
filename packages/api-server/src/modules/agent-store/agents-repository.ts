@@ -90,8 +90,8 @@ const specOf = (patch: Spec): Spec => (patch.spec as Spec | undefined) ?? patch;
  * What replaces the resourceVersion guard is the pair of columns the schema
  * bumped for it. A definition write names the generation it was decided from and
  * lands only if nothing rendered moved in between; a signal write is one
- * statement whose own predicate is the fact it depends on — the disable, the
- * stop request, the invocation pin version, the activity token — so no read
+ * statement whose own predicate is the fact it depends on — the stop request,
+ * the invocation pin version, the activity token — so no read
  * decides a write that a concurrent write invalidated. The sleep settle compares
  * the stop token it wrote, the precheck restore compares the activity token it
  * overwrote, and the reclaim mark is the one column it may read but never write.
@@ -308,12 +308,7 @@ export function createControlAgentsRepository(
 
   const stop = async (
     id: string,
-    opts: {
-      disabled?: boolean;
-      idle?: boolean;
-      stamp?: string;
-      unlessDisabled?: boolean;
-    } = {},
+    opts: { idle?: boolean; stamp?: string } = {},
   ): Promise<{
     agent: ReturnType<typeof parseInfraAgent>;
     stamp: string;
@@ -327,8 +322,6 @@ export function createControlAgentsRepository(
       invocationPinned: false,
       invocationPinVersion: sql`${controlAgentSignals.invocationPinVersion} + 1`,
       updatedAt: now,
-      ...(opts.disabled === true && { disabledAt: now }),
-      ...(opts.disabled === false && { disabledAt: null }),
       ...(opts.idle === true && {
         lastActivityAt: STALE_ACTIVITY,
         lastActivityToken: null,
@@ -337,14 +330,7 @@ export function createControlAgentsRepository(
     const updated = await db
       .update(controlAgentSignals)
       .set(values)
-      .where(
-        opts.unlessDisabled === true
-          ? and(
-              eq(controlAgentSignals.agentId, id),
-              sql`${controlAgentSignals.disabledAt} IS NULL`,
-            )
-          : eq(controlAgentSignals.agentId, id),
-      )
+      .where(eq(controlAgentSignals.agentId, id))
       .returning({ agentId: controlAgentSignals.agentId });
     if (updated.length === 0) return null;
     const live = await readLive(id);
@@ -555,47 +541,34 @@ export function createControlAgentsRepository(
           stopRequestToken: null,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(controlAgentSignals.agentId, id),
-            sql`${controlAgentSignals.disabledAt} IS NULL`,
-          ),
-        )
+        .where(eq(controlAgentSignals.agentId, id))
         .returning({ agentId: controlAgentSignals.agentId });
-      if (woke.length === 0) {
-        const existing = await agentOf(id);
-        return existing
-          ? err({ type: "AgentDisabled" as const })
-          : err({ type: "AgentNotFound" as const });
-      }
+      if (woke.length === 0) return err({ type: "AgentNotFound" as const });
       const live = await readLive(id);
       return live
         ? ok(parseInfraAgent(live))
         : err({ type: "AgentNotFound" as const });
     },
 
-    async setDisabled(id, disabled) {
-      if (disabled)
-        return (await stop(id, { disabled: true, idle: true }))?.agent ?? null;
-      const now = new Date();
-      const enabled = await db
+    // UNIT_BOUNDARY_DESCRIPTION: only the legacy marks are cleared, and only the stop request a disable wrote: a disable stamped the mark and the stop request with the same instant, so the stop columns go only while they still carry it, since anything newer — a stop, a pin, an activity stamp — is a fact this cleanup did not see. The statement's own predicate is the mark, so a second clear, or one racing another replica, changes no row; the signals row's own trigger rotates the version and notifies the controller, as for every signal write.
+    async clearLegacyDisabled(id) {
+      const stopIsLegacy = sql`${controlAgentSignals.stopRequestedAt} = ${controlAgentSignals.disabledAt}`;
+      const cleared = await db
         .update(controlAgentSignals)
         .set({
           disabledAt: null,
-          stopRequestedAt: null,
-          stopRequestToken: null,
-          sessionPinned: false,
-          invocationPinned: false,
-          invocationPinVersion: sql`${controlAgentSignals.invocationPinVersion} + 1`,
-          lastActivityAt: STALE_ACTIVITY,
-          lastActivityToken: null,
-          updatedAt: now,
+          stopRequestedAt: sql`CASE WHEN ${stopIsLegacy} THEN NULL ELSE ${controlAgentSignals.stopRequestedAt} END`,
+          stopRequestToken: sql`CASE WHEN ${stopIsLegacy} THEN NULL ELSE ${controlAgentSignals.stopRequestToken} END`,
+          updatedAt: new Date(),
         })
-        .where(eq(controlAgentSignals.agentId, id))
+        .where(
+          and(
+            eq(controlAgentSignals.agentId, id),
+            isNotNull(controlAgentSignals.disabledAt),
+          ),
+        )
         .returning({ agentId: controlAgentSignals.agentId });
-      if (enabled.length === 0) return null;
-      const live = await readLive(id);
-      return live ? parseInfraAgent(live) : null;
+      return cleared.length > 0;
     },
 
     async requestStop(id) {
@@ -603,7 +576,7 @@ export function createControlAgentsRepository(
     },
 
     async requestSleep(id) {
-      const stopped = await stop(id, { idle: true, unlessDisabled: true });
+      const stopped = await stop(id, { idle: true });
       if (stopped === null) {
         const current = await readLive(id);
         return current === null ? null : parseInfraAgent(current);
@@ -814,12 +787,7 @@ export function createControlAgentsRepository(
             stopRequestToken: null,
             updatedAt: now,
           })
-          .where(
-            and(
-              eq(controlAgentSignals.agentId, id),
-              sql`${controlAgentSignals.disabledAt} IS NULL`,
-            ),
-          )
+          .where(eq(controlAgentSignals.agentId, id))
           .returning({ agentId: controlAgentSignals.agentId });
         if (updated.length === 0) return null;
         return row;

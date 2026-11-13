@@ -168,7 +168,6 @@ export interface AgentView {
   description?: string;
   avatar: string | null;
   env?: EnvVar[];
-  hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
   whisper: boolean;
   grantedSecretIds: string[];
@@ -176,11 +175,9 @@ export interface AgentView {
   state: AgentState;
   error?: string;
   stopRequested: boolean;
-  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   startWaitMessage?: string;
-  reclaimed?: { at: string; for: "memory" | "compute" };
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;

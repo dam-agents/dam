@@ -60,12 +60,8 @@ export interface AgentsRepository {
   ): Promise<AgentSpecWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
-  wake(
-    id: string,
-  ): Promise<
-    Result<InfraAgent, { type: "AgentNotFound" } | { type: "AgentDisabled" }>
-  >;
-  setDisabled(id: string, disabled: boolean): Promise<InfraAgent | null>;
+  wake(id: string): Promise<Result<InfraAgent, { type: "AgentNotFound" }>>;
+  clearLegacyDisabled(id: string): Promise<boolean>;
   requestStop(id: string): Promise<InfraAgent | null>;
   requestSleep(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
@@ -133,14 +129,13 @@ export function createAgentsRepository(
 ): AgentsRepository {
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
-  const patchUnlessDisabled = async (
+  const patchActivity = async (
     id: string,
     annotations: Record<string, string>,
   ) => {
     for (let attempt = 0; ; attempt++) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      if (obj.metadata?.annotations?.[DISABLED_KEY]) return "disabled" as const;
       try {
         await k8s.patchCustomObject(AGENTS_PLURAL, id, {
           metadata: {
@@ -199,7 +194,7 @@ export function createAgentsRepository(
   // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read.
   async function stopAgent(
     id: string,
-    opts: { stamp?: string; disabledStamp?: string; idle?: boolean } = {},
+    opts: { stamp?: string; idle?: boolean } = {},
     live?: KubeObject,
   ): Promise<{ agent: InfraAgent; stamp: string } | null> {
     const obj = live ?? (await k8s.getCustomObject(AGENTS_PLURAL, id));
@@ -208,9 +203,6 @@ export function createAgentsRepository(
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
       metadata: {
         annotations: {
-          ...(opts.disabledStamp !== undefined && {
-            [DISABLED_KEY]: opts.disabledStamp,
-          }),
           [STOP_REQUESTED_KEY]: stamp,
           [ACTIVE_SESSION_KEY]: "",
           [INVOCATIONS_ACTIVE_KEY]: "",
@@ -328,25 +320,43 @@ export function createAgentsRepository(
     },
 
     async wake(id) {
-      const woke = await patchUnlessDisabled(id, {
+      const woke = await patchActivity(id, {
         [LAST_ACTIVITY_KEY]: new Date().toISOString(),
         [STOP_REQUESTED_KEY]: "",
       });
-      if (woke === "disabled") return err({ type: "AgentDisabled" });
-      const reread = woke && (await k8s.getCustomObject(AGENTS_PLURAL, id));
+      if (woke === null) return err({ type: "AgentNotFound" });
+      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
       return reread
         ? ok(parseInfraAgent(reread))
         : err({ type: "AgentNotFound" });
     },
 
-    async setDisabled(id, disabled) {
-      const stamp = disabled ? new Date().toISOString() : "";
-      const stopped = await stopAgent(id, {
-        stamp,
-        disabledStamp: stamp,
-        idle: true,
-      });
-      return stopped?.agent ?? null;
+    // UNIT_BOUNDARY_DESCRIPTION: only the legacy marks are touched, because a stop request, a pin or an activity stamp written since the disable is a newer fact this cleanup did not see. A disable wrote the mark and the stop request with the same stamp, so the stop request goes only while it still carries that stamp; the write names the resourceVersion it was decided from, and a conflict re-reads rather than overwriting.
+    async clearLegacyDisabled(id) {
+      for (let attempt = 0; ; attempt++) {
+        const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        const annotations = obj?.metadata?.annotations;
+        const disabledStamp = annotations?.[DISABLED_KEY];
+        if (!obj || !disabledStamp) return false;
+        try {
+          await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+            metadata: {
+              resourceVersion: obj.metadata?.resourceVersion,
+              annotations: {
+                [DISABLED_KEY]: "",
+                ...(annotations[STOP_REQUESTED_KEY] === disabledStamp && {
+                  [STOP_REQUESTED_KEY]: "",
+                }),
+              },
+            },
+          });
+          return true;
+        } catch (e) {
+          if (isConflict(e) && attempt < PIN_CONFLICT_RETRIES) continue;
+          if (isNotFound(e)) return false;
+          throw e;
+        }
+      }
     },
 
     async requestStop(id) {
@@ -356,8 +366,6 @@ export function createAgentsRepository(
     async requestSleep(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      if (obj.metadata?.annotations?.[DISABLED_KEY])
-        return parseInfraAgent(obj);
       const stopped = await stopAgent(id, { idle: true }, obj);
       if (!stopped) return null;
       const { agent: infra, stamp: sleepStamp } = stopped;
@@ -487,11 +495,11 @@ export function createAgentsRepository(
 
     async wakeIfHibernated(id) {
       const written = new Date().toISOString();
-      const woke = await patchUnlessDisabled(id, {
+      const woke = await patchActivity(id, {
         [LAST_ACTIVITY_KEY]: written,
         [STOP_REQUESTED_KEY]: "",
       });
-      if (woke === null || woke === "disabled") return null;
+      if (woke === null) return null;
       return {
         previous: woke.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
         written,

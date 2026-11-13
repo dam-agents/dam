@@ -2,10 +2,10 @@
  * TEST_OVERVIEW: the Postgres Agent and budget adapters on a real database. The
  * unit suite pins the mapping and the feed; what only a real server can show is
  * that the lifecycle statements behave as the versioned transactions the design
- * asks for — a definition write that names its generation, a disable a wake
- * cannot slip past, a pin released only by the version that set it, an activity
- * restore that applies to exactly the write it undid, and a delete that takes
- * the children with it.
+ * asks for — a definition write that names its generation, a legacy disabled
+ * mark cleared with its stop request, a pin released only by the version that
+ * set it, an activity restore that applies to exactly the write it undid, and a
+ * delete that takes the children with it.
  *
  * Run by `mise run //packages/api-server:test:agent-store` against a disposable
  * database with this branch's migrations applied.
@@ -167,17 +167,74 @@ async function main(): Promise<void> {
   const stillOnTwo = await repo.getLive(AGENT, OWNER);
   check("the refused write did not land", stillOnTwo?.spec.image === "agent:2");
 
-  // TEST_SCENARIO: A disabled Agent cannot be woken; enabling clears the mark without waking.
-  await repo.setDisabled(AGENT, true);
-  const wokeDisabled = await repo.wake(AGENT);
+  // TEST_SCENARIO: A legacy disabled mark is cleared with the stop request a disable stamped with it, and nothing else: an activity stamp and the pins a wake or a sleep wrote since are left alone, and the Agent wakes on its next use.
+  await repo.patchAnnotation(AGENT, "agent-platform.ai/active-session", "true");
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET disabled_at = '2026-10-15T10:00:00Z',
+           stop_requested_at = '2026-10-15T10:00:00Z',
+           stop_request_token = gen_random_uuid()
+     WHERE agent_id = ${AGENT}
+  `);
+  const marked = await repo.get(AGENT);
+  check("the legacy mark stands", marked?.disabled === true);
+  const activityBefore = (
+    await db.execute<{ activity: string | null }>(
+      sql`SELECT last_activity_at::text AS activity FROM control.agent_signals WHERE agent_id = ${AGENT}`,
+    )
+  )[0] as unknown as { activity: string | null } | undefined;
+  check("clearing it reports a write", await repo.clearLegacyDisabled(AGENT));
+  const cleared = await repo.get(AGENT);
+  const signals = (
+    (await db.execute<{ activity: string | null; pinned: boolean | null }>(
+      sql`SELECT last_activity_at::text AS activity, session_pinned AS pinned
+            FROM control.agent_signals WHERE agent_id = ${AGENT}`,
+    )) as unknown as Array<{ activity: string | null; pinned: boolean | null }>
+  )[0];
   check(
-    "a wake on a disabled Agent is refused",
-    !wokeDisabled.ok && wokeDisabled.error.type === "AgentDisabled",
-    JSON.stringify(wokeDisabled),
+    "the mark and the stop request it stamped are gone",
+    cleared?.disabled === false && cleared.stopRequested === false,
+    JSON.stringify({
+      disabled: cleared?.disabled,
+      stopRequested: cleared?.stopRequested,
+    }),
   );
-  await repo.setDisabled(AGENT, false);
+  check(
+    "the activity stamp and the pin are untouched",
+    signals?.activity === (activityBefore?.activity ?? null) &&
+      signals?.pinned === true,
+    JSON.stringify({ activity: signals?.activity, pinned: signals?.pinned }),
+  );
+  const secondClear = await repo.clearLegacyDisabled(AGENT);
+  check(
+    "a second clear changes nothing",
+    secondClear === false,
+    String(secondClear),
+  );
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET disabled_at = '2026-10-15T10:00:00Z',
+           stop_requested_at = '2026-10-15T11:00:00Z'
+     WHERE agent_id = ${AGENT}
+  `);
+  await repo.clearLegacyDisabled(AGENT);
+  const later = await repo.get(AGENT);
+  check(
+    "a stop request stamped after the mark survives",
+    later?.disabled === false && later.stopRequested === true,
+    JSON.stringify({
+      disabled: later?.disabled,
+      stopRequested: later?.stopRequested,
+    }),
+  );
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET stop_requested_at = NULL, stop_request_token = NULL,
+           disabled_at = NULL, session_pinned = false
+     WHERE agent_id = ${AGENT}
+  `);
   const wokeEnabled = await repo.wake(AGENT);
-  check("a wake after enabling lands", wokeEnabled.ok);
+  check("a wake after clearing lands", wokeEnabled.ok);
 
   // TEST_SCENARIO: An invocation pin is released only by the version that set it.
   const pinned = await repo.setInvocationPin(AGENT);
@@ -315,32 +372,15 @@ async function main(): Promise<void> {
     JSON.stringify(kitSeen?.metadata?.annotations ?? {}),
   );
 
-  await repo.setDisabled(AGENT, true);
+  await db.execute(
+    sql`UPDATE control.agent_signals SET disabled_at = now() WHERE agent_id = ${AGENT}`,
+  );
+  await repo.clearLegacyDisabled(AGENT);
   const hidden = await cache.get(AGENT);
   check(
-    "the cache serves the disable it was notified of",
-    hidden?.metadata?.annotations?.["agent-platform.ai/disabled"] !== undefined,
+    "the cache serves the cleared mark it was notified of",
+    hidden?.metadata?.annotations?.["agent-platform.ai/disabled"] === undefined,
     JSON.stringify(hidden?.metadata?.annotations ?? {}),
-  );
-  await repo.setDisabled(AGENT, false);
-
-  // TEST_SCENARIO: two writers interleaved, not sequential — the competing write holds its lock uncommitted while the repository call starts, then commits. PostgreSQL re-checks the predicate after the wait, so the loser must see the winner's row, which a read-then-write could not.
-  await db.execute(
-    sql`UPDATE control.agent_signals SET stop_requested_at = NULL, disabled_at = NULL WHERE agent_id = ${AGENT}`,
-  );
-  await other.sql`BEGIN`;
-  await other.sql`UPDATE control.agent_signals SET disabled_at = now() WHERE agent_id = ${AGENT}`;
-  const racing = repo.wake(AGENT);
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  await other.sql`COMMIT`;
-  const raced = await racing;
-  check(
-    "a wake that raced a committed disable is refused",
-    !raced.ok && raced.error.type === "AgentDisabled",
-    JSON.stringify(raced),
-  );
-  await db.execute(
-    sql`UPDATE control.agent_signals SET disabled_at = NULL, stop_requested_at = NULL WHERE agent_id = ${AGENT}`,
   );
 
   // TEST_SCENARIO: an observation the controller writes advances the version a decision compares, so a rollback decided before a condition changed is refused instead of landing on state it never saw.
@@ -388,8 +428,7 @@ async function main(): Promise<void> {
   await repo.wake(AGENT);
   await repo.wakeUnlessStopped(AGENT);
   await repo.requestStop(AGENT);
-  await repo.setDisabled(AGENT, true);
-  await repo.setDisabled(AGENT, false);
+  await repo.clearLegacyDisabled(AGENT);
   await repo.setInvocationPin(AGENT);
   const pin = await repo.readInvocationPin(AGENT);
   await repo.releaseInvocationPin(AGENT, pin ?? "");
@@ -1001,10 +1040,7 @@ async function absorbChecks(): Promise<void> {
     freshVerdict.ok ? "" : freshVerdict.reason,
   );
   const withoutTheClaim = contractVerdict(await factsAt(false));
-  check(
-    "the gate refuses an unclaimed empty archive",
-    !withoutTheClaim.ok,
-  );
+  check("the gate refuses an unclaimed empty archive", !withoutTheClaim.ok);
 
   await db.execute(sql`DELETE FROM control.agents`);
   await db.execute(sql`DELETE FROM control.user_budgets`);

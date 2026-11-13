@@ -46,6 +46,7 @@ function createGateway() {
     appToken: "xapp-test",
     commandName: "/platform",
     onCredentialRejected: async () => {},
+    companionAppIds: new Set<string>(),
   });
 }
 

@@ -8,7 +8,6 @@ import { ProcessList } from "./process-list.js";
 
 interface Props {
   agentId: string | null;
-  alwaysOn: boolean;
   open: boolean;
   onToggle?: () => void;
   className?: string;
@@ -18,7 +17,6 @@ interface Props {
 
 export function ProcessesPanel({
   agentId,
-  alwaysOn,
   open,
   onToggle,
   className,
@@ -48,7 +46,6 @@ export function ProcessesPanel({
           data={data}
           isPending={isPending}
           isError={isError}
-          alwaysOn={alwaysOn}
         />
       )}
     </SidebarSection>
@@ -61,14 +58,12 @@ function ProcessesSectionBody({
   data,
   isPending,
   isError,
-  alwaysOn,
 }: {
   agentId: string | null;
   reach: AgentReach;
   data: ProcessListData | undefined;
   isPending: boolean;
   isError: boolean;
-  alwaysOn: boolean;
 }) {
   if (reach === "inoperable")
     return <PanelNotice text="Processes show once the agent is running." />;
@@ -78,7 +73,7 @@ function ProcessesSectionBody({
         {reach === "unreachable" && (
           <PanelNotice text="Can't reach the agent right now. This list may be out of date." />
         )}
-        <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />
+        <ProcessList agentId={agentId} list={data} />
       </>
     );
   if (reach === "unreachable")

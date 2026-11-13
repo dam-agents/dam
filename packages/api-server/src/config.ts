@@ -104,6 +104,23 @@ const slackEmailPairingWorkspacesSchema = z
   })
   .pipe(z.array(z.string().min(1)));
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack app ids of other installs of the
+ * platform that share a workspace with this one. A post from a listed app that
+ * carries an Agent Footer is read as an Agent of another install. Empty is the
+ * shipped state: only this install's own app posts for Agents. */
+const slackCompanionAppIdsSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().regex(/^A[A-Z0-9]+$/, "must be a Slack app id")));
+
 const gheRetiredHostsSchema = z
   .string()
   .default("[]")
@@ -273,6 +290,7 @@ const configSchema = z.object({
   slackInstallCallbackUrl: z.string().nullable().default(null),
   slackEnterpriseId: z.string().default(""),
   slackEmailPairingWorkspaces: slackEmailPairingWorkspacesSchema,
+  slackCompanionAppIds: slackCompanionAppIdsSchema,
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
   slackTokenRotation: z.coerce.boolean().default(false),
@@ -496,6 +514,7 @@ export function loadConfig(): Config {
     slackInstallCallbackUrl: process.env.SLACK_INSTALL_CALLBACK_URL,
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
     slackEmailPairingWorkspaces: process.env.SLACK_EMAIL_PAIRING_WORKSPACES,
+    slackCompanionAppIds: process.env.SLACK_COMPANION_APP_IDS,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
     slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../brand.js";
+import { CurveBenderRestriction } from "./curve-bender-restriction.js";
 
 export const CURVE_BENDER_DOCS_URL =
   "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/";
@@ -15,7 +16,8 @@ export const CURVE_BENDER_DOCS_URL =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the deployment's CurveBender is a provider the
  * user holds no key for and cannot change, so its row opens this instead of a
- * form: that every user of this deployment runs on it, and where its docs are.
+ * form: that every user of this deployment runs on it, where its docs are,
+ * and that its models are approved for restricted use cases only.
  * Nothing here is editable and nothing is fetched.
  */
 export function CurveBenderInfoDialog({ onClose }: { onClose: () => void }) {
@@ -29,11 +31,12 @@ export function CurveBenderInfoDialog({ onClose }: { onClose: () => void }) {
           <a
             href={CURVE_BENDER_DOCS_URL}
             {...externalLinkProps}
-            className="font-medium text-accent underline underline-offset-2 hover:text-primary"
+            className="font-medium underline underline-offset-2 hover:text-foreground"
           >
             Learn more
           </a>
         </p>
+        <CurveBenderRestriction className="mt-2" />
       </DialogBody>
       <DialogFooter>
         <Button variant="secondary" size="sm" onClick={onClose}>

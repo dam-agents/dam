@@ -180,16 +180,6 @@ export function useWakeAgentMutation() {
   });
 }
 
-export function useSetAgentDisabled() {
-  return useMutation({
-    ...trpc.agents.setDisabled.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't change whether the agent is disabled",
-    },
-  });
-}
-
 export function useRetryWorkspace() {
   return useMutation({
     ...trpc.agents.retryWorkspace.mutationOptions(),

@@ -75,7 +75,7 @@ export function senderReaches(
   return match(sender)
     .with({ kind: "person" }, () => true)
     .with({ kind: "agent" }, ({ agentId }) => agentId !== binding.instanceName)
-    .with({ kind: "app" }, () => true)
+    .with({ kind: "companion" }, { kind: "app" }, () => true)
     .exhaustive();
 }
 

@@ -8,11 +8,7 @@ import { cn } from "@/lib/utils";
 import type { AgentView } from "../../../types.js";
 import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
-import {
-  AgentAvatar,
-  type AgentAvatarMood,
-  resolveCharacter,
-} from "./avatar/agent-avatar.js";
+import { AgentAvatar, resolveCharacter } from "./avatar/agent-avatar.js";
 import { AvatarPicker } from "./avatar/avatar-picker.js";
 import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
@@ -61,7 +57,6 @@ export function EditableAgentIdentity({
 
 interface IdentityDisplay {
   avatarSize: number;
-  mood: AgentAvatarMood;
   nameClassName?: string;
   nameTag?: "h1" | "h2";
 }
@@ -76,7 +71,6 @@ export function EditableIdentity({
   onRename,
   onAvatarChange,
   avatarSize,
-  mood,
   nameClassName,
   nameTag: NameTag = "h1",
 }: {
@@ -126,12 +120,7 @@ export function EditableIdentity({
   return (
     <>
       <AvatarPicker value={current} onChange={onAvatarChange}>
-        <AgentAvatar
-          name={name}
-          avatar={avatar}
-          size={avatarSize}
-          mood={mood}
-        />
+        <AgentAvatar name={name} avatar={avatar} size={avatarSize} />
         {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
       </AvatarPicker>
       {draft === null ? (

@@ -22,4 +22,3 @@ resources:
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories and publish results.
-hibernationTimeoutMin: 0

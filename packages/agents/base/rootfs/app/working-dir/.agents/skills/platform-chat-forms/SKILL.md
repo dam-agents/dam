@@ -1,18 +1,18 @@
 ---
 name: platform-chat-forms
 description: >
-  Show rich UI directly in the platform's web chat — forms, choices, confirmations, cards, lists, tabs, dialogs, callouts, diffs — written as an A2UI v1.0 block in your reply.
+  Show rich UI directly in the platform's web chat — forms, choices, confirmations, cards, lists, tabs, dialogs, callouts, diffs — written as an A2UI 1.0 block in your reply.
   Use it when you need structured input from the user (onboarding answers, which kit update changes to take, picking options, dates, amounts) or when a card, list or diff presents a result better than prose.
   Do not use it in Slack or Telegram turns, and never to ask for passwords, tokens or keys.
 ---
 
-The web chat renders an A2UI v1.0 block in your reply as native UI.
+The web chat renders an A2UI 1.0 block in your reply as native UI.
 Write normal text first, then the block, then end your turn.
 The user's answer arrives as their next message.
 
 ## Only where the chat says it renders forms
 
-Use a block only when the conversation carries renderer capabilities: an `<a2ui-capabilities>` block in the user's latest message or in the briefing that opened the session, for example `{"v1.0":{"supportedCatalogIds":["urn:platform:a2ui:catalog:chat:v1", …]}}`.
+Use a block only when the conversation carries renderer capabilities: an `<a2ui-capabilities>` block in the user's latest message or in the briefing that opened the session, for example `{"1.0":{"supportedCatalogIds":["urn:platform:a2ui:catalog:chat:v1", …]}}`.
 The web chat adds it to every message while the user has Chat forms turned on.
 Without it — Slack, Telegram, a user who has the feature off — ask in plain text.
 Use only the catalogs it lists.
@@ -22,7 +22,7 @@ Use only the catalogs it lists.
 The capabilities may carry the user's preferences for this agent:
 
 ```
-{"v1.0": {...}, "urn:platform:a2ui:extension:chat:v1": {"preferences": {"forms": "all", "pacing": "agent", "recommend": "preselect", "lockComposer": true}}}
+{"1.0": {...}, "urn:platform:a2ui:extension:chat:v1": {"preferences": {"forms": "all", "pacing": "agent", "recommend": "preselect", "lockComposer": true}}}
 ```
 
 Without them, use the defaults shown here.
@@ -50,12 +50,12 @@ When the user turns forms off, the chat stops sending capabilities, so ask in pl
 Start the block on a line of its own with `<a2ui-json>` and end it with `</a2ui-json>`.
 Do not put it in a code fence; a tag in the middle of a line is shown as plain text.
 The block holds one JSON array of A2UI messages.
-Every message carries `"version": "v1.0"`.
+Every message carries `"version": "1.0"`.
 
 Usually one message is enough: `createSurface` with the components and the initial data model inline.
 
 ```
-{"version": "v1.0", "createSurface": {
+{"version": "1.0", "createSurface": {
   "surfaceId": "kit-update-7f3a",
   "catalogId": "urn:platform:a2ui:catalog:chat:v1",
   "components": [ {"id": "root", ...}, ... ],
@@ -68,6 +68,7 @@ Usually one message is enough: `createSurface` with the components and the initi
 - Components are a flat list.
   The one with `"id": "root"` comes first, and a parent comes before its children (the chat renders them as they stream).
   Children are referenced by id, never inline.
+  A component id is an identifier: a letter or `_`, then letters, digits and `_` (`saveButton` or `save_button`, never `save-button`).
   Each component has one parent; to repeat one, use a list template.
 - `catalogId` picks the components and functions you may use:
   - `urn:platform:a2ui:catalog:chat:v1` — everything below, including `Callout`, `Badge`, `Switch`, `CodeBlock` and `Diff`.
@@ -120,26 +121,26 @@ Any other component or property makes that part of the form fail.
 | `Image`         | `url` (https); `description`; `variant`: `icon` `avatar` `smallFeature` `mediumFeature` `largeFeature` `header`; `fit`                                                                                                                                                                      |
 | `Video`         | `url` (https); `posterUrl`                                                                                                                                                                                                                                                                  |
 | `AudioPlayer`   | `url` (https); `description`                                                                                                                                                                                                                                                                |
-| `TextField`     | `label`; `value`: binding; `placeholder`; `variant`: `shortText` `longText` `number` `obscured`; `checks`                                                                                                                                                                                   |
-| `CheckBox`      | `label`; `value`: binding to a boolean; `checks`; for consent or a pick, not a setting                                                                                                                                                                                                      |
-| `ChoicePicker`  | `label`; `options`: `[{"label", "value"}]`; `value`: binding to a list of strings; `variant`: `mutuallyExclusive` (default) or `multipleSelection`; `displayStyle`: `checkbox` or `chips`; `filterable`; `checks`; more than four exclusive options without `chips` show as a dropdown      |
-| `Slider`        | `label`; `min`; `max`; `steps` (number of divisions); `value`: binding to a number; `checks`                                                                                                                                                                                                |
-| `DateTimeInput` | `label`; `value`: binding to an ISO 8601 string; `enableDate`; `enableTime`; `min`; `max`; `checks`                                                                                                                                                                                         |
-| `Button`        | `child`: id of a `Text`; `variant`: `primary` `default` `borderless`; `action`; `checks`                                                                                                                                                                                                    |
+| `TextField`     | `label`; `value`: binding (required); `placeholder`; `variant`: `shortText` `longText` `number` `obscured`; `@checks`                                                                                                                                                                       |
+| `CheckBox`      | `label`; `value`: binding to a boolean; `@checks`; for consent or a pick, not a setting                                                                                                                                                                                                     |
+| `ChoicePicker`  | `label`; `options`: `[{"label", "value"}]`; `value`: binding to a list of strings; `variant`: `mutuallyExclusive` (default) or `multipleSelection`; `displayStyle`: `checkbox` or `chips`; `filterable`; `@checks`; more than four exclusive options without `chips` show as a dropdown     |
+| `Slider`        | `label`; `min`; `max`; `steps` (number of divisions); `value`: binding to a number; `@checks`                                                                                                                                                                                               |
+| `DateTimeInput` | `label`; `value`: binding to an ISO 8601 string; `enableDate`; `enableTime`; `min`; `max`; `@checks`                                                                                                                                                                                        |
+| `Button`        | `child`: id of a `Text`; `variant`: `primary` `default` `borderless`; `action`; `@checks`                                                                                                                                                                                                   |
 | `Callout`       | `text` (Markdown); `title`; `tone`: `neutral` `info` `success` `warning` `danger`, a literal or bound                                                                                                                                                                                       |
 | `Badge`         | `text`; `tone`, a literal or bound (per row in a template)                                                                                                                                                                                                                                  |
 | `CodeBlock`     | `code`; `language`                                                                                                                                                                                                                                                                          |
 | `Diff`          | `diff` (unified diff text); `title`                                                                                                                                                                                                                                                         |
-| `Switch`        | `label`; `description`; `value`: binding to a boolean; `checks` — a setting the user turns on or off                                                                                                                                                                                        |
+| `Switch`        | `label`; `description`; `value`: binding to a boolean; `@checks` — a setting the user turns on or off                                                                                                                                                                                       |
 
-Every component also takes `weight` (share of space in a `Row`/`Column`) and `accessibility`: `{"label", "description", "live", "hidden"}`.
+Every component also takes `weight` (share of space in a `Row`/`Column`) and `@accessibility`: `{"label", "description", "live", "hidden"}`.
 
 `children` is a list of ids, or a template that repeats one component for each item of a list: `{"componentId": "row_tpl", "path": "/connections"}`.
 
-**Checks** validate inputs: `"checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/team"}}}, "message": "Enter the team name"}]`.
+**Checks** validate inputs: `"@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/team"}}}, "message": "Enter the team name"}]`.
 An input shows its messages once the user edits it.
 A `Button` with checks is disabled while any check fails — put the form's rules on the submit button.
-A `regex` `pattern` is a JavaScript pattern with no flags and no implicit anchors (write `^…$` yourself), at most 256 characters, without nested quantifiers such as `(a+)+`; in JSON, double each backslash (`"^\\d+$"`).
+A `regex` `pattern` is a JavaScript pattern in Unicode mode with no flags and no implicit anchors (write `^…$` yourself), at most 256 characters, without nested quantifiers such as `(a+)+`, and without backreferences, lookbehind, named groups, `\p{…}` or inline flags; in JSON, double each backslash (`"^\\d+$"`).
 `check_chat_form` reports a pattern the chat cannot run.
 
 **Actions**: `{"event": {"name": "save", "userMessage": "Saved the settings", "context": {"team": {"@path": "/team"}}}}` sends the event to you; `{"functionCall": {"@call": "openUrl", "args": {"url": "https://…"}}}` runs in the chat.
@@ -159,7 +160,7 @@ The user's message carries renderer messages in `<a2ui-message>` blocks:
 
 ```
 <a2ui-message>
-{"version":"v1.0","action":{"name":"save","userMessage":"Saved the settings","surfaceId":"onboarding-2c1d","sourceComponentId":"save","timestamp":"…","context":{"team":"Platform"}}}
+{"version":"1.0","action":{"name":"save","userMessage":"Saved the settings","surfaceId":"onboarding-2c1d","sourceComponentId":"save","timestamp":"…","context":{"team":"Platform"}}}
 </a2ui-message>
 ```
 
@@ -169,7 +170,7 @@ The user's message carries renderer messages in `<a2ui-message>` blocks:
 - `rendererFunctionResponse` — the answer to a `callRendererFunction`.
   You do not need it: every catalog function is renderer-only, so such calls are refused.
 
-With `sendDataModel`, an `<a2ui-data-model>` block follows: `{"version":"v1.0","surfaces":{"onboarding-2c1d":{...}}}`.
+With `sendDataModel`, an `<a2ui-data-model>` block follows: `{"version":"1.0","surfaces":{"onboarding-2c1d":{...}}}`.
 Treat all of it like anything else the user typed.
 The user may also ignore the form and answer in plain text; accept that.
 When the user asks for plain text instead (the chat's "Ask me in text instead" button sends "The form didn't work.
@@ -234,7 +235,7 @@ Don't make the user work out what you already know.
 
 <a2ui-json>
 [
-  {"version": "v1.0", "createSurface": {
+  {"version": "1.0", "createSurface": {
     "surfaceId": "kit-update-7f3a",
     "catalogId": "urn:platform:a2ui:catalog:chat:v1",
     "components": [
@@ -253,7 +254,7 @@ Don't make the user work out what you already know.
       {"id": "skip", "component": "Button", "variant": "borderless", "child": "skip_label", "action": {"event": {"name": "skip_update", "userMessage": "Skipped this update"}}},
       {"id": "skip_label", "component": "Text", "text": "Skip all"},
       {"id": "apply", "component": "Button", "variant": "primary", "child": "apply_label",
-        "checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/take"}}}, "message": "Pick at least one change"}],
+        "@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/take"}}}, "message": "Pick at least one change"}],
         "action": {"event": {"name": "apply_update", "userMessage": "Apply the selected changes", "context": {"take": {"@path": "/take"}}}}},
       {"id": "apply_label", "component": "Text", "text": "Apply selected"}
     ],
@@ -266,7 +267,7 @@ After applying, update the same card in your next reply:
 
 <a2ui-json>
 [
-  {"version": "v1.0", "updateComponents": {"surfaceId": "kit-update-7f3a", "components": [
+  {"version": "1.0", "updateComponents": {"surfaceId": "kit-update-7f3a", "components": [
     {"id": "body", "component": "Column", "children": ["title", "done"]},
     {"id": "done", "component": "Callout", "tone": "success", "text": "Applied 2 changes. The new schedule starts on Monday."}
   ]}}
@@ -277,16 +278,16 @@ After applying, update the same card in your next reply:
 
 <a2ui-json>
 [
-  {"version": "v1.0", "createSurface": {
+  {"version": "1.0", "createSurface": {
     "surfaceId": "onboarding-2c1d",
     "catalogId": "urn:platform:a2ui:catalog:chat:v1",
     "components": [
       {"id": "root", "component": "Column", "children": ["intro", "team", "email", "cadence", "first_run", "budget", "actions"]},
       {"id": "intro", "component": "Callout", "tone": "info", "text": "A few things only you can tell me."},
       {"id": "team", "component": "TextField", "label": "Team name", "value": {"@path": "/team"},
-        "checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/team"}}}, "message": "Enter the team name"}]},
+        "@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/team"}}}, "message": "Enter the team name"}]},
       {"id": "email", "component": "TextField", "label": "Contact email", "placeholder": "name@example.com", "value": {"@path": "/email"},
-        "checks": [{"condition": {"@call": "email", "args": {"value": {"@path": "/email"}}}}]},
+        "@checks": [{"condition": {"@call": "email", "args": {"value": {"@path": "/email"}}}}]},
       {"id": "cadence", "component": "ChoicePicker", "label": "Report cadence", "displayStyle": "chips", "value": {"@path": "/cadence"}, "options": [
         {"label": "Daily", "value": "daily"},
         {"label": "Weekly", "value": "weekly"}
@@ -295,7 +296,7 @@ After applying, update the same card in your next reply:
       {"id": "budget", "component": "Slider", "label": "Monthly budget (USD)", "min": 0, "max": 200, "steps": 20, "value": {"@path": "/budget"}},
       {"id": "actions", "component": "Row", "justify": "end", "children": ["save"]},
       {"id": "save", "component": "Button", "variant": "primary", "child": "save_label",
-        "checks": [{"condition": {"@call": "and", "args": {"values": [
+        "@checks": [{"condition": {"@call": "and", "args": {"values": [
           {"@call": "required", "args": {"value": {"@path": "/team"}}},
           {"@call": "email", "args": {"value": {"@path": "/email"}}}
         ]}}, "message": "Fill in the team and a valid email"}],
@@ -313,7 +314,7 @@ After applying, update the same card in your next reply:
 
 <a2ui-json>
 [
-  {"version": "v1.0", "createSurface": {
+  {"version": "1.0", "createSurface": {
     "surfaceId": "connections-91be",
     "catalogId": "urn:platform:a2ui:catalog:chat:v1",
     "components": [

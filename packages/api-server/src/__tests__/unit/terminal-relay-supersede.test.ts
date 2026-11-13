@@ -309,30 +309,25 @@ describe("terminal relay connect failure", () => {
     });
   });
 
-  // TEST_SCENARIO: a viewer that reconnects by itself tries again after "failed to connect to agent", and stops at a close whose reason starts with "agent not ready". An agent that its owner put to sleep or disabled while the viewer was away must get the second, so the viewer does not try again for minutes.
-  it("closes with agent not ready when the owner stopped or disabled the agent", async () => {
-    const closeFor = (disabled: boolean) =>
-      firstClose(
-        createTerminalRelay(
-          "ns",
-          {
-            ...repo,
-            ensureReady: async () => {
-              throw new AgentStoppedError("agent-1", disabled);
-            },
-          } as unknown as AgentsRepository,
-          presence,
-          fakeBus(),
-          () => "ws://127.0.0.1:1",
-        ),
-      );
-    expect(await closeFor(false)).toEqual({
+  // TEST_SCENARIO: a viewer that reconnects by itself tries again after "failed to connect to agent", and stops at a close whose reason starts with "agent not ready". An agent that its owner put to sleep while the viewer was away must get the second, so the viewer does not try again for minutes.
+  it("closes with agent not ready when the owner stopped the agent", async () => {
+    const close = await firstClose(
+      createTerminalRelay(
+        "ns",
+        {
+          ...repo,
+          ensureReady: async () => {
+            throw new AgentStoppedError("agent-1");
+          },
+        } as unknown as AgentsRepository,
+        presence,
+        fakeBus(),
+        () => "ws://127.0.0.1:1",
+      ),
+    );
+    expect(close).toEqual({
       code: 1011,
       reason: "agent not ready: stopped",
-    });
-    expect(await closeFor(true)).toEqual({
-      code: 1011,
-      reason: "agent not ready: disabled",
     });
   });
 });

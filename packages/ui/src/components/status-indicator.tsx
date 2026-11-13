@@ -13,7 +13,6 @@ const stateVariant: Record<
   preparing_workspace: "info",
   hibernating: "accent",
   hibernated: "accent",
-  disabled: "muted",
   error: "danger",
   over_budget: "warning",
 };
@@ -24,7 +23,6 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   preparing_workspace: "bg-info",
   hibernating: "bg-muted-foreground",
   hibernated: "bg-muted-foreground",
-  disabled: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
 };
@@ -79,21 +77,6 @@ function BackgroundWorkBadge({
           data-testid="background-work-badge"
         >
           Background work
-        </Badge>
-      </span>
-    </Tooltip>
-  );
-}
-
-export function AlwaysOnTag() {
-  return (
-    <Tooltip
-      side="top"
-      content="This agent never sleeps on its own, so it keeps using its share of resources."
-    >
-      <span className="inline-flex" tabIndex={0}>
-        <Badge variant="muted" data-testid="always-on-tag">
-          Always on
         </Badge>
       </span>
     </Tooltip>

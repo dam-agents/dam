@@ -207,11 +207,13 @@ import {
   historyPreamble,
   labelHistoryMessage,
   marksThread,
+  agentAuthor,
   closingBlock,
+  companionAgentLabel,
   footerMarksAmbientRound,
   footerSessionId,
   threadWindowMarker,
-  parseAgentFooter,
+  isCompanionAgentPost,
   type AgentFooter,
 } from "./agent-footer.js";
 import {
@@ -1018,6 +1020,7 @@ async function getContextMessages(read: {
   hasThreadMarker: boolean;
   hasAttachmentMarker: boolean;
   hasAgentAuthored: boolean;
+  hasCompanionAgent: boolean;
   hasUnattributedBot: boolean;
   readNewestTs: string | null;
   readHasMore: boolean;
@@ -1034,7 +1037,7 @@ async function getContextMessages(read: {
 
   const all = conversation.messages.map((message) => ({
     ts: message.ts,
-    authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+    authorAgentId: agentAuthor(message)?.agentId ?? null,
     message,
   }));
   const carried = new Set(read.carried);
@@ -1082,6 +1085,7 @@ async function getContextMessages(read: {
       (e) => (e.message.attachments ?? []).length > 0,
     ),
     hasAgentAuthored: entries.some((e) => e.footer !== null),
+    hasCompanionAgent: entries.some((e) => isCompanionAgentPost(e.message)),
     hasUnattributedBot: entries.some(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
@@ -2031,6 +2035,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         async ({ agentId }) =>
           `${(await resolveAgentName(agentId)) || agentId} (another agent)`,
       )
+      .with({ kind: "companion" }, ({ name, botId }) =>
+        companionAgentLabel(name || botId),
+      )
       .with({ kind: "app" }, ({ name, botId }) => `${name || botId} (an app)`)
       .exhaustive();
   }
@@ -2041,6 +2048,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with({ kind: "agent" }, ({ agentId }) => ({
         sender: "agent",
         senderAgentId: agentId,
+      }))
+      .with({ kind: "companion" }, ({ botId }) => ({
+        sender: "companion",
+        senderBotId: botId,
       }))
       .with({ kind: "app" }, ({ botId }) => ({
         sender: "app",
@@ -2053,7 +2064,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     sender: SlackSender,
     channelId: string,
   ): Promise<boolean> {
-    if (sender.kind !== "app") return false;
+    if (sender.kind !== "app" && sender.kind !== "companion") return false;
     let ignored: SlackIgnoredApp[];
     try {
       ignored = await ignoredApps.list(channelId);
@@ -2134,7 +2145,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await loopGuardDrops.record(channelId, {
         at: new Date().toISOString(),
         thread,
-        sender: sender.kind,
+        sender: sender.kind === "agent" ? "agent" : "app",
         name,
       });
     } catch (err) {
@@ -3239,7 +3250,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "No post with that ts in that chat. Pass the chatId and ts that " +
           "reply, post or start_thread returned for the post.",
       };
-    const author = parseAgentFooter(closingBlock(post))?.agentId;
+    const author = agentAuthor(closingBlock(post))?.agentId;
     if (author !== undefined && author !== instanceName)
       return {
         error:
@@ -3327,7 +3338,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       return;
     }
-    const agentId = parseAgentFooter(post)?.agentId;
+    const agentId = agentAuthor(post)?.agentId;
     if (!agentId) {
       await ack({
         text: "That message is not an agent post, so there is nothing for me to delete.",
@@ -4465,6 +4476,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       bot,
       lines,
       hasAgentAuthored,
+      hasCompanionAgent,
       hasUnattributedBot,
       hasThreadMarker,
       hasAttachmentMarker,
@@ -4488,9 +4500,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       },
     );
     const attribution =
-      hasAgentAuthored || hasUnattributedBot
+      hasAgentAuthored || hasUnattributedBot || hasCompanionAgent
         ? historyLegend(await hasScope(gw, ctx.teamId, "users:read"), {
             botLabel: hasUnattributedBot ? bot.label : null,
+            hasCompanionAgent,
           })
         : null;
     const legend = attribution ? `${preamble} ${attribution}` : preamble;
@@ -4556,7 +4569,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const own = lastOwnPostTs(
       tail.map((message) => ({
         ts: message.ts,
-        authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+        authorAgentId: agentAuthor(message)?.agentId ?? null,
         message,
       })),
       ctx.instanceName,
@@ -4602,6 +4615,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const {
         bot,
         lines,
+        hasCompanionAgent,
         hasUnattributedBot,
         hasThreadMarker,
         hasAttachmentMarker,
@@ -4652,6 +4666,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 : {}),
               hasThreadMarker,
               hasAttachmentMarker,
+              hasCompanionAgent,
             },
           ),
         },
@@ -5748,7 +5763,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ok: false,
         text: "I can't find that message. Check the link points at a message in this workspace, and that I am in that conversation.",
       };
-    if (parseAgentFooter(post))
+    if (agentAuthor(post))
       return {
         ok: false,
         text: "That is an agent's post. Posts by agents always reach the other agents here; only apps and webhooks can be ignored.",
@@ -6424,7 +6439,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             isAfterTs(message.ts, owned.deliveredUpTo) &&
             isAfterTs(oldest, message.ts),
         )
-        .map((message) => ({ message, footer: parseAgentFooter(message) }))
+        .map((message) => ({ message, footer: agentAuthor(message) }))
         .filter((e) => e.footer?.agentId !== instanceName);
       if (entries.length === 0) return [];
       const names = await resolveAuthorNames(entries, resolveAgentName);
@@ -9684,7 +9699,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         };
         const entries = end.messages.map((message) => ({
           message,
-          footer: parseAgentFooter(message),
+          footer: agentAuthor(message),
         }));
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const labelled = labelMessages(entries, names, instanceName, bot, {
@@ -9774,7 +9789,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         };
         const entries = oldestFirst.map((message) => ({
           message,
-          footer: parseAgentFooter(message),
+          footer: agentAuthor(message),
         }));
         const names = await resolveAuthorNames(entries, resolveAgentName);
         const lines = labelMessages(entries, names, instanceName, bot, {
@@ -9914,7 +9929,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               (message) =>
                 message.ts !== undefined &&
                 isAfterTs(message.ts, thread.deliveredUpTo) &&
-                parseAgentFooter(message)?.agentId !== instanceName,
+                agentAuthor(message)?.agentId !== instanceName,
             ),
           };
         }),

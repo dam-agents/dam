@@ -88,7 +88,6 @@ function fakeAgent(id: string, extra: Partial<Agent> = {}): Agent {
     state: "starting",
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
-    disabled: false,
     overBudget: false,
     podRestarts: 0,
     contributionFailures: [],
@@ -1200,6 +1199,17 @@ describe("starter kits: connection addressing", () => {
   });
 });
 
+describe("starter kits: idle timeout", () => {
+  // TEST_SCENARIO: a regular Agent sleeps on the install's idle timeout, so a kit that still names `hibernationTimeoutMin` (a published kit, "never sleeps") imports and creates its agent without an override.
+  it("creates the agent without the kit's idle override", async () => {
+    const set = makeHarness({
+      ...LOADED,
+      kit: kit({ hibernationTimeoutMin: 0 } as Partial<ResolvedStarterKit>),
+    });
+    await set.service.apply(APPLY);
+    expect(set.calls.created[0]).not.toHaveProperty("hibernationTimeoutMin");
+  });
+});
 describe("starter kits: egress preset", () => {
   // TEST_SCENARIO: the kit's egress preset seeds the agent's network rules at create, and a kit that names none leaves the create's own default in place rather than overriding it.
   it("passes the kit's egress preset to the create only when it declares one", async () => {
