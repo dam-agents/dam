@@ -4,21 +4,18 @@ import type { AgentView } from "../../../types.js";
 import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { workspaceFailureSentence } from "./workspace-failure.js";
 
-export const AGENT_ENABLE_ANCHOR = "enable-agent";
-
 export const VM_MEMORY_FULL =
-  "Your VM agents' memory is full. It starts once room frees up — or disable an agent you aren't using.";
+  "Your VM agents' memory is full. It starts once room frees up — or delete an agent you no longer use.";
 const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   running: "",
   starting: "",
   preparing_workspace: "Setting up the workspace. This finishes shortly.",
   hibernating: "",
   hibernated: "The agent isn't running.",
-  disabled: "",
   error: "The agent hit an error and isn't running.",
   over_budget:
-    "Starting this agent would exceed your compute budget. Disable agents " +
-    "you aren't using to free room, then start this one again.",
+    "Starting this agent would exceed your compute budget. Delete an agent " +
+    "you no longer use to free room, then start this one again.",
 };
 
 export function overlayDescription(

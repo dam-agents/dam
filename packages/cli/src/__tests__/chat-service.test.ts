@@ -53,7 +53,6 @@ function service(
       get: async () => ({ ok: true, value: { id: AGENT_ID } as never }),
       deleteAgent: vi.fn(),
       restart: vi.fn(),
-      setDisabled: vi.fn(),
       updateIdentity: vi.fn(),
       unlockedCharacters: vi.fn(),
       customAvatarsEnabled: vi.fn(),

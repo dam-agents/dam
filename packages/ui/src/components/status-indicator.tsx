@@ -13,7 +13,6 @@ const stateVariant: Record<
   preparing_workspace: "info",
   hibernating: "accent",
   hibernated: "accent",
-  disabled: "muted",
   error: "danger",
   over_budget: "warning",
 };
@@ -24,7 +23,6 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   preparing_workspace: "bg-info",
   hibernating: "bg-muted-foreground",
   hibernated: "bg-muted-foreground",
-  disabled: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
 };

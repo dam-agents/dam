@@ -167,7 +167,6 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   error?: string;
   stopRequested: boolean;
-  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   startWaitMessage?: string;
@@ -269,13 +268,7 @@ export type UpgradeAgentError =
 export type UpgradeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
 
-export type WakeAgentError =
-  { type: "AgentNotFound" } | { type: "AgentDisabled" };
-
-export type SetAgentDisabledError = { type: "AgentNotFound" };
-
-export type SetAgentDisabledResult =
-  { ok: true; value: Agent } | { ok: false; error: SetAgentDisabledError };
+export type WakeAgentError = { type: "AgentNotFound" };
 
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
@@ -394,10 +387,6 @@ export interface AgentsService {
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
-  setDisabled: (
-    id: string,
-    disabled: boolean,
-  ) => Promise<SetAgentDisabledResult>;
   upgrade: (
     id: string,
     expectedToImage?: string,

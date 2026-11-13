@@ -56,10 +56,7 @@ import {
   AgentUnavailableOverlay,
   takesOverChat,
 } from "../../agents/components/agent-unavailable-overlay.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -955,7 +952,6 @@ export function ChatView() {
                           name={agentView.name}
                           avatar={agentView.avatar}
                           size={96}
-                          mood={avatarMood(agentDisplay?.state, agentView)}
                           className="transition-opacity group-hover:opacity-80"
                         />
                       )}

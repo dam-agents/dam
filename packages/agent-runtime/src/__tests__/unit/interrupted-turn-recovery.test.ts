@@ -171,7 +171,7 @@ describe("interrupted-turn recovery", () => {
 
     expect(world.resumed).toEqual(["killed", "slept"]);
     expect(world.tasks).toEqual([INTERRUPTION_NOTICE, STOPPED_NOTICE]);
-    expect(STOPPED_NOTICE).toContain("put to sleep");
+    expect(STOPPED_NOTICE).toContain("the agent was stopped");
     expect(STOPPED_NOTICE).not.toContain("memory");
     expect(STOPPED_NOTICE).toContain("Nobody rejected it");
   });

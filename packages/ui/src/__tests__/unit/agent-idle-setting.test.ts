@@ -30,7 +30,6 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
         {
           id: "agent-dev",
           name: "dam",
-          disabled: false,
           env: [],
           access: {
             role: "owner",
@@ -94,7 +93,7 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
 const { SandboxHomeView } =
   await import("../../modules/sandboxes/views/sandbox-home-view.js");
 
-// TEST_SCENARIO: the General section renders its actions but no idle-sleep field, and the page shows no "Always on" tag.
+// TEST_SCENARIO: the General section renders its lifecycle actions but no idle-sleep field and no disable action, and the page shows no "Always on" tag.
 it("offers no idle-sleep setting on the agent's General section", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -103,7 +102,8 @@ it("offers no idle-sleep setting on the agent's General section", () => {
       createElement(SandboxHomeView),
     ),
   );
-  expect(html).toContain("Disable agent");
+  expect(html).toContain("Restart agent");
+  expect(html).not.toContain("Disable agent");
   expect(html).not.toMatch(/sleep after|idle for/i);
   expect(html).not.toContain("sleep-after-idle");
   expect(html).not.toContain("Always on");

@@ -114,7 +114,6 @@ export function usePaletteActions({
           : { avatar: resolveCharacter(agent.name, agent.avatar) }),
       }),
     restart: (agent) => void management.restart(agent),
-    toggleDisabled: (agent) => void management.toggleDisabled(agent),
     deleteAgent: (agent) => void management.remove(agent),
     leave: (agent) => void management.leave(agent),
     copy: (text, what) =>

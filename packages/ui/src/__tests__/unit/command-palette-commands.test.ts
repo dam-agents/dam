@@ -19,7 +19,6 @@ const owned = (id: string, name: string, over: Partial<AgentView> = {}) =>
     name,
     avatar: null,
     state: "running",
-    disabled: false,
     overBudget: false,
     requireConnectionAddress: true,
     access: { role: "owner", editors: [], permissions: [...AGENT_PERMISSIONS] },
@@ -166,18 +165,12 @@ describe("agent commands", () => {
     ]);
   });
 
-  // TEST_SCENARIO: an agent stopped for idleness offers no wake, since opening it wakes it, and no restart; a disabled one offers enable.
+  // TEST_SCENARIO: an agent stopped for idleness offers no wake, since opening it wakes it, and no restart.
   it("offers lifecycle tasks by the agent's state", () => {
     const sleepy = owned("z", "Zed", { state: "hibernated" });
-    const off = owned("o", "Off", { state: "hibernated", disabled: true });
-    const names = titles(
-      input({ agents: [sleepy, off], ownAgents: [sleepy, off] }),
-    );
+    const names = titles(input({ agents: [sleepy], ownAgents: [sleepy] }));
     expect(names).not.toContain("agent Zed: wake");
     expect(names).not.toContain("agent Zed: restart");
-    expect(names).toContain("agent Zed: disable");
-    expect(names).toContain("agent Off: enable");
-    expect(names).not.toContain("agent Off: wake");
   });
 
   // TEST_SCENARIO: right after a restart is clicked the server still reports the old state, so it is not offered again until the app stops showing the agent as restarting.

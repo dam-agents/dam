@@ -78,7 +78,7 @@ export function turnContinuedNotice(cut: {
 export const STOPPED_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the platform stopped the sandbox " +
-    "mid-task — the agent was put to sleep, restarted or moved — and it has " +
+    "mid-task — the agent was stopped, restarted or moved — and it has " +
     "started again. Some effects of your last actions may be partial — a " +
     "file half-written, a command that never finished.",
   DISOWNED_REJECTION,

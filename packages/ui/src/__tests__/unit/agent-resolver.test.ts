@@ -26,7 +26,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
-  disabled: false,
   overBudget: false,
   state,
   podRestarts: 0,
@@ -73,16 +72,6 @@ describe("resolveAgentDisplay", () => {
     expect(out.state).toBe("starting");
     expect(out.slowStart).toBe(true);
     expect(out.powerAction).toBe("restart");
-  });
-
-  // TEST_SCENARIO: a disabled agent reads as disabled whatever its pod does, and offers neither Wake nor Restart, since only enabling it lets it run again.
-  test("a disabled agent shows disabled and offers no power action", () => {
-    const out = resolveAgentDisplay(
-      { ...agent("a", "hibernated"), disabled: true },
-      new Set(["a"]),
-    );
-    expect(out.state).toBe("disabled");
-    expect(out.powerAction).toBe(null);
   });
 
   // TEST_SCENARIO: an agent stopped after a start that never came up shows as an error with its Start action, not as an idle agent, so the failed start stays visible.

@@ -10,7 +10,7 @@ import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-se
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
 import { useSidebarSharedAgents } from "../hooks/use-sidebar-agents.js";
 import { holds } from "../lib/agent-permissions.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { SidebarSessionActions } from "./sidebar-agent-actions.js";
 
 const NO_PREVIEW: never[] = [];
@@ -131,7 +131,6 @@ function SharedAgentRow({
   actions?: ReactNode;
   children?: ReactNode;
 }) {
-  const mood = avatarMood(agent.state, agent);
   return (
     <li data-testid="sidebar-shared-agent" data-agent-id={agent.id}>
       <div
@@ -150,16 +149,13 @@ function SharedAgentRow({
             actions && "group-hover/agent:pr-15",
             open
               ? "text-foreground"
-              : mood !== "awake"
-                ? "text-muted-foreground hover:text-foreground"
-                : "text-foreground/90 hover:text-foreground",
+              : "text-foreground/90 hover:text-foreground",
           )}
         >
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
             size={24}
-            mood={mood}
             className="shrink-0"
           />
           <span

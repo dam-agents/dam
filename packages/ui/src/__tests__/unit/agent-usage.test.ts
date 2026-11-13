@@ -22,7 +22,6 @@ const agent: AgentView = {
   grantedSecretIds: [],
   grantedConnectionIds: ["provider"],
   stopRequested: false,
-  disabled: false,
   overBudget: false,
   state: "hibernated",
   podRestarts: 0,

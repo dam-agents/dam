@@ -352,12 +352,10 @@ Paths are relative to the agent's workspace.
 
 ```sh
 dam agent restart my-agent --wait
-dam agent disable my-agent
-dam agent enable my-agent
 dam agent delete my-agent --yes
 ```
 
-`dam agent disable` keeps the agent asleep until `dam agent enable`; `dam agent delete` is permanent, so confirm first.
+`dam agent delete` is permanent, so confirm first.
 
 ### Schedules
 

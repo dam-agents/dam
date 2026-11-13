@@ -13,14 +13,12 @@ import {
 import { useStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 
-// TEST_OVERVIEW: opening a sleeping agent's sidebar session list wakes it once per open, and a wake already running counts as that open's wake. A sidebar open lasts until its row closes, so a sidebar that mounts again does not wake the agent again. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken. A view open on the agent (its chat, a page that needs it running) wakes it each time it finds it asleep, once per sleep, and retries a failed start only once per open.
+// TEST_OVERVIEW: opening a sleeping agent's sidebar session list wakes it once per open, and a wake already running counts as that open's wake. A sidebar open lasts until its row closes, so a sidebar that mounts again does not wake the agent again. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget or already awake is not woken. A view open on the agent (its chat, a page that needs it running) wakes it each time it finds it asleep, once per sleep, and retries a failed start only once per open.
 
 const wake = vi.hoisted(() => vi.fn());
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgent: (id: string | null) =>
-    id === "a1"
-      ? { id: "a1", state: "hibernated", overBudget: false, disabled: false }
-      : null,
+    id === "a1" ? { id: "a1", state: "hibernated", overBudget: false } : null,
 }));
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake }),
@@ -29,7 +27,6 @@ vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
 const asleep = {
   state: "hibernated" as const,
   overBudget: false,
-  disabled: false,
 };
 
 describe("waking a sleeping agent on open", () => {
@@ -71,15 +68,12 @@ describe("waking a sleeping agent on open", () => {
     });
   });
 
-  // TEST_SCENARIO: an over-budget, disabled or awake agent is not woken, and the open still counts as decided.
-  it("leaves over-budget, disabled and awake agents alone", () => {
+  // TEST_SCENARIO: an over-budget or awake agent is not woken, and the open still counts as decided.
+  it("leaves over-budget and awake agents alone", () => {
     expect(nextAutoWake(null, "a1", { ...asleep, overBudget: true })).toEqual({
       decidedFor: "a1",
       wake: false,
     });
-    expect(nextAutoWake(null, "a1", { ...asleep, disabled: true }).wake).toBe(
-      false,
-    );
     expect(nextAutoWake(null, "a1", { ...asleep, state: "running" }).wake).toBe(
       false,
     );
@@ -177,14 +171,10 @@ describe("a sidebar row's open", () => {
 const idle = {
   state: "hibernated" as const,
   overBudget: false,
-  disabled: false,
 };
 
 function walk(
-  states: Pick<
-    AgentView,
-    "state" | "overBudget" | "disabled" | "startFailure"
-  >[],
+  states: Pick<AgentView, "state" | "overBudget" | "startFailure">[],
   waking = false,
   visible: boolean[] = [],
 ): boolean[] {
@@ -230,9 +220,8 @@ describe("a view open on the agent", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a disabled or over-budget agent is never woken, and a wake already running counts as the view's own.
-  it("leaves disabled, over-budget and already-waking agents alone", () => {
-    expect(walk([{ ...idle, disabled: true }])).toEqual([false]);
+  // TEST_SCENARIO: an over-budget agent is never woken, and a wake already running counts as the view's own.
+  it("leaves over-budget and already-waking agents alone", () => {
     expect(walk([{ ...idle, overBudget: true }])).toEqual([false]);
     expect(walk([idle, idle], true)).toEqual([false, false]);
   });
