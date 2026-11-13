@@ -1116,7 +1116,9 @@ export function ValueMenu({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {entry.harness && (
-                      <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      <span aria-hidden="true">
+                        <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      </span>
                     )}
                     <span className="truncate">{entry.label}</span>
                   </span>

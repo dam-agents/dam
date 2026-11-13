@@ -116,7 +116,7 @@ export function ScheduleDialog<T extends DialogValues>({
     if (!existing) return;
     const confirmed = await showConfirm(
       deleteCopy.body,
-      `Delete “${existing.name}”?`,
+      `Delete schedule “${existing.name}”?`,
       { kind: "destructive", confirmLabel: deleteCopy.confirmLabel },
     );
     if (!confirmed) return;

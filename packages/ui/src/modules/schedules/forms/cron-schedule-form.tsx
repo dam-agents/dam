@@ -118,7 +118,7 @@ export function CronScheduleForm({
   const handleDelete = async () => {
     const confirmed = await showConfirm(
       "It stops running and cannot be recovered.",
-      `Delete “${existing.name}”?`,
+      `Delete schedule “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
