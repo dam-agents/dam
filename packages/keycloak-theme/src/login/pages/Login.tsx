@@ -26,6 +26,7 @@ import {
 } from "../hooks/use-login-page-setup.js";
 import type { I18n } from "../i18n.js";
 import type { KcContext } from "../KcContext.js";
+import { splitMeaningLines } from "../lib/name-meanings.js";
 
 type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
 
@@ -295,9 +296,9 @@ function ScrollPage({
                 key={nameMeaning}
                 className="text-foreground text-5xl leading-[0.95] font-light -tracking-[0.04em] motion-safe:animate-fade-in md:text-7xl"
               >
-                {(nameMeaning ?? brand).split(" ").map((word) => (
-                  <span key={word} className="block">
-                    {word}{" "}
+                {splitMeaningLines(nameMeaning ?? brand).map((line) => (
+                  <span key={line} className="block">
+                    {line}{" "}
                   </span>
                 ))}
               </h1>
