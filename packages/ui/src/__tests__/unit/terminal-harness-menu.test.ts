@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: the Browser Terminal button opens a menu of the harnesses a new web terminal can start with, the carried harnesses a provider fits, as menu items a keyboard reaches. Picking one stores the terminal's own pair and opens the terminal: the harness, with the first attached provider it accepts, and with no model and no settings, so the harness starts on its own default model. The chat picker's pair and the agent's chat default are neither copied nor changed. A harness that needs a provider first opens the attach dialog, which gives focus back to the button when it closes.
+// TEST_OVERVIEW: the Browser Terminal button opens a menu of what a new web terminal can start, as menu items a keyboard reaches: the carried harnesses a provider fits, then Shell. Picking a harness stores the terminal's own launch and opens the terminal: the harness, with the first attached provider it accepts, and with no model and no settings, so the harness starts on its own default model. The chat picker's pair and the agent's chat default are neither copied nor changed. A harness that needs a provider first opens the attach dialog, which gives focus back to the button when it closes. Shell is offered whatever the agent's harnesses and providers, even while they load, and opens the terminal on the agent user's login shell with no harness, provider or model.
 import type { SessionPair } from "api-server-api";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import type { TerminalLaunch } from "../../modules/sessions/lib/terminal-launch.js";
 
 const fake = vi.hoisted(() => {
   const anthropic = { id: "a", name: "Anthropic", type: "anthropic" as const };
@@ -36,7 +38,18 @@ const fake = vi.hoisted(() => {
     store: {
       nextSessionPair: { a1: picked },
       setNextSessionPair: vi.fn(),
-      setNextTerminalPair: vi.fn(),
+      setNextTerminalLaunch: vi.fn(),
+    },
+    harnessStatus: {
+      isPending: false,
+      isError: false,
+      data: {
+        harnesses: [
+          { name: "claude-code" },
+          { name: "codex" },
+          { name: "bob" },
+        ],
+      } as { harnesses: { name: string }[] } | undefined,
     },
     attachAll: vi.fn(),
     onOpen: vi.fn(),
@@ -50,13 +63,7 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake.store),
 }));
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
-  useHarnessConfigStatus: () => ({
-    isPending: false,
-    isError: false,
-    data: {
-      harnesses: [{ name: "claude-code" }, { name: "codex" }, { name: "bob" }],
-    },
-  }),
+  useHarnessConfigStatus: () => fake.harnessStatus,
 }));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
@@ -76,18 +83,16 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
 
 const { TerminalHarnessMenu } =
   await import("../../modules/sessions/components/terminal-harness-menu.js");
-const { pairMeta } =
-  await import("../../modules/sessions/lib/session-pair-options.js");
+const { terminalLaunchMeta } =
+  await import("../../modules/sessions/lib/terminal-launch.js");
 const { terminalSocketUrl } =
   await import("../../modules/sessions/lib/terminal-socket.js");
 
 let root: Root;
 let container: HTMLDivElement;
+const carried = fake.harnessStatus.data;
 
-beforeEach(() => {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+function render() {
   act(() =>
     root.render(
       createElement(TerminalHarnessMenu, {
@@ -101,12 +106,20 @@ beforeEach(() => {
       }),
     ),
   );
+}
+
+beforeEach(() => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  render();
 });
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.clearAllMocks();
+  fake.harnessStatus = { isPending: false, isError: false, data: carried };
 });
 
 const trigger = () => container.querySelector("button")!;
@@ -138,22 +151,47 @@ async function press(key: string) {
   await settle();
 }
 
-function storedPair(): SessionPair {
-  expect(fake.store.setNextTerminalPair).toHaveBeenCalledOnce();
-  const [agentId, pair] = fake.store.setNextTerminalPair.mock.calls[0] as [
+function storedLaunch(): TerminalLaunch {
+  expect(fake.store.setNextTerminalLaunch).toHaveBeenCalledOnce();
+  const [agentId, launch] = fake.store.setNextTerminalLaunch.mock.calls[0] as [
     string,
-    SessionPair,
+    TerminalLaunch,
   ];
   expect(agentId).toBe("a1");
-  return pair;
+  return launch;
 }
 
-// TEST_SCENARIO: the agent carries Claude, Codex and Bob. Claude has an attached provider, Codex one the owner can attach, and no provider fits Bob; Pi is in the catalog but not carried. The menu lists Claude and Codex and nothing else, and opening it opens no terminal.
-it("lists exactly the harnesses the agent can run", () => {
+function storedPair(): SessionPair {
+  const launch = storedLaunch();
+  expect(launch.kind).toBe("harness");
+  return (launch as Extract<TerminalLaunch, { kind: "harness" }>).pair;
+}
+
+const socketParams = (launch: TerminalLaunch) =>
+  [
+    ...new URL(
+      terminalSocketUrl({
+        location: { protocol: "https:", host: "dam.test" },
+        agentId: "a1",
+        sessionId: "s1",
+        token: "t",
+        reset: false,
+        wakes: true,
+        lease: terminalLaunchMeta(launch),
+      }),
+    ).searchParams.keys(),
+  ].sort();
+
+// TEST_SCENARIO: the agent carries Claude, Codex and Bob. Claude has an attached provider, Codex one the owner can attach, and no provider fits Bob; Pi is in the catalog but not carried. The menu lists Claude and Codex, then Shell, and nothing else, and opening it opens no terminal.
+it("lists exactly the harnesses the agent can run, then Shell", () => {
   expect(trigger().getAttribute("aria-haspopup")).toBe("menu");
   openMenu();
   expect(document.querySelector('[role="menu"]')).not.toBeNull();
-  expect(items().map((el) => el.textContent)).toEqual(["Claude", "Codex"]);
+  expect(items().map((el) => el.textContent)).toEqual([
+    "Claude",
+    "Codex",
+    "Shell",
+  ]);
   expect(fake.onOpen).not.toHaveBeenCalled();
 });
 
@@ -180,23 +218,61 @@ it("opens the terminal on the picked harness with no model or settings", async (
   });
   expect(fake.onOpen).toHaveBeenCalledOnce();
   expect(fake.store.setNextSessionPair).not.toHaveBeenCalled();
-  const url = new URL(
-    terminalSocketUrl({
-      location: { protocol: "https:", host: "dam.test" },
-      agentId: "a1",
-      sessionId: "s1",
-      token: "t",
-      reset: false,
-      wakes: true,
-      lease: pairMeta(storedPair()),
-    }),
-  );
-  expect([...url.searchParams.keys()].sort()).toEqual([
+  expect(socketParams(storedLaunch())).toEqual([
     "harness",
     "provider",
     "sessionId",
     "token",
   ]);
+});
+
+// TEST_SCENARIO: picking Shell opens a terminal that asks the runtime for a shell and names no harness, provider or model, and opens no attach dialog. The picker's pair is left as it was.
+it("opens Shell with no harness, provider or model", async () => {
+  openMenu();
+  await choose("Shell");
+  expect(storedLaunch()).toEqual({ kind: "shell" });
+  expect(fake.onOpen).toHaveBeenCalledOnce();
+  expect(dialog()).toBeNull();
+  expect(fake.store.setNextSessionPair).not.toHaveBeenCalled();
+  expect(socketParams(storedLaunch())).toEqual(["sessionId", "shell", "token"]);
+});
+
+// TEST_SCENARIO: Shell needs no harness and no provider, so it is offered while the harnesses load, on an agent no owner provider fits, and on an agent whose harnesses cannot be read, beside the runtime's default harness.
+it.each([
+  [
+    "while the harnesses load",
+    { isPending: true, isError: false, data: undefined },
+    ["Loading harnesses…", "Shell"],
+  ],
+  [
+    "when no provider fits a harness",
+    {
+      isPending: false,
+      isError: false,
+      data: { harnesses: [{ name: "bob" }] },
+    },
+    ["No harness supports the LLM providers you have configured.", "Shell"],
+  ],
+  [
+    "when the harnesses cannot be read",
+    { isPending: false, isError: true, data: undefined },
+    ["Default harness", "Shell"],
+  ],
+])("offers Shell %s", (_, status, labels) => {
+  fake.harnessStatus = status;
+  render();
+  openMenu();
+  expect(items().map((el) => el.textContent)).toEqual(labels);
+});
+
+// TEST_SCENARIO: on an agent whose harnesses cannot be read, the default-harness entry opens a terminal that names nothing, so the runtime starts its default harness as the button did before the menu had Shell.
+it("opens the runtime's default harness when the harnesses cannot be read", async () => {
+  fake.harnessStatus = { isPending: false, isError: true, data: undefined };
+  render();
+  openMenu();
+  await choose("Default harness");
+  expect(storedLaunch()).toBeNull();
+  expect(fake.onOpen).toHaveBeenCalledOnce();
 });
 
 // TEST_SCENARIO: a keyboard user picks Codex, which no attached provider fits. The attach dialog takes focus; Escape closes it, opens no terminal, and gives focus back to the button rather than to the menu item that is gone.
@@ -210,7 +286,7 @@ it("gives focus back to the button when the attach dialog is cancelled", async (
   await press("Escape");
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(trigger());
-  expect(fake.store.setNextTerminalPair).not.toHaveBeenCalled();
+  expect(fake.store.setNextTerminalLaunch).not.toHaveBeenCalled();
   expect(fake.onOpen).not.toHaveBeenCalled();
 });
 

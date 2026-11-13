@@ -1,6 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
+import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -63,6 +64,15 @@ import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
 import { terminalDefaultModel } from "./modules/terminal-default-model.js";
 import { terminalReap } from "./modules/terminal-reap.js";
+import {
+  loginShellOf,
+  shellSessionMeta,
+  startsShell,
+  terminalEnvLease,
+  type TerminalLaunch,
+  terminalProgram,
+  type TerminalRequest,
+} from "./modules/terminal-launch.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import { composeBrowser } from "./modules/browser-preview.js";
 import { config } from "./modules/config.js";
@@ -953,13 +963,18 @@ const grantedModel = (model: string): boolean => {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
  * refuses the terminal with the provider-removed reason, as a chat prompt
- * would be refused.
+ * would be refused. A shell asks for no harness and no model, so neither can
+ * refuse it.
  */
 function terminalLease(
   sessionId: string,
-  requested: { harness?: string; model?: string },
-): { harness: string; model: string | null } | string {
+  requested: TerminalRequest,
+): TerminalLaunch | string {
   const meta = sessionMetadata.get(sessionId)?.meta;
+  if (startsShell(meta, requested)) {
+    sessionMetadata.set(sessionId, shellSessionMeta(meta));
+    return { kind: "shell" };
+  }
   const harness = meta?.harness ?? requested.harness ?? defaultHarness;
   if (!Object.hasOwn(harnessManifests, harness))
     return `this agent does not carry the ${harness} harness`;
@@ -980,7 +995,7 @@ function terminalLease(
     harness,
     ...(chosen !== null && { model: chosen }),
   });
-  return { harness, model: chosen };
+  return { kind: "harness", harness, model: chosen };
 }
 
 /**
@@ -1049,7 +1064,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean; lease: { harness?: string; model?: string } },
+  opts: { reset: boolean; lease: TerminalRequest },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -1127,7 +1142,11 @@ function attachPty(
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
       browser.start();
-      const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
+      const envLease = terminalEnvLease(lease, defaultHarness);
+      const program = terminalProgram(lease, () =>
+        loginShellOf(() => userInfo().shell, process.env),
+      );
+      const pty = nodePty.spawn(program.file, program.args, {
         name: "xterm-256color",
         cols,
         rows,
@@ -1136,7 +1155,7 @@ function attachPty(
           ...(Object.fromEntries(
             Object.entries(
               leaseSpawnEnv(envStore, {
-                harness: lease.harness,
+                harness: envLease.harness,
                 provider: null,
                 model: null,
               }),
@@ -1147,7 +1166,7 @@ function attachPty(
                 !k.startsWith("npm_lifecycle_"),
             ),
           ) as Record<string, string>),
-          ...terminalModelEnv(lease),
+          ...terminalModelEnv(envLease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           ...gitTraceEnv(gitTraceDir, sessionEnvVars),
@@ -1452,6 +1471,7 @@ server.on("upgrade", (req, socket, head) => {
         provider: leaseParam("provider"),
       }),
       ...(leaseParam("model") !== undefined && { model: leaseParam("model") }),
+      ...(url.searchParams.get("shell") === "1" && { shell: true }),
     };
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset, lease }),

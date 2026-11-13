@@ -136,7 +136,7 @@ Its responsibilities are:
 - Accept ACP WebSocket connections (relayed from the api-server) — several at once, from any mix of clients — and speak JSON-RPC 2.0 to the agent process.
   Chat-mode sessions spawn `/usr/local/bin/harness-chat` as the ACP subprocess.
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server).
-  Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
+  Each session gets a PTY running `/usr/local/bin/harness-terminal`, or the agent user's login shell for a shell session ([sessions](sessions.md#session-inside-the-machine)); agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen.
   A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
   A harness that starts a new session inside a running PTY (Claude Code's `/clear`) reports the new id from a hook; the PTY moves to that session id and the viewer gets a session frame and follows it, so the old session stays listed with its own transcript and the new one is the one the terminal shows.
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server).
