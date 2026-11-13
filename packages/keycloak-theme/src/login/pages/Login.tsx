@@ -295,7 +295,11 @@ function ScrollPage({
                 key={nameMeaning}
                 className="text-foreground text-5xl leading-[0.95] font-light -tracking-[0.04em] motion-safe:animate-fade-in md:text-7xl"
               >
-                {nameMeaning ?? brand}
+                {(nameMeaning ?? brand).split(" ").map((word) => (
+                  <span key={word} className="block">
+                    {word}{" "}
+                  </span>
+                ))}
               </h1>
               <p className="text-muted-foreground text-lg">
                 Work better with AI agent teammates.
