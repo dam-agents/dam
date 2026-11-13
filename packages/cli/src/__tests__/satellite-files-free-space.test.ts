@@ -180,7 +180,9 @@ describe("the ceiling a satellite declares", () => {
       allowUpload: true,
       transfer: fakeTransfer(Buffer.from("payload")),
     });
-    const descriptions = backend.tools.map((tool) => tool.description ?? "");
+    const descriptions = backend.tools
+      .filter((tool) => tool.transfer !== undefined)
+      .map((tool) => tool.description ?? "");
 
     expect(descriptions).toHaveLength(2);
     expect(

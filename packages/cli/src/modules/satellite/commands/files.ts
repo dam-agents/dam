@@ -33,7 +33,7 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
   return connectOptions(
     new Command("files")
       .description(
-        "Let an agent copy single files between one directory on this machine and its own workspace",
+        "Let an agent list, inspect and copy files in one directory on this machine from its own workspace",
       )
       .option("--root <dir>", "the one directory an agent may read")
       .option(
@@ -44,21 +44,28 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
   )
     .addHelpText(
       "after",
-      "\nThe agent gets a `download` tool and, with --upload, an `upload` tool.\n" +
+      "\nThe agent gets `list` and `stat` to see what is there, a `download` tool\n" +
+        "and, with --upload, an `upload` tool.\n" +
         "A file's bytes never enter the agent's context: a download lands in the\n" +
         "agent's workspace and the agent gets its path, size and sha256, and an\n" +
-        "upload comes from a path in that workspace.\n\n" +
+        "upload comes from a path in that workspace.\n" +
+        "A download copies the whole file or a slice of it, with offset and\n" +
+        "length, so a file bigger than the limit still moves in pieces.\n\n" +
         "  dam satellite files --name laptop --root ~/work\n" +
         "  dam satellite files --name laptop --root ~/work --upload\n\n" +
         "--root is the whole allowlist: every path is resolved inside it, and an\n" +
-        "absolute path, a .. segment or a symlink is refused.\n" +
+        "absolute path or a .. segment is refused. A symlink is never followed:\n" +
+        "it is refused on the way to a file, and list shows it as a link.\n" +
         "It refuses / and your home directory — name the directory an agent may\n" +
         "read, e.g. ~/work rather than ~. Without --upload the agent can read but\n" +
         "never write; with it, a file already there is replaced only when the\n" +
         "agent's call asks to overwrite.\n" +
-        "One transfer carries at most 5 GiB. Changing what is exposed means\n" +
-        "restarting: there is no file to re-read. First interrupt drains, second\n" +
-        "kills running jobs.\n",
+        "One transfer carries at most 5 GiB; a slice under that limit still\n" +
+        "copies from a larger file.\n" +
+        "A listing stops at 10 levels deep, 5000 entries or 20 seconds, and says\n" +
+        "on its last line that it stopped there.\n" +
+        "Changing what is exposed means restarting: there is no file to\n" +
+        "re-read. First interrupt drains, second kills running jobs.\n",
     )
     .action(async (opts: Opts) => {
       const unsupported = platformRefusal();
