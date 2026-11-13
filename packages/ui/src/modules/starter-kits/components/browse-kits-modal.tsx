@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { HARNESS_ICONS, HARNESS_ORDER } from "@/components/harness-icons";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
@@ -13,7 +13,7 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
 import { CATEGORY_LABEL } from "../lib/catalog-cards.js";
 import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
-import { KitLinkForm } from "./kit-link-form.js";
+import { KitLinkButton, KitLinkDialog } from "./kit-link-import.js";
 
 const DEFAULT_KIT = {
   name: "The Generalist",
@@ -38,8 +38,9 @@ export function BrowseKitsModal() {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The starter kit catalog: search, category tabs,
- * the Generalist card and one card per kit. The Starter kits page and the
+ * UNIT_BOUNDARY_DESCRIPTION: The starter kit catalog: search and the
+ * "Import from link" button, category tabs, the Generalist card and one card
+ * per kit. The Starter kits page and the
  * Browse starter kits dialog both show it.
  */
 export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
@@ -59,8 +60,17 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
       .toLowerCase()
       .includes(query.trim().toLowerCase());
 
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const importFromLink = (
+    <KitLinkButton onClick={() => setLinkDialogOpen(true)} />
+  );
+
   return (
     <>
+      {!kits.data && (
+        <div className="mb-4 flex justify-end">{importFromLink}</div>
+      )}
+
       {kits.isPending && <ListSkeleton rows={2} rowHeight={180} />}
 
       {kits.isError && (
@@ -87,6 +97,7 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
             filter={filter}
             onFilterChange={setFilter}
             tabs={tabs}
+            action={importFromLink}
           />
           {shown.length === 0 && !showDefault ? (
             <div className="flex flex-wrap items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -158,7 +169,15 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
           )}
         </>
       )}
-      <KitLinkForm onOpenKit={onOpenKit} />
+      {linkDialogOpen && (
+        <KitLinkDialog
+          onClose={() => setLinkDialogOpen(false)}
+          onOpenKit={() => {
+            setLinkDialogOpen(false);
+            onOpenKit?.();
+          }}
+        />
+      )}
     </>
   );
 }
