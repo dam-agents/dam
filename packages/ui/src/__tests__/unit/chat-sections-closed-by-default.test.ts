@@ -265,6 +265,19 @@ describe("the column beside the conversation on a desktop", () => {
   });
 });
 
+describe("the top bar's left cell", () => {
+  // TEST_SCENARIO: the cell keeps the same borders whether a section is open or not, transparent while none is, so opening one never moves the top bar's icons.
+  it("keeps its geometry when a section opens", () => {
+    render(layout());
+    const cell = () => host.querySelector("header > div")!;
+    expect(cell().className).toContain("md:border-r md:border-b");
+    expect(cell().className).toContain("md:border-transparent");
+    act(() => useStore.setState({ filesSectionOpen: true }));
+    expect(cell().className).toContain("md:border-r md:border-b");
+    expect(cell().className).toContain("md:border-border");
+  });
+});
+
 describe("the sections screen on a phone", () => {
   // TEST_SCENARIO: a phone opens the column as a screen of its own, so it draws every section, closed ones too, and each folds from its header instead of closing with an X.
   it("draws every section, each folding from its header", () => {

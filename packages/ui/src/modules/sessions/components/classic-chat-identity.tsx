@@ -1,11 +1,11 @@
 import {
+  Activity,
   Branch,
   type CarbonIconType,
   Diagram,
   Document,
   Folder,
   Globe,
-  Process,
   Tools,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
@@ -23,18 +23,19 @@ import { useChatSections } from "../hooks/use-chat-sections.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { AgentSettingsButton } from "./agent-settings-button.js";
 
-/* UNIT_BOUNDARY_DESCRIPTION: the design's toggle: an 8×8 rounded square with muted ink and no background while closed, and the neutral muted square of a selected row while open; never the accent. */
-const TOGGLE =
-  "h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground";
+/* UNIT_BOUNDARY_DESCRIPTION: every icon button of the top bar, toggle or not, is this one 8×8 rounded square with muted ink, so they share one size and one alignment. */
+const TOP_BAR_ICON =
+  "h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground";
+/* UNIT_BOUNDARY_DESCRIPTION: a toggle adds the design's open state: the neutral muted square of a selected row, never the accent. */
+const TOGGLE = `${TOP_BAR_ICON} aria-pressed:bg-muted aria-pressed:text-foreground`;
 
-/* UNIT_BOUNDARY_DESCRIPTION: the toggles' icons: Files and Artifacts as the design draws them, Artifacts with the design's glyph here only, so it never reads as Files' folder beside it; Processes, which the design does not draw, the same way with its own icon. */
 const SECTION_TOGGLES: Record<
   SidebarPanelId,
   { label: string; Icon: CarbonIconType }
 > = {
   files: { label: "Show files", Icon: Folder },
   artifacts: { label: "Show artifacts", Icon: Diagram },
-  processes: { label: "Show processes", Icon: Process },
+  processes: { label: "Show processes", Icon: Activity },
 };
 
 /**
@@ -60,12 +61,12 @@ export function ClassicChatIdentity({
   display: AgentDisplay | null;
   onConfigure: () => void;
   processesEnabled?: boolean;
-  /** UNIT_BOUNDARY_DESCRIPTION: the top bar's buttons, drawn after the name and its toggles, where main has them. */
+  /** UNIT_BOUNDARY_DESCRIPTION: the top bar's buttons, drawn in the same row as the section toggles, with the same spacing, so every icon sits at the same place whether a section is open or not. */
   actions?: ReactNode;
 }) {
   const sections = useChatSections(processesEnabled);
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="flex min-w-min flex-1 items-center gap-3">
       <span
         aria-hidden
         className={cn(
@@ -84,7 +85,7 @@ export function ClassicChatIdentity({
           <SharedAgentBadge access={agent.access} />
         </span>
       )}
-      <div className="flex shrink-0 items-center gap-2 max-md:hidden">
+      <div className="flex shrink-0 items-center gap-2">
         {sections.map((section) => {
           const toggle = SECTION_TOGGLES[section.id];
           return (
@@ -96,15 +97,15 @@ export function ClassicChatIdentity({
               tooltip={toggle.label}
               aria-pressed={section.open}
               data-testid={`toggle-${section.id}-section`}
-              className={TOGGLE}
+              className={cn(TOGGLE, "max-md:hidden")}
               onClick={() => section.setOpen(!section.open)}
             >
               <toggle.Icon size={16} />
             </Button>
           );
         })}
+        {actions}
       </div>
-      <div className="ml-auto flex shrink-0">{actions}</div>
     </div>
   );
 }
@@ -169,7 +170,7 @@ export function ClassicChatToolbar({
         aria-label="Files and artifacts"
         tooltip="Files and artifacts"
         data-testid="open-agent-files"
-        className="md:hidden"
+        className={cn(TOP_BAR_ICON, "md:hidden")}
         onClick={() => setMobileScreen("files")}
       >
         <Document size={16} />
@@ -179,7 +180,7 @@ export function ClassicChatToolbar({
         size="icon-sm"
         aria-label="Agent settings"
         tooltip="Agent settings"
-        className="max-md:hidden"
+        className={cn(TOP_BAR_ICON, "max-md:hidden")}
         onClick={onConfigure}
       >
         <Tools size={16} />

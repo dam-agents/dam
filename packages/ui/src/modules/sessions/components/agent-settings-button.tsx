@@ -9,7 +9,8 @@ import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatar
  * UNIT_BOUNDARY_DESCRIPTION: The Agent's avatar and name at the start of the
  * chat's top bar, as one button that opens the Agent's settings over the
  * chat, as the design draws it: no caret, the tooltip says it opens the
- * settings; the top bar's wrench opens the same modal. The avatar keeps the dot that says a new avatar
+ * settings; the top bar's wrench opens the same modal. The name shows in full
+ * up to 10 rem and truncates beyond, and the top bar's cell grows to fit it. The avatar keeps the dot that says a new avatar
  * is waiting, since the avatar picker is one click away in those settings.
  */
 export function AgentSettingsButton({
@@ -21,7 +22,7 @@ export function AgentSettingsButton({
 }) {
   const hasNewAvatar = useFreshAvatars().length > 0;
   return (
-    <h1 className="flex min-w-0 shrink">
+    <h1 className="flex max-w-40 shrink-0">
       <Tooltip content="Agent settings">
         <button
           type="button"

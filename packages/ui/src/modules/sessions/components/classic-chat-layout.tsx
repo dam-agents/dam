@@ -113,6 +113,17 @@ export function ClassicChatLayout({
   );
   const rightWRef = useRef(rightW);
   const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the top bar's left cell is the column's width, or wider when the agent's name and its icons need more; the column below follows the cell, so their borders stay in one line and no icon is ever cut or covered. The header, not the cell, is the container its width queries read, since a container's content cannot size it. */
+  const [cellEl, setCellEl] = useState<HTMLDivElement | null>(null);
+  const [cellW, setCellW] = useState(0);
+  useEffect(() => {
+    if (!cellEl) return;
+    const ro = new ResizeObserver(() =>
+      setCellW(cellEl.getBoundingClientRect().width),
+    );
+    ro.observe(cellEl);
+    return () => ro.disconnect();
+  }, [cellEl]);
   const [columnsW, setColumnsW] = useState<number | null>(null);
   useEffect(() => {
     if (!columnsEl) return;
@@ -137,23 +148,27 @@ export function ClassicChatLayout({
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const { panelFills, panelMaxW, panelW } = classicColumns({
     columnsW,
-    leftW: column.open ? leftW : 0,
+    leftW: column.open ? Math.max(leftW, cellW) : 0,
     savedPanelW: rightW,
     panelOpen: panel !== null,
     panelMaximized: maximized,
   });
   const leftPanelWidth = { width: leftW };
+  const columnWidth = { width: desktop ? Math.max(leftW, cellW) : leftW };
 
   return (
     <>
       <header
-        className={`${mobileScreen === "files" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
+        className={`@container ${mobileScreen === "files" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
       >
         <div
+          ref={setCellEl}
           style={leftPanelWidth}
           className={cn(
-            "@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1",
-            column.open && "md:border-r md:border-b md:border-border",
+            "flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1 md:min-w-min",
+            /* UNIT_BOUNDARY_DESCRIPTION: the cell keeps its borders while the column is closed, drawn transparent, so opening a section never moves the icons by a pixel. */
+            "md:border-r md:border-b",
+            column.open ? "md:border-border" : "md:border-transparent",
           )}
         >
           <MobileMenuButton />
@@ -166,7 +181,7 @@ export function ClassicChatLayout({
 
       <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         <div
-          style={leftPanelWidth}
+          style={columnWidth}
           data-testid="chat-sections"
           className={cn(
             "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",

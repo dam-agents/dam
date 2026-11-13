@@ -28,6 +28,7 @@ Icons come from `@carbon/icons-react`.
 | Restart agent                                               | `Restart`                                      |
 | Retry, update, reload                                       | `Renew`                                        |
 | Files destination                                           | `Folder`                                       |
+| Processes destination                                       | `Activity`                                     |
 | Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
 | "About X" hint                                              | `Information`                                  |

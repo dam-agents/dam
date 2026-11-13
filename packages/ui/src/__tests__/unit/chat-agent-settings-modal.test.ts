@@ -195,7 +195,7 @@ describe("the top bar's avatar and name", () => {
     expect(onConfigure).toHaveBeenCalledTimes(1);
   });
 
-  // TEST_SCENARIO: the browser and changes buttons are the same 8×8 toggle as the sections' toggles, a pressed one drawn as the neutral square.
+  // TEST_SCENARIO: the browser and changes buttons are the same 8×8 toggle as the sections' toggles, a pressed one drawn as the neutral square, and the wrench is the same 8×8 square, so all of them line up.
   it("draw the browser and changes buttons as the sections' toggles", () => {
     render(
       createElement(ClassicChatToolbar, {
@@ -216,6 +216,11 @@ describe("the top bar's avatar and name", () => {
       expect(button.className).toContain("h-8 w-8");
       expect(button.className).toContain("aria-pressed:bg-muted");
     }
+    const wrench = host.querySelector<HTMLButtonElement>(
+      '[aria-label="Agent settings"]',
+    )!;
+    expect(wrench.className).toContain("h-8 w-8");
+    expect(wrench.className).toContain("rounded-lg");
   });
 });
 
