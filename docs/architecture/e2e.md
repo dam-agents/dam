@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-10
+Last verified: 2026-11-13
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -50,6 +50,7 @@ It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
 The spec that deletes a user's VM runner runs after the rest of the suite, since that runner runs every other machine of that user.
 The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
+Every project, the tier's too, starts after the auth project: its first test proves the Terms gate on the shared account before anything accepts the Terms, and `check:auth-first` fails a config where a project could run beside it.
 
 ## Scope: what a pull request runs
 
