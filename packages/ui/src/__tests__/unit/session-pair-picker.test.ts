@@ -984,6 +984,51 @@ describe("the new session panel", () => {
     );
   });
 
+  /** TEST_SCENARIO: a harness change keeps only the settings the new harness offers, effort carried by what it is: Claude Code High becomes Pi High and back, Pi's `mode` never lands in Claude Code's tool approval, and each step's pick shows the effort it sends. */
+  it("carries effort across a harness change in both directions", () => {
+    const both = [...carried, claudeCode];
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: { effort: "high" },
+    };
+    const node = mount(picker({ carried: both }));
+    pickMenu(node, "Harness", "Pi");
+    let sent = lastCall(state.chosenModel)[1] as SessionPair;
+    expect(sent).toMatchObject({ harness: "pi" });
+    expect(sent.settings).toEqual({ mode: "high" });
+
+    act(() => root!.unmount());
+    state.chosen = sent;
+    const onPi = mount(picker({ carried: both }));
+    expect(menuTrigger(onPi, "effort")).toBe("High");
+    pickMenu(onPi, "Harness", "Claude Code");
+    sent = lastCall(state.chosenModel)[1] as SessionPair;
+    expect(sent).toMatchObject({ harness: "claude-code" });
+    expect(sent.settings).toEqual({ effort: "high" });
+
+    act(() => root!.unmount());
+    state.chosen = sent;
+    const back = mount(picker({ carried: both }));
+    expect(menuTrigger(back, "effort")).toBe("High");
+  });
+
+  /** TEST_SCENARIO: a session already holding a key another harness left (`mode=high` on Claude Code) drops it on its next pick, any pick, instead of sending it again. */
+  it("drops another harness's key on the next pick", () => {
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: { mode: "high", effort: "high" },
+    };
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    pickEffort(node, "Low");
+    expect((lastCall(state.chosenModel)[1] as SessionPair).settings).toEqual({
+      effort: "low",
+    });
+  });
+
   /** TEST_SCENARIO: no provider at all warns in place of the panel, and an agent that has not reported its harnesses yet shows a loader. */
   it("warns in place of the picker when no provider is connected", () => {
     state.noProviders = true;

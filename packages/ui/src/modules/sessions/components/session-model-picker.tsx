@@ -67,7 +67,9 @@ import {
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
+  harnessChangeSettings,
   isModelOption,
+  offeredSettings,
   sessionSettingOptions,
   settingDefaults,
   settingsForModel,
@@ -180,7 +182,11 @@ export function SessionModelPicker({
   const harness = pair?.harness ?? defaultHarness;
   const capability = carried.find((h) => h.name === harness);
   const model = pair?.harness === harness ? (pair.model ?? null) : null;
-  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
+  /* UNIT_BOUNDARY_DESCRIPTION: what the picker shows and every pick sends are the settings the harness offers, so a key another harness left behind (Pi's `mode=high` on Claude Code) is dropped on the next pick instead of being sent again. */
+  const settings = offeredSettings(
+    capability,
+    pair?.harness === harness ? (pair.settings ?? {}) : {},
+  );
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
@@ -421,7 +427,7 @@ export function SessionModelPicker({
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. It keeps only the settings the new harness offers, effort carried by what it is rather than its key (harnessChangeSettings). */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
     const nextProvider =
@@ -458,14 +464,19 @@ export function SessionModelPicker({
       firstOfProvider?.options[0] ?? firstOfHarness?.options[0] ?? null;
     const nextModel = keptOption ?? fallback;
     const nextCapability = carried.find((h) => h.name === name);
+    const carriedSettings = harnessChangeSettings(
+      capability,
+      nextCapability,
+      settings,
+    );
     const keptSettings = nextModel
       ? settingsForModel(
           nextCapability,
           nextGroups,
           nextModel.model.name,
-          settings,
+          carriedSettings,
         )
-      : settings;
+      : carriedSettings;
     choose({
       harness: name,
       provider: nextModel?.group.connectionId ?? nextProvider?.id ?? null,
