@@ -9,7 +9,7 @@ import {
   Settings,
   Share,
 } from "@carbon/icons-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { stateDotClass } from "@/components/status-indicator";
 import {
@@ -61,6 +61,8 @@ export function AgentMenu({
   onOpenSettings: (section: SandboxSection) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: a menu closed with the keyboard hands focus back to its button, so the next key goes on from there; one closed with the pointer does not, so the button shows no focus ring after a click. */
+  const byPointer = useRef(false);
   return (
     <>
       {renaming && (
@@ -94,7 +96,16 @@ export function AgentMenu({
             )}
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" data-testid="agent-menu">
+        <DropdownMenuContent
+          align="start"
+          data-testid="agent-menu"
+          onPointerDown={() => (byPointer.current = true)}
+          onKeyDown={() => (byPointer.current = false)}
+          onCloseAutoFocus={(e) => {
+            if (byPointer.current) e.preventDefault();
+            byPointer.current = false;
+          }}
+        >
           <DropdownMenuItem onSelect={() => setRenaming(true)}>
             <Edit size={13} /> Rename
           </DropdownMenuItem>
