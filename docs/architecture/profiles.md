@@ -1,6 +1,6 @@
 # Profiles
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -31,6 +31,7 @@ A profile in use cannot be deleted, and the refusal names what uses it.
 
 Each owner has one **default for new agents**, picked in Settings › Providers with the same picker an agent's Providers page shows: a profile, or values of their own (harness, one of their provider Connections and a model), the way a Custom pick saves them.
 It is the top layer: a new agent's chat default is initialised from it, and from then on the agent's own chat default decides what its new chats run on; nothing reads the owner's default at run time.
+New profile opens on it, and a harness or provider picked there starts on its model where that harness and provider offer one, so a profile made without a reason of its own runs what a new agent runs.
 No profile is a default and none is made for an owner, so every profile not in use can be deleted.
 While the owner picked nothing, the **base default** applies: Pi on the owner's shared CurveBender Connection, with the CurveBender work model (DeepSeek), as values.
 A picked profile that is deleted takes the pick with it, and values whose Connection the owner no longer holds give way to the base default at the next create.

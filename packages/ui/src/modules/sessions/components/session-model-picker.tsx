@@ -108,6 +108,7 @@ export function SessionModelPicker({
   onManageProfiles,
   onEditProfile,
   profileHarness,
+  defaultPair,
   agentDefault,
   saveAsProfile,
   onLeaveProfiles,
@@ -130,6 +131,8 @@ export function SessionModelPicker({
   onEditProfile?: (profile: ProfileWithUsage) => void;
   /** UNIT_BOUNDARY_DESCRIPTION: an open session offers only the profiles that run on its harness, and says so when none does. */
   profileHarness?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: the pair this pick follows: with no model picked, the Provider row shows that default's Connection when that default names this harness and the Connection runs it, and a harness or provider pick that keeps no model of its own starts on that default's model where the new harness listing and Connection offer it. */
+  defaultPair?: SessionPair | null;
   onManageProfiles?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: a channel or a schedule follows the agent's default until it is switched off, which copies the default's values into its own pick. */
   agentDefault?: {
@@ -222,8 +225,13 @@ export function SessionModelPicker({
     entry === null
       ? providerId !== undefined && runsHarness(harness, providerId)
       : entry.options.some((o) => o.group.connectionId === providerId);
-  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option whose own model name the pair holds; an unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option that is both on the pair's own Connection and the pair's model, even where another Connection of the same alias lists the same model name; a family tier can hold another provider's name for the model, so the model alone comes next and the Connection alone after it. An unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
   const currentOption =
+    currentEntry?.options.find(
+      (o) =>
+        o.group.connectionId === pair?.provider &&
+        sameModel(o.model.name, model),
+    ) ??
     currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options.find(
       (o) => o.group.connectionId === pair?.provider,
@@ -237,7 +245,12 @@ export function SessionModelPicker({
   const provider =
     owned.find((p) => p.id === providerId) ??
     (model === null
-      ? owned.find((p) => runsHarness(harness, p.id))
+      ? (owned.find(
+          (p) =>
+            defaultPair?.harness === harness &&
+            p.id === defaultPair.provider &&
+            runsHarness(harness, p.id),
+        ) ?? owned.find((p) => runsHarness(harness, p.id)))
       : undefined);
   const subOption =
     subEntry?.options.find((o) => o.group.connectionId === subProvider) ??
@@ -378,6 +391,23 @@ export function SessionModelPicker({
     allEntries.find((entry) =>
       entry.options.some((o) => o.group.connectionId === providerId),
     ) ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick that keeps no model of its own — none picked, or the picked one off the new harness or Connection — starts on the model the default it follows names, when that listing and this Connection offer it. */
+  const inheritedEntry = (
+    entries: readonly Entry[],
+    providerId: string | undefined,
+  ): Entry | null => {
+    const inherited = defaultPair?.model ?? null;
+    if (inherited === null) return null;
+    return (
+      entries.find((entry) =>
+        entry.options.some(
+          (o) =>
+            sameModel(o.model.name, inherited) &&
+            (providerId === undefined || o.group.connectionId === providerId),
+        ),
+      ) ?? null
+    );
+  };
   const changeProvider = (providerId: string) => {
     if (currentEntry) {
       const option = currentEntry.options.find(
@@ -385,16 +415,18 @@ export function SessionModelPicker({
       );
       if (option) return pickOption(option);
     }
-    const first = firstEntryOf(providerId);
+    const first =
+      inheritedEntry(allEntries, providerId) ?? firstEntryOf(providerId);
     if (first === null)
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
     const nextProvider =
       fit.granted.find((p) => p.id === provider?.id) ??
+      fit.granted.find((p) => p.id === defaultPair?.provider) ??
       fit.granted[0] ??
       fit.addable[0];
     const nextGroups = catalogModels.forHarness(name) ?? [];
@@ -403,12 +435,13 @@ export function SessionModelPicker({
       ...nextEntries.families.flatMap((section) => section.expanded),
       ...nextEntries.other.models,
     ];
-    const kept =
+    const current =
       model === null
-        ? null
-        : (offered.find((entry) =>
+        ? undefined
+        : offered.find((entry) =>
             entry.options.some((o) => sameModel(o.model.name, model)),
-          ) ?? null);
+          );
+    const kept = current ?? inheritedEntry(offered, nextProvider?.id);
     const keptOption =
       kept?.options.find((o) => o.group.connectionId === nextProvider?.id) ??
       kept?.options[0];
@@ -653,7 +686,9 @@ export function SessionModelPicker({
                     Harness
                   </span>
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <HarnessIcons harnesses={[harness]} size="xs" />
+                    <span aria-hidden="true">
+                      <HarnessIcons harnesses={[harness]} size="xs" />
+                    </span>
                     <span className="truncate">
                       {harnessDisplayName(harness, views) ?? harness}
                     </span>
@@ -1089,7 +1124,9 @@ export function ValueMenu({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {entry.harness && (
-                      <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      <span aria-hidden="true">
+                        <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      </span>
                     )}
                     <span className="truncate">{entry.label}</span>
                   </span>

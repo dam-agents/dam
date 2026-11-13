@@ -327,12 +327,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "claude-code",
           displayName: "Claude Code",
-          providers: ["ibm-litellm", "anthropic"],
+          providers: ["ibm-litellm", "curve-bender", "anthropic", "bedrock"],
         },
         {
           name: "codex",
           displayName: "Codex",
-          providers: ["ibm-litellm"],
+          providers: ["ibm-litellm", "curve-bender", "openai"],
         },
       ],
     },
@@ -1380,6 +1380,297 @@ describe("a config page's picker", () => {
     expect(menuTrigger(node, "model")).toBeDefined();
     act(() => toggle.click());
     expect(target.agentDefault.onClear).toHaveBeenCalled();
+  });
+});
+
+describe("a pick that follows a default", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: one family tier, two names for its model: CurveBender's and IBM's. */
+  const tierCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("cb", "rits/zai-org/glm-5-3")],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "ibm",
+        alias: "ibm",
+        template: "ibm-litellm",
+        displayName: "IBM",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("ibm", "zai-org/glm-5-3")],
+      },
+    ],
+  });
+  const deepseek = "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash";
+  const glm = "cb/rits/zai-org/glm-5-3";
+  const shared = {
+    id: "shared",
+    name: "Shared",
+    type: "curve-bender",
+    templateId: "curve-bender-deployment",
+  };
+  const twoCurveCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+    ],
+  });
+  const emptySlots = {
+    profileId: null,
+    pair: null,
+    platformSubagentProfileId: null,
+    platformSubagentSettings: null,
+  };
+  const targetOf = (overrides: Record<string, unknown> = {}) => ({
+    slots: emptySlots,
+    label: "Schedule harness and model",
+    placeholder: "The agent's model for schedules",
+    defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    onChoose: vi.fn(),
+    ...overrides,
+  });
+  const providerRow = (node: ParentNode) =>
+    node.querySelector<HTMLElement>('[aria-label^="Provider:"]');
+
+  /** TEST_SCENARIO: with nothing picked, the panel's Provider row names the Connection the default runs on, not the first one that runs the harness (QA: two CurveBender Connections list one alias). */
+  it("shows the default's provider while no model is picked", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(picker({ target: targetOf() }));
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a provider with no model picked starts on the default's model, which both Connections offer, not on the menu's first model. */
+  it("starts a picked provider on the default's model", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    pickMenu(node, "Provider", "Curve");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "pi",
+        provider: "curve",
+        model: deepseek,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a pair's own Connection is what the Provider row shows, even where another Connection of the same alias lists the same model name, so a pick reads back as the Connection it was made on. */
+  it("reads a pair's provider beside its twin", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: glm };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: a harness switch whose current Connection cannot run the new harness lands on the default's Connection, not the first one that can, so a pick never moves to the own-key twin by accident. */
+  it("keeps the default's Connection when the current one cannot run the harness", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared, { id: "oai", name: "OpenAI", type: "openai" }];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
+      },
+      defaultPair: { harness: "codex", provider: "shared", model: deepseek },
+    });
+    const node = mount(
+      picker({
+        target,
+        defaultHarness: "codex",
+        carried: [...carried, { ...carried[0]!, name: "codex" }, claudeCode],
+      }),
+    );
+    pickMenu(node, "Harness", "Claude Code");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ harness: "claude-code", provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: saving a pick on the shared CurveBender as a profile keeps that Connection's template, so the profile runs where the pick does and never on the own-key twin. */
+  it("saves a pick as a profile on its own template", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: deepseek };
+    const node = mount(picker());
+    openMore(node);
+    click(node, "Save as profile");
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Profile name"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Shared review");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(document.body, "Save profile");
+    expect(state.profileMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+        model: deepseek,
+      }),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a schedule or a channel following a profile on the shared CurveBender reads that Connection, not the own-key twin that also lists the model. */
+  it("reads a profile's own Connection beside its twin", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(
+      picker({
+        target: targetOf({ slots: { ...emptySlots, profileId: "p1" } }),
+      }),
+    );
+    click(node, "Back to custom");
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a profile takes the Connection of the profile's template, so a pick on the shared CurveBender never moves to the own-key twin that lists the same model. */
+  it("picks a profile onto its own Connection", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    click(node, "Use a profile");
+    profileRow(node, "Shared review");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a family tier that holds another provider's name for the model still reads the pair's own model, so a stale Connection never names the row while the pair holds another provider's name for it. */
+  it("reads the pair's model inside a shared family tier", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Curve");
+  });
+
+  /** TEST_SCENARIO: a harness switch inherits the default's model only where the Connection it keeps offers the model; otherwise it takes that Connection's first model instead of moving the pick to another Connection. */
+  it("keeps the chosen Connection when it does not offer the default's model", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "pi", provider: "ibm", model: null },
+      },
+    });
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        provider: "ibm",
+        model: "ibm/zai-org/glm-5-3",
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a harness switch takes the default's model where the new harness offers it, not the first model the harness lists. */
+  it("takes the default's model on a harness switch", () => {
+    state.catalog = twoCurveCatalog();
+    state.owned = [shared];
+    state.granted = [shared];
+    const target = targetOf({
+      defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    });
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        provider: "shared",
+        model: deepseek,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });
 

@@ -270,37 +270,18 @@ export function scheduleFields(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: whether a schedule follows the agent's chat default
- * because it was written before profiles — no profile, no harness, no model —
- * which is the one case where the form keeps the empty choice so the row opens
- * and saves untouched (D123).
- */
-export function scheduleInheritsChoices(
-  existing: Schedule | undefined,
-): boolean {
-  return (
-    existing !== undefined &&
-    existing.profile === null &&
-    !existing.harness &&
-    !existing.model
-  );
-}
-
-/**
  * UNIT_BOUNDARY_DESCRIPTION: why a routed schedule's own pick cannot save:
- * it names no model. Only a row written before profiles that still
- * follows the chat default, with no harness of its own either, saves without
- * one (D123); null when the save may go ahead.
+ * it names a harness but no model. A schedule that keeps no choice of its own
+ * follows the agent's model for schedules and saves as it is; null when the
+ * save may go ahead.
  */
 export function customChoiceError(
   v: ChoiceValues,
-  existing: Schedule | undefined,
   routed: boolean,
 ): string | null {
-  if (!routed || v.profile || v.model?.trim()) return null;
-  return scheduleInheritsChoices(existing) && !v.harness?.trim()
-    ? null
-    : "Pick a model for this schedule, or a profile.";
+  if (!routed || v.profile || v.model?.trim() || !v.harness?.trim())
+    return null;
+  return "Pick a model for this schedule, or a profile.";
 }
 
 /**

@@ -105,6 +105,7 @@ export function OnceScheduleForm({
       namePlaceholder="e.g. Release notes"
       deleteCopy={{
         body: "It will not run.",
+        noun: "task",
         confirmLabel: "Delete task",
         buttonLabel: "Delete task",
       }}
