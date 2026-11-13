@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { unlink, type FileHandle } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { SATELLITE_FILE_MAX_BYTES, type SatelliteTool } from "api-server-api";
+import {
+  MAX_JOB_OUTPUT_BYTES,
+  SATELLITE_FILE_MAX_BYTES,
+  type SatelliteTool,
+} from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 import {
   listInRoot,
@@ -29,6 +33,8 @@ const LIST_DEFAULT_LIMIT = 500;
 const LIST_MAX_LIMIT = 5000;
 const LIST_BUDGET_MS = 20_000;
 const LIST_MAX_GLOB = 256;
+const LIST_OUTPUT_BYTES = MAX_JOB_OUTPUT_BYTES - 48 * 1024;
+const TRUNCATION_RESERVE_BYTES = 256;
 
 const REFUSALS: Record<Refusal, string> = {
   outside: "is not a place inside the directory this satellite exposes",
@@ -85,35 +91,76 @@ function megabytes(bytes: number): number {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A glob over one entry's name relative to the
- * directory that was listed. `**` crosses a separator, `*` and `?` do not, and
- * there are no braces. The CLI supports Node 20, which has no
- * `path.matchesGlob`, and the pattern only decides what is printed — the walk
- * still descends into every directory the depth allows.
+ * directory that was listed. A `**` segment stands for zero or more segments,
+ * `*` and `?` match inside one segment, and there are no braces. The CLI
+ * supports Node 20, which has no `path.matchesGlob`, and a regex built from a
+ * pattern is open to catastrophic backtracking on names an Agent did not choose —
+ * synchronously, so heartbeats, the deadline and cancellation would all stall.
+ * Both levels are therefore the two-pointer wildcard walk, quadratic at worst and
+ * unable to run away. The pattern only decides what is printed: the walk still
+ * descends into every directory the depth allows.
  */
-function globRegExp(glob: string): RegExp {
-  const escape = (ch: string) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let source = "";
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i] ?? "";
-    if (ch === "?") {
-      source += "[^/]";
+function matchCharacters(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && pattern[p] === "*") {
+      star = p++;
+      mark = t;
       continue;
     }
-    if (ch !== "*") {
-      source += escape(ch);
+    if (p < pattern.length && (pattern[p] === "?" || pattern[p] === text[t])) {
+      p++;
+      t++;
       continue;
     }
-    if (glob[i + 1] !== "*") {
-      source += "[^/]*";
-      continue;
-    }
-    i++;
-    if (glob[i + 1] === "/") {
-      i++;
-      source += "(?:.*/)?";
-    } else source += ".*";
+    if (star < 0) return false;
+    p = star + 1;
+    mark++;
+    t = mark;
   }
-  return new RegExp(`^${source}$`);
+  while (p < pattern.length && pattern[p] === "*") p++;
+  return p === pattern.length;
+}
+
+function matchSegments(
+  pattern: readonly string[],
+  name: readonly string[],
+): boolean {
+  let p = 0;
+  let n = 0;
+  let star = -1;
+  let mark = 0;
+  while (n < name.length) {
+    const segment = pattern[p];
+    if (
+      segment !== undefined &&
+      segment !== "**" &&
+      matchCharacters(segment, name[n] ?? "")
+    ) {
+      p++;
+      n++;
+      continue;
+    }
+    if (segment === "**") {
+      star = p++;
+      mark = n;
+      continue;
+    }
+    if (star < 0) return false;
+    p = star + 1;
+    mark++;
+    n = mark;
+  }
+  while (p < pattern.length && pattern[p] === "**") p++;
+  return p === pattern.length;
+}
+
+function globMatcher(glob: string): (path: string) => boolean {
+  const pattern = glob.split("/");
+  return (path) => matchSegments(pattern, path.split("/"));
 }
 
 interface Slice {
@@ -333,11 +380,11 @@ function listTool(root: string): SatelliteTool {
     title: "List what is inside one directory on this machine",
     description: [
       `List what is inside ${root} on this machine, one entry per line.`,
-      "Each line is tab-separated: kind, size, mtime in UTC and the path relative to the directory you listed. A directory's path ends with a slash, kind is file, dir, link or other, and size is - for anything that is not a regular file.",
+      "Each line is tab-separated: kind, size, mtime in UTC and a JSON string holding the path relative to the directory you listed, so a name with a tab, a newline or a quote reads back exactly. A directory's path ends with a slash inside that string, kind is file, dir, link or other, and size is - for anything that is not a regular file.",
       "A link is listed as a link and never followed: its target is not shown and nothing behind it is read.",
       "No file contents come back. A listing too big for one message is saved as a file in your workspace and you are given its path.",
       `depth is how many levels to descend, 1 by default and at most ${LIST_MAX_DEPTH}. glob filters what is printed, e.g. **/*.log or *.txt, and implies depth ${LIST_GLOB_DEPTH} unless you set depth. limit caps the entries listed, ${LIST_DEFAULT_LIMIT} by default and ${LIST_MAX_LIMIT} at most.`,
-      "Entries come in filesystem order, not sorted. A listing that a bound cut short ends with a truncated line saying so.",
+      "A listing stops at its output limit as well, which keeps one result inside what a Job can carry. Entries come in filesystem order, not sorted, and a listing that a bound cut short ends with a truncated line saying which bound it was.",
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -380,6 +427,7 @@ function statTool(root: string): SatelliteTool {
       "The result is JSON: path, kind, size, mtime in UTC and, when you ask for it, sha256. kind is file, dir, link or other, and size is null for anything that is not a regular file.",
       "A link is reported as a link and never followed. sha256 opens the file the way a download does, so a link and a file with more than one link are refused.",
       "A transfer moves no bytes, so any size can be hashed. sha256 reads the whole file on this machine: on a network mount every byte crosses that link, which is slow for a big file.",
+      "If the file changes while it is being hashed, the call is refused instead of reporting a digest of bytes that no longer match its size.",
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -406,14 +454,19 @@ function rangeLabel(args: Record<string, unknown>): string {
   return ` [offset ${String(args.offset ?? 0)}+${String(args.length ?? "end")}]`;
 }
 
+type ListTruncation = Exclude<ListCut, null> | "size";
+
 function truncatedLine(
-  cut: Exclude<ListCut, null>,
+  cut: ListTruncation,
   listed: number,
   budgetMs: number,
+  outputBytes: number,
 ): string {
-  return cut === "limit"
-    ? `… truncated: ${listed} entries listed, more exist — narrow path or glob, or raise limit`
-    : `… truncated: ${listed} entries listed — the ${Math.round(budgetMs / 1000)} s budget ran out; narrow path or glob`;
+  if (cut === "limit")
+    return `… truncated: ${listed} entries listed, more exist — narrow path or glob, or raise limit`;
+  if (cut === "time")
+    return `… truncated: ${listed} entries listed — the ${Math.round(budgetMs / 1000)} s budget ran out; narrow path or glob`;
+  return `… truncated: ${listed} entries listed — the listing reached its ${outputBytes} byte limit; narrow path or glob`;
 }
 
 /**
@@ -437,9 +490,11 @@ export function createFilesBackend(input: {
   transfer: FileTransfer;
   maxBytes?: number;
   listBudgetMs?: number;
+  listOutputBytes?: number;
 }): SatelliteBackend {
   const cap = input.maxBytes ?? SATELLITE_FILE_MAX_BYTES;
   const budget = input.listBudgetMs ?? LIST_BUDGET_MS;
+  const outputBytes = input.listOutputBytes ?? LIST_OUTPUT_BYTES;
   const running = new Map<number, AbortController>();
 
   async function download(
@@ -496,7 +551,7 @@ export function createFilesBackend(input: {
       (typeof glob !== "string" || glob === "" || glob.length > LIST_MAX_GLOB)
     )
       return refused('glob is a pattern like "**/*.log" or "*.txt"');
-    const pattern = glob === undefined ? null : globRegExp(glob);
+    const match = glob === undefined ? null : globMatcher(glob);
 
     let depth = glob === undefined ? LIST_DEFAULT_DEPTH : LIST_GLOB_DEPTH;
     if (args.depth !== undefined) {
@@ -518,19 +573,31 @@ export function createFilesBackend(input: {
       depth,
       limit,
       deadline: Date.now() + budget,
-      matches: ({ path }) => pattern === null || pattern.test(path),
+      matches: ({ path }) => match === null || match(path),
       signal,
     });
     if (!listed.ok)
       return refused(`${String(args.path ?? ".")} ${REFUSALS[listed.reason]}`);
 
-    const lines = ["kind\tsize\tmtime\tpath"];
-    for (const entry of listed.entries)
-      lines.push(
-        `${entry.kind}\t${entry.size ?? "-"}\t${isoSeconds(entry.mtimeMs)}\t${entry.kind === "dir" ? `${entry.path}/` : entry.path}`,
+    const header = "kind\tsize\tmtime\tpath";
+    const lines = [header];
+    let used = Buffer.byteLength(header);
+    let cut: ListTruncation | null = listed.cut;
+    for (const entry of listed.entries) {
+      const path = JSON.stringify(
+        entry.kind === "dir" ? `${entry.path}/` : entry.path,
       );
-    if (listed.cut !== null)
-      lines.push(truncatedLine(listed.cut, listed.entries.length, budget));
+      const line = `${entry.kind}\t${entry.size ?? "-"}\t${isoSeconds(entry.mtimeMs)}\t${path}`;
+      const bytes = Buffer.byteLength(line) + 1;
+      if (used + bytes > outputBytes - TRUNCATION_RESERVE_BYTES) {
+        cut = "size";
+        break;
+      }
+      lines.push(line);
+      used += bytes;
+    }
+    if (cut !== null)
+      lines.push(truncatedLine(cut, lines.length - 1, budget, outputBytes));
     return {
       status: "done",
       isError: false,
@@ -565,27 +632,35 @@ export function createFilesBackend(input: {
     const opened = await openInRoot(input.root, segments);
     if (!opened.ok) return refused(`${path} ${REFUSALS[opened.reason]}`);
     try {
-      const info = await opened.handle.stat();
+      const before = await opened.handle.stat();
       const hash = createHash("sha256");
       const buffer = Buffer.allocUnsafe(64 * 1024);
       let read = 0;
-      for (;;) {
+      while (read < before.size) {
         if (signal.aborted) throw new Error("cancelled");
         const { bytesRead } = await opened.handle.read(
           buffer,
           0,
-          buffer.length,
+          Math.min(buffer.length, before.size - read),
           read,
         );
+        if (signal.aborted) throw new Error("cancelled");
         if (bytesRead === 0) break;
         read += bytesRead;
         hash.update(buffer.subarray(0, bytesRead));
       }
+      const after = await opened.handle.stat();
+      if (
+        read !== before.size ||
+        after.size !== before.size ||
+        after.mtimeMs !== before.mtimeMs
+      )
+        return failed(`${path} changed while it was being hashed`);
       return done({
         path,
         kind: "file",
-        size: opened.size,
-        mtime: isoSeconds(info.mtimeMs),
+        size: before.size,
+        mtime: isoSeconds(before.mtimeMs),
         sha256: hash.digest("hex"),
       });
     } finally {

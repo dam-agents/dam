@@ -11,7 +11,16 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { FileHandle } from "node:fs/promises";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
 import { pinRoot } from "../modules/satellite/services/confined-files.js";
 import {
@@ -26,13 +35,41 @@ import {
   sha256,
 } from "./satellite-files-fixtures.js";
 
+const hooks = vi.hoisted(() => ({
+  beforeRead: null as null | (() => Promise<void> | void),
+  handles: [] as FileHandle[],
+}));
+
+vi.mock("node:fs/promises", async (original) => {
+  const fs = await original<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    async open(...args: Parameters<typeof fs.open>) {
+      const handle = await fs.open(...args);
+      hooks.handles.push(handle);
+      const read = handle.read.bind(handle);
+      handle.read = (async (...rest: unknown[]) => {
+        const hook = hooks.beforeRead;
+        hooks.beforeRead = null;
+        if (hook !== null) await hook();
+        return read(...(rest as Parameters<typeof read>));
+      }) as typeof handle.read;
+      return handle;
+    },
+  };
+});
+
 /**
  * TEST_OVERVIEW: The `stat` tool reports one path's facts without moving it: its
  * kind, its size, its mtime in UTC and, when the caller asks, the sha256 of the
  * whole file. A link is reported as a link and never followed; asking for the
  * hash reads the file on the machine, so it takes the transfer's own open — a
- * regular file with one link, no cap on its size, because no bytes move.
+ * regular file with one link, no cap on its size, because no bytes move — and
+ * reads exactly the size one `fstat` reported, refusing if a second `fstat`
+ * shows the file changed under it. The descriptor is closed either way.
  */
+
+const BODY = Buffer.from("0123456789abcdef");
 
 let dir: string;
 let root: string;
@@ -66,7 +103,7 @@ beforeAll(async () => {
   await mkdir(join(rawRoot, "empty"), { recursive: true });
   await mkdir(outside, { recursive: true });
 
-  await writeFile(join(rawRoot, "data.bin"), "0123456789abcdef");
+  await writeFile(join(rawRoot, "data.bin"), BODY);
   await utimes(
     join(rawRoot, "data.bin"),
     new Date("2026-11-12T09:14:03.500Z"),
@@ -80,6 +117,16 @@ beforeAll(async () => {
   const pinned = await pinRoot(rawRoot);
   if (!pinned.ok) throw new Error(pinned.reason);
   root = await realpath(rawRoot);
+});
+
+afterEach(async () => {
+  hooks.beforeRead = null;
+  await writeFile(join(root, "data.bin"), BODY);
+  await utimes(
+    join(root, "data.bin"),
+    new Date("2026-11-12T09:14:03.500Z"),
+    new Date("2026-11-12T09:14:03.500Z"),
+  );
 });
 
 afterAll(async () => {
@@ -135,7 +182,7 @@ describe("the sha256 of a whole file", () => {
       kind: "file",
       size: 16,
       mtime: "2026-11-12T09:14:03Z",
-      sha256: sha256(Buffer.from("0123456789abcdef")),
+      sha256: sha256(BODY),
     });
   });
 
@@ -155,12 +202,67 @@ describe("the sha256 of a whole file", () => {
 
   it("hashes a file larger than the transfer cap, because no byte moves", async () => {
     const hashed = jsonOf(await stat({ path: "data.bin", sha256: true }, 4));
-    expect(hashed.sha256).toBe(sha256(Buffer.from("0123456789abcdef")));
+    expect(hashed.sha256).toBe(sha256(BODY));
     expect(hashed.size).toBe(16);
   });
 
   it("reports a file's facts without the cap as well", async () => {
     const facts = jsonOf(await stat({ path: "data.bin" }, 4));
     expect(facts.size).toBe(16);
+  });
+
+  /**
+   * TEST_SCENARIO: A file that grows while it is hashed would otherwise be
+   * reported with one size and a digest of more bytes, and a file that keeps
+   * growing would keep the call reading. The hash is bounded by the size one
+   * `fstat` reported, and a second `fstat` that disagrees refuses the call.
+   */
+  it("refuses when the file grows while it is being hashed", async () => {
+    hooks.beforeRead = () =>
+      writeFile(
+        join(root, "data.bin"),
+        Buffer.concat([BODY, Buffer.from("XYZ")]),
+      );
+
+    const outcome = finished(await stat({ path: "data.bin", sha256: true }));
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.output).toBe("data.bin changed while it was being hashed");
+  });
+
+  it("refuses when the file shrinks while it is being hashed", async () => {
+    hooks.beforeRead = () =>
+      writeFile(join(root, "data.bin"), Buffer.from("0123"));
+
+    const outcome = finished(await stat({ path: "data.bin", sha256: true }));
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.output).toBe("data.bin changed while it was being hashed");
+  });
+
+  it("refuses when the file is rewritten with the same size", async () => {
+    hooks.beforeRead = () =>
+      writeFile(join(root, "data.bin"), Buffer.from("fedcba9876543210"));
+
+    const outcome = finished(await stat({ path: "data.bin", sha256: true }));
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.output).toBe("data.bin changed while it was being hashed");
+  });
+
+  it("closes the descriptor it hashed, whether it succeeded or refused", async () => {
+    hooks.handles.length = 0;
+    jsonOf(await stat({ path: "data.bin", sha256: true }));
+    const hashed = hooks.handles.at(-1);
+    if (hashed === undefined) throw new Error("no descriptor was opened");
+    await expect(hashed.stat()).rejects.toThrow();
+
+    hooks.handles.length = 0;
+    hooks.beforeRead = () =>
+      writeFile(join(root, "data.bin"), Buffer.from("0123"));
+    finished(await stat({ path: "data.bin", sha256: true }));
+    const refused = hooks.handles.at(-1);
+    if (refused === undefined) throw new Error("no descriptor was opened");
+    await expect(refused.stat()).rejects.toThrow();
   });
 });

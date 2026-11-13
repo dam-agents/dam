@@ -10,9 +10,20 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
-import { pinRoot } from "../modules/satellite/services/confined-files.js";
+import {
+  listInRoot,
+  pinRoot,
+} from "../modules/satellite/services/confined-files.js";
 import {
   createFilesBackend,
   LIST_TOOL,
@@ -24,18 +35,39 @@ import {
   textOf,
 } from "./satellite-files-fixtures.js";
 
+const hooks = vi.hoisted(() => ({
+  beforeLstat: null as null | ((path: unknown) => Promise<void> | void),
+}));
+
+vi.mock("node:fs/promises", async (original) => {
+  const fs = await original<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    async lstat(...args: Parameters<typeof fs.lstat>) {
+      if (hooks.beforeLstat !== null) await hooks.beforeLstat(args[0]);
+      return fs.lstat(...args);
+    },
+  };
+});
+
 /**
  * TEST_OVERVIEW: The `list` tool shows an agent what a files satellite exposes
  * without moving anything: one tab-separated line per entry, with the kind, the
- * size, the mtime and the path relative to the directory it was asked about. The
- * walk is the transfer walk — a link is listed and never followed, and a
- * directory is entered only after it was proved — and three bounds decide when a
- * listing stops: the depth, the number of entries, and a wall-clock budget, each
- * reported on a truncated line instead of ending silently.
+ * size, the mtime and a JSON-quoted path relative to the directory it was asked
+ * about, so a name carrying a tab or a newline cannot be misread. The walk is
+ * the transfer walk — a link is listed and never followed, and a directory is
+ * entered only after it was proved — and four bounds decide when a listing stops:
+ * the depth, the number of entries, a wall-clock budget checked after every
+ * filesystem call, and an output budget measured in UTF-8 bytes. Each is reported
+ * on a truncated line instead of ending silently, and a cancellation ends the
+ * call as cancelled.
  */
 
 const HEADER = "kind\tsize\tmtime\tpath";
 const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
+const LONG = "a".repeat(100);
+const ODD = 'weird\tname\nwith\rcr\\back"quote';
+const MONEY = [0, 1, 2, 3, 4].map((n) => `money-${n}-${"é".repeat(120)}`);
 
 interface Entry {
   kind: string;
@@ -50,7 +82,14 @@ function entries(output: string): Entry[] {
   return lines.slice(1).flatMap((line) => {
     if (line.startsWith("…")) return [];
     const [kind, size, mtime, path] = line.split("\t");
-    return [{ kind: kind!, size: size!, mtime: mtime!, path: path! }];
+    return [
+      {
+        kind: kind!,
+        size: size!,
+        mtime: mtime!,
+        path: JSON.parse(path!) as string,
+      },
+    ];
   });
 }
 
@@ -72,7 +111,9 @@ let dir: string;
 let root: string;
 let outside: string;
 
-function backendOf(options: { listBudgetMs?: number } = {}) {
+function backendOf(
+  options: { listBudgetMs?: number; listOutputBytes?: number } = {},
+) {
   return createFilesBackend({
     root,
     allowUpload: false,
@@ -109,6 +150,10 @@ beforeAll(async () => {
     new Date("2026-11-12T09:14:03.500Z"),
     new Date("2026-11-12T09:14:03.500Z"),
   );
+  await writeFile(join(rawRoot, "dumps", LONG), "long\n");
+  await writeFile(join(rawRoot, "dumps", ODD), "odd\n");
+  for (const name of MONEY)
+    await writeFile(join(rawRoot, "dumps", name), "x\n");
   await writeFile(join(outside, "secret.txt"), "SECRET");
   await symlink(join(outside, "secret.txt"), join(rawRoot, "escape.txt"));
   await symlink(join(rawRoot, "logs"), join(rawRoot, "logs-link"));
@@ -117,6 +162,10 @@ beforeAll(async () => {
   const pinned = await pinRoot(rawRoot);
   if (!pinned.ok) throw new Error(pinned.reason);
   root = await realpath(rawRoot);
+});
+
+afterEach(() => {
+  hooks.beforeLstat = null;
 });
 
 afterAll(async () => {
@@ -201,6 +250,20 @@ describe("a listing of the directory a satellite exposes", () => {
     expect(fifo?.size).toBe("-");
   });
 
+  /**
+   * TEST_SCENARIO: A name is the user's, not ours: a tab, a newline, a carriage
+   * return, a backslash or a quote in it would otherwise break the columns or the
+   * one-line-per-entry contract. The path column is a JSON string, so the name
+   * comes back exactly and the listing keeps one line per entry.
+   */
+  it("keeps a name with a tab, a newline, a carriage return, a backslash and a quote on its own line", async () => {
+    const output = textOf(await list({ path: "dumps" }));
+
+    expect(paths(output)).toContain(ODD);
+    expect(output).toContain('"weird\\tname\\nwith\\rcr\\\\back\\"quote"');
+    expect(output.split("\n")).toHaveLength(1 + entries(output).length);
+  });
+
   it("descends to the depth it was asked for and no further", async () => {
     const two = paths(textOf(await list({ depth: 2 })));
     expect(two).toContain("logs/app.log");
@@ -252,7 +315,7 @@ describe("the bounds a listing stops at", () => {
 
   /**
    * TEST_SCENARIO: On an rclone mount every `lstat` is a round trip, so the
-   * budget is what keeps a listing from holding the worker for minutes. An agent
+   * budget is what keeps a listing from holding the worker for minutes. An Agent
    * must see that the answer is partial, not an empty directory.
    */
   it("stops when the time budget is spent and says so", async () => {
@@ -269,6 +332,100 @@ describe("the bounds a listing stops at", () => {
     expect(truncation(output)).toContain("budget ran out");
   });
 
+  /**
+   * TEST_SCENARIO: The last filesystem call of a walk is the one no later
+   * iteration notices: if it returns after the budget, the listing must still be
+   * a truncation rather than a complete answer that quietly overran.
+   */
+  it("reports a truncation when the last filesystem call returns after the budget", async () => {
+    hooks.beforeLstat = async (path) => {
+      if (String(path).endsWith("nested.txt"))
+        await new Promise((resolve) => setTimeout(resolve, 40));
+    };
+    const output = textOf(
+      await backendOf({ listBudgetMs: 5 }).call({
+        sequence: 1,
+        tool: LIST_TOOL,
+        args: { path: "logs/deep/deeper" },
+        transferToken: CLAIM_TOKEN,
+      }),
+    );
+
+    expect(entries(output)).toHaveLength(0);
+    expect(truncation(output)).toContain("budget ran out");
+  });
+
+  /**
+   * TEST_SCENARIO: A cancellation that lands while the last filesystem call is in
+   * flight must end the call as cancelled, not as a listing the Agent could
+   * mistake for complete.
+   */
+  it("ends as cancelled when a cancellation lands during the last filesystem call", async () => {
+    const backend = backendOf();
+    hooks.beforeLstat = (path) => {
+      if (String(path).endsWith("nested.txt")) backend.cancel(9);
+    };
+
+    const outcome = await backend.call({
+      sequence: 9,
+      tool: LIST_TOOL,
+      args: { path: "logs/deep/deeper" },
+      transferToken: CLAIM_TOKEN,
+    });
+    expect(outcome.status).toBe("cancelled");
+  });
+
+  it("honours a signal that is already aborted", async () => {
+    await expect(
+      listInRoot(root, [], {
+        depth: 1,
+        limit: 10,
+        deadline: Date.now() + 10_000,
+        matches: () => true,
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toThrow("cancelled");
+  });
+
+  /**
+   * TEST_SCENARIO: A listing is one Job result, so it must fit one. The budget is
+   * counted in UTF-8 bytes, not characters: a name of two-byte characters costs
+   * what a reader would store, and the truncated line still fits under the cap.
+   */
+  it("stops at its output budget and counts bytes, not characters", async () => {
+    const output = textOf(
+      await backendOf({ listOutputBytes: 700 }).call({
+        sequence: 1,
+        tool: LIST_TOOL,
+        args: { path: "dumps", glob: "money-*" },
+        transferToken: CLAIM_TOKEN,
+      }),
+    );
+
+    expect(entries(output)).toHaveLength(1);
+    expect(truncation(output)).toBe(
+      "… truncated: 1 entries listed — the listing reached its 700 byte limit; narrow path or glob",
+    );
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(700);
+    expect(output.length).toBeLessThan(600);
+  });
+
+  /**
+   * TEST_SCENARIO: A pattern is the Agent's, so a pattern that would make a
+   * backtracking regex quadratic must not stall the worker's event loop — that
+   * would also stop heartbeats, the deadline and cancellation.
+   */
+  it("matches a pathological pattern without stalling the worker", async () => {
+    const started = Date.now();
+    const output = textOf(
+      await list({ path: "dumps", glob: `${"*a".repeat(30)}b` }),
+    );
+    const elapsed = Date.now() - started;
+
+    expect(paths(output)).not.toContain(LONG);
+    expect(elapsed).toBeLessThan(200);
+  });
+
   it("filters what it prints with a glob and still walks every directory", async () => {
     expect(paths(textOf(await list({ glob: "**/*.log" })))).toEqual([
       "logs/app.log",
@@ -282,6 +439,22 @@ describe("the bounds a listing stops at", () => {
     const none = textOf(await list({ glob: "**/*.nope" }));
     expect(entries(none)).toHaveLength(0);
     expect(truncation(none)).toBeUndefined();
+  });
+
+  it("reads a * in the pattern as a wildcard even where the name holds a literal *", async () => {
+    await writeFile(join(root, "dumps", "*ab"), "star\n");
+
+    expect(paths(textOf(await list({ path: "dumps", glob: "*b" })))).toEqual([
+      "*ab",
+    ]);
+  });
+
+  it("matches a whole tree with ** alone", async () => {
+    const all = paths(textOf(await list({ path: "logs", glob: "**" })));
+
+    expect(all).toContain("app.log");
+    expect(all).toContain("deep/");
+    expect(all).toContain("deep/deeper/nested.txt");
   });
 
   it("applies a glob to the path relative to the directory it was given", async () => {

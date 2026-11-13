@@ -236,6 +236,7 @@ So a file travels on **its own request, in the direction the queue cannot go** �
   A negative `offset` counts back from the end, which is how the tail of a growing log is read.
   The slice lands under the file's own name in the same per-Job directory, and the result adds the `offset` it came from and the file's `fileSize` so pieces can be joined in order.
 - `stat` with `sha256` hashes the whole file **on the machine** and moves nothing, which is how an Agent checks a file that arrived in pieces.
+  It reads exactly the size one `fstat` on the verified descriptor reported, and refuses if fewer bytes come back, or if a second `fstat` afterwards shows a different size or mtime, so the size and the digest always describe the same bytes.
   On a network mount every byte of that read crosses the link, so the tool's description says it is slow on a big file.
 
 Each tool declares which way it moves files, and **that direction is frozen on the Job when the Agent's call is admitted**, from the Snapshot that accepted it.
@@ -278,11 +279,13 @@ A ranged `download` sends the slice, declares the slice's length and reports the
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 What lands under `.dam/satellite-files/` in the Agent's workspace stays there: Platform never removes it, so the Agent is told to delete what it no longer needs.
 
-**A listing is bounded three ways**, because a machine's directory can be a network mount where every `stat` is a remote round trip: `depth` at most 10 levels, `limit` at most 5000 entries, and a 20 second wall clock per call.
-A bound that cut the walk short adds a last line saying so, so an Agent sees a partial answer rather than a short one.
+**A listing is bounded four ways**, because a machine's directory can be a network mount where every `stat` is a remote round trip: `depth` at most 10 levels, `limit` at most 5000 entries, a 20 second wall clock per call, and an output budget under the 1 MiB one Job result may carry.
+A bound that cut the answer short adds a last line saying which bound it was, so an Agent sees a partial answer rather than a short one.
+The clock and the cancellation signal are checked after every filesystem call, not only before one, but a call already in flight is not interrupted: a listing can overrun the budget by one stalled operation on a mount that stopped answering.
 `glob` filters the entries printed while every directory the depth allows is still walked, and the paths are relative to the directory that was listed.
+A printed path is a JSON string, so a name carrying a tab, a newline or a quote cannot be mistaken for a column or a line.
 Entries come in filesystem order, not sorted.
-A listing larger than one message is spilled into a workspace file by the same rule as any other result, so a big directory costs the Agent a path instead of its context.
+A listing within that budget that is still larger than one message is spilled into a workspace file by the same rule as any other result, so a big directory costs the Agent a path instead of its context.
 
 ## Trust boundary
 

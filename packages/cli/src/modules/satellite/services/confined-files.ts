@@ -304,6 +304,12 @@ export type ListCut = "limit" | "time" | null;
  * directory with more entries than the limit stops at the limit; the walk also
  * stops at the deadline, because on a network mount every `lstat` is remote.
  * Nested directories are visited in filesystem order, not sorted.
+ *
+ * The deadline and the signal are checked after every awaited filesystem call,
+ * not only before one, so a call that comes back after the budget is a
+ * truncation rather than a success. The ceiling is one stalled operation: a
+ * filesystem call already in flight is not interrupted, so a listing can overrun
+ * the budget by however long that single call takes to return.
  */
 export async function listInRoot(
   root: string,
@@ -319,19 +325,36 @@ export async function listInRoot(
   | { ok: true; entries: ListedEntry[]; cut: ListCut }
   | { ok: false; reason: Refusal }
 > {
-  if ((await realpath(root).catch(() => null)) !== root)
-    return { ok: false, reason: "outside" };
+  const entries: ListedEntry[] = [];
+  let cut: ListCut = null;
+
+  const stop = (): boolean => {
+    if (options.signal?.aborted) throw new Error("cancelled");
+    if (Date.now() > options.deadline) cut = "time";
+    return cut !== null;
+  };
+  const stopped = (): { ok: true; entries: ListedEntry[]; cut: ListCut } => ({
+    ok: true,
+    entries,
+    cut,
+  });
+
+  const resolved = await realpath(root).catch(() => null);
+  if (stop()) return stopped();
+  if (resolved !== root) return { ok: false, reason: "outside" };
 
   const parent =
     segments.length === 0
       ? ({ ok: true, path: root } as const)
       : await walkInRoot(root, segments.slice(0, -1), false);
+  if (stop()) return stopped();
   if (!parent.ok) return parent;
   const name = segments.at(-1);
   const start = name === undefined ? root : resolveInside(parent.path, [name]);
   if (start === null) return { ok: false, reason: "outside" };
 
   const info = await lstat(start).catch(() => null);
+  if (stop()) return stopped();
   if (info === null) return { ok: false, reason: "no-such-file" };
   if (!info.isDirectory()) {
     if (name === undefined) return { ok: false, reason: "outside" };
@@ -352,9 +375,6 @@ export async function listInRoot(
     };
   }
 
-  const entries: ListedEntry[] = [];
-  let cut: ListCut = null;
-
   const visit = async (
     handle: Dir,
     dir: string,
@@ -362,14 +382,11 @@ export async function listInRoot(
     depthLeft: number,
   ): Promise<void> => {
     for await (const entry of handle) {
-      if (options.signal?.aborted) throw new Error("cancelled");
-      if (Date.now() > options.deadline) {
-        cut = "time";
-        return;
-      }
+      if (stop()) return;
       const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       const child = join(dir, entry.name);
       const found = await lstat(child).catch(() => null);
+      if (stop()) return;
       if (found === null) continue;
       const kind = kindOf(found);
       if (options.matches({ path, kind })) {
@@ -385,21 +402,36 @@ export async function listInRoot(
         }
       }
       if (kind !== "dir" || depthLeft <= 1) continue;
-      if (!(await realDirectory(child))) continue;
+      const proved = await realDirectory(child);
+      if (stop()) return;
+      if (!proved) continue;
       const nested = await opendir(child).catch(() => null);
       if (nested === null) continue;
-      await visit(nested, child, path, depthLeft - 1);
+      try {
+        if (stop()) return;
+        await visit(nested, child, path, depthLeft - 1);
+      } finally {
+        await nested.close().catch(() => {});
+      }
       if (cut !== null) return;
     }
   };
 
-  if (!(await realDirectory(start))) return { ok: false, reason: "outside" };
+  const proved = await realDirectory(start);
+  if (stop()) return stopped();
+  if (!proved) return { ok: false, reason: "outside" };
   const opened = await opendir(start).catch(() => null);
-  if (opened === null) return { ok: false, reason: "outside" };
-  await visit(opened, start, "", options.depth);
+  try {
+    if (stop()) return stopped();
+    if (opened === null) return { ok: false, reason: "outside" };
+    await visit(opened, start, "", options.depth);
+    if (cut === null) stop();
+  } finally {
+    if (opened !== null) await opened.close().catch(() => {});
+  }
 
   if (cut === "limit") entries.length = options.limit;
-  return { ok: true, entries, cut };
+  return stopped();
 }
 
 export interface Staged {
