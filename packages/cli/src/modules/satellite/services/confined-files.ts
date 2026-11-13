@@ -615,3 +615,130 @@ async function discard(staged: Staged): Promise<void> {
   await staged.handle.close().catch(() => {});
   await unlink(staged.path).catch(() => {});
 }
+
+export interface StagedDir {
+  path: string;
+  name: string;
+  dir: string;
+  proved: Proved;
+  inode: Proved;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An empty directory beside the name a directory
+ * upload will land as, created exclusively, so a destination that already exists
+ * is refused before any byte is received and the whole tree can be unpacked
+ * beside it and published in one step. It sits in the parent the walk proved, and
+ * that proof is kept for the publish and the cleanup.
+ *
+ * The ceilings, stated: a same-user local process can race the destination's
+ * `lstat` and the cleanup's recursive remove — it can already write there, so it
+ * gains nothing #6216's threat model does not already grant it. Node exposes no
+ * `renameat2`/`openat2`, which is the upgrade path for both.
+ */
+export async function stageDirInRoot(
+  root: string,
+  target: readonly string[],
+): Promise<{ ok: true; staged: StagedDir } | { ok: false; reason: Refusal }> {
+  const parent = await walkInRoot(root, target.slice(0, -1), true);
+  const name = target.at(-1);
+  if (!parent.ok) return { ok: false, reason: parent.reason };
+  if (name === undefined) return { ok: false, reason: "outside" };
+  if ((await lstat(join(parent.path, name)).catch(() => null)) !== null)
+    return { ok: false, reason: "exists" };
+
+  const parentInfo = await lstat(parent.path).catch(() => null);
+  if (parentInfo === null) return { ok: false, reason: "outside" };
+
+  const path = join(
+    parent.path,
+    `.${name}.incoming-${randomBytes(6).toString("hex")}`,
+  );
+  try {
+    await mkdir(path, { mode: 0o700 });
+  } catch {
+    return { ok: false, reason: "not-writable" };
+  }
+  const info = await lstat(path).catch(() => null);
+  if (info === null || !(await realDirectory(path))) {
+    rmSync(path, { recursive: true, force: true });
+    return { ok: false, reason: "not-writable" };
+  }
+  return {
+    ok: true,
+    staged: {
+      path,
+      name,
+      dir: parent.path,
+      proved: { dev: parentInfo.dev, ino: parentInfo.ino },
+      inode: { dev: info.dev, ino: info.ino },
+    },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Publishes a whole unpacked tree onto its name with
+ * one rename taken inside the parent's proved inode, after the staging entry is
+ * proved to be the directory that was created and the name is shown absent, and
+ * the renamed entry is proved again afterwards. Nothing is merged and nothing is
+ * replaced: a name that is there fails the publish, and what sits at the name
+ * after a failed proof is never removed, because it may not be ours.
+ *
+ * The ceilings, stated: POSIX renames onto an **empty** directory that a
+ * same-user local process creates between the check and the rename, because Node
+ * exposes no `renameat2(RENAME_NOREPLACE)`; onto a non-empty directory, a file or
+ * a link the rename fails instead. A native `renameat2`/`openat2` is the upgrade
+ * path.
+ */
+export async function publishDirInRoot(
+  root: string,
+  staged: StagedDir,
+): Promise<Refusal | null> {
+  if ((await realpath(root).catch(() => null)) !== root) return "outside";
+  const from = basename(staged.path);
+  const anchored = insideDirectory(staged.dir, staged.proved, () => {
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current === undefined ||
+      !current.isDirectory() ||
+      current.dev !== staged.inode.dev ||
+      current.ino !== staged.inode.ino
+    )
+      return "changed" as const;
+    if (lstatSync(staged.name, { throwIfNoEntry: false }) !== undefined)
+      return "exists" as const;
+    try {
+      renameSync(from, staged.name);
+    } catch {
+      return "not-writable" as const;
+    }
+    const published = lstatSync(staged.name, { throwIfNoEntry: false });
+    return published !== undefined &&
+      published.dev === staged.inode.dev &&
+      published.ino === staged.inode.ino
+      ? ("published" as const)
+      : ("changed" as const);
+  });
+  if (!anchored.ok) return "outside";
+  return anchored.value === "published" ? null : anchored.value;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Removes an unpack that was not published, from
+ * inside the parent that was proved when the staging directory was created, so a
+ * path renamed on top of that parent cannot steer the remove. Nothing is removed
+ * when the parent is no longer the proved inode or the staging entry is no longer
+ * the directory that was created.
+ */
+export async function discardDirInRoot(staged: StagedDir): Promise<void> {
+  insideDirectory(staged.dir, staged.proved, () => {
+    const from = basename(staged.path);
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current?.isDirectory() === true &&
+      current.dev === staged.inode.dev &&
+      current.ino === staged.inode.ino
+    )
+      rmSync(from, { recursive: true, force: true });
+  });
+}

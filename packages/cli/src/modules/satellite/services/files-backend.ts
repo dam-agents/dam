@@ -1,23 +1,32 @@
 import { createHash } from "node:crypto";
+import { lstatSync, statfsSync } from "node:fs";
 import { unlink, type FileHandle } from "node:fs/promises";
-import { Readable } from "node:stream";
+import { join } from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   MAX_JOB_OUTPUT_BYTES,
   SATELLITE_FILE_MAX_BYTES,
   type SatelliteTool,
 } from "api-server-api";
+import { extract as tarExtract, pack as tarPack } from "tar-stream";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
 import {
+  discardDirInRoot,
   listInRoot,
   lstatInRoot,
   openInRoot,
   pathSegments,
+  publishDirInRoot,
   publishInRoot,
+  stageDirInRoot,
   stagedDigest,
   stageInRoot,
+  walkInRoot,
   type ListCut,
   type Refusal,
   type Staged,
+  type StagedDir,
 } from "./confined-files.js";
 import type { FileTransfer } from "./file-transfer.js";
 
@@ -35,6 +44,12 @@ const LIST_BUDGET_MS = 20_000;
 const LIST_MAX_GLOB = 256;
 const LIST_OUTPUT_BYTES = MAX_JOB_OUTPUT_BYTES - 48 * 1024;
 const TRUNCATION_RESERVE_BYTES = 256;
+
+const DIR_MAX_DEPTH = 32;
+const DOWNLOAD_DIR_MAX_FILES = 10_000;
+const UNPACK_MAX_ENTRIES = 10_000;
+const SKIPPED_LIST_MAX = 50;
+const UNPACK_HEADROOM_BYTES = 1024 * 1024 * 1024;
 
 const REFUSALS: Record<Refusal, string> = {
   outside: "is not a place inside the directory this satellite exposes",
@@ -75,6 +90,29 @@ function done(output: Record<string, unknown>): CallOutcome {
     output: JSON.stringify(output),
     truncated: false,
   };
+}
+
+class Phrased extends Error {
+  constructor(readonly outcome: CallOutcome) {
+    super(outcome.output);
+  }
+}
+
+function freeBytesOn(dir: string): number | null {
+  try {
+    const stats = statfsSync(dir);
+    return stats.bavail * stats.bsize;
+  } catch {
+    return null;
+  }
+}
+
+function skippedNames(names: readonly string[]): string[] {
+  if (names.length <= SKIPPED_LIST_MAX) return [...names];
+  return [
+    ...names.slice(0, SKIPPED_LIST_MAX),
+    `… and ${names.length - SKIPPED_LIST_MAX} more`,
+  ];
 }
 
 function wholeNumber(raw: unknown): number | null {
@@ -311,6 +349,8 @@ function downloadTool(root: string, cap: number): SatelliteTool {
       "offset and length copy part of a file: offset is the first byte, counting from 0, and a negative offset counts back from the end, so -1048576 is the last megabyte; length is how many bytes to copy, and without it the copy runs to the end of the file.",
       `One transfer carries at most ${megabytes(cap)} MB. A whole file over that is refused; a part under it still copies, which is how a larger file moves in pieces.`,
       "A part lands under the file's own name, and the result's offset and fileSize say which part it is.",
+      "path may also be a directory: then the whole directory comes down as one uncompressed tar of its regular files, keeping the directory's own name, and the result says format tar with how many files it holds. Unpack it in your workspace with `tar -xf <path> -C <dir>`. Links, special files and hard-linked files are left out and named in the result's skipped; it takes at most " +
+        `${DOWNLOAD_DIR_MAX_FILES} files, ${DIR_MAX_DEPTH} levels deep and the transfer limit in total, and offset or length with a directory is refused.`,
       "Delete what you no longer need from .dam/satellite-files/ in your workspace: nothing removes those files for you.",
     ].join("\n"),
     inputSchema: {
@@ -319,7 +359,7 @@ function downloadTool(root: string, cap: number): SatelliteTool {
         path: {
           type: "string",
           description:
-            "The file's path on this machine, relative to the exposed directory, e.g. logs/app.log.",
+            "The file's path on this machine, relative to the exposed directory, e.g. logs/app.log, or a directory's path to take the directory as one tar.",
         },
         offset: {
           type: "integer",
@@ -342,13 +382,17 @@ function downloadTool(root: string, cap: number): SatelliteTool {
 function uploadTool(root: string, cap: number): SatelliteTool {
   return {
     name: UPLOAD_TOOL,
-    title: "Copy one file from your workspace onto this machine",
+    title:
+      "Copy one file, or a whole tar of a directory, from your workspace onto this machine",
     transfer: "upload",
     description: [
       `Copy one file from your workspace to ${root} on this machine.`,
       "path is where it lands, relative to the directory this machine exposes; a missing directory on the way is created, and workspacePath is the file in your own workspace.",
       "An existing file is refused unless overwrite is true.",
       `Files up to ${megabytes(cap)} MB.`,
+      "`unpack: true` makes workspacePath an uncompressed tar that you made, e.g. `tar -cf out/reports.tar -C out reports`, and unpacks its entries under path.",
+      `path is then a directory that must not exist yet, and one tar makes one directory: overwrite is refused with unpack, because a directory upload never replaces or merges into an existing directory. The tar may hold regular files and directories only — a link, a hard link or a device fails the whole upload — at most ${UNPACK_MAX_ENTRIES} entries and ${DIR_MAX_DEPTH} levels deep, and what it unpacks to is held to the same transfer limit. Nothing is published unless every entry arrives and verifies.`,
+      "The result says how many files and directories landed, the bytes and the tar's sha256.",
     ].join("\n"),
     inputSchema: {
       type: "object",
@@ -356,7 +400,7 @@ function uploadTool(root: string, cap: number): SatelliteTool {
         path: {
           type: "string",
           description:
-            "Where the file lands on this machine, relative to the exposed directory, e.g. reports/today.csv.",
+            "Where the file lands on this machine, relative to the exposed directory, e.g. reports/today.csv — or, with unpack, the directory the tar unpacks into, which must not exist yet.",
         },
         workspacePath: {
           type: "string",
@@ -366,6 +410,11 @@ function uploadTool(root: string, cap: number): SatelliteTool {
         overwrite: {
           type: "boolean",
           description: "Replace a file that is already there.",
+        },
+        unpack: {
+          type: "boolean",
+          description:
+            "Treat workspacePath as an uncompressed tar and unpack it under path, which must not exist yet.",
         },
       },
       required: ["path", "workspacePath"],
@@ -491,11 +540,155 @@ export function createFilesBackend(input: {
   maxBytes?: number;
   listBudgetMs?: number;
   listOutputBytes?: number;
+  freeBytes?: (dir: string) => number | null;
 }): SatelliteBackend {
   const cap = input.maxBytes ?? SATELLITE_FILE_MAX_BYTES;
   const budget = input.listBudgetMs ?? LIST_BUDGET_MS;
   const outputBytes = input.listOutputBytes ?? LIST_OUTPUT_BYTES;
+  const freeSpace = input.freeBytes ?? freeBytesOn;
   const running = new Map<number, AbortController>();
+
+  async function downloadDirectory(
+    sequence: number,
+    given: string,
+    args: Record<string, unknown>,
+    token: string,
+    segments: readonly string[],
+    signal: AbortSignal,
+  ): Promise<CallOutcome> {
+    if (args.offset !== undefined || args.length !== undefined)
+      return refused(
+        `${given} is a directory — offset and length copy part of one file, not a directory`,
+      );
+
+    const walked = await listInRoot(input.root, segments, {
+      depth: DIR_MAX_DEPTH + 1,
+      limit: DOWNLOAD_DIR_MAX_FILES,
+      deadline: Date.now() + budget,
+      matches: () => true,
+      signal,
+    });
+    if (!walked.ok) return refused(`${given} ${REFUSALS[walked.reason]}`);
+    if (walked.cut === "limit")
+      return refused(
+        `${given} holds more than ${DOWNLOAD_DIR_MAX_FILES} entries within ${DIR_MAX_DEPTH} levels — download a narrower directory`,
+      );
+    if (walked.cut === "time")
+      return refused(
+        `${given} took longer than ${Math.round(budget / 1000)} s to walk — download a narrower directory`,
+      );
+    if (
+      walked.entries.some(
+        (entry) => entry.path.split("/").length > DIR_MAX_DEPTH,
+      )
+    )
+      return refused(
+        `${given} has entries deeper than ${DIR_MAX_DEPTH} levels — download a narrower directory`,
+      );
+
+    const files = walked.entries.filter((entry) => entry.kind === "file");
+    const skipped = walked.entries
+      .filter((entry) => entry.kind === "link" || entry.kind === "other")
+      .map(
+        (entry) =>
+          `${entry.path} (${entry.kind === "link" ? "link" : "other"})`,
+      );
+    const total = files.reduce((sum, entry) => sum + (entry.size ?? 0), 0);
+    if (total > cap)
+      return refused(
+        `${given} holds ${total} bytes of files, over the ${cap} byte transfer limit — download a subdirectory`,
+      );
+
+    const pack = tarPack();
+    let streamed = 0;
+    let included = 0;
+    let streaming = true;
+    let failure: unknown = null;
+    const feeding = (async () => {
+      for (const entry of files) {
+        if (signal.aborted) throw new Error("cancelled");
+        const path = [...segments, ...entry.path.split("/")];
+        const file = await openInRoot(input.root, path);
+        if (!file.ok) {
+          if (file.reason === "no-such-file") {
+            skipped.push(`${entry.path} (gone)`);
+            continue;
+          }
+          const again =
+            file.reason === "not-a-file"
+              ? await lstatInRoot(input.root, path)
+              : null;
+          if (again === null) throw new Error("changed");
+          if (!again.ok) throw new Error("changed");
+          if (again.facts.kind === "dir") throw new Error("changed");
+          skipped.push(
+            `${entry.path} (${again.facts.kind === "file" ? "hard link" : again.facts.kind === "link" ? "link" : "other"})`,
+          );
+          continue;
+        }
+        const info = await file.handle.stat();
+        streamed += info.size;
+        if (streamed > cap) {
+          await file.handle.close().catch(() => {});
+          throw new Phrased(
+            failed(
+              `${given} grew over the ${cap} byte transfer limit while it was being copied — download a subdirectory`,
+            ),
+          );
+        }
+        included += 1;
+        const sink = pack.entry({
+          name: entry.path,
+          size: info.size,
+          mode: (info.mode & 0o100) === 0 ? 0o644 : 0o755,
+          mtime: new Date(info.mtimeMs),
+        });
+        try {
+          await pipeline(
+            chunks(file.handle, signal, {
+              start: 0,
+              length: info.size,
+              ranged: true,
+            }),
+            sink,
+          );
+        } catch (err) {
+          if (!streaming || signal.aborted) throw err;
+          throw new Phrased(
+            failed(`${given} changed while it was being copied`),
+          );
+        }
+      }
+      pack.finalize();
+    })().catch((err: unknown) => {
+      failure = err;
+      pack.destroy(err instanceof Error ? err : undefined);
+    });
+
+    try {
+      const written = await input.transfer.send({
+        sequence,
+        token,
+        bytes: Readable.from(pack),
+        signal,
+      });
+      await feeding;
+      if (failure !== null) throw failure;
+      return done({
+        ...written,
+        format: "tar",
+        files: included,
+        skipped: skippedNames(skipped),
+      });
+    } catch (err) {
+      streaming = false;
+      pack.destroy();
+      await feeding;
+      if (signal.aborted) throw err;
+      if (failure instanceof Phrased) return failure.outcome;
+      throw err;
+    }
+  }
 
   async function download(
     sequence: number,
@@ -512,8 +705,21 @@ export function createFilesBackend(input: {
       return failed("this job was claimed without a transfer token");
 
     const opened = await openInRoot(input.root, segments);
-    if (!opened.ok)
+    if (!opened.ok) {
+      if (opened.reason === "not-a-file") {
+        const facts = await lstatInRoot(input.root, segments);
+        if (facts.ok && facts.facts.kind === "dir")
+          return downloadDirectory(
+            sequence,
+            String(args.path),
+            args,
+            token,
+            segments,
+            signal,
+          );
+      }
       return refused(`${String(args.path)} ${REFUSALS[opened.reason]}`);
+    }
 
     const sliced = sliceOf(args, opened.size, cap);
     if (!sliced.ok) {
@@ -668,6 +874,215 @@ export function createFilesBackend(input: {
     }
   }
 
+  async function uploadDirectory(
+    sequence: number,
+    given: string,
+    segments: readonly string[],
+    token: string,
+    signal: AbortSignal,
+  ): Promise<CallOutcome> {
+    const parent = await walkInRoot(input.root, segments.slice(0, -1), true);
+    if (!parent.ok) return refused(`${given} ${REFUSALS[parent.reason]}`);
+    if ((await lstatInRoot(input.root, segments)).ok)
+      return refused(
+        `${given} already exists on this machine — a directory upload never replaces or merges into an existing directory; choose a new path`,
+      );
+
+    let stream: Readable | null = null;
+    let staged: StagedDir | null = null;
+    let streamError: unknown = null;
+    let drained: Promise<void> = Promise.resolve();
+    let archived = 0;
+    try {
+      const incoming = await input.transfer.receive({
+        sequence,
+        token,
+        signal,
+      });
+      stream = incoming.stream;
+      const free = freeSpace(parent.path);
+      if (free !== null && free < incoming.size + UNPACK_HEADROOM_BYTES)
+        throw new Phrased(
+          refused(
+            `${given} needs ${megabytes(incoming.size + UNPACK_HEADROOM_BYTES)} MB free where it would land, and this machine has ${megabytes(free)} MB`,
+          ),
+        );
+
+      const created = await stageDirInRoot(input.root, segments);
+      if (!created.ok)
+        throw new Phrased(refused(`${given} ${REFUSALS[created.reason]}`));
+      staged = created.staged;
+      const unpackRoot = created.staged.path;
+
+      const tar = createHash("sha256");
+      const hashing = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          archived += chunk.length;
+          if (archived > cap) {
+            callback(new Error("too large"));
+            return;
+          }
+          tar.update(chunk);
+          callback(null, chunk);
+        },
+      });
+      const extract = tarExtract();
+      drained = pipeline(incoming.stream, hashing, extract).catch(
+        (err: unknown) => {
+          streamError = err;
+        },
+      );
+
+      let files = 0;
+      let dirs = 0;
+      let bytes = 0;
+      let entries = 0;
+      for await (const entry of extract) {
+        if (signal.aborted) throw new Error("cancelled");
+        entries += 1;
+        if (entries > UNPACK_MAX_ENTRIES)
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: the tar carries more than ${UNPACK_MAX_ENTRIES} entries`,
+            ),
+          );
+
+        const type = entry.header.type;
+        const rawName = entry.header.name;
+        if (
+          type !== "file" &&
+          type !== "contiguous-file" &&
+          type !== "directory"
+        )
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: entry ${JSON.stringify(rawName)} is a ${type ?? "unknown"} — a directory upload creates regular files and directories only`,
+            ),
+          );
+        const entryName =
+          type === "directory" ? rawName.replace(/\/$/, "") : rawName;
+        const target = pathSegments(entryName);
+        if (target === null)
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: entry ${JSON.stringify(entryName)} is not a relative path inside it — no absolute path, no .., no empty segment and no backslash`,
+            ),
+          );
+        if (target.length > DIR_MAX_DEPTH)
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: entry ${JSON.stringify(entryName)} is ${target.length} levels deep, over the ${DIR_MAX_DEPTH} level limit`,
+            ),
+          );
+
+        if (type === "directory") {
+          const made = await walkInRoot(unpackRoot, target, true);
+          if (!made.ok)
+            throw new Phrased(
+              refused(
+                `${given} was not unpacked: directory entry ${JSON.stringify(entryName)} ${REFUSALS[made.reason]}`,
+              ),
+            );
+          dirs += 1;
+          entry.resume();
+          continue;
+        }
+
+        if (bytes + entry.header.size > cap)
+          throw new Phrased(
+            failed(
+              `${given} was not unpacked: it unpacks to more than the ${cap} byte transfer limit`,
+            ),
+          );
+        const file = await stageInRoot(unpackRoot, target);
+        if (!file.ok)
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: file entry ${JSON.stringify(entryName)} ${REFUSALS[file.reason]}`,
+            ),
+          );
+        const carried = createHash("sha256");
+        let received = 0;
+        try {
+          for await (const chunk of entry) {
+            if (signal.aborted) throw new Error("cancelled");
+            const part = chunk as Buffer;
+            received += part.length;
+            bytes += part.length;
+            if (bytes > cap)
+              throw new Phrased(
+                failed(
+                  `${given} was not unpacked: it unpacks to more than the ${cap} byte transfer limit`,
+                ),
+              );
+            carried.update(part);
+            await writeAll(file.staged, part);
+          }
+        } catch (err) {
+          await discardStaged(file.staged);
+          throw err;
+        }
+
+        await file.staged.handle.chmod(
+          (entry.header.mode & 0o100) === 0 ? 0o600 : 0o700,
+        );
+        const onDisk = await stagedDigest(file.staged);
+        if (
+          onDisk === null ||
+          onDisk.size !== received ||
+          onDisk.sha256 !== carried.digest("hex")
+        ) {
+          await discardStaged(file.staged);
+          throw new Phrased(
+            failed(
+              `${given} was not unpacked: what reached this machine is not what the tar carried for ${JSON.stringify(entryName)}`,
+            ),
+          );
+        }
+        const published = await publishInRoot(unpackRoot, file.staged, false);
+        if (published !== null)
+          throw new Phrased(
+            refused(
+              `${given} was not unpacked: entry ${JSON.stringify(entryName)} ${REFUSALS[published]}`,
+            ),
+          );
+        files += 1;
+      }
+
+      await drained;
+      if (streamError !== null) throw streamError;
+
+      const published = await publishDirInRoot(input.root, staged);
+      if (published !== null) {
+        await discardDirInRoot(staged);
+        staged = null;
+        return refused(`${given} ${REFUSALS[published]}`);
+      }
+      staged = null;
+      return done({
+        path: given,
+        files,
+        dirs,
+        bytes,
+        sha256: tar.digest("hex"),
+      });
+    } catch (err) {
+      stream?.destroy();
+      await drained;
+      if (staged !== null) await discardDirInRoot(staged);
+      if (signal.aborted)
+        return { status: "cancelled", output: "", truncated: false };
+      if (err instanceof Phrased) return err.outcome;
+      if (archived > cap)
+        return failed(
+          `${given} was not unpacked: the tar is over the ${cap} byte transfer limit`,
+        );
+      return failed(
+        `${given} was not unpacked: what arrived is not a tar archive this machine can read, or it was cut short`,
+      );
+    }
+  }
+
   async function upload(
     sequence: number,
     args: Record<string, unknown>,
@@ -687,6 +1102,20 @@ export function createFilesBackend(input: {
       return failed("this job was claimed without a transfer token");
 
     const overwrite = args.overwrite === true;
+    if (args.unpack === true) {
+      if (overwrite)
+        return refused(
+          "a directory upload never replaces or merges into an existing directory — choose a new path",
+        );
+      return uploadDirectory(
+        sequence,
+        String(args.path),
+        segments,
+        token,
+        signal,
+      );
+    }
+
     const staged = await stageInRoot(input.root, segments);
     if (!staged.ok)
       return refused(`${String(args.path)} ${REFUSALS[staged.reason]}`);
@@ -789,13 +1218,24 @@ export function createFilesBackend(input: {
     describeCall: (tool, args) => {
       switch (tool) {
         case UPLOAD_TOOL:
-          return `upload ${String(args.workspacePath)} → ${String(args.path)}`;
+          return args.unpack === true
+            ? `upload ${String(args.workspacePath)} → ${String(args.path)}/ (unpack)`
+            : `upload ${String(args.workspacePath)} → ${String(args.path)}`;
         case LIST_TOOL:
           return `list ${String(args.path ?? ".")}`;
         case STAT_TOOL:
           return `stat ${String(args.path)}`;
-        case DOWNLOAD_TOOL:
-          return `download ${String(args.path)}${rangeLabel(args)}`;
+        case DOWNLOAD_TOOL: {
+          const segments = pathSegments(args.path);
+          const named =
+            segments === null ? undefined : join(input.root, ...segments);
+          const directory =
+            named !== undefined &&
+            lstatSync(named, { throwIfNoEntry: false })?.isDirectory() === true;
+          return directory
+            ? `download ${String(args.path)}/ (tar)`
+            : `download ${String(args.path)}${rangeLabel(args)}`;
+        }
         default:
           return tool;
       }

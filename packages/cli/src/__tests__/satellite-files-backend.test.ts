@@ -216,7 +216,7 @@ describe("a download from the machine into the agent's workspace", () => {
     });
   });
 
-  it("refuses a .. segment, an absolute path, a symlink out, a hard link out, a FIFO and a directory", async () => {
+  it("refuses a .. segment, an absolute path, a symlink out, a hard link out and a FIFO", async () => {
     const transfer = fakeTransfer();
     const backend = createFilesBackend({ root, allowUpload: false, transfer });
 
@@ -226,7 +226,6 @@ describe("a download from the machine into the agent's workspace", () => {
       { path: "escape.txt" },
       { path: "hard.txt" },
       { path: "fifo" },
-      { path: "logs" },
       { path: "" },
     ]) {
       const outcome = outcomeOf(
