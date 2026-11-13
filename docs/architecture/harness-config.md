@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -213,11 +213,11 @@ The router stamps each forwarded call with `x-platform-session` (the session it 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
-No retries, as a second call is a second bill, but one: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn.
+No retries, as a second call is a second bill, but two: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn; one Claude refuses for another model's thinking goes again without the earlier thinking, later calls too.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
 
-**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks dropped; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
+**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions and Messages replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort that the model or its deployment refuses, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
 The effort level Claude Code persists, sent as `output_config.effort`, is rewritten to the nearest level a DeepSeek target's chat template knows, since that template refuses the whole call on a level it does not: Claude Code's `medium` default becomes `high`.
 

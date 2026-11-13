@@ -8,10 +8,75 @@ const isObject = (v: unknown): v is Json =>
 
 const THINKING = new Set(["thinking", "redacted_thinking"]);
 
-const withoutThinking = (blocks: unknown[]): unknown[] =>
-  blocks.filter(
-    (block) => !isObject(block) || !THINKING.has(String(block.type)),
+const REFUSES_THINKING =
+  /invalid `?(?:signature|data)`? in `?(?:redacted_)?thinking`? block|(?:redacted_)?thinking\.(?:signature|data): field required/i;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a provider's error says a thinking block
+ * in the history is not one a Claude model wrote: Anthropic answers a block
+ * with a foreign signature with "Invalid `signature` in `thinking` block",
+ * one with none with "thinking.signature: Field required", and the redacted
+ * block a GPT model returns behind the proxies with "Invalid `data` in
+ * `redacted_thinking` block". Any other error about thinking, such as a
+ * budget one, is not answered by removing blocks and does not match.
+ */
+export function refusesThinking(text: string): boolean {
+  return REFUSES_THINKING.test(text);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the target checks the signature of each
+ * thinking block in a Messages history, which the Claude models do, on
+ * Anthropic's API and behind the proxies alike.
+ */
+export function verifiesThinking(target: {
+  dialect: ModelDialect;
+  upstreamId: string;
+}): boolean {
+  return (
+    target.dialect === "anthropic-messages" && /claude/i.test(target.upstreamId)
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a Messages call with the thinking blocks of its
+ * first `upTo` messages removed, for a Claude target that refused the call
+ * for a block another model wrote. The last assistant message keeps its
+ * blocks for a tool loop in flight, and a message left with nothing is
+ * removed, since the Messages API refuses an empty `content`. Messages from
+ * `upTo` on are untouched: they were written after the refusal, so they keep
+ * the model's reasoning and the provider's prompt cache keeps matching. The
+ * blocks are removed and never turned into text, which would put reasoning
+ * into visible replies, and Anthropic's safeguards refuse that as reasoning
+ * extraction. Null when the call carries no such block.
+ */
+export function withoutEarlierThinking(body: Json, upTo: number): Json | null {
+  const messages = body.messages;
+  if (!Array.isArray(messages)) return null;
+  const lastAssistant = messages.reduce<number>(
+    (last, m, i) => (isObject(m) && m.role === "assistant" ? i : last),
+    -1,
+  );
+  let changed = false;
+  const rewritten = messages.flatMap((m, i) => {
+    if (
+      i >= upTo ||
+      i === lastAssistant ||
+      !isObject(m) ||
+      m.role !== "assistant" ||
+      !Array.isArray(m.content)
+    )
+      return [m];
+    const original: unknown[] = m.content;
+    const content = original.filter(
+      (block) => !isObject(block) || !THINKING.has(String(block.type)),
+    );
+    if (content.length === original.length) return [m];
+    changed = true;
+    return content.length > 0 ? [{ ...m, content }] : [];
+  });
+  return changed ? { ...body, messages: rewritten } : null;
+}
 
 const TOOL_CALLS = new Set([
   "function_call",
@@ -88,49 +153,24 @@ function deepseekEffort(body: Json, upstreamId: string): Json {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: makes a conversation produced on one model
  * replayable on another, by target, since the router cannot know which model
- * wrote a history. A Claude target verifies thinking signatures, so earlier
- * assistant thinking blocks are dropped (the last message keeps them for a
- * tool loop in flight); turned into text instead, they put the model's
- * reasoning into visible replies, which Anthropic's safeguards refuse as
- * reasoning extraction. An earlier message that held nothing else leaves
- * with its blocks, since the Messages API refuses an empty `content`. A proxied Responses target refuses encrypted
- * reasoning items, `client_metadata`, and tool items without a tool config;
- * OpenAI itself refuses only reasoning items with a non-empty `content`.
+ * wrote a history. A Messages history goes out as the harness wrote it,
+ * thinking blocks included: a Claude target accepts the blocks any Claude
+ * model signed, on any provider, and the one it refuses is handled when it
+ * refuses (see `withoutEarlierThinking`). A proxied Responses target refuses
+ * encrypted reasoning items, `client_metadata`, and tool items without a tool
+ * config; OpenAI itself refuses only reasoning items with a non-empty
+ * `content`.
  */
 export function applyReplayRules(
   body: Json,
   target: { dialect: ModelDialect; alias: ProviderAlias; upstreamId: string },
 ): Json {
   switch (target.dialect) {
-    case "anthropic-messages": {
-      body = deepseekEffort(
+    case "anthropic-messages":
+      return deepseekEffort(
         bedrockThinking(body, target.alias),
         target.upstreamId,
       );
-      if (!/claude/i.test(target.upstreamId)) return body;
-      const messages = body.messages;
-      if (!Array.isArray(messages)) return body;
-      const lastAssistant = messages.reduce<number>(
-        (last, m, i) => (isObject(m) && m.role === "assistant" ? i : last),
-        -1,
-      );
-      let changed = false;
-      const rewritten = messages.flatMap((m, i) => {
-        if (
-          !isObject(m) ||
-          m.role !== "assistant" ||
-          i === lastAssistant ||
-          !Array.isArray(m.content)
-        )
-          return [m];
-        const original: unknown[] = m.content;
-        const content = withoutThinking(original);
-        if (content.length === original.length) return [m];
-        changed = true;
-        return content.length > 0 ? [{ ...m, content }] : [];
-      });
-      return changed ? { ...body, messages: rewritten } : body;
-    }
     case "openai-responses": {
       const proxied = target.alias !== "openai";
       const { client_metadata: _metadata, ...withoutMetadata } = body;

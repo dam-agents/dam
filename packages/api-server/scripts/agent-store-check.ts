@@ -176,7 +176,7 @@ async function main(): Promise<void> {
            stop_request_token = gen_random_uuid()
      WHERE agent_id = ${AGENT}
   `);
-  const marked = await repo.get(AGENT);
+  const marked = await repo.getLive(AGENT, OWNER);
   check("the legacy mark stands", marked?.disabled === true);
   const activityBefore = (
     await db.execute<{ activity: string | null }>(
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
     )
   )[0] as unknown as { activity: string | null } | undefined;
   check("clearing it reports a write", await repo.clearLegacyDisabled(AGENT));
-  const cleared = await repo.get(AGENT);
+  const cleared = await repo.getLive(AGENT, OWNER);
   const signals = (
     (await db.execute<{ activity: string | null; pinned: boolean | null }>(
       sql`SELECT last_activity_at::text AS activity, session_pinned AS pinned
@@ -218,7 +218,7 @@ async function main(): Promise<void> {
      WHERE agent_id = ${AGENT}
   `);
   await repo.clearLegacyDisabled(AGENT);
-  const later = await repo.get(AGENT);
+  const later = await repo.getLive(AGENT, OWNER);
   check(
     "a stop request stamped after the mark survives",
     later?.disabled === false && later.stopRequested === true,

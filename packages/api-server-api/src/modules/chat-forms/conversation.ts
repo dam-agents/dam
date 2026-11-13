@@ -13,7 +13,9 @@ import {
   type A2uiMessage,
   type A2uiMessageKind,
   ChatExtension,
+  ENVELOPE_KEYS,
   type FunctionCall,
+  LEGACY_A2UI_VERSION,
   MESSAGE_SCHEMAS,
 } from "./schema.js";
 import {
@@ -72,6 +74,7 @@ export interface BlockOutcome {
   closed: string[];
   errors: RendererError[];
   functionCalls: FunctionCallOutcome[];
+  outdated: RendererError[];
   streaming: boolean;
 }
 
@@ -81,7 +84,7 @@ export interface A2uiConversation {
 }
 
 export interface ConversationOptions {
-  callFunction: (call: FunctionCall) => unknown;
+  callFunction: (call: FunctionCall, dataModel: unknown) => unknown;
   assumeEarlierSurfaces?: boolean;
 }
 
@@ -91,6 +94,7 @@ interface Draft extends Omit<SurfaceState, "components"> {
 
 const LEADING_FENCE = /^\s*```[a-zA-Z-]*\s*/;
 const MESSAGE_KINDS = Object.keys(MESSAGE_SCHEMAS) as A2uiMessageKind[];
+const UAX31_IDENTIFIER = /^[\p{XID_Start}_][\p{XID_Continue}]*$/u;
 
 function pointer(segments: readonly PropertyKey[]): string {
   return `/${segments.map(String).join("/")}`;
@@ -141,6 +145,23 @@ function readMessages(block: BlockInput): {
   }
 }
 
+function componentProblem(
+  component: A2uiComponent,
+): { key: string; message: string } | undefined {
+  if (!UAX31_IDENTIFIER.test(component.id))
+    return {
+      key: "id",
+      message: `Component id "${component.id}" is not a UAX #31 identifier: start with a letter or _, then only letters, digits and _ (userCard or user_card, not user-card)`,
+    };
+  if (component.component === "TextField" && component.value === undefined)
+    return {
+      key: "value",
+      message:
+        'A TextField needs a value, usually a binding such as {"@path": "/name"}',
+    };
+  return undefined;
+}
+
 function messageKind(raw: unknown): A2uiMessageKind | undefined {
   if (!isRecord(raw)) return undefined;
   return MESSAGE_KINDS.find((kind) => kind in raw);
@@ -151,6 +172,7 @@ class ConversationBuilder {
   readonly blocks = new Map<string, BlockOutcome>();
   private outcome!: BlockOutcome;
   private block!: BlockInput;
+  private legacy = false;
 
   constructor(private readonly options: ConversationOptions) {}
 
@@ -163,6 +185,7 @@ class ConversationBuilder {
       closed: [],
       errors: [],
       functionCalls: [],
+      outdated: [],
       streaming: !block.closed,
     };
     this.blocks.set(block.key, this.outcome);
@@ -179,7 +202,8 @@ class ConversationBuilder {
     if (
       isRecord(raw) &&
       raw.version !== undefined &&
-      raw.version !== A2UI_VERSION
+      raw.version !== A2UI_VERSION &&
+      raw.version !== LEGACY_A2UI_VERSION
     ) {
       this.report({
         code: "VALIDATION_FAILED",
@@ -202,6 +226,13 @@ class ConversationBuilder {
       this.report(issueError(parsed.error, [index]));
       return;
     }
+    this.legacy = parsed.data.version === LEGACY_A2UI_VERSION;
+    if (this.legacy && this.outcome.outdated.length === 0)
+      this.outcome.outdated.push({
+        code: "VALIDATION_FAILED",
+        path: pointer([index, "version"]),
+        message: `A2UI version "${LEGACY_A2UI_VERSION}" is a draft of A2UI 1.0 the chat still replays; send "${A2UI_VERSION}" messages, with @catalogId, @accessibility, @metadata and @checks on components.`,
+      });
     this.apply(parsed.data, index);
   }
 
@@ -211,11 +242,60 @@ class ConversationBuilder {
     surfaceId: string,
   ): A2uiComponent[] {
     return (list ?? []).flatMap((raw, position) => {
-      const parsed = ComponentSchema.safeParse(raw);
-      if (parsed.success) return [parsed.data];
-      this.report(issueError(parsed.error, [...prefix, position], surfaceId));
-      return [];
+      const at = [...prefix, position];
+      const envelope = this.envelope(raw, at, surfaceId);
+      if (envelope === undefined) return [];
+      const parsed = ComponentSchema.safeParse(envelope);
+      if (!parsed.success) {
+        this.report(issueError(parsed.error, at, surfaceId));
+        return [];
+      }
+      const problem = this.legacy ? undefined : componentProblem(parsed.data);
+      if (problem) {
+        this.report({
+          code: "VALIDATION_FAILED",
+          path: pointer([...at, problem.key]),
+          surfaceId,
+          message: `${problem.message} (at ${pointer([...at, problem.key])})`,
+        });
+        return [];
+      }
+      return [parsed.data];
     });
+  }
+
+  private envelope(
+    raw: unknown,
+    at: readonly PropertyKey[],
+    surfaceId: string,
+  ): unknown {
+    if (!isRecord(raw)) return raw;
+    const component: Record<string, unknown> = { ...raw };
+    for (const key of ENVELOPE_KEYS) {
+      const prefixed = `@${key}`;
+      if (!(prefixed in component)) {
+        if (this.legacy || !(key in component)) continue;
+        this.report({
+          code: "VALIDATION_FAILED",
+          path: pointer([...at, key]),
+          surfaceId,
+          message: `"${key}" is written "${prefixed}" on an A2UI ${A2UI_VERSION} component (at ${pointer([...at, key])})`,
+        });
+        return undefined;
+      }
+      if (key in component) {
+        this.report({
+          code: "VALIDATION_FAILED",
+          path: pointer([...at, key]),
+          surfaceId,
+          message: `A component carries either "${prefixed}" or "${key}", not both (at ${pointer([...at, key])})`,
+        });
+        return undefined;
+      }
+      component[key] = component[prefixed];
+      delete component[prefixed];
+    }
+    return component;
   }
 
   private touch(draft: Draft) {
@@ -369,9 +449,11 @@ class ConversationBuilder {
   }
 
   private callRendererFunction({
+    surfaceId,
     functionCallId,
     callFunction: call,
   }: {
+    surfaceId?: string;
     functionCallId: string;
     callFunction: FunctionCall;
   }) {
@@ -384,8 +466,17 @@ class ConversationBuilder {
       },
     });
     const definition = catalogFor(call.catalogId)?.functions[name];
+    const surface =
+      surfaceId === undefined ? undefined : this.surfaces.get(surfaceId);
+    const unknownSurface =
+      surfaceId !== undefined &&
+      (surface === undefined
+        ? !this.options.assumeEarlierSurfaces
+        : surface.deleted);
     let outcome: FunctionCallOutcome;
-    if (call.catalogId === undefined)
+    if (unknownSurface)
+      outcome = reject(`Surface "${surfaceId}" does not exist.`);
+    else if (call.catalogId === undefined)
       outcome = reject("callRendererFunction needs a catalogId.");
     else if (!definition)
       outcome = reject(
@@ -399,7 +490,7 @@ class ConversationBuilder {
       outcome = reject(`Function "${name}" needs a user action.`);
     else {
       try {
-        const value = this.options.callFunction(call);
+        const value = this.options.callFunction(call, surface?.dataModel ?? {});
         outcome = { name, response: { functionCallId, value: value ?? null } };
       } catch (error) {
         outcome = {

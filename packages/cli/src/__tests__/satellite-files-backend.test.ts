@@ -52,6 +52,8 @@ import {
 import {
   createFilesBackend,
   DOWNLOAD_TOOL,
+  LIST_TOOL,
+  STAT_TOOL,
   UPLOAD_TOOL,
 } from "../modules/satellite/services/files-backend.js";
 
@@ -325,9 +327,15 @@ describe("an upload from the agent's workspace onto the machine", () => {
     const transfer = fakeTransfer();
     const backend = createFilesBackend({ root, allowUpload: false, transfer });
 
-    expect(backend.tools.map((tool) => tool.name)).toEqual([DOWNLOAD_TOOL]);
+    expect(backend.tools.map((tool) => tool.name)).toEqual([
+      DOWNLOAD_TOOL,
+      LIST_TOOL,
+      STAT_TOOL,
+    ]);
     expect(backend.tools.map((tool) => tool.transfer ?? null)).toEqual([
       "download",
+      null,
+      null,
     ]);
     const outcome = outcomeOf(
       await backend.call({
