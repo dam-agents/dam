@@ -96,7 +96,7 @@ function backendOf(options: {
   transfer: ReturnType<typeof fakeFilesTransfer>;
   allowUpload?: boolean;
   maxBytes?: number;
-  freeBytes?: (dir: string) => number | null;
+  freeBytes?: (dir: string) => number | null | Promise<number | null>;
 }) {
   return createFilesBackend({
     root,
@@ -115,7 +115,7 @@ async function upload(
   options: {
     allowUpload?: boolean;
     maxBytes?: number;
-    freeBytes?: (dir: string) => number | null;
+    freeBytes?: (dir: string) => number | null | Promise<number | null>;
     transfer?: ReturnType<typeof fakeFilesTransfer>;
   } = {},
 ): Promise<{
@@ -598,27 +598,32 @@ describe("a directory upload", () => {
     expect(transfer.received).toEqual([]);
   });
 
-  it("refuses when the destination's filesystem has too little room, measured on the parent", async () => {
-    const seen: string[] = [];
-    const { outcome } = await upload(
-      await tarOf([{ name: "x", body: "x" }]),
-      { path: "reports/2026" },
-      {
-        freeBytes: (where) => {
-          seen.push(where);
-          return 1024 * 1024;
+  it.each(["sync", "async"])(
+    "refuses when the destination's filesystem has too little room, measured on the parent (%s)",
+    async (mode) => {
+      const seen: string[] = [];
+      const { outcome } = await upload(
+        await tarOf([{ name: "x", body: "x" }]),
+        { path: "reports/2026" },
+        {
+          freeBytes: (where) => {
+            seen.push(where);
+            return mode === "async"
+              ? Promise.resolve(1024 * 1024)
+              : 1024 * 1024;
+          },
         },
-      },
-    );
+      );
 
-    const done = finished(outcome);
-    expect(done.isError).toBe(true);
-    expect(done.blocked).toBe(true);
-    expect(done.output).toContain("MB free");
-    expect(seen).toEqual([join(root, "reports")]);
-    expect(await exists(join(root, "reports", "2026"))).toBe(false);
-    expect(await staging(join(root, "reports"))).toEqual([]);
-  });
+      const done = finished(outcome);
+      expect(done.isError).toBe(true);
+      expect(done.blocked).toBe(true);
+      expect(done.output).toContain("MB free");
+      expect(seen).toEqual([join(root, "reports")]);
+      expect(await exists(join(root, "reports", "2026"))).toBe(false);
+      expect(await staging(join(root, "reports"))).toEqual([]);
+    },
+  );
 
   it("refuses a link planted where the destination's parent would be", async () => {
     await mkdir(join(dir, "elsewhere"));

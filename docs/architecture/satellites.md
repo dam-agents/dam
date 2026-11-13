@@ -285,11 +285,14 @@ The Agent's own workspace is treated as untrusted in exactly the same way, becau
 The platform's writes are staged beside their destination in the workspace and published by a second request, so the publish happens only after the bytes arrived and the token was spent; both directions walk the workspace components, open without following a link, refuse a hard link and a special file, and publish and clean up inside a verified directory's inode rather than by a pathname.
 Cleanup of an abandoned stage is confined the same way, and it removes only an entry that is one of the platform's own staged files, so it cannot be steered into deleting an Agent's file through a link.
 
-**A transfer carries at most 50 MB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
+**One transfer carries at most 5 GiB**, counted while the bytes move in both directions — including on the platform's own relay, which counts what it hands the machine and cuts the response off at the limit even when the workspace understates a file's size.
 A file that grows after it was measured, or a response that never ends, is cut off at the limit rather than read whole.
 Nothing passes through the api-server's memory: it relays the stream, the runtime owns the workspace end.
 The limit is measured against **what one call copies**, not against the file.
 A ranged `download` sends the slice, declares the slice's length and reports the slice's sha256, so a file of any size moves in pieces an Agent asks for; without `offset` and `length` a file over the limit is refused and the Agent is told to pass them.
+Before it stages a byte the workspace end refuses a file whose declared size plus 1 GiB of headroom does not fit in the free space of the directory the file lands in, answering HTTP 507 `no_space`.
+That check is best effort rather than a reservation: it reads the size the body declares, and nothing is measured when a body declares no length or the filesystem cannot be measured.
+In the upload direction the machine makes the same check against the directory the file lands in, so a file it cannot hold is refused before it is written.
 Every transfer leaves one audit line — the direction, the Job, the Agent, the path, the byte count and the outcome — and file contents never enter a log, an error message or a tool result.
 What lands under `.dam/satellite-files/` in the Agent's workspace stays there: Platform never removes it, so the Agent is told to delete what it no longer needs.
 

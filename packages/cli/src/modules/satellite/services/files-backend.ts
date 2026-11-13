@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { statfsSync } from "node:fs";
-import { unlink, type FileHandle } from "node:fs/promises";
+import { statfs, unlink, type FileHandle } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -45,6 +44,7 @@ const LIST_MAX_GLOB = 256;
 const LIST_OUTPUT_BYTES = MAX_JOB_OUTPUT_BYTES - 48 * 1024;
 const TRUNCATION_RESERVE_BYTES = 256;
 
+const FREE_SPACE_HEADROOM_BYTES = 1024 ** 3;
 const DIR_MAX_DEPTH = 32;
 const DOWNLOAD_DIR_MAX_FILES = 10_000;
 const UNPACK_MAX_ENTRIES = 10_000;
@@ -52,9 +52,17 @@ const SKIPPED_LIST_MAX = 50;
 const SKIPPED_LIST_BYTES = 16 * 1024;
 const ENTRY_LABEL_MAX = 200;
 const TAR_END_BYTES = 1024;
-const UNPACK_HEADROOM_BYTES = 1024 * 1024 * 1024;
 const TAR_HEADER_BYTES = 512;
 const TAR_TERMINATOR_BYTES = 1024;
+
+async function freeBytesAt(dir: string): Promise<number | null> {
+  try {
+    const info = await statfs(dir);
+    return info.bavail * info.bsize;
+  } catch {
+    return null;
+  }
+}
 
 const REFUSALS: Record<Refusal, string> = {
   outside: "is not a place inside the directory this satellite exposes",
@@ -100,15 +108,6 @@ function done(output: Record<string, unknown>): CallOutcome {
 class Phrased extends Error {
   constructor(readonly outcome: CallOutcome) {
     super(outcome.output);
-  }
-}
-
-function freeBytesOn(dir: string): number | null {
-  try {
-    const stats = statfsSync(dir);
-    return stats.bavail * stats.bsize;
-  } catch {
-    return null;
   }
 }
 
@@ -377,7 +376,7 @@ function downloadTool(root: string, cap: number): SatelliteTool {
       "The contents do not come back in the result: you get the workspace path the file landed at, its size, the sha256 of what landed, and you open, grep or hash it with your own tools.",
       "path is relative to the directory this machine exposes. A link is refused at any point on the way, even one that points back inside; so is anything that is not a regular file.",
       "offset and length copy part of a file: offset is the first byte, counting from 0, and a negative offset counts back from the end, so -1048576 is the last megabyte; length is how many bytes to copy, and without it the copy runs to the end of the file.",
-      `One transfer carries at most ${megabytes(cap)} MB. A whole file over that is refused; a part under it still copies, which is how a larger file moves in pieces.`,
+      `Files up to ${cap / 1024 ** 3} GiB. A whole file over that is refused; a part under it still copies, which is how a larger file moves in pieces.`,
       "A part lands under the file's own name, and the result's offset and fileSize say which part it is.",
       "path may also be a directory: then the whole directory comes down as one uncompressed tar of its regular files, keeping the directory's own name, and the result says format tar with how many files it holds. Unpack it in your workspace with `tar -xf <path> -C <dir>`. Links, special files and hard-linked files are left out and named in the result's skipped, which is bounded by count and by bytes so the result stays small; it takes at most " +
         `${DOWNLOAD_DIR_MAX_FILES} files, ${DIR_MAX_DEPTH} levels deep and the transfer limit in total, which counts the tar's own headers and padding too, and offset or length with a directory is refused.`,
@@ -419,7 +418,7 @@ function uploadTool(root: string, cap: number): SatelliteTool {
       `Copy one file from your workspace to ${root} on this machine.`,
       "path is where it lands, relative to the directory this machine exposes; a missing directory on the way is created, and workspacePath is the file in your own workspace.",
       "An existing file is refused unless overwrite is true.",
-      `Files up to ${megabytes(cap)} MB.`,
+      `Files up to ${cap / 1024 ** 3} GiB.`,
       "`unpack: true` makes workspacePath an uncompressed tar that you made, e.g. `tar -cf out/reports.tar -C out reports`, and unpacks its entries under path.",
       `path is then a directory that must not exist yet, and one tar makes one directory: overwrite is refused with unpack, because a directory upload never replaces or merges into an existing directory. The tar may hold regular files and directories only — a link, a hard link or a device fails the whole upload — each name once, at most ${UNPACK_MAX_ENTRIES} entries and ${DIR_MAX_DEPTH} levels deep, and its own bytes count against the same transfer limit. An empty but well-formed tar makes an empty directory; a body with no tar in it at all is refused. Nothing is published unless every entry arrives and verifies, and a cancelled Job publishes nothing.`,
       "The result says how many files and directories landed, the bytes and the tar's sha256.",
@@ -568,14 +567,14 @@ export function createFilesBackend(input: {
   allowUpload: boolean;
   transfer: FileTransfer;
   maxBytes?: number;
+  freeBytes?: (dir: string) => number | null | Promise<number | null>;
   listBudgetMs?: number;
   listOutputBytes?: number;
-  freeBytes?: (dir: string) => number | null;
 }): SatelliteBackend {
   const cap = input.maxBytes ?? SATELLITE_FILE_MAX_BYTES;
+  const freeBytes = input.freeBytes ?? freeBytesAt;
   const budget = input.listBudgetMs ?? LIST_BUDGET_MS;
   const outputBytes = input.listOutputBytes ?? LIST_OUTPUT_BYTES;
-  const freeSpace = input.freeBytes ?? freeBytesOn;
   const running = new Map<number, AbortController>();
 
   async function downloadDirectory(
@@ -964,11 +963,11 @@ export function createFilesBackend(input: {
         signal,
       });
       stream = incoming.stream;
-      const free = freeSpace(parent.path);
-      if (free !== null && free < incoming.size + UNPACK_HEADROOM_BYTES)
+      const free = await freeBytes(parent.path);
+      if (free !== null && free < incoming.size + FREE_SPACE_HEADROOM_BYTES)
         throw new Phrased(
           refused(
-            `${given} needs ${megabytes(incoming.size + UNPACK_HEADROOM_BYTES)} MB free where it would land, and this machine has ${megabytes(free)} MB`,
+            `${given} needs ${megabytes(incoming.size + FREE_SPACE_HEADROOM_BYTES)} MB free where it would land, and this machine has ${megabytes(free)} MB`,
           ),
         );
 
@@ -1243,6 +1242,15 @@ export function createFilesBackend(input: {
         token,
         signal,
       });
+      const free = await freeBytes(staged.staged.dir);
+      const needed = incoming.size + FREE_SPACE_HEADROOM_BYTES;
+      if (free !== null && needed > free) {
+        incoming.stream.destroy();
+        await discardStaged(staged.staged);
+        return failed(
+          "the directory this machine exposes does not have room for this file — it needs the file's size plus 1 GiB free",
+        );
+      }
       for await (const chunk of incoming.stream) {
         const part = chunk as Buffer;
         bytes += part.length;

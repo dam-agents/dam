@@ -67,8 +67,8 @@ export function buildFilesCommand(deps: ConnectDeps): Command {
         "read, e.g. ~/work rather than ~. Without --upload the agent can read but\n" +
         "never write; with it, a file already there is replaced only when the\n" +
         "agent's call asks to overwrite.\n" +
-        "One transfer carries at most 50 MB, which is the agent's own per-file\n" +
-        "limit; a slice under that limit still copies from a larger file.\n" +
+        "One transfer carries at most 5 GiB; a slice under that limit still\n" +
+        "copies from a larger file.\n" +
         "A listing stops at 10 levels deep, 5000 entries or 20 seconds, and says\n" +
         "on its last line that it stopped there.\n" +
         "Changing what is exposed means restarting: there is no file to\n" +
