@@ -167,7 +167,6 @@ export interface AgentView {
   description?: string;
   avatar: string | null;
   env?: EnvVar[];
-  hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
   whisper: boolean;
   grantedSecretIds: string[];

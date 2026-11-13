@@ -32,13 +32,8 @@ export async function createAgentOn(
   api: ApiClient,
   name: string,
   templateId: string,
-  { neverIdle = false }: { neverIdle?: boolean } = {},
 ): Promise<string> {
-  const created = await api.agents.create.mutate({
-    name,
-    templateId,
-    ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
-  });
+  const created = await api.agents.create.mutate({ name, templateId });
   return created.id;
 }
 

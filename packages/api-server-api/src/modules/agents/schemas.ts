@@ -93,7 +93,6 @@ export const agentCreateInputSchema = z.object({
     })
     .optional(),
   egressPreset: egressPresetSchema.optional(),
-  hibernationTimeoutMin: z.number().int().min(0).optional(),
   requireConnectionAddress: z.boolean().optional(),
   gitRepo: z
     .object({
@@ -129,7 +128,6 @@ export const agentUpdateInputSchema = agentPatchSchema.pick({
   name: true,
   description: true,
   avatar: true,
-  hibernationTimeoutMin: true,
 });
 
 export const agentSetEnvInputSchema = z.object({

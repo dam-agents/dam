@@ -1392,7 +1392,6 @@ export function ChatView() {
         notices={notices}
         agentId={selectedAgent}
         agentName={selectedAgentName}
-        alwaysOn={agentView?.hibernationTimeoutMin === 0}
         processesEnabled={processesEnabled}
         onOpenFile={openFileHandler}
         panel={shownClassicPanel}

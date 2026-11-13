@@ -21,7 +21,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   starterKit: null,
   starterKitOnboarded: null,
   image: "x:latest",
-  hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
   grantedSecretIds: [],

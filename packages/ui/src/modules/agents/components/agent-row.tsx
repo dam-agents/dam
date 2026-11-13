@@ -6,10 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
@@ -153,7 +150,6 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
-        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <Button
           variant="ghost"
           size="icon-sm"
