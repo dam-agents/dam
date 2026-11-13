@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import {
   linkSync,
   lstatSync,
+  mkdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -259,6 +260,7 @@ export interface Facts {
   kind: FileKind;
   size: number | null;
   mtimeMs: number;
+  nlink: number;
 }
 
 /**
@@ -286,6 +288,7 @@ export async function lstatInRoot(
       kind,
       size: kind === "file" ? info.size : null,
       mtimeMs: info.mtimeMs,
+      nlink: info.nlink,
     },
   };
 }
@@ -368,6 +371,7 @@ export async function listInRoot(
               kind,
               size: kind === "file" ? info.size : null,
               mtimeMs: info.mtimeMs,
+              nlink: info.nlink,
             },
           ]
         : [],
@@ -395,6 +399,7 @@ export async function listInRoot(
           kind,
           size: kind === "file" ? found.size : null,
           mtimeMs: found.mtimeMs,
+          nlink: found.nlink,
         });
         if (entries.length > options.limit) {
           cut = "limit";
@@ -614,4 +619,132 @@ export async function publishInRoot(
 async function discard(staged: Staged): Promise<void> {
   await staged.handle.close().catch(() => {});
   await unlink(staged.path).catch(() => {});
+}
+
+export interface StagedDir {
+  path: string;
+  name: string;
+  dir: string;
+  proved: Proved;
+  inode: Proved;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An empty directory beside the name a directory
+ * upload will land as, created exclusively, so a destination that already exists
+ * is refused before any byte is received and the whole tree can be unpacked
+ * beside it and published in one step. The parent is proved before it is used,
+ * and the creation and the proof of the new directory happen in one synchronous
+ * step inside that parent's inode, so a parent swapped for a link cannot make
+ * this create or remove anything somewhere else.
+ *
+ * The ceiling, stated: a same-user local process can race the destination's
+ * `lstat` and the cleanup's recursive remove, which gains it nothing it did not
+ * already have over a directory it can write to. Node exposes no `openat2`,
+ * which is the upgrade path for both.
+ */
+export async function stageDirInRoot(
+  root: string,
+  target: readonly string[],
+): Promise<{ ok: true; staged: StagedDir } | { ok: false; reason: Refusal }> {
+  const parent = await walkInRoot(root, target.slice(0, -1), true);
+  const name = target.at(-1);
+  if (!parent.ok) return { ok: false, reason: parent.reason };
+  if (name === undefined) return { ok: false, reason: "outside" };
+  if ((await lstat(join(parent.path, name)).catch(() => null)) !== null)
+    return { ok: false, reason: "exists" };
+
+  if (!(await realDirectory(parent.path)))
+    return { ok: false, reason: "outside" };
+  const parentInfo = await lstat(parent.path).catch(() => null);
+  if (parentInfo === null || !parentInfo.isDirectory())
+    return { ok: false, reason: "outside" };
+  const proved = { dev: parentInfo.dev, ino: parentInfo.ino };
+
+  const staging = `.${name}.incoming-${randomBytes(6).toString("hex")}`;
+  const made = insideDirectory(parent.path, proved, () => {
+    mkdirSync(staging, { mode: 0o700 });
+    const info = lstatSync(staging, { throwIfNoEntry: false });
+    if (info === undefined || !info.isDirectory()) return null;
+    return { dev: info.dev, ino: info.ino };
+  });
+  if (!made.ok || made.value === null)
+    return { ok: false, reason: "not-writable" };
+  return {
+    ok: true,
+    staged: {
+      path: join(parent.path, staging),
+      name,
+      dir: parent.path,
+      proved,
+      inode: made.value,
+    },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Publishes a whole unpacked tree onto its name with
+ * one rename taken inside the parent's proved inode, after the staging entry is
+ * proved to be the directory that was created and the name is shown absent, and
+ * the renamed entry is proved again afterwards. Nothing is merged and nothing is
+ * replaced: a name that is there fails the publish, and what sits at the name
+ * after a failed proof is never removed, because it may not be ours.
+ *
+ * The ceilings, stated: POSIX renames onto an **empty** directory that a
+ * same-user local process creates between the check and the rename, because Node
+ * exposes no `renameat2(RENAME_NOREPLACE)`; onto a non-empty directory, a file or
+ * a link the rename fails instead. A native `renameat2`/`openat2` is the upgrade
+ * path.
+ */
+export async function publishDirInRoot(
+  root: string,
+  staged: StagedDir,
+): Promise<Refusal | null> {
+  if ((await realpath(root).catch(() => null)) !== root) return "outside";
+  const from = basename(staged.path);
+  const anchored = insideDirectory(staged.dir, staged.proved, () => {
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current === undefined ||
+      !current.isDirectory() ||
+      current.dev !== staged.inode.dev ||
+      current.ino !== staged.inode.ino
+    )
+      return "changed" as const;
+    if (lstatSync(staged.name, { throwIfNoEntry: false }) !== undefined)
+      return "exists" as const;
+    try {
+      renameSync(from, staged.name);
+    } catch {
+      return "not-writable" as const;
+    }
+    const published = lstatSync(staged.name, { throwIfNoEntry: false });
+    return published !== undefined &&
+      published.dev === staged.inode.dev &&
+      published.ino === staged.inode.ino
+      ? ("published" as const)
+      : ("changed" as const);
+  });
+  if (!anchored.ok) return "outside";
+  return anchored.value === "published" ? null : anchored.value;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Removes an unpack that was not published, from
+ * inside the parent that was proved when the staging directory was created, so a
+ * path renamed on top of that parent cannot steer the remove. Nothing is removed
+ * when the parent is no longer the proved inode or the staging entry is no longer
+ * the directory that was created.
+ */
+export async function discardDirInRoot(staged: StagedDir): Promise<void> {
+  insideDirectory(staged.dir, staged.proved, () => {
+    const from = basename(staged.path);
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current?.isDirectory() === true &&
+      current.dev === staged.inode.dev &&
+      current.ino === staged.inode.ino
+    )
+      rmSync(from, { recursive: true, force: true });
+  });
 }
