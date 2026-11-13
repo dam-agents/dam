@@ -24,9 +24,12 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 2. **Never touch the user's DAM sign-in.**
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
-3. **Ask before anything you can't undo.**
-   `dam agent delete` removes an agent and all its data, and `dam connection disconnect` deletes a stored credential that every agent it is granted to loses.
-   Confirm with the user first, then pass `--yes` yourself; without a terminal, these commands refuse to run without it ([Without a terminal](#without-a-terminal) lists them).
+3. **Ask before anything you can't undo, and wait for the answer.**
+   Deleting an agent (`dam agent delete`) throws away its sessions, files and memory, `dam connection disconnect` deletes a stored credential that every agent it is granted to loses, and `dam schedule delete` removes a schedule for good.
+   When the user asks for one of those, don't run it: say what is lost, ask once whether to go ahead, and end your turn.
+   The request is not that answer, however plainly it was put: only their yes to that question, in a later message, is.
+   Then run it with `--yes`, which the CLI needs from you because you have no terminal ([Without a terminal](#without-a-terminal) lists those commands).
+   Reversible changes you make when they ask, with no second confirmation: renaming or updating an agent, running a task, setting up or changing a schedule, granting a connection.
 4. **Approvals and the Terms of Use are the user's to decide.**
    Don't approve or deny a pending request, and don't accept the Terms of Use, unless the user told you to after seeing what is being asked.
 5. **Parse `--json`, not tables.**
@@ -180,10 +183,11 @@ A ref that matches nothing or more than one agent exits with code 5; list the ag
 
 Your shell has no terminal attached, and the CLI behaves accordingly:
 
-- These commands need `--yes` (see the hard rules):
+- These commands need `--yes`, because the CLI would otherwise ask at a prompt you cannot answer:
   `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
   `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
-  `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
+  The deletes and disconnects among them also wait for the answer hard rule 3 makes you ask; the rest run when the user asks.
+  `dam terms accept` needs `--yes` too, and only after the user accepts (hard rule 4).
 - `dam chat <agent>` attaches to the agent's interactive session, `dam ssh connect <agent>` without a command opens a shell, and `dam agent create-interactive` walks through a form; they need a terminal, so offer the command to the user instead.
   `dam run` and `dam ssh connect <agent> -- <command>` are the ways in that need none.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
@@ -243,6 +247,9 @@ dam agent create my-desk --kit research --connection github --json
   `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
   Work through the steps that are not done, with the user.
   Most kits open a first session that asks the user for what the kit needs: find it with `dam session list <agent>` and relay the user's answers with `dam run <agent> --session <session-id> -p "<answer>"`.
+- Read `dam agent get <agent>` after the create, and put the harness and model its chat `DEFAULT` names and the `PROVIDERS` it granted into your reply: a kit's providers list can land the agent on another harness and provider than the user's default for new agents, which the create output's `defaultProvider` says with `"source": "kit"`.
+  For example "I've made it, and it runs on Claude Code with Opus through the IBM proxy."
+  A model or provider it has not read yet is one you say you can't see yet, never one you guess, and you switch it to the user's default only when they ask.
 
 `dam agent get <agent>` names the kit an agent came from (`STARTER KIT`, and `starterKit` in `--json`) and whether a newer version of the kit is out (`KIT UPDATE`, and `kitUpdate.state` in `--json`: `available`, `pending`, `skipped`, `onboarding`, `unreachable` or `up-to-date`).
 `dam kit changes <agent>` shows what the newer version changes.
@@ -355,7 +362,7 @@ dam agent restart my-agent --wait
 dam agent delete my-agent --yes
 ```
 
-`dam agent delete` is permanent, so confirm first.
+`dam agent delete` deletes the agent with everything in it, so say what will be lost and ask whether to go ahead; pass `--yes` only after the user says yes (hard rule 3).
 
 ### Schedules
 
@@ -384,7 +391,7 @@ dam connection default my-agent --connection github-work
 A connection belongs to the user; granting it lets one agent use it.
 An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
-`dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
+`dam connection disconnect` can't be undone: ask first, and pass `--yes` only after the user says yes (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
 
 A GitHub sign-in (`github`, `github-enterprise`) or a GitHub App installation (`github-app`, `github-enterprise-app`) holds the credential, and no agent is ever granted one.
@@ -485,6 +492,21 @@ dam telemetry show my-agent --session <session-id>
 
 `dam satellite` (experimental) lets a DAM agent call tools on this machine, and keeps running while it serves them.
 It exposes the user's machine, so start one only when the user asks for it.
+
+## In the web app
+
+When the user asks where in the app to do something, answer with the page rather than a command, and name pages only as they are named here.
+
+- **Home**: their agents, the approvals waiting on them, and **API spend** — **Today**, **This month**, which is the calendar month, and **Last month**, whose **Usage details** opens Settings › Usage.
+- **Artifacts** — what their agents made for them — and **Starter kits**, what an agent is created from.
+- **Settings › Connections**: the credentials their agents work with, such as a GitHub sign-in, a token or an MCP server.
+  **Settings › Providers**: the LLM providers they connected and the default for new agents.
+  **Settings › Profiles**: a named harness, model and provider that several agents share.
+  **Settings › Usage**: spend over the dates they pick.
+  **Settings › Schedules**: every schedule they have.
+- **Configure agent**, from an agent's row in the sidebar or in Home's list: **General**, which holds its name, avatar and description and the harness and model its sessions start on, then **People**, **Providers**, **Connections**, **Network access**, **Environment vars**, **Channels**, **Chat forms**, **Skills**, **Schedules**, **Usage**, and **Environments** where the install has them.
+
+For anything the map doesn't cover, say you don't know the way there, and offer a command only when this page or `dam <command> --help` shows one: never name a screen of your own.
 
 ## Exit codes
 
