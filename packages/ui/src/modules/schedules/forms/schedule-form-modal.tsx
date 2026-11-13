@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modal";
 
 import type { Schedule } from "../../../types.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import type { CreatedSchedule } from "../lib/just-ask.js";
@@ -34,9 +35,12 @@ export function ScheduleFormModal({
   onClose,
   onCreated,
 }: Props) {
-  const [kind, setKind] = useState<ScheduleKind>(
+  /* UNIT_BOUNDARY_DESCRIPTION: the Repeat / Once choice, and with it the one-time task form, only with the one-time-tasks feature on; without it a new schedule repeats, and the edit guard keeps an existing one-time task from reaching this form. */
+  const oneTimeTasks = useFeatures().data?.["one-time-tasks"] ?? false;
+  const [chosenKind, setKind] = useState<ScheduleKind>(
     existing?.type === "once" ? "once" : "repeat",
   );
+  const kind: ScheduleKind = oneTimeTasks ? chosenKind : "repeat";
   const [draft, setDraft] = useState<ScheduleDraft>({ name: "", task: "" });
   const [editing, setEditing] = useState(existing);
   const [converting, setConverting] = useState<Converting | null>(null);
@@ -82,7 +86,9 @@ export function ScheduleFormModal({
         agentId,
         draft,
         onDraftChange: setDraft,
-        leadingFields: <ScheduleKindField value={kind} onChange={setKind} />,
+        leadingFields: oneTimeTasks ? (
+          <ScheduleKindField value={kind} onChange={setKind} />
+        ) : null,
         onClose,
         onDirtyChange: setDirty,
       };
