@@ -7,7 +7,7 @@ export function StarterKitsView() {
     <>
       <PageHeader
         title="Starter kits"
-        description="Pick a starter kit to create your agent from"
+        description="Pick a starter kit to create your agent from."
       />
       <StarterKitCatalog />
     </>

@@ -233,7 +233,7 @@ function ScheduleRunsOn({ schedule }: { schedule: Schedule }) {
         (subagent?.["platformSubagent.harness"] &&
           subagent["platformSubagent.model"])) && (
         <span className="mt-1 flex min-w-0 items-center gap-1 text-xs font-normal text-muted-foreground">
-          Subagent:
+          Sub-agent:
           {subagentProfile ? (
             <span className="truncate">{subagentProfile.name}</span>
           ) : (

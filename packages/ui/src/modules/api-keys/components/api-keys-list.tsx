@@ -18,15 +18,9 @@ export function ApiKeysList() {
 
   async function revoke(id: string, name: string) {
     const ok = await showConfirm(
-      <>
-        <p className="mb-2">
-          The key <span className="font-semibold text-foreground">{name}</span>{" "}
-          stops working immediately for every CLI and integration that uses it.
-        </p>
-        <p>This cannot be undone. To restore access, create a new key.</p>
-      </>,
-      "Revoke API key?",
-      { kind: "destructive", confirmLabel: "Revoke key" },
+      "The key stops working immediately for every CLI and integration that uses it. To restore access, create a new key.",
+      `Revoke API key “${name}”?`,
+      { kind: "destructive", confirmLabel: "Revoke API key" },
     );
     if (ok) revokeApiKey.mutate({ id });
   }

@@ -256,7 +256,7 @@ export function ChatArtifactsPanel({
         </>
       }
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border px-3 py-2">
         {agentId && (
           <Tabs
             tabs={SCOPE_TABS}
@@ -275,7 +275,6 @@ export function ChatArtifactsPanel({
           aria-label="Search artifacts"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="min-w-0 flex-1"
         />
       </div>
       {failed ? (

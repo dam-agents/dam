@@ -1,6 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { isGrantable, parentNoun } from "./connection-hierarchy.js";
+import { isDamConnection } from "./dam-connection.js";
 
 export type CatalogTab = "apps" | "mcp" | "custom-headers";
 
@@ -197,6 +198,7 @@ export function connectionKindSubtitle(
   template: ConnectionTemplateView | undefined,
 ): string {
   if (connection.isParent) return parentNoun(connection);
+  if (isDamConnection(connection)) return "";
   if (
     connection.templateId === "github" ||
     connection.templateId === "github-enterprise"

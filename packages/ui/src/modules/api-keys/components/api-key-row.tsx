@@ -45,7 +45,8 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
         </div>
       </div>
       <RemoveButton
-        label="Revoke key"
+        label={`Revoke ${name}`}
+        tooltip="Revoke key"
         onClick={() => onRevoke(id, name)}
         disabled={revoking}
       />

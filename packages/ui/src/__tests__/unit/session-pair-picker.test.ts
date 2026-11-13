@@ -1057,7 +1057,7 @@ describe("the saved profiles behind Use a profile", () => {
       "Harness",
       "Model",
       "Thinking",
-      "Subagents",
+      "Sub-agents",
     ])
       expect(node.textContent).toContain(label);
     expect(node.textContent).toContain("GLM 5.3 · CurveBender");
