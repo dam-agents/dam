@@ -232,6 +232,26 @@ describe("thinking blocks in a Messages history", () => {
     expect(calls.map((c) => c.status)).toEqual([400, 200]);
   });
 
+  /** TEST_SCENARIO: after the refusal the harness compacts the Session, so
+   * its history is shorter than the part that was refused and holds only
+   * Claude turns. The remembered length no longer describes it: the call
+   * goes out unchanged, with every thinking block. */
+  it("forgets the refused part when the history got shorter", async () => {
+    await post("compacted", switched);
+    seen.length = 0;
+    const compacted = [
+      user("summary of the conversation so far"),
+      assistant(thinking(CLAUDE), text("a")),
+      user("more"),
+      assistant(thinking(CLAUDE), text("b")),
+      user("last"),
+    ];
+    const r = await post("compacted", compacted);
+    expect(r.status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.messages).toEqual(compacted);
+  });
+
   /** TEST_SCENARIO: a GPT model behind a proxy answers with a redacted
    * thinking block, which Claude refuses in other words than a signed one.
    * That refusal is answered the same way, so the person sees a reply and

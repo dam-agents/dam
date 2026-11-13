@@ -249,7 +249,9 @@ const keep = keepHeaders;
  * the start; and a Claude model that refuses a call for a thinking block
  * another model wrote gets it once more without the earlier thinking, and the
  * router keeps how long that Session's history was, so its later calls leave
- * the thinking out of that part from the start and keep it in the rest.
+ * the thinking out of that part from the start and keep it in the rest. A
+ * history shorter than that was compacted or rewound, so the length is
+ * forgotten and the next refusal sets it again.
  */
 export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
@@ -410,11 +412,17 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       upstreamId: entry.upstreamId,
     });
     const thinkingKey = handle?.sessionId ?? null;
-    const foreignUpTo =
+    const imagesFitted = known ?? prepared;
+    const historyLength = Array.isArray(imagesFitted.messages)
+      ? imagesFitted.messages.length
+      : 0;
+    const remembered =
       checksThinking && thinkingKey !== null
         ? (foreignThinking.get(thinkingKey) ?? 0)
         : 0;
-    const imagesFitted = known ?? prepared;
+    if (thinkingKey !== null && remembered > historyLength)
+      foreignThinking.delete(thinkingKey);
+    const foreignUpTo = remembered > historyLength ? 0 : remembered;
     let sent =
       (foreignUpTo > 0
         ? withoutEarlierThinking(imagesFitted, foreignUpTo)
@@ -521,9 +529,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         refusalText = await upstream.text().catch(() => "");
         const imagesOut =
           known === null && refusesImages(refusalText) ? imageless() : null;
-        const history = Array.isArray(imagesFitted.messages)
-          ? imagesFitted.messages.length
-          : 0;
+        const history = historyLength;
         const thinkingOut =
           imagesOut === null && checksThinking && refusesThinking(refusalText)
             ? withoutEarlierThinking(imagesFitted, history)
