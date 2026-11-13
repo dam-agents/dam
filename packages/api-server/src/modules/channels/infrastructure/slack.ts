@@ -184,6 +184,9 @@ import type {
   SlackSlashCommand,
   SlackThreadRead,
   SlackUserInfo,
+  SlackMessageAction,
+  SlackMessageReplacement,
+  SlackReplaceMessage,
   SlackViewSubmission,
 } from "./slack-gateway.js";
 import {
@@ -224,6 +227,17 @@ import {
   parseAgentPostLink,
   parseDeletePostModal,
 } from "./slack-post-delete.js";
+import {
+  MAX_AGENTS_SHOWN,
+  commandMenu,
+  commandMenuNotice,
+  commandMenuResult,
+  confirmDisconnect,
+  ignoredAppsMenu,
+  isCommandMenuAction,
+  parseCommandMenuAction,
+  type CommandMenuState,
+} from "./slack-command-menu.js";
 import {
   aboveBoundary,
   formatChannelHistoryCursor,
@@ -4892,6 +4906,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .join(" ");
 
     await match(verb)
+      .with("", async () => {
+        await openCommandMenu(command, reply);
+      })
       .with("login", async () => {
         const existing = await identityLinks.resolve("slack", command.userId);
         if (existing) {
@@ -5060,10 +5077,215 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         else await handleWhisperCommand(command, ack);
       })
       .with(P.string, async () => {
-        await ack({
-          text: `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
-        });
+        await ack({ text: usageText() });
       })
+      .exhaustive();
+  }
+
+  function usageText(): string {
+    return `Usage: \`/${brandShort} who\`, \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} history [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`;
+  }
+
+  async function commandMenuState(
+    channelId: string,
+    slackUserId: string,
+  ): Promise<CommandMenuState> {
+    const [roster, invoker, ignored] = await Promise.all([
+      resolveRoster(channelId),
+      identityLinks.resolve("slack", slackUserId),
+      ignoredApps.list(channelId),
+    ]);
+    const shown = [
+      ...roster.filter((entry) => entry.isDefault),
+      ...roster.filter((entry) => !entry.isDefault),
+    ].slice(0, MAX_AGENTS_SHOWN);
+    const hidden = roster.filter((entry) => !shown.includes(entry));
+    const ownerOf = (entry: RosterEntry) =>
+      getInstanceOwner(entry.instanceName).catch(() => null);
+    const mayManageEntry = async (entry: RosterEntry): Promise<boolean> =>
+      invoker !== null &&
+      (invoker === entry.owner || invoker === (await ownerOf(entry)));
+    const agents = await Promise.all(
+      shown.map(async (entry) => {
+        const [agentOwner, ownerTag, identity, takes] = await Promise.all([
+          ownerOf(entry),
+          ownerMention(entry).catch(() => null),
+          resolveAgentIdentity(entry.instanceName),
+          takesWhispers(entry.instanceName),
+        ]);
+        return {
+          name: entry.name,
+          role: roleLine(identity.description),
+          ownerTag,
+          isDefault: entry.isDefault,
+          ambient: entry.ambient,
+          history: entry.history,
+          whispers:
+            takes === null
+              ? ("unknown" as const)
+              : takes
+                ? ("on" as const)
+                : ("off" as const),
+          mayManage:
+            invoker !== null &&
+            (invoker === entry.owner || invoker === agentOwner),
+          isOwner: invoker !== null && invoker === agentOwner,
+          sharesName: matchRosterName(roster, entry.name).matches.length > 1,
+        };
+      }),
+    );
+    return {
+      linked: invoker !== null,
+      agents,
+      hiddenAgents: hidden.length,
+      ignoredApps: ignored.map((app) => ({
+        label: appLabel(app),
+        commandName: app.name || app.botId,
+      })),
+      mayChangeIgnoredApps:
+        agents.some((agent) => agent.mayManage) ||
+        (await Promise.all(hidden.map(mayManageEntry))).some(Boolean),
+    };
+  }
+
+  function commandMenuCopy() {
+    return { brandName: brand.name, brandShort };
+  }
+
+  async function commandMenuMessage(
+    channelId: string,
+    slackUserId: string,
+    screen: (
+      state: CommandMenuState,
+      copy: { brandName: string; brandShort: string },
+    ) => SlackMessageReplacement = commandMenu,
+  ): Promise<SlackMessageReplacement> {
+    try {
+      return screen(
+        await commandMenuState(channelId, slackUserId),
+        commandMenuCopy(),
+      );
+    } catch (err) {
+      getLogger().warn(
+        { channelId, error: formatError(err) },
+        "slack.command_menu.state_unread",
+      );
+      return commandMenuNotice(
+        "Couldn't read this conversation's agents just now. Try again in a moment.",
+      );
+    }
+  }
+
+  async function openCommandMenu(
+    command: SlackSlashCommand,
+    reply: CommandReply,
+  ): Promise<void> {
+    await reply.ack();
+    const menu = await commandMenuMessage(command.channelId, command.userId);
+    try {
+      await reply.respond(menu.text, menu.blocks);
+    } catch (err) {
+      getLogger().warn(
+        { channelId: command.channelId, error: formatError(err) },
+        "slack.command_menu.open_failed",
+      );
+      await reply.respond(usageText()).catch(() => {});
+    }
+  }
+
+  async function runMenuCommand(
+    event: SlackMessageAction,
+    text: string,
+    deliver: (reply: string | null) => Promise<void>,
+    run: (
+      command: SlackSlashCommand,
+      ack: SlackAck,
+      respond: SlackRespond,
+    ) => Promise<void> = handleCommand,
+  ): Promise<void> {
+    let delivered = false;
+    const once = async (reply: string | null) => {
+      if (delivered) return;
+      delivered = true;
+      await deliver(reply);
+    };
+    try {
+      await run(
+        {
+          text,
+          userId: event.userId,
+          channelId: event.channelId,
+          teamId: event.teamId,
+          triggerId: "",
+          ...(event.channelName ? { channelName: event.channelName } : {}),
+        },
+        async (response) => {
+          if (response) await once(response.text);
+        },
+        once,
+      );
+    } catch (err) {
+      getLogger().warn(
+        { channelId: event.channelId, error: formatError(err) },
+        "slack.command_menu.action_failed",
+      );
+      await once("That didn't work. Try again in a moment.");
+    }
+    await once(null);
+  }
+
+  async function handleMessageAction(
+    event: SlackMessageAction,
+    replace: SlackReplaceMessage,
+  ): Promise<void> {
+    if (!event.ephemeral || !isCommandMenuAction(event.actionId)) return;
+    const action = parseCommandMenuAction(event.value);
+    if (!action) return;
+    const show = async (message: SlackMessageReplacement | null) => {
+      try {
+        await replace(message);
+      } catch (err) {
+        getLogger().warn(
+          { channelId: event.channelId, error: formatError(err) },
+          "slack.command_menu.update_failed",
+        );
+      }
+    };
+    const showResult = (reply: string | null) =>
+      show(reply ? commandMenuResult(reply) : null);
+    await match(action)
+      .with({ kind: "home" }, async () =>
+        show(await commandMenuMessage(event.channelId, event.userId)),
+      )
+      .with({ kind: "close" }, () => show(null))
+      .with({ kind: "ignored-apps" }, async () =>
+        show(
+          await commandMenuMessage(
+            event.channelId,
+            event.userId,
+            ignoredAppsMenu,
+          ),
+        ),
+      )
+      .with({ kind: "whisper" }, ({ agentName }) =>
+        runMenuCommand(
+          event,
+          `whisper ${agentName}`,
+          showResult,
+          handleWhisperCommand,
+        ),
+      )
+      .with({ kind: "confirm-disconnect" }, ({ agentName }) =>
+        show(confirmDisconnect(agentName)),
+      )
+      .with({ kind: "delete-help" }, ({ agentName }) =>
+        showResult(
+          `To delete one of \`${agentName}\`'s posts, run \`/${brandShort} delete <message link>\`. Get the link from the post's "Copy link" action.`,
+        ),
+      )
+      .with({ kind: "run" }, ({ command }) =>
+        runMenuCommand(event, command, showResult),
+      )
       .exhaustive();
   }
 
@@ -8491,6 +8713,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onMessageEdited: handleMessageEdited,
         onBotJoinedChannel: handleBotJoinedChannel,
         onViewSubmission: handleViewSubmission,
+        onMessageAction: handleMessageAction,
         onSessionStopped: handleSessionStopped,
       });
       if (!connected) {
