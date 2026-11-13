@@ -709,7 +709,7 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 	checker.check(ctx)
 	assert.False(t, node.spec("my-agent").Running)
 	up, _, _ = r.servedDesiredUp(ctx, "my-agent")
