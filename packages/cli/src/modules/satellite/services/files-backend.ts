@@ -51,6 +51,7 @@ const UNPACK_MAX_ENTRIES = 10_000;
 const SKIPPED_LIST_MAX = 50;
 const SKIPPED_LIST_BYTES = 16 * 1024;
 const ENTRY_LABEL_MAX = 200;
+const TAR_END_BYTES = 1024;
 const UNPACK_HEADROOM_BYTES = 1024 * 1024 * 1024;
 const TAR_HEADER_BYTES = 512;
 const TAR_TERMINATOR_BYTES = 1024;
@@ -978,9 +979,13 @@ export function createFilesBackend(input: {
       const unpackRoot = created.staged.path;
 
       const tar = createHash("sha256");
+      let tail = Buffer.alloc(0);
       const hashing = new Transform({
         transform(chunk: Buffer, _encoding, callback) {
           archived += chunk.length;
+          tail = Buffer.concat([tail, chunk.subarray(-TAR_END_BYTES)]).subarray(
+            -TAR_END_BYTES,
+          );
           if (archived > cap) {
             callback(new Error("too large"));
             return;
@@ -1143,6 +1148,22 @@ export function createFilesBackend(input: {
         throw new Phrased(
           failed(
             `${given} was not unpacked: the upload was empty — send a tar of the directory`,
+          ),
+        );
+      /**
+       * UNIT_BOUNDARY_DESCRIPTION: A tar that ends between two entries parses
+       * cleanly up to the cut, so the parser alone would publish part of the
+       * tree. Every byte the workspace declared must have arrived, and the body
+       * must end in the two zero blocks that close every tar.
+       */
+      if (
+        archived !== incoming.size ||
+        tail.length < TAR_END_BYTES ||
+        tail.some((byte) => byte !== 0)
+      )
+        throw new Phrased(
+          failed(
+            `${given} was not unpacked: the tar was cut short — ${archived} of ${incoming.size} bytes arrived, or it does not end the way a tar ends`,
           ),
         );
 

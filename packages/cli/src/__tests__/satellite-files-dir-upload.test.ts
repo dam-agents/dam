@@ -401,6 +401,40 @@ describe("a directory upload", () => {
     expect(await staging(root)).toEqual([]);
   });
 
+  it("publishes nothing when the tar stops cleanly between two entries", async () => {
+    const tar = await tarOf([
+      { name: "first.txt", body: "one" },
+      { name: "second.txt", body: "two" },
+    ]);
+    const { outcome } = await upload(tar.subarray(0, 1024));
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.output).toContain("cut short");
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+  });
+
+  it("publishes nothing when fewer bytes arrive than the workspace declared", async () => {
+    const tar = await tarOf([{ name: "first.txt", body: "one" }]);
+    const { outcome } = await upload(
+      tar,
+      {},
+      {
+        transfer: fakeFilesTransfer({
+          receives: tar,
+          declares: tar.length + 512,
+        }),
+      },
+    );
+
+    const done = finished(outcome);
+    expect(done.isError).toBe(true);
+    expect(done.output).toContain(`${tar.length} of ${tar.length + 512} bytes`);
+    expect(await exists(join(root, "tree"))).toBe(false);
+    expect(await staging(root)).toEqual([]);
+  });
+
   it("publishes nothing when the job is cancelled mid-stream", async () => {
     const tar = await tarOf([{ name: "x", body: "x".repeat(4096) }]);
     let backend: ReturnType<typeof backendOf> | null = null;

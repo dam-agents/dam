@@ -33,7 +33,7 @@ export interface RecordedTransfer extends FileTransfer {
  * which length the transfer declared them and under which claim.
  */
 export function fakeFilesTransfer(
-  options: { receives?: Buffer } = {},
+  options: { receives?: Buffer; declares?: number } = {},
 ): RecordedTransfer {
   const sent: RecordedSend[] = [];
   const received: RecordedReceive[] = [];
@@ -56,7 +56,7 @@ export function fakeFilesTransfer(
       const body = options.receives ?? Buffer.from("from the workspace");
       return Promise.resolve({
         stream: Readable.from([body]),
-        size: body.length,
+        size: options.declares ?? body.length,
       });
     },
   };
