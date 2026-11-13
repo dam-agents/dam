@@ -111,7 +111,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
 
   const header: SectionHeaderSlot = (actions) => (
     <SandboxHomeHeader
-      agent={agent}
       title={sectionEntry?.title ?? ""}
       description={sectionEntry?.description}
       actions={actions}

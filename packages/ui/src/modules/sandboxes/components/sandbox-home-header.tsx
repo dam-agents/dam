@@ -6,8 +6,6 @@ import type { AgentView } from "../../../types.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { SharedBadge } from "../../agents/components/shared-badge.js";
-import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
-import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { isSharedAgent, ownerLine } from "../../agents/lib/agent-editors.js";
 
 interface Props {
@@ -44,36 +42,15 @@ export function SandboxIdentity({ agent }: Props) {
 export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
 
 export function SandboxHomeHeader({
-  agent,
   title,
   description,
   actions,
-  showUpdate = true,
 }: {
-  agent: AgentView;
   title: string;
   description?: string;
   actions?: ReactNode;
-  showUpdate?: boolean;
 }) {
-  const { updateOne, updatingId } = useUpdateSandbox();
   return (
-    <PageHeader
-      title={title}
-      description={description}
-      actions={
-        <>
-          {showUpdate && (
-            <UpdateAvailableAction
-              agent={agent}
-              pending={updatingId === agent.id}
-              busy={updatingId !== null}
-              onUpdate={() => void updateOne(agent)}
-            />
-          )}
-          {actions}
-        </>
-      }
-    />
+    <PageHeader title={title} description={description} actions={actions} />
   );
 }

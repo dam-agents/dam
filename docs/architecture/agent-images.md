@@ -172,4 +172,3 @@ The bound is short because a moved Agent takes the new image when it wakes, and 
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home disk does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
-The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

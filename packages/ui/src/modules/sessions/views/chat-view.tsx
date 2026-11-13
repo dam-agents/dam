@@ -860,8 +860,8 @@ export function ChatView() {
           onRetry={loadingSession ? undefined : retryChannel}
         />
       )}
-      {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-      <ContributionGapNotice agentId={selectedAgent} />
+      {runtimeOutdated && <RuntimeOutdatedNotice />}
+      <ContributionGapNotice agent={agentView} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
     </>
   );
@@ -1231,7 +1231,7 @@ export function ChatView() {
               <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                 <ChatColumn>
                   {choice.kind === "outdated" ? (
-                    <SessionPairOutdatedNotice agentId={choice.agentId} />
+                    <SessionPairOutdatedNotice />
                   ) : choice.kind === "session" &&
                     selectedAgent &&
                     currentSession ? (

@@ -23,7 +23,6 @@ import {
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
-import { UpdateAvailableAction } from "./update-available-action.js";
 import { UsagePairs } from "./usage-pairs.js";
 
 const SECOND_LINE_ITEM =
@@ -35,10 +34,7 @@ interface Props {
   working?: boolean;
   usage: AgentUsage | null;
   temporaryCount?: number;
-  updatePending: boolean;
-  updateBusy: boolean;
   onSelect: () => void;
-  onUpdate: () => void;
   onConfigure: () => void;
   configureLabel: string;
 }
@@ -49,10 +45,7 @@ export function AgentRow({
   working,
   usage,
   temporaryCount,
-  updatePending,
-  updateBusy,
   onSelect,
-  onUpdate,
   onConfigure,
   configureLabel,
 }: Props) {
@@ -143,12 +136,6 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <UpdateAvailableAction
-          agent={agent}
-          pending={updatePending}
-          busy={updateBusy}
-          onUpdate={onUpdate}
-        />
         <Button
           variant="ghost"
           size="icon-sm"

@@ -1,13 +1,6 @@
 import { WarningAltFilled } from "@carbon/icons-react";
 
-import { Button } from "@/components/ui/button";
-
-import { useAgentUpdateAction } from "../../agents/hooks/use-update-sandbox.js";
-
-export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
-  const { agent, updateOne, pending } = useAgentUpdateAction(agentId);
-  if (!agent) return null;
-
+export function SessionPairOutdatedNotice() {
   return (
     <p
       role="status"
@@ -18,23 +11,7 @@ export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
         className="shrink-0 text-warning"
         aria-hidden
       />
-      <span>
-        This agent is outdated.
-        {agent.templateUpdate && (
-          <>
-            {" "}
-            <Button
-              variant="link"
-              size="inline"
-              disabled={pending}
-              onClick={() => void updateOne(agent)}
-            >
-              Update
-            </Button>{" "}
-            to be able to configure models.
-          </>
-        )}
-      </span>
+      <span>This agent can&rsquo;t choose a model for a new session yet.</span>
     </p>
   );
 }

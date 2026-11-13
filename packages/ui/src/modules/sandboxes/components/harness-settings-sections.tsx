@@ -145,7 +145,7 @@ function HarnessSettings({
         <p className="text-sm text-muted-foreground">
           {loading
             ? "Loading settings…"
-            : "Settings unavailable. Start or upgrade the agent to read its settings."}
+            : "Settings unavailable. Start the agent to read its settings."}
           {!loading && (
             <button
               type="button"

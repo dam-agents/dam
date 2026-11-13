@@ -200,16 +200,6 @@ export function useRestartAgentMutation() {
   });
 }
 
-export function useUpgradeAgentMutation() {
-  return useMutation({
-    ...trpc.agents.upgrade.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't update agent",
-    },
-  });
-}
-
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),

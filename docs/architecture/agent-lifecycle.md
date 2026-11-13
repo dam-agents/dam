@@ -119,7 +119,6 @@ The api-server reports an update when an Agent's image differs from its Template
 Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
-A user may apply an upgrade sooner, confirming the target image and restart cost; the api-server refuses a target that changed since confirmation.
 A running machine restarts; a hibernated Agent takes the image on its next wake.
 No configuration is re-seeded: template env stays frozen to preserve user edits, and mount/storage changes still require recreating the Agent.
 A runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, closing the capability gap ([runtime-delivery](runtime-delivery.md#capability-negotiation)).
