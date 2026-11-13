@@ -5,6 +5,7 @@ import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackEdit, type SlackMessageChanged } from "./slack-edit.js";
+import { slackPostOrigin } from "./slack-post-origin.js";
 import { classifySlackSender } from "./slack-sender.js";
 import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
@@ -46,6 +47,7 @@ export interface BoltSlackGatewayDeps {
   appToken: string;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
+  companionAppIds: ReadonlySet<string>;
 }
 
 interface WorkspaceAuth {
@@ -146,30 +148,35 @@ function directMessageUserOf(
   return typeof channel.user === "string" ? channel.user : null;
 }
 
-function toSlackMessage(m: {
-  ts?: string;
-  user?: string;
-  text?: string;
-  blocks?: unknown;
-  attachments?: unknown;
-  edited?: unknown;
-  thread_ts?: string;
-  reply_count?: number;
-  latest_reply?: string;
-  subtype?: string;
-  bot_id?: string;
-  username?: string;
-  bot_profile?: { name?: string };
-  metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
-  files?: Array<{
-    id?: string;
-    name?: string;
-    title?: string;
-    mimetype?: string;
-    size?: number;
-    url_private?: string;
-  }>;
-}): SlackMessage {
+function toSlackMessage(
+  self: SlackSelf,
+  m: {
+    ts?: string;
+    user?: string;
+    text?: string;
+    blocks?: unknown;
+    attachments?: unknown;
+    edited?: unknown;
+    thread_ts?: string;
+    reply_count?: number;
+    latest_reply?: string;
+    subtype?: string;
+    bot_id?: string;
+    app_id?: string;
+    username?: string;
+    bot_profile?: { name?: string; app_id?: string };
+    metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
+    files?: Array<{
+      id?: string;
+      name?: string;
+      title?: string;
+      mimetype?: string;
+      size?: number;
+      url_private?: string;
+    }>;
+  },
+): SlackMessage {
+  const origin = slackPostOrigin(m, self);
   const metadata = m.metadata?.event_type
     ? {
         eventType: m.metadata.event_type,
@@ -204,6 +211,7 @@ function toSlackMessage(m: {
     ...((m.username ?? m.bot_profile?.name)
       ? { botName: m.username ?? m.bot_profile?.name }
       : {}),
+    ...(origin ? { origin } : {}),
     ...(metadata ? { metadata } : {}),
     ...(fileIds.length ? { fileIds } : {}),
     ...(attachments.length ? { attachments } : {}),
@@ -273,6 +281,18 @@ export function createBoltSlackGateway(
     };
     workspaces.set(teamId, fresh);
     return fresh;
+  }
+
+  async function selfOf(
+    workspace: SlackWorkspace,
+    botUserId?: string,
+  ): Promise<SlackSelf> {
+    const auth = await testedAuthFor(workspace);
+    return {
+      userId: botUserId ?? auth?.botUserId ?? null,
+      botId: auth?.botId ?? null,
+      companionAppIds: deps.companionAppIds,
+    };
   }
 
   async function tokenFor(teamId: SlackWorkspace): Promise<string | null> {
@@ -356,17 +376,6 @@ export function createBoltSlackGateway(
         },
       });
 
-      const selfOf = async (
-        workspace: SlackWorkspace,
-        botUserId: string | undefined,
-      ): Promise<SlackSelf> => {
-        const auth = await testedAuthFor(workspace);
-        return {
-          userId: botUserId ?? auth?.botUserId ?? null,
-          botId: auth?.botId ?? null,
-        };
-      };
-
       bolt.event("app_mention", async ({ event, context }) => {
         const workspace = event.team ?? context.teamId ?? NO_WORKSPACE;
         const sender = classifySlackSender(
@@ -413,7 +422,7 @@ export function createBoltSlackGateway(
             channel: msg.channel,
             channelType: msg.channel_type,
             teamId: workspace,
-            message: toSlackMessage(changed.message),
+            message: toSlackMessage(self, changed.message),
             files: (changed.message as { files?: SlackImageFile[] }).files,
           });
           return;
@@ -729,8 +738,9 @@ export function createBoltSlackGateway(
         ...(args.latest ? { latest: args.latest } : {}),
         ...(args.inclusive ? { inclusive: true } : {}),
       });
+      const self = await selfOf(args.teamId);
       return {
-        messages: (replies.messages ?? []).map(toSlackMessage),
+        messages: (replies.messages ?? []).map((m) => toSlackMessage(self, m)),
         hasMore: Boolean(
           replies.has_more || replies.response_metadata?.next_cursor,
         ),
@@ -760,7 +770,9 @@ export function createBoltSlackGateway(
             include_all_metadata: true,
           });
       const found = (page.messages ?? []).find((m) => m.ts === args.ts);
-      return found ? { ...toSlackMessage(found), ts: args.ts } : null;
+      return found
+        ? { ...toSlackMessage(await selfOf(args.teamId), found), ts: args.ts }
+        : null;
     },
 
     async getChannelHistory(args) {
@@ -768,6 +780,7 @@ export function createBoltSlackGateway(
       const token = await tokenFor(args.teamId);
       if (!token) return { messages: [], hasMore: false };
       const pageSize = Math.min(args.limit, CHANNEL_HISTORY_PAGE_SIZE);
+      const self = await selfOf(args.teamId);
       const newestFirst: SlackMessage[] = [];
       let cursor: string | undefined;
       for (;;) {
@@ -779,7 +792,9 @@ export function createBoltSlackGateway(
           ...(args.latest ? { latest: args.latest } : {}),
           ...(cursor ? { cursor } : {}),
         });
-        newestFirst.push(...(history.messages ?? []).map(toSlackMessage));
+        newestFirst.push(
+          ...(history.messages ?? []).map((m) => toSlackMessage(self, m)),
+        );
         cursor = history.response_metadata?.next_cursor || undefined;
         const olderRemain = Boolean(history.has_more || cursor);
         if (newestFirst.length >= args.limit) {

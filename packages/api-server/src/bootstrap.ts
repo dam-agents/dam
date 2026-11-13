@@ -1876,6 +1876,7 @@ export async function bootstrap() {
           appToken: slackAppToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
+          companionAppIds: new Set(config.slackCompanionAppIds),
         })
     : fakeSlackGateway
       ? () => fakeSlackGateway

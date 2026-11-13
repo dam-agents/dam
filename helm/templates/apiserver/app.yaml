@@ -289,6 +289,10 @@ spec:
             - name: SLACK_EMAIL_PAIRING_WORKSPACES
               value: {{ toJson . | quote }}
             {{- end }}
+            {{- with .Values.apiServer.slackCompanionAppIds }}
+            - name: SLACK_COMPANION_APP_IDS
+              value: {{ toJson . | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
