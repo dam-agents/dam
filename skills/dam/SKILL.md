@@ -1,11 +1,13 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
-  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
-  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
-  Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
-  A DAM agent that holds the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task the user picks or asks for, since it links the assistant's onboarding guide.
+  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
+  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page or into a command you hand them.
+  Its security advisory says how to set agents up so credentials stay out of reach and the user knows who acts as them.
+  It asks before it deletes anything and waits for the user's answer in a later message: a request to delete is not that answer.
+  Its map of the web app says where in the app each task is done, by the page the app shows.
+  A DAM agent holding the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -380,6 +382,8 @@ A schedule that only checks whether something changed should carry `--precheck <
 
 ### Connections
 
+In the web app, this is **Settings › Connections**, and the ones an agent may use are on its own page under **Connections**.
+
 ```sh
 dam connection templates
 dam connection list my-agent
@@ -479,6 +483,8 @@ dam skill list my-agent
 ```
 
 ### Spend
+
+In the web app, **Home**'s **API spend** card shows the last months, and **Usage details** opens Settings › Usage for any dates they pick.
 
 ```sh
 dam spend status my-agent
