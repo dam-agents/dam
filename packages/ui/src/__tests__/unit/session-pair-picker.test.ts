@@ -1384,6 +1384,43 @@ describe("a config page's picker", () => {
 });
 
 describe("a pick that follows a default", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: one family tier, two names for its model: CurveBender's and IBM's. */
+  const tierCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("cb", "rits/zai-org/glm-5-3")],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "ibm",
+        alias: "ibm",
+        template: "ibm-litellm",
+        displayName: "IBM",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("ibm", "zai-org/glm-5-3")],
+      },
+    ],
+  });
   const deepseek = "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash";
   const glm = "cb/rits/zai-org/glm-5-3";
   const shared = {
@@ -1495,6 +1532,116 @@ describe("a pick that follows a default", () => {
     pickMenu(node, "Harness", "Claude Code");
     expect(target.onChoose).toHaveBeenCalledWith(
       expect.objectContaining({ harness: "claude-code", provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: saving a pick on the shared CurveBender as a profile keeps that Connection's template, so the profile runs where the pick does and never on the own-key twin. */
+  it("saves a pick as a profile on its own template", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: deepseek };
+    const node = mount(picker());
+    openMore(node);
+    click(node, "Save as profile");
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Profile name"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Shared review");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(document.body, "Save profile");
+    expect(state.profileMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+        model: deepseek,
+      }),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a schedule or a channel following a profile on the shared CurveBender reads that Connection, not the own-key twin that also lists the model. */
+  it("reads a profile's own Connection beside its twin", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(
+      picker({
+        target: targetOf({ slots: { ...emptySlots, profileId: "p1" } }),
+      }),
+    );
+    click(node, "Back to custom");
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a profile takes the Connection of the profile's template, so a pick on the shared CurveBender never moves to the own-key twin that lists the same model. */
+  it("picks a profile onto its own Connection", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    click(node, "Use a profile");
+    profileRow(node, "Shared review");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a family tier that holds another provider's name for the model still reads the pair's own model, so a stale Connection never names the row while the pair holds another provider's name for it. */
+  it("reads the pair's model inside a shared family tier", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Curve");
+  });
+
+  /** TEST_SCENARIO: a harness switch inherits the default's model only where the Connection it keeps offers the model; otherwise it takes that Connection's first model instead of moving the pick to another Connection. */
+  it("keeps the chosen Connection when it does not offer the default's model", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "pi", provider: "ibm", model: null },
+      },
+    });
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        provider: "ibm",
+        model: "ibm/zai-org/glm-5-3",
+      }),
       expect.anything(),
       expect.anything(),
     );

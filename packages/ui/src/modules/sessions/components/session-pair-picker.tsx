@@ -331,10 +331,14 @@ export function SessionPairPicker(props: Props) {
   const lentSubagent = referenceProfile
     ? lentSubagentOfProfile(referenceProfile)
     : null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile names a provider template, so the panel and a pick from it name the Connection of that template the destination holds, not the first one that lists the model. */
   const targetPrimary = referenceProfile
     ? {
         harness: referenceProfile.harness,
-        provider: null,
+        provider:
+          providers.granted.find(
+            (p) => p.templateId === referenceProfile.providerTemplate,
+          )?.id ?? null,
         model: referenceProfile.model,
         settings: referenceProfile.settings,
       }
@@ -549,8 +553,8 @@ export function SessionPairPicker(props: Props) {
     providerTemplate: providers.owned.find(
       (p) =>
         p.id ===
-        (findModel(groups, pair?.model ?? null)?.group.connectionId ??
-          pair?.provider),
+        (pair?.provider ??
+          findModel(groups, pair?.model ?? null)?.group.connectionId),
     )?.templateId,
     subagent: subagentFor(
       pair,
@@ -687,10 +691,10 @@ export function SessionPairPicker(props: Props) {
         : undefined;
     const profileProvider =
       explicitProvider ??
-      findModel(groups, profile.model)?.group.connectionId ??
-      connectionId ??
       providers.granted.find((p) => p.templateId === profile.providerTemplate)
         ?.id ??
+      findModel(groups, profile.model)?.group.connectionId ??
+      connectionId ??
       null;
     const values = {
       ...profileValues(pair, profile, profileCapability),

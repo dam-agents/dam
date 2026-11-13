@@ -225,12 +225,17 @@ export function SessionModelPicker({
     entry === null
       ? providerId !== undefined && runsHarness(harness, providerId)
       : entry.options.some((o) => o.group.connectionId === providerId);
-  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option on the pair's own Connection, even where another Connection of the same alias lists the same model name; an unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option that is both on the pair's own Connection and the pair's model, even where another Connection of the same alias lists the same model name; a family tier can hold another provider's name for the model, so the model alone comes next and the Connection alone after it. An unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
   const currentOption =
+    currentEntry?.options.find(
+      (o) =>
+        o.group.connectionId === pair?.provider &&
+        sameModel(o.model.name, model),
+    ) ??
+    currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options.find(
       (o) => o.group.connectionId === pair?.provider,
     ) ??
-    currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options[0];
   const aliasProvider =
     model !== null ? providerOfModel(model, owned) : undefined;
@@ -436,7 +441,7 @@ export function SessionModelPicker({
         : offered.find((entry) =>
             entry.options.some((o) => sameModel(o.model.name, model)),
           );
-    const kept = current ?? inheritedEntry(offered, undefined);
+    const kept = current ?? inheritedEntry(offered, nextProvider?.id);
     const keptOption =
       kept?.options.find((o) => o.group.connectionId === nextProvider?.id) ??
       kept?.options[0];
