@@ -28,7 +28,9 @@ Icons come from `@carbon/icons-react`.
 | Restart agent                                               | `Restart`                                      |
 | Retry, update, reload                                       | `Renew`                                        |
 | Files destination                                           | `Folder`                                       |
-| Processes destination                                       | `Activity`                                     |
+| Agent menu: Rename, Artifacts, File tree, Git Changes       | `Edit`, `DataCategorical`, `Folder`, `Branch`  |
+| Agent menu: Browser, Processes                              | `Globe`, `Activity`                            |
+| Agent menu: Add editors, Agent settings                     | `Share`, `Settings`                            |
 | Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
 | "About X" hint                                              | `Information`                                  |

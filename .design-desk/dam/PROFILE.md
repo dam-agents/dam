@@ -22,8 +22,8 @@ Folder names in the code are internal: `sandboxes` is an agent's settings modal,
 ## Main screens
 
 - **Home** — what changed since the user last looked: agents, usage, spend.
-- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from its top bar, and a composer whose + menu reaches the agent's skills, schedules and connections.
-- **An agent's settings** — its harness, model, connections, schedules, skills, login items and environments, in one modal over whatever is on screen, which every wrench and the agent's name in the chat's top bar open; there is no settings page.
+- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from the agent menu on the agent's name, and a composer whose + menu reaches the agent's skills, schedules and connections.
+- **An agent's settings** — its harness, model, connections, schedules, skills, login items and environments, in one modal over whatever is on screen, which every wrench and the chat's agent menu open; there is no settings page.
 - **Artifacts** — the library of published work, with sharing.
 - **Starter kits** — ready setups an agent is created from.
 - **Settings** — providers, profiles, connections, API keys, usage, appearance.

@@ -6,7 +6,12 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { useUpdateAgent } from "../../agents/api/mutations.js";
+import {
+  AgentAvatar,
+  resolveCharacter,
+} from "../../agents/components/avatar/agent-avatar.js";
+import { AvatarPicker } from "../../agents/components/avatar/avatar-picker.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import {
   agentSettingsPath,
@@ -61,6 +66,25 @@ export function ConfigureAgentModal({ agent, initialSection, onClose }: Props) {
 }
 
 /* UNIT_BOUNDARY_DESCRIPTION: the modal's banner, as the design draws it: the Agent's avatar and name on the left, read-only, and the close button on the right; a screen reader hears "<name> settings". */
+/* UNIT_BOUNDARY_DESCRIPTION: the banner's avatar is the avatar picker, as the design's chat refresh draws it; the General section keeps its own picker beside the name. */
+function BannerAvatar({ agent }: { agent: AgentView }) {
+  const change = useUpdateAgent();
+  const avatar =
+    (change.isPending ? change.variables.avatar : undefined) ?? agent.avatar;
+  const current =
+    avatar?.startsWith("emoji:") || avatar?.startsWith("image:")
+      ? avatar
+      : resolveCharacter(agent.name, avatar);
+  return (
+    <AvatarPicker
+      value={current}
+      onChange={(next) => change.mutate({ id: agent.id, avatar: next })}
+    >
+      <AgentAvatar name={agent.name} avatar={avatar} size={28} />
+    </AvatarPicker>
+  );
+}
+
 function SettingsBanner({
   agent,
   onClose,
@@ -74,14 +98,16 @@ function SettingsBanner({
       className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3"
       data-dialog-noautofocus
     >
-      <h2
-        id={labelId}
-        aria-label={`${agent.name} settings`}
-        className="flex min-w-0 items-center gap-3 text-sm font-semibold text-foreground"
-      >
-        <AgentAvatar name={agent.name} avatar={agent.avatar} size={24} />
-        <span className="truncate">{agent.name}</span>
-      </h2>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <BannerAvatar agent={agent} />
+        <h2
+          id={labelId}
+          aria-label={`${agent.name} settings`}
+          className="min-w-0 truncate text-sm font-semibold text-foreground"
+        >
+          {agent.name}
+        </h2>
+      </div>
       <Button
         variant="ghost"
         size="icon-sm"

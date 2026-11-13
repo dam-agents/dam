@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width. A person with no stored choice sees both closed; a stored choice still wins. On a desktop the Show files, Show artifacts and, with processes on, Show processes icons right after the agent's name in the top bar open and close them, an open one drawn as the design's neutral square, the column beside the conversation draws only the open sections and is gone while none is open, and two open sections stack in it with a divider between them; a section's X closes it. A phone keeps every section in its own screen, each folding from its header.
+// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width; a stored choice still wins. On a desktop the column beside the conversation, 320 px as the design's chat refresh draws it, holds only the open ones and is gone while none is, two open ones stack with a divider, and a section's X closes it; Processes is never in it, since it docks beside the conversation instead. The thin strip across the top shows its border while anything is open beside the conversation. A phone keeps every section, Processes too, in a screen of its own, each folding from its header.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,12 +61,8 @@ const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 const { createArtifactsSlice } =
   await import("../../modules/artifacts/store.js");
 const { createFilesSlice } = await import("../../modules/files/store.js");
-const { createProcessesSlice } =
-  await import("../../modules/processes/store.js");
 const { ClassicChatLayout } =
   await import("../../modules/sessions/components/classic-chat-layout.js");
-const { ClassicChatIdentity } =
-  await import("../../modules/sessions/components/classic-chat-identity.js");
 const { useStore } = await import("../../store.js");
 
 let host: HTMLDivElement;
@@ -76,37 +72,29 @@ function render(node: ReactNode) {
   act(() => root.render(createElement(TooltipProvider, null, node)));
 }
 
-function layout(processesEnabled = false) {
+function layout(processesEnabled = false, panel: "dock" | null = null) {
   return createElement(ClassicChatLayout, {
-    identity: null,
+    identity: createElement("span", { "data-testid": "identity" }),
     status: null,
+    activity: createElement("span", { "data-testid": "activity" }),
     notices: createElement("p", { "data-testid": "notices" }),
     agentId: "agent-a",
     agentName: "Alpha",
     processesEnabled,
     onOpenFile: () => {},
-    panel: null,
+    panel,
     dockHiddenOnPhone: false,
-    dock: null,
+    dock: panel && createElement("div", { "data-testid": "dock" }),
     maximizable: null,
     onClosePanel: () => {},
     children: createElement("div", { "data-testid": "conversation" }),
   });
 }
 
-function identity(processesEnabled = false) {
-  return createElement(ClassicChatIdentity, {
-    agent: null,
-    name: "Alpha",
-    display: null,
-    onConfigure: () => {},
-    processesEnabled,
-  });
-}
-
 const byTestId = (id: string) =>
   host.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 const column = () => byTestId("chat-sections")!;
+const strip = () => byTestId("chat-top-strip")!;
 const shownSections = () =>
   [...column().querySelectorAll("section")].map((s) =>
     s.getAttribute("data-testid"),
@@ -142,104 +130,42 @@ describe("the default for a person with no stored choice", () => {
         ({
           ...createFilesSlice(...a),
           ...createArtifactsSlice(...a),
-          ...createProcessesSlice(...a),
         }) as PlatformStore,
     );
-    const { filesSectionOpen, artifactsSectionOpen, processesSectionOpen } =
-      store.getState();
-    return {
-      files: filesSectionOpen,
-      artifacts: artifactsSectionOpen,
-      processes: processesSectionOpen,
-    };
+    const { filesSectionOpen, artifactsSectionOpen } = store.getState();
+    return { files: filesSectionOpen, artifacts: artifactsSectionOpen };
   }
 
-  // TEST_SCENARIO: nothing is stored, so Files, Artifacts and Processes all start closed and the conversation has the width.
-  it("starts every section closed", () => {
-    expect(sectionsOnStart()).toEqual({
-      files: false,
-      artifacts: false,
-      processes: false,
-    });
+  // TEST_SCENARIO: nothing is stored, so both sections start closed and the conversation has the width.
+  it("starts Files and Artifacts closed", () => {
+    expect(sectionsOnStart()).toEqual({ files: false, artifacts: false });
   });
 
-  // TEST_SCENARIO: the person opened Artifacts before, and the stored choice brings it back open.
+  // TEST_SCENARIO: the person opened both before, and the stored choice brings them back open.
   it("keeps a section the person left open", () => {
     localStorage.setItem("platform-artifacts-open", "1");
     localStorage.setItem("platform-files-open", "1");
-    expect(sectionsOnStart()).toEqual({
-      files: true,
-      artifacts: true,
-      processes: false,
-    });
-  });
-});
-
-describe("the top bar's section icons", () => {
-  // TEST_SCENARIO: both sections are closed, so neither icon is pressed; a click on each opens its section and stores the choice, and a second click closes it again.
-  it("open and close their section", () => {
-    render(identity());
-    const files = byTestId("toggle-files-section")!;
-    const artifacts = byTestId("toggle-artifacts-section")!;
-    expect(files.getAttribute("aria-label")).toBe("Show files");
-    expect(artifacts.getAttribute("aria-label")).toBe("Show artifacts");
-    expect(files.getAttribute("aria-pressed")).toBe("false");
-    expect(artifacts.getAttribute("aria-pressed")).toBe("false");
-
-    click(artifacts);
-    expect(useStore.getState().artifactsSectionOpen).toBe(true);
-    expect(artifacts.getAttribute("aria-pressed")).toBe("true");
-    expect(artifacts.className).toContain("aria-pressed:bg-muted");
-    expect(artifacts.className).not.toMatch(/accent/);
-    expect(localStorage.getItem("platform-artifacts-open")).toBe("1");
-
-    click(files);
-    expect(useStore.getState().filesSectionOpen).toBe(true);
-
-    click(artifacts);
-    expect(useStore.getState().artifactsSectionOpen).toBe(false);
-    expect(artifacts.getAttribute("aria-pressed")).toBe("false");
-  });
-
-  // TEST_SCENARIO: the Agent's processes are off, so there is no Processes section and no icon for it.
-  it("offers no Processes icon while processes are off", () => {
-    render(identity());
-    expect(byTestId("toggle-processes-section")).toBeNull();
-  });
-
-  // TEST_SCENARIO: the person closed Processes with its X; the top bar's Show processes icon, drawn from the same section list as the column, opens it again.
-  it("opens a closed Processes section again", () => {
-    useStore.setState({ processesSectionOpen: true });
-    render(createElement("div", null, identity(true), layout(true)));
-    expect(shownSections()).toEqual(["section-processes"]);
-    click(host.querySelector('[aria-label="Close processes"]'));
-    expect(shownSections()).toEqual([]);
-
-    const processes = byTestId("toggle-processes-section")!;
-    expect(processes.getAttribute("aria-label")).toBe("Show processes");
-    expect(processes.getAttribute("aria-pressed")).toBe("false");
-    click(processes);
-    expect(useStore.getState().processesSectionOpen).toBe(true);
-    expect(shownSections()).toEqual(["section-processes"]);
+    expect(sectionsOnStart()).toEqual({ files: true, artifacts: true });
   });
 });
 
 describe("the column beside the conversation on a desktop", () => {
   // TEST_SCENARIO: no section is open, so the column draws none and is hidden, and the notices move above the conversation.
   it("is gone while no section is open", () => {
-    render(layout(true));
+    render(layout());
     expect(shownSections()).toEqual([]);
     expect(column().className).toContain("md:!hidden");
     expect(column().contains(byTestId("notices"))).toBe(false);
     expect(byTestId("notices")).not.toBeNull();
   });
 
-  // TEST_SCENARIO: only Artifacts is open, so the column draws it alone, with its X and no fold.
+  // TEST_SCENARIO: only Artifacts is open, so the column draws it alone, 320 px wide, with its X and no fold.
   it("draws only the open section", () => {
     useStore.setState({ artifactsSectionOpen: true });
-    render(layout(true));
+    render(layout());
     expect(shownSections()).toEqual(["section-artifacts"]);
     expect(column().className).not.toContain("md:!hidden");
+    expect(column().className).toContain("md:w-[320px]");
     expect(byTestId("section-artifacts")!.dataset.folds).toBe("false");
   });
 
@@ -263,23 +189,39 @@ describe("the column beside the conversation on a desktop", () => {
     expect(shownSections()).toEqual([]);
     expect(column().className).toContain("md:!hidden");
   });
+
+  // TEST_SCENARIO: the Agent's processes are on and Files and Artifacts are closed; Processes docks beside the conversation instead, so the column stays gone.
+  it("never holds Processes", () => {
+    render(layout(true));
+    expect(shownSections()).toEqual([]);
+    expect(column().className).toContain("md:!hidden");
+  });
 });
 
-describe("the top bar's left cell", () => {
-  // TEST_SCENARIO: the cell keeps the same borders whether a section is open or not, transparent while none is, so opening one never moves the top bar's icons.
-  it("keeps its geometry when a section opens", () => {
+describe("the chat's header and the strip above it", () => {
+  // TEST_SCENARIO: the agent menu sits in the conversation's own header, and the notifications live in the strip across the top.
+  it("put the agent menu beside the conversation and the bell on top", () => {
     render(layout());
-    const cell = () => host.querySelector("header > div")!;
-    expect(cell().className).toContain("md:border-r md:border-b");
-    expect(cell().className).toContain("md:border-transparent");
+    const header = host.querySelector("header")!;
+    expect(header.contains(byTestId("identity"))).toBe(true);
+    expect(header.parentElement!.contains(byTestId("conversation"))).toBe(true);
+    expect(strip().contains(byTestId("activity"))).toBe(true);
+  });
+
+  // TEST_SCENARIO: nothing is open beside the conversation, so the strip's border is transparent; a section or a docked panel draws it.
+  it("draws the strip's border only while something is open", () => {
+    render(layout());
+    expect(strip().className).toContain("border-transparent");
     act(() => useStore.setState({ filesSectionOpen: true }));
-    expect(cell().className).toContain("md:border-r md:border-b");
-    expect(cell().className).toContain("md:border-border");
+    expect(strip().className).toContain("border-border");
+    act(() => useStore.setState({ filesSectionOpen: false }));
+    render(layout(false, "dock"));
+    expect(strip().className).toContain("border-border");
   });
 });
 
 describe("the sections screen on a phone", () => {
-  // TEST_SCENARIO: a phone opens the column as a screen of its own, so it draws every section, closed ones too, and each folds from its header instead of closing with an X.
+  // TEST_SCENARIO: a phone opens the column as a screen of its own, so it draws every section, Processes too, closed ones included, and each folds from its header instead of closing with an X.
   it("draws every section, each folding from its header", () => {
     viewport.desktop = false;
     render(layout(true));

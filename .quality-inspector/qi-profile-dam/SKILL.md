@@ -30,12 +30,12 @@ Builds published before these accounts were added have only `qa-owner`; there an
 ## Vocabulary a user sees
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
-  In the chat's top bar, *Show files* (a folder) and *Show artifacts* (a diagram), right after the agent's name, open its Files and Artifacts sections beside the conversation, stacked when several are open; both start closed for an account that never opened them, and each stays as the account last left it.
-  With the agent's processes on, *Show processes* opens the Processes section the same way; it starts closed too.
-  *Show changes* appears only once the agent has a repository; it never shows first and then goes.
+  In the chat's header the agent's avatar, name and state dot open the agent menu: *Rename* (a dialog), *Artifacts* and *File tree*, which open those sections beside the conversation, stacked when both are open, and show a check while open, *Browser* and *Processes* for an agent that has them, *Git Changes* once the agent has a repository, *Add editors* and *Agent settings*.
+  Files and Artifacts start closed for an account that never opened them, and each stays as the account last left it; the processes and the running count (*N running*) open in a panel beside the conversation.
+  The notifications bell sits in a thin strip across the top of the chat.
   A new chat's empty message box shows example prompts one after another, with a *Tab* hint; Tab puts the one showing in the box, and the box's placeholder (its accessible name) is still *Message…*.
-  The agent's avatar and name at the start of the chat's top bar are one button, *<name> settings*, with the tooltip *Agent settings*, that opens the agent's settings in a dialog over the chat; its banner shows the agent's avatar and name, and its General section starts with the agent's rename and avatar picker.
-  Every wrench, *Agent settings* — the chat's top bar, an agent's row in the sidebar, an agent card on Home — opens the same dialog over whatever is on screen, with no chat needed behind it.
+  The settings dialog's banner shows the agent's avatar, which opens the avatar picker, and its name; its General section starts with the agent's rename and avatar picker.
+  The agent menu's *Agent settings*, and every wrench, *Agent settings* — an agent's row in the sidebar, an agent card on Home — open the same dialog over whatever is on screen, with no chat needed behind it.
   The agent's name above a reply, the empty chat's avatar, the assistant greeting's settings link and the model picker's *Manage providers* open the same dialog; there is no agent settings page, and the dialog has no link to one.
   An old agent link, `/sandboxes/<agent id>/<section>` as in a Slack message, opens the agent's chat with the dialog on that section.
   The dialog lists every section as a title with its summary under it; a section that needs attention has a small orange dot.

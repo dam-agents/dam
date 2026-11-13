@@ -8,7 +8,7 @@ const RESTART_PENDING_HINT = "A settings change is waiting";
 
 export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
   const summary = useRunningProcesses(agentId);
-  const openSection = useOpenProcessesSection();
+  const openSection = useOpenProcessesSection(agentId);
   if (!summary) return null;
   const { running, keepingAwake, restartPending } = summary;
 
@@ -20,10 +20,17 @@ export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
       className="text-muted-foreground"
       onClick={openSection}
     >
-      <WorkingDots size="md" className="working-dots-slow text-success" />
+      <WorkingDots size="md" className="working-dots-slow text-accent" />
       <span>
         {running} running
-        {keepingAwake > 0 && ` · ${keepingAwake} keeping it awake`}
+        {keepingAwake > 0 && (
+          <>
+            {" · "}
+            <span className="text-warning-fg">
+              {keepingAwake} keeping it awake
+            </span>
+          </>
+        )}
       </span>
       {restartPending && (
         <span

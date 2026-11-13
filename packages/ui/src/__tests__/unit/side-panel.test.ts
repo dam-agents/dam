@@ -34,6 +34,7 @@ const NOTHING_DOCKED: DockedItems = {
   artifact: false,
   processOutput: false,
   changes: false,
+  processes: false,
   browser: false,
   delegation: false,
 };

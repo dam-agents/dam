@@ -7,7 +7,7 @@ It is the first surface a user sees, and the only one that spans every Agent the
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the page's own top corner, and opens Approvals as a drawer over the page.
 The [Get started](getting-started.md) checklist sits in the sidebar footer, so it is no surface of this page.
-In an Agent's chat the bell sits in the chat's top bar and opens that same drawer.
+In an Agent's chat the bell sits in the thin strip across the top of the chat and opens that same drawer.
 
 ## What Home reads
 

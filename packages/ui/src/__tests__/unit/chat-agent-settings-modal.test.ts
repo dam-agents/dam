@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: In an Agent's chat, the avatar and name at the start of the top bar are one button, with a tooltip and no caret, that opens the Agent's settings in a modal over the conversation; the top bar's wrench opens the same modal. Every one of them says settings: the button is "<name> settings" and the wrench "Agent settings"; the modal's banner shows the Agent's avatar and name, as the design draws it, and is named "<name> settings". The modal shows all of the Agent's sections, opens at the section it was asked for, and switches sections inside itself without changing the chat's address. There is no settings page beside it, so it offers no link to one, and a sign-in started in it returns to it on Connections. Its X closes it, opening one of the Agent's sessions from it closes it, and switching the chat to another Agent drops it, a switch through a loading chat too. The modal is the app's own, not the chat's: a sidebar row's wrench and a Home card's wrench, both named Agent settings, open the same modal with no chat behind it, and a sidebar wrench for another Agent opens that Agent's modal over a chat.
+// TEST_OVERVIEW: The Agent's settings open in one modal over whatever is on screen: from the chat's agent menu, a sidebar row's wrench or a Home card. Its banner shows the Agent's avatar, the avatar picker, and name, with no link to a page beside it; it switches sections in place, closes from its X or when one of the Agent's sessions opens from it, and belongs to the Agent it was opened for, so a chat that comes to show another Agent drops it.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,18 @@ vi.mock("../../modules/agents/components/avatar/agent-avatar.js", () => ({
   AgentAvatar: (props: { name: string }) =>
     createElement("span", { "data-testid": "avatar" }, props.name[0]),
   avatarMood: () => "awake",
+  resolveCharacter: () => "char",
+}));
+vi.mock("../../modules/agents/api/mutations.js", () => ({
+  useUpdateAgent: () => ({ isPending: false, mutate: () => {} }),
+}));
+vi.mock("../../modules/agents/components/avatar/avatar-picker.js", () => ({
+  AvatarPicker: (props: { children: ReactNode }) =>
+    createElement(
+      "button",
+      { type: "button", "data-testid": "banner-avatar-picker" },
+      props.children,
+    ),
 }));
 vi.mock("../../modules/agents/hooks/use-resolved-agent-display.js", () => ({
   useResolvedAgentDisplay: () => ({ state: "running" }),
@@ -69,8 +81,6 @@ vi.mock("../../modules/sandboxes/components/agent-configuration.js", () => ({
 }));
 
 const { TooltipProvider } = await import("../../components/ui/tooltip.js");
-const { ClassicChatIdentity, ClassicChatToolbar } =
-  await import("../../modules/sessions/components/classic-chat-identity.js");
 const { useAgentSettingsModal } =
   await import("../../modules/sessions/hooks/use-agent-settings-modal.js");
 const { AgentSettingsHost } =
@@ -148,82 +158,6 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe("the top bar's avatar and name", () => {
-  // TEST_SCENARIO: the avatar and the name are one button, named the Agent's settings, with no caret, as the design draws it; a click opens the settings.
-  it("open the Agent's settings over the chat", () => {
-    const onConfigure = vi.fn();
-    render(
-      createElement(ClassicChatIdentity, {
-        agent: ALPHA,
-        name: ALPHA.name,
-        display: null,
-        onConfigure,
-      }),
-    );
-    const button = host.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-agent-identity"]',
-    )!;
-    expect(button.getAttribute("aria-label")).toBe("Alpha settings");
-    expect(button.textContent).toContain("Alpha");
-    expect(button.querySelector('[data-testid="avatar"]')).not.toBeNull();
-    expect(button.querySelector("svg")).toBeNull();
-    expect(button.closest("h1")).not.toBeNull();
-    act(() => button.click());
-    expect(onConfigure).toHaveBeenCalledTimes(1);
-  });
-
-  // TEST_SCENARIO: the top bar's wrench, Agent settings, calls the same handler as the name, so both open the one settings modal.
-  it("share their destination with the wrench", () => {
-    const onConfigure = vi.fn();
-    render(
-      createElement(ClassicChatToolbar, {
-        agentId: ALPHA.id,
-        canOpenBrowser: false,
-        canShowChanges: false,
-        browserOpen: false,
-        changesOpen: false,
-        onToggleBrowser: () => {},
-        onToggleChanges: () => {},
-        onConfigure,
-      }),
-    );
-    act(() =>
-      host
-        .querySelector<HTMLButtonElement>('[aria-label="Agent settings"]')!
-        .click(),
-    );
-    expect(onConfigure).toHaveBeenCalledTimes(1);
-  });
-
-  // TEST_SCENARIO: the browser and changes buttons are the same 8×8 toggle as the sections' toggles, a pressed one drawn as the neutral square, and the wrench is the same 8×8 square, so all of them line up.
-  it("draw the browser and changes buttons as the sections' toggles", () => {
-    render(
-      createElement(ClassicChatToolbar, {
-        agentId: ALPHA.id,
-        canOpenBrowser: true,
-        canShowChanges: true,
-        browserOpen: true,
-        changesOpen: false,
-        onToggleBrowser: () => {},
-        onToggleChanges: () => {},
-        onConfigure: () => {},
-      }),
-    );
-    for (const label of ["Open browser", "Show changes"]) {
-      const button = host.querySelector<HTMLButtonElement>(
-        `[aria-label="${label}"]`,
-      )!;
-      expect(button.className).toContain("h-8 w-8");
-      expect(button.className).toContain("aria-pressed:bg-muted");
-    }
-    const wrench = host.querySelector<HTMLButtonElement>(
-      '[aria-label="Agent settings"]',
-    )!;
-    expect(wrench.className).toContain("h-8 w-8");
-    expect(wrench.className).toContain("rounded-lg");
-  });
-});
-
 describe("the settings modal", () => {
   // TEST_SCENARIO: opening the settings shows a modal titled for the Agent, on the section asked for, and a later OAuth sign-in returns to the chat.
   it("opens over the chat at the asked section", () => {
@@ -236,6 +170,16 @@ describe("the settings modal", () => {
     expect(configuration()!.dataset.return).toBe(
       "/sandboxes/agent-a/connections",
     );
+  });
+
+  // TEST_SCENARIO: the banner's avatar is the avatar picker, as the design's chat refresh draws it, beside the Agent's name.
+  it("offers the avatar picker in its banner", () => {
+    render(createElement(Harness, { agent: ALPHA }));
+    clickText("open settings");
+    expect(
+      dialog()!.querySelector('[data-testid="banner-avatar-picker"]'),
+    ).not.toBeNull();
+    expect(bannerName()).toBe("Alpha settings");
   });
 
   // TEST_SCENARIO: picking another section switches it inside the modal, and the chat's address stays.

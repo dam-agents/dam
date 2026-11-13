@@ -24,7 +24,7 @@ export const createProcessesSlice: StateCreator<
 > = (set) => ({
   processesSectionOpen: readPersistedFlag(
     PROCESSES_SECTION_OPEN_STORAGE_KEY,
-    false,
+    true,
   ),
   finishedListOpen: readPersistedFlag(FINISHED_LIST_OPEN_STORAGE_KEY, true),
   setProcessesSectionOpen: (open) => {

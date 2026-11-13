@@ -1,16 +1,11 @@
 import { useCallback } from "react";
 
-import { isMobile } from "../../../lib/breakpoints.js";
 import { useStore } from "../../../store.js";
 
-export function useOpenProcessesSection() {
-  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const setSectionOpen = useStore((s) => s.setProcessesSectionOpen);
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
-
+/** UNIT_BOUNDARY_DESCRIPTION: opens the Agent's processes docked beside the conversation, as the design's running count does. */
+export function useOpenProcessesSection(agentId: string | null) {
+  const setDock = useStore((s) => s.setDock);
   return useCallback(() => {
-    setSidePanelTab("processes");
-    setSectionOpen(true);
-    if (isMobile()) setMobileScreen("files");
-  }, [setSidePanelTab, setSectionOpen, setMobileScreen]);
+    if (agentId) setDock({ kind: "processes", agentId });
+  }, [agentId, setDock]);
 }

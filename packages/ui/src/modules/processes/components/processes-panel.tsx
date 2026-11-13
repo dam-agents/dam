@@ -10,7 +10,6 @@ interface Props {
   agentId: string | null;
   open: boolean;
   onToggle?: () => void;
-  onClose?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -20,7 +19,6 @@ export function ProcessesPanel({
   agentId,
   open,
   onToggle,
-  onClose,
   className,
   style,
   ref,
@@ -36,7 +34,6 @@ export function ProcessesPanel({
       title="Processes"
       open={open}
       onToggle={onToggle}
-      onClose={onClose}
       className={className}
       headerClassName="border-t border-border"
       style={style}
@@ -55,7 +52,12 @@ export function ProcessesPanel({
   );
 }
 
-function ProcessesSectionBody({
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Agent's processes list with the notices it
+ * shows while the Agent is stopped, unreachable or loading, shared by the
+ * Processes section and the docked Processes panel.
+ */
+export function ProcessesSectionBody({
   agentId,
   reach,
   data,
