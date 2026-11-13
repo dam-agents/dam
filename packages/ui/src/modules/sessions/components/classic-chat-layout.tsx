@@ -59,7 +59,8 @@ function PanelDivider({
  * the Agent's status) in the middle, and the docked item on the right, beside
  * the conversation. The strip's border shows while anything is open beside
  * the conversation. A phone keeps the sections, Processes too, in a screen of
- * their own, each folding from its header.
+ * their own, each folding from its header, and the bell in the header. The
+ * bell is drawn once, in one place or the other.
  * Approvals opens as a drawer over the chat, so the slot keeps whatever it
  * shows.
  */
@@ -160,7 +161,7 @@ export function ClassicChatLayout({
           anythingOpen ? "border-border" : "border-transparent",
         )}
       >
-        {activity}
+        {desktop && activity}
       </div>
 
       <div ref={setColumnsEl} className="flex flex-1 min-h-0">
@@ -238,9 +239,11 @@ export function ClassicChatLayout({
             <MobileMenuButton />
             {identity}
             <div className="flex min-w-0 items-center gap-2">{status}</div>
-            <div className="ml-auto flex shrink-0 items-center md:hidden">
-              {activity}
-            </div>
+            {!desktop && (
+              <div className="ml-auto flex shrink-0 items-center">
+                {activity}
+              </div>
+            )}
           </header>
           {(!desktop || !column.open) && notices}
           {children}

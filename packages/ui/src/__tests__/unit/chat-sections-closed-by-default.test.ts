@@ -206,6 +206,17 @@ describe("the chat's header and the strip above it", () => {
     expect(header.contains(byTestId("identity"))).toBe(true);
     expect(header.parentElement!.contains(byTestId("conversation"))).toBe(true);
     expect(strip().contains(byTestId("activity"))).toBe(true);
+    expect(host.querySelectorAll('[data-testid="activity"]')).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: a phone has no strip, so the bell sits at the end of the chat's header instead, still drawn once.
+  it("puts the bell in the header on a phone", () => {
+    viewport.desktop = false;
+    render(layout());
+    expect(host.querySelector("header")!.contains(byTestId("activity"))).toBe(
+      true,
+    );
+    expect(host.querySelectorAll('[data-testid="activity"]')).toHaveLength(1);
   });
 
   // TEST_SCENARIO: nothing is open beside the conversation, so the strip's border is transparent; a section or a docked panel draws it.
