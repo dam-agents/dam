@@ -75,7 +75,6 @@ export const templateSpecSchema = z
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
     imagePullSecretRef: z.string().optional(),
-    hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
     storageClass: z.string().optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),

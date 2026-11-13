@@ -17,7 +17,6 @@ const agent: AgentView = {
   starterKit: null,
   starterKitOnboarded: null,
   image: "registry.example/agents/default:old",
-  hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
   whisper: true,
   grantedSecretIds: [],

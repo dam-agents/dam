@@ -162,7 +162,7 @@ async function movedRoom(
   return room.availMiB;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and a per-agent hibernation timeout a spec can set is not what the sweep reads for a machine; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
+// UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and an Agent has no idle timeout of its own; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
 async function keepAwake(id: string): Promise<void> {
   await api.agents.wake.mutate({ id });
   await waitAgentState(api, id, "running");
