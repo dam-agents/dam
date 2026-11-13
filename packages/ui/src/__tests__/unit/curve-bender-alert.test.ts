@@ -10,11 +10,11 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 const { CurveBenderAlert } =
   await import("../../modules/sessions/components/curve-bender-alert.js");
-const { CURVE_BENDER_RESTRICTIONS_URL } =
-  await import("../../modules/providers/components/curve-bender-restriction.js");
 
 const DOCS_URL =
   "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/";
+const RESTRICTIONS_URL =
+  "https://cb-docs-curvebender.apps.fmaas-backend.fmaas.res.ibm.com/ai-platform-incubation/cb_docs/getting-started/model-usage-guidance/";
 
 type Variant = "setup" | "offer" | null;
 
@@ -43,7 +43,7 @@ function expectRestriction() {
   const link = [...container.querySelectorAll("a")].find(
     (a) => a.textContent === "restricted use cases",
   );
-  expect(link?.getAttribute("href")).toBe(CURVE_BENDER_RESTRICTIONS_URL);
+  expect(link?.getAttribute("href")).toBe(RESTRICTIONS_URL);
   expect(link?.getAttribute("target")).toBe("_blank");
   expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
 }
