@@ -71,7 +71,7 @@ Channel-relayed turns (Slack, Telegram) are watched for **liveness, not duration
 
 The api-server proxies all ACP traffic to agents; clients never dial an agent directly.
 It also wakes hibernated agents on demand before forwarding the first message of a session.
-Every relay and proxy verifies the caller — either a Keycloak JWT or an API key, dispatched by token prefix, taken from the `Authorization: Bearer` slot on HTTP and from a query parameter on a WebSocket upgrade, where a browser cannot set headers — and checks ownership, the operate scope and any key-to-agent binding at the public port.
+Every relay and proxy verifies the caller — either a Keycloak JWT or an API key, dispatched by token prefix, taken from the `Authorization: Bearer` slot on HTTP, and on a WebSocket upgrade from that slot or, where a browser cannot set headers, from a query parameter — and checks ownership, the operate scope and any key-to-agent binding at the public port.
 The caller's credential is then **stripped**, not translated: nothing is forwarded in its place, and agent-runtime authenticates nobody.
 It serves unauthenticated on the assumption that the runner's NetworkPolicy, admitting a machine's published ports only from api-server and controller pods, is the auth boundary, which is where that guarantee actually lives.
 See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).

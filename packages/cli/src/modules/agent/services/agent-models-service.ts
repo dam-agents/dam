@@ -7,7 +7,7 @@ import {
   type SessionDefaultsView,
   type SessionPair,
 } from "api-server-api";
-import type { HarnessCatalogView } from "agent-runtime-api";
+import type { HarnessCatalogView, ToolApproval } from "agent-runtime-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
@@ -47,6 +47,10 @@ export interface AgentModelsService {
   clearDefault(
     agentId: string,
     kind: Exclude<DefaultKind, "chat">,
+  ): Promise<ModelsResult<void>>;
+  setToolApproval(
+    agentId: string,
+    toolApproval: ToolApproval | null,
   ): Promise<ModelsResult<void>>;
   catalog(
     agentId: string,
@@ -93,6 +97,13 @@ export function createAgentModelsService(deps: {
         await deps.trpc.harnessConfig.clearSessionDefault.mutate({
           agentId,
           kind,
+        });
+      }),
+    setToolApproval: (agentId, toolApproval) =>
+      trpcCall(async () => {
+        await deps.trpc.harnessConfig.setToolApproval.mutate({
+          agentId,
+          toolApproval,
         });
       }),
     catalog: (agentId, harness) =>

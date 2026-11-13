@@ -74,6 +74,21 @@ export type RelayAdmission = (
   relay: { kind: string; permission: AgentPermission },
 ) => Promise<RelayAdmissionResult>;
 
+const BEARER = "Bearer ";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the credential a relay upgrade carries. A browser
+ * cannot set a header on a WebSocket, so it sends the credential as the
+ * `token` query parameter. The CLI sends it in `Authorization: Bearer` too,
+ * and the header wins: inside an Agent the CLI holds only a placeholder, and
+ * the Agent's gateway puts the real key in that header, never in the query.
+ */
+export function upgradeToken(req: IncomingMessage, url: URL): string | null {
+  const header = req.headers.authorization;
+  if (header?.startsWith(BEARER)) return header.slice(BEARER.length);
+  return url.searchParams.get("token");
+}
+
 export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
   return async (req, url, agentId, { kind: relayKind, permission }) => {
     const connectedAt = performance.now();
@@ -84,7 +99,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       sourceIp: upgradeSourceIp(req),
     };
 
-    const token = url.searchParams.get("token");
+    const token = upgradeToken(req, url);
     const admitted = await deps.authenticate(token, site);
     if (!admitted.ok) return admitted;
     const { user } = admitted.principal;

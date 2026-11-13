@@ -86,7 +86,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs or from a link to one kit's repository, never from cluster state.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes; the [presets](architecture/connection-presets.md) catalogue; [GitHub](architecture/github-connections.md) sign-ins and App installations and the Connections made from them.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
-- [harness configuration](architecture/harness-config.md) — harness defaults and the session model list: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
+- [harness configuration](architecture/harness-config.md) — defaults and the model list: how a choice reaches the harness's file, where models are found, what shows for a stopped agent; [tool approval](architecture/tool-approval.md).
 - [profiles](architecture/profiles.md) — an owner's named harness, provider and model settings: what follows one, and the default a new agent starts on.
 - [owner model catalog](architecture/owner-model-catalog.md) — every model an owner's providers offer, listed by the api-server with no agent, for every routed picker.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.

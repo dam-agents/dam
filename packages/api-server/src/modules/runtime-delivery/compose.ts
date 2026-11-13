@@ -31,6 +31,7 @@ import {
   type StateQueue,
 } from "./infrastructure/state-queue.js";
 import { createStateBuilder } from "./services/state-builder.js";
+import type { DamSkillFile } from "../connections/domain/dam-connection.js";
 import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
@@ -131,8 +132,8 @@ export interface ComposeRuntimeDeliveryOpts {
   resolveAgentName: (agentId: string) => Promise<string | null>;
   resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
-  /* UNIT_BOUNDARY_DESCRIPTION: the install's brand, so the skill the DAM Connection carries is read as this install writes it now. */
-  brandName: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now. */
+  damSkill: readonly DamSkillFile[];
 }
 
 export function composeRuntimeDelivery(
@@ -150,7 +151,7 @@ export function composeRuntimeDelivery(
   const stateBuilder = createStateBuilder({
     db: opts.db,
     outboxRepo,
-    brandName: opts.brandName,
+    damSkill: opts.damSkill,
     builtin,
     agentName: opts.resolveAgentName,
     egressDenies: (agentId) => async (host, method, path) =>

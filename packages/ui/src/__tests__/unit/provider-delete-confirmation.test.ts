@@ -111,7 +111,12 @@ vi.mock("../../modules/agents/hooks/use-root-driver.js", () => ({
   useRootDriver: () => null,
 }));
 vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
-  useProviderUsage: () => () => ({ defaults: [], profiles: [], schedules: [] }),
+  useProviderUsage: () => () => ({
+    defaults: [],
+    profiles: [],
+    schedules: [],
+    turnedOffSchedules: 0,
+  }),
 }));
 vi.mock("../../modules/sessions/components/detach-provider-message.js", () => ({
   DetachProviderMessage: () => "Revoke this agent's grant",

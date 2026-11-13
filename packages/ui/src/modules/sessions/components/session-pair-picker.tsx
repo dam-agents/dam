@@ -578,11 +578,18 @@ export function SessionPairPicker(props: Props) {
     const provider = providers.granted.find((p) => p.id === id);
     return void showConfirm(
       <DetachProviderMessage
+        agentId={agentId ?? null}
         name={name}
         usage={
           provider
             ? usage(provider)
-            : { kinds: [], schedules: [], pages: [], profiles: [] }
+            : {
+                kinds: [],
+                schedules: [],
+                turnedOffSchedules: 0,
+                pages: [],
+                profiles: [],
+              }
         }
       />,
       `Disconnect ${name} from this agent?`,
@@ -835,6 +842,7 @@ export function SessionPairPicker(props: Props) {
         <ToolApprovalPicker
           capability={capability}
           settings={settings}
+          agentApproval={saved?.toolApproval}
           onChange={(changes) => {
             if (!agentId) return;
             setPair(agentId, {
