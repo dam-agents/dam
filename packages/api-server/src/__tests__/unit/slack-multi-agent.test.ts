@@ -720,7 +720,7 @@ describe("choosing the default agent in-chat", () => {
 
   it("lists default alongside the other commands in the usage help", async () => {
     const h = harness(both());
-    expect(await h.command("")).toContain("/dam default");
+    expect(await h.command("help")).toContain("/dam default");
   });
 });
 
