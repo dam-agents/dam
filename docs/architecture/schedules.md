@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -113,6 +113,7 @@ If that session is gone by then, *continue* runs the task in a fresh session ins
 An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply.
 Since an agent may create one from any Session, a scheduled one included (a retry, the next check-back), a buggy task could schedule itself without end; agent-created one-time schedules are therefore bounded by how many may wait at once and how many may be created in an hour, both deployment settings.
 Users are not bound by them.
+The web UI's schedule form offers one, beside Repeat, only with the `one-time-tasks` [experimental feature](features.md) on; without it the schedules list still shows each one-time task, as a row that can be deleted but not edited, so its owner can see and cancel work that will wake the Agent.
 A starter kit cannot declare one: an absolute moment means nothing in a kit applied at any time.
 
 ## Precheck

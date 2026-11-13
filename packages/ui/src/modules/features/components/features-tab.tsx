@@ -82,6 +82,18 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Pick which GitHub Enterprise host to connect to, and move a GitHub Enterprise sign-in to another host, on an install that offers more than one.",
   },
+  {
+    id: "chat-network-approvals",
+    label: "Network approvals in the chat",
+    description:
+      "Allow or deny an agent's waiting network request in the open conversation, above the message box. Without it, approvals wait in the approvals list and in notifications.",
+  },
+  {
+    id: "one-time-tasks",
+    label: "One-time tasks",
+    description:
+      "Create a schedule that runs once, at a set time or right away, in a session of its own, and edit one before it runs.",
+  },
 ];
 
 function FeatureRowCard({

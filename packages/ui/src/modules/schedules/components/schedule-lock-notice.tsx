@@ -34,6 +34,21 @@ export function scheduleLockNotice(
       ),
     };
   }
+  if (lock === "runs-once") {
+    return {
+      title: "This schedule runs once",
+      body: (
+        <div className="flex flex-col gap-3">
+          <p>
+            It runs a single time and then stops. It can&apos;t be edited here.
+          </p>
+          <p>
+            To change it, delete it and ask {sandboxName} in chat for a new one.
+          </p>
+        </div>
+      ),
+    };
+  }
   return {
     title: "This one-time task has already run",
     body: (
