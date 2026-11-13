@@ -327,8 +327,8 @@ Project-scope memory is not yet implemented.
 ### First-run bootstrap
 
 `@zhafron/pi-memory` copies its four empty templates and a `BOOTSTRAP.md` interview script into a home that holds no `MEMORY.md`.
-A `BOOTSTRAP.md` pending means every turn after it carries the interview script and a setup reminder, and the script asks what to name the agent, which the platform already decides.
-The seed carries a `MEMORY.md`, so a new agent skips the interview: its memory is injected from the first turn, and it asks a name and a role only when the user greets it with no task (`APPEND_SYSTEM.md`).
+While `BOOTSTRAP.md` exists, every turn carries the interview script and a setup reminder, and the script asks what to name the agent, which the platform already decides.
+The seed carries a `MEMORY.md`, so a new agent skips the interview: its memory is injected from the first turn, and it asks for the user's name and work only when the user greets it with no task (`APPEND_SYSTEM.md`).
 A home seeded before that file existed keeps its `BOOTSTRAP.md` until the user answers it; `APPEND_SYSTEM.md` tells the agent to skip the naming question there.
 
 ### Memory tool
