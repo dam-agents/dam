@@ -68,7 +68,10 @@ test("exchange messages with the agent", async ({ page }) => {
   });
 
   await test.step("the avatar picker opens on hover and closes when the pointer leaves", async () => {
-    const picker = page.getByTestId("avatar-picker");
+    // TEST_SCENARIO: the settings show the avatar picker twice, in the banner and at the top of General, as the design draws them; this step drives the General one.
+    const picker = page
+      .getByTestId("agent-general-identity")
+      .getByTestId("avatar-picker");
     const grid = page.getByRole("group", { name: "Avatar" });
     await picker.hover();
     await expect(grid).toBeVisible();
@@ -77,7 +80,9 @@ test("exchange messages with the agent", async ({ page }) => {
   });
 
   await test.step("Enter moves focus into the avatar picker and Escape returns it", async () => {
-    const picker = page.getByTestId("avatar-picker");
+    const picker = page
+      .getByTestId("agent-general-identity")
+      .getByTestId("avatar-picker");
     const grid = page.getByRole("group", { name: "Avatar" });
     await picker.press("Enter");
     await expect(grid.getByRole("button", { pressed: true })).toBeFocused();
