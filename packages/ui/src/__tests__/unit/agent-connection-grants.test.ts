@@ -11,6 +11,7 @@ const server = vi.hoisted(() => ({
   granted: [] as string[],
   writes: [] as { grant: string[]; revoke: string[] }[],
   release: [] as ((ok?: boolean) => void)[],
+  readGate: null as Promise<void> | null,
   access: undefined as
     | undefined
     | { role: "owner"; editors: string[] }
@@ -78,13 +79,16 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => {
     useAgentConnections: (agentId: string) =>
       useQuery({
         queryKey: trpc.connections.getAgentConnections.queryKey({ agentId }),
-        queryFn: async () => ({
-          connections: server.granted.map((connectionId) => ({
-            connectionId,
-            grantedAt: "2026-11-11T00:00:00Z",
-            preferred: false,
-          })),
-        }),
+        queryFn: async () => {
+          if (server.readGate) await server.readGate;
+          return {
+            connections: server.granted.map((connectionId) => ({
+              connectionId,
+              grantedAt: "2026-11-11T00:00:00Z",
+              preferred: false,
+            })),
+          };
+        },
         retry: false,
       }),
   };
@@ -128,6 +132,7 @@ async function releaseNext(ok = true) {
 beforeEach(() => {
   queryClient.clear();
   server.granted = ["c-gh"];
+  server.readGate = null;
   server.writes = [];
   server.release = [];
   server.access = { role: "owner", editors: [] };
@@ -227,9 +232,13 @@ describe("who may change the grants", () => {
 describe("the grant read", () => {
   // TEST_SCENARIO: the Agent's grants are still loading, so the hook says it has not loaded and holds no grant yet; once they arrive it holds the Agent's grants.
   it("reports loading until the grants arrive", async () => {
+    let open = () => {};
+    server.readGate = new Promise<void>((r) => (open = r));
     await render();
     expect(grants.loaded).toBe(false);
     expect(grants.grantedIds.size).toBe(0);
+    open();
+    server.readGate = null;
     await settle();
     expect(grants.loaded).toBe(true);
     expect([...grants.grantedIds]).toEqual(["c-gh"]);
