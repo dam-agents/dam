@@ -38,6 +38,7 @@ app/
       settings.json      ← pi config (→ ~/.pi/agent/)
       auth.json          ← placeholder credentials
       APPEND_SYSTEM.md   ← appended to the system prompt (global)
+      memory/MEMORY.md   ← a seeded memory file, so pi-memory never starts its first-run interview
 ```
 
 ## Platform instructions
@@ -325,9 +326,11 @@ Project-scope memory is not yet implemented.
 
 ### First-run bootstrap
 
-On first session, `@zhafron/pi-memory` seeds all four files with empty templates and a `BOOTSTRAP.md` interview script.
-The agent asks the user questions, overwrites the templates with real content, then deletes `BOOTSTRAP.md`.
-Normal memory injection resumes from the next session onward.
+`@zhafron/pi-memory` copies its four empty templates and a `BOOTSTRAP.md` interview script into a home that holds no `MEMORY.md`.
+While `BOOTSTRAP.md` exists, every turn carries the interview script and a setup reminder, and the script asks what to name the agent, which the platform already decides.
+The seed carries a `MEMORY.md`, so a new agent skips the interview: its memory is injected from the first turn, and it asks for the user's name and work only when the user greets it with no task (`APPEND_SYSTEM.md`).
+It must stay non-empty: a `MEMORY.md` with nothing in it injects nothing, and then pi-memory drops its `## Memory` tool instructions too.
+This holds for pi-memory 1.0.2, which tests only `MEMORY.md`; a bump must recheck it.
 
 ### Memory tool
 
@@ -345,7 +348,7 @@ mise run cluster:install        # first time
 mise run cluster:build -- agents    # rebuild after changes
 ```
 
-Create an agent from the **pi-agent** template in the Platform UI, open a session, and the bootstrap flow runs automatically.
+Create an agent from the **pi-agent** template in the Platform UI and open a session.
 
 ## Upgrading existing instances
 
@@ -355,3 +358,6 @@ Options:
 
 - Create a fresh instance (gets the new seed)
 - Delete `/home/agent/.initialized` in the machine and restart it
+
+A reseed does not finish a `BOOTSTRAP.md` an earlier image left pending, and it does not replace `APPEND_SYSTEM.md` either: the copy keeps a file that is already there.
+Such an agent keeps the old instructions and the interview until the user answers it or deletes `BOOTSTRAP.md`, and it keeps the codename until the owner deletes `~/.pi/agent/APPEND_SYSTEM.md` by hand.
