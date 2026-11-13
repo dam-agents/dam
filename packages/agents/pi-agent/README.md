@@ -329,7 +329,8 @@ Project-scope memory is not yet implemented.
 `@zhafron/pi-memory` copies its four empty templates and a `BOOTSTRAP.md` interview script into a home that holds no `MEMORY.md`.
 While `BOOTSTRAP.md` exists, every turn carries the interview script and a setup reminder, and the script asks what to name the agent, which the platform already decides.
 The seed carries a `MEMORY.md`, so a new agent skips the interview: its memory is injected from the first turn, and it asks for the user's name and work only when the user greets it with no task (`APPEND_SYSTEM.md`).
-A home seeded before that file existed keeps its `BOOTSTRAP.md` until the user answers it; `APPEND_SYSTEM.md` tells the agent to skip the naming question there.
+It must stay non-empty: a `MEMORY.md` with nothing in it injects nothing, and then pi-memory drops its `## Memory` tool instructions too.
+This holds for pi-memory 1.0.2, which tests only `MEMORY.md`; a bump must recheck it.
 
 ### Memory tool
 
@@ -358,4 +359,5 @@ Options:
 - Create a fresh instance (gets the new seed)
 - Delete `/home/agent/.initialized` in the machine and restart it
 
-A reseed does not finish a `BOOTSTRAP.md` an earlier image left pending: the memory directory is already initialized, so the agent still carries the interview script (without the naming question) until the user answers it or deletes `BOOTSTRAP.md`.
+A reseed does not finish a `BOOTSTRAP.md` an earlier image left pending, and it does not replace `APPEND_SYSTEM.md` either: the copy keeps a file that is already there.
+Such an agent keeps the old instructions and the interview until the user answers it or deletes `BOOTSTRAP.md`, and it keeps the codename until the owner deletes `~/.pi/agent/APPEND_SYSTEM.md` by hand.

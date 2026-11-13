@@ -1,6 +1,6 @@
 # MEMORY.md - Long-Term Memory
 
-This file stores crucial facts, decisions, and preferences that persist across sessions.
+This file stores crucial facts, decisions, and preferences that should persist across sessions.
 
 ## Technical Knowledge
 
