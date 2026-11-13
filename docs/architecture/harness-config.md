@@ -93,7 +93,7 @@ A setting always holds a value: one that neither the session nor its default nam
 A setting whose manifest default a person must approve stays the harness's own, since such a default would stall every unattended turn; its picker starts on the agent's configured value, else the manifest's `default`.
 A default the model does not take is not sent, e.g. an effort on Haiku 4.5; Haiku 5.5 takes it.
 The picker offers no unset choice, so a change always names a value the harness applies.
-A harness change in the picker keeps only the settings the new harness offers, each with a value it accepts for the model: effort carries by what it is, not its key (Claude Code's `effort`, Pi's `mode`), and a key another harness left behind is dropped on the session's next pick.
+A harness change keeps only the settings the new harness offers, effort carried over by meaning.
 The Config panel shows only the settings a harness keeps for all its sessions, such a setting among them; the others are chosen in a session or in its default.
 The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.
 A session that names no mode starts on the agent's tool approval, else on one the runtime derives from the catalog, whatever the agent's config file names — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
