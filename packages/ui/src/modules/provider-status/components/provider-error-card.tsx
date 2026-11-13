@@ -29,7 +29,7 @@ export function ProviderErrorCard({
   menu,
   className,
 }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const { title, message, hint, statusLink } = useProviderErrorCopy(
     templateId,
     interrupted,
@@ -67,7 +67,7 @@ export function ProviderErrorCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigateToSandboxHome(agentId, "providers")}
+              onClick={() => openAgentSettings(agentId, "providers")}
               data-testid="send-error-switch-provider"
             >
               Switch provider

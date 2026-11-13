@@ -132,7 +132,10 @@ import { BackgroundWorkIndicator } from "../components/background-work-indicator
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
-import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
+import {
+  ClassicChatIdentity,
+  ClassicChatToolbar,
+} from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import {
   ContinuedFromPrelude,
@@ -159,6 +162,7 @@ import {
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAgentSettingsModal } from "../hooks/use-agent-settings-modal.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
@@ -187,6 +191,7 @@ import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
+import { EXAMPLE_PROMPTS } from "../lib/example-prompts.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import { sendPreparation } from "../lib/send-preparation.js";
 import { applySettingChanges } from "../lib/session-settings.js";
@@ -291,7 +296,6 @@ export function ChatView() {
   const processesEnabled = useProcessesEnabled();
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const hasPendingPermission = useHasPendingPermission();
@@ -418,6 +422,7 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const { openSettings } = useAgentSettingsModal(agentView);
   const dialog = useStore((s) => s.dialog);
   /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
   const providerPromptOpen = providersModal ?? noProviders;
@@ -802,10 +807,11 @@ export function ChatView() {
     });
   const browserToggle = classicToggle("browser");
   const changesToggle = classicToggle("changes");
-  const handleConfigureSandbox = useCallback(() => {
-    if (!selectedAgent) return;
-    navigateToSandboxHome(selectedAgent);
-  }, [selectedAgent, navigateToSandboxHome]);
+  /* UNIT_BOUNDARY_DESCRIPTION: every way into the Agent's settings from its chat — the top bar's name and wrench, a reply's agent name, the empty chat's avatar, the greeting's link, and the model pickers' provider links at the Providers section — opens the same modal over the chat; the modal links to the full page. */
+  const handleConfigureSandbox = useCallback(
+    () => openSettings("setup"),
+    [openSettings],
+  );
 
   const handleBack = useCallback(() => {
     resetSession();
@@ -944,7 +950,7 @@ export function ChatView() {
                     <button
                       type="button"
                       onClick={handleConfigureSandbox}
-                      aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                      aria-label={`${selectedAgentName ?? "Agent"} settings`}
                       className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {agentView && (
@@ -1190,6 +1196,10 @@ export function ChatView() {
             emptyPlaceholder={
               greeting.kind === "greeting" ? greeting.copy.placeholder : null
             }
+            examples={
+              emptyChat && greeting.kind === "none" ? EXAMPLE_PROMPTS : null
+            }
+            onOpenSettings={openSettings}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)
@@ -1211,6 +1221,7 @@ export function ChatView() {
                       open={pairPickerOpen}
                       onOpenChange={setPairPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
+                      onManageProviders={() => openSettings("providers")}
                     />
                   ) : (
                     <SessionPairPicker
@@ -1291,6 +1302,7 @@ export function ChatView() {
                           void configureSession(change)
                         }
                         onNewSession={() => handleNewSession(true)}
+                        onManageProviders={() => openSettings("providers")}
                       />
                       <SessionPullRequests
                         repositories={currentSession.repositories}
@@ -1302,9 +1314,7 @@ export function ChatView() {
                       size="inline"
                       tone="muted"
                       className="pl-3 text-sm"
-                      onClick={() =>
-                        navigateToSandboxHome(choice.agentId, "providers")
-                      }
+                      onClick={() => openSettings("providers")}
                     >
                       {harnessCurrent?.model
                         ? `${harnessCurrent.model} · Configure defaults`
@@ -1339,28 +1349,33 @@ export function ChatView() {
         identity={
           <ClassicChatIdentity
             agent={agentView}
-            agentId={selectedAgent}
             name={selectedAgentName}
             display={agentDisplay}
-            canOpenBrowser={canOpenBrowser}
-            canShowChanges={changesAvailable}
-            browserOpen={browserToggle.pressed}
-            changesOpen={changesToggle.pressed}
-            onToggleBrowser={() => {
-              if (!selectedAgent) return;
-              if (browserToggle.click === "close") closeBrowser(null);
-              else if (browserToggle.click === "open")
-                void openBrowser(selectedAgent);
-              else revealDock();
-            }}
-            onToggleChanges={() => {
-              if (!selectedAgent) return;
-              if (changesToggle.click === "close") void toggleChanges(null);
-              else if (changesToggle.click === "open")
-                void toggleChanges(selectedAgent);
-              else revealDock();
-            }}
             onConfigure={handleConfigureSandbox}
+            actions={
+              <ClassicChatToolbar
+                agentId={selectedAgent}
+                canOpenBrowser={canOpenBrowser}
+                canShowChanges={changesAvailable}
+                browserOpen={browserToggle.pressed}
+                changesOpen={changesToggle.pressed}
+                onToggleBrowser={() => {
+                  if (!selectedAgent) return;
+                  if (browserToggle.click === "close") closeBrowser(null);
+                  else if (browserToggle.click === "open")
+                    void openBrowser(selectedAgent);
+                  else revealDock();
+                }}
+                onToggleChanges={() => {
+                  if (!selectedAgent) return;
+                  if (changesToggle.click === "close") void toggleChanges(null);
+                  else if (changesToggle.click === "open")
+                    void toggleChanges(selectedAgent);
+                  else revealDock();
+                }}
+                onConfigure={handleConfigureSandbox}
+              />
+            }
           />
         }
         status={

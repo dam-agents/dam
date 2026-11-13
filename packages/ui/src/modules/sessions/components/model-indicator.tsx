@@ -76,6 +76,8 @@ interface Props {
   /** UNIT_BOUNDARY_DESCRIPTION: a tool-approval pick, which configures this session and is saved nowhere else. */
   onToolApproval: (settings: Record<string, string>) => void;
   onNewSession: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: opens the Agent's Providers settings; the chat passes its settings modal. */
+  onManageProviders: () => void;
 }
 
 export function ModelIndicator({
@@ -92,8 +94,8 @@ export function ModelIndicator({
   onConfigure,
   onToolApproval,
   onNewSession,
+  onManageProviders,
 }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
@@ -334,9 +336,7 @@ export function ModelIndicator({
               }}
               saveAsProfile={saveAs.row}
               onChoose={applyPair}
-              onManageProviders={() =>
-                navigateToSandboxHome(agentId, "providers")
-              }
+              onManageProviders={onManageProviders}
             />
           ) : (
             <OldRuntimeModels

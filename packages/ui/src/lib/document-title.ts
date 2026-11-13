@@ -25,7 +25,6 @@ export function documentTitle(
   route: {
     view: View;
     settingsTab: SettingsTab;
-    sandboxSectionTitle?: string;
   },
   names: {
     agent?: string;
@@ -49,8 +48,6 @@ export function documentTitle(
         return [names.session, names.agent];
       case "settings":
         return [SETTINGS_TAB_TITLE[route.settingsTab], "Settings"];
-      case "sandbox-home":
-        return [route.sandboxSectionTitle, names.agent];
       case "starter-kit":
         return [names.kit ?? "Starter kit"];
       case "terms":

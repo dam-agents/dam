@@ -25,7 +25,7 @@ import { AgentMembersEditor, useAgentEdits } from "./agent-members-editor.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner's Share dialog for one Environment. It
  * says who opens it through its agent — the owner, the agent's editors and how
- * many people the agent's page names — and links there, and edits the
+ * many people the agent's settings name — and links there, and edits the
  * Environment's own members, people and Agents, who open this one Environment
  * only. One kept with no expiry, or kept awake, says so. The lists only add: nobody here narrows the agent's. An Environment is never
  * public, so there is no link to copy beyond its addresses. It holds the
@@ -41,7 +41,7 @@ export function EnvironmentShareDialog({
   onClose: () => void;
 }) {
   const agent = useAgent(environment.owningAgentId);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const save = useSetEnvironmentMembers();
   const [edits, setEdits] = useState<MemberEdits>(NO_EDITS);
   const [draft, setDraft] = useState("");
@@ -118,10 +118,7 @@ export function EnvironmentShareDialog({
                 className="text-accent hover:underline"
                 onClick={() => {
                   onClose();
-                  navigateToSandboxHome(
-                    environment.owningAgentId,
-                    "environments",
-                  );
+                  openAgentSettings(environment.owningAgentId, "environments");
                 }}
               >
                 Change them there

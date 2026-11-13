@@ -14,7 +14,7 @@ Icons come from `@carbon/icons-react`.
 | Draft marker on a session row                               | `Pen`                                          |
 | Delete, and remove an item from a list                      | `TrashCan` (use `RemoveButton` for a row)      |
 | Close a modal, panel, tab or search                         | `Close`                                        |
-| Attach a file in the composer                               | `Attachment`                                   |
+| Composer's + menu (attach, skills, schedules, connections)  | `Add`                                          |
 | New session, discuss with agent                             | `AddComment`                                   |
 | Generic add or new                                          | `Add`                                          |
 | Create agent                                                | `Add`                                          |

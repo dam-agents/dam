@@ -7,7 +7,7 @@ import { ConnectionsSection } from "./connections-section.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Services panel of the unified toolbar: the
  * connections the Agent holds, its network rules and its environment variables,
- * each as the section its configuration page already renders, in that order,
+ * each as the section its settings already render, in that order,
  * always open, with the one add button that belongs to it on its heading and no
  * copy under it. The providers, the harness settings they carry and the
  * spending are the Models panel's, and how credentials are injected is on and

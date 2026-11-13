@@ -53,7 +53,7 @@ When the owner sends it and the assistant replies
 Then the conversation is listed in the sidebar
 When they open a new chat on Dammy
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
-And the message box hints *Message…*
+And the empty message box shows one example prompt with a *Tab* hint, in place of a first task
 And no greeting and no first tasks are shown
 
 ## AC-5 — the assistant is an ordinary agent

@@ -59,7 +59,7 @@ export function SidebarAgents({
   );
   const conversationOf = useActivityConversations(attention, allAgents);
   const available = useAgents().data?.availableChannels ?? {};
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
@@ -99,7 +99,7 @@ export function SidebarAgents({
                 startSession(agent.id);
               })
         }
-        onOpenPeople={navigate(() => navigateToSandboxHome(agent.id, "people"))}
+        onOpenPeople={navigate(() => openAgentSettings(agent.id, "people"))}
         filtered={agentFilters.has(agent.id)}
         filter={
           <ActivityFilterMenu
@@ -116,7 +116,7 @@ export function SidebarAgents({
           <SidebarAgentActions
             channels={available}
             onNewSession={navigate(() => startSession(agent.id))}
-            onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
+            onConfigure={navigate(() => openAgentSettings(agent.id))}
             onBind={setBinding}
           />
         }

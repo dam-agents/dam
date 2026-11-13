@@ -17,7 +17,7 @@ vi.mock("../../store.js", () => ({
       setView: vi.fn(),
       showConfirm: vi.fn(),
       openAgentSession: vi.fn(),
-      navigateToSandboxHome: vi.fn(),
+      openAgentSettings: vi.fn(),
       selectAgent: vi.fn(),
     }),
 }));
@@ -90,21 +90,48 @@ vi.mock("../../modules/sandboxes/components/sandbox-home-header.js", () => ({
   SandboxIdentity: () => null,
 }));
 
-const { SandboxHomeView } =
-  await import("../../modules/sandboxes/views/sandbox-home-view.js");
+const { AgentConfiguration } =
+  await import("../../modules/sandboxes/components/agent-configuration.js");
+const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 
-// TEST_SCENARIO: the General section renders its lifecycle actions but no idle-sleep field and no disable action, and the page shows no "Always on" tag.
-it("offers no idle-sleep setting on the agent's General section", () => {
-  const html = renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement(SandboxHomeView),
-    ),
+const generalSection = (minutes: number) =>
+  createElement(
+    TooltipProvider,
+    null,
+    createElement(AgentConfiguration, {
+      agent: {
+        id: "agent-dev",
+        name: "dam",
+        env: [],
+        hibernationTimeoutMin: minutes,
+        access: {
+          role: "owner",
+          editors: [],
+          permissions: [...AGENT_PERMISSIONS],
+        },
+      } as never,
+      display: { state: "running", powerAction: "restart" } as never,
+      section: "setup",
+      onNavigate: () => {},
+      onOpenSession: () => {},
+      oauthReturnView: "/sandboxes/agent-dev/connections",
+    }),
   );
-  expect(html).toContain("Restart agent");
-  expect(html).not.toContain("Disable agent");
-  expect(html).not.toMatch(/sleep after|idle for/i);
-  expect(html).not.toContain("sleep-after-idle");
-  expect(html).not.toContain("Always on");
+
+// TEST_SCENARIO: the General section renders its lifecycle actions but no idle-sleep field, no disable action and no "Always on" tag, for an Agent on the install's default, one that never slept, and one with a window the old menu had no option for.
+it("offers no idle-sleep setting on the agent's General section", () => {
+  for (const minutes of [5, 0, 15, 42]) {
+    const html = renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        generalSection(minutes),
+      ),
+    );
+    expect(html).toContain("Restart agent");
+    expect(html).not.toContain("Disable agent");
+    expect(html).not.toMatch(/sleep after|idle for/i);
+    expect(html).not.toContain("sleep-after-idle");
+    expect(html).not.toContain("Always on");
+  }
 });

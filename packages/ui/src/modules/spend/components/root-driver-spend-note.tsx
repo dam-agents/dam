@@ -7,14 +7,14 @@ export function RootDriverSpendNote({
 }: {
   root: { id: string; name: string };
 }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   return (
     <p className="text-sm text-muted-foreground">
       This agent was started by{" "}
       <Button
         variant="link"
         size="inline"
-        onClick={() => navigateToSandboxHome(root.id, "usage")}
+        onClick={() => openAgentSettings(root.id, "usage")}
       >
         {root.name}
       </Button>

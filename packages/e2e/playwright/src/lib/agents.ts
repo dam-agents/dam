@@ -173,9 +173,11 @@ export async function sendMessageToAgent(
   const input = chatInput(page);
   await expect(input).toBeVisible();
   await input.fill(message);
-  // UNIT_BOUNDARY_DESCRIPTION: the composer accepts text while the Session it was just switched to is still loading, but send returns early while it loads and the text stays a draft, so the key goes only once the send button beside the textarea reports the composer ready.
+  // UNIT_BOUNDARY_DESCRIPTION: the composer accepts text while the Session it was just switched to is still loading, but send returns early while it loads and the text stays a draft, so the key goes only once the composer's send button reports it ready.
   await expect(
-    input.locator("xpath=..").getByRole("button", { name: /^(Send|Queue)$/ }),
+    page
+      .getByTestId("chat-composer")
+      .getByRole("button", { name: /^(Send|Queue)$/ }),
   ).toBeEnabled({ timeout: 60_000 });
   await input.press("Enter");
 }

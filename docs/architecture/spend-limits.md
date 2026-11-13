@@ -349,7 +349,7 @@ The limit with the least left today, when it is not the place's own, is marked "
 The spend ceiling shows only when the operator has set one.
 The screens:
 
-- **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
+- **The agent's settings:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units and how many calls are high estimates.
   Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
@@ -396,7 +396,7 @@ The screens:
   The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
 A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
-A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
+A sub-agent's settings set no limit: its spend counts for its root driver, so its Usage section names the root driver instead.
 A spend-limit question shows on Home with "Continue" only; "Dismiss" hides it from Home and leaves it open, and Home's "Deny all" leaves it out.
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
 Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.

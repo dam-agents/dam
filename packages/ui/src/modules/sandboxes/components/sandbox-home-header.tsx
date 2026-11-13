@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { PageHeader } from "@/components/ui/page-header";
-
 import type { AgentView } from "../../../types.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
@@ -57,12 +55,12 @@ export function SandboxHomeHeader({
   showUpdate?: boolean;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
+  /* UNIT_BOUNDARY_DESCRIPTION: the open section's heading, at the design's size for the settings modal: an 18 px semibold title, its actions on the right, and its description under it. */
   return (
-    <PageHeader
-      title={title}
-      description={description}
-      actions={
-        <>
+    <header className="mb-5 flex flex-col gap-1">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <div className="flex shrink-0 items-center gap-2">
           {showUpdate && (
             <UpdateAvailableAction
               agent={agent}
@@ -72,8 +70,11 @@ export function SandboxHomeHeader({
             />
           )}
           {actions}
-        </>
-      }
-    />
+        </div>
+      </div>
+      {description && (
+        <p className="text-sm text-muted-foreground">{description}</p>
+      )}
+    </header>
   );
 }

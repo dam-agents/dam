@@ -103,11 +103,11 @@ const titles = (i: PaletteInput, act = actions()) =>
   buildCommands(i, act).map((c) => `${c.prefix}${c.label}`);
 
 describe("agent commands", () => {
-  // TEST_SCENARIO: on Alice's Providers page, Alice's Providers command is gone (she is there) and Bob's carries the same action key the cross-agent boost reads.
+  // TEST_SCENARIO: with Alice's settings open on Providers in her chat, Alice's Providers command is gone (she is there) and Bob's carries the same action key the cross-agent boost reads.
   it("leaves out the open section and keys the same section of other agents", () => {
     const i = input({
       route: {
-        view: "sandbox-home",
+        view: "chat",
         agentId: "alice",
         section: "providers",
         sessionId: null,

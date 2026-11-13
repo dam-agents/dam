@@ -1,4 +1,13 @@
-import { Branch, Document, Globe, Tools } from "@carbon/icons-react";
+import {
+  Branch,
+  type CarbonIconType,
+  Diagram,
+  Document,
+  Folder,
+  Globe,
+  Tools,
+} from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import { stateDotClass } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -6,44 +15,53 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import {
+  type ChatSectionId,
+  useChatSections,
+} from "../hooks/use-chat-sections.js";
+import { AgentSettingsButton } from "./agent-settings-button.js";
+
+/* UNIT_BOUNDARY_DESCRIPTION: the design's toggle: an 8×8 rounded square with muted ink and no background while closed, and the neutral muted square of a selected row while open; never the accent. */
+const TOGGLE =
+  "h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground";
+
+/* UNIT_BOUNDARY_DESCRIPTION: the toggles' icons as the design draws them; Artifacts uses the design's glyph here only, so it never reads as Files' folder beside it. */
+const SECTION_TOGGLES: Record<
+  ChatSectionId,
+  { label: string; Icon: CarbonIconType }
+> = {
+  files: { label: "Show files", Icon: Folder },
+  artifacts: { label: "Show artifacts", Icon: Diagram },
+};
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
- * state dot, its avatar and name, editable in place, the Shared badge of a
- * Shared Agent, and the buttons that toggle the browser and the changes beside
- * the conversation, open the sections on a phone, and open the Agent's
- * configuration.
+ * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar, as the design
+ * draws it: the Agent's state dot, its avatar and name, which open its
+ * settings over the chat, the Shared badge of a Shared Agent, and right after
+ * the name the toggles of the sections beside the conversation (Files,
+ * Artifacts) on a desktop, and at the end
+ * of the same area, where main has them, the browser, changes and settings
+ * buttons. The buttons never shrink: on a narrow top bar the name truncates
+ * first, so no button is cut off.
  */
 export function ClassicChatIdentity({
   agent,
-  agentId,
   name,
   display,
-  canOpenBrowser,
-  canShowChanges,
-  browserOpen,
-  changesOpen,
-  onToggleBrowser,
-  onToggleChanges,
   onConfigure,
+  actions,
 }: {
   agent: AgentView | null;
-  agentId: string | null;
   name: string | null;
   display: AgentDisplay | null;
-  canOpenBrowser: boolean;
-  canShowChanges: boolean;
-  browserOpen: boolean;
-  changesOpen: boolean;
-  onToggleBrowser: () => void;
-  onToggleChanges: () => void;
   onConfigure: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the top bar's buttons, drawn after the name and its toggles, where main has them. */
+  actions?: ReactNode;
 }) {
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const sections = useChatSections();
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <span
@@ -55,11 +73,7 @@ export function ClassicChatIdentity({
         )}
       />
       {agent ? (
-        <EditableAgentIdentity
-          agent={agent}
-          avatarSize={32}
-          nameClassName="text-sm font-bold text-foreground"
-        />
+        <AgentSettingsButton agent={agent} onClick={onConfigure} />
       ) : (
         <h1 className="text-sm font-bold text-foreground truncate">{name}</h1>
       )}
@@ -68,53 +82,104 @@ export function ClassicChatIdentity({
           <SharedAgentBadge access={agent.access} />
         </span>
       )}
-      <div className="ml-auto flex shrink-0">
-        {canOpenBrowser && agentId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open browser"
-            tooltip="Open browser"
-            aria-pressed={browserOpen}
-            onClick={onToggleBrowser}
-          >
-            <Globe size={16} />
-          </Button>
-        )}
-        {canShowChanges && agentId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Show changes"
-            tooltip="Show changes"
-            aria-pressed={changesOpen}
-            onClick={onToggleChanges}
-          >
-            <Branch size={16} />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Files and artifacts"
-          tooltip="Files and artifacts"
-          data-testid="open-agent-files"
-          className="md:hidden"
-          onClick={() => setMobileScreen("files")}
-        >
-          <Document size={16} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Configure agent"
-          tooltip="Configure agent"
-          className="max-md:hidden"
-          onClick={onConfigure}
-        >
-          <Tools size={16} />
-        </Button>
+      <div className="flex shrink-0 items-center gap-2 max-md:hidden">
+        {sections.map((section) => {
+          const toggle = SECTION_TOGGLES[section.id];
+          return (
+            <Button
+              key={section.id}
+              variant="ghost"
+              size="icon-sm"
+              aria-label={toggle.label}
+              tooltip={toggle.label}
+              aria-pressed={section.open}
+              data-testid={`toggle-${section.id}-section`}
+              className={TOGGLE}
+              onClick={() => section.setOpen(!section.open)}
+            >
+              <toggle.Icon size={16} />
+            </Button>
+          );
+        })}
       </div>
+      <div className="ml-auto flex shrink-0">{actions}</div>
     </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The chat's top-bar buttons after the Agent's
+ * name, as on main: toggle the browser and the changes beside the
+ * conversation, open the sections on a phone, and the wrench, which opens the
+ * same settings modal as the Agent's name.
+ */
+export function ClassicChatToolbar({
+  agentId,
+  canOpenBrowser,
+  canShowChanges,
+  browserOpen,
+  changesOpen,
+  onToggleBrowser,
+  onToggleChanges,
+  onConfigure,
+}: {
+  agentId: string | null;
+  canOpenBrowser: boolean;
+  canShowChanges: boolean;
+  browserOpen: boolean;
+  changesOpen: boolean;
+  onToggleBrowser: () => void;
+  onToggleChanges: () => void;
+  onConfigure: () => void;
+}) {
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
+  return (
+    <>
+      {canOpenBrowser && agentId && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Open browser"
+          tooltip="Open browser"
+          aria-pressed={browserOpen}
+          onClick={onToggleBrowser}
+        >
+          <Globe size={16} />
+        </Button>
+      )}
+      {canShowChanges && agentId && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Show changes"
+          tooltip="Show changes"
+          aria-pressed={changesOpen}
+          onClick={onToggleChanges}
+        >
+          <Branch size={16} />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Files and artifacts"
+        tooltip="Files and artifacts"
+        data-testid="open-agent-files"
+        className="md:hidden"
+        onClick={() => setMobileScreen("files")}
+      >
+        <Document size={16} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Agent settings"
+        tooltip="Agent settings"
+        className="max-md:hidden"
+        onClick={onConfigure}
+      >
+        <Tools size={16} />
+      </Button>
+    </>
   );
 }

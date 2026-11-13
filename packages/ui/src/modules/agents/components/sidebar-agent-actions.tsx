@@ -16,7 +16,7 @@ export function hasChannelActions(channels: Channels): boolean {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The hover actions of an agent row in the
- * sidebar: New session and Configure agent as icons, and the Agent actions
+ * sidebar: New session and Agent settings as icons, and the Agent actions
  * kebab only when a messenger channel is available to add the agent to, so a
  * kebab never hides a single action behind an extra click.
  */
@@ -36,7 +36,7 @@ export function SidebarAgentActions({
       <RowIconButton label="New session" onClick={onNewSession}>
         <AddComment size={14} />
       </RowIconButton>
-      <RowIconButton label="Configure agent" onClick={onConfigure}>
+      <RowIconButton label="Agent settings" onClick={onConfigure}>
         <Tools size={14} />
       </RowIconButton>
       {hasChannelActions(channels) && (
@@ -64,7 +64,7 @@ export function SidebarAgentActions({
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the same New session and Configure agent icons for a Shared Agent's row, which never offers to add the agent to a messenger: only the owner binds channels.
+// UNIT_BOUNDARY_DESCRIPTION: the same New session and Agent settings icons for a Shared Agent's row, which never offers to add the agent to a messenger: only the owner binds channels.
 export function SidebarSessionActions({
   onNewSession,
   onConfigure,
@@ -77,7 +77,7 @@ export function SidebarSessionActions({
       <RowIconButton label="New session" onClick={onNewSession}>
         <AddComment size={14} />
       </RowIconButton>
-      <RowIconButton label="Configure agent" onClick={onConfigure}>
+      <RowIconButton label="Agent settings" onClick={onConfigure}>
         <Tools size={14} />
       </RowIconButton>
     </>

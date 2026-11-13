@@ -20,7 +20,7 @@ The api-server resolves a reference into the pair the runtime is sent, so an edi
 The agent's Providers, Channels and Schedules pages pick the three with the same picker, which a page shows as a row: its chat default, its channel pair and its scheduled pair.
 Only the chat default keeps a profile reference; a profile picked on the Channels or Schedules page is stored as its values, so a later edit of that profile does not reach it.
 The channel and scheduled pickers lead with **Use agent default**, which reads the chat default; picking it clears their own pair, so they follow that default and every later change of it.
-A channel or schedule naming none follows its kind's pair, which is the chat default until the agent's page sets one; picking a profile grants its provider on the agent.
+A channel or schedule naming none follows its kind's pair, which is the chat default until the agent's settings set one; picking a profile grants its provider on the agent.
 An edit that no agent using the profile can run is put back, and that revert never undoes a newer edit made meanwhile.
 A profile's platform sub-agent runs on the profile's harness and the agent's Connection of its own provider template, and its model is a model of that template; a slot with a subagent pick of its own never runs it, whole, and a null or absent sub-agent is **Same as agent**, which lets the harness pick.
 A subagent slot that holds a profile which can no longer run leaves the subagent to the agent, and a run whose profile lends a sub-agent that cannot run goes on, on the profile's primary model without it; an edit that breaks it is put back like any other no agent can run.

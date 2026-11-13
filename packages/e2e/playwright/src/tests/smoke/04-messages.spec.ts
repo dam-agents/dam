@@ -56,13 +56,15 @@ test("exchange messages with the agent", async ({ page }) => {
     expect(JSON.stringify(prompts)).toContain(userPrompt);
   });
 
-  await test.step("the agent's name above its reply opens its configuration", async () => {
+  await test.step("the agent's name above its reply opens its settings over the chat, and they offer no page beside them", async () => {
     await page
       .getByTestId("chat-message")
       .filter({ hasText: scriptedReply })
-      .getByRole("button", { name: `Configure ${agentName}` })
+      .getByRole("button", { name: `${agentName} settings` })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/sandboxes/${agentId}$`));
+    await expect(page.getByTestId("configure-agent-modal")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/chat/${agentId}`));
+    await expect(page.getByTestId("configure-agent-modal-page")).toHaveCount(0);
   });
 
   await test.step("the avatar picker opens on hover and closes when the pointer leaves", async () => {

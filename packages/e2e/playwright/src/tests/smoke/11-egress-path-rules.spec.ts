@@ -41,7 +41,8 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   await test.step("add a narrow allow rule in the network panel", async () => {
     await page.goto(`/sandboxes/${encodeURIComponent(agentId)}/network`);
     await page.getByTestId("egress-rule-new").click();
-    const dialog = page.getByRole("dialog");
+    // TEST_SCENARIO: the old agent link opens the settings dialog, so the rule form is the second dialog; it is found by its own title.
+    const dialog = page.getByRole("dialog", { name: "New rule" });
     await dialog.getByLabel("Host").fill(host);
     await dialog.getByLabel("Method").selectOption("GET");
     await dialog.getByLabel("Path").fill("/status/*");

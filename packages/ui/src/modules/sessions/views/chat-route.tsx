@@ -9,9 +9,9 @@ import { ChatView } from "./chat-view.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The chat route. A person who may not use an
  * Agent's sessions, such as an Agent Editor whose sessions permission is
- * taken away, never reaches its chat: a chat link to it opens the agent's
- * page instead. The redirect replaces the entry, so Back does not return to
- * the chat link and redirect again.
+ * taken away, never reaches its chat: a chat link to it opens the Agent's
+ * settings over Home instead. The redirect replaces the entry, so Back does
+ * not return to the chat link and redirect again.
  */
 export function ChatRoute() {
   const agentId = useStore((s) => s.selectedAgent);
@@ -20,12 +20,10 @@ export function ChatRoute() {
 
   useEffect(() => {
     if (!barred || !agentId) return;
-    history.replaceState(
-      null,
-      "",
-      routeToPath({ view: "sandbox-home", agentId, sandboxSection: "setup" }),
-    );
+    history.replaceState(null, "", routeToPath({ view: "home" }));
     useStore.getState().hydrateRoute();
+    useStore.setState({ selectedAgent: null });
+    useStore.getState().openAgentSettings(agentId);
   }, [barred, agentId]);
 
   return barred ? null : <ChatView />;

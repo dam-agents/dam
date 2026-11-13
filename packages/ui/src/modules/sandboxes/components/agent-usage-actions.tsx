@@ -56,7 +56,7 @@ export function AgentUsageActions({
   showConfigure?: boolean;
   onNewTerminal?: () => void;
 }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsData = useAgents().data;
@@ -208,7 +208,7 @@ export function AgentUsageActions({
             kind: "link" as const,
             title: "Configure agent",
             description: "Set LLM providers, skills, connections, and more.",
-            onClick: () => navigateToSandboxHome(agent.id),
+            onClick: () => openAgentSettings(agent.id),
           },
         ]
       : []),

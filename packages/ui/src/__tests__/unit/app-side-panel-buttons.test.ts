@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. An Agent's configuration page has an Artifacts button that opens that Agent's artifacts; Home and the other pages leave Artifacts to the Artifacts page, and the Getting started artifact task opens that page.
+// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. No such page has an Artifacts button: Artifacts is the Artifacts page's, and the Getting started artifact task opens that page.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -60,13 +60,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-it("TEST_SCENARIO: an Agent's configuration page on a phone has an Artifacts button, and Home does not", () => {
-  expect(buttons("sandbox-home", true)).toEqual(["artifacts", "approvals"]);
+it("TEST_SCENARIO: a page outside the chat, Home or Settings, shows only Approvals on a phone: Artifacts is the Artifacts page's, and the chat's top bar keeps its own", () => {
   expect(buttons("home", true)).toEqual(["approvals"]);
-});
-
-it("TEST_SCENARIO: the chat's top bar keeps its own Artifacts button, so the shared buttons add no second one", () => {
-  expect(buttons("sandbox-home", false)).toEqual(["approvals"]);
+  expect(buttons("settings", true)).toEqual(["approvals"]);
+  expect(buttons("home", false)).toEqual(["approvals"]);
 });
 
 it("TEST_SCENARIO: the Getting started artifact task on Home opens the Artifacts page, not the side panel", async () => {

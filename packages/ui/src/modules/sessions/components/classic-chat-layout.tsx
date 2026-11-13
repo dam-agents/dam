@@ -22,6 +22,7 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { ApprovalsDrawer } from "../../home/components/approvals-panel.js";
 import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
+import { useChatSections } from "../hooks/use-chat-sections.js";
 import {
   type SidebarPanelStack,
   useSidebarPanels,
@@ -31,8 +32,9 @@ import {
   classicColumns,
   LEFT_MIN_W,
   PANEL_MIN_W,
+  sectionsColumn,
 } from "../lib/classic-chat-layout.js";
-import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import type { SidebarPanel, SidebarPanelId } from "../lib/sidebar-panels.js";
 import { SidePanelCloseScope } from "./side-panel-close-button.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
@@ -52,9 +54,10 @@ function PanelDivider({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The chat view's layout: a top bar with the
- * Agent's identity and status, a resizable column of Files,
- * Artifacts and Processes sections on the left, the conversation in the
- * middle, and the docked item on the right, beside the conversation.
+ * Agent's identity and status, a resizable column of the open Files,
+ * Artifacts and Processes sections on the left, stacked when several are
+ * open, the conversation in the middle, and the docked item on the right,
+ * beside the conversation.
  * Approvals opens as a drawer over the chat, so the slot keeps whatever it
  * shows.
  */
@@ -120,18 +123,29 @@ export function ClassicChatLayout({
     return () => ro.disconnect();
   }, [columnsEl]);
   const panelRef = useRef<HTMLDivElement>(null);
+  const sections: SidebarPanel[] = useChatSections().map(({ id, open }) => ({
+    id,
+    open,
+  }));
   const panelStack = useSidebarPanels([
-    { id: "files", open: filesSectionOpen },
-    { id: "artifacts", open: artifactsSectionOpen },
+    ...sections,
     ...(processesEnabled
       ? [{ id: "processes" as const, open: processesSectionOpen }]
       : []),
   ]);
+  /* UNIT_BOUNDARY_DESCRIPTION: Processes stays in the column as on main, folding from its header, so the column shows while the Agent's processes are on even with Files and Artifacts closed. */
+  const column = sectionsColumn(sections, desktop);
+  const columnOpen = column.open || processesEnabled;
+  const shows = (id: SidebarPanelId) => column.shown.includes(id);
+  const sectionControls = (open: boolean, setOpen: (open: boolean) => void) =>
+    desktop
+      ? { onClose: () => setOpen(false) }
+      : { onToggle: () => setOpen(!open) };
 
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const { panelFills, panelMaxW, panelW } = classicColumns({
     columnsW,
-    leftW,
+    leftW: columnOpen ? leftW : 0,
     savedPanelW: rightW,
     panelOpen: panel !== null,
     panelMaximized: maximized,
@@ -145,7 +159,10 @@ export function ClassicChatLayout({
       >
         <div
           style={leftPanelWidth}
-          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
+          className={cn(
+            "@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1",
+            columnOpen && "md:border-r md:border-b md:border-border",
+          )}
         >
           <MobileMenuButton />
           {identity}
@@ -163,7 +180,7 @@ export function ClassicChatLayout({
             "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",
             mobileScreen === "chat" ? "hidden md:flex" : "flex",
             mobileScreen === "files" && "max-md:!w-full",
-            maximized && "md:!hidden",
+            (maximized || !columnOpen) && "md:!hidden",
           )}
         >
           <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
@@ -179,22 +196,31 @@ export function ClassicChatLayout({
               {agentName}
             </span>
           </div>
-          {desktop && notices}
+          {desktop && columnOpen && notices}
           <SidePanelCloseScope value={false}>
-            <FilesPanel
-              open={filesSectionOpen}
-              onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-              {...panelStack.panelProps("files")}
-              onOpenFile={onOpenFile}
-            />
-            <PanelDivider stack={panelStack} below="artifacts" />
-            <ChatArtifactsPanel
-              key={agentId}
-              agentId={agentId}
-              open={artifactsSectionOpen}
-              onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-              {...panelStack.panelProps("artifacts")}
-            />
+            {shows("files") && (
+              <FilesPanel
+                open={filesSectionOpen}
+                {...sectionControls(filesSectionOpen, setFilesSectionOpen)}
+                {...panelStack.panelProps("files")}
+                onOpenFile={onOpenFile}
+              />
+            )}
+            {shows("artifacts") && (
+              <>
+                <PanelDivider stack={panelStack} below="artifacts" />
+                <ChatArtifactsPanel
+                  key={agentId}
+                  agentId={agentId}
+                  open={artifactsSectionOpen}
+                  {...sectionControls(
+                    artifactsSectionOpen,
+                    setArtifactsSectionOpen,
+                  )}
+                  {...panelStack.panelProps("artifacts")}
+                />
+              </>
+            )}
             {processesEnabled && (
               <>
                 <PanelDivider stack={panelStack} below="processes" />
@@ -210,7 +236,7 @@ export function ClassicChatLayout({
             )}
           </SidePanelCloseScope>
         </div>
-        {!maximized && (
+        {!maximized && columnOpen && (
           <ResizeHandle
             side="left"
             label="Resize sections"
@@ -230,7 +256,7 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {!desktop && notices}
+          {(!desktop || !columnOpen) && notices}
           {children}
         </div>
 

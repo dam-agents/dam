@@ -1,4 +1,4 @@
-import { Save } from "@carbon/icons-react";
+import { Document, Save } from "@carbon/icons-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -30,6 +30,8 @@ export function SkillsSurface({
   comingUp,
   managesLibrary,
   canPublish,
+  compact = false,
+  hideSwitches = false,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -37,9 +39,13 @@ export function SkillsSurface({
   comingUp?: boolean;
   managesLibrary: boolean;
   canPublish: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: the composer + menu's Skills panel, as the design draws it: the same search, counts, groups and switches, with no skill-set or row actions and no add rows, which its footer holds; an Agent with no skill of its own shows the design's drop zone. */
+  compact?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: the + menu's read-only state for a viewer who may not change skills: the same groups, with no switches. */
+  hideSwitches?: boolean;
 }) {
   const isError = agentState === "error";
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
@@ -72,7 +78,7 @@ export function SkillsSurface({
   const openAddSource = () =>
     setOpenModal({ kind: "add-source", mode: "github", files: [] });
   const manageConnections = agentId
-    ? () => navigateToSandboxHome(agentId, "connections")
+    ? () => openAgentSettings(agentId, "connections")
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
@@ -128,8 +134,9 @@ export function SkillsSurface({
         )
       ) : (
         <>
-          <div className="mb-5">
+          <div className={compact ? "mb-4" : "mb-5"}>
             <SkillsSearchHeader
+              onWord={compact ? "on" : undefined}
               query={query}
               onQueryChange={setQuery}
               totals={totals}
@@ -144,6 +151,7 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
+                !compact &&
                 managesLibrary && (
                   <Button
                     variant="outline"
@@ -165,7 +173,7 @@ export function SkillsSurface({
             />
           </div>
 
-          <div className="flex flex-col gap-8">
+          <div className={cn("flex flex-col", compact ? "gap-6" : "gap-8")}>
             {(shownCreatedHere.length > 0 || !searching) && (
               <StandaloneSkillsGroup
                 skills={shownCreatedHere}
@@ -190,8 +198,10 @@ export function SkillsSurface({
                     : undefined
                 }
                 trackTargets={trackTargets}
+                hideRowActions={compact}
+                emptyState={compact ? <CompactSkillsEmpty /> : undefined}
                 onUpload={
-                  dropEnabled
+                  !compact && dropEnabled
                     ? () =>
                         setOpenModal({
                           kind: "add-source",
@@ -230,15 +240,17 @@ export function SkillsSurface({
                   : undefined
               }
               onManageConnections={manageConnections}
+              compact={compact}
+              hideSwitches={hideSwitches}
             />
-            {!managesLibrary && (
+            {!managesLibrary && !compact && (
               <HiddenSourcesList
                 sources={surface.hiddenSources}
                 onShow={(id) => surface.setSourceHidden(id, false)}
               />
             )}
 
-            {shownPlatform.length > 0 && (
+            {!compact && shownPlatform.length > 0 && (
               <PlatformSkillsGroup
                 skills={shownPlatform}
                 onOpenSkill={
@@ -248,12 +260,12 @@ export function SkillsSurface({
                 }
                 onOpenSection={
                   agentId
-                    ? (section) => navigateToSandboxHome(agentId, section)
+                    ? (section) => openAgentSettings(agentId, section)
                     : undefined
                 }
               />
             )}
-            {shownBuiltIn.length > 0 && (
+            {!compact && shownBuiltIn.length > 0 && (
               <LocalSkillsGroup
                 label="Included with sandbox image"
                 skills={shownBuiltIn}
@@ -283,6 +295,21 @@ export function SkillsSurface({
         }
         onClose={() => setOpenModal(null)}
       />
+    </div>
+  );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the design's drop zone for an Agent with no skill of its own in the + menu: a dashed box, a document glyph and the three ways to get one. */
+function CompactSkillsEmpty() {
+  return (
+    <div
+      data-testid="skills-compact-empty"
+      className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center"
+    >
+      <Document size={16} className="text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">
+        Drop a .md file here, add a source, or describe what you need below
+      </p>
     </div>
   );
 }

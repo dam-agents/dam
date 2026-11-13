@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-11-04
+Last verified: 2026-11-11
 
 ## Overview
 
@@ -309,7 +309,7 @@ Running a worker is the opt-in: a second switch in the UI would be one more plac
 Until then nothing about Satellites appears.
 After it, the Connections page lists each Satellite with whether it is online, its tools and its host, and removes one.
 An Agent's Connections section lists the Satellites granted to it.
-Its **+ New** catalog lists them under MCP servers, which is where a grant is given, so the path is ⵗ → Configure agent → Connections → + New → MCP servers → the machine → Add to agent.
+Its **+ New** catalog lists them under MCP servers, which is where a grant is given, so the path is the Agent's Agent settings wrench → Connections → + New → MCP servers → the machine → Add to agent.
 A Satellite is an MCP server to the agent, so the catalog has no tab of its own for it; the form that adds a remote MCP server points at `dam satellite` for one that runs on the user's own machine.
 The Connections page and the catalog poll while open, so a machine that has just connected, or just gone offline, shows without a reload.
 

@@ -23,7 +23,7 @@ const noConversation = () => undefined;
  * are on, and is hidden while nothing is shared. A row the person may use
  * sessions on opens to the agent's Sessions, read from the agent itself, as
  * the attention record that previews the person's own agents holds none of
- * them; any other row opens the agent's page.
+ * them; any other row opens the agent's settings.
  */
 export function SidebarSharedAgents({
   stickyHeaderClassName,
@@ -34,7 +34,7 @@ export function SidebarSharedAgents({
 }) {
   const { shared, active, folded, openAgentId, sessionOpen, isOpen } =
     useSidebarSharedAgents();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
@@ -63,7 +63,7 @@ export function SidebarSharedAgents({
       <ul className="flex flex-col gap-px">
         {shown.map((agent) => {
           const current = agent.id === openAgentId;
-          const configure = navigate(() => navigateToSandboxHome(agent.id));
+          const configure = navigate(() => openAgentSettings(agent.id));
           if (!holds(agent.access, "sessions"))
             return (
               <SharedAgentRow
