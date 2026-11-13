@@ -131,7 +131,7 @@ export function KitFilterBar({
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex gap-3">
         <div className="relative min-w-0 flex-1">
           <Search
             size={16}
