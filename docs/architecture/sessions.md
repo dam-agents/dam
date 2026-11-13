@@ -59,6 +59,7 @@ A permission answer that carries who answered in `result._meta.platform.answered
 Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts, and the running turn's Sender and the time it started, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
 A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps the Senders and the verdicts, and its Session Starter is whoever sent its first prompt.
+A prompt the runtime sends into a Session on its own, such as the one that sends a broken [chat form](chat-forms.md#the-conversation-is-the-transport) back to the agent, carries no Sender; it is a new turn of that Session, delivered the way a one-time task's result is.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
 The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).

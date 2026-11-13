@@ -109,6 +109,7 @@ import {
   type AgentRequestObserver,
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
+import { createChatFormChecks } from "./chat-form-checks.js";
 import { createHarnessActivity } from "./harness-activity.js";
 import { createLocalCommandEchoes } from "./local-command-echoes.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
@@ -242,6 +243,7 @@ export interface AcpRuntimeDeps {
     end: { stopReason: string | null; error: string | null },
   ) => void;
   onResultAccepted?: (sessionId: string) => void;
+  onChatFormFix?: (sessionId: string, prompt: string) => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modelSettingConfig?: string;
   modeSettingId?: string;
@@ -478,6 +480,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       interruptSteers.onTurnStarted(sessionId);
       generating.add(sessionId);
       localCommandEchoes.start(sessionId, typed);
+      const turnId = promptScheduler.activeTurnId(sessionId);
+      if (turnId !== null) chatFormChecks.start(sessionId, turnId, typed);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
@@ -770,6 +774,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onClose() {},
   };
   const turnModels = new Map<string, string>();
+  const chatFormChecks = createChatFormChecks();
   const runTextBuffers = new Map<
     string,
     { text: string; truncated: boolean }
@@ -1190,6 +1195,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     autonomousTurns.clear();
     localCommandEchoes.clear();
     runTextBuffers.clear();
+    chatFormChecks.clear();
     openToolCalls.clear();
     generating.clear();
     turnModels.clear();
@@ -1987,6 +1993,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     generating.delete(sessionId);
     supersededEchoes.delete(sessionId);
     runTextBuffers.delete(sessionId);
+    chatFormChecks.forget(sessionId);
     bootstrap.fill(sessionId, (loaded) => {
       const line = JSON.stringify(
         buildPlatformSessionResetNotification({ sessionId }),
@@ -2156,6 +2163,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     dropHarnessWork(sessionId);
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
+    chatFormChecks.forget(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork.forget(sessionId);
     lease.maybeRecycle();
@@ -2404,6 +2412,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const error = extractTurnError(frame);
           const model = turnModels.get(sid);
           turnModels.delete(sid);
+          const chatFormFix =
+            turnEnded && turnId !== null
+              ? chatFormChecks.end(turnId, {
+                  stopReason,
+                  failed: lost || error !== undefined,
+                  nextPromptWaiting:
+                    promptScheduler.hasTurnInFlight(sid) ||
+                    promptScheduler.snapshot(sid).length > 0,
+                })
+              : null;
           transcript.append(
             sid,
             JSON.stringify(
@@ -2414,9 +2432,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 ...(stopReason !== null && { stopReason }),
                 ...(error !== undefined && { error }),
                 ...(model !== undefined && { model }),
+                ...(chatFormFix !== null && {
+                  chatFormFix: chatFormFix.attempt,
+                }),
               }),
             ),
           );
+          if (chatFormFix !== null)
+            deps.onChatFormFix?.(sid, chatFormFix.prompt);
           if (turnEnded && (runPrompt || isRunSession(sid))) {
             if (harnessActivity.isBusy(sid))
               heldRuns.set(sid, { promptId, stopReason, cancelled: false });
@@ -2513,6 +2536,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           accumulateRunText(sessionId, text);
         const update = sessionUpdateKind(frame);
         const promptTurn = promptScheduler.activeTurnId(sessionId);
+        if (text !== null && promptTurn !== null)
+          chatFormChecks.text(promptTurn, text);
         transcript.append(
           sessionId,
           logged,
