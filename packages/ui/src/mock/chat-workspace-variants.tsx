@@ -1,11 +1,13 @@
 import {
   Add,
+  Branch,
   Calendar,
+  Checkmark,
   ChevronRight,
   Close,
   CloudApp,
   Dashboard,
-  Diagram,
+  DataCategorical,
   Document,
   DocumentAdd,
   Download,
@@ -17,12 +19,20 @@ import {
   Move,
   OverflowMenuVertical,
   Search,
+  Settings,
   Share,
+  ShareKnowledge,
   TrashCan,
   Upload,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
+import {
+  DialogActions,
+  DialogBody,
+  DialogHeader,
+  Modal,
+} from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -31,8 +41,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {} from "@/components/ui/popover";
-import { Tooltip } from "@/components/ui/tooltip";
 import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -419,28 +429,139 @@ export function WorkspaceArtifactList({
   );
 }
 
-function AgentMenuTrigger({ chrome }: { chrome: AgentChrome }) {
+function RenameAgentDialog({
+  value,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Modal>
+      <DialogHeader onClose={onClose} title="Rename agent" />
+      <DialogBody>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-foreground">Name</span>
+          <Input
+            size="sm"
+            aria-label="Name"
+            value={value}
+            autoFocus
+            maxLength={64}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) onSave();
+            }}
+          />
+        </div>
+      </DialogBody>
+      <DialogActions
+        onCancel={onClose}
+        label="Save"
+        disabled={!value.trim()}
+        onSubmit={onSave}
+      />
+    </Modal>
+  );
+}
+
+function AgentMenuTrigger({
+  chrome,
+  openPanels,
+  onTogglePanel,
+}: {
+  chrome: AgentChrome;
+  openPanels?: ReadonlySet<LeftPanelKind>;
+  onTogglePanel?: (panel: LeftPanelKind) => void;
+}) {
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(chrome.name);
+
   return (
     <div className="flex min-w-0 items-center gap-2">
       {chrome.backButton}
-      <button
-        type="button"
-        onClick={chrome.onConfigure}
-        data-pointer-target="header-agent-name"
-        className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pl-1 pr-3 transition-colors hover:bg-muted"
-      >
-        {chrome.agentId && (
-          <AgentAvatar
-            agentId={chrome.agentId}
-            state="running"
-            className="!size-6"
-          />
-        )}
-        <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-          {chrome.name}
-        </span>
-        {chrome.statusDot}
-      </button>
+      {renameOpen && (
+        <RenameAgentDialog
+          value={renameValue}
+          onChange={setRenameValue}
+          onClose={() => setRenameOpen(false)}
+          onSave={() => {
+            emitToast({
+              kind: "success",
+              message: `Renamed to ${renameValue.trim()}`,
+            });
+            setRenameOpen(false);
+          }}
+        />
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            data-pointer-target="header-agent-name"
+            className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pl-1 pr-3 transition-colors hover:bg-muted"
+          >
+            {chrome.agentId && (
+              <AgentAvatar
+                agentId={chrome.agentId}
+                state="running"
+                className="!size-6"
+              />
+            )}
+            <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {chrome.name}
+            </span>
+            {chrome.statusDot}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem
+            onSelect={() => {
+              setRenameValue(chrome.name);
+              setRenameOpen(true);
+            }}
+          >
+            <Edit size={13} /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onTogglePanel?.("artifacts")}>
+            <DataCategorical size={13} />
+            <span className="flex-1">Artifacts</span>
+            {openPanels?.has("artifacts") && (
+              <Checkmark size={16} className="text-foreground" />
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onTogglePanel?.("files")}>
+            <Folder size={13} />
+            <span className="flex-1">File tree</span>
+            {openPanels?.has("files") && (
+              <Checkmark size={16} className="text-foreground" />
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() =>
+              useStore.getState().setOpenChangesData({
+                files: [],
+                summary: "",
+                selectedFile: null,
+              })
+            }
+          >
+            <Branch size={13} /> Git Changes
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem>
+            <Share size={13} /> Add editors
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => chrome.onConfigure?.()}>
+            <Settings size={13} /> Agent settings
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -557,35 +678,6 @@ function QuickFindDialog({
 }
 
 export type LeftPanelKind = "files" | "artifacts";
-
-function PanelToggleButton({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip content={label}>
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-          active
-            ? "bg-muted text-foreground"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-        )}
-      >
-        {icon}
-      </button>
-    </Tooltip>
-  );
-}
 
 type FileEntry = { name: string; type: "file" | "dir"; children?: FileEntry[] };
 
@@ -892,22 +984,14 @@ export function WorkspaceChatHeader({
 }) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-2 pr-6 pl-6">
-      <AgentMenuTrigger chrome={chrome} />
-      <PanelToggleButton
-        icon={<Folder size={16} />}
-        label="Files"
-        active={openPanels?.has("files") ?? false}
-        onClick={() => onTogglePanel?.("files")}
+      <AgentMenuTrigger
+        chrome={chrome}
+        openPanels={openPanels}
+        onTogglePanel={onTogglePanel}
       />
-      <PanelToggleButton
-        icon={<Diagram size={16} />}
-        label="Artifacts"
-        active={openPanels?.has("artifacts") ?? false}
-        onClick={() => onTogglePanel?.("artifacts")}
-      />
-      <div className="flex flex-1 items-center justify-center min-w-0">
-        <div className="flex w-full max-w-[813px] items-center justify-end px-4">
-          {chrome.status}
+      {chrome.status}
+      <div className="flex flex-1 items-center justify-end min-w-0">
+        <div className="flex items-center px-4">
           {onNewChat && (
             <Button variant="outline" size="sm" onClick={onNewChat}>
               <Add size={16} />

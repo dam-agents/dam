@@ -1,7 +1,7 @@
 import {
   Add,
   ArrowLeft,
-  Diagram,
+  DataCategorical,
   Folder,
   Notification,
 } from "@carbon/icons-react";
@@ -209,7 +209,7 @@ function LeftDockBoard() {
               size="sm"
               onClick={() => togglePanel("artifacts")}
             >
-              <Diagram size={16} />
+              <DataCategorical size={16} />
               Artifacts
             </Button>
           </div>
@@ -467,8 +467,8 @@ export function HandoffSheet() {
           <SectionTitle>2 &middot; Chat Header</SectionTitle>
           <SectionNote>
             The real header component with interactive toggles. Click the
-            Folder, Diagram, and Wikis (browser) buttons to see their active
-            states.
+            Folder, DataCategorical, and Wikis (browser) buttons to see their
+            active states.
           </SectionNote>
 
           <HeaderBoard />
@@ -478,7 +478,7 @@ export function HandoffSheet() {
               items={[
                 "Agent trigger: avatar + name + status dot — click opens configure modal.",
                 "Files toggle (Folder icon): 8×8 rounded-lg button, highlights bg-muted when active.",
-                "Artifacts toggle (Diagram icon): same style, opens artifacts panel in left dock.",
+                "Artifacts toggle (DataCategorical icon): same style, opens artifacts panel in left dock.",
                 "Browser toggle (Wikis icon): same style, opens browser in right dock.",
                 "Quick-find search bar (centered): 280px, rounded-full bg-muted/70, ⌘K shortcut.",
                 "Status area (right): background work indicator, badges, contribution failures.",

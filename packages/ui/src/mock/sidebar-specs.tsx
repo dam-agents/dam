@@ -6,7 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cube,
-  Diagram,
+  DataCategorical,
   Filter,
   Help,
   Home,
@@ -158,7 +158,7 @@ const SPEC_SESSIONS: SpecSession[] = [
 
 const RAIL_NAV_ITEMS = [
   { label: "Home", icon: Home },
-  { label: "Artifacts", icon: Diagram },
+  { label: "Artifacts", icon: DataCategorical },
   { label: "Starter Kits", icon: Cube },
 ];
 

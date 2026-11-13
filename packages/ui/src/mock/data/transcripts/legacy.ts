@@ -29,6 +29,7 @@ function artifactTranscript(): Message[] {
         tool: "artifact",
         title: "Spring 2025 Campaign Brief",
         artifactKind: "Markdown",
+        artifactId: "art-1",
         accessLabel: "Only you",
       },
     ]),
@@ -41,7 +42,15 @@ function artifactTranscript(): Message[] {
     msg("art-m4", "assistant", [
       {
         kind: "text",
-        text: "Done — I've added a **Tone & Voice** section to the artifact with guidelines for the campaign. The key points:\n\n- Lead with confidence, not urgency\n- Use active voice throughout\n- Keep sentences under 20 words for headers\n- Match the optimistic-but-grounded tone from the Q4 launch\n\n[Spring 2025 Campaign Brief](platform://artifacts/art-1)",
+        text: "Done — I've added a **Tone & Voice** section to the artifact with guidelines for the campaign. The key points:\n\n- Lead with confidence, not urgency\n- Use active voice throughout\n- Keep sentences under 20 words for headers\n- Match the optimistic-but-grounded tone from the Q4 launch",
+      },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
       },
     ]),
     msg("art-m5", "user", [
@@ -67,6 +76,14 @@ function artifactTranscript(): Message[] {
         kind: "text",
         text: "Here's what the Q4 data shows:\n\n**Top-performing segments (Q4):**\n1. Mid-market SaaS (35% of conversions, 2.1x ROAS)\n2. Enterprise DevOps teams (28% of conversions, 1.8x ROAS)\n3. Startup founders (22% of conversions, 3.4x ROAS — highest efficiency)\n\n**Spring 2025 brief currently targets:**\n- Enterprise only, which was our second-best segment\n- Drops startup founders entirely, despite their high ROAS\n\nI'd recommend keeping startup founders in the mix and adjusting the messaging hierarchy to lead with the efficiency angle that resonated with them. I've updated the artifact with a comparison table.",
       },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
+      },
     ]),
     msg("art-m7", "user", [
       {
@@ -89,6 +106,14 @@ function artifactTranscript(): Message[] {
         kind: "text",
         text: "Updated the artifact with a **Channel Strategy** section. Based on Q4 attribution:\n\n**Recommended channel mix:**\n- **LinkedIn Sponsored Content** (40% budget) — strongest for enterprise DevOps, 1.9x ROAS\n- **Google Search** (25% budget) — high-intent traffic, best for mid-market\n- **Developer newsletters** (20% budget) — Pointer, TLDR, Changelog — strong with startup founders\n- **Twitter/X promoted** (10% budget) — brand awareness, lower direct conversion but feeds top-of-funnel\n- **Retargeting** (5% budget) — across all channels for site visitors who didn't convert\n\nThe brief now has: messaging hierarchy, tone guidelines, audience segments with comparison data, and channel strategy. Want me to add a timeline and budget breakdown?",
       },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
+      },
     ]),
     msg("art-m9", "user", [
       {
@@ -100,6 +125,14 @@ function artifactTranscript(): Message[] {
       {
         kind: "text",
         text: 'Added the **Campaign Timeline** section:\n\n**Phase 1 — Teaser (Mar 10–16)**\n- Organic social hints and "coming soon" posts\n- Seed developer newsletters with preview content\n- Internal enablement for sales team\n\n**Phase 2 — Launch (Mar 17–30)**\n- Full paid media activation across all channels\n- Blog post + landing page go live\n- Product Hunt launch (Mar 18)\n- Webinar with customer case study (Mar 20)\n\n**Phase 3 — Sustain (Mar 31 – Apr 20)**\n- Retargeting ramp-up for non-converters\n- Second blog post with technical deep-dive\n- Adjust spend based on Week 2 performance data\n- Close out with ROI report and retro\n\nThe artifact is getting comprehensive — 6 sections now. Should I add anything else or is this ready for review?',
+      },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
       },
     ]),
     msg("art-m11", "user", [
@@ -119,6 +152,14 @@ function artifactTranscript(): Message[] {
         kind: "text",
         text: 'Added **Competitive Positioning** to the artifact:\n\n**vs. Competitor A (Acme Platform)**\n- They lead on breadth of integrations (200+ vs. our 45)\n- We lead on **depth of automation** — our agents actually complete work, theirs only notify\n- Messaging angle: "Not just alerts — actual outcomes"\n\n**vs. Competitor B (Orion Dev)**\n- They\'re cheaper at the entry tier ($29 vs. our $49)\n- We lead on **enterprise security** — SOC 2 Type II, private VPC, audit logs\n- Messaging angle: "Enterprise-grade from day one"\n\n**Key differentiator to emphasize:**\n- Neither competitor offers scheduled autonomous agents\n- This is our unique wedge — "Set it and forget it" automation\n- Should be the hero message in Phase 2 launch content\n\nThe brief is now 7 sections. This feels solid for a review pass.',
       },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
+      },
     ]),
     msg("art-m13", "user", [
       {
@@ -130,6 +171,14 @@ function artifactTranscript(): Message[] {
       {
         kind: "text",
         text: "Added **Success Metrics & KPIs** as the final section:\n\n**Primary KPIs:**\n| Metric | Target | Measurement |\n|--------|--------|------------|\n| Marketing Qualified Leads | 1,200 | Hubspot |\n| Pipeline Generated | $2.4M | Salesforce |\n| ROAS (blended) | 2.5x | Attribution model |\n| Trial Signups | 800 | Product analytics |\n\n**Secondary KPIs:**\n- Brand search volume: +40% vs. pre-campaign baseline\n- Newsletter subscriber growth: +2,000 net new\n- Webinar attendance: 300+ registrations, 45% show rate\n- Content engagement: avg. 3:20 time-on-page for campaign landing page\n\n**Reporting cadence:**\n- Daily: spend and conversion dashboards\n- Weekly: channel performance review with optimization recommendations\n- End of campaign: full retro with ROI analysis\n\nThe artifact now has 8 sections covering the complete campaign strategy. Ready for stakeholder review.",
+      },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
       },
     ]),
     msg("art-m15", "user", [
@@ -146,6 +195,14 @@ function artifactTranscript(): Message[] {
       {
         kind: "text",
         text: 'I\'ve done a consistency pass across all 8 sections. Changes made:\n\n1. **Unified terminology** — was inconsistent between "agents", "autonomous agents", and "AI agents". Standardized to "autonomous agents" for external messaging, "agents" for internal references\n2. **Tone alignment** — the competitive positioning section was more aggressive than the tone guidelines suggested. Softened to match the "confident, not urgent" direction\n3. **Audience threading** — made sure startup founder messaging appears in channel strategy (newsletters) and timeline (Product Hunt), not just the audience section\n4. **CTA consistency** — all sections now point to the same primary CTA: "Start a free trial"\n5. **Formatting** — standardized header levels, added consistent bullet formatting\n\nThe artifact is polished and ready to share. All 8 sections are aligned on message, tone, and audience targeting.',
+      },
+      {
+        kind: "work",
+        tool: "artifact",
+        title: "Spring 2025 Campaign Brief",
+        artifactKind: "Markdown",
+        artifactId: "art-1",
+        accessLabel: "Only you",
       },
     ]),
   ];

@@ -1,5 +1,4 @@
 import { Asleep, Checkmark, StopFilledAlt } from "@carbon/icons-react";
-import type { FinishedRow as FinishedRowData } from "agent-runtime-api";
 import { match } from "ts-pattern";
 
 import { clickableProps } from "@/lib/clickable";
@@ -7,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import { ENDED_BY_LABEL } from "../lib/process-copy.js";
+import type { FinishedRow as FinishedRowData } from "../types.js";
 import { ProcessCommand } from "./process-command.js";
 
 interface Props {
@@ -23,7 +23,7 @@ export function FinishedRow({ row, now, outputOpen, onOpenOutput }: Props) {
       data-testid="finished-process-row"
       aria-pressed={hasOutput ? outputOpen : undefined}
       className={cn(
-        "flex items-center gap-2 border-b border-border px-4 py-1.5 text-2xs text-muted-foreground transition-colors",
+        "flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground transition-colors",
         hasOutput && "cursor-pointer",
         outputOpen ? "bg-muted" : hasOutput && "hover:bg-muted/60",
       )}

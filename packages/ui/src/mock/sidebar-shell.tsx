@@ -5,7 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cube,
-  Diagram,
+  DataCategorical,
   Help,
   Home,
   OverflowMenuVertical,
@@ -371,7 +371,7 @@ function ExpandedSidebar({
       <div className="mt-px flex shrink-0 flex-col gap-px px-2">
         <NavItem icon={Home} label="Home" active={activeNav === "home"} />
         <NavItem
-          icon={Diagram}
+          icon={DataCategorical}
           label="Artifacts"
           active={activeNav === "artifacts"}
         />

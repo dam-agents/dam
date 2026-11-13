@@ -25,6 +25,10 @@ const badgeVariants = cva(
         danger: "border-transparent bg-danger-light text-danger",
         info: "border-transparent bg-info-light text-info",
         muted: "border-transparent bg-muted text-muted-foreground",
+        pending:
+          "border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-400/15 dark:text-yellow-300",
+        conflict:
+          "border-orange-400 bg-orange-100 text-orange-900 dark:border-orange-700 dark:bg-orange-950 dark:text-orange-300",
         accent: "border-transparent bg-accent-light text-accent",
         template: "border-transparent bg-template-light text-template",
         preset: "border-transparent bg-preset-border/50 text-preset",

@@ -4,6 +4,7 @@ import {
   ChartNetwork,
   ChartRelationship,
   ChartScatter,
+  DataCategorical,
   DataVis_1,
   DataVis_2,
   DataVis_3,
@@ -58,6 +59,11 @@ const OPTIONS: IconOption[] = [
     name: "ChartRelationship",
     icon: ChartRelationship,
     note: "Entity relationship lines",
+  },
+  {
+    name: "DataCategorical",
+    icon: DataCategorical,
+    note: "Categorical data — current artifacts icon",
   },
   {
     name: "Diagram",

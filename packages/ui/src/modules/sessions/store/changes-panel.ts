@@ -7,6 +7,7 @@ export interface ChangesPanelData {
   files: ChangesFileEntry[];
   summary: string;
   selectedFile: string | null;
+  changeSetPath?: string | null;
 }
 
 export interface ChangesPanelSlice {
@@ -34,6 +35,7 @@ export const createChangesPanelSlice: StateCreator<
             openArtifactDirty: false,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openProcessesPanelDocked: false,
             openDelegation: null,
             openWorkProcess: null,
             openEnvironment: null,

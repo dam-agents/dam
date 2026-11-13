@@ -1,30 +1,25 @@
 import { Close } from "@carbon/icons-react";
-import { PROCESS_OUTPUT_MAX_BYTES } from "agent-runtime-api";
 import { useMemo, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
+import { processList, processOutput } from "../../../mock/data/processes.js";
 import { useStore } from "../../../store.js";
-import { useProcesses, useProcessOutput } from "../api/queries.js";
 import { useStickToBottom } from "../hooks/use-stick-to-bottom.js";
 import { findListedProcess } from "../lib/listed-process.js";
+import { PROCESS_OUTPUT_MAX_BYTES } from "../types.js";
 
 interface Props {
   agentId: string;
   outputKey: string;
 }
 
-export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
+export function DockedProcessOutputPanel({ outputKey }: Props) {
   const close = useStore((s) => s.setOpenProcessOutputKey);
-  const { data: list, isPending } = useProcesses(agentId, {
-    enabled: true,
-    poll: false,
-  });
   const listed = useMemo(
-    () => findListedProcess(list, outputKey),
-    [list, outputKey],
+    () => findListedProcess(processList, outputKey),
+    [outputKey],
   );
 
   return (
@@ -63,13 +58,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
         </Button>
       </div>
       {listed ? (
-        <OutputBody
-          agentId={agentId}
-          outputKey={outputKey}
-          running={listed.running}
-        />
-      ) : isPending ? (
-        <CenteredSpinner />
+        <OutputBody outputKey={outputKey} />
       ) : (
         <Notice text="This process is no longer listed." />
       )}
@@ -77,28 +66,12 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
   );
 }
 
-function OutputBody({
-  agentId,
-  outputKey,
-  running,
-}: {
-  agentId: string;
-  outputKey: string;
-  running: boolean;
-}) {
-  const { data, isPending, isError } = useProcessOutput(
-    agentId,
-    outputKey,
-    running,
-  );
+function OutputBody({ outputKey }: { outputKey: string }) {
+  const data = processOutput[outputKey] ?? null;
   const bodyRef = useRef<HTMLPreElement>(null);
   const onScroll = useStickToBottom(bodyRef, data?.text);
 
-  if (!data) {
-    if (isError) return <Notice text="This output can't be read." />;
-    if (isPending) return <CenteredSpinner />;
-    return null;
-  }
+  if (!data) return <Notice text="This output can't be read." />;
   return (
     <>
       {data.truncated && (
@@ -116,14 +89,6 @@ function OutputBody({
         )}
       </pre>
     </>
-  );
-}
-
-function CenteredSpinner() {
-  return (
-    <div className="flex flex-1 items-center justify-center">
-      <Spinner size={18} />
-    </div>
   );
 }
 

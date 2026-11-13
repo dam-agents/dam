@@ -1,5 +1,4 @@
-import type { ProcessList } from "agent-runtime-api";
-
+import type { ProcessList } from "../types.js";
 import { ENDED_BY_LABEL } from "./process-copy.js";
 
 export interface ListedProcess {

@@ -1,5 +1,4 @@
 import { Document } from "@carbon/icons-react";
-import type { ProcessRow } from "agent-runtime-api";
 
 import {
   DropdownMenuItem,
@@ -8,6 +7,7 @@ import {
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
+import type { ProcessRow } from "../types.js";
 import { KeepMenuItem } from "./keep-menu-item.js";
 import { StopProcessMenuItem } from "./stop-process-menu-item.js";
 

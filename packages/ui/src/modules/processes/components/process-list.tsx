@@ -1,10 +1,10 @@
-import type { ProcessList as ProcessListData } from "agent-runtime-api";
 import { useMemo } from "react";
 
 import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
 import { useToggleProcessOutput } from "../hooks/use-toggle-process-output.js";
 import { groupProcesses } from "../lib/process-groups.js";
+import type { ProcessList as ProcessListData } from "../types.js";
 import { FinishedList } from "./finished-list.js";
 import { PendingRestartBanner } from "./pending-restart-banner.js";
 import { ProcessGroup } from "./process-group.js";

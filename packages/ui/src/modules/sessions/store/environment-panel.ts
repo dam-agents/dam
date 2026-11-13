@@ -36,6 +36,7 @@ export const createEnvironmentPanelSlice: StateCreator<
             openArtifactDirty: false,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openProcessesPanelDocked: false,
             openDelegation: null,
             openChangesData: null,
             openWorkProcess: null,

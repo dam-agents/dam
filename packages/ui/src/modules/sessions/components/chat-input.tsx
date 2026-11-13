@@ -37,10 +37,10 @@ import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { useNow } from "../../../hooks/use-now.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { emitToast } from "../../../lib/toast.js";
+import { processList } from "../../../mock/data/processes.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
-import { useProcesses } from "../../processes/api/queries.js";
 import { formatRunTime } from "../../processes/lib/format-process.js";
 import { summarizeProcesses } from "../../processes/lib/process-summary.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
@@ -423,20 +423,19 @@ export function ChatInput({
   );
 }
 
-export function BackgroundTasksIndicator({
-  agentId,
-}: {
-  agentId: string | null;
-}) {
-  const { data } = useProcesses(agentId, { enabled: !!agentId, poll: false });
+export function BackgroundTasksIndicator(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  props: { agentId: string | null },
+) {
+  const data = processList;
   const now = useNow(5_000);
 
   const background = useMemo(
-    () => (data ? data.running.filter((r) => r.kind !== "turn") : []),
+    () => data.running.filter((r) => r.kind !== "turn"),
     [data],
   );
 
-  const { running } = data ? summarizeProcesses(data) : { running: 0 };
+  const { running } = summarizeProcesses(data);
   if (running === 0) return null;
 
   return (

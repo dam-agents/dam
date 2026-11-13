@@ -57,9 +57,12 @@ function makeSession(
 export const MOCK_SESSION_IDS = {
   artifact: "sess-artifact-example",
   browser: "sess-browser-example",
+  gitChanges: "sess-git-changes-example",
+  backgroundProcesses: "sess-bg-processes-example",
   longChat: "sess-long-chat-example",
   devFlow: "sess-dev-flow",
   envMockup: "sess-env-mockup",
+  newUser: "sess-new-user",
 };
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
@@ -77,6 +80,18 @@ const ciPipelineSessions = [
     AGENT_IDS.codexResearch,
     "Browser session",
     3 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.gitChanges,
+    AGENT_IDS.codexResearch,
+    "Git changes session",
+    2 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.backgroundProcesses,
+    AGENT_IDS.codexResearch,
+    "Background processes",
+    1.5 * hr,
   ),
   makeSession(
     "sess-ci-004",
@@ -111,6 +126,16 @@ const ciPipelineSessions = [
   ),
 ];
 
+const chesterSessions = [
+  makeSession(
+    MOCK_SESSION_IDS.newUser,
+    AGENT_IDS.chester,
+    "New user session",
+    5 * min,
+  ),
+];
+
 export const mockSessions: Record<string, unknown[]> = {
   [AGENT_IDS.codexResearch]: ciPipelineSessions,
+  [AGENT_IDS.chester]: chesterSessions,
 };

@@ -4,9 +4,15 @@ import type { PlatformStore } from "../../../store.js";
 
 export interface WorkProcessData {
   command: string;
-  exitCode: number;
-  logLines: string[];
-  status?: "running" | "finished" | "failed" | "restart-waiting";
+  exitCode?: number;
+  logLines?: string[];
+  status?:
+    | "running"
+    | "running-awake"
+    | "running-hibernates"
+    | "exited"
+    | "stopped"
+    | "hibernated";
 }
 
 export interface WorkProcessPanelSlice {
@@ -33,6 +39,7 @@ export const createWorkProcessPanelSlice: StateCreator<
             openArtifactDirty: false,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openProcessesPanelDocked: false,
             openDelegation: null,
             openChangesData: null,
             openEnvironment: null,

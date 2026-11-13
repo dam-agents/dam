@@ -204,7 +204,7 @@ version = "21.0.2"
 backend = "core:java"
 
 [tools.java.options]
-shorthand_vendor = "openjdk"
+shorthand_vendor = "temurin"
 
 [tools.java."platforms.linux-arm64"]
 checksum = "sha256:08db1392a48d4eb5ea5315cf8f18b89dbaf36cda663ba882cf03c704c9257ec2"
@@ -300,6 +300,12 @@ provenance = "github-attestations"
 [tools.lima."platforms.macos-x64"]
 checksum = "sha256:0d6f99c19f6e4bc3c92730c4c29d929e6927f0cb0a0ba1a84383367135a8ff31"
 url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Darwin-x86_64.tar.gz"
+provenance = "github-attestations"
+
+[tools.lima."platforms.windows-x64"]
+checksum = "sha256:e7bf7dd2d2e7ab7ce020631f8f7533665f6e6f9068686d3ffcd0f3c438856ea9"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Windows-AMD64.zip"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484814002"
 provenance = "github-attestations"
 
 [[tools.maven]]

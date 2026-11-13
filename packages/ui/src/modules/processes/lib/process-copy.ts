@@ -1,11 +1,11 @@
+import { match } from "ts-pattern";
+
 import type {
   FinishedRow,
   PendingRestart,
   ProcessKind,
   ProcessRow,
-} from "agent-runtime-api";
-import { match } from "ts-pattern";
-
+} from "../types.js";
 import type { ProcessGroupId } from "./process-groups.js";
 
 export const BACKGROUND_KIND_LABEL: Record<
@@ -14,6 +14,7 @@ export const BACKGROUND_KIND_LABEL: Record<
 > = {
   "harness-task": "Background task",
   detached: "Detached",
+  "startup-item": "Login item",
 };
 
 export const PROCESS_GROUP_LABEL: Record<ProcessGroupId, string> = {

@@ -1,5 +1,3 @@
-import type { ProcessRow } from "agent-runtime-api";
-
 import { cn } from "@/lib/utils";
 
 import {
@@ -7,6 +5,7 @@ import {
   formatMemory,
   formatRunTime,
 } from "../lib/format-process.js";
+import type { ProcessRow } from "../types.js";
 
 const BUSY_CPU_PERCENT = 50;
 
@@ -16,9 +15,10 @@ interface Props {
 }
 
 export function ProcessStats({ row, now }: Props) {
-  const cpu = formatCpu(row.cpuPercent);
-  const memory = formatMemory(row.rssBytes);
-  const busy = row.cpuPercent !== null && row.cpuPercent >= BUSY_CPU_PERCENT;
+  const cpu = formatCpu(row.cpuPercent ?? null);
+  const memory = formatMemory(row.rssBytes ?? null);
+  const busy =
+    row.cpuPercent !== undefined && row.cpuPercent >= BUSY_CPU_PERCENT;
 
   return (
     <span className="tabular-nums">

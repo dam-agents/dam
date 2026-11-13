@@ -1,23 +1,21 @@
 import { Button } from "@/components/ui/button";
 
+import { processList } from "../../../mock/data/processes.js";
+import { useStore } from "../../../store.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
-import { useProcesses } from "../api/queries.js";
-import { useOpenProcessesSection } from "../hooks/use-open-processes-section.js";
 import { summarizeProcesses } from "../lib/process-summary.js";
 
 const RESTART_PENDING_HINT = "A settings change is waiting";
 
 export function ProcessesIndicator({
-  agentId,
   onClick,
 }: {
   agentId: string | null;
   onClick?: () => void;
 }) {
-  const { data } = useProcesses(agentId, { enabled: true, poll: false });
-  const openSection = useOpenProcessesSection();
-  if (!data) return null;
-  const { running, keepingAwake, restartPending } = summarizeProcesses(data);
+  const openPanel = useStore((s) => s.setOpenProcessesPanelDocked);
+  const { running, keepingAwake, restartPending } =
+    summarizeProcesses(processList);
   if (running === 0) return null;
 
   return (
@@ -26,12 +24,19 @@ export function ProcessesIndicator({
       size="sm"
       data-testid="processes-indicator"
       className="text-muted-foreground"
-      onClick={onClick ?? openSection}
+      onClick={onClick ?? (() => openPanel(true))}
     >
-      <WorkingDots size="md" className="working-dots-slow text-success" />
+      <WorkingDots size="md" className="working-dots-slow text-accent" />
       <span>
         {running} running
-        {keepingAwake > 0 && ` · ${keepingAwake} keeping it awake`}
+        {keepingAwake > 0 && (
+          <>
+            {" · "}
+            <span className="text-warning-fg">
+              {keepingAwake} keeping it awake
+            </span>
+          </>
+        )}
       </span>
       {restartPending && (
         <span

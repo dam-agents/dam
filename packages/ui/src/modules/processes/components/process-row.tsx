@@ -1,9 +1,8 @@
-import type { ProcessRow as ProcessRowData } from "agent-runtime-api";
-
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { BACKGROUND_KIND_LABEL } from "../lib/process-copy.js";
+import type { ProcessRow as ProcessRowData } from "../types.js";
 import { ProcessActionsMenu } from "./process-actions-menu.js";
 import { ProcessCommand } from "./process-command.js";
 import { ProcessStats } from "./process-stats.js";
@@ -47,7 +46,7 @@ export function ProcessRow({
           />
           <ProcessCommand command={row.command} />
         </div>
-        <span className="truncate text-2xs text-muted-foreground">
+        <span className="truncate text-xs text-muted-foreground">
           {row.kind !== "turn" && `${BACKGROUND_KIND_LABEL[row.kind]} · `}
           <ProcessStats row={row} now={now} />
         </span>

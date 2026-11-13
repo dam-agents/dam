@@ -74,6 +74,7 @@ import {
   useBrowserAvailable,
   useOpenBrowser,
 } from "../../browser/hooks/use-auto-open-browser.js";
+import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
@@ -100,6 +101,7 @@ import {
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { DockedProcessesPanel } from "../../processes/components/docked-processes-panel.js";
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import {
   getDefaultExamples,
@@ -112,7 +114,6 @@ import {
   setSessionRunning,
 } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
-import { ChangesPanel } from "../components/changes-panel.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
@@ -194,8 +195,10 @@ export function ChatView() {
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
   const openChangesData = useStore((s) => s.openChangesData);
+  const setOpenChangesData = useStore((s) => s.setOpenChangesData);
   const openWorkProcess = useStore((s) => s.openWorkProcess);
   const openEnvironment = useStore((s) => s.openEnvironment);
+  const openProcessesPanelDocked = useStore((s) => s.openProcessesPanelDocked);
   const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
@@ -597,6 +600,7 @@ export function ChatView() {
       openArtifactId ||
       dockedExperiment ||
       openProcessOutputKey ||
+      openProcessesPanelDocked ||
       openChangesData ||
       openWorkProcess ||
       openEnvironment
@@ -924,12 +928,17 @@ export function ChatView() {
                   agentId={selectedAgent}
                   outputKey={openProcessOutputKey}
                 />
+              ) : openProcessesPanelDocked ? (
+                <DockedProcessesPanel agentId={selectedAgent} />
               ) : openWorkProcess ? (
                 <WorkProcessPanel />
               ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : openChangesData ? (
-                <ChangesPanel />
+                <DockedChangesPanel
+                  initialPath={openChangesData.changeSetPath}
+                  onClose={() => setOpenChangesData(null)}
+                />
               ) : openEnvironment ? (
                 <EnvironmentPanel />
               ) : dashboardExperiment ? (

@@ -7,6 +7,7 @@ const AGENT_IDS = {
   experiment1: "a1b2c3d4-0005-4000-8000-000000000005",
   experiment2: "a1b2c3d4-0006-4000-8000-000000000006",
   knowledgeBase2: "a1b2c3d4-0007-4000-8000-000000000007",
+  chester: "a1b2c3d4-0008-4000-8000-000000000007",
 };
 
 export { AGENT_IDS };
@@ -80,6 +81,33 @@ export const agents: AgentView[] = [
     grantedSecretIds: [],
     grantedConnectionIds: [],
     state: "hibernated",
+    error: undefined,
+    stopRequested: false,
+    overBudget: false,
+    overBudgetMessage: undefined,
+    size: { cpu: "2000m", memory: "2Gi" },
+    podTerminationReason: undefined,
+    contributionFailures: [],
+    channels: [],
+
+    kind: undefined,
+    kbTemplateId: null,
+    features: { liveUpdates: true },
+  },
+  {
+    id: AGENT_IDS.chester,
+    spawnedBy: null,
+    name: "Chester",
+    templateId: "claude-code",
+    templateUpdate: null,
+    image: "ghcr.io/anthropic/claude-code:latest",
+    description:
+      "Your personal agent that learns about you and helps with daily tasks",
+
+    hibernationTimeoutMin: 30,
+    grantedSecretIds: [],
+    grantedConnectionIds: [],
+    state: "running",
     error: undefined,
     stopRequested: false,
     overBudget: false,

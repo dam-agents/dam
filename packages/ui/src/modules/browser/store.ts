@@ -39,6 +39,7 @@ export const createBrowserSlice: StateCreator<
             openArtifactDirty: false,
             openDelegation: null,
             openProcessOutputKey: null,
+            openProcessesPanelDocked: false,
             openChangesData: null,
             openWorkProcess: null,
             openEnvironment: null,

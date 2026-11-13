@@ -19,6 +19,7 @@ import { approvals } from "./data/approvals.js";
 import {
   artifactContents,
   artifactFolders,
+  artifactPreviews,
   artifacts,
 } from "./data/artifacts.js";
 import { brand } from "./data/brand.js";
@@ -147,6 +148,17 @@ queryClient.setQueryData(
     { version: 2, createdAt: new Date(Date.now() - 3600000).toISOString() },
     { version: 1, createdAt: new Date(Date.now() - 7200000).toISOString() },
   ],
+);
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.preview", { id: "art-1" }),
+  artifactPreviews["art-1"],
+);
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.preview", {
+    id: "art-1",
+    version: undefined,
+  }),
+  artifactPreviews["art-1"],
 );
 
 // Skills

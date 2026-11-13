@@ -105,13 +105,11 @@ export function PlusMenuPopover({
     [agentId, agentConnectionsQ.data, setConnections],
   );
 
-  const granted = useMemo(
-    () =>
-      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
-        grantedIds.has(c.id),
-      ),
-    [connectionsQ.data, grantedIds],
-  );
+  const granted = useMemo(() => {
+    const all = excludeProviderConnections(connectionsQ.data ?? []);
+    if (grantedIds.size === 0 && all.length > 0) return all;
+    return all.filter((c) => grantedIds.has(c.id));
+  }, [connectionsQ.data, grantedIds]);
 
   const { populated: groups, templateById } = useCatalogGroups(granted);
 

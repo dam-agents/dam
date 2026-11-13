@@ -1,10 +1,12 @@
 export { adaevolveTranscript } from "./adaevolve.js";
+export { backgroundProcessesSessionTranscript } from "./background-processes-session.js";
 export { browserSessionTranscript } from "./browser-session.js";
 export { codeReviewerTranscript } from "./code-reviewer.js";
 export { devFlowTranscript } from "./dev-flow.js";
 export { environmentMockupTranscript } from "./environment-mockup.js";
 export { evoxTranscript } from "./evox.js";
 export { gepaTranscript } from "./gepa.js";
+export { gitChangesSessionTranscript } from "./git-changes-session.js";
 export { form, msg } from "./helpers.js";
 export { kSearchTranscript } from "./k-search.js";
 export {
@@ -15,6 +17,7 @@ export {
 } from "./legacy.js";
 export { llmWikiTranscript } from "./llm-wiki.js";
 export { microManagerTranscript } from "./micro-manager.js";
+export { newUserSessionTranscript } from "./new-user-session.js";
 export { nousTranscript } from "./nous.js";
 export { openevolveTranscript } from "./openevolve.js";
 export { personalAssistantTranscript } from "./personal-assistant.js";
@@ -31,12 +34,14 @@ import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { MOCK_SESSION_IDS, mockSessions } from "../sessions.js";
 import { adaevolveTranscript } from "./adaevolve.js";
-import { codeReviewerTranscript } from "./code-reviewer.js";
+import { backgroundProcessesSessionTranscript } from "./background-processes-session.js";
 import { browserSessionTranscript } from "./browser-session.js";
+import { codeReviewerTranscript } from "./code-reviewer.js";
 import { devFlowTranscript } from "./dev-flow.js";
 import { environmentMockupTranscript } from "./environment-mockup.js";
 import { evoxTranscript } from "./evox.js";
 import { gepaTranscript } from "./gepa.js";
+import { gitChangesSessionTranscript } from "./git-changes-session.js";
 import { kSearchTranscript } from "./k-search.js";
 import {
   artifactTranscript,
@@ -45,6 +50,7 @@ import {
 } from "./legacy.js";
 import { llmWikiTranscript } from "./llm-wiki.js";
 import { microManagerTranscript } from "./micro-manager.js";
+import { newUserSessionTranscript } from "./new-user-session.js";
 import { nousTranscript } from "./nous.js";
 import { openevolveTranscript } from "./openevolve.js";
 import { personalAssistantTranscript } from "./personal-assistant.js";
@@ -93,11 +99,20 @@ export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.browser) {
     return browserSessionTranscript();
   }
+  if (sessionId === MOCK_SESSION_IDS.gitChanges) {
+    return gitChangesSessionTranscript();
+  }
+  if (sessionId === MOCK_SESSION_IDS.backgroundProcesses) {
+    return backgroundProcessesSessionTranscript();
+  }
   if (sessionId === MOCK_SESSION_IDS.devFlow) {
     return devFlowTranscript();
   }
   if (sessionId === MOCK_SESSION_IDS.envMockup) {
     return environmentMockupTranscript();
+  }
+  if (sessionId === MOCK_SESSION_IDS.newUser) {
+    return newUserSessionTranscript();
   }
   if (sessionId === MOCK_SESSION_IDS.longChat) {
     return longChatTranscript();

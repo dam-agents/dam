@@ -1,8 +1,7 @@
-import type { FinishedRow as FinishedRowData } from "agent-runtime-api";
-
 import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import { useStore } from "../../../store.js";
+import type { FinishedRow as FinishedRowData } from "../types.js";
 import { FinishedRow } from "./finished-row.js";
 import { GROUP_HEADING_CLASS, GroupCount } from "./group-heading.js";
 

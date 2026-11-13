@@ -3,10 +3,21 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useAgentDisplayName, useAgents } from "../../agents/api/queries.js";
+import {
+  AgentAvatar,
+  CharAvatar,
+  CHAR_NAMES,
+  type CharName,
+} from "../../agents/components/char-avatar.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
@@ -95,9 +106,14 @@ export function ConfigureAgentModal({
   return (
     <Modal widthClass="w-[960px]">
       <div className="flex items-center justify-between border-b border-border px-5 py-3">
-        <h2 className="text-sm font-semibold text-foreground">
-          {agentName ?? "Configure Agent"}
-        </h2>
+        <div className="flex items-center gap-2.5">
+          {agent && display ? (
+            <AvatarPicker agentId={agentId} state={display.state} />
+          ) : null}
+          <h2 className="text-sm font-semibold text-foreground">
+            {agentName ?? "Configure Agent"}
+          </h2>
+        </div>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -199,5 +215,72 @@ export function ConfigureAgentModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function AvatarPicker({
+  agentId,
+  state,
+}: {
+  agentId: string;
+  state: import("../../agents/utils/agent-resolver.js").AgentDisplayState;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<CharName | null>(null);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="group relative rounded-lg transition-colors hover:bg-muted"
+          aria-label="Change agent icon"
+        >
+          {selected ? (
+            <CharAvatar name={selected} state="running" className="size-7" />
+          ) : (
+            <AgentAvatar agentId={agentId} state={state} className="size-7" />
+          )}
+          <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M12.1 3.9l-.7-.8c-.4-.4-1-.4-1.4 0L4 9.1l-.5 2.9 2.9-.5 6-6c.3-.4.3-1-.3-1.6zM5.6 10.6l-.8.1.1-.8 4.8-4.8.7.7-4.8 4.8z" />
+            </svg>
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-auto p-3"
+      >
+        <p className="mb-2 text-sm font-medium text-foreground">
+          Choose icon
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {CHAR_NAMES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                setSelected(name);
+                setOpen(false);
+              }}
+              className={cn(
+                "rounded-lg p-1.5 transition-colors hover:bg-muted",
+                selected === name && "bg-muted ring-2 ring-accent",
+              )}
+              aria-label={name}
+            >
+              <CharAvatar name={name} state="running" className="size-8" />
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

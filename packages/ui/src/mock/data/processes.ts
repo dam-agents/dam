@@ -1,5 +1,9 @@
-import type { FinishedRow, ProcessList, ProcessRow } from "agent-runtime-api";
-
+import type {
+  FinishedRow,
+  ProcessList,
+  ProcessRow,
+  StartupItem,
+} from "../../modules/processes/types.js";
 import { AGENT_IDS } from "./agents.js";
 
 // TODO(dev): processes API needs the starting session
@@ -38,6 +42,20 @@ const pythonTrain: MockProcessRow = {
   sessionId: "Nightly eval",
 };
 
+const dockerContainer: MockProcessRow = {
+  key: "proc-docker-1",
+  kind: "detached",
+  pid: 48500,
+  command: "docker run -d postgres:16",
+  startedAt: minutesAgo(60),
+  cpuPercent: 3,
+  rssBytes: 80 * 1024 * 1024,
+  outputPath: "/tmp/agent-output/docker-postgres.log",
+  keepsAwake: true,
+  keepSource: "user",
+  container: { engine: "docker", role: "container", id: "a1b2c3d4e5f6" },
+};
+
 const hibernatedJob: MockFinishedRow = {
   key: "proc-cargo-hib-1",
   kind: "detached",
@@ -51,10 +69,61 @@ const hibernatedJob: MockFinishedRow = {
   sessionId: "Fix login redirect",
 };
 
+const exitedJob: MockFinishedRow = {
+  key: "proc-lint-exit-1",
+  kind: "harness-task",
+  command: "eslint . --fix",
+  startedAt: minutesAgo(20),
+  finishedAt: minutesAgo(15),
+  endedBy: "exit",
+  outputPath: "/tmp/agent-output/eslint.log",
+  keptAwake: false,
+  keepSource: "default",
+};
+
+const stoppedJob: MockFinishedRow = {
+  key: "proc-server-stop-1",
+  kind: "detached",
+  command: "node server.js",
+  startedAt: minutesAgo(45),
+  finishedAt: minutesAgo(10),
+  endedBy: "stop",
+  outputPath: "/tmp/agent-output/server.log",
+  keptAwake: true,
+  keepSource: "user",
+};
+
+const startupItems: StartupItem[] = [
+  {
+    id: "login-tailscale",
+    command: "tailscaled --state=/var/lib/tailscale",
+    running: true,
+    disabled: false,
+    listed: true,
+    outputPath: "/tmp/agent-output/tailscale.log",
+  },
+  {
+    id: "login-ssh-agent",
+    command: "ssh-agent -a $SSH_AUTH_SOCK",
+    running: true,
+    disabled: false,
+    listed: true,
+    outputPath: null,
+  },
+];
+
 export const processList: ProcessList = {
+  running: [npmBuild, pythonTrain, dockerContainer],
+  finished: [exitedJob, stoppedJob, hibernatedJob],
+  startupItems,
+  pendingRestart: null,
+};
+
+export const processListWithRestart: ProcessList = {
   running: [npmBuild, pythonTrain],
   finished: [hibernatedJob],
-  pendingRestart: null,
+  startupItems,
+  pendingRestart: { blockingTasks: 2, stops: { tasks: 2, turns: 0 } },
 };
 
 export const processListEmpty: ProcessList = {
@@ -122,6 +191,25 @@ test auth::test_expired_token ... ok
 test routes::test_health ... ok
 
 [agent hibernated — output stopped]`,
+    truncated: false,
+  },
+  "proc-docker-1": {
+    text: `PostgreSQL 16.1 on x86_64-pc-linux-gnu
+listening on IPv4 address "0.0.0.0", port 5432
+database system is ready to accept connections`,
+    truncated: false,
+  },
+  "proc-lint-exit-1": {
+    text: `✖ 3 problems (0 errors, 3 warnings)
+  3 warnings potentially fixable with the \`--fix\` option.
+All fixes applied.`,
+    truncated: false,
+  },
+  "proc-server-stop-1": {
+    text: `Server listening on http://0.0.0.0:3000
+GET / 200 12ms
+GET /api/health 200 2ms
+[stopped by user]`,
     truncated: false,
   },
 };

@@ -125,7 +125,11 @@ export function ArtifactCard({ part }: { part: WorkArtifact }) {
         </span>
       }
       trailing={<ArtifactTrailingMenu />}
-      onClick={() => {}}
+      onClick={() => {
+        if (part.artifactId) {
+          useStore.getState().setOpenArtifactId(part.artifactId);
+        }
+      }}
     />
   );
 }

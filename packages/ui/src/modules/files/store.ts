@@ -64,6 +64,7 @@ export const createFilesSlice: StateCreator<
             openArtifactId: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openProcessesPanelDocked: false,
             openChangesData: null,
             openWorkProcess: null,
             openEnvironment: null,

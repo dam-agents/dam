@@ -103,9 +103,6 @@ tr:hover td{background:#f9f9f9}
   <span>6 reports</span>
   <span>Showing 1–6 of 6</span>
 </div>
-<div class="note">
-  Environments are configured in the Agent Configure page. Managing access is only available through here.
-</div>
 </body>
 </html>`;
 

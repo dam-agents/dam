@@ -1,4 +1,4 @@
-import type { ProcessKind, ProcessRow } from "agent-runtime-api";
+import type { ProcessKind, ProcessRow } from "../types.js";
 
 export type ProcessGroupId = "turn" | "awake" | "hibernates" | "always-on";
 

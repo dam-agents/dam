@@ -1,9 +1,7 @@
-import type { ProcessList as ProcessListData } from "agent-runtime-api";
 import type { CSSProperties, Ref } from "react";
 
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { processList } from "../../../mock/data/processes.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
-import { useProcesses } from "../api/queries.js";
 import { PROCESSES_SECTION_ID } from "../hooks/use-open-processes-section.js";
 import { ProcessList } from "./process-list.js";
 
@@ -26,11 +24,7 @@ export function ProcessesPanel({
   style,
   ref,
 }: Props) {
-  const operable = useIsAgentOperable(agentId);
-  const { data, isPending, isError } = useProcesses(agentId, {
-    enabled: true,
-    poll: open,
-  });
+  const data = processList;
 
   return (
     <SidebarSection
@@ -43,43 +37,14 @@ export function ProcessesPanel({
       style={style}
       ref={ref}
     >
-      {open && (
-        <ProcessesSectionBody
-          agentId={agentId}
-          operable={operable}
-          data={data}
-          isPending={isPending}
-          isError={isError}
-          alwaysOn={alwaysOn}
-        />
-      )}
+      {open &&
+        (agentId && data ? (
+          <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />
+        ) : (
+          <PanelNotice text="Processes show once the agent is running." />
+        ))}
     </SidebarSection>
   );
-}
-
-function ProcessesSectionBody({
-  agentId,
-  operable,
-  data,
-  isPending,
-  isError,
-  alwaysOn,
-}: {
-  agentId: string | null;
-  operable: boolean;
-  data: ProcessListData | undefined;
-  isPending: boolean;
-  isError: boolean;
-  alwaysOn: boolean;
-}) {
-  if (!operable)
-    return <PanelNotice text="Processes show once the agent is running." />;
-  if (data && agentId)
-    return <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />;
-  if (isError)
-    return <PanelNotice text="Couldn't load the agent's processes." />;
-  if (isPending) return <PanelNotice text="Loading…" />;
-  return null;
 }
 
 function PanelNotice({ text }: { text: string }) {

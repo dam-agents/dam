@@ -68,7 +68,9 @@ export function WorkCardShell({
         )}
       </span>
       {trailing && (
-        <span className="ml-auto shrink-0 text-foreground">{trailing}</span>
+        <span className="absolute right-2 top-2 shrink-0 text-foreground">
+          {trailing}
+        </span>
       )}
     </div>
   );

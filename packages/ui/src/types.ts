@@ -82,15 +82,37 @@ export interface WorkChanges {
   files: ChangesFileEntry[];
   summary: string;
   pullRequestUrl?: string;
+  pullRequest?: {
+    number: number;
+    url: string;
+    state?:
+      | "draft"
+      | "pending"
+      | "approved"
+      | "changes-requested"
+      | "merged"
+      | "closed";
+    conflicts?: boolean;
+  };
+  repository?: string;
+  branch?: string;
 }
 
 export interface WorkProcess {
   kind: "work";
   tool: "process";
-  status?: "running" | "finished" | "failed" | "restart-waiting";
+  status?:
+    | "running"
+    | "running-awake"
+    | "running-hibernates"
+    | "exited"
+    | "stopped"
+    | "hibernated";
   command: string;
-  exitCode: number;
-  logLines: string[];
+  exitCode?: number;
+  logLines?: string[];
+  processKind?: "harness-task" | "detached" | "startup-item";
+  container?: { id: string };
 }
 
 export interface WorkBrowser {
@@ -135,6 +157,7 @@ export interface WorkArtifact {
   tool: "artifact";
   title: string;
   artifactKind: string;
+  artifactId?: string;
   url?: string;
   accessLabel?: string;
   expiresAt?: string;

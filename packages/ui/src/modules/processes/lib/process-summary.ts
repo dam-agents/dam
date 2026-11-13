@@ -1,4 +1,4 @@
-import type { ProcessList } from "agent-runtime-api";
+import type { ProcessList } from "../types.js";
 
 export interface ProcessSummary {
   running: number;
