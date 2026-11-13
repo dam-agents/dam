@@ -232,24 +232,23 @@ describe("thinking blocks in a Messages history", () => {
     expect(calls.map((c) => c.status)).toEqual([400, 200]);
   });
 
-  /** TEST_SCENARIO: after the refusal the harness compacts the Session, so
-   * its history is shorter than the part that was refused and holds only
-   * Claude turns. The remembered length no longer describes it: the call
-   * goes out unchanged, with every thinking block. */
-  it("forgets the refused part when the history got shorter", async () => {
-    await post("compacted", switched);
+  /** TEST_SCENARIO: between two turns of a Session that was refused, the
+   * harness makes a short call of its own under the same Session, as a side
+   * call or a token count does. The remembered length survives it: the next
+   * turn goes out once, with no second refusal. */
+  it("keeps the remembered length across a shorter call", async () => {
+    await post("side", switched);
+    await post("side", [user("name this conversation")]);
     seen.length = 0;
-    const compacted = [
-      user("summary of the conversation so far"),
-      assistant(thinking(CLAUDE), text("a")),
-      user("more"),
-      assistant(thinking(CLAUDE), text("b")),
-      user("last"),
-    ];
-    const r = await post("compacted", compacted);
+    calls.length = 0;
+    const r = await post("side", [
+      ...switched,
+      assistant(thinking(CLAUDE), text("c")),
+      user("next"),
+    ]);
     expect(r.status).toBe(200);
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.messages).toEqual(compacted);
+    expect(calls.map((c) => c.status)).toEqual([200]);
   });
 
   /** TEST_SCENARIO: a GPT model behind a proxy answers with a redacted

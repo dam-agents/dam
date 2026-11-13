@@ -249,9 +249,10 @@ const keep = keepHeaders;
  * the start; and a Claude model that refuses a call for a thinking block
  * another model wrote gets it once more without the earlier thinking, and the
  * router keeps how long that Session's history was, so its later calls leave
- * the thinking out of that part from the start and keep it in the rest. A
- * history shorter than that was compacted or rewound, so the length is
- * forgotten and the next refusal sets it again.
+ * the thinking out of that part from the start and keep it in the rest. The
+ * length only grows: a shorter call of the same Session, such as a side call
+ * or a compacted history, never lowers it, since a lost length costs a
+ * refused call and the prompt cache of everything after it.
  */
 export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
@@ -416,13 +417,10 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const historyLength = Array.isArray(imagesFitted.messages)
       ? imagesFitted.messages.length
       : 0;
-    const remembered =
+    const foreignUpTo =
       checksThinking && thinkingKey !== null
         ? (foreignThinking.get(thinkingKey) ?? 0)
         : 0;
-    if (thinkingKey !== null && remembered > historyLength)
-      foreignThinking.delete(thinkingKey);
-    const foreignUpTo = remembered > historyLength ? 0 : remembered;
     let sent =
       (foreignUpTo > 0
         ? withoutEarlierThinking(imagesFitted, foreignUpTo)
@@ -538,8 +536,9 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         if (retry) {
           if (imagesOut) textOnlyModels.add(modelKey);
           else if (thinkingKey !== null) {
+            const upTo = Math.max(history, foreignUpTo);
             foreignThinking.delete(thinkingKey);
-            foreignThinking.set(thinkingKey, history);
+            foreignThinking.set(thinkingKey, upTo);
             if (foreignThinking.size > FOREIGN_THINKING_SESSIONS)
               for (const oldest of foreignThinking.keys()) {
                 foreignThinking.delete(oldest);
