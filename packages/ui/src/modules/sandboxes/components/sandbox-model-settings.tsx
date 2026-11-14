@@ -42,7 +42,7 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
   if (statusPending || pending) return <ModelSettingsSkeleton />;
 
   if (!operable && !hasRun) {
-    return (
+    return comingUp ? null : (
       <Fallback agentId={agentId} comingUp={comingUp}>
         This agent hasn&rsquo;t run yet — its model settings are resolved when
         it starts, so there&rsquo;s nothing recorded to show. Start it once and
