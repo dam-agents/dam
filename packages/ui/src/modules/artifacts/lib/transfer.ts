@@ -1,5 +1,6 @@
 import { getAccessToken } from "../../../auth.js";
 import { getErrorMessage } from "../../../lib/errors.js";
+import { formatBytes } from "../../../lib/format-size.js";
 import { emitToast } from "../../../lib/toast.js";
 
 export function filenameFromDisposition(header: string | null): string | null {
@@ -41,6 +42,16 @@ function saveAs(href: string, filename?: string): void {
   anchor.click();
 }
 
+async function uploadLimit(response: Response): Promise<string> {
+  const body = (await response.json().catch(() => null)) as {
+    maxBytes?: unknown;
+  } | null;
+  const maxBytes = body?.maxBytes;
+  return typeof maxBytes === "number"
+    ? ` — the limit is ${formatBytes(maxBytes)}`
+    : "";
+}
+
 export async function uploadArtifactFile(file: File): Promise<string> {
   const token = await getAccessToken();
   const response = await fetch(
@@ -57,7 +68,7 @@ export async function uploadArtifactFile(file: File): Promise<string> {
   if (!response.ok) {
     const message =
       response.status === 413
-        ? "File is too large"
+        ? `File is too large${await uploadLimit(response)}`
         : `Upload failed (${response.status})`;
     throw new Error(message);
   }
