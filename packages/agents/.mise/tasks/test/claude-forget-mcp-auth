@@ -17,7 +17,7 @@ assert.match(bin("harness-chat"), /\nexport CLAUDE_CODE_EXECUTABLE=\/usr\/local\
 assert.match(bin("harness-chat"), /\nexport PLATFORM_CLAUDE_CLI="\$modules\/\.bin\/claude"\n/);
 assert.match(bin("harness-claude"), /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/);
 assert.match(bin("harness-claude"), /\nexec "\$\{PLATFORM_CLAUDE_CLI:-claude\}" "\$@"\n/);
-assert.match(bin("harness-terminal"), /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/);
+assert.match(bin("harness-terminal"), /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs \|\| true\n/);
 
 // TEST_SCENARIO: the servers this drops are the platform's own, named once in api-server-api; a rename there must reach this script.
 const shared = readFileSync(new URL("../../../../../packages/api-server-api/src/modules/shared.ts", import.meta.url), "utf8");

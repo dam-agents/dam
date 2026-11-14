@@ -11,12 +11,12 @@
  * in to from the machine at all.
  */
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const PLATFORM_SERVERS = ["platform-outbound", "knowledge-bases"];
 const path = join(
-  process.env.HOME ?? "",
-  ".claude",
+  process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
   "mcp-needs-auth-cache.json",
 );
 
