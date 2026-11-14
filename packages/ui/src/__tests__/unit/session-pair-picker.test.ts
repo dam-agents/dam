@@ -1376,7 +1376,7 @@ describe("a config page's picker", () => {
     );
     const card = node.querySelector('[data-testid="session-pair-row-picker"]');
     expect(card).not.toBeNull();
-    expect(card?.textContent).toContain("Claude Opus 5.5 · Low · IBM proxy");
+    expect(card?.textContent).toContain("Claude Opus 5.5 · IBM proxy");
     expect(card?.textContent).toContain("Pi");
     expect(menuTrigger(node, "model")).toBeDefined();
     expect(

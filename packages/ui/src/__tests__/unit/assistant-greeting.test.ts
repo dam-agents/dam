@@ -270,7 +270,7 @@ describe("the greeting in the chat", () => {
     ).not.toBeNull();
   });
 
-  // TEST_SCENARIO: a click on a pill puts that idea's text — never its label, which only says what kind of work it is — in the composer of this chat, and stops there, so nothing runs before the person acts.
+  // TEST_SCENARIO: a click on a pill puts that idea's text — never its label, which only says what kind of work it is — in an empty composer of this chat, and stops there, so nothing runs before the person acts; each idea is clicked on an empty one because a chip adds to what is there.
   it("fills the composer without sending", () => {
     const ideas = assistantIdeas("DAM");
     const buttons = [...host.querySelectorAll("button")];
@@ -279,6 +279,7 @@ describe("the greeting in the chat", () => {
         button.textContent?.startsWith(`${idea.label}:`),
       );
       expect(chip).toBeDefined();
+      act(() => useStore.getState().clearDraft(draftKey(ASSISTANT, null)));
       act(() =>
         chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })),
       );
