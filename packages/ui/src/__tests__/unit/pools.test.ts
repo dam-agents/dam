@@ -5,6 +5,7 @@ import {
   agentsAtCpuCeiling,
   cpuBar,
   memoryBar,
+  poolNearFull,
   poolWarning,
   storageBar,
   storageRows,
@@ -251,5 +252,54 @@ describe("a pool's warning text", () => {
     expect(poolWarning("critical", advice, fact, "/platform login")).toBe(
       `${advice} ${fact} Run /platform login in Slack to get alerts like this there.`,
     );
+  });
+});
+
+describe("when Home shows the resources card", () => {
+  const cpu: NonNullable<BudgetVmUsage["cpu"]> = {
+    limitMilli: 20_000,
+    usedMilli: 1_000,
+    throttledPercent: 0,
+    pressurePercent: 0,
+    congestion: "low",
+    level: "ok",
+    fill: 0.05,
+  };
+  const roomy: BudgetVmUsage = {
+    ...usage,
+    memory: { ...usage.memory, level: "ok" },
+    storage: { ...usage.storage, level: "ok" },
+    cpu: { ...cpu, level: "ok" },
+    agents: usage.agents.map((share) => ({ ...share, homeFull: false })),
+  };
+
+  // TEST_SCENARIO: the card is where a pool's level and a full home are named, so it appears on either, and stays away while both pools have room.
+  it("shows for a pool that is not ok, or a home that is full", () => {
+    expect(poolNearFull(roomy)).toBe(false);
+    expect(
+      poolNearFull({
+        ...roomy,
+        storage: { ...roomy.storage, level: "warning" },
+      }),
+    ).toBe(true);
+    expect(
+      poolNearFull({
+        ...roomy,
+        memory: { ...roomy.memory, level: "critical" },
+      }),
+    ).toBe(true);
+    expect(
+      poolNearFull({
+        ...roomy,
+        cpu: { ...cpu, level: "warning" },
+      }),
+    ).toBe(true);
+    expect(
+      poolNearFull({
+        ...roomy,
+        cpu: undefined,
+        agents: roomy.agents.map((share) => ({ ...share, homeFull: true })),
+      }),
+    ).toBe(true);
   });
 });

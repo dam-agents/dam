@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-11-13
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -94,7 +94,7 @@ Already-running machines are never re-checked by resyncs or pool changes: a pool
 Creates are refused only for storage, once the owner's claim passes its critical level ([vm storage](vm-storage.md#the-owners-claim)); a create the memory pool cannot start simply lands parked, and the UI's job is to make "free some room" obvious.
 This also means the whole enforcement path is invisible on the happy path: users with room never touch it.
 
-The home dashboard's resource card shows the pools: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage logs and system — as the last.
+The home dashboard's resource card shows the pools, and it is on the dashboard only while memory, storage or CPU is at its warning level or above, or an agent's own home is full: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage logs and system — as the last.
 Its header carries the operator's budget-request link, or no link when the install names none.
 Once storage reaches the warning level, or an agent reports its own disk full, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, and what is left.
 An agent whose own disk is full says so on its row — its writes are failing while it keeps running — so the owner sees which agent to open where they go to free space.

@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
@@ -6,7 +7,9 @@ import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
+import { usePoolUsage } from "../../budgets/api/queries.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
+import { poolNearFull } from "../../budgets/lib/pools.js";
 import { MeteringNotice } from "../../spend/components/metering-notice.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { useFeed } from "../api/queries.js";
@@ -16,6 +19,8 @@ import { WidgetSkeleton } from "../components/home-skeletons.js";
 export function HomeView() {
   const { agentsData, initialLoaded, rowProps } = useAgentRows();
   const { workingByAgent } = useFeed();
+  const usage = usePoolUsage().data;
+  const nearFull = usage && poolNearFull(usage) ? usage : null;
 
   const allAgents = agentsData?.list ?? [];
   const { visible, temporaryCountByDriver } =
@@ -26,10 +31,7 @@ export function HomeView() {
       <div>
         <PageHeader title="Home" />
         <div className="@container mb-8">
-          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
-            <WidgetSkeleton rows={2} />
-            <WidgetSkeleton rows={2} />
-          </div>
+          <WidgetSkeleton rows={2} />
         </div>
         <ListSkeleton rows={3} rowHeight={70} />
       </div>
@@ -50,11 +52,14 @@ export function HomeView() {
       <PageHeader title="Home" />
       <ApprovalsBanner />
       <div className="@container mb-8">
-        <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
-          <MeteringNotice className="@3xl:col-span-2" />
-          <div className="rounded-lg border border-border bg-card p-6">
-            <ResourcesCard agents={allAgents} />
-          </div>
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            nearFull && "@3xl:grid-cols-2",
+          )}
+        >
+          <MeteringNotice className={cn(nearFull && "@3xl:col-span-2")} />
+          {nearFull && <ResourcesCard usage={nearFull} agents={allAgents} />}
           <SpendWidget />
         </div>
       </div>
