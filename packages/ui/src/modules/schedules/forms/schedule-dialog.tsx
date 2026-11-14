@@ -16,20 +16,13 @@ import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useDeleteSchedule } from "../api/mutations.js";
 import { useSchedules } from "../api/queries.js";
-import {
-  ScheduleChoicesField,
-  ScheduleSessionTitleField,
-} from "./schedule-fields.js";
-import {
-  customChoiceError,
-  scheduleInheritsChoices,
-} from "./schedule-form-schema.js";
+import { ScheduleChoicesField } from "./schedule-fields.js";
+import { customChoiceError } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
   name: string;
   task: string;
-  sessionTitle: string;
   harness: string;
   model: string;
   settings: Record<string, string>;
@@ -39,6 +32,8 @@ type DialogValues = FieldValues & {
 
 interface DeleteCopy {
   body: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the kind the dialog names in its title: a recurring schedule is a schedule, a one-time task is a task, and both forms share this dialog. */
+  noun: string;
   confirmLabel: string;
   buttonLabel: string;
 }
@@ -119,7 +114,7 @@ export function ScheduleDialog<T extends DialogValues>({
     if (!existing) return;
     const confirmed = await showConfirm(
       deleteCopy.body,
-      `Delete “${existing.name}”?`,
+      `Delete ${deleteCopy.noun} “${existing.name}”?`,
       { kind: "destructive", confirmLabel: deleteCopy.confirmLabel },
     );
     if (!confirmed) return;
@@ -130,8 +125,7 @@ export function ScheduleDialog<T extends DialogValues>({
   return (
     <form
       onSubmit={handleSubmit((values) => {
-        const missing =
-          showSessionFields && customChoiceError(values, existing, routed);
+        const missing = showSessionFields && customChoiceError(values, routed);
         if (missing) return fields.setError("model", { message: missing });
         onValid(values as T);
       })}
@@ -167,13 +161,8 @@ export function ScheduleDialog<T extends DialogValues>({
               agentId={agentId}
               control={control}
               migrationNote={existing?.migrationNote ?? null}
-              inheritChoice={scheduleInheritsChoices(existing)}
             />
             {afterChoices}
-            <ScheduleSessionTitleField
-              registration={register("sessionTitle")}
-              error={errors.sessionTitle?.message}
-            />
           </>
         )}
       </DialogBody>

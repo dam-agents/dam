@@ -61,7 +61,7 @@ describe("schedule status transitions", () => {
 
   // TEST_SCENARIO: a run that finished and a hold are both facts the owner wants kept, so neither is cleared the way a failure is.
   it("a decline keeps a finished run and a hold", () => {
-    for (const kept of ["success", "held: agent disabled"])
+    for (const kept of ["success", "held: spend limit reached for today"])
       expect(statusForVerdict("declined", AT, null, kept)).not.toHaveProperty(
         "lastFiredResult",
       );

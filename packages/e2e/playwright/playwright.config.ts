@@ -101,11 +101,13 @@ const suite: NamedProject[] = [
         {
           name: "invocations-full",
           testMatch: /full\/invocation-.*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "slack-full",
           testMatch: /full\/slack-(?!token-rotation).*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
@@ -117,21 +119,25 @@ const suite: NamedProject[] = [
         {
           name: "gateway-full",
           testMatch: /full\/gateway-.*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "schedules-full",
           testMatch: /full\/schedule-.*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "prompt-delivery-full",
           testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
           name: "skills-full",
           testMatch: /full\/skill-.*\.spec\.ts$/,
+          dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
       ]
@@ -195,7 +201,10 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
  * that fail for real there, and the merge queue, the nightly run and a tag take every
  * one (docs/architecture/e2e.md). pr-scope.json lists the specs it defers, and
  * E2E_PR_SPECS names those a pull request's change still needs, from the paths that
- * file maps to each. No spec a PR run keeps reads state an excluded spec creates. The
+ * file maps to each. No spec a PR run keeps reads state an excluded spec creates. Every
+ * project starts after the auth project, the full/ tier's too: its first test needs the
+ * shared account before it has accepted the Terms, and the specs of every other
+ * project accept them (#6579). The
  * agent machine spec deletes its owner's runner, so it runs in its own project after
  * every other one, and in no other project. E2E_TIMEOUT_SCALE multiplies the default
  * test and expect timeouts: e2e:loop sets it, as a warm cluster shares the machine's

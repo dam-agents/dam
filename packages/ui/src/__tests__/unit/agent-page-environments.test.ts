@@ -50,7 +50,6 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
           id: "agent-dev",
           name: "dam",
           vm: true,
-          disabled: false,
           access: { role: "owner", editors: [], permissions: OWNS },
         },
       ],
@@ -60,7 +59,6 @@ vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetAgentDisabled: () => ({ mutate: vi.fn(), isPending: false }),
   useLeaveAgent: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
@@ -119,7 +117,6 @@ const agent = () =>
   ({
     id: "agent-dev",
     name: "dam",
-    disabled: false,
     env: [],
     access: { role: "owner", editors: [], permissions: OWNS },
   }) as unknown as AgentView;

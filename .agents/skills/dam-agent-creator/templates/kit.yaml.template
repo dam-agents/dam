@@ -134,10 +134,6 @@ startupItems:
     command: ~/bin/TODO-creator
     args: [serve]
 
-# TODO(creator): keep only when a heartbeat fires finer than the install's idle
-# timeout — otherwise the agent is paid for a wake-up round trip every tick.
-hibernationTimeoutMin: 30
-
 # TODO(creator): keep only for values EVERY deployment shares. Anything that differs
 # between two deployments is a config key in the onboarding dialog, never here.
 env:

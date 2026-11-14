@@ -1,10 +1,13 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, create agents from starter kits and take kit updates, and manage schedules, connections, network rules, approvals, channels, skills and spend.
-  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
-  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
-  Its security advisory says how to set agents up so that their credentials stay out of reach and the user knows who can act as them.
+  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
+  Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page or into a command you hand them.
+  Its security advisory says how to set agents up so credentials stay out of reach and the user knows who acts as them.
+  It asks before it deletes anything and waits for the user's answer in a later message: a request to delete is not that answer.
+  Its map of the web app says where in the app each task is done, by the page the app shows.
+  A DAM agent holding the install's own connection has the CLI and this skill already, and the personal assistant the install gave the user reads it before it starts on a task.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -23,9 +26,12 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 2. **Never touch the user's DAM sign-in.**
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
-3. **Ask before anything you can't undo.**
-   `dam agent delete` removes an agent and all its data, and `dam connection disconnect` deletes a stored credential that every agent it is granted to loses.
-   Confirm with the user first, then pass `--yes` yourself; without a terminal, these commands refuse to run without it ([Without a terminal](#without-a-terminal) lists them).
+3. **Ask before anything you can't undo, and wait for the answer.**
+   Deleting an agent (`dam agent delete`) throws away its sessions, files and memory, `dam connection disconnect` deletes a stored credential that every agent it is granted to loses, and `dam schedule delete` removes a schedule for good.
+   When the user asks for one of those, don't run it: say what is lost, ask once whether to go ahead, and end your turn.
+   The request is not that answer, however plainly it was put: only their yes to that question, in a later message, is.
+   Then run it with `--yes`, which the CLI needs from you because you have no terminal ([Without a terminal](#without-a-terminal) lists those commands).
+   Reversible changes you make when they ask, with no second confirmation: renaming or updating an agent, running a task, setting up or changing a schedule, granting a connection.
 4. **Approvals and the Terms of Use are the user's to decide.**
    Don't approve or deny a pending request, and don't accept the Terms of Use, unless the user told you to after seeing what is being asked.
 5. **Parse `--json`, not tables.**
@@ -37,6 +43,20 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 7. **Say who can act as the user.**
    Anyone who can steer a DAM agent uses every connection and satellite it holds.
    Before you bind a channel, grant a connection or satellite, or widen what an agent reaches, check the agent as the [security advisory](references/security-advisory.md) says: choose the safer set-up it names, and tell the user what each change shares.
+
+## Inside a DAM agent
+
+When you are a DAM agent yourself, and `DAM_SERVER` and `DAM_TOKEN` are set in your environment, the CLI is already set up: skip [Set up](#set-up).
+`dam` is on your PATH, built from the same commit as the server, and this skill came with it, so it matches the CLI.
+`DAM_TOKEN` is a placeholder that your machine's network gateway swaps for the user's real credential on the way out: it works, and it is not a secret you can see.
+Never run `dam auth login` there.
+
+Every command acts as the user who owns you, yourself included: `dam run`, `dam session show --follow` and `dam ssh connect` work from inside an agent as they do from the user's machine.
+To prompt yourself or another of the user's agents, use `dam run <agent> -p "<prompt>" --json`; a sleeping agent wakes for it.
+To run a command on another agent, use `dam ssh connect <agent> -- <command>`.
+You have no terminal, so `dam chat` and an interactive `dam ssh connect` shell are not for you ([Without a terminal](#without-a-terminal)).
+
+If the user's instructions say you are the personal assistant this DAM install gave them, also read [the personal assistant's guide](references/personal-assistant.md) before you start on a task they pick or ask for.
 
 ## Set up
 
@@ -165,11 +185,13 @@ A ref that matches nothing or more than one agent exits with code 5; list the ag
 
 Your shell has no terminal attached, and the CLI behaves accordingly:
 
-- These commands need `--yes` (see the hard rules):
+- These commands need `--yes`, because the CLI would otherwise ask at a prompt you cannot answer:
   `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
   `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
-  `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
-- `dam chat <agent>` attaches to the agent's interactive session and `dam agent create-interactive` walks through a form; both need a terminal, so offer the command to the user instead.
+  The deletes and disconnects among them also wait for the answer hard rule 3 makes you ask; the rest run when the user asks.
+  `dam terms accept` needs `--yes` too, and only after the user accepts (hard rule 4).
+- `dam chat <agent>` attaches to the agent's interactive session, `dam ssh connect <agent>` without a command opens a shell, and `dam agent create-interactive` walks through a form; they need a terminal, so offer the command to the user instead.
+  `dam run` and `dam ssh connect <agent> -- <command>` are the ways in that need none.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
 
 ## Common tasks
@@ -227,6 +249,9 @@ dam agent create my-desk --kit research --connection github --json
   `done: null` means not checked: without `credentials:read` the CLI cannot read which connections meet a need, so ask the user before setting up another one.
   Work through the steps that are not done, with the user.
   Most kits open a first session that asks the user for what the kit needs: find it with `dam session list <agent>` and relay the user's answers with `dam run <agent> --session <session-id> -p "<answer>"`.
+- Read `dam agent get <agent>` after the create, and put the harness and model its chat `DEFAULT` names and the `PROVIDERS` it granted into your reply: a kit's providers list can land the agent on another harness and provider than the user's default for new agents, which the create output's `defaultProvider` says with `"source": "kit"`.
+  For example "I've made it, and it runs on Claude Code with Opus through the IBM proxy."
+  A model or provider it has not read yet is one you say you can't see yet, never one you guess, and you switch it to the user's default only when they ask.
 
 `dam agent get <agent>` names the kit an agent came from (`STARTER KIT`, and `starterKit` in `--json`) and whether a newer version of the kit is out (`KIT UPDATE`, and `kitUpdate.state` in `--json`: `available`, `pending`, `skipped`, `onboarding`, `unreachable` or `up-to-date`).
 `dam kit changes <agent>` shows what the newer version changes.
@@ -336,12 +361,10 @@ Paths are relative to the agent's workspace.
 
 ```sh
 dam agent restart my-agent --wait
-dam agent disable my-agent
-dam agent enable my-agent
 dam agent delete my-agent --yes
 ```
 
-`dam agent disable` keeps the agent asleep until `dam agent enable`; `dam agent delete` is permanent, so confirm first.
+`dam agent delete` deletes the agent with everything in it, so say what will be lost and ask whether to go ahead; pass `--yes` only after the user says yes (hard rule 3).
 
 ### Schedules
 
@@ -359,6 +382,8 @@ A schedule that only checks whether something changed should carry `--precheck <
 
 ### Connections
 
+In the web app, this is **Settings › Connections**, and the ones an agent may use are on its own page under **Connections**.
+
 ```sh
 dam connection templates
 dam connection list my-agent
@@ -370,7 +395,7 @@ dam connection default my-agent --connection github-work
 A connection belongs to the user; granting it lets one agent use it.
 An agent that holds several GitHub accounts on one host, or several Object Storage connections, acts as one of them by default: `dam connection list my-agent` marks it in the DEFAULT column (`default.active` in `--json`), and `dam connection default` picks another.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
-`dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
+`dam connection disconnect` can't be undone: ask first, and pass `--yes` only after the user says yes (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
 
 A GitHub sign-in (`github`, `github-enterprise`) or a GitHub App installation (`github-app`, `github-enterprise-app`) holds the credential, and no agent is ever granted one.
@@ -459,6 +484,8 @@ dam skill list my-agent
 
 ### Spend
 
+In the web app, **Home**'s **API spend** card shows the last months, and **Usage details** opens Settings › Usage for any dates they pick.
+
 ```sh
 dam spend status my-agent
 dam spend daily --days 30
@@ -471,6 +498,21 @@ dam telemetry show my-agent --session <session-id>
 
 `dam satellite` (experimental) lets a DAM agent call tools on this machine, and keeps running while it serves them.
 It exposes the user's machine, so start one only when the user asks for it.
+
+## In the web app
+
+When the user asks where in the app to do something, answer with the page rather than a command, and name pages only as they are named here.
+
+- **Home**: their agents, the approvals waiting on them, and **API spend** — **Today**, **This month**, which is the calendar month, and **Last month**, whose **Usage details** opens Settings › Usage.
+- **Artifacts** — what their agents made for them — and **Starter kits**, what an agent is created from.
+- **Settings › Connections**: the credentials their agents work with, such as a GitHub sign-in, a token or an MCP server.
+  **Settings › Providers**: the LLM providers they connected and the default for new agents.
+  **Settings › Profiles**: a named harness, model and provider that several agents share.
+  **Settings › Usage**: spend over the dates they pick.
+  **Settings › Schedules**: every schedule they have.
+- **Configure agent**, from an agent's row in the sidebar or in Home's list: **General**, which holds its name, avatar and description and the harness and model its sessions start on, then **People**, **Providers**, **Connections**, **Network access**, **Environment vars**, **Channels**, **Chat forms**, **Skills**, **Schedules**, **Usage**, and **Environments** where the install has them.
+
+For anything the map doesn't cover, say you don't know the way there, and offer a command only when this page or `dam <command> --help` shows one: never name a screen of your own.
 
 ## Exit codes
 

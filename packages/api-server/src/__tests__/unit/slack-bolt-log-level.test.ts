@@ -41,6 +41,7 @@ describe("Slack Bolt logging", () => {
       appToken: "xapp-test",
       commandName: "/platform",
       onCredentialRejected: async () => {},
+      companionAppIds: new Set<string>(),
     });
 
     expect(await gateway.start({} as SlackGatewayHandlers)).toBe(true);

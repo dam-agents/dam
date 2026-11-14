@@ -6,6 +6,9 @@ cli_auth_credentials_store = "file"
 # The router's catalog entries carry a one-line template only (the full one
 # on every model overflows the catalog response Codex accepts); this file
 # wins over any template.
+# Its first lines are the platform's, not the release's: the model is the one
+# the user picked, so it must not present itself as GPT-5. A pin bump re-copies
+# the rest of the file; check:codex-model-identity fails if the claim returns.
 model_instructions_file = "/etc/codex/model-instructions.md"
 forced_login_method = "api"
 # CLI rides the image pin; the startup upgrade nag would only hit the egress chain

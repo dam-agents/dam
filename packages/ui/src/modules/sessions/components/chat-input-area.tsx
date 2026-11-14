@@ -2,6 +2,7 @@ import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message, VerdictPart } from "../../../types.js";
+import { useFeatures } from "../../features/api/queries.js";
 import {
   OwnerQuestionPrompt,
   PostponedQuestionsLine,
@@ -30,6 +31,8 @@ export function ChatInputArea(
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const questions = useOwnerQuestionQueue(agentId, sessionId);
+  /* UNIT_BOUNDARY_DESCRIPTION: a waiting network approval shows above the message box only with the chat-network-approvals feature on; without it, it waits in the approvals list and the notifications alone, as before the feature. */
+  const chatApprovals = useFeatures().data?.["chat-network-approvals"] ?? false;
 
   const appendVerdict = useCallback(
     (verdict: PermissionVerdict, toolCallId: string) => {
@@ -74,7 +77,7 @@ export function ChatInputArea(
     );
   return (
     <>
-      <EgressApprovalPrompt />
+      {chatApprovals && <EgressApprovalPrompt />}
       <PostponedQuestionsLine
         questions={questions.postponed}
         onAnswer={questions.resume}

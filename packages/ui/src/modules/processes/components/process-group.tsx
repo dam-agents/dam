@@ -11,7 +11,6 @@ import { ProcessRow } from "./process-row.js";
 interface Props {
   agentId: string;
   group: ProcessGroupData;
-  alwaysOn: boolean;
   now: Date;
   openOutputKey: string | null;
   onOpenOutput: (key: string) => void;
@@ -20,7 +19,6 @@ interface Props {
 export function ProcessGroup({
   agentId,
   group,
-  alwaysOn,
   now,
   openOutputKey,
   onOpenOutput,
@@ -43,7 +41,6 @@ export function ProcessGroup({
             key={row.key}
             agentId={agentId}
             row={row}
-            alwaysOn={alwaysOn}
             now={now}
             outputOpen={row.key === openOutputKey}
             onOpenOutput={onOpenOutput}
@@ -58,6 +55,6 @@ function GroupIcon({ id }: { id: ProcessGroupData["id"] }) {
   return match(id)
     .with("awake", () => <Awake size={14} aria-hidden />)
     .with("hibernates", () => <Asleep size={12} aria-hidden />)
-    .with("turn", "always-on", () => null)
+    .with("turn", () => null)
     .exhaustive();
 }

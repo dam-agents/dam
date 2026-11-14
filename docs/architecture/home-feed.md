@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -15,7 +15,7 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
-A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
+A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and, with the `chat-network-approvals` [experimental feature](features.md) on, shows in the Agent's chat beside its held network requests.
 The rules an Agent asks for on one of its sub-agents or Environments share one card, named after the asking Agent: a line per rule with its own "Allow" and "Decline", one button that allows them all, and, for a rule wider than the Agent's own, "Allow, and stop asking", which turns on the Agent's switch for its children's network access ([invocations](invocations.md#spawning)).
 A one-off sub-agent whose start is held for such a rule shows as "Waiting for you", not as working.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
@@ -180,6 +180,10 @@ Read state is **per session, not per person**, and it is the owner's.
 An [Agent Editor](agent-editors.md) using a Shared Agent's session is a viewer that never stamps it seen, so an editor reading a session leaves it unread for the owner.
 An editor gets no Home feed items or unread marks for a Shared Agent.
 The dismissal watermarks are already keyed per user, so per-person read state would need no migration for that half.
+
+The browser tab's title carries a "● " while the tab is in the background and something arrived after it went there: a Session that is now unread, a Session that came back from working, or an approval that started waiting.
+The working case is what the rule above leaves open: a viewer attached to a chat stamps its Session seen as the turn ends, so a user who prompts and switches tabs would otherwise see no mark.
+A Session that was already unread when the tab went to the background stays quiet, and showing the tab clears the mark.
 
 ## Terminal sessions
 

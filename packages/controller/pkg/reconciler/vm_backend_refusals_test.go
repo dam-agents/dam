@@ -48,7 +48,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
-	assert.Contains(t, cond.Message, "disable an agent you aren't using", "the user reads what frees it")
+	assert.Contains(t, cond.Message, "delete an agent you no longer use", "the user reads what frees it")
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }
 
@@ -63,7 +63,7 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 		message   string
 	}{
 		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, retried: true, message: "waiting for the node"},
-		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonAwaitingMemory, reclaimed: true, retried: true, message: "put to sleep to make room"},
+		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonAwaitingMemory, reclaimed: true, retried: true, message: "making room from an idle agent"},
 	} {
 		agent := vmAgentCR()
 		r, node, requeued := setupVMReconciler(t, agent)
@@ -109,7 +109,7 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 		assert.Equal(t, tc.reclaimed, hibernated > 0,
 			"%s: an idle agent is hibernated only when the owner's own memory is what the start lacks", tc.reason)
 		if !tc.reclaimed {
-			assert.NotContains(t, cond.Message, "disable an agent", "nothing the owner disables frees memory the node has not granted")
+			assert.NotContains(t, cond.Message, "delete an agent", "nothing the owner frees, deletes included, is the memory the node has not granted")
 		}
 		if tc.retried {
 			assert.Equal(t, vmReadinessPoll, requeued.last(), "retried at the machine watch's cadence, not at the parked tick")

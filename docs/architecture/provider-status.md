@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-11-03
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -150,7 +150,7 @@ Once an outage has lasted the delay, the job looks up their Sessions in the [Ses
 A run that retried and then succeeded still counts, and a Session that the directory cannot read counts at a later run.
 An ambient turn in Slack or Telegram that failed because the provider is down is failed unattended work too: its turn event names the template, so it counts without a lookup.
 An addressed turn does not count, because its reply already names the outage, and a failed call in a channel Session does not count by itself, because addressed and ambient turns can share one Session.
-A disabled or deleted agent is left out.
+A deleted agent is left out.
 
 The alerts react to the state of each run on the replica that ran the job, so each run is the delay's clock, and a lost run changes nothing, because the next one repeats the whole state.
 Each owner has one alert per template, told or recovered, written with a compare-and-set before the message goes out: two runs never send the same message twice, and a send that fails is lost, not repeated.

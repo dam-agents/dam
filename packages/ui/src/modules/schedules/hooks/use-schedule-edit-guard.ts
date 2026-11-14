@@ -1,5 +1,6 @@
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { scheduleLockNotice } from "../components/schedule-lock-notice.js";
 import { scheduleLock } from "../lib/schedule-lock.js";
 
@@ -13,9 +14,10 @@ export function useScheduleEditGuard(): ScheduleEditGuard {
   const showAlert = useStore((s) => s.showAlert);
   const showConfirm = useStore((s) => s.showConfirm);
   const selectAgent = useStore((s) => s.selectAgent);
+  const oneTimeTasks = useFeatures().data?.["one-time-tasks"] ?? false;
 
   return async (schedule, agentName, onEdit) => {
-    const lock = scheduleLock(schedule);
+    const lock = scheduleLock(schedule, oneTimeTasks);
     if (!lock) {
       onEdit();
       return;

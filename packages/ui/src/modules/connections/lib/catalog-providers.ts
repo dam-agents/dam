@@ -1,6 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { isGrantable, parentNoun } from "./connection-hierarchy.js";
+import { isDamConnection } from "./dam-connection.js";
 
 export type CatalogTab = "apps" | "mcp" | "custom-headers";
 
@@ -99,8 +100,8 @@ export function templateCreateHeading(template: ConnectionTemplateView): {
 const SUBMIT_LABELS: Record<string, { label: string; external?: boolean }> = {
   github: { label: "Continue to GitHub", external: true },
   "github-enterprise": { label: "Continue to GitHub", external: true },
-  "github-pat": { label: "Create token" },
-  "github-enterprise-pat": { label: "Create token" },
+  "github-pat": { label: "Connect" },
+  "github-enterprise-pat": { label: "Connect" },
   "github-app": { label: "Connect app" },
   "github-enterprise-app": { label: "Connect app" },
   figma: { label: "Continue to Figma", external: true },
@@ -165,16 +166,19 @@ export function groupCatalog({
   for (const t of offeredTemplates) groupFor(t.id).templates.push(t);
   for (const c of connections) groupFor(c.templateId).connections.push(c);
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the providers the user already has a connection with come first, so adding one of those to another agent is not a scroll; FAMILY_ORDER keeps the rest in the order a new user should meet them. */
   const rank = (g: CatalogProviderGroup) => {
     const i = FAMILY_ORDER.indexOf(g.provider.id);
     return i === -1 ? FAMILY_ORDER.length : i;
   };
+  const held = (g: CatalogProviderGroup) => (g.connections.length > 0 ? 0 : 1);
   const byTab = new Map<CatalogTab, CatalogProviderGroup[]>(
     CATALOG_TAB_ORDER.map((tab) => [tab, []]),
   );
   for (const group of groups.values())
     byTab.get(group.provider.tab)!.push(group);
-  for (const list of byTab.values()) list.sort((a, b) => rank(a) - rank(b));
+  for (const list of byTab.values())
+    list.sort((a, b) => held(a) - held(b) || rank(a) - rank(b));
   return byTab;
 }
 
@@ -197,6 +201,7 @@ export function connectionKindSubtitle(
   template: ConnectionTemplateView | undefined,
 ): string {
   if (connection.isParent) return parentNoun(connection);
+  if (isDamConnection(connection)) return "";
   if (
     connection.templateId === "github" ||
     connection.templateId === "github-enterprise"

@@ -12,8 +12,9 @@ import type { GreetingCopy } from "../lib/greeting.js";
  * UNIT_BOUNDARY_DESCRIPTION: the greeting an unused assistant opens its chat
  * with, shown where the transcript would start: its avatar and name, what it is
  * set up with, where the person changes that, and the five ideas it offers.
- * An idea goes into the composer for the owner to send or edit, so nothing runs
- * before they act.
+ * An idea's text — never its label, which is the kind of work, not a message —
+ * goes into the composer for the owner to send or edit, so nothing runs before
+ * they act.
  */
 export function AssistantGreeting({
   greeting,
@@ -60,9 +61,7 @@ export function AssistantGreeting({
             variant="outline"
             size="sm"
             onClick={() => {
-              setDraft(draftKey(agentId, sessionId), {
-                text: `${idea.label}: ${idea.text}`,
-              });
+              setDraft(draftKey(agentId, sessionId), { text: idea.text });
               onPicked();
             }}
             className="h-10 max-w-full rounded-full px-5 whitespace-normal text-left"

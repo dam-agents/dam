@@ -1,4 +1,5 @@
 import type { SlackConversationLabel } from "api-server-api";
+import type { SlackPostOrigin } from "./slack-post-origin.js";
 import type { SlackSender } from "./slack-sender.js";
 
 export interface SlackImageFile {
@@ -164,6 +165,7 @@ export interface SlackMessage {
   subtype?: string;
   botId?: string;
   botName?: string;
+  origin?: SlackPostOrigin;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
   attachments?: SlackImageFile[];

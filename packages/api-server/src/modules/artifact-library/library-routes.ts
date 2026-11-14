@@ -2,11 +2,17 @@ import { Hono } from "hono";
 
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
+import { contentDisposition } from "../../core/content-disposition.js";
 import { downloadFileName } from "./domain/artifact-kind.js";
 import { stagingKey } from "./domain/storage-key.js";
 import { parseVersion } from "./viewer/authorize.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 import type { ApiVariables } from "../../core/http-context.js";
+
+const tooLargeBody = (maxBytes: number) => ({
+  error: `artifact exceeds the ${maxBytes}-byte cap`,
+  maxBytes,
+});
 
 export interface ArtifactLibraryRoutesDeps {
   artifactLibraryFor: (
@@ -35,18 +41,12 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       return c.json({ error: "invalid Content-Length" }, 400);
     }
     if (declared > deps.artifacts.maxBytes) {
-      return c.json(
-        { error: `artifact exceeds the ${deps.artifacts.maxBytes}-byte cap` },
-        413,
-      );
+      return c.json(tooLargeBody(deps.artifacts.maxBytes), 413);
     }
     const body = Buffer.from(await c.req.arrayBuffer());
     if (body.byteLength === 0) return c.json({ error: "empty body" }, 400);
     if (body.byteLength > deps.artifacts.maxBytes) {
-      return c.json(
-        { error: `artifact exceeds the ${deps.artifacts.maxBytes}-byte cap` },
-        413,
-      );
+      return c.json(tooLargeBody(deps.artifacts.maxBytes), 413);
     }
 
     const key = stagingKey(user.sub, fileName);
@@ -109,7 +109,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       headers: {
         "Content-Type": ref.contentType || "application/octet-stream",
         "Content-Length": String(blob.sizeBytes),
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": contentDisposition(filename),
       },
     });
   });

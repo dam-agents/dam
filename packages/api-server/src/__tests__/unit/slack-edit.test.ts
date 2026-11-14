@@ -9,7 +9,11 @@
 import { describe, expect, it } from "vitest";
 import { classifySlackEdit } from "../../modules/channels/infrastructure/slack-edit.js";
 
-const self = { userId: "UBOT", botId: "BSELF" };
+const self = {
+  userId: "UBOT",
+  botId: "BSELF",
+  companionAppIds: new Set<string>(),
+};
 
 const footer = [
   {

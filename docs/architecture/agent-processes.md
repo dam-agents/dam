@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-11-09
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -32,7 +32,7 @@ The processes list reports a change waiting this way, with how many kept tasks i
 Right after a user saves an agent setting that can reach the harness, the UI checks for such a change for a few seconds and, if one waits, asks whether to restart now or to apply it when the tasks finish.
 That question is not behind the `processes` feature, since every agent waits this way.
 A change made from account settings, outside one agent, does not ask.
-The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by disabling the agent.
+The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by restarting the agent.
 Once the last kept task is gone, the recycle runs at once on an idle runtime, or after the grace period while a turn still runs.
 Unkept tasks never hold a recycle back, since the recycle kills them anyway; a kept Detached Process never does either, since the recycle leaves it alone.
 A harness that stopped answering is recycled regardless, since a wedged harness serves no task.
@@ -84,8 +84,8 @@ Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runti
 The chat view shows the inventory behind the `processes` [experimental feature](features.md).
 It is a Processes section beside Files and Artifacts, in the column beside the conversation, and a row's output opens in the panel docked beside the conversation, the way a file does.
 Either way the output follows the file while the process runs.
-Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation (on an Always on agent the last two are one group, since nothing stops there).
-Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which says in one line what the row does, and is disabled on an Always on agent, and changing it moves the row to the other group.
+Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation.
+Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which says in one line what the row does, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
 An indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section or the tab — so a user who wonders why the agent stays awake finds the answer one click away.
 Without either experiment it sits in the chat's top bar, which has the room; with one on, the side panel's icon bar carries it on the Processes icon wherever that bar is drawn, and a phone keeps it in the top bar until a panel opens; either way the count turns from grey to accent blue while a process keeps the agent awake.

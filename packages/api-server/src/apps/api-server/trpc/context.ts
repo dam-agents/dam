@@ -1,5 +1,10 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
+import {
+  ChannelType,
+  editorEmailOf,
+  featureOnForUser,
+  hiddenHarnessesFor,
+} from "api-server-api";
 import {
   childEgressGrants,
   childrenMirroringConnections,
@@ -671,8 +676,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
-      hiddenHarnesses: async () =>
-        new Set((await features.flags()).hermes ? [] : ["hermes"]),
+      hiddenHarnesses: async () => hiddenHarnessesFor(await features.flags()),
     });
     const artifactLibrary = artifactLibraryFor(user.sub, surface, {
       agentExists,

@@ -15,7 +15,7 @@ import { failedChecks } from "../../modules/a2ui/lib/validation.js";
 
 const CREATE = JSON.stringify([
   {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "pick",
       catalogId: BASIC_CATALOG_ID,
@@ -30,11 +30,11 @@ const CREATE = JSON.stringify([
 
 const UPDATE = JSON.stringify([
   {
-    version: "v1.0",
+    version: "1.0",
     updateDataModel: { surfaceId: "pick", path: "/title", value: "Applied" },
   },
   {
-    version: "v1.0",
+    version: "1.0",
     updateComponents: {
       surfaceId: "pick",
       components: [{ id: "extra", component: "Card", child: "gone" }],
@@ -110,13 +110,15 @@ describe("A2UI v1.0", () => {
         ],
         ctx(model),
       ),
-    ).toEqual([{ message: "Use a work email", severity: "error" }]);
+    ).toEqual([
+      { code: "INVALID_EMAIL", message: "Use a work email", severity: "error" },
+    ]);
   });
 
   // TEST_SCENARIO: while the agent streams, the surface holds only the components that are already complete and reports nothing; a finished message that never closed the block reports it.
   test("renders the complete prefix of a streaming block and reports it once the message ends", () => {
     const partial =
-      '[{"version":"v1.0","createSurface":{"surfaceId":"s","catalogId":"' +
+      '[{"version":"1.0","createSurface":{"surfaceId":"s","catalogId":"' +
       BASIC_CATALOG_ID +
       '","components":[{"id":"root","component":"Text","text":"Hi"},{"id":"b","component":"Bu';
     const streaming = buildConversation([
@@ -134,6 +136,33 @@ describe("A2UI v1.0", () => {
     );
   });
 
+  // TEST_SCENARIO: a streaming reply is not checked yet, so it must not change or close a surface an earlier reply shows; it applies once it is complete.
+  test("applies a streaming block's updates to earlier surfaces only once it closes", () => {
+    const update = JSON.stringify([
+      {
+        version: "v1.0",
+        updateDataModel: { surfaceId: "pick", path: "/title", value: "Other" },
+      },
+      { version: "v1.0", deleteSurface: { surfaceId: "pick" } },
+    ]);
+    const earlier = { key: "a", messageId: "m1", source: CREATE, closed: true };
+
+    const streaming = buildConversation([
+      earlier,
+      { key: "b", messageId: "m2", source: update, closed: false },
+    ]);
+    const finished = buildConversation([
+      earlier,
+      { key: "b", messageId: "m2", source: update, closed: true },
+    ]);
+
+    expect(streaming.surfaces.get("pick")?.deleted).toBe(false);
+    expect(streaming.surfaces.get("pick")?.dataModel).toEqual({
+      title: "Pick changes",
+    });
+    expect(finished.surfaces.get("pick")?.deleted).toBe(true);
+  });
+
   // TEST_SCENARIO: an agent that shares one child id between parents gets an error, and the node count stops at its limit instead of following the exponential fan-out.
   test("rejects a shared child and caps the rendered node count", () => {
     const components = [
@@ -146,7 +175,7 @@ describe("A2UI v1.0", () => {
     ];
     const source = JSON.stringify([
       {
-        version: "v1.0",
+        version: "1.0",
         createSurface: {
           surfaceId: "fan",
           catalogId: BASIC_CATALOG_ID,
@@ -168,7 +197,7 @@ describe("A2UI v1.0", () => {
   test("locks the composer only for a valid surface in the newest reply", () => {
     const form = (components: unknown[]) =>
       JSON.stringify({
-        version: "v1.0",
+        version: "1.0",
         createSurface: {
           surfaceId: "ask",
           catalogId: BASIC_CATALOG_ID,
@@ -217,7 +246,7 @@ describe("A2UI v1.0", () => {
         messageId: "m2",
         closed: true,
         source: JSON.stringify({
-          version: "v1.0",
+          version: "1.0",
           updateComponents: {
             surfaceId: "ask",
             components: [{ id: "root", component: "Text", text: "Done" }],

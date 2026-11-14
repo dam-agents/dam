@@ -48,9 +48,6 @@ export const agentRetryWorkspaceInputSchema = z.object({
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
 export const agentSleepInputSchema = idSchema;
-export const agentSetDisabledInputSchema = idSchema.extend({
-  disabled: z.boolean(),
-});
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
@@ -93,7 +90,6 @@ export const agentCreateInputSchema = z.object({
     })
     .optional(),
   egressPreset: egressPresetSchema.optional(),
-  hibernationTimeoutMin: z.number().int().min(0).optional(),
   requireConnectionAddress: z.boolean().optional(),
   gitRepo: z
     .object({
@@ -129,7 +125,6 @@ export const agentUpdateInputSchema = agentPatchSchema.pick({
   name: true,
   description: true,
   avatar: true,
-  hibernationTimeoutMin: true,
 });
 
 export const agentSetEnvInputSchema = z.object({

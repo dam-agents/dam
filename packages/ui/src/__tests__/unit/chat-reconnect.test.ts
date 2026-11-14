@@ -11,6 +11,7 @@ const fake = vi.hoisted(() => ({
   state: "running" as string,
   connectionState: "reconnecting" as string,
   retryChannel: vi.fn(),
+  resumeSession: vi.fn(),
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
@@ -31,10 +32,7 @@ function mockModule(path: string, exports: Record<string, unknown>): void {
 
 const components = new Map<string, string[]>();
 for (const [path, names] of [
-  [
-    "../../modules/agents/components/avatar/agent-avatar.js",
-    ["AgentAvatar", "avatarMood"],
-  ],
+  ["../../modules/agents/components/avatar/agent-avatar.js", ["AgentAvatar"]],
   [
     "../../modules/agents/components/agent-start-notice.js",
     ["AgentStartNotice", "hasStartNotice"],
@@ -262,7 +260,7 @@ mockModule("../../modules/sessions/hooks/use-app-side-panel-tabs.js", {
 mockModule("../../modules/sessions/hooks/use-acp-session.js", {
   useAcpSession: () => ({
     resetSession: vi.fn(),
-    resumeSession: vi.fn(),
+    resumeSession: fake.resumeSession,
     loadOlderMessages: vi.fn(),
     sendPrompt: fake.sendPrompt,
     rewriteFrom: vi.fn(),
@@ -323,7 +321,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     id: "a-1",
     name: "Code Guardian",
     state: fake.state,
-    disabled: false,
     overBudget: false,
     features: { liveUpdates: true },
     access: { role: "owner", editors: [], permissions: [] },
@@ -333,7 +330,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     startFailure: null,
     podTerminationReason: null,
     podTerminationCode: null,
-    hibernationTimeoutMin: 5,
     avatar: null,
     templateUpdate: null,
     unsupportedContributionKinds: [],
@@ -537,7 +533,7 @@ afterEach(() => {
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
   fake.greeting = { kind: "none" };
-  useStore.setState({ pendingPermissions: [] });
+  useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
 });
 
@@ -586,7 +582,7 @@ it("opens an unused assistant's chat on its greeting", () => {
   expect(placeholder(el)).toBe("Message Dammy");
 });
 
-// TEST_SCENARIO: a click on one of its pills puts the labelled text in the composer of this chat and sends nothing, so no turn runs before the person acts.
+// TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
 it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
   const el = openNewChat();
@@ -596,7 +592,7 @@ it("fills the composer from a greeting pill without sending", () => {
   expect(task).toBeDefined();
   act(() => task!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
-    "Artifact: Make my next PowerPoint deck the way I make them",
+    "Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
 });
@@ -615,6 +611,39 @@ it("keeps a running Agent's chat while it reconnects", () => {
   expect(notice(el)).not.toBeNull();
   expect(placeholder(el)).toContain("Reconnecting to this agent");
   expect(el.textContent).not.toContain("Restart agent");
+});
+
+// TEST_SCENARIO: a conversation the agent still holds that would not load used to be a dead end with no action; it offers Retry, and one that is gone for good offers none, since trying again cannot bring it back.
+it("offers Retry on a conversation that would not load", () => {
+  fake.connectionState = "live";
+  useStore.setState({ sessionError: { sessionId: "s-1", kind: "other" } });
+  const el = openChat("running", true);
+  const retry = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Retry"),
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(fake.resumeSession).toHaveBeenCalledWith("s-1");
+
+  fake.loadingSession = false;
+  useStore.setState({
+    sessionError: { sessionId: "s-1", kind: "unavailable" },
+  });
+  paint();
+  expect(el.textContent).toContain("Can't open this conversation");
+  expect(
+    [...el.querySelectorAll("button")].some((b) =>
+      b.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
+});
+
+// TEST_SCENARIO: a chat opening on a conversation that is still loading, as when a sleeping agent wakes, says the message waits for it, the way a connecting chat does.
+it("says a message waits for the conversation to load", () => {
+  fake.connectionState = "live";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(placeholder(el)).toContain("your message sends once it opens");
 });
 
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.

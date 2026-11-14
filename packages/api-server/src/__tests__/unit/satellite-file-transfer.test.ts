@@ -375,6 +375,78 @@ describe("a file the machine sends into the agent's workspace", () => {
   });
 
   /**
+   * UNIT_BOUNDARY_DESCRIPTION: The route served by a workspace that refuses
+   * every stage with one reason of its own, so a refusal whose code the Agent can
+   * act on can be read on its own.
+   */
+  function appRefusingStages(
+    repo: SatellitesRepository,
+    reason: "no-space" | "too-large",
+  ): Hono<{ Variables: ApiVariables }> {
+    const app = new Hono<{ Variables: ApiVariables }>();
+    app.use("*", async (c, next) => {
+      c.set("user", SERVE_KEY);
+      c.set("roles", []);
+      c.set("surface", "api");
+      await next();
+    });
+    app.route(
+      "/",
+      createSatelliteFileRoutes({
+        repo,
+        transferFor: () => ({
+          async stage() {
+            return { ok: false as const, reason };
+          },
+          async publish() {
+            return { ok: false as const, reason: "refused" as const };
+          },
+          async read() {
+            return { ok: false as const, reason: "refused" as const };
+          },
+        }),
+      }),
+    );
+    return app;
+  }
+
+  /**
+   * TEST_SCENARIO: The workspace end found the agent's disk too full for the
+   * file. That is not the workspace refusing a path, and an agent told
+   * "workspace refused" would never learn to free space, so the refusal travels
+   * as its own code and the claim stays unspent.
+   */
+  it("answers a full workspace with its own code", async () => {
+    const harness = setup();
+
+    const res = await transferRequest(
+      appRefusingStages(harness.repo, "no-space"),
+    );
+
+    expect(res.status).toBe(507);
+    expect(await res.json()).toEqual({ error: "no_space" });
+    expect(harness.state.spent).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: An older workspace still caps a transfer at 50 MB and answers
+   * its own 413. Collapsing that into "workspace refused" would tell the agent to
+   * retry a file the platform will never take, so the over-limit code travels on
+   * unchanged and the claim stays unspent.
+   */
+  it("keeps an older workspace's over-limit answer", async () => {
+    const harness = setup();
+
+    const res = await transferRequest(
+      appRefusingStages(harness.repo, "too-large"),
+    );
+
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "transfer_too_large" });
+    expect(harness.state.spent).toBe(0);
+  });
+
+  /**
    * TEST_SCENARIO: The body comes from the network, and it can fail in the
    * middle. The transfer must fail as a whole: nothing is published, no staging
    * answer is trusted, and the counter that carried the bytes is torn down with

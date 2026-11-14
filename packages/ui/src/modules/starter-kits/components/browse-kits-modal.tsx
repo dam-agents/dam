@@ -27,7 +27,7 @@ export function BrowseKitsModal() {
     <Modal size="lg" heightClass="h-[95dvh] md:h-[85vh]" onClose={onClose}>
       <DialogHeader
         title="Browse starter kits"
-        subtitle="Pick a starter kit to create your agent from"
+        subtitle="Pick a starter kit to create your agent from."
         onClose={onClose}
       />
       <DialogBody>

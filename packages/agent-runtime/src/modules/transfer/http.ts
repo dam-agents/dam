@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { statfs } from "node:fs/promises";
 import type http from "node:http";
+import { SATELLITE_FILE_MAX_BYTES } from "api-server-api";
 import {
   createStaged,
   discardStaged,
-  MAX_TRANSFER_BYTES,
   openConfined,
   openStaged,
   publishStaged,
@@ -15,7 +16,23 @@ import {
 
 const STAGING_MAX_AGE_MS = 10 * 60_000;
 const SWEEP_EVERY_MS = 60_000;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How long a body may stall while bytes are still
+ * arriving. The timer runs on the socket, which outlives the last byte, so the
+ * stage disarms it before it reads the staged file back: that read-back sends
+ * nothing, and a timer left armed would destroy a connection that is working.
+ */
 const BODY_INACTIVITY_MS = 30_000;
+const FREE_SPACE_HEADROOM_BYTES = 1024 ** 3;
+
+async function freeBytesAt(dir: string): Promise<number | null> {
+  try {
+    const info = await statfs(dir);
+    return info.bavail * info.bsize;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The workspace end of one satellite file transfer,
@@ -36,8 +53,14 @@ export function createTransferHandlers(deps: {
   log: (msg: string) => void;
   reserved: readonly string[];
   cap?: number;
+  freeBytes?: (dir: string) => Promise<number | null>;
+  bodyInactivityMs?: number;
+  verify?: typeof stagedDigest;
 }) {
-  const cap = deps.cap ?? MAX_TRANSFER_BYTES;
+  const cap = deps.cap ?? SATELLITE_FILE_MAX_BYTES;
+  const freeBytes = deps.freeBytes ?? freeBytesAt;
+  const bodyInactivityMs = deps.bodyInactivityMs ?? BODY_INACTIVITY_MS;
+  const verify = deps.verify ?? stagedDigest;
   let lastSweep = 0;
 
   const segmentsOf = (relative: unknown): string[] | null =>
@@ -107,7 +130,18 @@ export function createTransferHandlers(deps: {
     }
     const staged = created.staged;
 
-    req.setTimeout(BODY_INACTIVITY_MS, () => req.destroy());
+    if (declared > 0) {
+      const free = await freeBytes(staged.dir);
+      const needed = declared + FREE_SPACE_HEADROOM_BYTES;
+      if (free !== null && needed > free) {
+        deps.log(`stage refused: ${needed} bytes needed, ${free} free`);
+        await discardStaged(staged);
+        req.resume();
+        return reply(res, 507, { error: "no_space", free, needed });
+      }
+    }
+
+    req.setTimeout(bodyInactivityMs, () => req.destroy());
 
     const hash = createHash("sha256");
     let received = 0;
@@ -127,9 +161,10 @@ export function createTransferHandlers(deps: {
     } catch {
       failure = "aborted";
     }
+    req.socket?.setTimeout(0);
 
     if (failure === null) {
-      const onDisk = await stagedDigest(staged);
+      const onDisk = await verify(staged);
       if (
         onDisk === null ||
         onDisk.size !== received ||

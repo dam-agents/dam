@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 Companion to [channels](channels.md), [channel-turns](channel-turns.md), [slack-threads](slack-threads.md), [slack-channel-history](slack-channel-history.md) and [slack-edits](slack-edits.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -132,6 +132,7 @@ flowchart TD
 | An Agent posts where others read along                   | Every reader but the author gets it; a reply in an ambient round does not, since the round already handed it on                                    | A reader that went before it in the round never sees that reply live; each reader spends a turn per post, even to stay silent |
 | A reader tags a peer in its ambient reply                | The peer answers once, as an addressed turn, and skips its turn in that round; its answer reaches the asker                                        | The peer answers only the request, not the person's message on its own                                                        |
 | Another app or a webhook posts (CI, alerts, deploys)     | Routed like a person's post: a tag reaches one Agent, readers get plain posts; the Agent reads the post's attachments and blocks, named by the app | On by default; `/dam ignore <link to its post>` makes the channel ignore that app; same ten-a-minute rate limit               |
+| An Agent of another install posts through its own app    | Routed like an app's post, and named as an agent from another install, live and in history ([slack-companion-apps](slack-companion-apps.md))       | Only once an operator lists that app as a companion; ignorable like any app; same ten-a-minute rate limit                     |
 
 ### 1.6 Proactive and cross-channel posts
 

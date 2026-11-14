@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -281,7 +281,7 @@ A held request is one pending approval, and identical requests — same host, po
 Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.
 
 That re-published prompt is for attached ACP clients such as the CLI.
-The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
+The web chat does not read it: a held request belongs to the agent, not to a session, so with the `chat-network-approvals` [experimental feature](features.md) on, every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls; with it off they wait in the approvals list and the notifications alone.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
 

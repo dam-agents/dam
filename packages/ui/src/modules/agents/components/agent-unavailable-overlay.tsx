@@ -1,10 +1,4 @@
-import {
-  Asleep,
-  Information,
-  Play,
-  Restart,
-  Warning,
-} from "@carbon/icons-react";
+import { Information, Play, Restart, Warning } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 import { match } from "ts-pattern";
 
@@ -12,15 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
-import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { routeToPath } from "../../platform/lib/routes.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import {
-  AGENT_ENABLE_ANCHOR,
-  overlayDescription,
-} from "../lib/overlay-copy.js";
+import { overlayDescription } from "../lib/overlay-copy.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -30,9 +19,8 @@ import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
 
-const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
+const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Information>> = {
   hibernated: Information,
-  disabled: Asleep,
   error: Warning,
   over_budget: Warning,
 };
@@ -47,7 +35,7 @@ export function takesOverChat(state: AgentDisplayState | null): boolean {
       "hibernating",
       () => false,
     )
-    .with("hibernated", "over_budget", "error", "disabled", () => true)
+    .with("hibernated", "over_budget", "error", () => true)
     .exhaustive();
 }
 
@@ -63,7 +51,6 @@ export function AgentUnavailableOverlay({
   onBack: () => void;
 }) {
   const { wake } = useWakeAgent();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { restart, isPending: restarting } = useRestartAgent();
 
   if (!agent || !display) {
@@ -113,27 +100,6 @@ export function AgentUnavailableOverlay({
       </div>
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
-      )}
-      {state === "disabled" && (
-        <p className="max-w-105 text-sm text-muted-foreground">
-          This agent is disabled.{" "}
-          <a
-            href={`${routeToPath({ view: "sandbox-home", agentId: agent.id, sandboxSection: "setup" })}#${AGENT_ENABLE_ANCHOR}`}
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToSandboxHome(agent.id);
-              history.replaceState(
-                null,
-                "",
-                `${location.pathname}#${AGENT_ENABLE_ANCHOR}`,
-              );
-            }}
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            Enable it in agent configuration
-          </a>{" "}
-          to use it again.
-        </p>
       )}
       {state === "starting" && (
         <p role="status" className="sr-only">

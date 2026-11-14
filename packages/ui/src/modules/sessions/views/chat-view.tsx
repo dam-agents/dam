@@ -56,10 +56,7 @@ import {
   AgentUnavailableOverlay,
   takesOverChat,
 } from "../../agents/components/agent-unavailable-overlay.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -697,8 +694,17 @@ export function ChatView() {
   );
 
   const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the CurveBender notice asks which provider to use, so the panel it opens lands on that row rather than on the harness. */
+  const [pairPickerFocus, setPairPickerFocus] = useState<"provider" | null>(
+    null,
+  );
+  const setPickerOpen = (open: boolean) => {
+    setPairPickerOpen(open);
+    if (!open) setPairPickerFocus(null);
+  };
   useEffect(() => {
-    if (sessionId) setPairPickerOpen(false);
+    if (!sessionId) return;
+    setPickerOpen(false);
   }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
@@ -856,13 +862,15 @@ export function ChatView() {
 
   const notices = (
     <>
-      {channelBlock !== null && agentDisplay?.state === "running" && (
-        <AgentReconnectingNotice
-          name={selectedAgentName ?? "the agent"}
-          state={channelBlock}
-          onRetry={loadingSession ? undefined : retryChannel}
-        />
-      )}
+      {channelBlock !== null &&
+        !sessionError &&
+        agentDisplay?.state === "running" && (
+          <AgentReconnectingNotice
+            name={selectedAgentName ?? "the agent"}
+            state={channelBlock}
+            onRetry={loadingSession ? undefined : retryChannel}
+          />
+        )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
@@ -955,7 +963,6 @@ export function ChatView() {
                           name={agentView.name}
                           avatar={agentView.avatar}
                           size={96}
-                          mood={avatarMood(agentDisplay?.state, agentView)}
                           className="transition-opacity group-hover:opacity-80"
                         />
                       )}
@@ -1174,7 +1181,10 @@ export function ChatView() {
           <CurveBenderAlert
             variant={notice}
             onTry={curveBender.tryIt}
-            onPickProvider={() => setPairPickerOpen(true)}
+            onPickProvider={() => {
+              setPairPickerFocus("provider");
+              setPairPickerOpen(true);
+            }}
           />
           <ChatInputArea
             textareaRef={textareaRef}
@@ -1192,7 +1202,11 @@ export function ChatView() {
             channelLive={channelLive}
             harness={sendHarness ?? null}
             emptyPlaceholder={
-              greeting.kind === "greeting" ? greeting.copy.placeholder : null
+              loadingSession
+                ? "Loading the conversation — your message sends once it opens."
+                : greeting.kind === "greeting"
+                  ? greeting.copy.placeholder
+                  : null
             }
             onBlockedClick={
               block?.kind === "connect"
@@ -1213,7 +1227,8 @@ export function ChatView() {
                       defaultHarness={choice.defaultHarness}
                       routed={choice.routed}
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      initialFocus={pairPickerFocus ?? undefined}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   ) : (
@@ -1222,7 +1237,7 @@ export function ChatView() {
                       agentHarness={agentView?.harness}
                       pending
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   )}
@@ -1392,7 +1407,6 @@ export function ChatView() {
         notices={notices}
         agentId={selectedAgent}
         agentName={selectedAgentName}
-        alwaysOn={agentView?.hibernationTimeoutMin === 0}
         processesEnabled={processesEnabled}
         onOpenFile={openFileHandler}
         panel={shownClassicPanel}
@@ -1488,6 +1502,16 @@ const RESUME_FAILURE_COPY: Record<
   },
 };
 
+const RESUME_FAILURE_ACTION: Record<
+  SessionError["kind"],
+  "retry" | "delete" | null
+> = {
+  unavailable: null,
+  orphaned: "delete",
+  connection: "retry",
+  other: "retry",
+};
+
 function SessionErrorCard({
   error,
   onRetry,
@@ -1498,6 +1522,7 @@ function SessionErrorCard({
   onDelete: () => void;
 }) {
   const { title, body } = RESUME_FAILURE_COPY[error.kind];
+  const action = RESUME_FAILURE_ACTION[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -1508,15 +1533,15 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {(error.kind === "connection" || error.kind === "orphaned") && (
+      {action !== null && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "connection" ? (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={14} /> Retry
-            </Button>
-          ) : (
+          {action === "delete" ? (
             <Button variant="destructive" size="sm" onClick={onDelete}>
               <TrashCan size={12} /> Delete this session
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={14} /> Retry
             </Button>
           )}
         </div>

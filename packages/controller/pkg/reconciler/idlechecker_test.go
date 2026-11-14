@@ -18,6 +18,22 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+func idleReadyCondition(ok bool, reason string, ago time.Duration) metav1.Condition {
+	status := metav1.ConditionFalse
+	if ok {
+		status = metav1.ConditionTrue
+	}
+	return metav1.Condition{Type: apiv1.ConditionAgentPodReady, Status: status, Reason: reason, LastTransitionTime: metav1.NewTime(time.Now().UTC().Add(-ago))}
+}
+
+func idleSessionCondition(ok bool, reason string, ago time.Duration) metav1.Condition {
+	status := metav1.ConditionFalse
+	if ok {
+		status = metav1.ConditionTrue
+	}
+	return metav1.Condition{Type: apiv1.ConditionReady, Status: status, Reason: reason, LastTransitionTime: metav1.NewTime(time.Now().UTC().Add(-ago))}
+}
+
 func idleCheckerCfg(timeout time.Duration) *config.Config {
 	return &config.Config{
 		Namespace: "test-agents",
@@ -52,7 +68,7 @@ func newIdleChecker(t *testing.T, timeout time.Duration, agents []*apiv1.Agent, 
 	}
 	client := fake.NewSimpleClientset(sts...)
 	checker := NewIdleChecker(client, newFakeDynamic(dynObjs...), idleCheckerCfg(timeout))
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 	return checker, client
 }
 
@@ -112,13 +128,70 @@ func TestIdleChecker_SkipsBusyAgent(t *testing.T) {
 	agent := idleAgentCR("busy-agent", staleTime, nil)
 	ss := agentStatefulSet("busy-agent", 1)
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-	checker.busyProbe = func(context.Context, string) bool { return true }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, true }
 
 	checker.check(context.Background())
 
 	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "busy-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "busy agent must stay running even when idle by activity")
+}
+
+// TEST_SCENARIO: A machine that reads ready is answering the runner's own prober, so the sweep's silence is its own path failing rather than a sign that the agent is quiet: the agent keeps its machine however many sweeps go by, and the log says so once the silence lasts.
+func TestIdleChecker_NeverHibernatesAReadyMachineTheProbeCannotReach(t *testing.T) {
+	ctx := context.Background()
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("quiet-agent", staleTime, nil)
+	agent.Status.Conditions = []metav1.Condition{
+		idleReadyCondition(true, "PodReady", time.Hour),
+		idleSessionCondition(true, "AllPodsReady", time.Hour),
+	}
+	ss := agentStatefulSet("quiet-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+
+	for range 30 {
+		checker.check(ctx)
+	}
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "quiet-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "an unanswered probe never hibernates an agent whose machine reads ready")
+}
+
+// TEST_SCENARIO: A machine that does not read ready is down, still coming up, or failed to start, and it answers no probe either way. The sweep hibernates it on that, as it did before, so a start that never came up does not hold the owner's memory for ever.
+func TestIdleChecker_HibernatesASilentAgentWhoseMachineDoesNotReadReady(t *testing.T) {
+	ctx := context.Background()
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("down-agent", staleTime, nil)
+	agent.Status.Conditions = []metav1.Condition{
+		idleReadyCondition(false, vmrunner.ReasonNotReady, time.Hour),
+		idleSessionCondition(false, "PodsNotReady", time.Hour),
+	}
+	ss := agentStatefulSet("down-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+
+	checker.check(ctx)
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "down-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "a silent machine that does not read ready hibernates without a probe answer")
+}
+
+// TEST_SCENARIO: An answer of idle is the runtime agreeing that the agent is quiet, so it needs no second sweep to believe it: the probe's only job is to catch work the activity stamp cannot see, and a machine that says it is idle is that work being over.
+func TestIdleChecker_HibernatesAnAgentThatAnsweredIdleAtOnce(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("idle-agent", staleTime, nil)
+	ss := agentStatefulSet("idle-agent", 1)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "an answered idle hibernates on the first sweep")
 }
 
 // TEST_SCENARIO: Hibernating an agent already scaled to zero leaves it there.
@@ -152,7 +225,7 @@ func TestIdleChecker_SkipsAgentAtZeroAndReportedHibernated(t *testing.T) {
 	ss := agentStatefulSet("sleeping-agent", 0)
 	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
 	probed := false
-	checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 
 	checker.check(context.Background())
 
@@ -311,7 +384,7 @@ func runnerDeployment(annotations map[string]string) *appsv1.Deployment {
 	}}
 }
 
-// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll waits out its settle timeout.
+// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll settles without seeing it come back on the new pod.
 func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("rolled-agent", staleTime, nil)
@@ -378,13 +451,13 @@ func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T
 	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
 	require.NoError(t, err)
 	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine).WithOwnerLock(r.OwnerLock)
-	checker.busyProbe = func(context.Context, string) bool {
+	checker.idleProbe = func(context.Context, string) (bool, bool) {
 		changeRunnerPod(r)
 		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
 		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 		require.NoError(t, err)
 		require.Equal(t, "my-agent", dep.Annotations[annRunnerAwaiting])
-		return false
+		return true, true
 	}
 
 	checker.check(ctx)
@@ -467,7 +540,7 @@ func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
 	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
 	require.NoError(t, err)
 	checker := NewIdleChecker(r.client, r.dynamic, r.config)
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 
 	checker.check(ctx)
 
@@ -519,21 +592,23 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 	}
 	booting := cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonNotReady, time.Hour)
 	notReady := cond(apiv1.ConditionReady, false, "PodsNotReady", time.Hour)
+	// UNIT_BOUNDARY_DESCRIPTION: what the probe does is part of the case, since the two ways a sweep spares an agent are an answered idle and a silence from a machine that reads ready. A machine that never came up answers nothing: its silence must hibernate it, or a start that never arrives holds its owner's memory for ever.
 	tests := []struct {
 		name         string
 		lastActivity time.Duration
 		conds        []metav1.Condition
 		replicas     int32
 		hibernated   bool
+		answersIdle  bool
 	}{
-		{"booting", 6 * time.Minute, []metav1.Condition{booting, notReady}, 1, false},
-		{"ready since a minute", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", time.Minute)}, 1, false},
-		{"ready since long", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", 6*time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", 6*time.Minute)}, 1, true},
-		{"start failed", 6 * time.Minute, []metav1.Condition{booting, notReady, cond(apiv1.ConditionStartFailed, true, apiv1.ReasonNeverReady, time.Minute)}, 1, true},
-		{"boot failed", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonBootFailed, time.Hour), notReady}, 1, true},
-		{"boot past the cap", 21 * time.Minute, []metav1.Condition{booting, notReady}, 1, true},
-		{"copying a disk past the cap", 3 * time.Hour, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonCopyingDisk, time.Hour), notReady}, 1, false},
-		{"halt unconfirmed", 6 * time.Minute, []metav1.Condition{booting, notReady}, 0, true},
+		{"booting", 6 * time.Minute, []metav1.Condition{booting, notReady}, 1, false, true},
+		{"ready since a minute", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", time.Minute)}, 1, false, true},
+		{"ready since long", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", 6*time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", 6*time.Minute)}, 1, true, true},
+		{"start failed", 6 * time.Minute, []metav1.Condition{booting, notReady, cond(apiv1.ConditionStartFailed, true, apiv1.ReasonNeverReady, time.Minute)}, 1, true, false},
+		{"boot failed", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonBootFailed, time.Hour), notReady}, 1, true, false},
+		{"boot past the cap", 21 * time.Minute, []metav1.Condition{booting, notReady}, 1, true, false},
+		{"copying a disk past the cap", 3 * time.Hour, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonCopyingDisk, time.Hour), notReady}, 1, false, true},
+		{"halt unconfirmed", 6 * time.Minute, []metav1.Condition{booting, notReady}, 0, true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -542,7 +617,7 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 			checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", tt.replicas))
 			checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 			probed := false
-			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return tt.answersIdle, tt.answersIdle }
 
 			checker.check(context.Background())
 
@@ -567,7 +642,7 @@ func TestIdleChecker_HoldsASweepableAgentParkedForRoom(t *testing.T) {
 			agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonAwaitingMemory}}
 			checker, _ := newIdleChecker(t, time.Minute, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 0))
 			probed := false
-			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+			checker.idleProbe = func(context.Context, string) (bool, bool) { probed = true; return true, true }
 
 			checker.check(context.Background())
 

@@ -38,6 +38,7 @@ app/
       settings.json      ← pi config (→ ~/.pi/agent/)
       auth.json          ← placeholder credentials
       APPEND_SYSTEM.md   ← appended to the system prompt (global)
+      memory/MEMORY.md   ← a seeded memory file, so pi-memory never starts its first-run interview
 ```
 
 ## Platform instructions
@@ -256,7 +257,7 @@ Pi queues a steer even after its run has ended, so such a message waits for some
 
 Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it.
-It patches eleven things:
+It patches thirteen things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
@@ -266,6 +267,8 @@ It patches eleven things:
   The platform pins the Pi version, so the user cannot act on that notice.
 - A turn whose last reply stopped at the output limit (Pi's `length`) ends with `max_tokens`.
 - On `session/load`, the replayed text of such a reply carries `_meta.platform.stopReason: "max_tokens"`, so a reopened chat still marks the cut.
+- On `session/load`, a reply's thinking replays as thought chunks, and each replayed tool call keeps the arguments its assistant message carried, so a reopened chat keeps the reasoning and a bash step keeps its command ([svkozak/pi-acp#144](https://github.com/svkozak/pi-acp/pull/144) covers the arguments alone).
+- A `write` or `edit` step is titled with the file it touched, live and on replay, instead of just the tool's name.
 - A turn whose last model request failed (Pi's `error`) fails with `Model request failed: <Pi's error>`.
 - pi-acp writes no `Retrying (attempt n/3, …)` or `Retry finished, resuming.` text into the reply.
 - Each session's pi starts with `PLATFORM_SESSION_REF` set to the session ref of its `session/new` or `session/load` (see [MCP servers](#mcp-servers)).
@@ -277,8 +280,8 @@ It patches eleven things:
 
 The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly.
 Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the machine's log.
-**To remove it** once a pi-acp release fixes #152, #72 and #135, reports `max_tokens`, writes no retry lines, hands pi the session ref (or takes HTTP MCP servers) and serves `_session/steering` with an answer that waits until Pi takes the message (#115 alone does not): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
-A release that fixes only some of the seven lets you drop just their edits.
+**To remove it** once a pi-acp release fixes #152, #72 and #135, reports `max_tokens`, writes no retry lines, replays a session's thinking and its tool calls' arguments, names a file step after its file, hands pi the session ref (or takes HTTP MCP servers) and serves `_session/steering` with an answer that waits until Pi takes the message (#115 alone does not): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
+A release that fixes only some of the nine lets you drop just their edits.
 A release that fixes #135 but still writes retry lines keeps the edit that drops them.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
@@ -325,9 +328,11 @@ Project-scope memory is not yet implemented.
 
 ### First-run bootstrap
 
-On first session, `@zhafron/pi-memory` seeds all four files with empty templates and a `BOOTSTRAP.md` interview script.
-The agent asks the user questions, overwrites the templates with real content, then deletes `BOOTSTRAP.md`.
-Normal memory injection resumes from the next session onward.
+`@zhafron/pi-memory` copies its four empty templates and a `BOOTSTRAP.md` interview script into a home that holds no `MEMORY.md`.
+While `BOOTSTRAP.md` exists, every turn carries the interview script and a setup reminder, and the script asks what to name the agent, which the platform already decides.
+The seed carries a `MEMORY.md`, so a new agent skips the interview: its memory is injected from the first turn, and it asks for the user's name and work only when the user greets it with no task (`APPEND_SYSTEM.md`).
+It must stay non-empty: a `MEMORY.md` with nothing in it injects nothing, and then pi-memory drops its `## Memory` tool instructions too.
+This holds for pi-memory 1.0.2, which tests only `MEMORY.md`; a bump must recheck it.
 
 ### Memory tool
 
@@ -345,7 +350,7 @@ mise run cluster:install        # first time
 mise run cluster:build -- agents    # rebuild after changes
 ```
 
-Create an agent from the **pi-agent** template in the Platform UI, open a session, and the bootstrap flow runs automatically.
+Create an agent from the **pi-agent** template in the Platform UI and open a session.
 
 ## Upgrading existing instances
 
@@ -355,3 +360,6 @@ Options:
 
 - Create a fresh instance (gets the new seed)
 - Delete `/home/agent/.initialized` in the machine and restart it
+
+A reseed does not finish a `BOOTSTRAP.md` an earlier image left pending, and it does not replace `APPEND_SYSTEM.md` either: the copy keeps a file that is already there.
+Such an agent keeps the old instructions and the interview until the user answers it or deletes `BOOTSTRAP.md`, and it keeps the codename until the owner deletes `~/.pi/agent/APPEND_SYSTEM.md` by hand.

@@ -78,7 +78,7 @@ export function turnContinuedNotice(cut: {
 export const STOPPED_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the platform stopped the sandbox " +
-    "mid-task — the agent was put to sleep, restarted or moved — and it has " +
+    "mid-task — the agent was stopped, restarted or moved — and it has " +
     "started again. Some effects of your last actions may be partial — a " +
     "file half-written, a command that never finished.",
   DISOWNED_REJECTION,
@@ -127,8 +127,9 @@ function promptText(prompt: PlatformUndeliveredPrompt): string {
  * restart cut off — written as a user's rejection that says to stop and wait —
  * so the agent carries on instead of waiting for a person who never acted.
  * A turn the platform stopped, as by a Sleep, gets a notice that says so
- * rather than blaming its memory. Nobody reads the resumed turn live, so its
- * prompt waits for the harness alone, never for a viewer to engage.
+ * rather than blaming its memory. The resume carries no unattended flag, so a
+ * chat Session starts no run of its own for it and the chat draws no run
+ * divider, while a Session a schedule owns keeps the run that fire began.
  * A continuation that dies again is resumed again, up to
  * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
  * the resume is tried, so a continuation that keeps running out of memory
@@ -187,7 +188,6 @@ export async function recoverInterruptedTurns(deps: {
       await deps.triggerDriver.start({
         task: marker.stopped ? STOPPED_NOTICE : INTERRUPTION_NOTICE,
         resumeSessionId: marker.sessionId,
-        unattended: true,
       });
       deps.log(`resumed interrupted session ${marker.sessionId}`);
       continue;

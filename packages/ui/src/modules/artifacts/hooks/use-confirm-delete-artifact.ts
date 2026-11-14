@@ -26,8 +26,8 @@ export function useConfirmDeleteArtifact() {
     async (artifact: LibraryArtifact) => {
       const confirmed = await showConfirm(
         "All versions are deleted and its share link stops working. This cannot be undone.",
-        `Delete “${artifact.title}”?`,
-        { kind: "destructive", confirmLabel: "Delete" },
+        `Delete artifact “${artifact.title}”?`,
+        { kind: "destructive", confirmLabel: "Delete artifact" },
       );
       if (!confirmed) return;
 

@@ -111,6 +111,18 @@ describe("what the greeting says", () => {
     ).not.toContain(copy.placeholder);
   });
 
+  // TEST_SCENARIO: a click puts the idea's text in the composer, so each text must read as a message: never the idea's own label, and never a kind prefix such as "Artifact:".
+  it("offers only texts that read as a message", () => {
+    const ideas = assistantIdeas("DAM");
+    for (const idea of ideas) {
+      expect(idea.text.trim()).not.toBe("");
+      expect(idea.text).not.toBe(idea.label);
+      for (const kind of ideas)
+        expect(idea.text.startsWith(`${kind.label}:`)).toBe(false);
+    }
+    expect(ideas[ideas.length - 1]?.text).toBe("I have a question about DAM: ");
+  });
+
   // TEST_SCENARIO: the composer under the greeting hints a message to the assistant by name, as the design does, never one of the ideas whose pill already says it.
   it("hints a message to the assistant by name", () => {
     expect(copy.placeholder).toBe("Message Dammy");
@@ -249,7 +261,7 @@ describe("the greeting in the chat", () => {
     expect(host.textContent).toContain(copy.opening);
     const pills = [...host.querySelectorAll("button")].filter((button) =>
       assistantIdeas("DAM").some((idea) =>
-        button.textContent?.includes(idea.text),
+        button.textContent?.startsWith(`${idea.label}:`),
       ),
     );
     expect(pills).toHaveLength(assistantIdeas("DAM").length);
@@ -258,18 +270,23 @@ describe("the greeting in the chat", () => {
     ).not.toBeNull();
   });
 
-  // TEST_SCENARIO: a click on a pill puts its labelled text in the composer of this chat and stops there, so nothing runs before the person acts.
+  // TEST_SCENARIO: a click on a pill puts that idea's text — never its label, which only says what kind of work it is — in the composer of this chat, and stops there, so nothing runs before the person acts.
   it("fills the composer without sending", () => {
-    const task = `${assistantIdeas("DAM")[0]!.label}: ${assistantIdeas("DAM")[0]!.text}`;
-    const chip = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes(assistantIdeas("DAM")[0]!.text),
-    );
-    expect(chip).toBeDefined();
-    act(() => chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(useStore.getState().drafts[draftKey(ASSISTANT, null)]?.text).toBe(
-      task,
-    );
+    const ideas = assistantIdeas("DAM");
+    const buttons = [...host.querySelectorAll("button")];
+    for (const idea of ideas) {
+      const chip = buttons.find((button) =>
+        button.textContent?.startsWith(`${idea.label}:`),
+      );
+      expect(chip).toBeDefined();
+      act(() =>
+        chip!.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      );
+      expect(useStore.getState().drafts[draftKey(ASSISTANT, null)]?.text).toBe(
+        idea.text,
+      );
+    }
     expect(useStore.getState().messages).toEqual([]);
-    expect(picked).toHaveBeenCalledOnce();
+    expect(picked).toHaveBeenCalledTimes(ideas.length);
   });
 });

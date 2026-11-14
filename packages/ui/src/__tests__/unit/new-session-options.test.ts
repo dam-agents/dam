@@ -65,7 +65,7 @@ it("keeps the terminal cards without the channels permission", () => {
     ...OWNER,
     permissions: AGENT_PERMISSIONS.filter((p) => p !== "channels"),
   });
-  expect(html).toContain("Browser Terminal");
-  expect(html).toContain("VS Code / Zed");
-  expect(html).not.toContain("Slack Channel");
+  expect(html).toContain("Web terminal");
+  expect(html).toContain("VS Code and Zed");
+  expect(html).not.toContain("Slack");
 });

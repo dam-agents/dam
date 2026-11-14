@@ -490,8 +490,9 @@ virtualization:
     # has (rounded up, at least one), which is what keeps a full roll of a
     # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
-    # before the roll is ready again. `settleTimeout` bounds that wait, so a
-    # machine that never comes back (its agent was stopped mid-roll) does not
+    # before the roll is ready again; a machine whose agent was deleted,
+    # stopped or hibernated mid-roll is not waited for. `settleTimeout` bounds
+    # the wait, so a machine that never comes back for another reason does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
     # A pass visits each runner about once every five minutes while its
     # agents run, and on the controller's ten-minute sweep otherwise, so a
@@ -1404,6 +1405,15 @@ apiServer:
   # plan lets a workspace admin set a member's email without verification, so
   # list only a workspace whose addresses you trust as identities.
   slackEmailPairingWorkspaces: []
+  # -- Slack app ids (A...) of other installs of the platform that share a
+  # workspace with this one, for example a staging install next to production.
+  # A post from a listed app that carries an Agent Footer is read as an agent
+  # of another install, not as an integration. Such a post gets no more
+  # authority than any app's: a channel can ignore the app, and its posts count
+  # toward the bot-post rate limit. An unlisted app's post is never read as an
+  # agent's. List each install in the other for both to see it. The app id is
+  # on the app's Basic Information page.
+  slackCompanionAppIds: []
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web

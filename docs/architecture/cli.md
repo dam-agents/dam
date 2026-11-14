@@ -122,7 +122,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`update`** (`upgrade` alias) — update the documented global npm installation to the latest stable CLI release, or report that it is current.
-- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, `kept` (the tree of kept sub-agents under an agent), plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`kit`** — list the starter kits, show what one sets up and what it needs from the user, and see, take or skip a kit's update on an agent; `agent create --kit` applies one and lists the setup left, and `agent get` names the kit an agent came from with its update state, owned by [starter-kits.md](starter-kits.md).
   A kit is a separate group from the template listing because a kit is not a Template: an agent that only knows templates answers a question about kits with images.
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
@@ -211,10 +211,11 @@ It warns and never asks, since an agent usually drives it, and a read it cannot 
 
 A second agent client runs **inside** the platform: the `dam` of an Agent's own image, driving the install that Agent runs on ([connections](connection-presets.md#platform-preset-this-install-itself)).
 Every agent image builds the CLI of its commit and puts `dam` on the PATH, with no configuration of its own.
-The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the in-agent skill into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
+The Connection that grants the install sets the two variables the CLI takes from its environment — `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's placeholder — and writes the `dam` skill the api-server serves into the Agent's Skill Path, so both exist for an Agent holding that Connection and for no other.
 The CLI runs in its normal mode there, with the whole surface a person has, and the placeholder works because the Agent's egress gateway swaps it for a real owner API key on the wire.
 That key is the platform's and never reaches the Agent ([security and credentials](security-and-credentials.md#credential-storage)).
-Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — send their credential in a WebSocket's query string rather than in the header the Connection injects, so they are the person's own and fail from inside an Agent; the in-agent skill says so rather than leaving the Agent to guess.
+Doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket, and send its credential both in the query string a browser needs and in the `Authorization: Bearer` header, which the relays read first: the gateway swaps the real key in only for that header, so from inside an Agent these doors act as the owner like every other command, and `dam run` prompts the Agent itself or another of the owner's Agents, waking it when it sleeps.
+The Connection's chain takes WebSocket upgrades for that reason.
 Version skew is accepted, as for the served skill: an image and a server come from the same build, and the CLI has to work against a newer server anyway.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
@@ -227,8 +228,6 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
   **Delete** removes the Agent, and the controller tears down its owned resources (the gateway StatefulSet, the Services and the NetworkPolicies) and deletes the machine and its disk, the same path the UI's delete uses.
   **Restart** stamps a restart revision; the controller restarts the machine on the current spec, and its disk survives.
-  **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
-  `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   The create then prints a `Provider:` line naming the one granted and what chose it (`defaultProvider` in `--json`), so a caller sees a provider it did not expect.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.

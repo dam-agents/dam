@@ -1,6 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
+
+import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import { emitToast } from "../../../lib/toast.js";
 import type { Schedule } from "../../../types.js";
@@ -12,6 +14,7 @@ import {
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleRowGroup,
+  ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
@@ -55,10 +58,25 @@ export function RecurringScheduleForm({
   });
   const { errors } = form.formState;
   const values = form.watch();
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule that already carries one of the folded fields opens them, so nothing set is hidden behind More options; a new one starts closed. */
+  const [moreOptions, setMoreOptions] = useState(() => {
+    const v = form.getValues();
+    return (
+      v.sessionMode !== "fresh" ||
+      v.quietHours.length > 0 ||
+      v.precheck.trim() !== "" ||
+      v.sessionTitle.trim() !== ""
+    );
+  });
 
   const { summary } = buildRRuleParts(values);
   const quietHoursError =
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
+  /* UNIT_BOUNDARY_DESCRIPTION: a folded field whose value the form refuses opens them again, or a refusal would leave Create doing nothing while its reason sits in a closed section. */
+  const detailsError = Boolean(
+    quietHoursError || errors.precheck || errors.sessionTitle,
+  );
+  const showMore = moreOptions || detailsError;
 
   const onValid = (v: ScheduleFormValues) => {
     const precheck = v.precheck.trim();
@@ -137,6 +155,7 @@ export function RecurringScheduleForm({
       namePlaceholder="e.g. Daily brief"
       deleteCopy={{
         body: "It stops running and cannot be recovered.",
+        noun: "schedule",
         confirmLabel: "Delete schedule",
         buttonLabel: "Delete",
       }}
@@ -158,19 +177,36 @@ export function RecurringScheduleForm({
       }
       afterChoices={
         <>
-          <ScheduleRowGroup label="Options">
-            <ScheduleSessionTypeField control={form.control} />
-            <QuietHoursEditor
-              control={form.control}
-              register={form.register}
-              error={quietHoursError}
-            />
-          </ScheduleRowGroup>
-          <SchedulePrecheckField
-            layout="stacked"
-            registration={form.register("precheck")}
-            error={errors.precheck?.message}
-          />
+          <DisclosureToggle
+            open={showMore}
+            onToggle={() => setMoreOptions(!showMore)}
+            chevronSize={14}
+            testId="schedule-more-options"
+            className="self-start text-[13px] text-muted-foreground hover:text-foreground"
+          >
+            More options
+          </DisclosureToggle>
+          {showMore && (
+            <>
+              <ScheduleRowGroup label="Options">
+                <ScheduleSessionTypeField control={form.control} />
+                <QuietHoursEditor
+                  control={form.control}
+                  register={form.register}
+                  error={quietHoursError}
+                />
+              </ScheduleRowGroup>
+              <SchedulePrecheckField
+                layout="stacked"
+                registration={form.register("precheck")}
+                error={errors.precheck?.message}
+              />
+              <ScheduleSessionTitleField
+                registration={form.register("sessionTitle")}
+                error={errors.sessionTitle?.message}
+              />
+            </>
+          )}
         </>
       }
     />

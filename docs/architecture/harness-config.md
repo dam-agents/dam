@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -18,7 +18,7 @@ It shows loading, unavailable and empty listings explicitly, with a retry for fa
 The catalog remains usable where discovery is not configured.
 Before a session starts, a routed picker picks harness, model, provider and effort in turn: a harness an owner provider runs, its models by family, each once, and a provider, one lacking the model disabled, with the reason; a model the provider lacks moves the pick to one with it, and a provider the agent lacks connects on pick.
 The old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
-A web terminal starts from a menu of harnesses: the empty chat's Browser Terminal card opens it, and so does the Web terminal row on the agent's General page.
+A web terminal starts from a menu of harnesses: the empty chat's Web terminal card opens it, and so does the Web terminal row on the agent's General page.
 The menu lists the harnesses the agent carries that a provider the owner holds accepts.
 Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
 The terminal pair is its own: the menu neither reads nor changes the pair the session picker holds.
@@ -213,17 +213,18 @@ The router stamps each forwarded call with `x-platform-session` (the session it 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
-No retries, as a second call is a second bill, but one: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn.
+No retries, as a second call is a second bill, but two: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn; one Claude refuses for another model's thinking goes again without the earlier thinking, later calls too.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
 
-**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks dropped; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
+**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions and Messages replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort that the model or its deployment refuses, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
 The effort level Claude Code persists, sent as `output_config.effort`, is rewritten to the nearest level a DeepSeek target's chat template knows, since that template refuses the whole call on a level it does not: Claude Code's `medium` default becomes `high`.
 
 Beyond the model routes the router serves each harness's **catalog endpoint** in the shape it reads, Claude Code's probe, and Pi's measured session cost from the ledger; before the first listing it answers 503, which a harness retries, and a harness with no router binding gets the same view under plain qualified names, the preferred work model first.
 A Bob call it has no route for (profile, team budget, docs search) goes to the Bob Shell Connection's gateway with its placeholder, outside the [meter](spend-limits.md#meter); the profile loses the region that would move Bob off the router and puts the pinned team and instance first, the agent's env over the Connection's; any other unrouted path gets a 404 and one log line.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for, and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
+Bob's `security` check, still named that, runs on CurveBender's Nemotron where none lists it.
 Claude Code's tier slots (manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
 The router moves such a **side call**, one Claude Code classes as auxiliary, a subagent's, a workflow agent's or a side reply (`x-claude-code-request-class`, sent since the image turns its gateway hint headers on) or stamps with a subagent's id, to the session provider's model of the same tier, else to the session's own model, when it names a tier of another provider, or a model its own provider no longer lists: the tier of the slot the id fills on that provider, the smallest where one id fills several, else the tier its word carries.
 A bare id Claude Code sends for a skill or an agent definition goes the same way when the session's provider lists neither that id nor a deployment of it; a bare id the provider lists resolves as any bare name does, on the session's provider first.

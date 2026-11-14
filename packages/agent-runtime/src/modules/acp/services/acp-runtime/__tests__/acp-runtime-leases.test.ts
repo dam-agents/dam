@@ -117,6 +117,7 @@ function createLeaseWorld(opts: {
   const backgroundWork = createBackgroundWorkRegistry({
     keepPolicy: keepsEveryTask,
   });
+  const undelivered = createInMemoryUndeliveredStore();
   const router = createLeaseRouter({
     defaultHarness: "claude-code",
     harnessKnown: (h) => ["claude-code", "codex", "pi"].includes(h),
@@ -180,7 +181,7 @@ function createLeaseWorld(opts: {
         workingDir: "/workspace",
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
-        undeliveredPrompts: createInMemoryUndeliveredStore(),
+        undeliveredPrompts: undelivered,
         continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
           new Date().toISOString(),
         ),
@@ -229,6 +230,7 @@ function createLeaseWorld(opts: {
     router,
     metadata,
     backgroundWork,
+    undelivered,
     connect() {
       const { client, channel } = createClient();
       router.attach(channel);
@@ -1935,7 +1937,14 @@ describe("acp-runtime: one harness process per harness", () => {
       }
       refuse();
     };
-    client.send(frames.prompt(2, "s", "go"));
+    const promptWithId = (id: number, text: string, promptId: string) => ({
+      ...frames.prompt(id, "s", text),
+      params: {
+        ...frames.prompt(id, "s", text).params,
+        _meta: { platform: { promptId } },
+      },
+    });
+    client.send(promptWithId(2, "go", "p-go"));
     refuseThroughRetries();
     expect(modelFrames(harness, "s")).toHaveLength(
       CRITICAL_RETRY_WAITS_MS.length + 1,
@@ -1946,6 +1955,7 @@ describe("acp-runtime: one harness process per harness", () => {
       ),
     });
     expect(promptTextsOf(harness)).toEqual([]);
+    expect(world.undelivered.readFor("s").map((r) => r.id)).toEqual(["p-go"]);
 
     client.send(frames.prompt(3, "s", "again"));
     expect(modelFrames(harness, "s")).toHaveLength(
@@ -1956,6 +1966,18 @@ describe("acp-runtime: one harness process per harness", () => {
       message: expect.stringContaining("refused the session's model"),
     });
     expect(promptTextsOf(harness)).toEqual([]);
+
+    client.send({
+      ...promptWithId(4, "go", "p-again"),
+      params: {
+        ...promptWithId(4, "go", "p-again").params,
+        _meta: { platform: { promptId: "p-again", retryOf: "p-go" } },
+      },
+    });
+    refuseThroughRetries();
+    const kept = world.undelivered.readFor("s").map((r) => r.id);
+    expect(kept).toContain("p-again");
+    expect(kept).not.toContain("p-go");
   });
 
   /** TEST_SCENARIO: Claude Code lists the router's catalog lazily, and the

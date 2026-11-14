@@ -31,6 +31,8 @@ const (
 	minIdleCheckInterval = 15 * time.Second
 	maxIdleCheckInterval = 5 * time.Minute
 	vmStartHold          = 15 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how many sweeps in a row an agent may leave the busy probe unanswered while its machine reads ready before the sweep says so out loud. KNOWN CEILING: a machine the runner's own prober reports ready that the controller's probe never reaches is never hibernated by this path, so it holds its CPU and memory until the machine stops reading ready, an operator stops it, or the path recovers. A guest that stops answering is not that case: the runner restarts it within about a minute, and a restarted machine does not read ready until it answers. So what this spares is the controller's own path to a healthy machine — the same Service the api-server's relay uses — and an outage there shows up as relays failing as well. The upgrade path is a durable "turn running" signal in the store, a pin the api-server's relay writes while a session reports a turn, which the sweep could read instead of asking the guest at all.
+	silentProbeWarnAfter = 10
 )
 
 type IdleChecker struct {
@@ -42,8 +44,11 @@ type IdleChecker struct {
 	ownerLock               func(owner string) *sync.Mutex
 	ownerLocks              map[string]*sync.Mutex
 	ownerLocksMu            sync.Mutex
-	busyProbe               func(ctx context.Context, agentName string) bool
 	shortestObservedTimeout atomic.Int64
+	// UNIT_BOUNDARY_DESCRIPTION: the runtime's own idle flag and whether it answered at all, which the sweep has to tell apart: only an answer of idle proves an agent quiet, and an answer of busy proves it at work, while a probe that does not answer proves nothing and must never be the reason a machine goes down.
+	idleProbe func(ctx context.Context, agentName string) (idle, answered bool)
+	// UNIT_BOUNDARY_DESCRIPTION: the sweeps in a row an agent has left its busy probe unanswered, kept only to make a guest that stopped answering visible in the log: no count reaches a hibernation, and the map is rebuilt on every sweep, so an answer clears it.
+	unanswered map[string]int
 }
 
 func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
@@ -82,9 +87,8 @@ func (c *IdleChecker) WithAgentBackend(backend AgentBackend) *IdleChecker {
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg,
 		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
-	c.busyProbe = func(ctx context.Context, name string) bool {
-		idle, answered := agentIdleStatus(ctx, c.config.Namespace, name)
-		return answered && !idle
+	c.idleProbe = func(ctx context.Context, name string) (bool, bool) {
+		return agentIdleStatus(ctx, c.config.Namespace, name)
 	}
 	return c
 }
@@ -140,6 +144,9 @@ func (c *IdleChecker) check(ctx context.Context) {
 	ctx, finish := telemetry.StartPass(ctx, "idle check")
 	var passErr error
 	defer func() { finish(passErr) }()
+	// UNIT_BOUNDARY_DESCRIPTION: the silences this pass saw, keyed by agent, which replace the last pass's: a pass that did not run forgets them, so the count is consecutive sweeps and nothing else.
+	unanswered := map[string]int{}
+	defer func() { c.unanswered = unanswered }()
 	start := time.Now()
 	// UNIT_BOUNDARY_DESCRIPTION: a store that cannot answer lately cannot say who went quiet. A sweep that hibernated from a stale fleet is exactly the decision this gate exists for, so the pass does nothing and the next one asks again.
 	if err := c.backend.Healthy(); err != nil {
@@ -184,12 +191,32 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if c.busyProbe(ctx, name) {
+		// UNIT_BOUNDARY_DESCRIPTION: only what the runtime and the runner answer can take a machine down. An answer of idle is the runtime proving the agent quiet and hibernates it; a probe that does not answer proves nothing and never permits hibernation, since a working guest that misses three seconds is exactly the turn this sweep must not end. A silence is then read against the runner's own report of the machine: a machine that is stopped or gone answers no probe, so it hibernates on that report, and one the runner still calls running holds its machine and is logged when the silence lasts.
+		idle, answered := c.idleProbe(ctx, name)
+		if answered && !idle {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
 		}
+		why := "the busy probe answered idle"
+		if !answered {
+			// UNIT_BOUNDARY_DESCRIPTION: a silence is read against the readiness the runner's own prober publishes, the same condition the sweep already holds, so this costs no call: a machine that reads ready is answering the runner, and the sweep's own path to it is what failed, so the agent keeps its machine; a machine that does not read ready is down, still coming up, or failed to start, and its silence is its state — it hibernates, as it did before.
+			_, podReady, _ := vmStartConditions(agent)
+			if podReady != nil && podReady["status"] == string(metav1.ConditionTrue) {
+				n := unanswered[name] + 1
+				unanswered[name] = n
+				if n == 1 {
+					slog.Info("idle checker: not hibernating, the busy probe did not answer while the machine reads ready", "agent", name)
+				}
+				// UNIT_BOUNDARY_DESCRIPTION: at the threshold and then at each doubling of it, so a machine spared for hours does not fill the log.
+				if m := n / silentProbeWarnAfter; n%silentProbeWarnAfter == 0 && m&(m-1) == 0 {
+					slog.Warn("idle checker: an agent has left its busy probe unanswered while its machine reads ready, and it stays up", "agent", name, "sweeps", n)
+				}
+				continue
+			}
+			why = "the busy probe did not answer and the machine does not read ready"
+		}
 
-		hibernated += c.hibernateIdle(ctx, agent, name)
+		hibernated += c.hibernateIdle(ctx, agent, name, why)
 	}
 	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
@@ -197,7 +224,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hibernates one idle Agent, unless a runner roll started since the sweep read which machines are pinned. The owner's lock is the one a roll start takes, so holding it here makes the pin read and the halt one decision: a roll that begins while the pod is being probed is seen by the read inside the lock, and the machine it waits on is left up. The probe stays outside the lock, so the lock is never held for its three seconds.
-func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Unstructured, name string) int {
+func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Unstructured, name, why string) int {
 	owner := agent.GetLabels()[envoyOwnerLabel]
 	lock := c.lockOf(owner)
 	lock.Lock()
@@ -211,7 +238,7 @@ func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Uns
 		slog.Info("idle checker: skipping a machine a runner roll waits on", "agent", name)
 		return 0
 	}
-	slog.Info("hibernating idle agent", "agent", name)
+	slog.Info("hibernating idle agent", "agent", name, "why", why)
 	if err := c.hibernate(ctx, owner, name); err != nil {
 		slog.Error("idle checker: hibernating", "agent", name, "error", err)
 		return 0
@@ -219,7 +246,7 @@ func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Uns
 	return 1
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
+// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready: the roll then stops waiting for it (agentLeftTheRoll), so hibernating one of them would settle the roll without seeing a machine that was only idle come back on the new pod. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
 func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context, owner string) (map[string]bool, error) {
 	awaiting := map[string]bool{}
 	selector := "app.kubernetes.io/component=" + vmRunnerComponent
@@ -358,7 +385,7 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. The idle checker and a runner roll take a silence as idle, so an agent that is down still hibernates and a stuck guest does not hold up the roll that would replace it; a reclaim does not, since a guest saturated by a long turn is silent too.
+// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. A runner roll takes a silence as idle, so a stuck guest does not hold up the roll that would replace it; the idle checker asks twice, since a working guest that misses one probe is not an idle one; and a reclaim does not take it at all, since a guest saturated by a long turn is silent too.
 func agentIdleStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}

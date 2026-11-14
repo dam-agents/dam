@@ -32,7 +32,8 @@ function RunningLabel({ chip, step }: { chip: ToolChip; step: number }) {
 
 function DoneLabel({ chips }: { chips: readonly ToolChip[] }) {
   const failed = chips.filter((chip) => chip.status === "failed").length;
-  const label = groupLabel(chips);
+  const ran = chips.filter((chip) => chip.status !== "cancelled");
+  const label = ran.length > 0 ? groupLabel(ran) : "Cancelled";
   return (
     <span className="min-w-0 truncate" title={label}>
       {label}
