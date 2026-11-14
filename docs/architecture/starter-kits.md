@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -233,7 +233,7 @@ With the owner's [chat forms](chat-forms.md) on, it also announces that the chat
 ## Linked Kit
 
 A **Linked Kit** is one kit read straight from a link to its repository, the way a teammate shares a kit nobody added to a catalog.
-Under the catalog, the Starter kits page and the Browse Kits modal take a pasted link to a public GitHub repository, and open the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
+"Import from link", beside the catalog search on the Starter kits page and in the Browse Kits modal, takes a pasted link to a public GitHub repository in a small dialog, and opens the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
 No admin is involved and no catalog changes.
 
 - **Read like a catalog entry, never stored.** The kit is resolved by the same reader the refresh uses, as the only entry of a catalog named `link` that exists for that one read: the default branch's head is resolved to a commit, `kit.yaml` at the repository's root is validated there, its seed pinned and its bundled skills scanned.
