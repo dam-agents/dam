@@ -61,7 +61,7 @@ message HttpRequest {
   map<string, string> headers = 3;
   string path = 4;
   string host = 5;
-  string scheme = 7;
+  string scheme = 6;
 }
 
 // Populated for L4 ext_authz when the listener has a TLS inspector — that's
