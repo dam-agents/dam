@@ -59,6 +59,7 @@ import {
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
 } from "../lib/catalog-cards.js";
+import { kitRunsOn } from "../lib/runs-on.js";
 import {
   buildStarterKitApplyInput,
   connectionRequirements,
@@ -484,6 +485,7 @@ function KitDetail({
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
+  const runsOn = kitRunsOn(kit);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -521,6 +523,14 @@ function KitDetail({
 
         <DialogBody>
           {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
+          {runsOn && (
+            <p
+              className="mb-6 text-sm text-muted-foreground"
+              data-testid="kit-runs-on"
+            >
+              {runsOn}
+            </p>
+          )}
           {form.name && (
             <div
               className="mb-8 flex min-w-0 items-center gap-3"
