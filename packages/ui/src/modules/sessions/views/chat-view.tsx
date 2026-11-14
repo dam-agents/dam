@@ -1509,15 +1509,15 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {(error.kind === "connection" || error.kind === "orphaned") && (
+      {error.kind !== "unavailable" && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "connection" ? (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={14} /> Retry
-            </Button>
-          ) : (
+          {error.kind === "orphaned" ? (
             <Button variant="destructive" size="sm" onClick={onDelete}>
               <TrashCan size={12} /> Delete this session
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={14} /> Retry
             </Button>
           )}
         </div>
