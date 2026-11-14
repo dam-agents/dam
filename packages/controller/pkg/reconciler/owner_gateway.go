@@ -1473,10 +1473,12 @@ func (r *AgentReconciler) cutOverToOwnerGateway(ctx context.Context, owner strin
 			if err != nil {
 				return err
 			}
-			// UNIT_BOUNDARY_DESCRIPTION: the move carries over whether the agent's own gateway was up, since its reconcile records only a wake: a moved agent with no record would read as asleep, and a turn running past the idle timeout would lose its machine.
-			awake, err := r.pairAwake(ctx, name)
-			if err != nil {
-				return err
+			// UNIT_BOUNDARY_DESCRIPTION: the move records the agent up when it should run, the wake its reconcile would record, and otherwise carries over whether its own gateway was up, since its reconcile records only a wake: a moved agent with no record would read as asleep, and a turn running past the idle timeout would lose its machine. A first start or a start after a park moves before its own gateway pod is applied, so its own gateway alone reads as down.
+			awake := shouldRun(m.agent.Annotations, effectiveIdleTimeout(m.agent.Spec.HibernationTimeout, r.config.AgentBase), time.Now().UTC())
+			if !awake {
+				if awake, err = r.pairAwake(ctx, name); err != nil {
+					return err
+				}
 			}
 			moved := retargetedGatewayService(svc, owner, m.slot)
 			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annOwnerGatewayServed, "true")

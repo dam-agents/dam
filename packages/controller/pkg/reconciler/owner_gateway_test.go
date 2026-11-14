@@ -348,14 +348,17 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	t.Helper()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	serveOwnerGateway(t, r, agent)
+	serveOwnerGateway(t, r)
+	for range 3 {
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+	}
 	svc, err := r.client.CoreV1().Services("test-agents").Get(context.Background(), GatewayName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "true", svc.Annotations[annOwnerGatewayServed])
 	return r, node, agent
 }
 
-func serveOwnerGateway(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+func serveOwnerGateway(t *testing.T, r *AgentReconciler) {
 	t.Helper()
 	r.config.VM.Gateway.PerOwner = true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -374,9 +377,6 @@ func serveOwnerGateway(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
 		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
-	for range 3 {
-		require.NoError(t, r.Reconcile(context.Background(), agent))
-	}
 }
 
 // TEST_SCENARIO: the owner gateway mounts one Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
@@ -799,9 +799,28 @@ func TestOwnerGateway_AMoveKeepsAWorkingMachineUp(t *testing.T) {
 	require.True(t, node.spec("my-agent").Running)
 	lapseActivity(t, r, agent)
 
-	serveOwnerGateway(t, r, agent)
+	serveOwnerGateway(t, r)
+	for range 3 {
+		require.NoError(t, r.Reconcile(ctx, agent))
+	}
 	_, ok, _ := r.servedDesiredUp(ctx, "my-agent")
 	require.True(t, ok, "the agent moved onto its owner gateway")
+	assert.True(t, node.spec("my-agent").Running)
+}
+
+// TEST_SCENARIO: the first start of an agent can move it onto its owner gateway in the same reconcile, before its own gateway pod is applied, so the own gateway reads as down at the move. The agent should run, so the move records it up, and a turn that outlasts the idle timeout before the next waking reconcile keeps its machine.
+func TestOwnerGateway_AMoveDuringTheFirstStartRecordsTheAgentUp(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	serveOwnerGateway(t, r)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	up, ok, _ := r.servedDesiredUp(ctx, "my-agent")
+	require.True(t, ok, "the first reconcile moved the agent onto its owner gateway")
+	assert.True(t, up)
+
+	lapseActivity(t, r, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.True(t, node.spec("my-agent").Running)
 }
 
