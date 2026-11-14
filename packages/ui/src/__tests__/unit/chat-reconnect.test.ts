@@ -20,6 +20,7 @@ const fake = vi.hoisted(() => ({
     | { kind: "none" }
     | { kind: "loading" }
     | { kind: "greeting"; copy: unknown },
+  assistantChat: false,
 }));
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -370,7 +371,18 @@ mockModule("../../modules/sessions/api/background-work.js", {
 });
 mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
   useAssistantGreeting: () => fake.greeting,
-  useAssistantChat: () => fake.greeting.kind === "greeting",
+  useAssistantChat: () =>
+    fake.assistantChat || fake.greeting.kind === "greeting",
+  useAssistantIdeas: () => [
+    {
+      label: "Artifact",
+      text: "Make my next PowerPoint deck the way I make them",
+    },
+    {
+      label: "Skill",
+      text: "Learn how my team writes tickets, then take it over",
+    },
+  ],
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
@@ -533,6 +545,7 @@ afterEach(() => {
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
   fake.greeting = { kind: "none" };
+  fake.assistantChat = false;
   useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
 });
@@ -595,6 +608,22 @@ it("fills the composer from a greeting pill without sending", () => {
     "Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: an assistant whose first chat spent its greeting keeps its idea chips on a later new chat, in place of the launch options, and a pick fills the composer there too.
+it("offers the assistant's ideas on a later new chat", () => {
+  fake.assistantChat = true;
+  const el = openNewChat();
+  expect(el.querySelector('[data-testid="new-session-launcher"]')).toBeNull();
+  expect(el.textContent).toContain("Send a message to begin.");
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
+  expect(task).toBeDefined();
+  act(() => task!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Artifact: Make my next PowerPoint deck the way I make them",
+  );
 });
 
 // TEST_SCENARIO: while the greeting's own answers are still on their way the chat shows neither it nor the empty page, so neither flashes and is taken back a moment later.

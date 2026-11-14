@@ -79,11 +79,15 @@ import {
   assistantAudienceKnown,
   useAssistantState,
 } from "../../assistants/api/assistant-state.js";
-import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import {
+  AssistantGreeting,
+  AssistantIdeas,
+} from "../../assistants/components/assistant-greeting.js";
 import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
 import {
   useAssistantChat,
   useAssistantGreeting,
+  useAssistantIdeas,
 } from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
@@ -443,6 +447,7 @@ export function ChatView() {
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
   /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
   const assistantChat = useAssistantChat(selectedAgent);
+  const assistantIdeas = useAssistantIdeas();
 
   const {
     messagesRef,
@@ -971,12 +976,22 @@ export function ChatView() {
                   <p className="text-sm text-muted-foreground">
                     Send a message to begin.
                   </p>
-                  {agentView && (
-                    <NewSessionOptions
-                      agent={agentView}
-                      onNewTerminal={handleNewTerminal}
-                    />
-                  )}
+                  {agentView &&
+                    (assistantChat && selectedAgent ? (
+                      <div className="mt-5">
+                        <AssistantIdeas
+                          ideas={assistantIdeas}
+                          agentId={selectedAgent}
+                          sessionId={sessionId}
+                          onPicked={() => textareaRef.current?.focus()}
+                        />
+                      </div>
+                    ) : (
+                      <NewSessionOptions
+                        agent={agentView}
+                        onNewTerminal={handleNewTerminal}
+                      />
+                    ))}
                   {startNotice && <div className="mt-6">{startNotice}</div>}
                 </div>
               )}
