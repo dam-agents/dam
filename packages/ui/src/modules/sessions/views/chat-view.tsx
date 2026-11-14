@@ -1489,6 +1489,16 @@ const RESUME_FAILURE_COPY: Record<
   },
 };
 
+const RESUME_FAILURE_ACTION: Record<
+  SessionError["kind"],
+  "retry" | "delete" | null
+> = {
+  unavailable: null,
+  orphaned: "delete",
+  connection: "retry",
+  other: "retry",
+};
+
 function SessionErrorCard({
   error,
   onRetry,
@@ -1499,6 +1509,7 @@ function SessionErrorCard({
   onDelete: () => void;
 }) {
   const { title, body } = RESUME_FAILURE_COPY[error.kind];
+  const action = RESUME_FAILURE_ACTION[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -1509,9 +1520,9 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {error.kind !== "unavailable" && (
+      {action !== null && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "orphaned" ? (
+          {action === "delete" ? (
             <Button variant="destructive" size="sm" onClick={onDelete}>
               <TrashCan size={12} /> Delete this session
             </Button>

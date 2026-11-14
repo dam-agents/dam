@@ -26,7 +26,7 @@ function flushFrames() {
   });
 }
 
-function render(loadingSession: boolean) {
+function render(loadingSession: boolean, blockedReason?: string) {
   const textareaRef = createRef<HTMLTextAreaElement>();
   act(() =>
     root.render(
@@ -37,6 +37,7 @@ function render(loadingSession: boolean) {
           textareaRef,
           busy: false,
           loadingSession,
+          blockedReason,
           onSend,
           onStop: () => {},
         }),
@@ -148,6 +149,65 @@ describe("a send while the conversation loads", () => {
     expect(onSend).not.toHaveBeenCalled();
     expect(useStore.getState().drafts["agent-1:session-1"]?.text).toBe(
       "for a conversation that will not load",
+    );
+  });
+
+  // TEST_SCENARIO: Enter in an empty composer arms nothing, so text typed later in the same load is not sent by that earlier keypress.
+  it("does not arm on an Enter in an empty composer", () => {
+    render(true);
+    pressEnter();
+    expect(host.textContent).not.toContain(
+      "Sending as soon as this conversation opens",
+    );
+
+    type("typed after the empty Enter");
+    render(false);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(useStore.getState().drafts["agent-1:session-1"]?.text).toBe(
+      "typed after the empty Enter",
+    );
+  });
+
+  // TEST_SCENARIO: a load that ends with the composer blocked drops the held send and keeps the draft, so it never goes out later than the person asked.
+  it("drops the held send when the load ends blocked", () => {
+    render(true);
+    type("for a composer that stays blocked");
+    pressEnter();
+    expect(host.textContent).toContain(
+      "Sending as soon as this conversation opens",
+    );
+
+    render(
+      false,
+      "Connecting to this agent — your message stays in the draft.",
+    );
+    expect(onSend).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain(
+      "Sending as soon as this conversation opens",
+    );
+
+    render(false);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(useStore.getState().drafts["agent-1:session-1"]?.text).toBe(
+      "for a composer that stays blocked",
+    );
+  });
+
+  // TEST_SCENARIO: moving to another conversation drops the held send and its notice there, so nothing fires in a conversation the person opened instead.
+  it("drops the held send when the person moves to another conversation", () => {
+    render(true);
+    type("for the first conversation");
+    pressEnter();
+
+    act(() => useStore.setState({ sessionId: "session-2" }));
+    render(true);
+    expect(host.textContent).not.toContain(
+      "Sending as soon as this conversation opens",
+    );
+    render(false);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(useStore.getState().drafts["agent-1:session-1"]?.text).toBe(
+      "for the first conversation",
     );
   });
 

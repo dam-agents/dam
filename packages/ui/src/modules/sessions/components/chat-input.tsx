@@ -214,15 +214,15 @@ export function ChatInput({
   const [heldSendFor, setHeldSendFor] = useState<string | null>(null);
   const send = useCallback(() => {
     if (!key || blockedReason) return;
-    if (loadingSession) {
-      setHeldSendFor(key);
-      return;
-    }
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
+    if (loadingSession) {
+      setHeldSendFor(key);
+      return;
+    }
     promptHistory.reset();
     clearDraftContent(key);
     onSend(text, files);
@@ -236,18 +236,19 @@ export function ChatInput({
   ]);
 
   /* UNIT_BOUNDARY_DESCRIPTION: a send typed while the session loads waits for it
-   * and goes out the moment the conversation is open, so a message to a waking
-   * agent is never dropped. It stays in the draft for a conversation the person
-   * left, a load that failed, or a composer still blocked, since none of those
-   * can send it now. */
+   * and goes out when the conversation is open, so a message to a waking agent is
+   * never dropped. Any other end leaves it in the draft, unsent: the person moved
+   * to another conversation, the load failed, or the composer is blocked. */
   useEffect(() => {
-    if (heldSendFor === null || loadingSession || blockedReason) return;
+    if (heldSendFor === null) return;
+    if (heldSendFor !== key) {
+      setHeldSendFor(null);
+      return;
+    }
+    if (loadingSession) return;
     setHeldSendFor(null);
     const failed = useStore.getState().sessionError;
-    if (
-      heldSendFor !== key ||
-      failed?.sessionId === useStore.getState().sessionId
-    )
+    if (blockedReason || failed?.sessionId === useStore.getState().sessionId)
       return;
     send();
   }, [heldSendFor, loadingSession, blockedReason, key, send]);
