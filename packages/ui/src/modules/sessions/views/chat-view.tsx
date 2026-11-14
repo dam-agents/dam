@@ -1356,6 +1356,7 @@ export function ChatView() {
             display={agentDisplay}
             canOpenBrowser={canOpenBrowser}
             canShowChanges={changesAvailable}
+            canStartNewSession={!(sessionId === null && emptyChat)}
             browserOpen={browserToggle.pressed}
             changesOpen={changesToggle.pressed}
             onToggleBrowser={() => {
@@ -1372,7 +1373,7 @@ export function ChatView() {
                 void toggleChanges(selectedAgent);
               else revealDock();
             }}
-            onConfigure={handleConfigureSandbox}
+            onStartNewSession={() => handleNewSession()}
           />
         }
         status={
