@@ -3,7 +3,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,7 +13,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
-import { useDirSnapshot, useFileContentQuery } from "../api/queries.js";
+import { useDirSnapshot } from "../api/queries.js";
 import {
   type FileEntryKind,
   useFileMutations,
@@ -109,15 +108,7 @@ export function useFilesPanelController({
     uploadBundle,
     isUploading,
   } = useFileMutations(selectedAgent);
-  const { data: openFile, error: openFileError } = useFileContentQuery(
-    selectedAgent,
-    openFilePath,
-  );
   useFileWatch(selectedAgent, openFilePath);
-
-  useEffect(() => {
-    if (openFileError) setDock(null);
-  }, [openFileError, setDock]);
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
@@ -389,7 +380,6 @@ export function useFilesPanelController({
 
   return {
     ctxValue,
-    openFile,
     pendingNew,
     rootIsLoadedEmpty,
     rootLoading,
