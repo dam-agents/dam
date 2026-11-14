@@ -52,7 +52,7 @@ export function ArtifactsView() {
         <ChatArtifactsPanel
           agentId={null}
           open
-          className="h-[70dvh] overflow-hidden rounded-lg border border-border"
+          className="rounded-lg border border-border"
         />
       </SidePanelCloseScope>
     </>
