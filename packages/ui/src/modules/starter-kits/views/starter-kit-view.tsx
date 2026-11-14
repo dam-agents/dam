@@ -285,6 +285,7 @@ function KitDetailSkeleton({
           <TextSkeleton width={260} className="h-10" />
         </DialogFooter>
       </div>
+      <KitVideoPanel video={undefined} />
     </div>
   );
 }
@@ -341,21 +342,25 @@ function repositoryHint(seed: { ref?: string; commit?: string }): string {
   return at ? `Open repository (${at})` : "Open repository";
 }
 
-function KitVideoPanel({ video }: { video: string }) {
+function KitVideoPanel({ video }: { video: string | undefined }) {
   return (
     <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
       <PlayFilledAlt size={56} className="mb-3 text-kit/40" aria-hidden />
       <p className="text-base font-semibold text-foreground">
         See it in action
       </p>
-      <a
-        href={video}
-        target="_blank"
-        rel="noreferrer"
-        className="flex items-center gap-1.5 text-sm text-foreground underline underline-offset-2"
-      >
-        Watch the walkthrough <Launch size={14} />
-      </a>
+      {video ? (
+        <a
+          href={video}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 text-sm text-foreground underline underline-offset-2"
+        >
+          Watch the walkthrough <Launch size={14} />
+        </a>
+      ) : (
+        <p className="text-sm text-muted-foreground">Video coming soon</p>
+      )}
     </aside>
   );
 }
@@ -797,7 +802,7 @@ function KitDetail({
           />
         )}
       </div>
-      {kit.video && <KitVideoPanel video={kit.video} />}
+      <KitVideoPanel video={kit.video} />
     </div>
   );
 }
