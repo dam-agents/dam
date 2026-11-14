@@ -17,7 +17,7 @@
     "@chat-adapter/telegram": "^4.44.0",
     "@clickhouse/client": "^1.24.1",
     "@grpc/grpc-js": "^1.14.6",
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.6",
     "@json-render/chat": "^0.22.0",
     "@json-render/core": "^0.22.0",
     "@kubernetes/client-node": "^2.0.1",
