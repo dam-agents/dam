@@ -5,6 +5,7 @@
 # also refuses inbound messages.
 export CLAUDE_CODE_HARBOR_KITE=0
 node /usr/local/lib/sync-claude-settings.mjs || true
+node /usr/local/lib/forget-platform-mcp-auth.mjs
 CLAUDE_OPTS="--allow-dangerously-skip-permissions"
 # The session's model (a catalog name the Model Router routes) as the TUI's
 # start value; /model then offers the router's catalog.

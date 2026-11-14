@@ -11,5 +11,9 @@ export CLAUDE_CODE_HARBOR_KITE=0
 modules=$(dirname "$(dirname "$(command -v claude-agent-acp)")")
 export NODE_PATH="$modules:$modules/.mise/node_modules"
 export CLAUDE_CODE_EXECUTABLE="$modules/.bin/claude"
+# Claude Code reads its MCP needs-auth cache once per process and skips a
+# cached server for 15 minutes, so one mesh blip would cost every session of
+# this process the platform's tools; harness-terminal does the same.
+node /usr/local/lib/forget-platform-mcp-auth.mjs
 exec node --import /usr/local/lib/sync-claude-settings.mjs \
 	/usr/local/lib/harness/claude-code/adapter/index.js "$@"

@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+//MISE description="Test that a Claude process forgets the platform's own MCP servers in the needs-auth cache before Claude Code reads it, and only those"
+//MISE sources=["claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/claude-forget-mcp-auth"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", import.meta.url));
+
+// TEST_SCENARIO: Claude Code reads the cache once per process, so a session cannot forget an entry: both harness processes run this before Claude Code starts.
+for (const surface of ["harness-chat", "harness-terminal"]) {
+  const text = readFileSync(new URL(`../../../claude-code/rootfs/usr/local/bin/${surface}`, import.meta.url), "utf8");
+  assert.match(text, /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/, surface);
+}
+
+const run = (content) => {
+  const home = mkdtempSync(join(tmpdir(), "forget-mcp-auth-"));
+  try {
+    const file = join(home, ".claude", "mcp-needs-auth-cache.json");
+    if (content !== undefined) {
+      mkdirSync(join(home, ".claude"), { recursive: true });
+      writeFileSync(file, content);
+    }
+    const r = spawnSync(process.execPath, [script], { env: { HOME: home }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, "", "harness-chat's stdout belongs to the ACP stream");
+    return { file, text: existsSync(file) ? readFileSync(file, "utf8") : undefined };
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+};
+
+// TEST_SCENARIO: one mesh blip cached both platform servers as needing auth, and the agent's own server must keep its entry, or a person has to sign it in again.
+{
+  const cache = {
+    "platform-outbound": { timestamp: 1763066141847 },
+    "knowledge-bases": { timestamp: 1763066141847 },
+    "my-connector": { timestamp: 1763066000000 },
+  };
+  const { text } = run(JSON.stringify(cache));
+  assert.deepEqual(JSON.parse(text), { "my-connector": { timestamp: 1763066000000 } });
+}
+
+// TEST_SCENARIO: nothing cached, nothing to forget, and no file appears.
+{
+  const { file, text } = run(undefined);
+  assert.equal(text, undefined, `${file} must not be created`);
+}
+
+// TEST_SCENARIO: a cache that is not ours to read is left byte for byte, and so is one that holds no platform server.
+for (const content of ["{not json", '{"my-connector":{"timestamp":1}}']) {
+  const { text } = run(content);
+  assert.equal(text, content);
+}
+
+console.log("claude-forget-mcp-auth: ok");
