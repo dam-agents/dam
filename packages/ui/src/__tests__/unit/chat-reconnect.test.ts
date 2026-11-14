@@ -164,8 +164,8 @@ for (const [path, names] of [
   ],
   ["../../modules/sessions/components/thread-divider.js", ["ThreadDivider"]],
   [
-    "../../modules/sessions/components/classic-chat-identity.js",
-    ["ClassicChatIdentity"],
+    "../../modules/agents/components/editable-agent-identity.js",
+    ["EditableAgentIdentity"],
   ],
 ] as const)
   components.set(path, [...names]);
@@ -182,6 +182,7 @@ for (const [path, names] of components) {
 
 mockModule("../../modules/sessions/components/classic-chat-layout.js", {
   ClassicChatLayout: (props: {
+    identity: unknown;
     notices: unknown;
     status: unknown;
     children: unknown;
@@ -189,6 +190,7 @@ mockModule("../../modules/sessions/components/classic-chat-layout.js", {
     createElement(
       "div",
       {},
+      props.identity as never,
       props.status as never,
       props.notices as never,
       props.children as never,
@@ -519,6 +521,12 @@ const notice = (el: HTMLElement) =>
 const placeholder = (el: HTMLElement) =>
   el.querySelector("textarea")?.getAttribute("placeholder") ?? "";
 
+function newSessionButton(el: HTMLElement): HTMLButtonElement | undefined {
+  return [...el.querySelectorAll("button")].find(
+    (b) => b.getAttribute("aria-label") === "New session",
+  );
+}
+
 function button(el: HTMLElement, label: string): HTMLButtonElement {
   const found = [...el.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === label,
@@ -585,6 +593,36 @@ it("opens an unused assistant's chat on its greeting", () => {
   expect(placeholder(el)).toBe("Message Dammy");
 });
 
+// TEST_SCENARIO: the header offers New session only where pressing it would start one. A new, empty chat has it not, and neither has a follow-up draft, which is a new empty chat too and where a press would only focus the composer. A chat that holds a session or a message has it.
+it("shows New session only once the chat holds something", () => {
+  const el = openNewChat();
+  expect(newSessionButton(el)).toBeUndefined();
+
+  act(() =>
+    useStore.setState({
+      drafts: {
+        "a-1:~new": {
+          text: "",
+          attachments: [],
+          continuesInvocation: "inv-1",
+        },
+      },
+    }),
+  );
+  paint();
+  expect(newSessionButton(el)).toBeUndefined();
+
+  act(() =>
+    useStore.setState({
+      messages: [
+        { id: "m-1", role: "assistant", parts: [], streaming: false },
+      ] as never,
+    }),
+  );
+  paint();
+  expect(newSessionButton(el)).toBeDefined();
+});
+
 // TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
 it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
@@ -612,7 +650,7 @@ it("offers the assistant's ideas on a later new chat", () => {
   expect(task).toBeDefined();
   act(() => task!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
-    "Artifact: Make my next PowerPoint deck the way I make them",
+    "Make my next PowerPoint deck the way I make them",
   );
 });
 

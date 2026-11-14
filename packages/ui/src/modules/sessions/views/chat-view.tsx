@@ -1372,7 +1372,7 @@ export function ChatView() {
             display={agentDisplay}
             canOpenBrowser={canOpenBrowser}
             canShowChanges={changesAvailable}
-            canStartNewSession={!(sessionId === null && emptyChat)}
+            canStartNewSession={sessionId !== null || messages.length > 0}
             browserOpen={browserToggle.pressed}
             changesOpen={changesToggle.pressed}
             onToggleBrowser={() => {
