@@ -31,6 +31,7 @@ import { FormField } from "../../../components/form-field.js";
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
   type Choice,
@@ -582,6 +583,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "platformSubagentProfile",
   });
+  const { data: profiles = [] } = useProfiles(agentId || null);
   const { data: fallback } = useScheduleDefault(
     routed && agentId ? agentId : null,
     null,
@@ -677,11 +679,17 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
                 {")"}
               </>
             )}
-            , which the agent&apos;s Schedules page sets. Pick a profile or a
-            model to give it values of its own.
+            , which the agent&apos;s Schedules page sets.{" "}
+            {profiles.length > 0
+              ? "Pick a profile or a model to give it values of its own."
+              : "Pick a model to give it values of its own."}
           </>
         ) : (
-          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; a pick of its own applies to this schedule only."
+          <>
+            The model this schedule runs on.
+            {profiles.length > 0 &&
+              " Pick a profile to follow its later edits."}
+          </>
         )}
       </span>
       <FormError
