@@ -23,6 +23,20 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+export const TELEMETRY_IDENTITY_ENV = "OTEL_RESOURCE_ATTRIBUTES";
+const TELEMETRY_NAME_ATTR = "platform.agent.name=";
+
+// UNIT_BOUNDARY_DESCRIPTION: the platform's own telemetry row, told apart from a variable the user added under the same name by the agent-name attribute the platform writes into it.
+export function isTelemetryIdentityEnv(env: {
+  name: string;
+  value: string;
+}): boolean {
+  return (
+    env.name === TELEMETRY_IDENTITY_ENV &&
+    env.value.includes(TELEMETRY_NAME_ATTR)
+  );
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the termination codes clients word for themselves. A view's code stays a string, since the controller can add one, but a client compares against these names, so a typo or a removed code fails to compile.
 export const TerminationCode = {
   OutOfMemory: "OutOfMemory",
