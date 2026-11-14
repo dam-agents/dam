@@ -694,8 +694,14 @@ export function ChatView() {
   );
 
   const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the CurveBender notice asks which provider to use, so the panel it opens lands on that row rather than on the harness. */
+  const [pairPickerFocus, setPairPickerFocus] = useState<"provider" | null>(
+    null,
+  );
   useEffect(() => {
-    if (sessionId) setPairPickerOpen(false);
+    if (!sessionId) return;
+    setPairPickerOpen(false);
+    setPairPickerFocus(null);
   }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
@@ -1172,7 +1178,10 @@ export function ChatView() {
           <CurveBenderAlert
             variant={notice}
             onTry={curveBender.tryIt}
-            onPickProvider={() => setPairPickerOpen(true)}
+            onPickProvider={() => {
+              setPairPickerFocus("provider");
+              setPairPickerOpen(true);
+            }}
           />
           <ChatInputArea
             textareaRef={textareaRef}
@@ -1211,7 +1220,11 @@ export function ChatView() {
                       defaultHarness={choice.defaultHarness}
                       routed={choice.routed}
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      initialFocus={pairPickerFocus ?? undefined}
+                      onOpenChange={(next) => {
+                        setPairPickerOpen(next);
+                        if (!next) setPairPickerFocus(null);
+                      }}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   ) : (

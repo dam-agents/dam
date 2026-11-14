@@ -13,6 +13,7 @@ import {
   type PropsWithChildren,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useState,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -248,10 +249,22 @@ vi.mock("@radix-ui/react-dropdown-menu", async (importOriginal) => {
 vi.mock("@/components/ui/popover", () => {
   const passthrough = ({ children }: PropsWithChildren) =>
     createElement(Fragment, null, children);
+  const Content = ({
+    children,
+    onOpenAutoFocus,
+  }: PropsWithChildren<{ onOpenAutoFocus?: (event: unknown) => void }>) => {
+    useEffect(() => {
+      onOpenAutoFocus?.({
+        preventDefault: () => {},
+        currentTarget: document.body,
+      });
+    }, [onOpenAutoFocus]);
+    return createElement(Fragment, null, children);
+  };
   return {
     Popover: passthrough,
     PopoverTrigger: passthrough,
-    PopoverContent: passthrough,
+    PopoverContent: Content,
     PopoverClose: passthrough,
   };
 });
@@ -663,6 +676,19 @@ describe("the new session panel", () => {
     profilesState = [profile(), profile({ id: "p2", name: "Second" })];
     const node = mount(picker());
     expect(node.textContent).toContain("Saved profiles");
+  });
+
+  /** TEST_SCENARIO: "Use a different provider" in the CurveBender notice asks which provider to use, so the panel it opens lands on that row rather than on the harness above it. */
+  it("opens on the Provider row when the notice asked for a provider", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    mount(picker({ initialFocus: "provider" }));
+    expect(document.activeElement?.getAttribute("aria-label")).toContain(
+      "Provider:",
+    );
   });
 
   /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */

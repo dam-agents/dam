@@ -109,6 +109,7 @@ export function SessionModelPicker({
   note,
   profiles = [],
   selectedProfileId = null,
+  providerTriggerRef,
   onPickProfile,
   onManageProfiles,
   onEditProfile,
@@ -148,6 +149,8 @@ export function SessionModelPicker({
   };
   saveAsProfile?: ReactNode;
   onLeaveProfiles?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the Provider row's trigger, which a caller focuses when the question that opened the panel is which provider to use. */
+  providerTriggerRef?: React.Ref<HTMLButtonElement>;
   onChoose: (pair: SessionPair, intent: PickerIntent) => void;
   onManageProviders: () => void;
 }) {
@@ -802,6 +805,7 @@ export function SessionModelPicker({
                       reason={(id) => providerReason(currentEntry, id, harness)}
                       onPick={changeProvider}
                       onManage={onManageProviders}
+                      triggerRef={providerTriggerRef}
                     />
                   </div>
                 </div>
@@ -1218,6 +1222,7 @@ function ProviderMenu({
   onPick,
   onManage,
   none,
+  triggerRef,
 }: {
   label: string;
   providers: readonly { id: string; name: string }[];
@@ -1226,6 +1231,7 @@ function ProviderMenu({
   reason: (id: string) => string | null;
   onPick: (id: string) => void;
   onManage?: () => void;
+  triggerRef?: React.Ref<HTMLButtonElement>;
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
   none?: { label: string; onPick: () => void };
 }) {
@@ -1243,6 +1249,7 @@ function ProviderMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`${label}: ${shown}`}
           className={CONTROL}
