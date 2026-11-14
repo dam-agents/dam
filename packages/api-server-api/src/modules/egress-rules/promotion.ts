@@ -1,9 +1,16 @@
+const PASSTHROUGH_PORT = 443;
+
+/* UNIT_BOUNDARY_DESCRIPTION: a rule needs the inspected chain only for what the passthrough chain cannot check: a method, a path, or a port other than 443. Passthrough dials 443 and its check already reads the request as TLS on 443, so a rule that names 443 holds there like one that names no port. */
 function needsL7Promotion(
   method: string,
   pathPattern: string,
   port?: number,
 ): boolean {
-  return method !== "*" || pathPattern !== "*" || port != null;
+  return (
+    method !== "*" ||
+    pathPattern !== "*" ||
+    (port != null && port !== PASSTHROUGH_PORT)
+  );
 }
 
 export interface PromotionRule {

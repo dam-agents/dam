@@ -143,6 +143,41 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
     expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
   });
 
+  // TEST_SCENARIO: #6245 — a kit author writes `port: 443` to be explicit. The rule narrows nothing the passthrough path cannot check, so its host stays off the inspected chain, as with no port; the same rule with a path is still promoted.
+  it("does NOT promote a host-wide rule that names port 443", async () => {
+    const { repo } = fakeRepo();
+    const l7 = fakeL7Hosts();
+    const svc = createEgressRulesService({
+      repo,
+      l7Hosts: l7.port,
+      trustedHosts: [],
+      isAgentOwnedBy: async () => true,
+      ownerSub: "sub-1",
+      actor: "sub-1",
+      resolveUserEmail: async () => null,
+    });
+
+    await svc.create({
+      agentId: "a1",
+      host: "api.example.com",
+      port: 443,
+      method: "*",
+      pathPattern: "*",
+      verdict: "allow",
+    });
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
+
+    await svc.create({
+      agentId: "a1",
+      host: "files.example.com",
+      port: 443,
+      method: "*",
+      pathPattern: "/public/*",
+      verdict: "allow",
+    });
+    expect(l7.last()).toEqual({ agentId: "a1", hosts: ["files.example.com"] });
+  });
+
   it("demotes the host when the last narrowing on it is revoked", async () => {
     const seed = [
       rowFrom({
