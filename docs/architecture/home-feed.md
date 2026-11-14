@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-13
+Last verified: 2026-11-14
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -180,6 +180,10 @@ Read state is **per session, not per person**, and it is the owner's.
 An [Agent Editor](agent-editors.md) using a Shared Agent's session is a viewer that never stamps it seen, so an editor reading a session leaves it unread for the owner.
 An editor gets no Home feed items or unread marks for a Shared Agent.
 The dismissal watermarks are already keyed per user, so per-person read state would need no migration for that half.
+
+The browser tab's title carries a "● " while the tab is in the background and something arrived after it went there: a Session that is now unread, a Session that came back from working, or an approval that started waiting.
+The working case is what the rule above leaves open: a viewer attached to a chat stamps its Session seen as the turn ends, so a user who prompts and switches tabs would otherwise see no mark.
+A Session that was already unread when the tab went to the background stays quiet, and showing the tab clears the mark.
 
 ## Terminal sessions
 
