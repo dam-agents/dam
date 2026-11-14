@@ -55,3 +55,4 @@ export const READY_REASONS_AWAITING_ROOM: ReadonlySet<string> = new Set([
   "AwaitingAllocation",
 ]);
 export const MACHINE_STOPPING_REASON = "MachineStopping";
+export const MACHINE_RESTARTING_REASON = "MachineRestarting";

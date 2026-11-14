@@ -178,6 +178,10 @@ import {
 import { useSessionWatch } from "../hooks/use-session-watch.js";
 import { useTakeBack } from "../hooks/use-take-back.js";
 import {
+  agentHoldFailureCopy,
+  sessionOpenWaitLabel,
+} from "../lib/agent-hold.js";
+import {
   classicAppTab,
   classicDockToggle,
   classicPanel,
@@ -908,10 +912,10 @@ export function ChatView() {
         <div className="@container relative flex flex-1 flex-col min-h-0">
           <div ref={messagesRef} className="flex-1 overflow-y-auto">
             <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-              {!historyShown && (
+              {!historyShown && !sessionError && (
                 <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                   <Spinner size={20} />
-                  Loading session…
+                  {sessionOpenWaitLabel(agentDisplay?.state)}
                 </div>
               )}
               {loadingSession && startNotice && (
@@ -1479,6 +1483,10 @@ const RESUME_FAILURE_COPY: Record<
     title: "Can't reach the agent",
     body: "The agent didn't answer. It may still be starting — try again in a moment.",
   },
+  agent: {
+    title: "The agent isn't ready",
+    body: "The conversation is kept.",
+  },
   other: {
     title: "Can't open this conversation",
     body: "The agent still has it, but it wouldn't load.",
@@ -1494,7 +1502,23 @@ function SessionErrorCard({
   onRetry: () => void;
   onDelete: () => void;
 }) {
-  const { title, body } = RESUME_FAILURE_COPY[error.kind];
+  const copy = RESUME_FAILURE_COPY[error.kind];
+  const { title } = copy;
+  const held =
+    error.kind === "agent" && error.agentCause !== undefined
+      ? agentHoldFailureCopy({ cause: error.agentCause })
+      : null;
+  const body =
+    held === null
+      ? copy.body
+      : [
+          held.cause,
+          copy.body,
+          held.ownInstruction ? null : "Retry once the agent is up.",
+        ]
+          .filter((part) => part !== null)
+          .join(" ");
+  const retries = error.kind === "connection" || error.kind === "agent";
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -1505,9 +1529,9 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {(error.kind === "connection" || error.kind === "orphaned") && (
+      {(retries || error.kind === "orphaned") && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "connection" ? (
+          {retries ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
               <Renew size={14} /> Retry
             </Button>

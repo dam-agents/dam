@@ -313,6 +313,13 @@ const ReasonContainerBackendRemoved = "ContainerBackendRemoved"
 // yet Hibernated; the api-server reads it as hibernating, not as starting.
 const ReasonMachineStopping = "MachineStopping"
 
+// ReasonMachineRestarting is stamped on AgentPodReady of a vm agent whose
+// machine the runner is restarting, onto a new spec or because its guest
+// stopped answering. The old guest can keep answering its health check until
+// the runner stops it, so the api-server's relays wait for Ready on such an
+// agent instead of trusting that answer.
+const ReasonMachineRestarting = "MachineRestarting"
+
 // ReasonOverBudget is stamped on Ready when the agent wants to run but its
 // start would push the owner's summed Sizes (`spec.resources.limits`) past
 // their Ceiling (#1900). The pods stay at zero; the message carries the

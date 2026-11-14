@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-11-09
+Last verified: 2026-11-10
 
 ## Overview
 
@@ -222,6 +222,12 @@ Work that runs outside any request — each attempt at a schedule fire and each 
 Its attributes follow the counters' rule: a fire carries its type, mode, attempt, outcome, the stage that failed and why it was held; a turn carries its channel, whether it was read-along, its outcome and its failure reason token.
 A failure records its error type and never its message, since a message is free text.
 Traces are sampled, so they explain individual fires and turns; counting stays with the counters and the activity log.
+
+### Relay traces
+
+Each agent relay's hold on a socket is a trace of its own, `relay.hold`, since the upgrade that opened the socket was answered before the wait began: what the Agent was when it began (`ready`, `hibernated`, `running`, `restarting`) and how it ended (`ready`, `answered` for the agent's own health answer, `failed`, `refused`, `gone`).
+The two requests a session open waits on are traced from the frame reaching the agent to its answer, `relay.request`, linked to the hold they waited behind: a `session/load` or `session/resume` on the ACP relay and the transcript tail read on the agent's tRPC relay, with the time the frame waited for the hold and whether the agent answered, failed or never did.
+They follow the counters' rule: the relay and method are the only dimensions, never an Agent, a Session or a person, and a failed hold carries its error type alone.
 
 ### VM runner
 

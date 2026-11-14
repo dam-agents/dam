@@ -18,6 +18,7 @@ export function createSshRelay(
 ): SshRelay {
   const stamper = createActivityStamper(repo);
   return createWakeGatedRelay({
+    name: "ssh",
     repo,
     upstreamBase,
     upstreamPath: () => "/api/ssh",

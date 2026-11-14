@@ -137,13 +137,16 @@ An Agent whose last start never came up shows as an error with that start's reas
 Its sidebar session list wakes it once per open (the open lasts until the sidebar row closes), and offers a retry when the Agent stays asleep ([home-feed](home-feed.md)).
 An Agent still falling asleep is woken once it is asleep.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
-The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.
-`Ready` arrives only after the controller's next reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
-That answer is weaker than `Ready`: it does not say which machine revision answered.
-It is trusted only on a wake from hibernation, because hibernation stops the agent's machine, so what answers came up for this wake.
-For that reason the controller publishes hibernation only once the runner has confirmed the machine stopped ([Hibernate](#hibernate)).
-A running machine that is not `Ready` can be in a restart, and it keeps answering on its port until its restart stops it, so a hold on such an agent, or one that begins after the controller has started the wake, waits for `Ready`.
+The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket.
+`Ready` arrives only after the controller's next reconcile, and a running agent's `Ready` goes down whenever the controller cannot reach its owner's runner or the runner misses a probe under load, while the guest itself still answers.
+So a relay whose hold began on a hibernated Agent, or on a running one that is not `Ready`, also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
+That answer is weaker than `Ready`: it does not say which machine answered.
+It is trusted only where a single machine can answer.
+On a wake from hibernation that holds because hibernation stops the agent's machine, so what answers came up for this wake; for that reason the controller publishes hibernation only once the runner has confirmed the machine stopped ([Hibernate](#hibernate)).
+On a running agent it holds while `AgentPodReady` was published for the Agent's current spec and its reason is not `MachineRestarting` or `MachineStopping`, and no stop is asked for.
+A machine the runner restarts — onto a new spec, or because its guest stopped answering — keeps answering on its port until the restart stops it, so the controller publishes `MachineRestarting` for the whole restart, and keeps it while the runner cannot be reached; a hold on such an agent, on one whose readiness is from an older spec, or one that sees a restart begin while it polls, waits for `Ready`.
 A stop ends that polling, and a wake that fails still closes the socket with its cause.
+Each hold records a span of its own ([observability](observability.md#relay-traces)).
 Contributions are applied out-of-band by a single background worker (a machine's `hello` is presence-only — it just signals the worker to dispatch).
 The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses — so an apply never targets a machine that is down or restarting; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is.
 Each apply runs every contribution to termination and records which drivers failed; a degraded agent (failed installs retrying in the background, capped) surfaces via its `contributionFailures` badge and never wedges.
