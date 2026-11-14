@@ -1,14 +1,17 @@
 import { Code, Terminal } from "@carbon/icons-react";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { useState } from "react";
 
 import { getBrand } from "@/brand";
 import { SlackColorIcon, TelegramColorIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { Button } from "@/components/ui/button";
+import { externalLinkProps } from "@/lib/external-link";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
@@ -16,7 +19,7 @@ import { TerminalHarnessMenu } from "./terminal-harness-menu.js";
 
 type LocalTarget = "terminal" | "ide";
 
-// UNIT_BOUNDARY_DESCRIPTION: the cards an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent. Each card shows only to a person who holds the Agent Permission it needs: terminal for the terminals and editors, channels for the messengers.
+// UNIT_BOUNDARY_DESCRIPTION: the quiet row an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent. Each shows only to a person who holds the Agent Permission it needs: terminal for the terminals and editors, channels for the messengers.
 export function NewSessionOptions({
   agent,
   onNewTerminal,
@@ -37,47 +40,51 @@ export function NewSessionOptions({
   return (
     <>
       <div
-        className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 sm:grid-cols-2"
+        className="mt-5 flex w-full max-w-[640px] flex-wrap items-center justify-center gap-1 text-sm"
         data-testid="new-session-launcher"
       >
+        <span className="px-1 text-muted-foreground">Also open in:</span>
         {terminal && (
           <>
             <TerminalHarnessMenu agentId={agent.id} onOpen={onNewTerminal}>
-              <LauncherTile
-                icon={<Terminal size={18} />}
-                title="Web terminal"
-                description="Interactive session in this tab"
-              />
+              <Button variant="ghost" size="sm">
+                <Terminal size={16} />
+                Web terminal
+              </Button>
             </TerminalHarnessMenu>
-            <LauncherTile
-              icon={<Terminal size={18} />}
-              title="CLI and SSH"
-              description="Use the agent from your own terminal or over SSH"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setLocal("terminal")}
-            />
-            <LauncherTile
-              icon={<Code size={18} />}
-              title="VS Code and Zed"
-              description="Open workspace in your local editor"
-              onClick={() => setLocal("ide")}
-            />
+            >
+              <Terminal size={16} />
+              CLI and SSH
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setLocal("ide")}>
+              <Code size={16} />
+              VS Code and Zed
+            </Button>
           </>
         )}
         {channels && available.slack && (
-          <LauncherTile
-            icon={<SlackColorIcon aria-hidden width={18} height={18} />}
-            title="Slack"
-            description="Mention the agent in a connected channel"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setMessenger("slack")}
-          />
+          >
+            <SlackColorIcon aria-hidden width={16} height={16} />
+            Slack
+          </Button>
         )}
         {channels && available.telegram && (
-          <LauncherTile
-            icon={<TelegramColorIcon aria-hidden width={18} height={18} />}
-            title="Telegram"
-            description="Message the agent from a Telegram chat"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setMessenger("telegram")}
-          />
+          >
+            <TelegramColorIcon aria-hidden width={16} height={16} />
+            Telegram
+          </Button>
         )}
       </div>
       {local && (
@@ -110,6 +117,8 @@ function LocalCommandDialog({
   onClose: () => void;
 }) {
   const cli = getBrand().short;
+  const brand = getBrand();
+  const cliReferenceUrl = useDocsUrl("cliReference");
   return (
     <Modal size="sm" onClose={onClose}>
       <DialogHeader
@@ -138,6 +147,23 @@ function LocalCommandDialog({
         }
       />
       <DialogBody className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          {cliReferenceUrl ? (
+            <>
+              Follow the{" "}
+              <a
+                href={cliReferenceUrl}
+                {...externalLinkProps}
+                className="font-medium text-foreground hover:underline"
+              >
+                CLI quickstart
+              </a>{" "}
+              to install the {brand.name} CLI and log in.
+            </>
+          ) : (
+            <>Install the {brand.name} CLI and log in.</>
+          )}
+        </p>
         {target === "terminal" ? (
           <>
             <span className="text-sm font-medium text-foreground">
@@ -167,36 +193,5 @@ function LocalCommandDialog({
         )}
       </DialogBody>
     </Modal>
-  );
-}
-
-function LauncherTile({
-  icon,
-  title,
-  description,
-  ...props
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-} & ComponentProps<"button">) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">
-          {title}
-        </span>
-        <span className="mt-0.5 block text-sm text-muted-foreground">
-          {description}
-        </span>
-      </span>
-    </button>
   );
 }

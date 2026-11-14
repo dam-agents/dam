@@ -73,7 +73,6 @@ import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-wat
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
-import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import {
@@ -754,10 +753,6 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const canOpenBrowser = agentView?.requireConnectionAddress === true;
-  const sessionsElsewhere =
-    agentView === null ||
-    holds(agentView.access, "terminal") ||
-    holds(agentView.access, "channels");
   // UNIT_BOUNDARY_DESCRIPTION: the browser, changes and delegation docks belong to one agent, so a dock left by a previously selected agent counts as nothing docked here.
   const shownDock =
     dock === null
@@ -974,9 +969,7 @@ export function ChatView() {
                     </button>
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    {sessionsElsewhere
-                      ? "Send a message to begin or open a new session in:"
-                      : "Send a message to begin."}
+                    Send a message to begin.
                   </p>
                   {agentView && (
                     <NewSessionOptions
