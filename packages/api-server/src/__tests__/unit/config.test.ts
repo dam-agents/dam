@@ -351,7 +351,7 @@ describe("loadConfig — outbound links", () => {
       if (value) process.env[env] = value;
     }
     expect(loadConfig().links).toEqual({
-      docs: "https://pages.github.ibm.com/dam-agents/docs/",
+      docs: "https://dam-agents.github.io/docs/",
       computeRequest:
         "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759",
       slackInstallRequest: null,

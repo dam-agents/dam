@@ -22,7 +22,7 @@ export const kcEnvDefaults: Record<KcEnvName, string> = {
   "PLATFORM_ALLOW_PASSWORD": "true",
   "PLATFORM_SHARE_CLIENT_ID": "platform-share",
   "PLATFORM_BRAND_NAME_MEANINGS": "[]",
-  "PLATFORM_DOCS_URL": "https://pages.github.ibm.com/dam-agents/docs/",
+  "PLATFORM_DOCS_URL": "https://dam-agents.github.io/docs/",
   "PLATFORM_LOGIN_COMMUNITY_LABEL": "",
   "PLATFORM_LOGIN_COMMUNITY_URL": "",
   "PLATFORM_API_URL": ""
