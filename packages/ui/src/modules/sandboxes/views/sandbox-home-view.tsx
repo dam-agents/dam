@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   findAgent,
   useAgents,
@@ -27,7 +28,6 @@ import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
-import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
 import {
   AgentDescriptionSection,
   AgentModelSettingsSection,
@@ -99,8 +99,11 @@ function AgentHome({ agent }: { agent: AgentView }) {
     enabled: environmentsEnabled,
     count: environments.data?.length,
   });
+  const chatFormsEnabled = useChatFormsEnabled();
   const sections = SECTIONS.filter(
-    (e) => agentHasEnvironments || e.section !== "environments",
+    (e) =>
+      (chatFormsEnabled || e.section !== "chat-forms") &&
+      (agentHasEnvironments || e.section !== "environments"),
   );
   const locked = new Set(
     sections
@@ -154,10 +157,7 @@ function AgentHome({ agent }: { agent: AgentView }) {
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
           ) : section === "chat-forms" ? (
-            <>
-              <ChatFormSettings agentId={agent.id} />
-              <ThinkingSetting />
-            </>
+            <ChatFormSettings agentId={agent.id} />
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
           ) : section === "schedules" ? (
