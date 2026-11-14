@@ -7,7 +7,10 @@ import {
   ViewOff,
   WarningAlt,
 } from "@carbon/icons-react";
-import { isProtectedAgentEnvName } from "api-server-api";
+import {
+  isProtectedAgentEnvName,
+  isTelemetryIdentityEnv,
+} from "api-server-api";
 import { type ReactNode, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
@@ -19,10 +22,16 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { ListGroup } from "@/components/ui/list-group";
-import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
+import {
+  AddRow,
+  LIST_ROW,
+  ListSection,
+  SectionHeader,
+} from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
@@ -114,13 +123,21 @@ export function EnvTab({
       return next;
     });
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [inheritedOpen, setInheritedOpen] = useState(false);
   const [query, setQuery] = useState("");
   // UNIT_BOUNDARY_DESCRIPTION: in a panel the variables are grouped by who contributes them — the Agent's own first, then one group per provider, connection or the platform — and each group folds to its name and count until a search opens them all, the way the network rules group.
   const manualRows = envVars.map((v, i) => ({
     name: v.name,
     value: v.value,
     node: (
-      <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
+      <div
+        key={`${v.name}:${i}`}
+        className={cn(
+          LIST_ROW,
+          "text-xs",
+          isTelemetryIdentityEnv(v) && "flex-wrap",
+        )}
+      >
         <span className="font-mono font-semibold text-foreground truncate">
           {v.name}
         </span>
@@ -168,6 +185,12 @@ export function EnvTab({
           }
           disabled={saving}
         />
+        {isTelemetryIdentityEnv(v) && (
+          <p className="basis-full text-muted-foreground">
+            Added by the platform so telemetry carries the agent&apos;s name.
+            You can remove it.
+          </p>
+        )}
       </div>
     ),
   }));
@@ -287,16 +310,33 @@ export function EnvTab({
       </ListSection>
 
       {!panelHeading && shownInherited.length > 0 && (
-        <ListSection
-          label="Inherited"
-          description="Set by the platform and by this agent's providers and connections. Read-only."
-          isEmpty={false}
-          empty={null}
-        >
-          {shownInherited.map((e, i) => (
-            <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
-          ))}
-        </ListSection>
+        <section className="mb-8">
+          <SectionHeader label="Inherited">
+            <DisclosureToggle
+              open={inheritedOpen}
+              onToggle={() => setInheritedOpen((open) => !open)}
+              testId="env-inherited-toggle"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              {inheritedOpen
+                ? "Hide"
+                : `Show ${shownInherited.length} inherited`}
+            </DisclosureToggle>
+          </SectionHeader>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Set by the platform and by this agent&apos;s providers and
+            connections. Read-only.
+          </p>
+          {inheritedOpen && (
+            <Card className="overflow-hidden">
+              <div className="divide-y divide-border">
+                {shownInherited.map((e, i) => (
+                  <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
+                ))}
+              </div>
+            </Card>
+          )}
+        </section>
       )}
 
       {editing !== null && (

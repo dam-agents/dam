@@ -144,7 +144,9 @@ export function SchedulesPanel({
           )}
         </section>
       )}
-      {!panel && <AgentModelPicker agentId={agentId} kind="scheduled" />}
+      {!panel && upcoming.length > 0 && (
+        <AgentModelPicker agentId={agentId} kind="scheduled" />
+      )}
 
       {form && (
         <ScheduleFormModal

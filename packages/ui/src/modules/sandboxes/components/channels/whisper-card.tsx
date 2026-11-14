@@ -15,11 +15,11 @@ export function WhisperCard({ agent }: { agent: AgentView }) {
       onChange={(whisper) => update.mutate({ id: agent.id, whisper })}
       disabled={update.isPending || !holds(agent.access, "channels")}
     >
-      Anyone in a conversation this agent is connected to can talk to it
-      privately with <code>/{getBrand().short} whisper</code>. Nobody else there
-      sees it, so someone could ask the agent to change its instructions, memory
-      or settings without the others knowing. You can still read every whisper
-      in the agent&apos;s sessions.
+      Anyone in a Slack channel this agent is in can talk to it privately with{" "}
+      <code>/{getBrand().short} whisper</code>. Nobody else there sees it, so
+      someone could ask the agent to change its instructions, memory or settings
+      without the others knowing. You can still read every whisper in the
+      agent&apos;s sessions.
     </ChannelSwitchCard>
   );
 }

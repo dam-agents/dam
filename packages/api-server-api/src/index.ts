@@ -238,6 +238,8 @@ export {
   type AgentUnreachableBody,
   isProtectedAgentEnvName,
   isStartRefusal,
+  isTelemetryIdentityEnv,
+  TELEMETRY_IDENTITY_ENV,
   TerminationCode,
 } from "./modules/agents/types.js";
 export {
