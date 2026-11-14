@@ -239,8 +239,9 @@ describe("the grant read", () => {
     expect(grants.grantedIds.size).toBe(0);
     open();
     server.readGate = null;
-    await settle();
-    expect(grants.loaded).toBe(true);
+    await act(async () => {
+      await vi.waitFor(() => expect(grants.loaded).toBe(true));
+    });
     expect([...grants.grantedIds]).toEqual(["c-gh"]);
   });
 });

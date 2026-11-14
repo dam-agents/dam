@@ -6,6 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentView } from "../../types.js";
 
+vi.mock("../../modules/a2ui/hooks/use-chat-forms-enabled.js", () => ({
+  useChatFormsEnabled: () => true,
+}));
 vi.mock("../../modules/environments/api/queries.js", () => ({
   useEnvironmentsEnabled: () => false,
   useEnvironments: () => ({ data: undefined, isLoading: false }),
