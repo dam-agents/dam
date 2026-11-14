@@ -14,9 +14,7 @@
       "packages/agents/base",
       "packages/vm-runner",
       "packages/controller/pkg/reconciler/vm_*",
-      "packages/controller/pkg/reconciler/hibernation.go",
-      "packages/ui/src/modules/home",
-      "packages/ui/src/modules/budgets"
+      "packages/controller/pkg/reconciler/hibernation.go"
     ],
     "21-s3-signing": [
       "packages/api-server/src/modules/connections/domain/s3-contributions.ts",

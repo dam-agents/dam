@@ -1,8 +1,9 @@
-import type { BudgetVmUsage, PoolLevel } from "api-server-api";
+import type { PoolLevel } from "api-server-api";
 
 import { getBrand } from "../../../brand.js";
 import { formatBytes } from "../../../lib/format-size.js";
 import type { AgentView } from "../../../types.js";
+import { usePoolUsage } from "../api/queries.js";
 import {
   memoryBar,
   poolWarning,
@@ -23,14 +24,19 @@ const LEVEL_WORD: Record<PoolLevel, string> = {
 const percentOf = (used: number, limit: number) =>
   limit > 0 ? Math.min(100, Math.floor((used * 100) / limit)) : 0;
 
-export function PoolUsage({
-  usage,
-  agents,
-}: {
-  usage: BudgetVmUsage;
-  agents: readonly AgentView[];
-}) {
+export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
+  const { data: usage, isPending } = usePoolUsage();
   const ownAgents = agents;
+  if (!usage) {
+    if (isPending) return null;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {ownAgents.some((agent) => agent.state === "running")
+          ? "Usage is unavailable right now — try again in a minute."
+          : "Usage appears once one of your agents is running."}
+      </p>
+    );
+  }
   const { memory, storage } = usage;
   // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard holds each running agent to the pool's room above its reserve, and a home also fills on its own: the breakdown that names it opens on either, not only on the pool's own level, and it asks the shares whether a home is full rather than the rows it renders, so a disk the runner could not read cannot close it.
   const rows = storageRows(usage, ownAgents);

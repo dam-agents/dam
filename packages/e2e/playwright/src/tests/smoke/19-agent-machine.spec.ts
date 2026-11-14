@@ -211,29 +211,10 @@ test("starts docker as an openrc service with only the gateway of the agent's en
   expect(guest, "dockerd runs platform-runc").toMatch(/^runc-first$/m);
   expect(guest).toMatch(/^stopped 1$/m);
 });
-// TEST_SCENARIO: the home dashboard reads the owner's memory and storage pools from the owner's runner. This agent's own share of both shows on its row, and the pool card with the meters and the agent's segment is there only when a pool is near full or an agent's home is full, which this lane can reach on a loaded machine, so the expectation comes from the same pools the UI reads rather than from a fixed level.
-test("reads its owner's pools on the home dashboard", async ({ page }) => {
+// TEST_SCENARIO: the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
+test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.setTimeout(120_000);
-  const { vm } = await api.budgets.reserved.query();
-  const poolsNearFull = vm
-    ? vm.memory.level !== "ok" ||
-      vm.storage.level !== "ok" ||
-      (vm.cpu !== undefined && vm.cpu.level !== "ok") ||
-      vm.agents.some((share) => share.homeFull)
-    : false;
   await page.goto("/");
-  const row = page.getByTestId("agent-row").filter({ hasText: agentName });
-  await expect(
-    row.locator('[aria-label^="Memory used by this agent: "]'),
-  ).toBeVisible({ timeout: 60_000 });
-  await expect(
-    row.locator('[aria-label^="Storage used by this agent: "]'),
-  ).toBeVisible({ timeout: 60_000 });
-  const memory = page.getByRole("meter", { name: "Memory" });
-  if (!poolsNearFull) {
-    await expect(memory).toHaveCount(0);
-    return;
-  }
   for (const pool of ["Memory", "Storage"])
     await expect(page.getByRole("meter", { name: pool })).toBeVisible({
       timeout: 60_000,

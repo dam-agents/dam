@@ -237,15 +237,6 @@ export function topCpuAgents(
     .map((t) => t.agent);
 }
 
-export function poolNearFull(usage: BudgetVmUsage): boolean {
-  return (
-    usage.memory.level !== "ok" ||
-    usage.storage.level !== "ok" ||
-    (usage.cpu !== undefined && usage.cpu.level !== "ok") ||
-    usage.agents.some((share) => share.homeFull)
-  );
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: a pool's warning-sign text: the advice at every level, and at critical also what the platform does and, for a user without a Slack link, the command that links it.
 export function poolWarning(
   level: PoolLevel,
