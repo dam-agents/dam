@@ -698,10 +698,13 @@ export function ChatView() {
   const [pairPickerFocus, setPairPickerFocus] = useState<"provider" | null>(
     null,
   );
+  const setPickerOpen = (open: boolean) => {
+    setPairPickerOpen(open);
+    if (!open) setPairPickerFocus(null);
+  };
   useEffect(() => {
     if (!sessionId) return;
-    setPairPickerOpen(false);
-    setPairPickerFocus(null);
+    setPickerOpen(false);
   }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
@@ -1221,10 +1224,7 @@ export function ChatView() {
                       routed={choice.routed}
                       open={pairPickerOpen}
                       initialFocus={pairPickerFocus ?? undefined}
-                      onOpenChange={(next) => {
-                        setPairPickerOpen(next);
-                        if (!next) setPairPickerFocus(null);
-                      }}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   ) : (
@@ -1233,7 +1233,7 @@ export function ChatView() {
                       agentHarness={agentView?.harness}
                       pending
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   )}

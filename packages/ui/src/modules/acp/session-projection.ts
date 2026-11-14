@@ -587,11 +587,13 @@ export function appendUndelivered(
   records: PlatformUndeliveredPrompt[],
 ): Message[] {
   if (records.length === 0) return messages;
+  /* UNIT_BOUNDARY_DESCRIPTION: the runtime and this browser each record a prompt the harness refused, under the prompt's own id, so one message is one bubble and not two; the later record wins, which is the one this browser kept with its reason. */
+  const unique = [...new Map(records.map((r) => [r.id, r])).values()];
   const marked = markUndelivered(
     messages,
-    new Map(records.map((r) => [r.id, r])),
+    new Map(unique.map((r) => [r.id, r])),
   );
-  const fresh = records
+  const fresh = unique
     .filter((r) => !messages.some((m) => m.id === r.id))
     .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
   if (fresh.length === 0) return marked;

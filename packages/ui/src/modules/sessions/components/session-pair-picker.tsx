@@ -712,6 +712,7 @@ export function SessionPairPicker(props: Props) {
       agentId={agentId}
       carried={carried}
       providerTriggerRef={providerTrigger}
+      initialFocus={initialFocus}
       harnesses={names}
       pair={pair}
       defaultHarness={defaultHarness}

@@ -1290,24 +1290,20 @@ describe("the saved profiles behind Use a profile", () => {
     });
   });
 
-  /** TEST_SCENARIO: a profile whose harness this agent cannot offer is refused with the reason, and picking it changes nothing (QA: a Hermes profile, with the Hermes feature off, was offered in a Codex agent's chip, and picking it silently ran the agent on Pi). */
-  it("refuses a profile whose harness this agent cannot run", () => {
-    profilesState = [profile({ harness: "hermes", name: "qa-hermes" })];
+  /** TEST_SCENARIO: a profile whose harness this agent cannot offer is not offered at all, so nobody picks it into a pair that cannot run (QA: a Hermes profile, with the Hermes feature off, was offered in a Codex agent's chip, and picking it silently ran the agent on Pi). */
+  it("leaves out a profile whose harness this agent cannot run", () => {
+    profilesState = [
+      profile({ harness: "hermes", name: "qa-hermes" }),
+      profile({ id: "p2", name: "runs here" }),
+    ];
     const node = mount(picker({ carried: [...carried, claudeCode] }));
     click(node, "Use a profile");
-    expect(node.textContent).toContain("Hermes isn't available for this agent");
-    const row = [...node.querySelectorAll<HTMLButtonElement>("li button")].find(
-      (b) => b.textContent?.includes("qa-hermes"),
-    );
-    expect(row).toBeDefined();
-    expect(row!.disabled).toBe(true);
-    act(() => row!.click());
-    expect(state.remember).not.toHaveBeenCalled();
-    expect(state.chosenModel).not.toHaveBeenCalled();
+    expect(node.textContent).toContain("runs here");
+    expect(node.textContent).not.toContain("qa-hermes");
   });
 
-  /** TEST_SCENARIO: a profile that cannot run here stays listed, disabled, with its reason and the one action that fixes it. */
-  it("keeps an unavailable profile listed with its reason", () => {
+  /** TEST_SCENARIO: a profile the owner catalog says cannot run here is left out too, rather than offered and refused on the pick. */
+  it("leaves out a profile that cannot run here", () => {
     profilesState = [
       profile({
         id: "p2",

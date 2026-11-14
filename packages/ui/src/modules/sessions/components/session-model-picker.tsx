@@ -110,6 +110,7 @@ export function SessionModelPicker({
   profiles = [],
   selectedProfileId = null,
   providerTriggerRef,
+  initialFocus,
   onPickProfile,
   onManageProfiles,
   onEditProfile,
@@ -151,6 +152,8 @@ export function SessionModelPicker({
   onLeaveProfiles?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: the Provider row's trigger, which a caller focuses when the question that opened the panel is which provider to use. */
   providerTriggerRef?: React.Ref<HTMLButtonElement>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the row a caller asked the panel to land on, which is on the fields and never on the saved profiles. */
+  initialFocus?: "provider";
   onChoose: (pair: SessionPair, intent: PickerIntent) => void;
   onManageProviders: () => void;
 }) {
@@ -163,9 +166,20 @@ export function SessionModelPicker({
   const connectOnPick = useConnectOnPick(agentId);
   const { attach } = useProfileAttach(agentId);
   const [older, setOlder] = useState(false);
-  /* UNIT_BOUNDARY_DESCRIPTION: the panel opens on the fields while the profile in use is the only one there is, since a list of one is a screen the user has nothing to choose on; two profiles or more open on their list, which is what the picker is for then. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the profiles this panel can offer at all: those on the session's own harness, whose harness it can offer — one the agent does not carry, or one its owner's feature leaves out, can never be picked here — and which the owner catalog says can run. */
+  const fitProfiles = sortProfiles(
+    profiles.filter(
+      (profile) =>
+        (profileHarness === undefined || profile.harness === profileHarness) &&
+        (harnesses.length === 0 || harnesses.includes(profile.harness)) &&
+        (profile.availability?.available ?? true),
+    ),
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: the panel opens on the fields while the profile in use is the only one to choose from, since a list of one is a screen with nothing to pick; two or more open on their list, which is what the picker is for then. A caller that asked for the Provider row starts on the fields too, since that row is not on the list. */
   const [view, setView] = useState<"custom" | "profiles">(() =>
-    profiles.length > 1 && selectedProfileId ? "profiles" : "custom",
+    initialFocus !== "provider" && fitProfiles.length > 1 && selectedProfileId
+      ? "profiles"
+      : "custom",
   );
   const [more, setMore] = useState<boolean | null>(null);
   const pair = pairProp;
@@ -574,30 +588,6 @@ export function SessionModelPicker({
       ? undefined
       : (option?.choices.find((c) => c.value === value)?.name ?? value);
   const onProfiles = view === "profiles" && profiles.length > 0;
-  /* UNIT_BOUNDARY_DESCRIPTION: what a profile answers this picker: the owner catalog's own availability, unless its harness is one this picker cannot offer at all — one the agent does not carry, or one its owner's feature leaves out — which no Connection fixes, and which stays listed and refused rather than being picked into a pair that cannot run. */
-  const availabilityOf = (profile: ProfileWithUsage) => {
-    const availability = profile.availability ?? {
-      available: true,
-      reason: null,
-      attachable: false,
-    };
-    if (harnesses.length === 0 || harnesses.includes(profile.harness))
-      return availability;
-    return {
-      available: false,
-      reason: `${harnessDisplayName(profile.harness, views) ?? profile.harness} isn't available for this agent`,
-      attachable: false,
-    };
-  };
-  const fitProfiles = sortProfiles(
-    profiles.filter(
-      (profile) =>
-        (profileHarness === undefined || profile.harness === profileHarness) &&
-        (!harnesses.includes(profile.harness) ||
-          (profile.availability?.available ?? true)),
-    ),
-  );
-
   const effortField =
     effort &&
     (effortChoices.length === 0 ? (
@@ -997,7 +987,11 @@ export function SessionModelPicker({
           <ul className="flex flex-col">
             {fitProfiles.map((profile) => {
               const selected = profile.id === selectedProfileId;
-              const availability = availabilityOf(profile);
+              const availability = profile.availability ?? {
+                available: true,
+                reason: null,
+                attachable: false,
+              };
               return (
                 <li
                   key={profile.id}
@@ -1027,15 +1021,13 @@ export function SessionModelPicker({
                       <span className="min-w-0 whitespace-normal">
                         {availability.reason ?? "This profile cannot run here."}
                       </span>
-                      {availability.attachable && (
-                        <button
-                          type="button"
-                          onClick={onManageProviders}
-                          className="shrink-0 text-accent underline-offset-2 hover:underline"
-                        >
-                          Configure providers
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={onManageProviders}
+                        className="shrink-0 text-accent underline-offset-2 hover:underline"
+                      >
+                        Configure providers
+                      </button>
                     </div>
                   )}
                   {selected && (
