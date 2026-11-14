@@ -64,6 +64,21 @@ export function rangeOf(period: SpendPeriod, today: string): DayRange {
   return isPresetPeriod(period) ? PRESET_RANGES[period](today) : period;
 }
 
+export function rangeOfPeriods(
+  periods: readonly SpendPeriod[],
+  today: string,
+): DayRange {
+  const days = periods.flatMap((period) => {
+    const range = rangeOf(period, today);
+    return [range.from, range.to];
+  });
+  return { from: days.reduce(minDay), to: days.reduce(maxDay) };
+}
+
+const minDay = (a: string, b: string) => (a < b ? a : b);
+
+const maxDay = (a: string, b: string) => (a > b ? a : b);
+
 export function periodOfRange(range: DayRange, today: string): SpendPeriod {
   return (
     PRESET_PERIODS.find((preset) => {
