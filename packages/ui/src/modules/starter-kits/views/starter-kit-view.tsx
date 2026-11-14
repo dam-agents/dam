@@ -338,7 +338,7 @@ function repositoryHint(seed: { ref?: string; commit?: string }): string {
   const at = [seed.ref, seed.commit && shortKitVersion(seed.commit)]
     .filter(Boolean)
     .join(" · ");
-  return at ? `Open repository at ${at}` : "Open repository";
+  return at ? `Open repository (${at})` : "Open repository";
 }
 
 function KitVideoPanel({ video }: { video: string }) {
@@ -524,12 +524,7 @@ function KitDetail({
         <DialogBody>
           {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
           {runsOn && (
-            <p
-              className="mb-6 text-sm text-muted-foreground"
-              data-testid="kit-runs-on"
-            >
-              {runsOn}
-            </p>
+            <p className="mb-6 text-sm text-muted-foreground">{runsOn}</p>
           )}
           {form.name && (
             <div
