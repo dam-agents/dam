@@ -333,6 +333,13 @@ function LinkedKitNotice({
   );
 }
 
+function repositoryHint(seed: { ref?: string; commit?: string }): string {
+  const at = [seed.ref, seed.commit && shortKitVersion(seed.commit)]
+    .filter(Boolean)
+    .join(" · ");
+  return at ? `Open repository at ${at}` : "Open repository";
+}
+
 function KitVideoPanel({ video }: { video: string }) {
   return (
     <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
@@ -534,9 +541,9 @@ function KitDetail({
             <Section label="Knowledge base">
               <Row
                 title={`${kit.name} knowledge base skills`}
-                detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
+                detail="Comes with the skills that file your notes and find them again."
                 action={
-                  <Tooltip content="Open repository">
+                  <Tooltip content={repositoryHint(kbSeed)}>
                     <a
                       href={kbSeed.url}
                       target="_blank"
@@ -594,17 +601,9 @@ function KitDetail({
             <Section label="Repository">
               <Row
                 title={kit.seed.url.replace("https://github.com/", "")}
-                detail={`Seeded into ${
-                  kit.seed.into === "home"
-                    ? "the agent's home directory"
-                    : "the work directory"
-                }${kit.seed.ref ? ` on ${kit.seed.ref}` : ""}${
-                  kit.seed.commit
-                    ? ` at ${shortKitVersion(kit.seed.commit)}`
-                    : ""
-                } before the first session`}
+                detail="The kit's instructions come from this repository."
                 action={
-                  <Tooltip content="Open repository">
+                  <Tooltip content={repositoryHint(kit.seed)}>
                     <a
                       href={kit.seed.url}
                       target="_blank"
