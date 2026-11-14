@@ -241,13 +241,18 @@ export function ChatInput({
     apply: applyCommand,
   });
 
+  const [heldSendFor, setHeldSendFor] = useState<string | null>(null);
   const send = useCallback(() => {
-    if (!key || loadingSession || blockedReason) return;
+    if (!key || blockedReason) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
+    if (loadingSession) {
+      setHeldSendFor(key);
+      return;
+    }
     promptHistory.reset();
     clearDraftContent(key);
     onSend(text, files);
@@ -259,6 +264,24 @@ export function ChatInput({
     onSend,
     promptHistory,
   ]);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a send typed while the session loads waits for it
+   * and goes out when the conversation is open, so a message to a waking agent is
+   * never dropped. Any other end leaves it in the draft, unsent: the person moved
+   * to another conversation, the load failed, or the composer is blocked. */
+  useEffect(() => {
+    if (heldSendFor === null) return;
+    if (heldSendFor !== key) {
+      setHeldSendFor(null);
+      return;
+    }
+    if (loadingSession) return;
+    setHeldSendFor(null);
+    const failed = useStore.getState().sessionError;
+    if (blockedReason || failed?.sessionId === useStore.getState().sessionId)
+      return;
+    send();
+  }, [heldSendFor, loadingSession, blockedReason, key, send]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (commandMenu.onKeyDown(e)) {
@@ -331,6 +354,11 @@ export function ChatInput({
               ))}
             </div>
           )}
+          {heldSendFor !== null && (
+            <div className="px-3 pt-3 text-2xs text-muted-foreground">
+              Sending as soon as this conversation opens…
+            </div>
+          )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
             <ComposerPlusMenu
               agentId={agentId}
@@ -384,9 +412,7 @@ export function ChatInput({
                 size="icon"
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={
-                  sendDisabled || loadingSession || !key || !!blockedReason
-                }
+                disabled={sendDisabled || !key || !!blockedReason}
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >

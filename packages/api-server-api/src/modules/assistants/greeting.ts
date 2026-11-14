@@ -27,11 +27,11 @@ export const ASSISTANT_IDEAS: readonly AssistantIdea[] = [
   },
 ];
 
-/* UNIT_BOUNDARY_DESCRIPTION: the five ideas the greeting offers, the last of them the install's own product — its label and its question both named from the brand, so a renamed install is asked about itself and never about a name nobody here uses. */
+/* UNIT_BOUNDARY_DESCRIPTION: the five ideas the greeting offers, the last of them the install's own product — its label and its question both named from the brand, so a renamed install is asked about itself and never about a name nobody here uses. Every idea's text is a message the person could send as it stands, never its label, because the composer fills from the text alone. */
 export function assistantIdeas(brandName: string): readonly AssistantIdea[] {
   return [
     ...ASSISTANT_IDEAS,
-    { label: brandName, text: `Ask me a question about ${brandName}` },
+    { label: brandName, text: `I have a question about ${brandName}: ` },
   ];
 }
 
@@ -82,11 +82,13 @@ The platform opens your first chat with a greeting in your voice, before the per
 
   ${ASSISTANT_LEARN_LINE}
 
-Under it the platform offers these ideas, each one filling the message box for them to send or edit: ${assistantIdeas(
+Under it the platform offers these ideas, each pill labelled with the kind of work it is: ${assistantIdeas(
     input.brandName,
   )
     .map((idea) => `"${idea.label}: ${idea.text}"`)
-    .join(", ")}.
+    .join(
+      ", ",
+    )}. A click fills the message box with the text after the label, never the label, for them to send or edit.
 
 So their first message is a reply to that greeting. Learn how they work one task at a time, and say what you could do for them. Remember what they tell you: write it in this file, and it is here next time.
 

@@ -238,6 +238,8 @@ export {
   type AgentUnreachableBody,
   isProtectedAgentEnvName,
   isStartRefusal,
+  isTelemetryIdentityEnv,
+  TELEMETRY_IDENTITY_ENV,
   TerminationCode,
 } from "./modules/agents/types.js";
 export {
@@ -542,6 +544,7 @@ export {
 export {
   FEATURES_ON_BY_DEFAULT,
   featureOnForUser,
+  hiddenHarnessesFor,
 } from "./modules/features/modes.js";
 export type {
   AssistantFirstResult,
@@ -652,6 +655,7 @@ export {
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
   DAM_TEMPLATE_ID,
+  damKeyName,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,

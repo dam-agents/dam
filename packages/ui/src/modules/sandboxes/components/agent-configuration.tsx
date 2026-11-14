@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { holds, isLockedSection } from "../../agents/lib/agent-permissions.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
@@ -20,7 +21,6 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
-import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 import {
   AgentDescriptionSection,
@@ -81,8 +81,10 @@ export function AgentConfiguration({
     enabled: environmentsEnabled,
     count: environments.data?.length,
   });
+  const chatFormsEnabled = useChatFormsEnabled();
   const sections = SECTIONS.filter(
     (e) =>
+      (chatFormsEnabled || e.section !== "chat-forms") &&
       (agentHasEnvironments || e.section !== "environments") &&
       (agent.requireConnectionAddress === true || e.section !== "browser"),
   );
@@ -194,12 +196,7 @@ function SectionBody({
     ))
     .with("environment", () => <EnvTab agent={agent} header={header} />)
     .with("channels", () => <SandboxChannelsSection agentId={agent.id} />)
-    .with("chat-forms", () => (
-      <>
-        <ChatFormSettings agentId={agent.id} />
-        <ThinkingSetting />
-      </>
-    ))
+    .with("chat-forms", () => <ChatFormSettings agentId={agent.id} />)
     .with("skills", () => <SandboxSkillsSection agent={agent} />)
     .with("schedules", () => (
       <SchedulesPanel

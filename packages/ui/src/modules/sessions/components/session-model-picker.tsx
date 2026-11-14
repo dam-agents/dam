@@ -83,7 +83,12 @@ const CONTROL =
 
 interface MenuSection {
   title: string;
-  entries: { key: string; label: string; harness?: string }[];
+  entries: {
+    key: string;
+    label: string;
+    harness?: string;
+    description?: string;
+  }[];
 }
 
 interface Entry extends MenuEntry {
@@ -104,6 +109,8 @@ export function SessionModelPicker({
   note,
   profiles = [],
   selectedProfileId = null,
+  providerTriggerRef,
+  initialFocus,
   onPickProfile,
   onManageProfiles,
   onEditProfile,
@@ -143,6 +150,10 @@ export function SessionModelPicker({
   };
   saveAsProfile?: ReactNode;
   onLeaveProfiles?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the Provider row's trigger, which a caller focuses when the question that opened the panel is which provider to use. */
+  providerTriggerRef?: React.Ref<HTMLButtonElement>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the row a caller asked the panel to land on, which is on the fields and never on the saved profiles. */
+  initialFocus?: "provider";
   onChoose: (pair: SessionPair, intent: PickerIntent) => void;
   onManageProviders: () => void;
 }) {
@@ -155,8 +166,20 @@ export function SessionModelPicker({
   const connectOnPick = useConnectOnPick(agentId);
   const { attach } = useProfileAttach(agentId);
   const [older, setOlder] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the profiles this panel can offer at all: those on the session's own harness, whose harness it can offer — one the agent does not carry, or one its owner's feature leaves out, can never be picked here — and which the owner catalog says can run. */
+  const fitProfiles = sortProfiles(
+    profiles.filter(
+      (profile) =>
+        (profileHarness === undefined || profile.harness === profileHarness) &&
+        (harnesses.length === 0 || harnesses.includes(profile.harness)) &&
+        (profile.availability?.available ?? true),
+    ),
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: the panel opens on the fields while the profile in use is the only one to choose from, since a list of one is a screen with nothing to pick; two or more open on their list, which is what the picker is for then. A caller that asked for the Provider row starts on the fields too, since that row is not on the list. */
   const [view, setView] = useState<"custom" | "profiles">(() =>
-    profiles.length > 0 && selectedProfileId ? "profiles" : "custom",
+    initialFocus !== "provider" && fitProfiles.length > 1 && selectedProfileId
+      ? "profiles"
+      : "custom",
   );
   const [more, setMore] = useState<boolean | null>(null);
   const pair = pairProp;
@@ -565,14 +588,6 @@ export function SessionModelPicker({
       ? undefined
       : (option?.choices.find((c) => c.value === value)?.name ?? value);
   const onProfiles = view === "profiles" && profiles.length > 0;
-  const fitProfiles = sortProfiles(
-    profiles.filter(
-      (profile) =>
-        (profileHarness === undefined || profile.harness === profileHarness) &&
-        (profile.availability?.available ?? true),
-    ),
-  );
-
   const effortField =
     effort &&
     (effortChoices.length === 0 ? (
@@ -710,6 +725,8 @@ export function SessionModelPicker({
                           key: name,
                           label: harnessDisplayName(name, views) ?? name,
                           harness: name,
+                          description: views.find((view) => view.name === name)
+                            ?.description,
                         })),
                       },
                     ]}
@@ -779,6 +796,7 @@ export function SessionModelPicker({
                       reason={(id) => providerReason(currentEntry, id, harness)}
                       onPick={changeProvider}
                       onManage={onManageProviders}
+                      triggerRef={providerTriggerRef}
                     />
                   </div>
                 </div>
@@ -1128,7 +1146,14 @@ export function ValueMenu({
                         <HarnessIcons harnesses={[entry.harness]} size="xs" />
                       </span>
                     )}
-                    <span className="truncate">{entry.label}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate">{entry.label}</span>
+                      {entry.description && (
+                        <span className="block whitespace-normal text-[12px] leading-snug text-muted-foreground">
+                          {entry.description}
+                        </span>
+                      )}
+                    </span>
                   </span>
                 </DropdownMenuRadioItem>
               ))}
@@ -1190,6 +1215,7 @@ function ProviderMenu({
   onPick,
   onManage,
   none,
+  triggerRef,
 }: {
   label: string;
   providers: readonly { id: string; name: string }[];
@@ -1198,6 +1224,7 @@ function ProviderMenu({
   reason: (id: string) => string | null;
   onPick: (id: string) => void;
   onManage?: () => void;
+  triggerRef?: React.Ref<HTMLButtonElement>;
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
   none?: { label: string; onPick: () => void };
 }) {
@@ -1215,6 +1242,7 @@ function ProviderMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`${label}: ${shown}`}
           className={CONTROL}
