@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   appendInterruptedNotice,
+  appendUndelivered,
   applyUpdate,
   failQueuedOnDisconnect,
   finalizeAllStreaming,
@@ -877,6 +878,28 @@ describe("heldStillUndelivered", () => {
         ["retried"],
       ).map((r) => r.id),
     ).toEqual(["lost"]);
+  });
+});
+
+describe("appendUndelivered", () => {
+  const record = (id: string, reason?: string) => ({
+    id,
+    recordedAt: "2026-11-14T00:00:00.000Z",
+    blocks: [{ type: "text" as const, text: "go" }],
+    droppedAttachments: [],
+    ...(reason !== undefined && { reason }),
+  });
+
+  // TEST_SCENARIO: The runtime and this browser each record a prompt the harness refused, under the prompt's own id. The replay shows it once, with the record this browser kept, so the person does not read the same message twice.
+  test("shows a prompt both records hold once", () => {
+    const out = appendUndelivered(
+      [],
+      [record("p1"), record("p1", "the harness refused the session's model")],
+    );
+    expect(out.map((m) => m.id)).toEqual(["p1"]);
+    expect(out[0]?.error?.message).toBe(
+      "the harness refused the session's model",
+    );
   });
 });
 

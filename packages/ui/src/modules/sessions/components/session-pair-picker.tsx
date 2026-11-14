@@ -11,7 +11,7 @@ import type {
   SessionChoiceSlots,
   SessionPair,
 } from "api-server-api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,8 @@ interface CommonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the row the panel opens on when something other than the chip asked for it, as the CurveBender notice's "Use a different provider" asks for the provider choice. */
+  initialFocus?: "provider";
 }
 
 type Props = CommonProps &
@@ -225,7 +227,9 @@ function withoutSubagentSettings(pair: SessionPair): SessionPair {
  * the agent's Providers page.
  */
 export function SessionPairPicker(props: Props) {
-  const { agentId, open, onOpenChange, onConnectProviders } = props;
+  const { agentId, open, onOpenChange, onConnectProviders, initialFocus } =
+    props;
+  const providerTrigger = useRef<HTMLButtonElement>(null);
   const carried = props.pending ? [] : props.carried;
   const routed = props.pending ? false : (props.routed ?? false);
   const edit = props.pending ? undefined : props.edit;
@@ -707,6 +711,8 @@ export function SessionPairPicker(props: Props) {
     <SessionModelPicker
       agentId={agentId}
       carried={carried}
+      providerTriggerRef={providerTrigger}
+      initialFocus={initialFocus}
       harnesses={names}
       pair={pair}
       defaultHarness={defaultHarness}
@@ -835,6 +841,11 @@ export function SessionPairPicker(props: Props) {
               ? "Profile harness and model"
               : "New session harness and model")
           }
+          onOpenAutoFocus={(event) => {
+            if (initialFocus !== "provider" || !providerTrigger.current) return;
+            event.preventDefault();
+            providerTrigger.current.focus();
+          }}
           onInteractOutside={keepOpenWhileDialog}
           tail={false}
           className={cn(
