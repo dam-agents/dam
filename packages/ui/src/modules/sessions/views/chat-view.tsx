@@ -1,5 +1,6 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  assistantIdeas,
   type DefaultKind,
   SessionMode,
   type SessionPair,
@@ -16,6 +17,7 @@ import {
   useState,
 } from "react";
 
+import { getBrand } from "@/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -87,7 +89,6 @@ import { AssistantUnlockCelebration } from "../../assistants/components/assistan
 import {
   useAssistantChat,
   useAssistantGreeting,
-  useAssistantIdeas,
 } from "../../assistants/hooks/use-assistant-greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
@@ -447,7 +448,7 @@ export function ChatView() {
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
   /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
   const assistantChat = useAssistantChat(selectedAgent);
-  const assistantIdeas = useAssistantIdeas();
+  const ideas = assistantIdeas(getBrand().name);
 
   const {
     messagesRef,
@@ -980,7 +981,7 @@ export function ChatView() {
                     (assistantChat && selectedAgent ? (
                       <div className="mt-5">
                         <AssistantIdeas
-                          ideas={assistantIdeas}
+                          ideas={ideas}
                           agentId={selectedAgent}
                           sessionId={sessionId}
                           onPicked={() => textareaRef.current?.focus()}

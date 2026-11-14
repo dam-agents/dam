@@ -71,6 +71,7 @@ The text lives once, in `api-server-api`, because two readers need it: the UI th
 
 Under the message it offers five **ideas**, each labelled with the kind of work it is — Artifact, Schedule, Knowledge base, Skill, and a question about the install itself — and a click fills the composer for the person to send or edit, so nothing runs before they act.
 A click puts the task's text in the composer and sends nothing: no turn, no model call, no token is spent until the person acts.
+The ideas outlive the greeting: every new chat of the assistant's own shows them under *Send a message to begin.*, in place of the row of ways to open the agent elsewhere, since the greeting's words are said once but a person starts a task on many days.
 
 Everything here is behind the `dambledore` feature and the record's own mark: the greeting is shown while the record says the assistant is unused, and it is that mark alone — not the count of Sessions the Agent holds — that decides, so an empty chat shows it again after a reset even though older Sessions exist.
 The session report lags the Session that just started, so the chat needs the Agent's own answer too, and a Session appearing there sets the cached mark at once, which is why a New chat after the first message does not bring the greeting back.

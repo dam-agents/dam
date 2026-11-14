@@ -37,7 +37,11 @@ export function AssistantIdeas({
           variant="outline"
           size="sm"
           onClick={() => {
-            setDraft(draftKey(agentId, sessionId), { text: idea.text });
+            const key = draftKey(agentId, sessionId);
+            const typed = useStore.getState().drafts[key]?.text ?? "";
+            setDraft(key, {
+              text: typed.length > 0 ? `${typed}\n\n${idea.text}` : idea.text,
+            });
             onPicked();
           }}
           className="h-10 max-w-full rounded-full px-5 whitespace-normal text-left"

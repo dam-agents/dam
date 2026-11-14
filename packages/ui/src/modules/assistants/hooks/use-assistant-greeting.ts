@@ -1,5 +1,3 @@
-import { type AssistantIdea, assistantIdeas } from "api-server-api";
-
 import { getUser } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
@@ -36,15 +34,6 @@ export function useAssistantChat(selectedAgent: string | null): boolean {
     assistantId: listed?.agentId ?? null,
     selectedAgent,
   });
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the ideas the assistant offers, for an empty chat
- * of its own after the greeting is gone: the greeting's words are said once, the
- * ideas are how a person starts a task on any later day.
- */
-export function useAssistantIdeas(): readonly AssistantIdea[] {
-  return assistantIdeas(getBrand().name);
 }
 
 /**

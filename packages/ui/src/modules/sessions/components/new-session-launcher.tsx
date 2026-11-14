@@ -1,4 +1,4 @@
-import { Code, Terminal } from "@carbon/icons-react";
+import { Code, Launch, Terminal } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { getBrand } from "@/brand";
@@ -116,7 +116,6 @@ function LocalCommandDialog({
   agentRef: string;
   onClose: () => void;
 }) {
-  const cli = getBrand().short;
   const brand = getBrand();
   const cliReferenceUrl = useDocsUrl("cliReference");
   return (
@@ -129,17 +128,17 @@ function LocalCommandDialog({
         subtitle={
           target === "terminal" ? (
             <>
-              <code className="font-mono">{cli} chat</code> connects your
-              terminal to{" "}
+              <code className="font-mono">{brand.short} chat</code> connects
+              your terminal to{" "}
               <strong className="text-foreground">{agentName}</strong>
               's interactive TUI;{" "}
-              <code className="font-mono">{cli} ssh connect</code> opens a
-              shell.
+              <code className="font-mono">{brand.short} ssh connect</code> opens
+              a shell.
             </>
           ) : (
             <>
-              <code className="font-mono">{cli} ssh connect</code> launches your
-              editor against{" "}
+              <code className="font-mono">{brand.short} ssh connect</code>{" "}
+              launches your editor against{" "}
               <strong className="text-foreground">{agentName}</strong>'s
               workspace over SSH.
             </>
@@ -154,9 +153,9 @@ function LocalCommandDialog({
               <a
                 href={cliReferenceUrl}
                 {...externalLinkProps}
-                className="font-medium text-foreground hover:underline"
+                className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
               >
-                CLI quickstart
+                CLI quickstart <Launch size={13} />
               </a>{" "}
               to install the {brand.name} CLI and log in.
             </>
@@ -169,11 +168,13 @@ function LocalCommandDialog({
             <span className="text-sm font-medium text-foreground">
               Open the agent TUI
             </span>
-            <CopyableCommand command={`${cli} chat ${agentRef}`} />
+            <CopyableCommand command={`${brand.short} chat ${agentRef}`} />
             <span className="mt-1 text-sm font-medium text-foreground">
               SSH to the agent
             </span>
-            <CopyableCommand command={`${cli} ssh connect ${agentRef}`} />
+            <CopyableCommand
+              command={`${brand.short} ssh connect ${agentRef}`}
+            />
           </>
         ) : (
           <>
@@ -181,13 +182,13 @@ function LocalCommandDialog({
               Open in VS Code
             </span>
             <CopyableCommand
-              command={`${cli} ssh connect -x code ${agentRef}`}
+              command={`${brand.short} ssh connect -x code ${agentRef}`}
             />
             <span className="mt-1 text-sm font-medium text-foreground">
               Open in Zed
             </span>
             <CopyableCommand
-              command={`${cli} ssh connect -x zed ${agentRef}`}
+              command={`${brand.short} ssh connect -x zed ${agentRef}`}
             />
           </>
         )}

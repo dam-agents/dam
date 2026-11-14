@@ -59,7 +59,7 @@ Then the conversation is listed in the sidebar
 When they open a new chat on Dammy
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
 And the message box hints *Message…*
-And no greeting and no first tasks are shown
+And no greeting is shown, and the five idea pills are, in place of the *Also open in:* row
 
 ## AC-5 — the assistant is an ordinary agent
 

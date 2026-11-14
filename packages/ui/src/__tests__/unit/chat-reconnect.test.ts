@@ -373,16 +373,6 @@ mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
   useAssistantGreeting: () => fake.greeting,
   useAssistantChat: () =>
     fake.assistantChat || fake.greeting.kind === "greeting",
-  useAssistantIdeas: () => [
-    {
-      label: "Artifact",
-      text: "Make my next PowerPoint deck the way I make them",
-    },
-    {
-      label: "Skill",
-      text: "Learn how my team writes tickets, then take it over",
-    },
-  ],
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
