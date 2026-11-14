@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-11-13
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -30,7 +30,7 @@ It controls where a feature *appears*:
 
 - **UI surfaces** — navigation destinations, settings tabs, panels.
   Most current features gate only these.
-  The Hermes harness gates the list of harnesses an agent's harness-config status offers, which every harness picker reads, so the api-server leaves Hermes out of it for an owner with the flag off.
+  The Hermes harness gates the list of harnesses an agent's harness-config status offers and the harnesses of the owner catalog its Settings pickers read, so the api-server leaves Hermes out of both for an owner with the flag off.
   A change or a session that names Hermes still goes through.
 
 - **Agent surface** — whether the feature's MCP tools are registered into an agent's MCP session, decided at session creation.

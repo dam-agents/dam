@@ -581,7 +581,8 @@ export function SessionModelPicker({
       reason: null,
       attachable: false,
     };
-    if (harnesses.includes(profile.harness)) return availability;
+    if (harnesses.length === 0 || harnesses.includes(profile.harness))
+      return availability;
     return {
       available: false,
       reason: `${harnessDisplayName(profile.harness, views) ?? profile.harness} isn't available for this agent`,

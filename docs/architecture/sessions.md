@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Session inside the machine
 
@@ -200,7 +200,8 @@ A client fails a prompt on evidence instead:
 
 A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender.
 The queue keeps running with nobody engaged, so a person who opens another session while a message waits finds its answer when they come back.
-A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
+A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session whose settings the harness refuses — and each writes the queue's prompts down as **undelivered** in a durable document on the machine, whole, inline images capped.
+The refusal also errors each sender, so the person reads the harness's own reason, and the record is what hands the text back once a session the harness never stored is retired.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
 Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
