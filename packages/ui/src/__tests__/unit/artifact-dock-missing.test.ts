@@ -9,6 +9,7 @@ import { artifactMissing } from "../../modules/artifacts/lib/load-failure.js";
 
 const failure = vi.hoisted(() => ({
   error: undefined as unknown,
+  data: undefined as unknown,
   refetch: (): void => {},
 }));
 
@@ -28,7 +29,7 @@ vi.mock("../../modules/sessions/components/side-panel-close-button.js", () => ({
 }));
 vi.mock("../../modules/artifacts/api/queries.js", () => ({
   useArtifact: () => ({
-    data: undefined,
+    data: failure.data,
     isPending: false,
     isError: true,
     error: failure.error,
@@ -78,6 +79,7 @@ afterEach(() => {
   act(() => root.unmount());
   document.body.replaceChildren();
   failure.error = undefined;
+  failure.data = undefined;
 });
 
 const render = async (error: unknown) => {
@@ -104,6 +106,24 @@ describe("the docked preview of an artifact that is not there", () => {
 
     expect(text).toContain("Artifact not found");
     expect(text).not.toContain("Retry");
+  });
+
+  // TEST_SCENARIO: the artifact was deleted while it was open here — the live hint re-reads it, the read answers NOT_FOUND, and the query still holds the last good copy. The preview must read the answer, not the copy: no title actions, no version switcher, and the missing-artifact message.
+  it("reads NOT_FOUND over the copy it still holds", async () => {
+    failure.data = {
+      id: "a-1",
+      title: "qa-qft-page",
+      version: 2,
+      kind: "page",
+    };
+
+    const text = await render({
+      data: { code: "NOT_FOUND" },
+      message: "artifact not found",
+    });
+
+    expect(text).not.toContain("qa-qft-page");
+    expect(text).toContain("Artifact not found");
   });
 
   // TEST_SCENARIO: a failure to reach the api-server is not a missing artifact, so the preview names the failure and keeps the retry.
