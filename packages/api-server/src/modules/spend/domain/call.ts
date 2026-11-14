@@ -40,6 +40,8 @@ export interface CallRecord {
   readonly path: string;
   readonly dialect: ApiDialect;
   readonly model: string | null;
+  readonly modelGroup: string | null;
+  readonly replay: boolean;
   readonly usage: RawUsage;
   readonly status: number | null;
   readonly replyBytes: number | null;
@@ -85,6 +87,17 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
 
   const { provider, ambiguous } = payingProvider(record.providers);
   const usage = normalizeUsage(record.dialect, record.usage);
+  if (record.replay)
+    return {
+      kind: "measured",
+      provider,
+      unit: unitOf(provider),
+      model: record.model ?? UNKNOWN_MODEL,
+      priceSource: "replay",
+      needsReferenceCost: false,
+      estimateReasons: [],
+      amounts: callAmounts(usage, 0, false, record.durationMs),
+    };
   const outputShort =
     record.final &&
     record.dialect !== "openai-embeddings" &&
@@ -124,19 +137,28 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     priceSource: price.source,
     needsReferenceCost,
     estimateReasons,
-    amounts: {
-      costMicros: cost ?? 0,
-      uncachedInputTokens: metered.uncachedInputTokens,
-      outputTokens: metered.outputTokens,
-      cacheReadTokens: metered.cacheReadTokens,
-      cacheWrite5mTokens: metered.cacheWrite5mTokens,
-      cacheWrite1hTokens:
-        metered.cacheWrite1hTokens + metered.cacheWriteUnsplitTokens,
-      webSearches: metered.webSearches,
-      calls: 1,
-      estimatedCalls: estimated ? 1 : 0,
-      durationMs: record.durationMs,
-    },
+    amounts: callAmounts(metered, cost ?? 0, estimated, record.durationMs),
+  };
+}
+
+function callAmounts(
+  usage: NormalizedUsage,
+  costMicros: number,
+  estimated: boolean,
+  durationMs: number,
+): CallAmounts {
+  return {
+    costMicros,
+    uncachedInputTokens: usage.uncachedInputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWrite5mTokens: usage.cacheWrite5mTokens,
+    cacheWrite1hTokens:
+      usage.cacheWrite1hTokens + usage.cacheWriteUnsplitTokens,
+    webSearches: usage.webSearches,
+    calls: 1,
+    estimatedCalls: estimated ? 1 : 0,
+    durationMs,
   };
 }
 

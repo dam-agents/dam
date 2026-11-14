@@ -415,6 +415,9 @@ export function createSpendIngest(deps: {
             sessionId: record.sessionId,
             harness: record.harness,
             durationMs: record.durationMs,
+            modelGroup: record.modelGroup,
+            replay: record.replay,
+            proxyCostBody: record.proxyCost.body,
           },
           "spend.call_recorded",
         );
@@ -438,6 +441,7 @@ export function createSpendIngest(deps: {
             proxyCostOriginal: record.proxyCost.original,
             proxyCostDiscount: record.proxyCost.discount,
             proxyCostMargin: record.proxyCost.margin,
+            proxyCostBody: record.proxyCost.body,
             uncachedInputTokens: amounts.uncachedInputTokens,
             outputTokens: amounts.outputTokens,
           },

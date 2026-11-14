@@ -58,7 +58,7 @@ export type CallPrice =
   | { readonly kind: "credits"; readonly source: "provider-rule" }
   | { readonly kind: "unpriced"; readonly source: "unpriced" };
 
-export type PriceSource = CallPrice["source"];
+export type PriceSource = CallPrice["source"] | "replay";
 
 const ANTHROPIC_TABLE_PROVIDERS: ReadonlySet<string> = new Set([
   "anthropic",

@@ -58,10 +58,13 @@ Text from the model sits inside JSON strings, where quotes are escaped, so model
 For each count the highest value wins, so a repeated or forged object can only raise a count, never lower it.
 A reply that reports the passes of one call apart, such as a compaction pass and an answer pass, counts the sum of the passes, because the provider bills each pass.
 It keeps the raw counts with the dialect and leaves their meaning to pricing: input, output, cache reads, cache writes and their five-minute and one-hour parts, cached tokens, web searches, Bob credits, the service tier, the speed, the inference geography and the reply's model.
+The cache writes include the writes that a Chat Completions reply reports in its prompt details.
+The meter also keeps LiteLLM's own cost of the call when the usage carries it, as in the last chunk of a chat stream.
 
 **The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address the controller gives only this agent's gateway.
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
 It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figures when the reply has them, and whether the reply ended with its format's end event.
+From LiteLLM's reply headers, it also carries the model group that served the call and whether LiteLLM served the reply from its response cache.
 A reply that stops early keeps the counts read so far and is not marked complete.
 Every final record also goes to [Provider Status](provider-status.md), which counts the failed calls of each provider.
 
@@ -73,7 +76,8 @@ The gateway's telemetry logs leave periodic records out, so they show one entry 
 
 **Where a price comes from.** The meter counts tokens, and a limit is in money, so the api-server turns each call's counts into a cost.
 Only Bob's replies carry their own price, in Bobcoins.
-The other providers send tokens only, and IBM LiteLLM's own cost figure is real only on replies that are not streamed.
+The other providers send tokens only, and IBM LiteLLM sends its own cost only on replies that are not streamed and on chat streams that report their usage.
+A reply that LiteLLM served from its response cache costs nothing and is not estimated, because LiteLLM does not bill it.
 The api-server looks up a price by the call's provider and model, and the first match wins:
 
 - **An operator price** from the chart.
@@ -101,6 +105,7 @@ Costs are whole micro-units of the Connection's unit, rounded up.
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
 DAM compares its cost with the proxy's own cost of a call and logs a large difference, which shows an operator price that is wrong or old.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
+When these headers give no cost, as on a chat stream, the proxy's cost is the cost in the reply's usage.
 Only a completed dollar call with no cache read and no cache write is compared, because the proxy's figure leaves out cached tokens.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.

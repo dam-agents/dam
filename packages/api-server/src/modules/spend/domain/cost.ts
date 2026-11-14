@@ -23,6 +23,7 @@ export interface ProxyCostHeaders {
   readonly original: string | null;
   readonly discount: string | null;
   readonly margin: string | null;
+  readonly body: string | null;
 }
 
 const dollars = (text: string | null): number | null => {
@@ -33,17 +34,21 @@ const dollars = (text: string | null): number | null => {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: LiteLLM's own cost of a call: its response cost
  * when that is above zero, else the original cost less the discount plus the
- * margin, the order in which LiteLLM applies them; a missing discount or
- * margin counts as zero.
+ * margin, the order in which LiteLLM applies them, a missing discount or
+ * margin counting as zero; when the headers give no cost above zero, the
+ * cost in a chat stream's usage.
  */
-export function proxyCostDollars(headers: ProxyCostHeaders): number | null {
-  const cost = dollars(headers.cost);
+export function proxyCostDollars(costs: ProxyCostHeaders): number | null {
+  const cost = dollars(costs.cost);
   if (cost !== null && cost > 0) return cost;
-  const original = dollars(headers.original);
-  if (original === null || original <= 0) return null;
-  return (
-    original - (dollars(headers.discount) ?? 0) + (dollars(headers.margin) ?? 0)
-  );
+  const original = dollars(costs.original);
+  const adjusted =
+    original !== null && original > 0
+      ? original - (dollars(costs.discount) ?? 0) + (dollars(costs.margin) ?? 0)
+      : null;
+  if (adjusted !== null && adjusted > 0) return adjusted;
+  const body = dollars(costs.body);
+  return body !== null && body > 0 ? body : null;
 }
 
 export function proxyCostDifference(
