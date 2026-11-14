@@ -18,7 +18,7 @@ It shows loading, unavailable and empty listings explicitly, with a retry for fa
 The catalog remains usable where discovery is not configured.
 Before a session starts, a routed picker picks harness, model, provider and effort in turn: a harness an owner provider runs, its models by family, each once, and a provider, one lacking the model disabled, with the reason; a model the provider lacks moves the pick to one with it, and a provider the agent lacks connects on pick.
 The old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
-A web terminal starts from a menu of harnesses: the empty chat's Web terminal card opens it, and so does the Web terminal row on the agent's General page.
+A web terminal starts from a menu of harnesses: the empty chat's Web terminal button opens it, and so does the Web terminal row on the agent's General page.
 The menu lists the harnesses the agent carries that a provider the owner holds accepts.
 Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
 The terminal pair is its own: the menu neither reads nor changes the pair the session picker holds.

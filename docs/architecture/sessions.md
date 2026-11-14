@@ -129,7 +129,7 @@ Both ride a sender-minted prompt id as platform metadata, stripped before the ag
 Both are **sender-only and ephemeral**; a Session's reset is ephemeral too, sent to every viewer engaged when it happened; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
 A prompt's echo enters the log only when it starts.
 The queue marks a prompt that waits only for its session — nothing running ahead, the harness still loading the session after a wake, a restart or a rewind — as **starting**, and the chat shows it as sent rather than queued.
-A person's Stop takes the prompts still waiting in the queue back before it cancels the turn, so none of them starts as the next one: their text goes into the composer after anything typed there, an image among them goes back as an attachment, and a prompt the runtime starts in the meantime counts as delivered and is left alone.
+A person's Stop takes the prompts still waiting in the queue back before it cancels the turn, so none of them starts as the next one: their text goes into the composer after anything typed there, an image among them goes back as an attachment, a file it carried is named as not restored since its upload is gone, and a prompt the runtime starts in the meantime counts as delivered and is left alone.
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.

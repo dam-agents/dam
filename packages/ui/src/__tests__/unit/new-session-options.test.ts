@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An empty chat offers ways to start a session elsewhere, as launcher cards. Each way shows only to a person who holds the Agent Permission it needs, so an Agent Editor of a Shared Agent is offered no terminal, local editor or messenger.
+// TEST_OVERVIEW: An empty chat offers ways to start a session elsewhere, as one quiet row of buttons. Each way shows only to a person who holds the Agent Permission it needs, so an Agent Editor of a Shared Agent is offered no terminal, local editor or messenger.
 import { AGENT_PERMISSIONS, type AgentPermission } from "api-server-api";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -46,15 +46,15 @@ function render(access: object = OWNER) {
   );
 }
 
-// TEST_SCENARIO: the launcher cards offer the web terminal, the local terminal and editor, and the messengers.
-it("keeps the launcher cards", () => {
+// TEST_SCENARIO: the row offers the web terminal, the local terminal and editor, and the messengers.
+it("keeps the launch row", () => {
   const html = render();
   expect(html).toContain('data-testid="new-session-launcher"');
   expect(html).not.toContain("aria-expanded");
 });
 
 // TEST_SCENARIO: an editor's empty chat in the current layout offers no cards at all: every card needs the terminal or the channels permission, which only the owner holds.
-it("offers an editor no launcher cards", () => {
+it("offers an editor no launch row", () => {
   const html = render(EDITOR);
   expect(html).toBe("");
 });
