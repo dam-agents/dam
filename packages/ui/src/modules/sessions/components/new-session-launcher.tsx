@@ -1,11 +1,10 @@
 import { Code, Launch, Terminal } from "@carbon/icons-react";
-import { useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { getBrand } from "@/brand";
 import { SlackColorIcon, TelegramColorIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import type { AgentView } from "../../../types.js";
@@ -19,7 +18,7 @@ import { TerminalHarnessMenu } from "./terminal-harness-menu.js";
 
 type LocalTarget = "terminal" | "ide";
 
-// UNIT_BOUNDARY_DESCRIPTION: the quiet row an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent. Each shows only to a person who holds the Agent Permission it needs: terminal for the terminals and editors, channels for the messengers.
+// UNIT_BOUNDARY_DESCRIPTION: the cards an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent. Each card shows only to a person who holds the Agent Permission it needs: terminal for the terminals and editors, channels for the messengers.
 export function NewSessionOptions({
   agent,
   onNewTerminal,
@@ -40,51 +39,47 @@ export function NewSessionOptions({
   return (
     <>
       <div
-        className="mt-5 flex w-full max-w-[640px] flex-wrap items-center justify-center gap-1 text-sm"
+        className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 sm:grid-cols-2"
         data-testid="new-session-launcher"
       >
-        <span className="px-1 text-muted-foreground">Also open in:</span>
         {terminal && (
           <>
             <TerminalHarnessMenu agentId={agent.id} onOpen={onNewTerminal}>
-              <Button variant="ghost" size="sm">
-                <Terminal size={16} />
-                Web terminal
-              </Button>
+              <LauncherTile
+                icon={<Terminal size={18} />}
+                title="Web terminal"
+                description="Interactive session in this tab"
+              />
             </TerminalHarnessMenu>
-            <Button
-              variant="ghost"
-              size="sm"
+            <LauncherTile
+              icon={<Terminal size={18} />}
+              title="CLI and SSH"
+              description="Use the agent from your own terminal or over SSH"
               onClick={() => setLocal("terminal")}
-            >
-              <Terminal size={16} />
-              CLI and SSH
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setLocal("ide")}>
-              <Code size={16} />
-              VS Code and Zed
-            </Button>
+            />
+            <LauncherTile
+              icon={<Code size={18} />}
+              title="VS Code and Zed"
+              description="Open workspace in your local editor"
+              onClick={() => setLocal("ide")}
+            />
           </>
         )}
         {channels && available.slack && (
-          <Button
-            variant="ghost"
-            size="sm"
+          <LauncherTile
+            icon={<SlackColorIcon aria-hidden width={18} height={18} />}
+            title="Slack"
+            description="Mention the agent in a connected channel"
             onClick={() => setMessenger("slack")}
-          >
-            <SlackColorIcon aria-hidden width={16} height={16} />
-            Slack
-          </Button>
+          />
         )}
         {channels && available.telegram && (
-          <Button
-            variant="ghost"
-            size="sm"
+          <LauncherTile
+            icon={<TelegramColorIcon aria-hidden width={18} height={18} />}
+            title="Telegram"
+            description="Message the agent from a Telegram chat"
             onClick={() => setMessenger("telegram")}
-          >
-            <TelegramColorIcon aria-hidden width={16} height={16} />
-            Telegram
-          </Button>
+          />
         )}
       </div>
       {local && (
@@ -117,6 +112,7 @@ function LocalCommandDialog({
   onClose: () => void;
 }) {
   const brand = getBrand();
+  const cli = brand.short;
   const cliReferenceUrl = useDocsUrl("cliReference");
   return (
     <Modal size="sm" onClose={onClose}>
@@ -128,17 +124,17 @@ function LocalCommandDialog({
         subtitle={
           target === "terminal" ? (
             <>
-              <code className="font-mono">{brand.short} chat</code> connects
-              your terminal to{" "}
+              <code className="font-mono">{cli} chat</code> connects your
+              terminal to{" "}
               <strong className="text-foreground">{agentName}</strong>
               's interactive TUI;{" "}
-              <code className="font-mono">{brand.short} ssh connect</code> opens
-              a shell.
+              <code className="font-mono">{cli} ssh connect</code> opens a
+              shell.
             </>
           ) : (
             <>
-              <code className="font-mono">{brand.short} ssh connect</code>{" "}
-              launches your editor against{" "}
+              <code className="font-mono">{cli} ssh connect</code> launches your
+              editor against{" "}
               <strong className="text-foreground">{agentName}</strong>'s
               workspace over SSH.
             </>
@@ -168,13 +164,11 @@ function LocalCommandDialog({
             <span className="text-sm font-medium text-foreground">
               Open the agent TUI
             </span>
-            <CopyableCommand command={`${brand.short} chat ${agentRef}`} />
+            <CopyableCommand command={`${cli} chat ${agentRef}`} />
             <span className="mt-1 text-sm font-medium text-foreground">
               SSH to the agent
             </span>
-            <CopyableCommand
-              command={`${brand.short} ssh connect ${agentRef}`}
-            />
+            <CopyableCommand command={`${cli} ssh connect ${agentRef}`} />
           </>
         ) : (
           <>
@@ -182,17 +176,48 @@ function LocalCommandDialog({
               Open in VS Code
             </span>
             <CopyableCommand
-              command={`${brand.short} ssh connect -x code ${agentRef}`}
+              command={`${cli} ssh connect -x code ${agentRef}`}
             />
             <span className="mt-1 text-sm font-medium text-foreground">
               Open in Zed
             </span>
             <CopyableCommand
-              command={`${brand.short} ssh connect -x zed ${agentRef}`}
+              command={`${cli} ssh connect -x zed ${agentRef}`}
             />
           </>
         )}
       </DialogBody>
     </Modal>
+  );
+}
+
+function LauncherTile({
+  icon,
+  title,
+  description,
+  ...props
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+} & ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      {...props}
+      className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-foreground">
+          {title}
+        </span>
+        <span className="mt-0.5 block text-sm text-muted-foreground">
+          {description}
+        </span>
+      </span>
+    </button>
   );
 }

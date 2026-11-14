@@ -71,10 +71,6 @@ for (const [path, names] of [
     ["AgentInaccessibleOverlay"],
   ],
   ["../../modules/sessions/components/chat-message.js", ["ChatMessage"]],
-  [
-    "../../modules/sessions/components/new-session-launcher.js",
-    ["NewSessionOptions"],
-  ],
   ["../../modules/sessions/components/queued-prompts.js", ["QueuedPrompts"]],
   ["../../modules/sessions/components/quiet-turn-line.js", ["QuietTurnLine"]],
   [
@@ -179,6 +175,11 @@ for (const [path, names] of components) {
         : nullComponent;
   mockModule(path, exports);
 }
+
+mockModule("../../modules/sessions/components/new-session-launcher.js", {
+  NewSessionOptions: () =>
+    createElement("div", { "data-testid": "new-session-launcher" }),
+});
 
 mockModule("../../modules/sessions/components/classic-chat-layout.js", {
   ClassicChatLayout: (props: {
@@ -638,12 +639,14 @@ it("fills the composer from a greeting pill without sending", () => {
   expect(fake.sendPrompt).not.toHaveBeenCalled();
 });
 
-// TEST_SCENARIO: an assistant whose first chat spent its greeting keeps its idea chips on a later new chat, in place of the launch options, and a pick fills the composer there too.
+// TEST_SCENARIO: an assistant whose first chat spent its greeting keeps its idea chips on a later new chat, under the cards for opening a new session elsewhere, and a pick fills the composer there too.
 it("offers the assistant's ideas on a later new chat", () => {
   fake.assistantChat = true;
   const el = openNewChat();
-  expect(el.querySelector('[data-testid="new-session-launcher"]')).toBeNull();
-  expect(el.textContent).toContain("Send a message to begin.");
+  expect(
+    el.querySelector('[data-testid="new-session-launcher"]'),
+  ).not.toBeNull();
+  expect(el.textContent).toContain("Send a message to begin");
   const task = [...el.querySelectorAll("button")].find((b) =>
     b.textContent?.includes("Make my next PowerPoint deck"),
   );
