@@ -9,6 +9,7 @@ import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const state = vi.hoisted(() => ({
   read: {} as { data?: unknown; error?: unknown },
+  openFileDirty: false,
   setDock: vi.fn(),
   readFile: vi.fn(),
 }));
@@ -18,7 +19,7 @@ vi.mock("../../store.js", () => ({
     select({
       selectedAgent: "agent-a",
       dock: { kind: "file", path: "qa-qft-20mb.bin" },
-      openFileDirty: false,
+      openFileDirty: state.openFileDirty,
       setDock: state.setDock,
       setOpenFileEdit: vi.fn(),
       setSidePanelTab: vi.fn(),
@@ -62,9 +63,21 @@ afterEach(() => {
   act(() => root.unmount());
   document.body.replaceChildren();
   state.read = {};
+  state.openFileDirty = false;
   state.setDock.mockClear();
   state.readFile.mockReset();
 });
+
+const notFound = () =>
+  new TRPCClientError("not found", {
+    result: {
+      error: {
+        code: -32004,
+        message: "not found",
+        data: { code: "NOT_FOUND" },
+      },
+    },
+  } as never);
 
 const render = async () => {
   await act(async () => {
@@ -122,22 +135,38 @@ describe("the file panel while the file is being read", () => {
 
   // TEST_SCENARIO: the file is not there (a stale row, a dead link from a markdown file) — the panel names it and says so, without a retry that cannot help.
   it("says the file is gone", async () => {
-    state.read = {
-      error: new TRPCClientError("not found", {
-        result: {
-          error: {
-            code: -32004,
-            message: "not found",
-            data: { code: "NOT_FOUND" },
-          },
-        },
-      } as never),
-    };
+    state.read = { error: notFound() };
 
     const text = await render();
 
     expect(text).toContain("qa-qft-20mb.bin is not there any more.");
     expect(text).not.toContain("Retry");
+  });
+
+  // TEST_SCENARIO: the file was open and the agent deleted it — the re-read answers NOT_FOUND while the query still holds the file's bytes, and those bytes must not stand under the deleted file's name.
+  it("drops the copy it holds when the file is gone", async () => {
+    state.read = {
+      data: { path: "qa-qft-20mb.bin", content: "old", binary: true },
+      error: notFound(),
+    };
+
+    const text = await render();
+
+    expect(text).not.toContain("viewer:");
+    expect(text).toContain("qa-qft-20mb.bin is not there any more.");
+  });
+
+  // TEST_SCENARIO: the same deletion while a draft is open keeps the editor on screen, because the draft outranks the message and is lost if the viewer unmounts.
+  it("keeps a draft on screen when the file is gone", async () => {
+    state.openFileDirty = true;
+    state.read = {
+      data: { path: "qa-qft-20mb.bin", content: "old", binary: true },
+      error: notFound(),
+    };
+
+    const text = await render();
+
+    expect(text).toContain("viewer:qa-qft-20mb.bin");
   });
 
   // TEST_SCENARIO: the read fails — the panel keeps the file's name, gives the reason and offers the retry, instead of an empty pane the row cannot reopen.

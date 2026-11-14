@@ -65,6 +65,7 @@ export function ArtifactPanel({
   const openArtifactEdit = useStore((s) => s.openArtifactEdit);
   const setOpenArtifactEdit = useStore((s) => s.setOpenArtifactEdit);
   const setOpenArtifactDirty = useStore((s) => s.setOpenArtifactDirty);
+  const openArtifactDirty = useStore((s) => s.openArtifactDirty);
   const {
     data: stale,
     isPending: artifactPending,
@@ -72,7 +73,8 @@ export function ArtifactPanel({
     error: artifactFailure,
     refetch: refetchArtifact,
   } = useArtifact(artifactId);
-  const artifact = artifactMissing(artifactFailure) ? undefined : stale;
+  const artifact =
+    artifactMissing(artifactFailure) && !openArtifactDirty ? undefined : stale;
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [dialog, setDialog] = useState<ArtifactDialog | null>(null);

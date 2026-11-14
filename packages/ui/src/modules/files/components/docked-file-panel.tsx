@@ -29,13 +29,14 @@ export function DockedFilePanel({ onOpenFile }: Props) {
 
   const operable = useIsAgentOperable(selectedAgent);
   const {
-    data: openFile,
+    data: stale,
     error,
     refetch,
   } = useFileContentQuery(selectedAgent, openFilePath);
 
   const gone =
     error instanceof TRPCClientError && error.data?.code === "NOT_FOUND";
+  const openFile = gone && !openFileDirty ? undefined : stale;
 
   const close = useCallback(async () => {
     if (

@@ -10,6 +10,7 @@ import { artifactMissing } from "../../modules/artifacts/lib/load-failure.js";
 const failure = vi.hoisted(() => ({
   error: undefined as unknown,
   data: undefined as unknown,
+  openArtifactDirty: false,
   refetch: (): void => {},
 }));
 
@@ -19,6 +20,7 @@ vi.mock("../../store.js", () => ({
       dock: { kind: "artifact", id: "a-1" },
       setDock: vi.fn(),
       openArtifactEdit: false,
+      openArtifactDirty: failure.openArtifactDirty,
       setOpenArtifactEdit: vi.fn(),
       setOpenArtifactDirty: vi.fn(),
       confirmDockDiscard: async () => true,
@@ -80,6 +82,7 @@ afterEach(() => {
   document.body.replaceChildren();
   failure.error = undefined;
   failure.data = undefined;
+  failure.openArtifactDirty = false;
 });
 
 const render = async (error: unknown) => {
@@ -115,7 +118,8 @@ describe("the docked preview of an artifact that is not there", () => {
       title: "qa-qft-page",
       version: 2,
       kind: "page",
-    };
+      visibility: "private",
+    } as never;
 
     const text = await render({
       data: { code: "NOT_FOUND" },
@@ -124,6 +128,26 @@ describe("the docked preview of an artifact that is not there", () => {
 
     expect(text).not.toContain("qa-qft-page");
     expect(text).toContain("Artifact not found");
+  });
+
+  // TEST_SCENARIO: the same deletion while the artifact holds an unsaved edit keeps the panel on the artifact, because a draft that vanishes is worse than a title the server has already dropped.
+  it("keeps an unsaved edit on screen when the artifact is gone", async () => {
+    failure.openArtifactDirty = true;
+    failure.data = {
+      id: "a-1",
+      title: "qa-qft-page",
+      version: 2,
+      kind: "page",
+      visibility: "private",
+    } as never;
+
+    const text = await render({
+      data: { code: "NOT_FOUND" },
+      message: "artifact not found",
+    });
+
+    expect(text).toContain("qa-qft-page");
+    expect(text).not.toContain("Artifact not found");
   });
 
   // TEST_SCENARIO: a failure to reach the api-server is not a missing artifact, so the preview names the failure and keeps the retry.
