@@ -258,6 +258,8 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     return c.html(
       renderWrapper({
         title: artifact.title,
+        icon: artifact.icon,
+        brandIconUrl: `${deps.uiBaseUrl.replace(/\/+$/, "")}/api/brand/icon.svg`,
         brandName: deps.brandName,
         contentUrl: contentUrl.href,
         slug,

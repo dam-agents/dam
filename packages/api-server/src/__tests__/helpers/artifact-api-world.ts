@@ -143,6 +143,7 @@ export function createArtifactApiWorld() {
       agentId: options.by === undefined ? "agent-a" : options.by,
       folderId: null,
       sourcePath: null,
+      icon: null,
       title: "Dashboard",
       slug: `slug-${id}`,
       kind: options.kind ?? "html",

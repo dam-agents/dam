@@ -23,6 +23,7 @@ import {
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { artifactMissing } from "../lib/load-failure.js";
+import { ArtifactIcon } from "./artifact-badges.js";
 import {
   ArtifactBarActions,
   ArtifactPanelMenu,
@@ -164,6 +165,9 @@ export function ArtifactPanel({
           title={artifact?.title}
         >
           {editor.dirty ? "● " : ""}
+          {artifact?.icon && (
+            <ArtifactIcon icon={artifact.icon} className="mr-1.5" />
+          )}
           {artifact?.title ?? "Artifact"}
         </span>
         {editor.editing ? (

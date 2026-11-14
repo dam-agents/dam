@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -31,6 +31,17 @@ An artifact's **kind is settled when it is created** and no revision can move it
 The share link outlives every revision, so a mutable kind would let a URL vetted while it served inert text later serve executing HTML or JSX to the same audience; publishing executable content is fine, silently changing what an already-shared link *does* is not.
 It also keeps a version history coherent, since every version renders through the artifact's one kind.
 Title and file name stay editable, and both describe the whole artifact rather than one revision: the history snapshots bytes, so a past version downloads under the artifact's current name.
+
+An artifact also carries an **icon**, one emoji, so the user tells it apart from the others in the library and in its browser tab.
+The Agent picks it when it publishes, as it picks the title, without being asked: the publish tool tells it to pick one that sets this artifact apart from the others it published, and the update tool gives one to an artifact that has none.
+The icon is optional, so an Agent on an older skill still publishes, with no icon.
+The platform stores exactly one emoji and refuses anything else, so a stored icon always draws.
+Emoji only, rather than also an icon set: an emoji brings its own colours, which light and dark tab strips both show, and needs no dependency.
+Like the title, it describes the whole artifact, a new version keeps it, and the owner changes or clears it in the Rename dialog.
+The list row and the docked preview's top bar show it before the title.
+Every page that shows the artifact alone in a tab uses it as the favicon, an SVG drawn in the page from the emoji alone: the share page, the framed document and the app's own artifact page.
+An HTML artifact that names its own favicon keeps it.
+An artifact without an icon, such as an upload or one published before icons, shows the brand icon, on its share page and in the app alike.
 
 The design is a port of a proven external tool (the "slop" artifact vault) onto platform rails: content bytes live in the S3-compatible object store ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing surface is the per-agent platform MCP server, and by-link serving happens on two dedicated hosts — a **share host** for the pages and a **content host** for the framed artifact itself.
 
@@ -271,7 +282,7 @@ flowchart LR
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
   The docked preview's top bar shows only the actions users take most: the title, the version switcher, **Share** with the current visibility ("Private", "Restricted", "Public") and a chevron, which opens the sharing dialog, Download, **Open in new tab**, a ⋮ menu and the side panel's close X, which the docked preview in a chat with both experiments off does not show.
-  The ⋮ menu holds the rest, in groups: Rename and Move first; then **Edit source** and Start a new session, where the artifact offers them; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
+  The ⋮ menu holds the rest, in groups: Rename, which also changes the icon, and Move first; then **Edit source** and Start a new session, where the artifact offers them; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
   Edit source names what it changes, the artifact's text, which may be Markdown as well as code, so it does not read as asking the Agent for a change.
   So opening an artifact is a place to start sharing or continuing it rather than a dead end, and the bar stays short enough to scan.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does; it has no full page of its own, because a wider panel or Open in new tab covers that.

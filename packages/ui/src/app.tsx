@@ -5,6 +5,7 @@ import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { useAppViewport } from "./hooks/use-app-viewport.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
+import { applyDocumentIcon, documentIconHref } from "./lib/document-icon.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
@@ -89,6 +90,10 @@ function useDocumentTitle() {
   useEffect(() => {
     document.title = marked ? `● ${title}` : title;
   }, [title, marked]);
+  const iconHref = documentIconHref(artifact?.icon);
+  useEffect(() => {
+    applyDocumentIcon(document, iconHref);
+  }, [iconHref]);
 }
 
 export default function App() {

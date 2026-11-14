@@ -515,11 +515,19 @@ export {
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
+  ARTIFACT_ICON_MAX_LENGTH,
+  ARTIFACT_ICON_RULE,
+  artifactIconDataUrl,
+  artifactIconSvg,
+  isArtifactIcon,
+} from "./modules/artifact-library/icon.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
+  artifactIconSchema,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,

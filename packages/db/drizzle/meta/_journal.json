@@ -1065,6 +1065,13 @@
       "when": 1794494652171,
       "tag": "0151_agent_tool_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1794500461905,
+      "tag": "0152_artifact_icon",
+      "breakpoints": true
     }
   ]
 }

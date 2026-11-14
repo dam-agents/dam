@@ -28,6 +28,7 @@ export interface ArtifactRow {
   agentId: string | null;
   folderId: string | null;
   title: string;
+  icon: string | null;
   slug: string;
   sourcePath: string | null;
   kind: string;
@@ -93,6 +94,7 @@ export type ArtifactPatch = Partial<
   Pick<
     ArtifactRow,
     | "title"
+    | "icon"
     | "folderId"
     | "kind"
     | "contentType"
@@ -234,6 +236,7 @@ export function createArtifactLibraryRepository(
     agentId: artifactsTable.agentId,
     folderId: artifactsTable.folderId,
     title: artifactsTable.title,
+    icon: artifactsTable.icon,
     slug: artifactsTable.slug,
     sourcePath: artifactsTable.sourcePath,
     kind: artifactsTable.kind,

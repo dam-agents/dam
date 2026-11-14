@@ -29,6 +29,13 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+const iconInput = z
+  .string()
+  .optional()
+  .describe(
+    'Exactly one emoji, e.g. "📈". It marks the artifact in the library and is the favicon of its browser tab. Pick one that tells this artifact apart from the others you published: two artifacts on one subject get different emoji.',
+  );
+
 const folderIdInput = z
   .string()
   .optional()
@@ -45,9 +52,10 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact",
-    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library. PREFER THIS for handing work products to humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Artifacts are private by default: only the user sees them, in the app. Keep them private until the user picks how to share; publishing is not sharing. Set visibility='public' only when the user asks for a link anyone can open (the unguessable URL is the access control). Before you publish, call list_artifact_folders: when one of the user's folders fits the artifact by its name, pass its id as `folder_id`; when none fits, leave the artifact ungrouped — do not create a folder unless the user asks for one. A folder the user or your instructions name for this work wins over your own match. Say in your reply whether the artifact is private or public, and which folder it went into, if any. Set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link). The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat. That link works only in the app's chat: in a Slack or Telegram message, link `shareUrl` instead. A private artifact has no `shareUrl`, so say there that it must be shared from the app first. A channel message that carries a platform://artifacts link gets the share URL in its place, or is refused while the artifact is private — except in a 1:1 DM between you and your owner, where a private artifact's link becomes the app's artifact page.",
+    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library. Always set `icon` as you set `title`, without being asked: one emoji that tells this artifact apart from the others you published. PREFER THIS for handing work products to humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Artifacts are private by default: only the user sees them, in the app. Keep them private until the user picks how to share; publishing is not sharing. Set visibility='public' only when the user asks for a link anyone can open (the unguessable URL is the access control). Before you publish, call list_artifact_folders: when one of the user's folders fits the artifact by its name, pass its id as `folder_id`; when none fits, leave the artifact ungrouped — do not create a folder unless the user asks for one. A folder the user or your instructions name for this work wins over your own match. Say in your reply whether the artifact is private or public, and which folder it went into, if any. Set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link). The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat. That link works only in the app's chat: in a Slack or Telegram message, link `shareUrl` instead. A private artifact has no `shareUrl`, so say there that it must be shared from the app first. A channel message that carries a platform://artifacts link gets the share URL in its place, or is refused while the artifact is private — except in a 1:1 DM between you and your owner, where a private artifact's link becomes the app's artifact page.",
     {
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
+      icon: iconInput,
       content: z
         .string()
         .optional()
@@ -98,6 +106,7 @@ export function registerArtifactLibraryTools(
     },
     ({
       title,
+      icon,
       content,
       upload_ref,
       file_name,
@@ -112,6 +121,7 @@ export function registerArtifactLibraryTools(
         const artifact = await lib.create(
           {
             title,
+            icon,
             content,
             uploadRef: upload_ref,
             fileName: file_name,
@@ -242,10 +252,11 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same and shows only the new version; earlier versions stay with the owner). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same and shows only the new version; earlier versions stay with the owner). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file. When the artifact's `icon` is null, pass one; otherwise omit `icon` to keep the one it has, which the owner may have picked.",
     {
       id: z.string().min(1),
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH).optional(),
+      icon: iconInput,
       content: z.string().optional(),
       upload_ref: z.string().optional(),
       file_name: z
@@ -265,12 +276,22 @@ export function registerArtifactLibraryTools(
           "Workspace-relative path of the file this revision came from (as shown in the file browser), recorded on the artifact.",
         ),
     },
-    ({ id, title, content, upload_ref, file_name, folder_id, source_path }) =>
+    ({
+      id,
+      title,
+      icon,
+      content,
+      upload_ref,
+      file_name,
+      folder_id,
+      source_path,
+    }) =>
       run(async () => {
         const artifact = await lib.update(
           id,
           {
             title,
+            icon,
             content,
             uploadRef: upload_ref,
             fileName: file_name,

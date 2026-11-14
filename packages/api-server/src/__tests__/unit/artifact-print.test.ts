@@ -108,6 +108,8 @@ describe("the share page prints the whole artifact", () => {
   it("hides the banner and releases the full-height layout in print", () => {
     const html = renderWrapper({
       title: "Report",
+      icon: null,
+      brandIconUrl: "https://app.example.com/api/brand/icon.svg",
       brandName: "DAM",
       contentUrl: "https://content.example.com/a/s?v=1&t=x",
       slug: "s",
