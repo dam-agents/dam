@@ -612,6 +612,14 @@ it("keeps a running Agent's chat while it reconnects", () => {
   expect(el.textContent).not.toContain("Restart agent");
 });
 
+// TEST_SCENARIO: a chat opening on a conversation that is still loading, as when a sleeping agent wakes, says the message waits for it, the way a connecting chat does.
+it("says a message waits for the conversation to load", () => {
+  fake.connectionState = "live";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(placeholder(el)).toContain("your message sends once it opens");
+});
+
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.
 it("drops the notice when the Agent answers", () => {
   fake.connectionState = "live";

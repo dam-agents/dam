@@ -211,8 +211,13 @@ export function ChatInput({
     apply: applyCommand,
   });
 
+  const [heldSendFor, setHeldSendFor] = useState<string | null>(null);
   const send = useCallback(() => {
-    if (!key || loadingSession || blockedReason) return;
+    if (!key || blockedReason) return;
+    if (loadingSession) {
+      setHeldSendFor(key);
+      return;
+    }
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
@@ -229,6 +234,23 @@ export function ChatInput({
     onSend,
     promptHistory,
   ]);
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a send typed while the session loads waits for it
+   * and goes out the moment the conversation is open, so a message to a waking
+   * agent is never dropped. It stays in the draft for a conversation the person
+   * left, a load that failed, or a composer still blocked, since none of those
+   * can send it now. */
+  useEffect(() => {
+    if (heldSendFor === null || loadingSession || blockedReason) return;
+    setHeldSendFor(null);
+    const failed = useStore.getState().sessionError;
+    if (
+      heldSendFor !== key ||
+      failed?.sessionId === useStore.getState().sessionId
+    )
+      return;
+    send();
+  }, [heldSendFor, loadingSession, blockedReason, key, send]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (commandMenu.onKeyDown(e)) {
@@ -295,6 +317,11 @@ export function ChatInput({
               ))}
             </div>
           )}
+          {heldSendFor !== null && (
+            <div className="px-3 pt-3 text-2xs text-muted-foreground">
+              Sending as soon as this conversation opens…
+            </div>
+          )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
             <Button
               variant="ghost"
@@ -345,9 +372,7 @@ export function ChatInput({
                 size="icon"
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={
-                  sendDisabled || loadingSession || !key || !!blockedReason
-                }
+                disabled={sendDisabled || !key || !!blockedReason}
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >

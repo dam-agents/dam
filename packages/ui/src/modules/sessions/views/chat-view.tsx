@@ -1190,7 +1190,11 @@ export function ChatView() {
             channelLive={channelLive}
             harness={sendHarness ?? null}
             emptyPlaceholder={
-              greeting.kind === "greeting" ? greeting.copy.placeholder : null
+              loadingSession
+                ? "Loading the conversation — your message sends once it opens."
+                : greeting.kind === "greeting"
+                  ? greeting.copy.placeholder
+                  : null
             }
             onBlockedClick={
               block?.kind === "connect"
