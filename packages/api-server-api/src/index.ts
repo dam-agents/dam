@@ -652,6 +652,7 @@ export {
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
   DAM_TEMPLATE_ID,
+  damKeyName,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,

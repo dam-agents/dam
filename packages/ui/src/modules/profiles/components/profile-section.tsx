@@ -108,11 +108,6 @@ export function ProfileSection({
           onClose={() => setRenaming(null)}
         />
       )}
-      <p className="mb-3 text-sm text-muted-foreground">
-        Save harness, provider and model settings as profiles to quickly set and
-        change them in agents. Update a profile here to quickly change settings
-        on all agents using that profile.
-      </p>
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading profiles…</p>
       ) : (
