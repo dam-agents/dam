@@ -33,7 +33,7 @@ You're set up with CurveBender, IBM-hosted open-source models.
 You can switch providers anytime in Agent settings.*, with *Agent settings* a link
 And below that message stands *I learn how you work, one task at a time.
 Pick one to try, or ask me anything.*
-And under the message sit five full-round pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* Ask me a question about DAM
+And under the message sit five full-round pills, each labelled in bold: *Artifact:* Make my next PowerPoint deck the way I make them, *Schedule:* Do competitive research over night, the way I do it, *Knowledge base:* Learn my project so I can ask questions, *Skill:* Learn how my team writes tickets, then take it over, and *DAM:* I have a question about DAM:
 And the message box under them hints *Message Dammy*, not one of the ideas
 And the avatar-unlock celebration plays beside the composer, reading *You unlocked your first agent avatar!*
 It's now your new agent's avatar.
@@ -43,8 +43,13 @@ Finish the checklist to unlock more.\*, with a *Nice* button
 
 Given that greeting
 When the owner clicks the *Artifact:* pill
-Then the message box holds *Artifact: Make my next PowerPoint deck the way I make them*, and nothing was sent
+Then the message box holds *Make my next PowerPoint deck the way I make them*, with the cursor at its end, and nothing was sent
+And the message box holds no kind label: not *Artifact:* and no other pill's label
 And the greeting is still on screen
+
+Given that greeting again
+When the owner clicks the *DAM:* pill
+Then the message box holds *I have a question about DAM:*, ready for the owner to type their question after it, and nothing was sent
 
 ## AC-4 — the greeting does not come back once the assistant was used
 
