@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
 
-import { Markdown } from "../../../components/markdown.js";
+import { CAPPED_CODE_BLOCK, Markdown } from "../../../components/markdown.js";
 import type {
   MessagePart,
   Role,
@@ -72,7 +72,11 @@ function TextPart({
           onFileClick={onFileClick}
         />
       );
-    return <Markdown onFileClick={onFileClick}>{text}</Markdown>;
+    return (
+      <Markdown className={CAPPED_CODE_BLOCK} onFileClick={onFileClick}>
+        {text}
+      </Markdown>
+    );
   }
   if (hasRendererBlocks(text)) return <A2uiUserText text={text} />;
   return (
