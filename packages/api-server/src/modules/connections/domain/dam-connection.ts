@@ -2,6 +2,7 @@ import {
   AGENT_SCOPES,
   CREDENTIAL_SCOPES,
   DAM_TEMPLATE_ID,
+  damKeyName,
   isGatewayHostname,
   type ApiKeysService,
   type Contribution,
@@ -60,8 +61,6 @@ export const DAM_KEY_SCOPES: readonly Scope[] = [
   ...AGENT_SCOPES,
   ...CREDENTIAL_SCOPES,
 ];
-
-export const damKeyName = (brandName: string) => `${brandName} connection`;
 
 /* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install mints, revokes and reads one. `revoke` treats a key that is already revoked as done and throws only when the key store cannot be reached. `ledger` is the record a key is written to before anything uses it: an entry means the key is not a Connection's yet and must be revoked, so a crash anywhere between minting and the Connection naming it costs a key rather than leaving one live and untracked. */
 export interface DamKeyPort {

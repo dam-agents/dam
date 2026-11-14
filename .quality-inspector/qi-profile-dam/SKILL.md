@@ -70,7 +70,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
     An agent reaches it through a **GitHub** connection, made either way a user makes one:
-    **Authorize with GitHub** (OAuth, its button *Continue to GitHub*), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*, its button *Create token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
+    **Authorize with GitHub** (OAuth, its button *Continue to GitHub*), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*, its button *Connect*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
     DAM checks a token when it is saved and shows the test user's login as the connection's account.
     With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
     Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.

@@ -4,9 +4,11 @@ import { useState } from "react";
 import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
+import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { useRevokeApiKey } from "../api/mutations.js";
 import { useApiKeys } from "../api/queries.js";
+import { revokeKeyBody } from "../lib/revoke-key-copy.js";
 import { ApiKeyRow } from "./api-key-row.js";
 import { CreateApiKeyDialog } from "./create-api-key-dialog/index.js";
 
@@ -18,7 +20,7 @@ export function ApiKeysList() {
 
   async function revoke(id: string, name: string) {
     const ok = await showConfirm(
-      "The key stops working immediately for every CLI and integration that uses it. To restore access, create a new key.",
+      revokeKeyBody(name, getBrand().name),
       `Revoke API key “${name}”?`,
       { kind: "destructive", confirmLabel: "Revoke API key" },
     );

@@ -16,17 +16,13 @@ import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useDeleteSchedule } from "../api/mutations.js";
 import { useSchedules } from "../api/queries.js";
-import {
-  ScheduleChoicesField,
-  ScheduleSessionTitleField,
-} from "./schedule-fields.js";
+import { ScheduleChoicesField } from "./schedule-fields.js";
 import { customChoiceError } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 type DialogValues = FieldValues & {
   name: string;
   task: string;
-  sessionTitle: string;
   harness: string;
   model: string;
   settings: Record<string, string>;
@@ -167,10 +163,6 @@ export function ScheduleDialog<T extends DialogValues>({
               migrationNote={existing?.migrationNote ?? null}
             />
             {afterChoices}
-            <ScheduleSessionTitleField
-              registration={register("sessionTitle")}
-              error={errors.sessionTitle?.message}
-            />
           </>
         )}
       </DialogBody>

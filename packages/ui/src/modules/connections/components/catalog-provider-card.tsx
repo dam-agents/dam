@@ -116,9 +116,6 @@ export function CatalogProviderCard({
         </div>
       ) : (
         <div className="flex flex-col items-start gap-3 px-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            No connections set up yet.
-          </p>
           {newButton}
         </div>
       )}
