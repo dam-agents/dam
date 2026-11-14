@@ -14,11 +14,11 @@ export function DetachProviderMessage({
   usage: ProviderUsage;
 }) {
   const closeDialog = useStore((s) => s.closeDialog);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const seeAll = agentId
     ? () => {
         closeDialog(false);
-        navigateToSandboxHome(agentId, "schedules");
+        openAgentSettings(agentId, "schedules");
       }
     : undefined;
   const turnedOff = usage.turnedOffSchedules;

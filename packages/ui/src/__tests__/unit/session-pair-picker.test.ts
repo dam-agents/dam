@@ -224,7 +224,7 @@ vi.mock("../../store.js", () => ({
     select({
       nextSessionPair: state.chosen ? { agent: state.chosen } : {},
       setNextSessionPair: state.chosenModel,
-      navigateToSandboxHome: state.navigate,
+      openAgentSettings: state.navigate,
       navigateToSettings: state.navigateSettings,
       showConfirm: state.showConfirm,
     }),
@@ -807,7 +807,7 @@ describe("the new session panel", () => {
     }
   });
 
-  /** TEST_SCENARIO: one provider reads as its name with a Change link to the Providers page, and the dropdown's Manage providers entry is a link, not a pick. */
+  /** TEST_SCENARIO: one provider reads as its name with a Change link to the agent's Providers settings, and the dropdown's Manage providers entry is a link, not a pick. */
   it("shows one provider as text with a Change link", () => {
     state.oneProvider = true;
     const node = mount(picker());
@@ -822,6 +822,15 @@ describe("the new session panel", () => {
     clickMenu(node, "Manage providers");
     expect(state.navigate).toHaveBeenCalledWith("agent", "providers");
     expect(state.chosenModel).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: in the chat the picker is given the settings modal for Manage providers, so it opens that instead of leaving for the configuration page. */
+  it("opens the given Manage providers instead of the page", () => {
+    const onManageProviders = vi.fn();
+    const node = mount(picker({ onManageProviders }));
+    clickMenu(node, "Manage providers");
+    expect(onManageProviders).toHaveBeenCalledTimes(1);
+    expect(state.navigate).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: the model dropdown groups one provider's models by family and keeps older versions behind a toggle, so no model is listed twice for two providers. */
@@ -1087,6 +1096,7 @@ describe("the new session panel", () => {
         onChoose: vi.fn(),
         onConfigure: vi.fn(),
         onNewSession: state.newSession,
+        onManageProviders: () => state.navigate("agent", "providers"),
       }),
     );
     expect(html).toContain('aria-label="Loading harness and model"');
@@ -1767,6 +1777,7 @@ describe("an open session's picker", () => {
       onChoose: vi.fn(),
       onConfigure: vi.fn(),
       onNewSession: state.newSession,
+      onManageProviders: () => state.navigate("agent", "providers"),
       ...props,
     });
 

@@ -36,7 +36,7 @@ export function PromptModelDialog({
   const { data: saved } = useArtifactPromptChoice(artifact.id);
   const { data: status } = useHarnessConfigStatus(agentId);
   const defaults = useSessionDefaults(agentId).data;
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setChoice = useSetArtifactPromptChoice();
   const [draft, setDraft] = useState<SessionChoiceSlots | null>(null);
   const slots = draft ?? saved;
@@ -84,7 +84,7 @@ export function PromptModelDialog({
                 routed={status?.modelRouter ?? false}
                 row
                 onConnectProviders={() =>
-                  navigateToSandboxHome(agentId, "providers")
+                  openAgentSettings(agentId, "providers")
                 }
                 target={{
                   slots,

@@ -42,7 +42,7 @@ const COPY: Record<DefaultKind, { label: string; placeholder: string }> = {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what an agent's chats, channel turns or schedule
- * fires run on, picked on its configuration page with the chat's own picker as
+ * fires run on, picked in its settings with the chat's own picker as
  * a row card. A channel and a schedule follow the default model unless they
  * pick their own, which their list's first row clears.
  */
@@ -58,7 +58,7 @@ export function AgentModelPicker({
   const { data: remembered } = useRememberedPair(agentId);
   const { owned } = useProviderConnections(agentId);
   const access = useAgent(agentId)?.access;
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const [draft, setDraft] = useState<SessionChoiceSlots | null>(null);
   if (!routesSessionPairs(status?.harnesses ?? [])) return null;
   /* UNIT_BOUNDARY_DESCRIPTION: an agent with no provider to offer has no model to pick; the page it is on says how to connect one. */
@@ -139,7 +139,7 @@ export function AgentModelPicker({
             /* UNIT_BOUNDARY_DESCRIPTION: a harness picked without a model waits in the open picker alone, so closing it drops the draft rather than leaving the page's card on a pick nothing saved. */
             if (!open && draft?.pair?.model === null) setDraft(null);
           }}
-          onConnectProviders={() => navigateToSandboxHome(agentId, "providers")}
+          onConnectProviders={() => openAgentSettings(agentId, "providers")}
           target={{
             valueOnly: kind !== "chat",
             slots,

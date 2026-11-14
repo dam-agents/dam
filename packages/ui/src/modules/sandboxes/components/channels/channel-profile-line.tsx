@@ -54,7 +54,7 @@ export function ChannelChoicePicker({
   ) => void;
 }) {
   const { data: status } = useHarnessConfigStatus(agentId);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   return (
     <fieldset disabled={readOnly} className="min-w-0">
       <SessionPairPicker
@@ -62,7 +62,7 @@ export function ChannelChoicePicker({
         carried={status?.harnesses ?? []}
         defaultHarness={status?.defaultHarness ?? ""}
         routed={status?.modelRouter ?? false}
-        onConnectProviders={() => navigateToSandboxHome(agentId, "providers")}
+        onConnectProviders={() => openAgentSettings(agentId, "providers")}
         target={{
           slots,
           label: "Channel harness and model",

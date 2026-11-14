@@ -22,12 +22,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           return (
             "This agent failed to start: its image can't be pulled " +
             "(check the image name and registry credential). " +
-            "Check the agent's page or contact its owner."
+            "Check the agent's settings or contact its owner."
           );
         case "OutOfMemory":
           return (
             "This agent failed to start: it ran out of memory. " +
-            "Check the agent's page or contact its owner."
+            "Check the agent's settings or contact its owner."
           );
         case "HomeVolumeFull":
           return (
@@ -37,7 +37,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "MachineImageUnavailable":
           return (
             "This agent failed to start: its image isn't available. " +
-            "Check the agent's page or contact its owner."
+            "Check the agent's settings or contact its owner."
           );
         case "MachineImageCacheUnreachable":
           return (
@@ -48,7 +48,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "MachineBootFailed":
           return (
             "This agent failed to start: its VM didn't boot. " +
-            "Check the agent's page or contact its owner."
+            "Check the agent's settings or contact its owner."
           );
         case "MachineStorageFull":
           return (
@@ -80,13 +80,13 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         default:
           return (
             "This agent failed to start: it crashed while starting. " +
-            "Check the agent's page or contact its owner."
+            "Check the agent's settings or contact its owner."
           );
       }
     case "reconcile-error":
       return (
         "This agent failed to start: its configuration couldn't be " +
-        "applied. Check the agent's page or contact its owner."
+        "applied. Check the agent's settings or contact its owner."
       );
     case "agent-not-ready":
       return "The agent is still warming up — give it a minute and try again.";
@@ -107,17 +107,17 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "InvalidImageName":
           return (
             "This agent can't reach the network: its gateway image can't be " +
-            "pulled. Check the agent's page or contact its owner."
+            "pulled. Check the agent's settings or contact its owner."
           );
         case "OutOfMemory":
           return (
             "This agent can't reach the network: its gateway ran out of " +
-            "memory. Check the agent's page or contact its owner."
+            "memory. Check the agent's settings or contact its owner."
           );
         default:
           return (
             "This agent can't reach the network: its gateway crashed while " +
-            "starting. Check the agent's page or contact its owner."
+            "starting. Check the agent's settings or contact its owner."
           );
       }
     case "unknown":

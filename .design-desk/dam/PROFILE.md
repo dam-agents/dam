@@ -17,13 +17,13 @@ Most screens serve one owner and their own agents: there are no teams or workspa
 
 Use the words in [`docs/ubiquitous-language.md`](../../docs/ubiquitous-language.md), the section "Words users read" first, and never a word from "Retired words".
 The thing a user owns is an **agent**.
-Folder names in the code are internal: `sandboxes` is an agent's configuration page, `sessions` is the chat, `platform` is the app shell.
+Folder names in the code are internal: `sandboxes` is an agent's settings modal, `sessions` is the chat, `platform` is the app shell.
 
 ## Main screens
 
 - **Home** — what changed since the user last looked: agents, usage, spend.
-- **An agent's chat** — the conversation, with the files and artifacts panel beside it.
-- **An agent's configuration** — its harness, model, connections, schedules, skills, login items and environments.
+- **An agent's chat** — the conversation, with the Files and Artifacts sections beside it, which start closed and open from the agent menu on the agent's name, and a composer whose + menu reaches the agent's skills, schedules and connections.
+- **An agent's settings** — its harness, model, connections, schedules, skills, login items and environments, in one modal over whatever is on screen, which every wrench and the chat's agent menu open; there is no settings page.
 - **Artifacts** — the library of published work, with sharing.
 - **Starter kits** — ready setups an agent is created from.
 - **Settings** — providers, profiles, connections, API keys, usage, appearance.
@@ -59,7 +59,7 @@ The imports from `packages/ui/src/app.tsx` are the map; these paths are hints th
 - The sidebar: its width when expanded is `SIDEBAR_DEFAULT_W` in `modules/platform/lib/sidebar-layout.ts`; its destinations, in order, come from `modules/platform/hooks/use-sidebar-destinations.ts`, with the agents and activity under them.
 - The page column: its padding and the maximum width of the view you change.
 - The right side: `modules/sessions/components/side-panel-bar.tsx`, and which tabs a view hides (`hiddenSidePanelTabs()` in `modules/sessions/lib/side-panel.ts`).
-- An agent's configuration page: `modules/sandboxes/views/sandbox-home-view.tsx`, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
+- An agent's settings: `modules/sandboxes/components/agent-configuration.tsx`, which the settings modal (`components/configure-agent-modal.tsx`, mounted by `components/agent-settings-host.tsx`) shows, its sections in `components/sandbox-section-nav.tsx`, and their derived counts in `hooks/use-section-summaries.ts`.
   Read the function behind a count ("4 enabled") and make sample data agree with it.
 - The chat: `modules/sessions/views/chat-view.tsx`, whose only layout is `modules/sessions/components/classic-chat-layout.tsx`.
 
@@ -92,7 +92,7 @@ Menus are portalled to the page body by the review bar; dialogs reuse `confirm-d
 | Page headers, list sections, empty states    | `components/ui/page-header.tsx`, `list-section.tsx`, `empty-state.tsx`, `empty-hero.tsx` |
 | The app shell and sidebar                    | `modules/platform/`                                                                      |
 | An agent's chat                              | `modules/sessions/`                                                                      |
-| An agent's configuration                     | `modules/sandboxes/`                                                                     |
+| An agent's settings                          | `modules/sandboxes/`                                                                     |
 | Theme tokens                                 | `App.css`                                                                                |
 
 ## Where the "why" lives

@@ -252,9 +252,8 @@ flowchart LR
 
 - The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
   An artifact also has an address of its own, `/artifacts/<id>`, which opens that page with the artifact docked, the state a click on its row leaves; an id that is gone or not the owner's leaves the library and says in the dock that there is no such artifact.
-  The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
-  On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
-  In an Agent's chat the list is an **Artifacts section** in the column beside the conversation, under Files.
+  Pages outside an Agent's chat leave the side panel's **Artifacts tab** out, so the library is never open twice.
+  In an Agent's chat the list is an **Artifacts section** in the column beside the conversation, under Files; it starts closed, and the agent menu's *Artifacts* opens it.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   While the library holds no artifact and no folder, the page shows an introduction instead of the list, with Create agent and Upload artifact; a list that fails to load still shows the list's retry.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.

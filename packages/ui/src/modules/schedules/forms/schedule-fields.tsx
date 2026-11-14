@@ -561,7 +561,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
   const agentOperable = useIsAgentOperable(agentId || null);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const routed = status?.modelRouter ?? false;
   const { field: profileField } = useController({
     control: typed,
@@ -626,7 +626,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         defaultHarness={defaultHarness}
         routed
         onConnectProviders={() =>
-          agentId && navigateToSandboxHome(agentId, "providers")
+          agentId && openAgentSettings(agentId, "providers")
         }
         target={{
           slots,

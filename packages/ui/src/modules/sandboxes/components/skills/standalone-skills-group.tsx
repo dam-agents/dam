@@ -1,5 +1,6 @@
 import { Add } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { AddRow, ListSection } from "@/components/ui/list-section";
 
@@ -22,6 +23,8 @@ export function StandaloneSkillsGroup({
   onOpenSkill,
   trackTargets,
   onUpload,
+  hideRowActions = false,
+  emptyState,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
@@ -34,8 +37,13 @@ export function StandaloneSkillsGroup({
   onOpenSkill?: (skill: LocalSkill) => void;
   trackTargets: ReadonlyMap<string, TrackTarget>;
   onUpload?: () => void;
+  hideRowActions?: boolean;
+  /** UNIT_BOUNDARY_DESCRIPTION: what an empty group shows in place of its usual line; the + menu's compact list passes the design's drop zone. */
+  emptyState?: ReactNode;
 }) {
   const published = latestPublishByName(publishes);
+
+  if (emptyState !== undefined && skills.length === 0) return <>{emptyState}</>;
 
   return (
     <ListSection
@@ -77,6 +85,7 @@ export function StandaloneSkillsGroup({
             onTrack={(target) => onTrack(skill, target)}
             onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
             trackTarget={trackTargets.get(skill.name)}
+            hideActions={hideRowActions}
           />
         );
       })}

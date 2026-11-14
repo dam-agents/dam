@@ -30,6 +30,20 @@ Builds published before these accounts were added have only `qa-owner`; there an
 ## Vocabulary a user sees
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
+  In the chat's header the agent's avatar, name and state dot open the agent menu: *Rename* (a dialog), *Artifacts* and *File tree*, which open those sections beside the conversation, stacked when both are open, and show a check while open, *Browser* and *Processes* for an agent that has them, *Git Changes* once the agent has a repository, *Add editors* and *Agent settings*.
+  Files and Artifacts start closed for an account that never opened them, and each stays as the account last left it; the processes and the running count (*N running*) open in a panel beside the conversation.
+  The notifications bell sits in a thin strip across the top of the chat.
+  A new chat's empty message box shows example prompts one after another, with a *Tab* hint; Tab puts the one showing in the box, and the box's placeholder (its accessible name) is still *Message…*.
+  The settings dialog's banner shows the agent's avatar, which opens the avatar picker, and its name; its General section starts with the agent's rename and avatar picker.
+  The agent menu's *Agent settings*, and every wrench, *Agent settings* — an agent's row in the sidebar, an agent card on Home — open the same dialog over whatever is on screen, with no chat needed behind it.
+  The agent's name above a reply, the empty chat's avatar, the assistant greeting's settings link and the model picker's *Manage providers* open the same dialog; there is no agent settings page, and the dialog has no link to one.
+  An old agent link, `/sandboxes/<agent id>/<section>` as in a Slack message, opens the agent's chat with the dialog on that section.
+  The dialog lists every section as a title with its summary under it; a section that needs attention has a small orange dot.
+  The list scrolls up and down when it does not fit, never sideways.
+  The **+** button at the start of the message box (*Add*) opens a menu: *Attach file* (the file picker the box always had), then *Skills*, *Schedules* and *Connections*, each with a count of what the agent has on.
+  Each of the three opens a list with *Back* and *Manage* (the same section of the agent's settings): a skill's switch installs or removes it while the agent runs, a recurring schedule's switch pauses or resumes it (a one-time task has none), and the Connections list shows the connections the agent holds, one card per service, each with its ⋯ menu; *Add connection* grants more.
+  A schedule's ⋮ menu offers *Run now*, *Edit schedule* and *Delete schedule*, as on the Schedules section.
+  *Add source*, *Create schedule* and *Add connection* open the usual dialogs; *Or, describe to create* (skills and schedules) leaves *Create a skill that...* or *Every morning at 9am...* in the box in place of any draft, and sends nothing.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and starts an agent that stopped while idle.

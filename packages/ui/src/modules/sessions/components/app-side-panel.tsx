@@ -32,14 +32,13 @@ export function AppSidePanelButtons({
   const tabs = useAppSidePanelTabs();
   const openSidePanel = useOpenSidePanel();
   const desktop = useIsDesktop();
-  const view = useStore((s) => s.view);
   if (desktop && !onDesktop) return null;
   return (
     <SidePanelTabButtons
       tabs={appSidePanelTabs(
         hiddenSidePanelTabs({
           agent: false,
-          artifacts: view === "sandbox-home",
+          artifacts: false,
           canOpenBrowser: false,
           changes: false,
           processesEnabled: false,
@@ -56,10 +55,9 @@ export function AppSidePanelButtons({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel on every page outside an Agent's
- * chat: on an Agent's configuration page it holds Artifacts, scoped to that
- * Agent with a switch to the whole library. Other pages leave Artifacts to the
- * Artifacts page, whose opened artifact docks here without the interactive
- * bridge, because no chat is open to receive a prompt.
+ * chat. These pages leave Artifacts to the Artifacts page, whose opened
+ * artifact docks here without the interactive bridge, because no chat is open
+ * to receive a prompt.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const openArtifactId = useStore((s) =>
@@ -69,13 +67,12 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const view = useStore((s) => s.view);
-  const agentId = useStore((s) => s.agentId);
   const tabs = useAppSidePanelTabs();
   // UNIT_BOUNDARY_DESCRIPTION: Approvals is a drawer over the page, not a side-panel tab, so the shell's bar holds only the tabs it opens; the drawer reads the same store tab.
   const shellHidden = new Set<SidePanelTab>([
     ...hiddenSidePanelTabs({
       agent: false,
-      artifacts: view === "sandbox-home",
+      artifacts: false,
       canOpenBrowser: false,
       changes: false,
       processesEnabled: false,
@@ -115,7 +112,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
         activeTab === "artifacts" &&
         !shellHidden.has("artifacts") && (
           <ChatArtifactsPanel
-            agentId={view !== "sandbox-home" ? null : agentId}
+            agentId={null}
             open
             className={cn("flex-1", dockedShown && "hidden")}
           />

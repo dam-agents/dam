@@ -24,7 +24,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
   const selectAgent = useStore((s) => s.selectAgent);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
@@ -44,7 +44,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
       };
       const openAgentSection = async (section: "skills" | "channels") => {
         if (!agent) return createDefault.create();
-        navigateToSandboxHome(agent.id, section);
+        openAgentSettings(agent.id, section);
       };
       await match(task)
         .with("create-agent", () => createDefault.create())
@@ -72,7 +72,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
       selectAgent,
       setMobileScreen,
       navigateToSettings,
-      navigateToSandboxHome,
+      openAgentSettings,
       setKitBrowserOpen,
       setSidePanelTab,
       setArtifactsSectionOpen,

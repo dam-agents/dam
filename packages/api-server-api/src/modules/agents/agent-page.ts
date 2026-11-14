@@ -5,6 +5,7 @@ export const SANDBOX_SECTIONS = [
   "providers",
   "connections",
   "network",
+  "browser",
   "environment",
   "channels",
   "chat-forms",

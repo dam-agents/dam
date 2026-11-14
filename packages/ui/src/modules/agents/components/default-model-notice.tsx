@@ -11,7 +11,7 @@ import {
 
 export function DefaultModelNotice({ agentId }: { agentId: string }) {
   const { byAgentEvenDismissed } = useDefaultModelNotices();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const notices = (byAgentEvenDismissed.get(agentId) ?? []).filter(
     defaultModelStopsRuns,
   );
@@ -32,7 +32,7 @@ export function DefaultModelNotice({ agentId }: { agentId: string }) {
         variant="link"
         size="inline"
         className="text-xs"
-        onClick={() => navigateToSandboxHome(agentId, "providers")}
+        onClick={() => openAgentSettings(agentId, "providers")}
       >
         {defaultModelAction(notice)}
       </Button>

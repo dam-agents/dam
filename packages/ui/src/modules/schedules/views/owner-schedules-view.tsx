@@ -43,7 +43,7 @@ export function OwnerSchedulesView() {
 
 function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
   const { schedule, agentName, active, problem } = row;
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const cadence = scheduleCadenceText(schedule);
   const nextRun = active ? schedule.status?.nextRun : undefined;
   const outcome = runOutcomeLine(schedule);
@@ -52,7 +52,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
   return (
     <button
       type="button"
-      onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
+      onClick={() => openAgentSettings(schedule.agentId, "schedules")}
       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
     >
       <div className="min-w-0 flex-1">

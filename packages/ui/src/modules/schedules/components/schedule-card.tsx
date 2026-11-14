@@ -1,14 +1,10 @@
 import { ChevronDown, ChevronUp, Time, WarningAlt } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
-import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
@@ -18,21 +14,15 @@ import {
 } from "../../home/lib/default-model-copy.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { StoredPairSummary } from "../../sessions/components/stored-pair-summary.js";
-import {
-  useDeleteSchedule,
-  useResetScheduleSession,
-  useRunScheduleNow,
-  useToggleSchedule,
-} from "../api/mutations.js";
+import { useToggleSchedule } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
 import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
   cardOutcome,
   precheckAlert,
-  runNowConfirmText,
-  runNowStartedText,
   scheduleCadenceText,
 } from "../lib/schedule-format.js";
+import { ScheduleActionsMenu } from "./schedule-actions-menu.js";
 import { ScheduleDetails } from "./schedule-details.js";
 
 interface Props {
@@ -50,13 +40,9 @@ export function ScheduleCard({
   onEdit,
   onViewResults,
 }: Props) {
-  const { id, name, enabled, sessionMode, status } = schedule;
-  const showConfirm = useStore((s) => s.showConfirm);
+  const { id, name, enabled, status } = schedule;
   const sandboxName = useAgentDisplayName(schedule.agentId);
   const toggleSchedule = useToggleSchedule();
-  const deleteSchedule = useDeleteSchedule();
-  const resetScheduleSession = useResetScheduleSession();
-  const runScheduleNow = useRunScheduleNow();
   const defaultModels = useDefaultModelNotices();
   /* UNIT_BOUNDARY_DESCRIPTION: the row names the profile it runs on (D92), so
    * two schedules of one agent that differ only there can be told apart. */
@@ -80,46 +66,6 @@ export function ScheduleCard({
   const outcome = cardOutcome(schedule);
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
-
-  const handleDelete = async () => {
-    if (
-      await showConfirm(
-        "It stops running and cannot be recovered.",
-        `Delete schedule “${name}”?`,
-        { kind: "destructive", confirmLabel: "Delete schedule" },
-      )
-    )
-      deleteSchedule.mutate({ id });
-  };
-
-  const handleRunNow = async () => {
-    if (
-      await showConfirm(runNowConfirmText(schedule), "Run now?", {
-        confirmLabel: "Run now",
-      })
-    )
-      runScheduleNow.mutate(
-        { id },
-        {
-          onSuccess: () =>
-            emitToast({
-              kind: "success",
-              message: runNowStartedText(schedule),
-            }),
-        },
-      );
-  };
-
-  const handleReset = async () => {
-    if (
-      await showConfirm(
-        `Reset the session for "${name}"? The next run starts a fresh conversation.`,
-        "Reset session?",
-        { confirmLabel: "Reset session" },
-      )
-    )
-      resetScheduleSession.mutate({ id });
-  };
 
   return (
     <div>
@@ -257,24 +203,7 @@ export function ScheduleCard({
           />
         )}
 
-        <RowActionsMenu label="Schedule actions">
-          {onceState === null && (
-            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
-          )}
-          {(onceState === null || onceState === "pending") && (
-            <DropdownMenuItem onSelect={handleEdit}>
-              Edit schedule
-            </DropdownMenuItem>
-          )}
-          {sessionMode === "continuous" && (
-            <DropdownMenuItem onSelect={handleReset}>
-              Reset session
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem tone="danger" onSelect={handleDelete}>
-            Delete schedule
-          </DropdownMenuItem>
-        </RowActionsMenu>
+        <ScheduleActionsMenu schedule={schedule} onEdit={onEdit} />
       </div>
 
       <button

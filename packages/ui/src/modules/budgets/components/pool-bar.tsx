@@ -80,7 +80,7 @@ const SEGMENT_FOCUS =
   "h-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function Segment({ segment, fill }: { segment: PoolSegment; fill: string }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const { agentId, label } = segment;
   const style = { width: `${segment.fraction * 100}%` };
   return (
@@ -89,7 +89,7 @@ function Segment({ segment, fill }: { segment: PoolSegment; fill: string }) {
         <button
           type="button"
           aria-label={label}
-          onClick={() => navigateToSandboxHome(agentId, "setup")}
+          onClick={() => openAgentSettings(agentId, "setup")}
           className={cn(SEGMENT_FOCUS, "cursor-pointer", fill)}
           style={style}
         />

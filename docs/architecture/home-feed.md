@@ -7,7 +7,7 @@ It is the first surface a user sees, and the only one that spans every Agent the
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the page's own top corner, and opens Approvals as a drawer over the page.
 The [Get started](getting-started.md) checklist sits in the sidebar footer, so it is no surface of this page.
-In an Agent's chat the bell sits in the chat's top bar and opens that same drawer.
+In an Agent's chat the bell sits in the thin strip across the top of the chat and opens that same drawer.
 
 ## What Home reads
 
@@ -49,8 +49,8 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar's Agents section lists the Sessions of an Agent only while the user has it open, and the Agent whose chat or configuration page is shown is open.
-A click on a closed Agent opens its list and its new-session page, so its files and artifacts show beside the chat; a click on an open Agent only closes its list and leaves the page where it is.
+The sidebar's Agents section lists the Sessions of an Agent only while the user has it open, and the Agent whose chat is shown is open.
+A click on a closed Agent opens its list and its new-session page, with its Files and Artifacts sections as the account last left them (closed at first); a click on an open Agent only closes its list and leaves the page where it is.
 An open Agent lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
 When the new rows come later, from the Agent's own list after its last known Sessions or from a Retry of a failed page, focus moves once they show.
 An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.
@@ -66,8 +66,8 @@ Opening a Session from Activity leaves its Agent's row as it was, closed or open
 
 The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
 An Agent the order does not name yet, a new Agent, joins the foot of the list, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N more)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
-An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
+Hibernated Agents fold under **See all (N more)**, unless the user has clicked its row or its chat is shown, so closing an Agent's Sessions keeps its row in place.
+An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Agent settings**, which opens the Agent's settings in a modal over the current view, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
 The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
 The runtime cannot tell which Sessions need attention, so for that status the browser picks the matches from each page, and filling the next five may take several pages.

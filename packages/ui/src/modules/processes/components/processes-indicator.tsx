@@ -1,14 +1,19 @@
 import { Button } from "@/components/ui/button";
 
 import { WorkingDots } from "../../sessions/components/working-dots.js";
-import { useOpenProcessesSection } from "../hooks/use-open-processes-section.js";
 import { useRunningProcesses } from "../hooks/use-running-processes.js";
 
 const RESTART_PENDING_HINT = "A settings change is waiting";
 
-export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
+/** UNIT_BOUNDARY_DESCRIPTION: the Agent's running count beside the agent menu, as the design draws it; a click shows its processes beside the conversation, through the same toggle as the menu's Processes. */
+export function ProcessesIndicator({
+  agentId,
+  onOpen,
+}: {
+  agentId: string | null;
+  onOpen: () => void;
+}) {
   const summary = useRunningProcesses(agentId);
-  const openSection = useOpenProcessesSection();
   if (!summary) return null;
   const { running, keepingAwake, restartPending } = summary;
 
@@ -18,12 +23,19 @@ export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
       size="sm"
       data-testid="processes-indicator"
       className="text-muted-foreground"
-      onClick={openSection}
+      onClick={onOpen}
     >
-      <WorkingDots size="md" className="working-dots-slow text-success" />
+      <WorkingDots size="md" className="working-dots-slow text-accent" />
       <span>
         {running} running
-        {keepingAwake > 0 && ` · ${keepingAwake} keeping it awake`}
+        {keepingAwake > 0 && (
+          <>
+            {" · "}
+            <span className="text-warning-fg">
+              {keepingAwake} keeping it awake
+            </span>
+          </>
+        )}
       </span>
       {restartPending && (
         <span

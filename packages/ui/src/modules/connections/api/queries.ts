@@ -20,7 +20,7 @@ export function useAppConnections(options?: {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The connections an Agent's page shows. On the
+ * UNIT_BOUNDARY_DESCRIPTION: The connections an Agent's settings show. On the
  * viewer's own agent that is their whole library. On a Shared Agent it is the
  * owner's connections granted to that agent, read on the owner's behalf:
  * all an Agent Editor sees of the owner's library, and never their own.

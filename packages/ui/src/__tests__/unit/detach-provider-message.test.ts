@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   closeDialog: vi.fn(),
-  navigateToSandboxHome: vi.fn(),
+  openAgentSettings: vi.fn(),
 }));
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.mock("../../store.js", () => ({
@@ -57,7 +57,7 @@ it("names all five when there are five", () => {
   expect(html).not.toContain("more");
 });
 
-/** TEST_SCENARIO: the count links to the agent's Schedules page, where every name is; following it closes the dialog without disconnecting. */
+/** TEST_SCENARIO: the count opens the agent's settings on Schedules, where every name is; following it closes the dialog without disconnecting. */
 it("opens the agent's Schedules from the count", () => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -68,10 +68,7 @@ it("opens the agent's Schedules from the count", () => {
   );
   act(() => link?.click());
   expect(state.closeDialog).toHaveBeenCalledWith(false);
-  expect(state.navigateToSandboxHome).toHaveBeenCalledWith(
-    "agent-1",
-    "schedules",
-  );
+  expect(state.openAgentSettings).toHaveBeenCalledWith("agent-1", "schedules");
 });
 
 /** TEST_SCENARIO: turned-off schedules on the provider are not named, but one sentence warns that turning them back on runs them on nothing; with none, the sentence is absent. */

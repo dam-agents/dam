@@ -22,6 +22,7 @@ import { Callout } from "@/components/ui/callout";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useNow } from "../../../hooks/use-now.js";
+import { isMobile } from "../../../lib/breakpoints.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Attachment, Message } from "../../../types.js";
@@ -105,9 +106,11 @@ import {
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { DockedProcessesPanel } from "../../processes/components/docked-processes-panel.js";
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { useToggleProcesses } from "../../processes/hooks/use-toggle-processes.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
@@ -159,10 +162,15 @@ import {
 import { Terminal } from "../components/terminal.js";
 import { ThreadDivider } from "../components/thread-divider.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAgentSettingsModal } from "../hooks/use-agent-settings-modal.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useChatScroll } from "../hooks/use-chat-scroll.js";
+import {
+  type ChatSectionId,
+  useChatSections,
+} from "../hooks/use-chat-sections.js";
 import { useCurveBender } from "../hooks/use-curve-bender.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
@@ -187,6 +195,7 @@ import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
+import { EXAMPLE_PROMPTS } from "../lib/example-prompts.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import { sendPreparation } from "../lib/send-preparation.js";
 import { applySettingChanges } from "../lib/session-settings.js";
@@ -287,11 +296,16 @@ export function ChatView() {
   const dock = useStore((s) => s.dock);
   const openBrowser = useOpenBrowser();
   const closeBrowser = useStore((s) => s.setOpenBrowser);
+  const chatSections = useChatSections();
+  const filesSectionOpen =
+    chatSections.find((x) => x.id === "files")?.open ?? false;
+  const artifactsSectionOpen =
+    chatSections.find((x) => x.id === "artifacts")?.open ?? false;
   const toggleChanges = useToggleChanges();
+  const toggleProcesses = useToggleProcesses();
   const processesEnabled = useProcessesEnabled();
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const hasPendingPermission = useHasPendingPermission();
@@ -418,6 +432,7 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const { openSettings } = useAgentSettingsModal(agentView);
   const dialog = useStore((s) => s.dialog);
   /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
   const providerPromptOpen = providersModal ?? noProviders;
@@ -762,8 +777,11 @@ export function ChatView() {
   const shownDock =
     dock === null
       ? null
-      : dock.kind === "browser" || dock.kind === "changes"
-        ? dock.agentId === selectedAgent
+      : dock.kind === "browser" ||
+          dock.kind === "changes" ||
+          dock.kind === "processes"
+        ? dock.agentId === selectedAgent &&
+          (dock.kind !== "processes" || processesEnabled)
           ? dock
           : null
         : dock.kind === "delegation"
@@ -779,6 +797,7 @@ export function ChatView() {
     processOutput:
       shownDock?.kind === "process-output" && selectedAgent !== null,
     changes: shownDock?.kind === "changes",
+    processes: shownDock?.kind === "processes",
     browser: shownDock?.kind === "browser" && canOpenBrowser,
     delegation: shownDock?.kind === "delegation",
   };
@@ -802,7 +821,7 @@ export function ChatView() {
     setPhoneHiddenDock(null);
     if (classicTab !== null) setSidePanelTab(null);
   };
-  const classicToggle = (item: "browser" | "changes") =>
+  const classicToggle = (item: "browser" | "changes" | "processes") =>
     classicDockToggle({
       docked: docked[item],
       front: dockedTab === item,
@@ -811,10 +830,31 @@ export function ChatView() {
     });
   const browserToggle = classicToggle("browser");
   const changesToggle = classicToggle("changes");
-  const handleConfigureSandbox = useCallback(() => {
+  const processesToggle = classicToggle("processes");
+  /* UNIT_BOUNDARY_DESCRIPTION: the running count and the agent menu's Processes go through the same toggle as the browser and changes: a dock hidden on a phone comes back to view, and opening asks to discard an unsaved draft first. The running count only shows the processes; it never takes them away. */
+  const showProcesses = () => {
     if (!selectedAgent) return;
-    navigateToSandboxHome(selectedAgent);
-  }, [selectedAgent, navigateToSandboxHome]);
+    if (processesToggle.click === "reveal") revealDock();
+    else if (processesToggle.click === "open")
+      void toggleProcesses(selectedAgent);
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: every way into the Agent's settings from its chat — the top bar's name and wrench, a reply's agent name, the empty chat's avatar, the greeting's link, and the model pickers' provider links at the Providers section — opens the same modal over the chat; the modal links to the full page. */
+  const handleConfigureSandbox = useCallback(
+    () => openSettings("setup"),
+    [openSettings],
+  );
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the agent menu's Artifacts and File tree open or close their section beside the conversation; on a phone, where the sections are a screen of their own, they open it there. */
+  const toggleSection = (id: ChatSectionId) => {
+    const section = chatSections.find((x) => x.id === id);
+    if (!section) return;
+    if (isMobile()) {
+      section.setOpen(true);
+      setMobileScreen("files");
+      return;
+    }
+    section.setOpen(!section.open);
+  };
 
   const handleBack = useCallback(() => {
     resetSession();
@@ -851,6 +891,11 @@ export function ChatView() {
         key={`${shownDock.agentId}:${sessionId ?? ""}`}
         agentId={shownDock.agentId}
         sessionId={sessionId}
+      />
+    ) : shownDock?.kind === "processes" ? (
+      <DockedProcessesPanel
+        key={shownDock.agentId}
+        agentId={shownDock.agentId}
       />
     ) : shownDock?.kind === "process-output" && selectedAgent ? (
       <DockedProcessOutputPanel
@@ -955,7 +1000,7 @@ export function ChatView() {
                     <button
                       type="button"
                       onClick={handleConfigureSandbox}
-                      aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                      aria-label={`${selectedAgentName ?? "Agent"} settings`}
                       className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {agentView && (
@@ -1208,6 +1253,10 @@ export function ChatView() {
                   ? greeting.copy.placeholder
                   : null
             }
+            examples={
+              emptyChat && greeting.kind === "none" ? EXAMPLE_PROMPTS : null
+            }
+            onOpenSettings={openSettings}
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)
@@ -1230,6 +1279,7 @@ export function ChatView() {
                       initialFocus={pairPickerFocus ?? undefined}
                       onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
+                      onManageProviders={() => openSettings("providers")}
                     />
                   ) : (
                     <SessionPairPicker
@@ -1310,6 +1360,7 @@ export function ChatView() {
                           void configureSession(change)
                         }
                         onNewSession={() => handleNewSession(true)}
+                        onManageProviders={() => openSettings("providers")}
                       />
                       <SessionPullRequests
                         repositories={currentSession.repositories}
@@ -1321,9 +1372,7 @@ export function ChatView() {
                       size="inline"
                       tone="muted"
                       className="pl-3 text-sm"
-                      onClick={() =>
-                        navigateToSandboxHome(choice.agentId, "providers")
-                      }
+                      onClick={() => openSettings("providers")}
                     >
                       {harnessCurrent?.model
                         ? `${harnessCurrent.model} · Configure defaults`
@@ -1358,33 +1407,63 @@ export function ChatView() {
         identity={
           <ClassicChatIdentity
             agent={agentView}
-            agentId={selectedAgent}
             name={selectedAgentName}
             display={agentDisplay}
-            canOpenBrowser={canOpenBrowser}
-            canShowChanges={changesAvailable}
-            browserOpen={browserToggle.pressed}
-            changesOpen={changesToggle.pressed}
-            onToggleBrowser={() => {
-              if (!selectedAgent) return;
-              if (browserToggle.click === "close") closeBrowser(null);
-              else if (browserToggle.click === "open")
-                void openBrowser(selectedAgent);
-              else revealDock();
+            artifacts={{
+              open: artifactsSectionOpen,
+              onToggle: () => toggleSection("artifacts"),
             }}
-            onToggleChanges={() => {
-              if (!selectedAgent) return;
-              if (changesToggle.click === "close") void toggleChanges(null);
-              else if (changesToggle.click === "open")
-                void toggleChanges(selectedAgent);
-              else revealDock();
+            files={{
+              open: filesSectionOpen,
+              onToggle: () => toggleSection("files"),
             }}
-            onConfigure={handleConfigureSandbox}
+            browser={
+              canOpenBrowser && selectedAgent
+                ? {
+                    open: browserToggle.pressed,
+                    onToggle: () => {
+                      if (browserToggle.click === "close") closeBrowser(null);
+                      else if (browserToggle.click === "open")
+                        void openBrowser(selectedAgent);
+                      else revealDock();
+                    },
+                  }
+                : null
+            }
+            processes={
+              processesEnabled && selectedAgent
+                ? {
+                    open: processesToggle.pressed,
+                    onToggle: () => {
+                      if (processesToggle.click === "close")
+                        void toggleProcesses(null);
+                      else showProcesses();
+                    },
+                  }
+                : null
+            }
+            changes={
+              changesAvailable && selectedAgent
+                ? () => {
+                    if (changesToggle.click === "close")
+                      void toggleChanges(null);
+                    else if (changesToggle.click === "open")
+                      void toggleChanges(selectedAgent);
+                    else revealDock();
+                  }
+                : null
+            }
+            onOpenSettings={openSettings}
           />
         }
         status={
           <>
-            {processesEnabled && <ProcessesIndicator agentId={selectedAgent} />}
+            {processesEnabled && (
+              <ProcessesIndicator
+                agentId={selectedAgent}
+                onOpen={showProcesses}
+              />
+            )}
             <ChatHeaderStatus
               selectedAgent={selectedAgent}
               agent={agentView}
@@ -1393,16 +1472,16 @@ export function ChatView() {
               sessionId={sessionId}
               processesEnabled={processesEnabled}
             />
-            <SidePanelTabButtons
-              tabs={appSidePanelTabs(hiddenTabs)}
-              active={classicTab}
-              onSelect={(tab) =>
-                setSidePanelTab(tab === classicTab ? null : tab)
-              }
-              placement="top-bar"
-              {...appTabs}
-            />
           </>
+        }
+        activity={
+          <SidePanelTabButtons
+            tabs={appSidePanelTabs(hiddenTabs)}
+            active={classicTab}
+            onSelect={(tab) => setSidePanelTab(tab === classicTab ? null : tab)}
+            placement="top-bar"
+            {...appTabs}
+          />
         }
         notices={notices}
         agentId={selectedAgent}

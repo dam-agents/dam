@@ -82,13 +82,14 @@ The runtime scans every few seconds while someone watches, every quarter minute 
 The user's decisions — the keep switch and Stop — go through the same surface.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 The chat view shows the inventory behind the `processes` [experimental feature](features.md).
-It is a Processes section beside Files and Artifacts, in the column beside the conversation, and a row's output opens in the panel docked beside the conversation, the way a file does.
+On a desktop it is a panel docked beside the conversation, opened from the agent menu's *Processes* or the running count, like the browser and the changes; a row's output opens in the same dock, the way a file does, and its Back returns to the processes.
+A phone keeps it as a Processes section in its sections screen, with Files and Artifacts.
 Either way the output follows the file while the process runs.
 Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation.
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which says in one line what the row does, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
-An indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section or the tab — so a user who wonders why the agent stays awake finds the answer one click away.
-Without either experiment it sits in the chat's top bar, which has the room; with one on, the side panel's icon bar carries it on the Processes icon wherever that bar is drawn, and a phone keeps it in the top bar until a panel opens; either way the count turns from grey to accent blue while a process keeps the agent awake.
+An indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and shows the docked processes — so a user who wonders why the agent stays awake finds the answer one click away.
+It sits beside the agent menu in the chat's header, as the chat refresh design draws it: accent dots, with the count keeping the agent awake in the warning colour.
 The list and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the list says the agent can't be reached; while the agent does not run, neither shows it.
 
 ## Keeping work

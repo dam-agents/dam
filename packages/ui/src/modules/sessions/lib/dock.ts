@@ -5,6 +5,7 @@ export type Dock =
   | { kind: "artifact"; id: string }
   | { kind: "browser"; agentId: string }
   | { kind: "changes"; agentId: string }
+  | { kind: "processes"; agentId: string }
   | { kind: "process-output"; key: string }
   | { kind: "delegation"; driverAgentId: string; id: string };
 
@@ -20,6 +21,8 @@ export function dockKey(dock: Dock | null): string | null {
       return `browser:${dock.agentId}`;
     case "changes":
       return `changes:${dock.agentId}`;
+    case "processes":
+      return `processes:${dock.agentId}`;
     case "process-output":
       return `process-output:${dock.key}`;
     case "delegation":
@@ -33,6 +36,7 @@ export const dockTab: Record<Dock["kind"], SidePanelTab> = {
   artifact: "artifacts",
   browser: "browser",
   changes: "changes",
+  processes: "processes",
   "process-output": "processes",
   delegation: "delegation",
 };

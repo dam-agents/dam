@@ -10,7 +10,6 @@ const TITLES: Partial<Record<View, string>> = {
   artifacts: "Artifacts",
   "starter-kits": "Starter kits",
   "starter-kit": "Starter kits",
-  "sandbox-home": "Configure agent",
 };
 
 export function AppTopBar({ actions }: { actions: ReactNode }) {

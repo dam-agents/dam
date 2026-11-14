@@ -52,7 +52,12 @@ export function ProcessesPanel({
   );
 }
 
-function ProcessesSectionBody({
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Agent's processes list with the notices it
+ * shows while the Agent is stopped, unreachable or loading, shared by the
+ * Processes section and the docked Processes panel.
+ */
+export function ProcessesSectionBody({
   agentId,
   reach,
   data,

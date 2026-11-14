@@ -33,8 +33,7 @@ import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { ProviderOutageBanner } from "./modules/provider-status/components/provider-outage-banner.js";
-import { SECTIONS } from "./modules/sandboxes/components/sandbox-section-nav.js";
-import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import { AgentSettingsHost } from "./modules/sandboxes/components/agent-settings-host.js";
 import { useAgentSession } from "./modules/sessions/api/queries.js";
 import {
   AppSidePanelButtons,
@@ -55,10 +54,7 @@ import { useStore } from "./store.js";
 function useDocumentTitle() {
   const view = useStore((s) => s.view);
   const settingsTab = useStore((s) => s.settingsTab);
-  const sandboxSection = useStore((s) => s.sandboxSection);
-  const agentId = useStore((s) =>
-    s.view === "chat" ? s.selectedAgent : s.agentId,
-  );
+  const agentId = useStore((s) => (s.view === "chat" ? s.selectedAgent : null));
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
@@ -70,12 +66,7 @@ function useDocumentTitle() {
   const kit = useStarterKit(kitCatalog, kitId).data;
   const artifact = useArtifact(pageArtifactId).data;
   const title = documentTitle(
-    {
-      view,
-      settingsTab,
-      sandboxSectionTitle: SECTIONS.find((e) => e.section === sandboxSection)
-        ?.title,
-    },
+    { view, settingsTab },
     {
       agent: agent?.name,
       session: session?.title,
@@ -224,6 +215,7 @@ function MainApp() {
         {kitBrowserOpen && <BrowseKitsModal />}
         <MobileNavDrawer />
         <SignInFollowUp />
+        <AgentSettingsHost />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -252,15 +244,13 @@ function MainApp() {
                   view === "starter-kits" ||
                   view === "artifacts"
                   ? "max-w-[1200px]"
-                  : view === "settings" || view === "sandbox-home"
+                  : view === "settings"
                     ? "max-w-[1040px]"
                     : "max-w-[960px]",
               )}
             >
               <ProviderOutageBanner className="mb-6" />
-              {view === "sandbox-home" ? (
-                <SandboxHomeView />
-              ) : view === "home" || view === "starter-kit" ? (
+              {view === "home" || view === "starter-kit" ? (
                 <>
                   <HomeView />
                   {view === "starter-kit" && <StarterKitDetailView />}
@@ -282,6 +272,7 @@ function MainApp() {
       <ClassicPagePanels />
       <MobileNavDrawer />
       <SignInFollowUp />
+      <AgentSettingsHost />
       <DialogOverlay />
       <ConnectionBanner />
     </div>

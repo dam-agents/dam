@@ -4,7 +4,7 @@
 
 Given the owner signed in, with a new agent made from a Claude Code template, a model connection, and a GitHub connection made with the sandbox token, and the owner's Slack account linked to the test person
 When they pick the sandbox Slack channel by name and connect the agent to it
-Then the agent's page shows the GitHub connection and the Slack channel as connected
+Then the agent's settings show the GitHub connection and the Slack channel as connected
 
 ## AC-2 — the agent answers in the thread with the new pull request
 

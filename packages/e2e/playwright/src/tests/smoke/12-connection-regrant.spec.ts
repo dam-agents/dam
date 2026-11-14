@@ -59,8 +59,9 @@ test("recreating a disconnected connection regrants cleanly", async ({
 
   await test.step("open the sandbox connections page", async () => {
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
+    // TEST_SCENARIO: the old agent link opens the agent's chat with its settings dialog on Connections.
     await expect(
-      page.getByRole("heading", { level: 2, name: agentName }),
+      page.getByRole("dialog", { name: `${agentName} settings` }),
     ).toBeVisible();
     await expect(
       page.getByTestId(`catalog-connection-${originalId}`),

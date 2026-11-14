@@ -62,7 +62,7 @@ export function useApprovalActions(
   const showConfirm = useStore((s) => s.showConfirm);
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const restart = useEgressApprovalRestart(row);
 
   const inflight =
@@ -325,6 +325,6 @@ export function useApprovalActions(
       row.status === "expired" && row.type === "ext_authz"
         ? "The original request already failed. Always allow writes a rule that future retries match."
         : null,
-    openSettings: () => navigateToSandboxHome(row.agentId, "network"),
+    openSettings: () => openAgentSettings(row.agentId, "network"),
   };
 }

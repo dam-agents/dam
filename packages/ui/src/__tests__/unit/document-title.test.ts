@@ -34,20 +34,6 @@ describe("documentTitle", () => {
     ).toBe("Jeeves · Brand");
   });
 
-  test("names an agent config section under the agent", () => {
-    expect(
-      documentTitle(
-        {
-          ...base,
-          view: "sandbox-home",
-          sandboxSectionTitle: "Network access",
-        },
-        { agent: "Jeeves" },
-        "Brand",
-      ),
-    ).toBe("Network access · Jeeves · Brand");
-  });
-
   test("names Home", () => {
     expect(documentTitle({ ...base, view: "home" }, {}, "Brand")).toBe(
       "Home · Brand",

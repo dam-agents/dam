@@ -164,7 +164,7 @@ for (const [path, names] of [
   ["../../modules/sessions/components/thread-divider.js", ["ThreadDivider"]],
   [
     "../../modules/sessions/components/classic-chat-identity.js",
-    ["ClassicChatIdentity"],
+    ["ClassicChatIdentity", "ClassicChatToolbar"],
   ],
 ] as const)
   components.set(path, [...names]);

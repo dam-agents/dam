@@ -44,6 +44,10 @@ import {
   type ProcessesSlice,
 } from "./modules/processes/store.js";
 import {
+  type AgentSettingsSlice,
+  createAgentSettingsSlice,
+} from "./modules/sandboxes/store.js";
+import {
   claimDraftsFor,
   flushDraftsOnHide,
   onForeignDraftChange,
@@ -79,6 +83,7 @@ export type PlatformStore = DialogSlice &
   ProcessesSlice &
   SidePanelSlice &
   SpendSlice &
+  AgentSettingsSlice &
   OwnerQuestionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -98,6 +103,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createSidePanelSlice(...a),
   ...createSpendSlice(...a),
+  ...createAgentSettingsSlice(...a),
   ...createOwnerQuestionsSlice(...a),
 }));
 
