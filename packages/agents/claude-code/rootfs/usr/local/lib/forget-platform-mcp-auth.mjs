@@ -5,10 +5,10 @@
  * platform's own MCP server with a 403, and every session for the next 15
  * minutes then runs without the platform's tools — schedules, artifacts,
  * sub-agents, channel messaging — while the agent tells the user to authorise a
- * server the platform provides. So each session drops the platform's servers
- * from that cache before it connects them. A server of the agent's own stays: a
- * person may have signed it in, and a connector cannot be signed in to from
- * the machine at all.
+ * server the platform provides. So a process drops the platform's servers from
+ * that cache before Claude Code starts and reads it. A server of the agent's
+ * own stays: a person may have signed it in, and a connector cannot be signed
+ * in to from the machine at all.
  */
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

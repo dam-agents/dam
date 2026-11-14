@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Test that a Claude process forgets the platform's own MCP servers in the needs-auth cache before Claude Code reads it, and only those"
-//MISE sources=["claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/claude-forget-mcp-auth"]
+//MISE sources=["claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", "packages/api-server-api/src/modules/shared.ts", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/claude-forget-mcp-auth"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -15,6 +15,15 @@ const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/
 for (const surface of ["harness-chat", "harness-terminal"]) {
   const text = readFileSync(new URL(`../../../claude-code/rootfs/usr/local/bin/${surface}`, import.meta.url), "utf8");
   assert.match(text, /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/, surface);
+}
+
+// TEST_SCENARIO: the servers this drops are the platform's own, named once in api-server-api; a rename there must reach this script.
+const shared = readFileSync(new URL("../../../../../packages/api-server-api/src/modules/shared.ts", import.meta.url), "utf8");
+const scriptText = readFileSync(script, "utf8");
+for (const constant of ["PLATFORM_OUTBOUND_MCP_SERVER", "KB_AGGREGATE_MCP_SERVER"]) {
+  const name = new RegExp(`export const ${constant} = "([^"]+)"`).exec(shared)?.[1];
+  assert.ok(name, constant);
+  assert.match(scriptText, new RegExp(`"${name}"`), `${constant} = ${name}`);
 }
 
 const run = (content) => {
