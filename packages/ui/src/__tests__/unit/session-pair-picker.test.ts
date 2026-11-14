@@ -327,6 +327,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "claude-code",
           displayName: "Claude Code",
+          description: "Anthropic's coding agent",
           providers: ["ibm-litellm", "curve-bender", "anthropic", "bedrock"],
         },
         {
@@ -738,6 +739,14 @@ describe("the new session panel", () => {
         provider: "curve",
         model: "cb/rits/zai-org/glm-5-3",
       }),
+    );
+  });
+
+  /** TEST_SCENARIO: the Harness menu says what each harness is, so a person picking between six names has a sentence to go on (QA: "Harness" was the first field of every picker with no hint what any of the names means). */
+  it("describes each harness in the harness menu", () => {
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    expect(openMenu(node, "Harness").textContent).toContain(
+      "Anthropic's coding agent",
     );
   });
 
