@@ -91,7 +91,7 @@ it("TEST_SCENARIO: the Getting started artifact task on Home hands the newest Ag
   await start!("create-artifact");
   expect(fake.appendNewSessionDraft).toHaveBeenCalledWith(
     "a1",
-    expect.stringContaining("Make me a one-page document about"),
+    expect.stringContaining("Make me a one-page artifact about"),
   );
   expect(fake.setView).not.toHaveBeenCalled();
   expect(fake.setSidePanelTab).not.toHaveBeenCalled();

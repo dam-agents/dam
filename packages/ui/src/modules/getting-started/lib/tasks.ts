@@ -26,4 +26,4 @@ export const FIRST_MESSAGE_PREFILL = "Hello! What can you help me with?";
 
 export const SCHEDULE_PREFILL = "Every Friday at 9am, ";
 
-export const ARTIFACT_PREFILL = "Make me a one-page document about ";
+export const ARTIFACT_PREFILL = "Make me a one-page artifact about ";
