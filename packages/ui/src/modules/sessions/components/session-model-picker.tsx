@@ -155,8 +155,9 @@ export function SessionModelPicker({
   const connectOnPick = useConnectOnPick(agentId);
   const { attach } = useProfileAttach(agentId);
   const [older, setOlder] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the panel opens on the fields while the profile in use is the only one there is, since a list of one is a screen the user has nothing to choose on; two profiles or more open on their list, which is what the picker is for then. */
   const [view, setView] = useState<"custom" | "profiles">(() =>
-    profiles.length > 0 && selectedProfileId ? "profiles" : "custom",
+    profiles.length > 1 && selectedProfileId ? "profiles" : "custom",
   );
   const [more, setMore] = useState<boolean | null>(null);
   const pair = pairProp;

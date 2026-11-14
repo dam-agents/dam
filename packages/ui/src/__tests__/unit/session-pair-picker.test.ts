@@ -633,6 +633,32 @@ describe("the new session panel", () => {
     expect(document.activeElement).toBe(curve);
   });
 
+  /** TEST_SCENARIO: the panel opens on the fields while the profile in use is the only profile there is (QA: every new agent runs on the one profile "Default", so the chip and "Use a different provider" opened a list with one entry, and the provider choice was one hop further). */
+  it("opens on the fields while one profile is the only one", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    profilesState = [profile()];
+    const node = mount(picker());
+    expect(node.textContent).not.toContain("Saved profiles");
+    expect(node.textContent).toContain("Using profile");
+    expect(menuTrigger(node, "harness")).toBeDefined();
+  });
+
+  /** TEST_SCENARIO: once there are two profiles to choose between, the panel opens on their list, which is what a picker following a profile is for then. */
+  it("opens on the saved profiles once there are two", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    profilesState = [profile(), profile({ id: "p2", name: "Second" })];
+    const node = mount(picker());
+    expect(node.textContent).toContain("Saved profiles");
+  });
+
   /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
   it("picks a provider once, and never a greyed one", () => {
     state.chosen = {
@@ -934,7 +960,7 @@ describe("the new session panel", () => {
     );
   });
 
-  /** TEST_SCENARIO: Save as a profile sits in the More options header, and a pick that came from a profile offers to update it there. */
+  /** TEST_SCENARIO: Save as a profile sits in the More options header. */
   it("offers Save as a profile in the More options header", () => {
     const collapsed = renderToStaticMarkup(picker());
     expect(collapsed).not.toContain("Save as profile");
@@ -947,21 +973,22 @@ describe("the new session panel", () => {
     const node = mount(picker());
     openMore(node);
     expect(node.textContent).toContain("Save as profile");
+  });
 
+  /** TEST_SCENARIO: a pick that came from a profile offers to update it, not only to save a new one. */
+  it("offers to update the profile a pick came from", () => {
     profilesState = [profile()];
     state.chosen = {
       harness: "pi",
-      provider: "curve",
-      model: "cb/rits/zai-org/glm-5-3",
+      provider: "ibm",
+      model: "ibm/azure/gpt-5.5",
     };
-    act(() => root!.unmount());
-    root = null;
-    container.remove();
-    const picked = mount(picker());
-    profileRow(picked, "Fast review");
-    click(picked, "Back to custom");
-    openMore(picked);
-    expect(picked.textContent).toContain("Save as a new profile");
+    const node = mount(picker());
+    click(node, "Use a profile");
+    profileRow(node, "Fast review");
+    click(node, "Back to custom");
+    openMore(node);
+    expect(node.textContent).toContain("Save as a new profile");
   });
 
   /** TEST_SCENARIO: a harness picked without a model clears it, and the pair waits for a model there instead of saving a chat default the server would refuse. */
@@ -1076,6 +1103,7 @@ describe("the saved profiles behind Use a profile", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     click(node, "Edit profile");
     expect(state.navigateSettings).toHaveBeenCalledWith("profiles", {
       profileId: "p1",
@@ -1093,6 +1121,7 @@ describe("the saved profiles behind Use a profile", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     act(() =>
       [...node.querySelectorAll<HTMLElement>("button")]
         .find((b) => b.textContent?.includes("Back to custom"))
@@ -1168,7 +1197,6 @@ describe("the saved profiles behind Use a profile", () => {
       model: "cb/rits/zai-org/glm-5-3",
     };
     const node = mount(picker());
-    click(node, "Back to custom");
     expect(node.textContent).toContain("Using profile “Deep review”");
     act(() =>
       [...node.querySelectorAll<HTMLElement>("button")]
@@ -1581,7 +1609,6 @@ describe("a pick that follows a default", () => {
         target: targetOf({ slots: { ...emptySlots, profileId: "p1" } }),
       }),
     );
-    click(node, "Back to custom");
     expect(providerRow(node)?.textContent).toBe("Shared");
   });
 
@@ -1935,6 +1962,7 @@ describe("an open session's picker", () => {
       }),
     ];
     const node = mount(session({ model: "ibm/aws/claude-opus-5-5" }));
+    click(node, "Using profile");
     profileRow(node, "Fast review");
     click(node, "Back to custom");
     openMore(node);
@@ -2127,7 +2155,6 @@ describe("the slots a pick stores", () => {
       settings: { mode: "high" },
     };
     const node = mount(picker());
-    click(node, "Back to custom");
     openMore(node);
     pickMenu(node, "Subagent model", "Claude Opus 5.5");
     const [, , , , references] = lastCall(state.remember);
@@ -2164,7 +2191,6 @@ describe("the subagent a page inherits from its profile", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
-    click(node, "Back to custom");
     expect(node.textContent).toContain("Subagents");
     expect(menuTrigger(node, "subagent-model")).toContain("GLM 5.3");
     pickMenu(node, "Model", "Claude Haiku 5.5");
@@ -2188,6 +2214,7 @@ describe("the subagent a page inherits from its profile", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
+    click(node, "Using profile");
     profileRow(node, "Deep review");
     click(node, "Back to custom");
     click(node, "Save as a new profile");
@@ -2327,6 +2354,7 @@ describe("the profiles view", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     expect(node.textContent).toContain("Saved profiles");
     expect(node.textContent).not.toContain("More options");
     expect(node.querySelector('[id$="-model"]')).toBeNull();
@@ -2395,7 +2423,6 @@ describe("references kept apart from effective values", () => {
       settings: { mode: "high" },
     };
     const first = mount(picker());
-    click(first, "Back to custom");
     pickMenu(first, "Model", "Claude Haiku 5.5");
     const [, customPair, , , customReferences] = lastCall(state.remember);
     expect(customPair.model).toBe("ibm/aws/claude-haiku-5-5");
@@ -2427,7 +2454,6 @@ describe("references kept apart from effective values", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
-    click(node, "Back to custom");
     pickMenu(node, "Subagent model", "Same as agent");
     const [stored, references, effective] = lastCall(target.onChoose);
     expect(stored.settings?.["platformSubagent.model"]).toBeUndefined();
