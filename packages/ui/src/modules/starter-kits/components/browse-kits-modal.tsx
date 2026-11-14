@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 
+import { HARNESS_ICONS, HARNESS_ORDER } from "@/components/harness-icons";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
@@ -119,6 +121,25 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
                   <p className="flex-1 text-sm text-muted-foreground">
                     {DEFAULT_KIT.text}
                   </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {HARNESS_ORDER.map((harness) => {
+                      const { Icon, label, fg } = HARNESS_ICONS[harness];
+                      return (
+                        <Badge
+                          key={harness}
+                          variant="muted"
+                          size="sm"
+                          className="gap-1.5"
+                        >
+                          <Icon
+                            aria-hidden="true"
+                            className={`size-3.5 ${fg}`}
+                          />
+                          {label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
                 </button>
               )}
               {shown.map((kit) => (
