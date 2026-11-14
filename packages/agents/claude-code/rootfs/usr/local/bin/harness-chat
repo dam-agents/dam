@@ -10,10 +10,10 @@ export CLAUDE_CODE_HARBOR_KITE=0
 # the shim sets; the bundle finds the native CLI only where it is named.
 modules=$(dirname "$(dirname "$(command -v claude-agent-acp)")")
 export NODE_PATH="$modules:$modules/.mise/node_modules"
-export CLAUDE_CODE_EXECUTABLE="$modules/.bin/claude"
-# Claude Code reads its MCP needs-auth cache once per process and skips a
-# cached server for 15 minutes, so one mesh blip would cost every session of
-# this process the platform's tools; harness-terminal does the same.
-node /usr/local/lib/forget-platform-mcp-auth.mjs
+# Each session's `claude` runs from harness-claude, which drops the platform's
+# servers from Claude Code's MCP needs-auth cache before that process reads it;
+# harness-terminal does the same for the terminal's claude.
+export PLATFORM_CLAUDE_CLI="$modules/.bin/claude"
+export CLAUDE_CODE_EXECUTABLE=/usr/local/bin/harness-claude
 exec node --import /usr/local/lib/sync-claude-settings.mjs \
 	/usr/local/lib/harness/claude-code/adapter/index.js "$@"

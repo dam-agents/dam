@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Test that a Claude process forgets the platform's own MCP servers in the needs-auth cache before Claude Code reads it, and only those"
-//MISE sources=["claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", "packages/api-server-api/src/modules/shared.ts", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/claude-forget-mcp-auth"]
+//MISE sources=["claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", "packages/api-server-api/src/modules/shared.ts", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", "claude-code/rootfs/usr/local/bin/harness-claude", ".mise/tasks/test/claude-forget-mcp-auth"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -11,11 +11,13 @@ import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/forget-platform-mcp-auth.mjs", import.meta.url));
 
-// TEST_SCENARIO: Claude Code reads the cache once per process, so a session cannot forget an entry: both harness processes run this before Claude Code starts.
-for (const surface of ["harness-chat", "harness-terminal"]) {
-  const text = readFileSync(new URL(`../../../claude-code/rootfs/usr/local/bin/${surface}`, import.meta.url), "utf8");
-  assert.match(text, /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/, surface);
-}
+// TEST_SCENARIO: Claude Code reads the cache once per process, so a session cannot forget an entry: each `claude` the adapter starts goes through harness-claude, and the terminal's claude prunes for itself.
+const bin = (name) => readFileSync(new URL(`../../../claude-code/rootfs/usr/local/bin/${name}`, import.meta.url), "utf8");
+assert.match(bin("harness-chat"), /\nexport CLAUDE_CODE_EXECUTABLE=\/usr\/local\/bin\/harness-claude\n/);
+assert.match(bin("harness-chat"), /\nexport PLATFORM_CLAUDE_CLI="\$modules\/\.bin\/claude"\n/);
+assert.match(bin("harness-claude"), /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/);
+assert.match(bin("harness-claude"), /\nexec "\$\{PLATFORM_CLAUDE_CLI:-claude\}" "\$@"\n/);
+assert.match(bin("harness-terminal"), /\nnode \/usr\/local\/lib\/forget-platform-mcp-auth\.mjs\n/);
 
 // TEST_SCENARIO: the servers this drops are the platform's own, named once in api-server-api; a rename there must reach this script.
 const shared = readFileSync(new URL("../../../../../packages/api-server-api/src/modules/shared.ts", import.meta.url), "utf8");
@@ -64,6 +66,33 @@ const run = (content) => {
 for (const content of ["{not json", '{"my-connector":{"timestamp":1}}']) {
   const { text } = run(content);
   assert.equal(text, content);
+}
+
+// TEST_SCENARIO: harness-claude is what every session's `claude` runs as: it prunes the cache and then runs the CLI with the same arguments.
+{
+  const home = mkdtempSync(join(tmpdir(), "harness-claude-"));
+  try {
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    const cache = join(home, ".claude", "mcp-needs-auth-cache.json");
+    writeFileSync(cache, '{"platform-outbound":{"timestamp":1},"mine":{"timestamp":2}}');
+    const fake = join(home, "claude");
+    writeFileSync(fake, '#!/bin/sh\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n', { mode: 0o755 });
+    const wrapper = join(home, "harness-claude");
+    writeFileSync(
+      wrapper,
+      bin("harness-claude").replaceAll("/usr/local/lib/forget-platform-mcp-auth.mjs", script),
+      { mode: 0o755 },
+    );
+    const r = spawnSync("/bin/sh", [wrapper, "--resume", "abc"], {
+      env: { PATH: process.env.PATH, HOME: home, PLATFORM_CLAUDE_CLI: fake },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(cache, "utf8")), { mine: { timestamp: 2 } });
+    assert.deepEqual(readFileSync(join(home, "claude-args"), "utf8").trim().split("\n"), ["--resume", "abc"]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 console.log("claude-forget-mcp-auth: ok");
