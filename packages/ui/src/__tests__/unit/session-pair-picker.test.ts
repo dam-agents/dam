@@ -335,6 +335,11 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
           displayName: "Codex",
           providers: ["ibm-litellm", "curve-bender", "openai"],
         },
+        {
+          name: "hermes",
+          displayName: "Hermes",
+          providers: ["ibm-litellm", "curve-bender", "openai"],
+        },
       ],
     },
   }),
@@ -1257,6 +1262,22 @@ describe("the saved profiles behind Use a profile", () => {
       profileId: "p1",
       platformSubagentProfileId: null,
     });
+  });
+
+  /** TEST_SCENARIO: a profile whose harness this agent cannot offer is refused with the reason, and picking it changes nothing (QA: a Hermes profile, with the Hermes feature off, was offered in a Codex agent's chip, and picking it silently ran the agent on Pi). */
+  it("refuses a profile whose harness this agent cannot run", () => {
+    profilesState = [profile({ harness: "hermes", name: "qa-hermes" })];
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    click(node, "Use a profile");
+    expect(node.textContent).toContain("Hermes isn't available for this agent");
+    const row = [...node.querySelectorAll<HTMLButtonElement>("li button")].find(
+      (b) => b.textContent?.includes("qa-hermes"),
+    );
+    expect(row).toBeDefined();
+    expect(row!.disabled).toBe(true);
+    act(() => row!.click());
+    expect(state.remember).not.toHaveBeenCalled();
+    expect(state.chosenModel).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: a profile that cannot run here stays listed, disabled, with its reason and the one action that fixes it. */

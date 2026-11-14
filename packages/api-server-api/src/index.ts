@@ -542,6 +542,7 @@ export {
 export {
   FEATURES_ON_BY_DEFAULT,
   featureOnForUser,
+  hiddenHarnessesFor,
 } from "./modules/features/modes.js";
 export type {
   AssistantFirstResult,

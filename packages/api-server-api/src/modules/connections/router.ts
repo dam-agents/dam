@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type { ApiContext } from "../../context.js";
 import { t } from "../../trpc.js";
+import { hiddenHarnessesFor } from "../features/modes.js";
 import {
   agentPermission,
   agentTarget,
@@ -59,7 +60,14 @@ export const connectionsRouter = t.router({
 
   catalog: readCredentialsProcedure
     .use(requireWildcardBinding)
-    .query(({ ctx }) => ctx.connections.modelCatalog()),
+    .query(async ({ ctx }) => {
+      const catalog = await ctx.connections.modelCatalog();
+      const hidden = hiddenHarnessesFor(await ctx.features.flags());
+      return {
+        ...catalog,
+        harnesses: catalog.harnesses.filter((h) => !hidden.has(h.name)),
+      };
+    }),
 
   /* UNIT_BOUNDARY_DESCRIPTION: an agent's model catalog: its granted providers, and with `unattached` every provider its owner holds, which a pick then connects. Only an unrestricted principal sees the unattached ones; an Agent Editor's and a bound key's context is bound to the agent, so they see its grants alone. */
   agentCatalog: readAgentProcedure

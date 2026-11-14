@@ -571,11 +571,26 @@ export function SessionModelPicker({
       ? undefined
       : (option?.choices.find((c) => c.value === value)?.name ?? value);
   const onProfiles = view === "profiles" && profiles.length > 0;
+  /* UNIT_BOUNDARY_DESCRIPTION: what a profile answers this picker: the owner catalog's own availability, unless its harness is one this picker cannot offer at all — one the agent does not carry, or one its owner's feature leaves out — which no Connection fixes, and which stays listed and refused rather than being picked into a pair that cannot run. */
+  const availabilityOf = (profile: ProfileWithUsage) => {
+    const availability = profile.availability ?? {
+      available: true,
+      reason: null,
+      attachable: false,
+    };
+    if (harnesses.includes(profile.harness)) return availability;
+    return {
+      available: false,
+      reason: `${harnessDisplayName(profile.harness, views) ?? profile.harness} isn't available for this agent`,
+      attachable: false,
+    };
+  };
   const fitProfiles = sortProfiles(
     profiles.filter(
       (profile) =>
         (profileHarness === undefined || profile.harness === profileHarness) &&
-        (profile.availability?.available ?? true),
+        (!harnesses.includes(profile.harness) ||
+          (profile.availability?.available ?? true)),
     ),
   );
 
@@ -977,11 +992,7 @@ export function SessionModelPicker({
           <ul className="flex flex-col">
             {fitProfiles.map((profile) => {
               const selected = profile.id === selectedProfileId;
-              const availability = profile.availability ?? {
-                available: true,
-                reason: null,
-                attachable: false,
-              };
+              const availability = availabilityOf(profile);
               return (
                 <li
                   key={profile.id}
@@ -1011,13 +1022,15 @@ export function SessionModelPicker({
                       <span className="min-w-0 whitespace-normal">
                         {availability.reason ?? "This profile cannot run here."}
                       </span>
-                      <button
-                        type="button"
-                        onClick={onManageProviders}
-                        className="shrink-0 text-accent underline-offset-2 hover:underline"
-                      >
-                        Configure providers
-                      </button>
+                      {availability.attachable && (
+                        <button
+                          type="button"
+                          onClick={onManageProviders}
+                          className="shrink-0 text-accent underline-offset-2 hover:underline"
+                        >
+                          Configure providers
+                        </button>
+                      )}
                     </div>
                   )}
                   {selected && (
