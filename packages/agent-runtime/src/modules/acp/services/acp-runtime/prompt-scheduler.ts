@@ -21,7 +21,8 @@ export type SteerNowFate = "sent" | "not-queued" | "cannot-steer";
 
 export type SteerOutcome = "injected" | "refused";
 
-export type QueueDropCause = "session-forgotten" | "scheduler-cleared";
+export type QueueDropCause =
+  "session-forgotten" | "scheduler-cleared" | "harness-refused";
 
 export type SteerOnlyAnswer =
   "injected" | "noRunningTurn" | "notYourTurn" | "queueFull";
@@ -215,12 +216,14 @@ export interface PromptSchedulerDeps {
  * when its viewer leaves, so a person who opens another session while their
  * message waits finds the answer when they come back. Every route a queue can
  * leave by — the session being forgotten, the scheduler being cleared when
- * the harness goes down — announces it over onQueueDropped with the cause, so
- * a queue cannot be discarded anywhere without its prompts being written down
- * first. Nothing outside this module ever removes a queue itself. refuseQueue
- * is the one exception and answers each sender with an error instead, so the
- * loss is reported to the client that is still there to hear it rather than
- * recorded.
+ * the harness goes down, the harness refusing the session's settings —
+ * announces it over onQueueDropped with the cause, so a queue cannot be
+ * discarded anywhere without its prompts being written down first. Nothing
+ * outside this module ever removes a queue itself. refuseQueue answers each
+ * sender with an error too, so the reason reaches the client that is still
+ * there to hear it, and writes the prompts down all the same: the session a
+ * refused prompt started in is often removed as never stored, and the record
+ * is what brings the text back.
  * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it applies to the session's next turn, so it waits for
  * the turn in flight to end and for the session to be loaded back into the
@@ -840,8 +843,10 @@ export function createPromptScheduler(
       if (queue === undefined) return;
       queues.delete(sessionId);
       deps.onQueueChanged?.(sessionId);
-      for (const entry of answerSteerOnly(queue, "noRunningTurn"))
-        refuse(entry, message);
+      const dropped = answerSteerOnly(queue, "noRunningTurn");
+      if (dropped.length === 0) return;
+      for (const entry of dropped) refuse(entry, message);
+      deps.onQueueDropped(sessionId, dropped, "harness-refused");
     },
 
     update(sessionId, promptId, edit) {
