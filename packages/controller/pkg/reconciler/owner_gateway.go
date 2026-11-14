@@ -1473,8 +1473,14 @@ func (r *AgentReconciler) cutOverToOwnerGateway(ctx context.Context, owner strin
 			if err != nil {
 				return err
 			}
+			// UNIT_BOUNDARY_DESCRIPTION: the move carries over whether the agent's own gateway was up, since its reconcile records only a wake: a moved agent with no record would read as asleep, and a turn running past the idle timeout would lose its machine.
+			awake, err := r.pairAwake(ctx, name)
+			if err != nil {
+				return err
+			}
 			moved := retargetedGatewayService(svc, owner, m.slot)
 			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annOwnerGatewayServed, "true")
+			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annDesiredUp, strconv.FormatBool(awake))
 			_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, moved, metav1.UpdateOptions{})
 			return err
 		}); err != nil {

@@ -458,8 +458,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	served = served && ownerGatewayOn
 	applyGateway := func() error {
 		if served {
-			if err := recordDesiredUp(ctx, r.client, r.config.Namespace, name, running && !hardStop); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("recording whether the agent should run: %v", err))
+			// UNIT_BOUNDARY_DESCRIPTION: only a wake is recorded here. The record is the replica count an own gateway would carry, and applyStatefulSet never scales that count down for a lapsed idle timeout: the idle checker, which also asks agent-runtime whether a turn is running, records the agent down, and a park, a reclaim and a hard stop record it down through scaleAgentPairToZero. Writing false here would stop a working machine on its activity stamp alone.
+			if running && !hardStop {
+				if err := recordDesiredUp(ctx, r.client, r.config.Namespace, name, true); err != nil {
+					return r.setError(ctx, name, fmt.Sprintf("recording whether the agent should run: %v", err))
+				}
 			}
 			if moved {
 				r.deleteOwnGateway(ctx, name)

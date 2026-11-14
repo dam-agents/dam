@@ -348,6 +348,15 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	t.Helper()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
+	serveOwnerGateway(t, r, agent)
+	svc, err := r.client.CoreV1().Services("test-agents").Get(context.Background(), GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "true", svc.Annotations[annOwnerGatewayServed])
+	return r, node, agent
+}
+
+func serveOwnerGateway(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+	t.Helper()
 	r.config.VM.Gateway.PerOwner = true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		rev, _ := r.ownerGatewayRevisions.Load("my-agent")
@@ -368,10 +377,6 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	for range 3 {
 		require.NoError(t, r.Reconcile(context.Background(), agent))
 	}
-	svc, err := r.client.CoreV1().Services("test-agents").Get(context.Background(), GatewayName("my-agent"), metav1.GetOptions{})
-	require.NoError(t, err)
-	require.Equal(t, "true", svc.Annotations[annOwnerGatewayServed])
-	return r, node, agent
 }
 
 // TEST_SCENARIO: the owner gateway mounts one Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
@@ -728,6 +733,76 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	assert.True(t, up)
 	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "a wake starts no gateway pod")
+}
+
+func lapseActivity(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+	t.Helper()
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), agent.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(agent.Annotations)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(context.Background(), stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: QA on dev: a turn runs a long command with its chat closed, so nothing bumps the activity stamp, and five minutes later the agent's own reconcile recorded it down on its Service and stopped the machine without asking agent-runtime. Only the idle checker may take a served agent down: its reconciles keep the machine running while the runtime answers busy, and once the runtime answers idle the sweep hibernates it as before.
+func TestOwnerGateway_ALapsedIdleTimeoutLeavesAWorkingMachineUp(t *testing.T) {
+	ctx := context.Background()
+	r, node, agent := servedVMReconciler(t)
+	lapseActivity(t, r, agent)
+	for range 2 {
+		require.NoError(t, r.Reconcile(ctx, agent))
+	}
+	assert.True(t, node.spec("my-agent").Running, "the reconcile does not stop a machine on its activity stamp alone")
+	up, _, _ := r.servedDesiredUp(ctx, "my-agent")
+	assert.True(t, up, "and does not record the agent down")
+
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, true }
+	for range 3 {
+		checker.check(ctx)
+		require.NoError(t, r.Reconcile(ctx, agent))
+	}
+	assert.True(t, node.spec("my-agent").Running, "a runtime that answers busy keeps its machine through sweeps and reconciles")
+
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
+	checker.check(ctx)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.False(t, node.spec("my-agent").Running, "a runtime that answers idle is hibernated")
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+}
+
+// TEST_SCENARIO: a served agent whose machine does not read ready and whose probe does not answer is down or failed to start, so the sweep still hibernates it, and its reconcile keeps it stopped.
+func TestOwnerGateway_ASilentMachineThatIsNotReadyStillHibernates(t *testing.T) {
+	ctx := context.Background()
+	r, node, agent := servedVMReconciler(t)
+	lapseActivity(t, r, agent)
+	require.NoError(t, r.backend.UpdateStatus(ctx, "my-agent", func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonNeverReady, "", 0)
+		setStatusCondition(s, apiv1.ConditionStartFailed, true, "StartFailed", apiv1.ReasonNeverReady, "", 0)
+	}))
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return false, false }
+	checker.check(ctx)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.False(t, node.spec("my-agent").Running)
+	up, _, _ := r.servedDesiredUp(ctx, "my-agent")
+	assert.False(t, up)
+}
+
+// TEST_SCENARIO: an agent moves onto its owner gateway while its turn runs with the activity stamp lapsed, as every agent of an owner does when the flag is turned on. The move carries over that its own gateway was up, so the machine is not stopped for a record that was never written.
+func TestOwnerGateway_AMoveKeepsAWorkingMachineUp(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running)
+	lapseActivity(t, r, agent)
+
+	serveOwnerGateway(t, r, agent)
+	_, ok, _ := r.servedDesiredUp(ctx, "my-agent")
+	require.True(t, ok, "the agent moved onto its owner gateway")
+	assert.True(t, node.spec("my-agent").Running)
 }
 
 // TEST_SCENARIO: one release that changes the owner gateway's template would restart every owner's egress at the same moment, so a changed template waits for a place: with one place, the first owner gateway rolls and the second waits until the first has rolled out, then rolls on the next sweep. A gateway whose template is unchanged is never touched.
