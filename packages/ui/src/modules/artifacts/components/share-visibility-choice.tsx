@@ -25,7 +25,7 @@ export const VISIBILITY_OPTIONS: Record<
   },
   public: {
     label: "Public",
-    description: "Anyone with the link",
+    description: "Anyone with the link, no sign-in",
     Icon: Earth,
   },
 };

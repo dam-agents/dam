@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-11-10
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -41,7 +41,7 @@ A collapsed sidebar shows the ring alone, and names the progress for a screen re
 A click on the item opens the checklist in a popover beside it: the same ring, the done count, a strip of the eight characters with an egg for each one still locked, and the eight tasks, each with an info mark that gives a one-line reason for it.
 A click elsewhere on the page, Escape, the popover's close button or its Dismiss closes it back to the item, so a user cannot be left with it over a button they want.
 Nothing opens it but that click: an unlock the user has not seen puts a count on the item instead.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the Artifacts page, or in an Agent's chat the Artifacts section beside the conversation.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer, including the artifact task, which asks for a one-page artifact because an artifact is something an Agent makes; in an Agent's chat the artifact task opens the Artifacts section beside the conversation instead.
 A click on a row closes the checklist before it takes the user there.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); while the popover is open it plays a short celebration beside the item for each unlock the user has not seen, one at a time, in place of the task list, then records it as seen.
 

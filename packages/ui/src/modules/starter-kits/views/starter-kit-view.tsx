@@ -59,6 +59,7 @@ import {
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
 } from "../lib/catalog-cards.js";
+import { kitRunsOn } from "../lib/runs-on.js";
 import {
   buildStarterKitApplyInput,
   connectionRequirements,
@@ -334,6 +335,13 @@ function LinkedKitNotice({
   );
 }
 
+function repositoryHint(seed: { ref?: string; commit?: string }): string {
+  const at = [seed.ref, seed.commit && shortKitVersion(seed.commit)]
+    .filter(Boolean)
+    .join(" · ");
+  return at ? `Open repository (${at})` : "Open repository";
+}
+
 function KitVideoPanel({ video }: { video: string | undefined }) {
   return (
     <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
@@ -482,6 +490,7 @@ function KitDetail({
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
+  const runsOn = kitRunsOn(kit);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -519,6 +528,9 @@ function KitDetail({
 
         <DialogBody>
           {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
+          {runsOn && (
+            <p className="mb-6 text-sm text-muted-foreground">{runsOn}</p>
+          )}
           {form.name && (
             <div
               className="mb-8 flex min-w-0 items-center gap-3"
@@ -539,9 +551,9 @@ function KitDetail({
             <Section label="Knowledge base">
               <Row
                 title={`${kit.name} knowledge base skills`}
-                detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
+                detail="Comes with the skills that file your notes and find them again."
                 action={
-                  <Tooltip content="Open repository">
+                  <Tooltip content={repositoryHint(kbSeed)}>
                     <a
                       href={kbSeed.url}
                       target="_blank"
@@ -599,17 +611,9 @@ function KitDetail({
             <Section label="Repository">
               <Row
                 title={kit.seed.url.replace("https://github.com/", "")}
-                detail={`Seeded into ${
-                  kit.seed.into === "home"
-                    ? "the agent's home directory"
-                    : "the work directory"
-                }${kit.seed.ref ? ` on ${kit.seed.ref}` : ""}${
-                  kit.seed.commit
-                    ? ` at ${shortKitVersion(kit.seed.commit)}`
-                    : ""
-                } before the first session`}
+                detail="The kit's instructions come from this repository."
                 action={
-                  <Tooltip content="Open repository">
+                  <Tooltip content={repositoryHint(kit.seed)}>
                     <a
                       href={kit.seed.url}
                       target="_blank"
