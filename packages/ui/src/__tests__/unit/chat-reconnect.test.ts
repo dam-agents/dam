@@ -581,7 +581,7 @@ it("opens an unused assistant's chat on its greeting", () => {
   expect(placeholder(el)).toBe("Message Dammy");
 });
 
-// TEST_SCENARIO: a click on one of its pills puts the labelled text in the composer of this chat and sends nothing, so no turn runs before the person acts.
+// TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
 it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
   const el = openNewChat();
@@ -591,7 +591,7 @@ it("fills the composer from a greeting pill without sending", () => {
   expect(task).toBeDefined();
   act(() => task!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
-    "Artifact: Make my next PowerPoint deck the way I make them",
+    "Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
 });
