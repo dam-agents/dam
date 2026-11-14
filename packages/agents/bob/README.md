@@ -181,6 +181,7 @@ The router books that call's [spend](../../../docs/architecture/spend-limits.md#
 The settings file's `session.model` is only the fallback for a call made before that choice is known: the agent's default model for Bob, `PLATFORM_BOB_DEFAULT_MODEL`, which the runtime sets unless that default is Bob's own gateway.
 Bob accepts a reply naming another model than it asked for, so one Bob process serves every session and provider.
 Bob's subagents ask for a tier alias of Bob's own gateway (`premium-ide`, `explorer`) with `X-Parent-Task-Id` on their calls; the router sends those to the session's subagent model, else to the session's model.
+Bob's command-safety check, which runs before every shell command, asks for a model named `security` when the session's own model has not taken its call; where no granted provider lists that name, the router runs the check on CurveBender's preferred classifier, its Nemotron, so an agent on CurveBender alone still runs commands unattended, and a check that errors still leaves Bob asking.
 
 A Bob process the platform starts with session approvals of its own still gets a settings file of its own, `~/.bob/platform-processes/<hash>/settings.json`: [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs), preloaded through `NODE_OPTIONS` into `bob acp` only, redirects Bob's reads, writes, renames and watches of `~/.bob/settings/settings.json` to the file `BOB_SETTINGS_FILE` names.
 `bob-settings.mjs` runs without it, so it reads the agent-wide choices from the shared file and writes the process's copy.
