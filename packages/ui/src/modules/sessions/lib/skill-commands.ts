@@ -35,6 +35,13 @@ export function commandTrigger(
   return { start: lineStart, end, query: typed };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the commands a typed query offers, best match
+ * first — a name that starts with it, then one that contains it, then a
+ * description that does — and at equal rank the harness's own commands before
+ * the `skill:` ones, since the agent loads a skill by itself and a person
+ * typing `/` is after the commands they run.
+ */
 export function filterCommands(
   commands: readonly SkillCommand[],
   query: string,
@@ -47,10 +54,15 @@ export function filterCommands(
     if (c.description.toLowerCase().includes(q)) return 2;
     return -1;
   };
+  const skillAfter = (c: SkillCommand): number =>
+    c.name.toLowerCase().startsWith("skill:") ? 1 : 0;
   return commands
     .map((command) => ({ command, rank: rank(command) }))
     .filter((c) => c.rank >= 0)
-    .sort((a, b) => a.rank - b.rank)
+    .sort(
+      (a, b) =>
+        a.rank - b.rank || skillAfter(a.command) - skillAfter(b.command),
+    )
     .map((c) => c.command);
 }
 
