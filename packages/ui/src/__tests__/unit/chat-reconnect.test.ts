@@ -11,6 +11,7 @@ const fake = vi.hoisted(() => ({
   state: "running" as string,
   connectionState: "reconnecting" as string,
   retryChannel: vi.fn(),
+  resumeSession: vi.fn(),
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
@@ -259,7 +260,7 @@ mockModule("../../modules/sessions/hooks/use-app-side-panel-tabs.js", {
 mockModule("../../modules/sessions/hooks/use-acp-session.js", {
   useAcpSession: () => ({
     resetSession: vi.fn(),
-    resumeSession: vi.fn(),
+    resumeSession: fake.resumeSession,
     loadOlderMessages: vi.fn(),
     sendPrompt: fake.sendPrompt,
     rewriteFrom: vi.fn(),
@@ -532,7 +533,7 @@ afterEach(() => {
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
   fake.greeting = { kind: "none" };
-  useStore.setState({ pendingPermissions: [] });
+  useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
 });
 
@@ -610,6 +611,39 @@ it("keeps a running Agent's chat while it reconnects", () => {
   expect(notice(el)).not.toBeNull();
   expect(placeholder(el)).toContain("Reconnecting to this agent");
   expect(el.textContent).not.toContain("Restart agent");
+});
+
+// TEST_SCENARIO: a conversation the agent still holds that would not load used to be a dead end with no action; it offers Retry, and one that is gone for good offers none, since trying again cannot bring it back.
+it("offers Retry on a conversation that would not load", () => {
+  fake.connectionState = "live";
+  useStore.setState({ sessionError: { sessionId: "s-1", kind: "other" } });
+  const el = openChat("running", true);
+  const retry = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Retry"),
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(fake.resumeSession).toHaveBeenCalledWith("s-1");
+
+  fake.loadingSession = false;
+  useStore.setState({
+    sessionError: { sessionId: "s-1", kind: "unavailable" },
+  });
+  paint();
+  expect(el.textContent).toContain("Can't open this conversation");
+  expect(
+    [...el.querySelectorAll("button")].some((b) =>
+      b.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
+});
+
+// TEST_SCENARIO: a chat opening on a conversation that is still loading, as when a sleeping agent wakes, says the message waits for it, the way a connecting chat does.
+it("says a message waits for the conversation to load", () => {
+  fake.connectionState = "live";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(placeholder(el)).toContain("your message sends once it opens");
 });
 
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.

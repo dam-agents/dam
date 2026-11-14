@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Session inside the machine
 
@@ -50,6 +50,7 @@ A harness can send the same output twice: Claude Code answers a local command su
 So in a prompt turn whose prompt is one text block starting with `/`, an agent message whose whole text, trailing white space aside, is that of the message just before it, with no thought or tool call between them, never enters the log, and the output shows once, live and on every load.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
+A turn boot recovery resumes after it cut one short carries no unattended flag, so a chat Session starts no run of its own for it and the chat draws no boundary over the resume; a Session a schedule owns keeps the run that fire began, which its row, its run totals and its billing read.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 

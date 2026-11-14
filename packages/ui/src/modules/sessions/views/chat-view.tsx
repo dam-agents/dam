@@ -1190,7 +1190,11 @@ export function ChatView() {
             channelLive={channelLive}
             harness={sendHarness ?? null}
             emptyPlaceholder={
-              greeting.kind === "greeting" ? greeting.copy.placeholder : null
+              loadingSession
+                ? "Loading the conversation — your message sends once it opens."
+                : greeting.kind === "greeting"
+                  ? greeting.copy.placeholder
+                  : null
             }
             onBlockedClick={
               block?.kind === "connect"
@@ -1485,6 +1489,16 @@ const RESUME_FAILURE_COPY: Record<
   },
 };
 
+const RESUME_FAILURE_ACTION: Record<
+  SessionError["kind"],
+  "retry" | "delete" | null
+> = {
+  unavailable: null,
+  orphaned: "delete",
+  connection: "retry",
+  other: "retry",
+};
+
 function SessionErrorCard({
   error,
   onRetry,
@@ -1495,6 +1509,7 @@ function SessionErrorCard({
   onDelete: () => void;
 }) {
   const { title, body } = RESUME_FAILURE_COPY[error.kind];
+  const action = RESUME_FAILURE_ACTION[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -1505,15 +1520,15 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {(error.kind === "connection" || error.kind === "orphaned") && (
+      {action !== null && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "connection" ? (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={14} /> Retry
-            </Button>
-          ) : (
+          {action === "delete" ? (
             <Button variant="destructive" size="sm" onClick={onDelete}>
               <TrashCan size={12} /> Delete this session
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={14} /> Retry
             </Button>
           )}
         </div>
