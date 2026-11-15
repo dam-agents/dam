@@ -19,6 +19,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: The delivery nudge's own lifecycle. A nudge waiting on a
@@ -132,6 +133,7 @@ function harness(opts: {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

@@ -11,6 +11,7 @@ import type {
   storeDelegationFramesInputSchema,
   delegationFramesSchema,
   sessionCategorySchema,
+  sessionChannelTypeSchema,
   sessionDirectoryEntrySchema,
   sessionListCursorSchema,
   sessionListInputSchema,
@@ -33,6 +34,7 @@ export type Session = z.infer<typeof sessionSchema>;
 export type Sender = z.infer<typeof senderSchema>;
 export type SessionNotice = z.infer<typeof sessionNoticeSchema>;
 export type SessionCategory = z.infer<typeof sessionCategorySchema>;
+export type SessionChannelType = z.infer<typeof sessionChannelTypeSchema>;
 export type SessionListCursor = z.infer<typeof sessionListCursorSchema>;
 export type SessionListQuery = NonNullable<
   z.infer<typeof sessionListInputSchema>

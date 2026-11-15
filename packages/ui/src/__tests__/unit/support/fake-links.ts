@@ -7,7 +7,7 @@ import {
 } from "../../../modules/links/lib/docs-pages.js";
 
 export const CHART_DEFAULT_LINKS: Links = {
-  docs: "https://pages.github.ibm.com/dam-agents/docs/",
+  docs: "https://dam-agents.github.io/docs/",
   computeRequest:
     "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759",
   slackInstallRequest: null,

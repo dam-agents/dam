@@ -1,6 +1,8 @@
 import { findRendererBlocks, separateRendererBlocks } from "api-server-api";
-import { A2UI_VERSION } from "api-server-api/chat-forms";
+import { A2UI_VERSION, LEGACY_A2UI_VERSION } from "api-server-api/chat-forms";
 import { z } from "zod";
+
+const Version = z.enum([A2UI_VERSION, LEGACY_A2UI_VERSION]);
 
 const ActionPayload = z.object({
   name: z.string(),
@@ -26,16 +28,16 @@ const FunctionResponsePayload = z.object({
 });
 
 const RendererMessage = z.union([
-  z.object({ version: z.literal(A2UI_VERSION), action: ActionPayload }),
-  z.object({ version: z.literal(A2UI_VERSION), error: ErrorPayload }),
+  z.object({ version: Version, action: ActionPayload }),
+  z.object({ version: Version, error: ErrorPayload }),
   z.object({
-    version: z.literal(A2UI_VERSION),
+    version: Version,
     rendererFunctionResponse: FunctionResponsePayload,
   }),
 ]);
 
 const DataModels = z.object({
-  version: z.literal(A2UI_VERSION),
+  version: Version,
   surfaces: z.record(z.string(), z.unknown()),
 });
 

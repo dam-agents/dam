@@ -46,6 +46,7 @@ export async function steerChannelTurn(
 
 export interface ConversationQueue<T> {
   submit(message: T): Promise<void>;
+  replace(revise: (queued: T) => T | null): boolean;
   heldSteer(): readonly T[];
   abortSteer(): void;
 }
@@ -93,9 +94,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  and picks up whatever arrived during its round trip, and no turn is
  *  composed while a batch is still claimed — otherwise a batch coming back
  *  would land behind messages sent after it, and the agent would read a split
- *  thought out of order. The caller supplies what a turn and a steer mean on
- *  its surface, and can see and abort a held steer; the ordering, the quiet
- *  period, and the one-turn-at-a-time rule live here. */
+ *  thought out of order. A caller can replace a message that still waits,
+ *  in its place, so the agent only ever reads the replacement; a message a
+ *  turn or a steer already took is past replacing, and the caller is told
+ *  so. The caller supplies what a turn and a steer mean on its surface, and
+ *  can see and abort a held steer; the ordering, the quiet period, and the
+ *  one-turn-at-a-time rule live here. */
 export function createConversationQueue<T>(
   deps: ConversationQueueDeps<T>,
 ): ConversationQueue<T> {
@@ -250,6 +254,16 @@ export function createConversationQueue<T>(
     submit(message: T): Promise<void> {
       pending.push(message);
       return draining ? steerPending() : drain();
+    },
+
+    replace(revise) {
+      for (const [index, queued] of pending.entries()) {
+        const revised = revise(queued);
+        if (revised === null) continue;
+        pending[index] = revised;
+        return true;
+      }
+      return false;
     },
 
     heldSteer() {

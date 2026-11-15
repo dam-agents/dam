@@ -11,20 +11,23 @@ import { createAssistantsService } from "../../modules/assistants/services/assis
 export const OWNER = "alice";
 export const NAME = "Dambledore";
 
-/** UNIT_BOUNDARY_DESCRIPTION: the record store as PostgreSQL behaves — the primary key settles `claim`, and `replaceAgent` and `pointAt` are what say which Agent the row names. */
+/** UNIT_BOUNDARY_DESCRIPTION: the record store as PostgreSQL behaves — the primary key settles `claim`, `replaceAgent` says which Agent the row names, and the cohort `claim` wrote is never touched again. */
 export function rowStore(initial?: AssistantRow) {
   const rows = new Map<string, AssistantRow>();
   if (initial) rows.set(initial.owner, initial);
   const repo: AssistantsRepository = {
     find: async (owner) => rows.get(owner) ?? null,
-    claim: async (owner, agentId) => {
+    claim: async (owner, agentId, legacy) => {
       if (rows.has(owner)) return false;
       rows.set(owner, {
         owner,
         agentId,
         state: "creating",
+        legacy,
         used: false,
         resetAt: null,
+        firstResult: null,
+        epoch: 0,
       });
       return true;
     },
@@ -44,6 +47,40 @@ export function rowStore(initial?: AssistantRow) {
       });
       return true;
     },
+    /* UNIT_BOUNDARY_DESCRIPTION: the transaction's own reads and writes; the test's lock hands the same store through, and holding the lock is what serializes callers. */
+    firstResultIn: async (tx, owner) => {
+      void tx;
+      return rows.get(owner) ?? null;
+    },
+    claimFirstResultIn: async (tx, owner, kind, ref) => {
+      void tx;
+      const row = rows.get(owner);
+      if (row === undefined || row.firstResult !== null) return false;
+      rows.set(owner, {
+        ...row,
+        firstResult: { kind, ref, at: new Date(), completed: false },
+      });
+      return true;
+    },
+    completeFirstResultIn: async (tx, owner) => {
+      void tx;
+      const row = rows.get(owner);
+      if (row?.firstResult == null) return;
+      rows.set(owner, {
+        ...row,
+        firstResult: { ...row.firstResult, completed: true },
+      });
+    },
+    clearFirstResultIn: async (tx, owner) => {
+      void tx;
+      const row = rows.get(owner);
+      if (row === undefined) return;
+      rows.set(owner, {
+        ...row,
+        firstResult: null,
+        epoch: row.epoch + 1,
+      });
+    },
     usageOf: async (agentId) => {
       for (const row of rows.values())
         if (row.agentId === agentId)
@@ -54,6 +91,7 @@ export function rowStore(initial?: AssistantRow) {
       for (const [owner, row] of rows)
         if (row.agentId === agentId) rows.set(owner, { ...row, used: true });
     },
+    /* UNIT_BOUNDARY_DESCRIPTION: as PostgreSQL behaves — the used mark and its epoch are this write's, and the first result is cleared by the reset's own locked statement, not here. */
     resetUsed: async (owner) => {
       const row = rows.get(owner);
       if (row) rows.set(owner, { ...row, used: false, resetAt: new Date() });
@@ -84,6 +122,9 @@ export function agentStore(initialNames: readonly string[] = []) {
   const gates: (() => Promise<void>)[] = [];
   const create = vi.fn(
     async (input: { id?: string; name: string; instructions?: string }) => {
+      /* UNIT_BOUNDARY_DESCRIPTION: the same id asked for again is a resume — the Agent an earlier attempt wrote, finished rather than refused — as the real create does for the platform's own ids. */
+      const existing = input.id ? live.get(input.id) : undefined;
+      if (existing) return existing as unknown as Agent;
       if ([...live.values()].some((agent) => agent.name === input.name))
         throw new Error(`you already have an agent named "${input.name}"`);
       const gate = gates.shift();
@@ -133,15 +174,46 @@ export function assistantService(
     enabled?: boolean;
     admitted?: boolean;
     assistantName?: string;
+    damConnection?: () => Promise<string | null>;
     waitMs?: number;
     pollMs?: number;
+    /* UNIT_BOUNDARY_DESCRIPTION: the real bookkeeping, for a test that asks what the checklist ends up holding rather than that it was told. */
+    provisioned?: (agent: { id: string }) => Promise<void>;
   } = {},
 ) {
   const rows = deps.rows ?? rowStore();
   const agents = deps.agents ?? agentStore();
   const enrolled = vi.fn(async () => {});
-  const provisioned = vi.fn(async (_agent: { id: string }) => {});
-  const resetChecklist = vi.fn(async () => undefined);
+  const provisioned = vi.fn(deps.provisioned ?? (async () => {}));
+  const recordTaskIn = vi.fn(async (_tx: unknown, _task: string) => null);
+  const resetChecklistIn = vi.fn(async () => undefined);
+  /* UNIT_BOUNDARY_DESCRIPTION: the per-owner transaction as PostgreSQL behaves — one holder per owner, the next caller waiting for it, and a gate a test can park the work behind so a reset and a report can be interleaved. */
+  const tails = new Map<string, Promise<unknown>>();
+  const gates: Promise<void>[] = [];
+  const firstResultLock = async <T>(
+    owner: string,
+    work: (tx: never) => Promise<T>,
+  ): Promise<T> => {
+    const previous = tails.get(owner) ?? Promise.resolve();
+    const run = previous.then(async () => {
+      const gate = gates.shift();
+      if (gate !== undefined) await gate;
+      /* UNIT_BOUNDARY_DESCRIPTION: as PostgreSQL behaves — the work's writes land only when it returns, and a throw rolls the record back to what it was. */
+      const before = structuredClone(rows.rows);
+      try {
+        return await work(null as never);
+      } catch (err) {
+        rows.rows.clear();
+        for (const [key, value] of before) rows.rows.set(key, value);
+        throw err;
+      }
+    });
+    tails.set(
+      owner,
+      run.catch(() => {}),
+    );
+    return run;
+  };
   const service = createAssistantsService({
     repo: rows.repo,
     owner: OWNER,
@@ -153,9 +225,20 @@ export function assistantService(
     agents: { list: agents.list, create: agents.create },
     enrolled,
     provisioned,
-    resetChecklist,
+    recordTaskIn,
+    resetChecklistIn,
+    firstResultLock,
+    damConnection: deps.damConnection ?? (async () => null),
     waitMs: deps.waitMs ?? 200,
     pollMs: deps.pollMs ?? 10,
   });
-  return { rows, agents, enrolled, provisioned, resetChecklist, ...service };
+  return {
+    rows,
+    agents,
+    enrolled,
+    provisioned,
+    recordTaskIn,
+    resetChecklistIn,
+    ...service,
+  };
 }

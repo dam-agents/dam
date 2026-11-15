@@ -1,9 +1,22 @@
 import { TRPCError } from "@trpc/server";
-import type { InvocationsQueryService } from "api-server-api";
+import {
+  delegationTitle,
+  type DelegationNode,
+  type InvocationsQueryService,
+  type OwnerQuestion,
+  type OwnerQuestionNotice,
+} from "api-server-api";
 
-import { buildDelegationTree } from "../domain/delegation-tree.js";
+import {
+  buildDelegationTree,
+  questionOf,
+  shownStatus,
+} from "../domain/delegation-tree.js";
 import { shownInSession } from "../domain/session-scope.js";
-import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
+import type {
+  InvocationRow,
+  InvocationsRepository,
+} from "../infrastructure/invocations-repository.js";
 import type { DelegationFramesPort } from "./delegation-frames.js";
 
 const DELEGATION_TREE_ROW_LIMIT = 2000;
@@ -18,6 +31,8 @@ export function createDelegationsQuery(deps: {
   repo: InvocationsRepository;
   owner: string;
   frames: DelegationFramesPort;
+  // UNIT_BOUNDARY_DESCRIPTION: which of the sub-agents named have a network rule that waits for the owner, so a tree shows one whose start is held for it as waiting, not as working.
+  egressWaitingAmong?: (agentIds: readonly string[]) => Promise<Set<string>>;
 }): InvocationsQueryService {
   async function rootOf(driverAgentId: string): Promise<string> {
     const driverRow = await deps.repo.get(driverAgentId);
@@ -48,6 +63,74 @@ export function createDelegationsQuery(deps: {
     return rows.map((r) =>
       running.has(r.id) ? { ...r, status: "running" as const } : r,
     );
+  }
+
+  async function withStartHolds(
+    nodes: DelegationNode[],
+  ): Promise<DelegationNode[]> {
+    const unstarted = (list: readonly DelegationNode[]): string[] =>
+      list.flatMap((node) => [
+        ...(node.status === "running" && !node.started ? [node.id] : []),
+        ...unstarted(node.children),
+      ]);
+    const ids = unstarted(nodes);
+    if (ids.length === 0 || !deps.egressWaitingAmong) return nodes;
+    const held = await deps.egressWaitingAmong(ids);
+    const mark = (list: readonly DelegationNode[]): DelegationNode[] =>
+      list.map((node) => ({
+        ...node,
+        ...(held.has(node.id) && !node.started && { waitingForOwner: true }),
+        children: mark(node.children),
+      }));
+    return held.size > 0 ? mark(nodes) : nodes;
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: each waiting question with the child of a driver it sits under, at any depth: that child's start names the driver's Session the question belongs to. A question whose chain does not reach the driver is left out.
+  async function placed(
+    asking: readonly InvocationRow[],
+    driverOf: (row: InvocationRow) => string,
+  ) {
+    const trees = new Map<string, Map<string, string>>();
+    const treeOf = async (root: string) => {
+      const known = trees.get(root);
+      if (known) return known;
+      const tree = new Map(
+        (await deps.repo.listTreeOfRoot(root)).map((r) => [
+          r.id,
+          r.driverAgentId,
+        ]),
+      );
+      trees.set(root, tree);
+      return tree;
+    };
+    const out: {
+      row: InvocationRow;
+      question: NonNullable<ReturnType<typeof questionOf>>;
+      child: InvocationRow;
+    }[] = [];
+    for (const row of asking) {
+      const question = questionOf(row);
+      if (!question) continue;
+      const driver = driverOf(row);
+      const tree = await treeOf(row.rootDriverId);
+      const seen = new Set<string>();
+      let childId: string | undefined;
+      for (
+        let at: string | undefined = row.id;
+        at !== undefined && !seen.has(at);
+        at = tree.get(at)
+      ) {
+        if (tree.get(at) === driver) {
+          childId = at;
+          break;
+        }
+        seen.add(at);
+      }
+      if (childId === undefined) continue;
+      const child = childId === row.id ? row : await deps.repo.get(childId);
+      if (child) out.push({ row, question, child });
+    }
+    return out;
   }
 
   return {
@@ -85,7 +168,7 @@ export function createDelegationsQuery(deps: {
                   {
                     id: r.id,
                     label: r.label,
-                    status: r.status,
+                    status: shownStatus(r.status),
                     keepUntil: r.keepUntil!.toISOString(),
                     parentId,
                   },
@@ -96,7 +179,7 @@ export function createDelegationsQuery(deps: {
 
     async tree({ driverAgentId, ids }) {
       const owned = await ownedRowsOfRoot(driverAgentId);
-      return { nodes: buildDelegationTree(owned, ids) };
+      return { nodes: await withStartHolds(buildDelegationTree(owned, ids)) };
     },
 
     async running({ driverAgentId, sessionId }) {
@@ -109,7 +192,50 @@ export function createDelegationsQuery(deps: {
         .map((r) => r.id);
       if (running.length === 0) return { nodes: [] };
       const owned = await ownedRowsOfRoot(driverAgentId);
-      return { nodes: buildDelegationTree(owned, running) };
+      return {
+        nodes: await withStartHolds(buildDelegationTree(owned, running)),
+      };
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: the questions sub-agents under this driver wait on, oldest first, for one of its chats to put to the owner: at any depth, and scoped to the chat by the child of the driver they sit under, as its running children are.
+    async questions({ driverAgentId, sessionId }) {
+      const root = await rootOf(driverAgentId);
+      const asking = (await deps.repo.listAskingByRoot(root)).filter(
+        (r) => r.owner === deps.owner,
+      );
+      const questions: OwnerQuestion[] = [];
+      for (const { row, question, child } of await placed(
+        asking,
+        () => driverAgentId,
+      )) {
+        if (sessionId !== undefined && !shownInSession(child, sessionId))
+          continue;
+        questions.push({
+          id: row.id,
+          title: delegationTitle(row),
+          ...question,
+        });
+      }
+      return {
+        questions: questions.sort(
+          (a, b) => Date.parse(a.askedAt) - Date.parse(b.askedAt),
+        ),
+      };
+    },
+
+    async waitingForOwner() {
+      const asking = await deps.repo.listAskingByOwner(deps.owner);
+      return (await placed(asking, (row) => row.rootDriverId)).map(
+        ({ row, question, child }): OwnerQuestionNotice => ({
+          id: row.id,
+          title: delegationTitle(row),
+          text: question.text,
+          askedAt: question.askedAt,
+          answerBy: question.answerBy,
+          agentId: row.rootDriverId,
+          sessionId: child.driverSessionId,
+        }),
+      );
     },
 
     async transcript({ driverAgentId, id }) {

@@ -112,7 +112,8 @@ var testConfig = &config.Config{
 }
 
 var testAgent = &apiv1.AgentSpec{
-	Image: "ghcr.io/myorg/agent:latest",
+	Backend: &apiv1.Backend{Type: "vm"},
+	Image:   "ghcr.io/myorg/agent:latest",
 	Mounts: []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},

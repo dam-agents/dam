@@ -10,6 +10,9 @@ export const featureIdSchema = z.enum([
   "hermes",
   "github-enterprise-hosts",
   "dambledore",
+  "damConnection",
+  "chat-network-approvals",
+  "one-time-tasks",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

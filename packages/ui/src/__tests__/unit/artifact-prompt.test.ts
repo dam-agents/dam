@@ -108,6 +108,28 @@ describe("artifact frame messages", () => {
     port2.close();
   });
 
+  it("passes on the page's conversation key and drops a malformed one", () => {
+    const { port1, port2 } = new MessageChannel();
+    const data = {
+      type: ARTIFACT_PROMPT_TYPE,
+      prompt: "Go",
+      conversation: "thread.R-1.v2_a-b",
+    };
+    expect(readArtifactPrompt({ source: port1, data }, port1)).toEqual({
+      prompt: "Go",
+      conversation: "thread.R-1.v2_a-b",
+    });
+    for (const conversation of ["", "a b", "x".repeat(65), "a/b", 3])
+      expect(
+        readArtifactPrompt(
+          { source: port1, data: { ...data, conversation } },
+          port1,
+        ),
+      ).toBeNull();
+    port1.close();
+    port2.close();
+  });
+
   it("accepts only the exact frame and forwards only its prompt", () => {
     const { port1, port2 } = new MessageChannel();
     const data = {

@@ -15,6 +15,22 @@ const isChatView = (view: View) => view === "chat";
 const isChatRoute = (route: Route): route is Extract<Route, { view: "chat" }> =>
   isChatView(route.view);
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a move from one route to another drops an
+ * unsaved artifact or file draft. A chat and the artifact page each hold their
+ * own editor, so a move into or out of either, or to another artifact's page,
+ * drops it. Between other pages the side panel keeps its dock, and the draft
+ * with it.
+ */
+const dropsEditor = (
+  from: { view: View; pageArtifactId: string | null },
+  to: Route,
+) =>
+  isChatView(from.view) ||
+  isChatRoute(to) ||
+  ((from.view === "artifact" || to.view === "artifact") &&
+    (to.view !== "artifact" || to.artifactId !== from.pageArtifactId));
+
 export function useBrowserHistory(): void {
   useEffect(installBrowserHistory, []);
 }
@@ -67,11 +83,12 @@ export function installBrowserHistory(): () => void {
   const onPopState = () => {
     if (takeBackPress()) return;
     const state = useStore.getState();
-    const resetsDock =
-      isChatView(state.view) ||
-      isChatRoute(parseRoute(window.location.pathname));
+    const dropsDraft = dropsEditor(
+      state,
+      parseRoute(window.location.pathname, window.location.search),
+    );
     if (confirming) return;
-    if (!resetsDock || (!state.openArtifactDirty && !state.openFileDirty))
+    if (!dropsDraft || (!state.openArtifactDirty && !state.openFileDirty))
       return applyRoute();
     const left = shown;
     confirming = true;

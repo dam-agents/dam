@@ -33,6 +33,9 @@ To let a button work where the owner opens the page outside that chat, such as f
 Outside a chat the prompt then starts or continues the owner's own Session for this page with you, unattended, so a tool call that asks for permission is refused; in the chat it still goes into the chat.
 Without the option, a prompt sent outside the chat starts nothing, and the owner is told to open the page in your chat.
 On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
+For a page used for many separate conversations, such as one per thread or request, pass `{ conversation: "<key>" }` so each conversation gets its own Session: `platform.sendPrompt('Answer this thread.', { conversation: 'thread-42' })`.
+The key is 1 to 64 letters, digits, dots, underscores or hyphens, and the call throws on any other; a later prompt with the same key continues that Session.
+It splits only the caller's own Sessions for this page, the owner's or each viewer's, and always opens one of its own, also in your chat, unattended as above.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
 Never show a busy state, such as "Refreshing…", that waits for the prompt to end, since nothing tells the page; to show progress, keep it in your Artifact API and have the page read it with `platform.request`.

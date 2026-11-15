@@ -45,12 +45,15 @@ function setup(
     spawn: async (body: SpawnRequest, origin: unknown) => {
       spawned.push(body);
       from.push(origin);
-      return { ok: true, id: "agent-child" };
+      return { ok: true, id: "agent-child", egressWaiting: [] };
     },
   } as unknown as DriverOps;
   registerSubAgentTools(server, {
     ops,
-    awaits: { markAwaited: async () => {}, markCollected: async () => {} },
+    awaits: {
+      markAwaited: async () => {},
+      collect: async () => ({ inTurn: [] }),
+    },
     ...(sessionContext && { sessionContext }),
     ...(catalogModels && { catalogModels }),
     spawningSession: spawningSession ?? (async () => null),

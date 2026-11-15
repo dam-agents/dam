@@ -9,6 +9,7 @@ import { createTargetCapture } from "../../modules/invocations/services/target-c
 import { createTargetReaper } from "../../modules/invocations/services/target-reaper.js";
 import {
   fakeInvocationsRepo,
+  fakeOwnerQuestions,
   invocationRow,
 } from "../helpers/invocations-repo.js";
 
@@ -45,10 +46,14 @@ function fakeRepo(rows: InvocationRow[]) {
     get: async (id) => byId.get(id) ?? null,
     fail: calls.fail,
     failStopped: calls.failStopped,
-    listRunningRuns: async (id) =>
-      rows.filter((r) => r.id === id && r.status === "running"),
     listRunningRunsOf: async (ids) =>
       rows.filter((r) => ids.includes(r.id) && r.status === "running"),
+    listOpenRunsOf: async (ids) =>
+      rows.filter(
+        (r) =>
+          ids.includes(r.id) &&
+          (r.status === "running" || r.status === "asking"),
+      ),
     listRunningByDriver: async (driver) =>
       rows.filter((r) => r.driverAgentId === driver && r.status === "running"),
     markReaped: calls.markReaped,
@@ -272,7 +277,12 @@ describe("stopping a delegation", () => {
     return {
       calls,
       reaper,
-      control: createDelegationControl({ repo, owner: "owner-1", stopper }),
+      control: createDelegationControl({
+        repo,
+        owner: "owner-1",
+        stopper,
+        questions: fakeOwnerQuestions(),
+      }),
     };
   };
 

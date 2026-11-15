@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-09
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -94,11 +94,17 @@ Postgres carries application state the api-server owns end-to-end — anything t
   A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles.
   Each binding carries its own ambient, channel history and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
+  `slack_untagged_reply_notes` holds, per person, what decides the note about an untagged reply in an Agent's thread: when they first used the platform in Slack, when they last got the note, and when they tagged the bot after one; the person is keyed by the activity log's keyed hash of their Slack user id.
   `slack_loop_guard_drops` holds, per conversation, the bot and app posts the loop guard dropped: a count, the last drop's time and the newest five.
   `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by a hash of the image.
   `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its hash.
   `telegram_conversations` records the chat→Agent binding for Telegram, one row per chat, plus its ambient flag and its owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
   `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel; a second workspace leaves it untouched, since inside one enterprise organization a user id already identifies one person and re-keying it would make anyone who linked in one workspace link again in the next.
+  It carries the `source` of the link — `oauth` for a Keycloak sign-in, `email` for the DM Bridge's mailbox pairing — which decides what may happen to the row: a pairing inserts only and never moves an owner or a workspace, a sign-in promotes an `email` row to `oauth`, and a revoke deletes only an `email` one ([slack-dm-bridge](slack-dm-bridge.md)).
+  `slack_dm_bridges` is the DM Bridge's record of what it settled, keyed by Agent, workspace and DM: the owner, the person, the state (`active`, `revoking`, `revoked`), the generation each connect opens and a revoke is tied to, and the greeting's claim — with the token that owns it — and recorded post.
+  Every write to a Slack person's link or record takes one transaction-scoped advisory lock on the workspace and that person before any row lock, which is what serializes a connect, a sign-in, a revoke and a greeting even when the identity row does not exist yet.
+  It outlives the link and the binding it created, so a revoke named by it finishes after a logout or a half-failed cleanup, and its state is what stops turns and delivery into that DM ([slack-dm-bridge](slack-dm-bridge.md)).
+  `slack_installs` also records the Slack organization the install handshake reported — an id, or the empty string for a workspace that stands alone — and `null` when nothing recorded one, which is a token imported from Helm or an install older than the column; anything that pairs a person to a workspace compares it with the organization Slack reports for that person and refuses when either side is unknown.
   `slack_installs` is one row per workspace that completed the install handshake or whose Helm bot token was imported, holding the workspace's name, who connected it, and whether its credential still works — the bot token itself lives in a Kubernetes Secret the row points at, so no credential is stored here ([channels](channels.md)).
   That Secret is platform-owned rather than per-Agent: the api-server reads it, and no agent gateway is ever handed it, so it sits outside the per-`(owner, connection)` credential classes on [security-and-credentials](security-and-credentials.md).
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use.
@@ -134,6 +140,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
 - **delegation records** — one row per Invocation and one per run of it (`invocation_runs`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
 - **child inheritance** — one row per sub-agent or Environment an agent launched (`agent_inheritance`): which of its parent's connections it holds and whose egress rules decide its requests, chosen at launch and kept for the child's life ([invocations](invocations.md#spawning)).
+- **child egress grants** — one row per root Agent whose owner let its sub-agents and Environments have network access of their own (`agent_child_egress_grants`), with who turned it on and when; no row is off ([invocations](invocations.md#spawning)).
 - **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; the owner's daily limits; and each user's Spend Ceiling that a platform operator set, with who set it and when.
   Redis caches the day totals.
   Owned by [spend-limits](spend-limits.md#ledger).
@@ -146,7 +153,7 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
 
 - **the Agent store** — one schema of its own (`control`), separate from the rest because its writers are separate and because the pseudonymized usage mirror in this one must keep its name and its readers.
   A definition row per Agent carries what the controller renders: image, harness, the install default's resource limits, the idle timeout, the nested-virtualization and connection-address flags, the L7 hosts, and the compatibility values a machine still falls back on.
-  A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, a disable, the restart revision, and the reclaim mark the controller writes.
+  A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, the restart revision, and the reclaim mark the controller writes.
   Observation tables carry what the controller sees — conditions with their original transition times, machine restarts and the OOM attribution that goes with them — and it is their only writer.
   A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.
   A store row records where an install is in the move, and the snapshot table holds the archive the rollback window depends on.
@@ -198,7 +205,7 @@ An install with no object store fails closed: bulk-blob features are unavailable
 
 The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
 Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
-Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
+Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the reclaim mark, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
 From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
 A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
 An install may delete its own resources with `delete-crs`, an optional cleanup that refuses without a real-clock contract gate and orphans the children through their anchors.

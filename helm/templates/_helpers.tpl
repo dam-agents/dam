@@ -363,6 +363,17 @@ and the controller both hand to agents.
 {{- end }}
 
 {{/*
+In-cluster address of the api-server's public Service, which the Connection
+that lets an Agent drive this install names over HTTPS: a gateway pod takes
+that request to this Service, and the api-server learns the name from it. The
+controller derives the same name from the release name and namespace, so a
+change here is a change there.
+*/}}
+{{- define "platform.apiserver.serviceUrl" -}}
+{{- printf "http://%s.%s.svc.cluster.local:%v" (include "platform.apiserver.fullname" .) .Release.Namespace .Values.apiServer.port }}
+{{- end }}
+
+{{/*
 API Server database host — uses external host if set, otherwise shared postgres
 */}}
 {{- define "platform.apiserver.db.host" -}}
@@ -633,6 +644,34 @@ directory.
 */}}
 {{- define "platform.vmImageCache.dir" -}}
 {{- with .Values.virtualization.imageCache | default dict }}{{ with .hostPath }}{{ printf "%s/%s/%s" (clean .) $.Release.Namespace $.Release.Name }}{{ end }}{{ end }}
+{{- end }}
+{{/*
+AGENT_VM: the runner every machine of this release runs on, and the gateway
+policy around it. Built here rather than where it is rendered, so that the
+check in _validators.tpl holds the very dict the controller decodes, field for
+field, instead of a list of the values a reader hopes reach it.
+*/}}
+{{- define "platform.controller.agentVM" -}}
+{{- $r := .Values.virtualization.runner }}
+{{- $cache := .Values.virtualization.imageCache | default dict }}
+{{- $devices := $r.devices | default (dict "devices.kubevirt.io/kvm" "1") }}
+{{- $runner := dict
+      "image" (include "platform.vmRunner.image" .)
+      "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
+      "imagePullSecrets" (.Values.imagePullSecrets | default list)
+      "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
+      "storage" $r.storage "storageClass" $r.storageClass
+      "devices" $devices
+      "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false)
+      "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
+      "seccomp" (include "platform.vmRunner.seccomp" .)
+      "imageCacheHostPath" (include "platform.vmImageCache.dir" .) "imageCacheBudget" ($cache.budget | default "" | toString)
+      "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
+      "resources" $r.resources
+      "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
+      "hostAddress" ($r.hostAddress | default "") "hostPort" ($r.hostPort | default 0) "machineMemoryMiB" ($r.machineMemoryMiB | default 2048 | int)
+      "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
+{{- dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson }}
 {{- end }}
 {{/*
 What unpacking an image faithfully costs, and nothing else: every capability

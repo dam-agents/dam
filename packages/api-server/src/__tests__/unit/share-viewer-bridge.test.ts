@@ -11,11 +11,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ARTIFACT_TITLE_MAX_LENGTH } from "api-server-api";
+
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { AcpSessionLoadError } from "../../core/acp-client.js";
 import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
 import { shareSessionCookie } from "../../modules/artifact-library/domain/share-session.js";
 import {
+  ownerSessionTitle,
   viewerSessionKey,
   viewerSessionTitle,
 } from "../../modules/artifact-library/domain/viewer-bridge.js";
@@ -586,6 +589,51 @@ describe("a viewer's prompt on a shared interactive page", () => {
     expect(JSON.stringify(securityLog.mock.calls)).not.toContain("Refresh");
   });
 
+  /**
+   * TEST_SCENARIO: A team page keeps each of a viewer's conversations apart.
+   * A prompt that names its conversation goes to that viewer's own Session
+   * for it, titled with it; the security log records the name and never the
+   * prompt text.
+   */
+  it("keeps a named conversation in the viewer's own session for it", async () => {
+    const { w, app } = world();
+    const res = await call(app, "/a/slug-a/prompt", {
+      prompt: "Refresh the numbers.",
+      conversation: "thread-7",
+    });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(w.delivered).toEqual([
+      expect.objectContaining({
+        sessionKey: "artifact-conversation:a1:thread-7:alice-sub",
+        sessionTitle: "alice@example.com · Team dashboard · thread-7",
+      }),
+    ]);
+    expect(loggedEvents()).toEqual([
+      expect.objectContaining({
+        event: "artifact.viewer_prompt",
+        decision: "allow",
+        detail: expect.objectContaining({ conversation: "thread-7" }),
+      }),
+    ]);
+    expect(JSON.stringify(securityLog.mock.calls)).not.toContain("Refresh");
+  });
+
+  it.each(["", "a b", "x".repeat(65), "../other", 7])(
+    "refuses a conversation that is not a short plain key %#",
+    async (conversation) => {
+      const { w, app } = world();
+      const res = await call(app, "/a/slug-a/prompt", {
+        prompt: "Go",
+        conversation,
+      });
+      expect(await res.json()).toEqual({
+        ok: false,
+        reason: "invalid-request",
+      });
+      expect(w.delivered).toEqual([]);
+    },
+  );
+
   it("refuses a prompt from someone not on the viewer list", async () => {
     const { w, app } = world();
     const res = await call(
@@ -675,13 +723,51 @@ describe("the share page relay", () => {
   });
 });
 
+describe("viewer session keys", () => {
+  it("adds a page's conversation only to the caller's own key", () => {
+    expect(viewerSessionKey("a1", "alice-sub")).toBe("artifact:a1:alice-sub");
+    expect(viewerSessionKey("a1", "alice-sub", "t1")).toBe(
+      "artifact-conversation:a1:t1:alice-sub",
+    );
+  });
+
+  it("never lets a page's key spell another caller's Session", () => {
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f:a:b"),
+    );
+    expect(viewerSessionKey("a1", "f:a", "b")).not.toBe(
+      viewerSessionKey("a1", "f", "a:b"),
+    );
+  });
+});
+
 describe("viewer session titles", () => {
+  it("ends with the page's conversation when it has one", () => {
+    expect(viewerSessionTitle("a@b.c", "Dash", "t-1")).toBe(
+      "a@b.c · Dash · t-1",
+    );
+    expect(ownerSessionTitle("Dash", "t-1")).toBe("Dash · t-1");
+    expect(ownerSessionTitle("Dash")).toBe("Dash");
+  });
+
   it("names the viewer first and stays within the title limit", () => {
     expect(viewerSessionTitle("a@b.c", "Dash")).toBe("a@b.c · Dash");
     const long = viewerSessionTitle("a@b.c", "x".repeat(400));
     expect(long).toHaveLength(200);
     expect(long.startsWith("a@b.c · ")).toBe(true);
     expect(long.endsWith("…")).toBe(true);
+  });
+
+  it("keeps the conversation whole when the longest title is shortened", () => {
+    const title = "x".repeat(ARTIFACT_TITLE_MAX_LENGTH);
+    const key = "k".repeat(64);
+    for (const shortened of [
+      viewerSessionTitle("a@b.c", title, key),
+      ownerSessionTitle(title, key),
+    ]) {
+      expect(shortened).toHaveLength(200);
+      expect(shortened.endsWith(`… · ${key}`)).toBe(true);
+    }
   });
 });
 
@@ -801,6 +887,39 @@ describe("delivering a viewer's prompt", () => {
     await expect(second).resolves.toEqual({ ok: true, sessionId: "s-1" });
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]!.opts).toMatchObject({ resumeSessionId: "s-1" });
+    finishTurns();
+  });
+
+  /**
+   * TEST_SCENARIO: A viewer works two conversations of one page at once. Each
+   * key opens its own Session, and a later prompt for the first continues
+   * that Session, not the second.
+   */
+  it("keeps each conversation of a viewer in its own session", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d } = delivery(acp);
+    const one = {
+      ...turn,
+      sessionKey: viewerSessionKey("a1", "alice-sub", "t1"),
+    };
+    const two = {
+      ...turn,
+      sessionKey: viewerSessionKey("a1", "alice-sub", "t2"),
+    };
+    await expect(d.deliver(one)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
+    await expect(d.deliver(two)).resolves.toEqual({
+      ok: true,
+      sessionId: "s-2",
+    });
+    await expect(d.deliver({ ...one, prompt: "again" })).resolves.toEqual({
+      ok: true,
+      sessionId: "s-1",
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent[2]!.opts).toMatchObject({ resumeSessionId: "s-1" });
     finishTurns();
   });
 

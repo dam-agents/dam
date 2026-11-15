@@ -5,6 +5,7 @@ import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
+import type { XactTxLock } from "../../core/xact-lock.js";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type {
@@ -90,6 +91,8 @@ export interface ApiServerDeps {
   config: Config;
   api: CoreV1Api;
   db: Db;
+  /* UNIT_BOUNDARY_DESCRIPTION: one per-owner transaction around the first result, taken by its report and by every onboarding reset. */
+  assistantFirstResultLock: XactTxLock;
   channelManager: ChannelManager;
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: TtlStore<SlackOAuthPending>;
@@ -153,7 +156,10 @@ export interface ApiServerDeps {
   artifacts: ArtifactService;
   delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
-  userDirectory: Pick<KeycloakUserDirectory, "resolveBySub">;
+  userDirectory: Pick<
+    KeycloakUserDirectory,
+    "resolveBySub" | "resolveVerifiedEmailBySub"
+  >;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

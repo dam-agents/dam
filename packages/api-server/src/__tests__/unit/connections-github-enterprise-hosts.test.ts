@@ -274,6 +274,155 @@ describe("the GitHub Enterprise hosts an install offers", () => {
   });
 });
 
+describe("a host the install does not list", () => {
+  // TEST_SCENARIO: a user whose host the install has no app on brings their own app; the sign-in is made on that host with their client ID and secret, and without a secret it is refused before any sign-in is made.
+  it("takes your own app there, client ID and secret", async () => {
+    const own = "ghe.own.example.com";
+    const pick = (extra: Record<string, string>) =>
+      buildConnection(
+        gheTemplate(),
+        {
+          templateId: "github-enterprise",
+          name: "ghe",
+          authKind: "oauth",
+          host: own,
+          ...extra,
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      );
+    const conn = await pick({ clientId: "Iv1.mine", clientSecret: "mine" });
+    expect(conn.auth).toMatchObject({
+      kind: "oauth",
+      clientId: "Iv1.mine",
+      host: own,
+      authorizationUrl: `https://${own}/login/oauth/authorize`,
+    });
+    await expect(pick({ clientId: "Iv1.mine" })).rejects.toThrow(
+      /uses your own app: enter its client secret too/,
+    );
+    await expect(pick({})).rejects.toThrow(/No GitHub app is registered/);
+  });
+});
+
+describe("a host typed as a URL", () => {
+  // TEST_SCENARIO: the host a user types becomes the {host} of the sign-in URLs, the egress host and GH_HOST, so a URL or upper case must be stored as the bare hostname, for a sign-in and a token alike, and a value that is no hostname is refused.
+  it("is stored as its hostname, and a non-hostname is refused", async () => {
+    const own = await buildConnection(
+      gheTemplate(),
+      {
+        templateId: "github-enterprise",
+        name: "ghe",
+        authKind: "oauth",
+        host: "https://GHE.Own.example.com/",
+        clientId: "Iv1.mine",
+        clientSecret: "mine",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    expect(own.auth).toMatchObject({
+      host: "ghe.own.example.com",
+      authorizationUrl: "https://ghe.own.example.com/login/oauth/authorize",
+    });
+
+    const pat = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-pat",
+    )!;
+    const token = await buildConnection(
+      pat,
+      {
+        templateId: pat.id,
+        name: "ghe-pat",
+        authKind: "header",
+        host: `https://${NEW.toUpperCase()}/`,
+        value: "ghp_x",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    const hosts = token.contributions.flatMap((c) =>
+      c.kind === "egress-inject" ? [c.host] : [],
+    );
+    expect(hosts).toContain(NEW);
+    expect(hosts.every((h) => h === h.toLowerCase() && !h.includes("/"))).toBe(
+      true,
+    );
+
+    await expect(
+      buildConnection(
+        pat,
+        {
+          templateId: pat.id,
+          name: "ghe-pat-2",
+          authKind: "header",
+          host: "not a host",
+          value: "ghp_x",
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      ),
+    ).rejects.toThrow(/is not a GitHub Enterprise hostname/);
+  });
+});
+
+describe("a GitHub Enterprise host with a port", () => {
+  // TEST_SCENARIO: a token on a host that listens on another port must keep that port, or its egress rules address port 443 and every call fails; a sign-in or app installation has no way to carry a port, so it is refused with a message rather than silently dropped.
+  it("keeps a token's port, and refuses one for a sign-in or app", async () => {
+    const pat = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-pat",
+    )!;
+    const token = await buildConnection(
+      pat,
+      {
+        templateId: pat.id,
+        name: "ghe-pat",
+        authKind: "header",
+        host: `https://${NEW}:8443/`,
+        value: "ghp_x",
+      },
+      mintRef,
+      CALLBACK,
+      "Test",
+    );
+    const injected = token.contributions.flatMap((c) =>
+      c.kind === "egress-inject" ? [[c.host, c.port]] : [],
+    );
+    expect(injected).toContainEqual([NEW, 8443]);
+    expect(injected).toContainEqual([`api.${NEW}`, 8443]);
+
+    await expect(build(`${NEW}:8443`)).rejects.toThrow(
+      /names a port\. A GitHub Enterprise sign-in or app installation reaches its host on port 443/,
+    );
+    const app = buildCatalog(CREDS).find(
+      (t) => t.id === "github-enterprise-app",
+    )!;
+    await expect(
+      buildConnection(
+        app,
+        {
+          templateId: app.id,
+          name: "ghe-app",
+          authKind: "github-app",
+          host: `${NEW}:8443`,
+          appId: "1",
+          installationId: "2",
+          privateKey:
+            "-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----",
+          fullAccess: true,
+        },
+        mintRef,
+        CALLBACK,
+        "Test",
+      ),
+    ).rejects.toThrow(/names a port/);
+  });
+});
+
 describe("hosts written with a scheme or a port", () => {
   // TEST_SCENARIO: an operator may write a host as a URL or with a port in the chart; it must still match its app and its retirement, or the picker offers a host whose every sign-in fails and a retired host is never refused.
   it("match their app and their retirement by hostname", async () => {

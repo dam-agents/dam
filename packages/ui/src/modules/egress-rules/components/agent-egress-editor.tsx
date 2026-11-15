@@ -59,6 +59,7 @@ import {
   RULE_GROUP_TITLE,
   type RuleGroupKey,
 } from "../rule-groups.js";
+import { ChildEgressToggle } from "./child-egress-toggle.js";
 
 const EMPTY: EgressRuleView[] = [];
 const ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -170,6 +171,7 @@ export function AgentEgressEditor({
           </Button>
         </div>
       )}
+      {!compact && <ChildEgressToggle agentId={agentId} />}
       <ListSection
         className={compact ? "mb-0" : undefined}
         loading={isLoading}
@@ -196,9 +198,12 @@ export function AgentEgressEditor({
         )}
         {!query.trim() && <RemovedPlatformRule agentId={agentId} />}
         {groups.map((g) => {
-          // UNIT_BOUNDARY_DESCRIPTION: only the groups whose rules come from somewhere else fold — a connection's rules repeat what the Connections section already lists, and a preset's are a hundred lines of someone else's defaults — while the reader's own rules and a kit's stay open; a search shows every match.
+          // UNIT_BOUNDARY_DESCRIPTION: only the groups whose rules come from somewhere else fold — a connection's rules repeat what the Connections section already lists, a preset's are a hundred lines of someone else's defaults, and the platform's one rule is the platform's, not the reader's — while the reader's own rules and a kit's stay open; a search shows every match.
           const collapsible =
-            !query.trim() && (g.key === "connection" || g.key === "preset");
+            !query.trim() &&
+            (g.key === "connection" ||
+              g.key === "preset" ||
+              g.key === "platform");
           const open = !collapsible || (openGroups[g.key] ?? false);
           return (
             <ListGroup
@@ -235,35 +240,38 @@ export function AgentEgressEditor({
                 </div>
               }
             >
-              {g.key === "platform" && (
-                <p
-                  className="px-4 pt-1 text-xs text-muted-foreground"
-                  data-testid="egress-platform-note"
-                >
-                  Lets this agent open the Environments shared with it, from its
-                  sandbox. Its gateway sends its key with these requests, and
-                  each Environment decides whether to let it in. Remove it to
-                  turn that off; you can restore it here.
-                </p>
+              {open && (
+                <>
+                  {g.key === "platform" && (
+                    <p
+                      className="px-4 pt-1 text-xs text-muted-foreground"
+                      data-testid="egress-platform-note"
+                    >
+                      Lets this agent open the Environments shared with it, from
+                      its sandbox. Its gateway sends its key with these
+                      requests, and each Environment decides whether to let it
+                      in. Remove it to turn that off; you can restore it here.
+                    </p>
+                  )}
+                  {g.rules.map((r) => (
+                    <RuleRow
+                      key={r.id}
+                      rule={r}
+                      group={g.key}
+                      decidedByYou={r.decidedBy === me}
+                      connectionName={
+                        r.source.startsWith("connection:")
+                          ? connectionNames.get(
+                              r.source.slice("connection:".length),
+                            )
+                          : undefined
+                      }
+                      disabled={revokeRule.isPending}
+                      onRevoke={() => void revoke(r)}
+                    />
+                  ))}
+                </>
               )}
-              {open &&
-                g.rules.map((r) => (
-                  <RuleRow
-                    key={r.id}
-                    rule={r}
-                    group={g.key}
-                    decidedByYou={r.decidedBy === me}
-                    connectionName={
-                      r.source.startsWith("connection:")
-                        ? connectionNames.get(
-                            r.source.slice("connection:".length),
-                          )
-                        : undefined
-                    }
-                    disabled={revokeRule.isPending}
-                    onRevoke={() => void revoke(r)}
-                  />
-                ))}
             </ListGroup>
           );
         })}

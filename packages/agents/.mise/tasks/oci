@@ -251,6 +251,11 @@ build_default() (
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist/js "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  # The dam CLI this image carries, as one file the /usr/local/bin/dam wrapper
+  # runs. The image ships no install command for it: an agent gets the server
+  # URL and a placeholder token from the Connection that grants this install.
+  pnpm --filter @dam-agents/cli exec tsup
+  install -D -m 644 packages/cli/dist/js/bin.js "$b/usr/local/lib/dam/dam.mjs"
   install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
 
   # Not -C: mise reads .miserc.toml from the working directory only.

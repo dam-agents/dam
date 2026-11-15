@@ -21,7 +21,6 @@ import { exitCodeFor, printError } from "./chat.js";
 const SUMMARY_MAX = 160;
 const TEXT_MAX = 400;
 
-// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
 
 function safe(text: string): string {

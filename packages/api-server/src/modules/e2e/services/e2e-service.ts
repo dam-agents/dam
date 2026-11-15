@@ -17,6 +17,7 @@ export interface SlackInstallE2eControl {
   record(install: {
     teamId: string;
     teamName: string | null;
+    enterpriseId: string | null;
     botToken: string;
     rotation: null;
     installedBy: string | null;
@@ -143,6 +144,7 @@ export function createE2eService(deps: {
       const secretPath = await installs.record({
         teamId: input.teamId,
         teamName: input.teamName ?? null,
+        enterpriseId: null,
         botToken: input.botToken,
         rotation: null,
         installedBy: null,

@@ -14,6 +14,6 @@ export function assistantFeatureRow(brand: Brand): {
   return {
     id: "dambledore",
     label: brand.assistantName,
-    description: `Smart assistant that can control ${brand.name} for you`,
+    description: `An assistant that can control ${brand.name} for you.`,
   };
 }

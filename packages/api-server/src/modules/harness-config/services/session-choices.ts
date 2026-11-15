@@ -29,9 +29,17 @@ export interface SessionChoices {
   settings?: SessionSettings;
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the pair a fire already resolved, given to the check that runs at fire rather than at save, so the run's own model is never refused as if the person had just typed it. */
+export type FiredPair = {
+  harness: string;
+  provider?: string | null;
+  model: string | null;
+};
+
 export type SessionChoicesValidator = (
   agentId: string,
   choices: SessionChoices,
+  fire?: FiredPair,
 ) => Promise<string | undefined>;
 
 /**
@@ -101,11 +109,18 @@ export function createSessionChoicesValidator(deps: {
   const fireOf = async (
     agentId: string,
     choices: SessionChoices,
+    fired: FiredPair | undefined,
   ): Promise<{
     harness: string;
     provider: string | null;
     model: string | null;
   } | null> => {
+    if (fired)
+      return {
+        harness: fired.harness,
+        provider: fired.provider ?? null,
+        model: fired.model,
+      };
     try {
       const fire = await deps.firePair(agentId, "scheduled", {
         ...(choices.harness !== undefined && { harness: choices.harness }),
@@ -128,7 +143,7 @@ export function createSessionChoicesValidator(deps: {
       model: string | null;
     } | null,
   ): Promise<string | undefined> => {
-    if (!fire) return undefined;
+    if (!fire || fire.model === null) return undefined;
     const capability = carried.find((h) => h.name === fire.harness);
     const nativeTemplates = capability?.nativeTemplates ?? [];
     if (nativeTemplates.length === 0 || !choices.settings) return undefined;
@@ -164,7 +179,7 @@ export function createSessionChoicesValidator(deps: {
       : undefined;
   };
 
-  return async (agentId, choices) => {
+  return async (agentId, choices, fired) => {
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities))
       return legacyChoices(agentId, capabilities, choices);
@@ -202,7 +217,7 @@ export function createSessionChoicesValidator(deps: {
     }
     if (choices.settings !== undefined) {
       /* UNIT_BOUNDARY_DESCRIPTION: the settings checked are the ones a fire runs, native subagent values derived by the one rule against the pair the fire resolves, so save and fire agree on what the sub-agent is (D193B). */
-      const fire = await fireOf(agentId, choices);
+      const fire = await fireOf(agentId, choices, fired);
       const effectiveHarness = fire?.harness ?? harness;
       const effectiveCapability =
         carried.find((h) => h.name === effectiveHarness) ?? harnessCapability;

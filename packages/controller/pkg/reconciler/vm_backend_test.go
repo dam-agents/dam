@@ -655,11 +655,10 @@ func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedI
 	return informer
 }
 
-// TEST_SCENARIO: every Agent that existed before this release still carries what the CRD keeps but no code reads — a container backend, a runtime class, a node selector, the copy attempts. Such an Agent must reconcile into exactly the machine a clean one of the same spec gets, and the controller must not rewrite the stale fields, since only the CRD's retirement removes them.
+// TEST_SCENARIO: every Agent that existed before this release still carries what the CRD keeps but no code reads — a runtime class, a node selector, the copy attempts. Such an Agent must reconcile into exactly the machine a clean one of the same spec gets, and the controller must not rewrite the stale fields, since only the CRD's retirement removes them. The fields are no reason to refuse the Agent: an Agent that names the vm backend with them is still reconciled.
 func TestAStaleAgentReconcilesLikeACleanOne(t *testing.T) {
 	ctx := context.Background()
 	stale := vmAgentCR()
-	stale.Spec.Backend = &apiv1.Backend{Type: "container"}
 	stale.Spec.RuntimeClassName = "gvisor"
 	stale.Spec.NodeSelector = map[string]string{"gpu": "true"}
 	stale.Status.RuntimeMigrationAttempts = 3
@@ -673,6 +672,57 @@ func TestAStaleAgentReconcilesLikeACleanOne(t *testing.T) {
 	assert.Equal(t, cleanNode.spec("my-agent"), staleNode.spec("my-agent"))
 	stored, err := staleReconciler.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
-	backend, _, _ := unstructured.NestedString(stored.Object, "spec", "backend", "type")
-	assert.Equal(t, "container", backend, "the stale field stays as the CRD left it")
+	runtimeClassName, _, _ := unstructured.NestedString(stored.Object, "spec", "runtimeClassName")
+	assert.Equal(t, "gvisor", runtimeClassName, "the stale field stays as the CRD left it")
 }
+
+// TEST_SCENARIO: the container backend and the runtime migration that moved Agents off it are gone, so an Agent still on it can only be refused: no machine is made for it, and it reads not-ready with the reason and the message that say to move it on the release this install runs now. An Agent that names no backend is refused the same way, since that is how a release before this one wrote a container Agent. Both can appear after the controller started — a restore, the previous api-server during a rollout — so the refusal belongs to the reconcile, and the vm Agent beside them keeps reconciling.
+func TestAnAgentOnTheContainerBackendGetsNoMachine(t *testing.T) {
+	ctx := context.Background()
+	container := vmAgentCR()
+	container.Name, container.UID = "container-agent", "container-uid"
+	container.Spec.Backend = &apiv1.Backend{Type: "container"}
+	legacy := vmAgentCR()
+	legacy.Name, legacy.UID = "legacy-agent", "legacy-uid"
+	legacy.Spec.Backend = nil
+	vm := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, vm)
+	for _, other := range []*apiv1.Agent{container, legacy} {
+		other.Labels = map[string]string{envoyOwnerLabel: testOwner}
+		stored, err := agentToUnstructured(other)
+		require.NoError(t, err)
+		_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, stored, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+
+	assert.NoError(t, r.Reconcile(ctx, container), "a refusal is a published state, not a reconcile error")
+	assert.NoError(t, r.Reconcile(ctx, legacy), "a refusal is a published state, not a reconcile error")
+	require.NoError(t, r.Reconcile(ctx, vm))
+
+	for _, name := range []string{"container-agent", "legacy-agent"} {
+		cond := readyCondition(t, r, name)
+		require.NotNil(t, cond, "%s carries no Ready condition", name)
+		assert.Equal(t, metav1.ConditionFalse, cond.Status, "%s reads ready on a backend this release cannot run", name)
+		assert.Equal(t, apiv1.ReasonContainerBackendRemoved, cond.Reason)
+		assert.Contains(t, cond.Message, "Move it to the vm backend", "%s does not say what to do", name)
+		assert.Empty(t, node.specs[name], "%s got a machine", name)
+	}
+	assert.NotEmpty(t, node.spec("my-agent"), "the vm Agent beside them stopped reconciling")
+}
+
+// TEST_SCENARIO: an absent backend is the container backend only while the custom resources are the fleet. After the store's switch the rows are, and they carry no backend at all, so the same Agent there is a machine like every other and is reconciled rather than refused.
+func TestAnAbsentBackendIsOnlyRefusedOnTheCustomResources(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	agent.Spec.Backend = nil
+	r, node, _ := setupVMReconciler(t, agent)
+	r.WithAgentBackend(rowsAuthority{crAgentBackend{dynamic: r.dynamic, namespace: r.config.Namespace}})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.NotEmpty(t, node.spec("my-agent"), "an Agent the rows describe as a machine was refused as a container one")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the rows authority, as the store presents it: every read and write is the custom resources' here, and only the answer to whether the controller writes the definition differs.
+type rowsAuthority struct{ AgentBackend }
+
+func (rowsAuthority) SpecWritable() bool { return false }

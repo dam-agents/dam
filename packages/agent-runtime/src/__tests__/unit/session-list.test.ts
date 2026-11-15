@@ -266,6 +266,55 @@ describe("pageSessions", () => {
     expect(page.nextCursor).toBeNull();
   });
 
+  // TEST_SCENARIO: The sidebar's filter on an Agent goes with the page request: Slack and Telegram are told apart, a schedule's chat counts as a schedule, In progress is a running turn and Unread is activity newer than the viewer last saw. The filter runs before the cut, so each page holds up to its limit of matches, however few of the newest sessions match.
+  it("narrows a page by channel type and status before cutting it", () => {
+    const seen = "2026-08-27T12:00:00.000Z";
+    const all = [
+      session("chat-new", "2026-08-27T16:00:00.000Z", { seenAt: seen }),
+      session("slack-read", "2026-08-27T15:00:00.000Z", {
+        type: "channel_slack",
+        seenAt: "2026-08-27T15:00:00.000Z",
+      }),
+      session("telegram", "2026-08-27T14:30:00.000Z", {
+        type: "channel_telegram",
+        running: true,
+      }),
+      session("slack-run", "2026-08-27T14:00:00.000Z", {
+        type: "channel_slack",
+        running: true,
+      }),
+      session("scheduled-chat", "2026-08-27T13:00:00.000Z", {
+        scheduleId: "s1",
+        running: true,
+      }),
+      session("slack-new", "2026-08-27T13:30:00.000Z", {
+        type: "channel_slack",
+        seenAt: seen,
+      }),
+    ];
+    const ids = (query: SessionListQuery) =>
+      pageSessions(all, query).sessions.map((s) => s.sessionId);
+    expect(ids({ channelTypes: ["slack"] })).toEqual([
+      "slack-read",
+      "slack-run",
+      "slack-new",
+    ]);
+    expect(ids({ channelTypes: ["chat"] })).toEqual(["chat-new"]);
+    expect(ids({ channelTypes: ["schedule"] })).toEqual(["scheduled-chat"]);
+    expect(ids({ status: "running" })).toEqual([
+      "telegram",
+      "slack-run",
+      "scheduled-chat",
+    ]);
+    expect(ids({ channelTypes: ["slack"], status: "unread" })).toEqual([
+      "slack-run",
+      "slack-new",
+    ]);
+    const page = pageSessions(all, { channelTypes: ["slack"], limit: 1 });
+    expect(page.sessions.map((s) => s.sessionId)).toEqual(["slack-read"]);
+    expect(page.nextCursor).not.toBeNull();
+  });
+
   // TEST_SCENARIO: A one-time task that continued a chat ran its turn in a session it did not open, so the schedule's filter also matches a session that names the schedule among the ones that continued it.
   it("lists a session a schedule continued under that schedule", () => {
     const all = [

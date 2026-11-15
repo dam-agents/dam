@@ -83,7 +83,7 @@ describe("finished container row copy", () => {
 
 describe("container row order", () => {
   test("lists the user's own work first, then runtimes, then containers", () => {
-    const [group] = groupProcesses([container, runtime, plain], false);
+    const [group] = groupProcesses([container, runtime, plain]);
     expect(group?.rows.map((r) => r.key)).toEqual(["sleep", "k3s", "shim"]);
   });
 });

@@ -57,16 +57,16 @@ func BuildGatewayIngressNetworkPolicy(pairKey, owner string, cfg *config.Config,
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the api-server ports a gateway dials: ext-authz and the harness, and, on an install that serves Environments, the public port, where an Agent Key chain takes its requests to the Environment gate. Every route on that port authenticates its caller, as the ingress already sends the whole internet there; only the gateway reaches it, never the machine behind it.
+// UNIT_BOUNDARY_DESCRIPTION: the api-server ports a gateway dials: ext-authz and the harness, and the public port, where the chain of the Connection that drives this install takes its requests to the install's own Service — and, on an install that serves Environments, where an Agent Key chain takes its requests to the Environment gate. Every route on that port authenticates its caller, as the ingress already sends the whole internet there; a gateway without such a Connection has no key to send and is refused there, and the machine never reaches it.
 func apiServerPorts(cfg *config.Config) []int {
 	ports := []int{cfg.ExtAuthzPort, cfg.HarnessServerPort, hbonePort}
-	if cfg.EnvironmentsDomain != "" && cfg.APIServerPort != 0 {
+	if cfg.APIServerPort != 0 {
 		ports = append(ports, cfg.APIServerPort)
 	}
 	return ports
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness (and its public port, for Environments), the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The in-cluster peers and the ranges an install opens for its enterprise services come on top, each peer on its own ports, plus HBONE for a peer in the mesh, with the metadata endpoints excepted inside the ranges.
+// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness and its public port, the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The in-cluster peers and the ranges an install opens for its enterprise services come on top, each peer on its own ports, plus HBONE for a peer in the mesh, with the metadata endpoints excepted inside the ranges.
 func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	tcpPorts := func(ports ...int) []networkingv1.NetworkPolicyPort {

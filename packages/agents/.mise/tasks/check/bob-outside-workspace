@@ -1,0 +1,23 @@
+#!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+//MISE description="The Bob preload that opens tools outside the work directory targets the Bob version the image pins, so a bump revisits it"
+//MISE sources=["bob/image.toml", "bob/rootfs/usr/local/lib/bob-outside-workspace.mjs", ".mise/tasks/check/bob-outside-workspace"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+const pinned = read("bob/image.toml").match(/^"npm:@ibm\/bob" = "([^"]+)"$/m)?.[1];
+const targeted = read("bob/rootfs/usr/local/lib/bob-outside-workspace.mjs").match(/^const BOB_VERSION = "([^"]+)";$/m)?.[1];
+
+if (pinned === undefined || pinned !== targeted) {
+  console.error(
+    `bob-outside-workspace: the image pins Bob ${pinned} but the preload targets ${targeted}. ` +
+      "In the new Bob's dist/bob.js, confirm requiresExplicitApproval still treats a call outside the workspace as " +
+      "protected unless approval.permissionOptions gives its group enableOutsideWorkspace: true, and compare the " +
+      "preload's GROUPS with the permission groups Bob lists. Then run `mise run //packages/agents:test:bob-outside-workspace`, " +
+      "live-check that an Auto-approve chat reads ~/AGENTS.md without an approval (packages/agents/bob/README.md, " +
+      "\"Outside the work directory\"), and update BOB_VERSION.",
+  );
+  process.exit(1);
+}
+console.log("bob-outside-workspace: ok");

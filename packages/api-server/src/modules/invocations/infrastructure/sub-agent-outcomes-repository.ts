@@ -17,10 +17,17 @@ export interface SubAgentOutcomesRepository {
     runIds: string[],
     until: Date,
   ): Promise<void>;
-  markCollected(driverAgentId: string, runIds: string[]): Promise<void>;
+  collect(
+    driverAgentId: string,
+    runIds: string[],
+  ): Promise<{ inTurn: string[] }>;
   claimUndelivered(limit: number, until: Date): Promise<InvocationRow[]>;
   release(runIds: string[], lease: Date): Promise<void>;
-  markDelivered(runIds: string[], lease: Date): Promise<void>;
+  markDelivered(
+    runIds: string[],
+    lease: Date,
+    carriedWhole: string[],
+  ): Promise<void>;
   markWoken(runIds: string[]): Promise<void>;
   listDeliveredUnwoken(limit: number): Promise<InvocationRow[]>;
 }
@@ -85,19 +92,41 @@ export function createSubAgentOutcomesRepository(
         .where(and(drivenBy(driverAgentId), inArray(runsTable.id, runIds)));
     },
 
-    async markCollected(driverAgentId, runIds) {
-      if (runIds.length === 0) return;
+    // UNIT_BOUNDARY_DESCRIPTION: what a wait may hand back: one write takes every outcome no turn has, so a sweep cannot claim it after, and reports what it took. An outcome a wait took before, or a turn carried trimmed, is handed back again: that answer may never have reached the driver, and the trimmed turn sends it here for the rest. Every other one a sweep held when the write ran, so it goes out as a turn even when that sweep lets it go, and its id comes back as inTurn.
+    async collect(driverAgentId, runIds) {
+      if (runIds.length === 0) return { inTurn: [] };
       const now = new Date();
-      await db
+      const asked = () =>
+        and(drivenBy(driverAgentId), inArray(runsTable.id, runIds));
+      const taken = await db
         .update(runsTable)
         .set({ deliveredAt: now, wokeAt: now, claimedUntil: null })
         .where(
           and(
-            drivenBy(driverAgentId),
-            inArray(runsTable.id, runIds),
+            asked(),
             isNull(runsTable.deliveredAt),
+            sql`(${runsTable.claimedUntil} is null or ${runsTable.claimedUntil} < now())`,
           ),
-        );
+        )
+        .returning({ id: runsTable.id });
+      const tookNow = new Set(taken.map((r) => r.id));
+      const rows = await db
+        .select({
+          id: runsTable.id,
+          deliveredAt: runsTable.deliveredAt,
+          deliveredInTurn: runsTable.deliveredInTurn,
+        })
+        .from(runsTable)
+        .where(asked());
+      return {
+        inTurn: rows
+          .filter(
+            (r) =>
+              !tookNow.has(r.id) &&
+              (r.deliveredInTurn || r.deliveredAt === null),
+          )
+          .map((r) => r.id),
+      };
     },
 
     async claimUndelivered(limit, until) {
@@ -138,11 +167,18 @@ export function createSubAgentOutcomesRepository(
         );
     },
 
-    async markDelivered(runIds, lease) {
+    async markDelivered(runIds, lease, carriedWhole) {
       if (runIds.length === 0) return;
       await db
         .update(runsTable)
-        .set({ deliveredAt: new Date(), claimedUntil: null })
+        .set({
+          deliveredAt: new Date(),
+          deliveredInTurn:
+            carriedWhole.length > 0
+              ? inArray(runsTable.id, carriedWhole)
+              : false,
+          claimedUntil: null,
+        })
         .where(
           and(
             inArray(runsTable.id, runIds),

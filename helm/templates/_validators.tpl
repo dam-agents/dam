@@ -21,6 +21,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
 {{- include "platform.validate.templateDefaultsRenamed" . -}}
+{{- include "platform.validate.controllerConfigKeys" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -32,6 +33,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.environmentsUrlNamesTheDomain" . -}}
 {{- include "platform.validate.backchannelHostsAreItsOwn" . -}}
 {{- include "platform.validate.agentStore" . -}}
+{{- include "platform.validate.noContainerAgents" . -}}
 {{- end -}}
 
 {{/*
@@ -670,6 +672,53 @@ never happens — or, worse, a later one without the operator's timing.
 {{- end -}}
 
 {{/*
+The container backend and its runtime migration are gone: this release
+reconciles every Agent as a machine, so one still on the container backend boots
+on an empty home from its image while the data it wrote stays on a volume
+nothing mounts any more, and no later release can move it. The fleet is the
+cluster's to answer for, so the render asks the cluster before Helm applies
+anything, which puts the refusal ahead of the api-server's migrations — the
+first thing a new pod does. A pre-upgrade hook Job would run before the update
+too and was not chosen: it needs a Job, an image and RBAC of its own in the agent
+namespace, where `lookup` is one read.
+Every authority but `contract` is read this way: the `crd` release serves the
+Agents it is asked about, and a `postgres` one still serves them until the
+cutover it performs has absorbed them, so an Agent left on the container backend
+is caught on the way into either. `contract` reads only rows, and its custom
+resources are frozen copies nothing mounts or boots.
+`lookup` finds nothing in an offline render (`helm template`, a GitOps
+controller's plan), so the refusal never fires there, and an install applied
+that way (`helm template | kubectl apply`) never sees it: the api-server's
+migrations run, and only the controller's per-Agent refusal keeps such an Agent
+from booting. An upgrade through Helm refuses unless the identity running it may
+list Agents in the agent namespace.
+An Agent with no `spec.backend.type` is a container Agent: that is how a release
+before this one wrote one, and this one's api-server stamps `vm` on every Agent
+it creates.
+*/}}
+{{- define "platform.validate.noContainerAgents" -}}
+{{- $authority := "crd" -}}
+{{- with .Values.agentStore -}}{{- $authority = toString (.authority | default "crd") -}}{{- end -}}
+{{- if ne $authority "contract" -}}
+{{- $agents := index (lookup "agent-platform.ai/v1" "Agent" .Values.agentNamespace "" | default dict) "items" -}}
+{{- $left := list -}}
+{{- range $agents -}}
+{{- $type := toString (dig "spec" "backend" "type" "" . | default "none") -}}
+{{- if ne $type "vm" -}}
+{{- $left = append $left (printf "%s/%s (backend: %s)" (dig "metadata" "namespace" "" .) (dig "metadata" "name" "" .) $type) -}}
+{{- end -}}
+{{- end -}}
+{{- if $left -}}
+{{- $named := $left -}}
+{{- if gt (len $left) 10 -}}
+{{- $named = append (slice $left 0 10) (printf "and %d more" (sub (len $left) 10)) -}}
+{{- end -}}
+{{- fail (printf "%d Agent(s) still run on the container backend: %s. This release has neither that backend nor the runtime migration that moved Agents off it, so each of them would boot as a machine on a fresh home from its image, while the volume its data is on stays where nothing mounts it, and no later release can move it. Move them to the vm backend with the release this install runs now (its runtime migration carries an Agent's home across), then run this upgrade. An Agent whose spec.backend.type is absent counts as a container Agent." (len $left) (join ", " $named)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The Templates were renamed from `agentTemplates` with no alias. Helm keeps the
 old map and reads none of it, so an install that kept the key renders no
 Template it declares and no pull Secret one of them brings, while the Agents
@@ -694,5 +743,163 @@ instead, naming the key to rename.
 {{- define "platform.validate.templateDefaultsRenamed" -}}
 {{- if hasKey .Values.controller.agent "templateDefaults" -}}
 {{- fail "controller.agent.templateDefaults is no longer read: the key was renamed to harnessTemplateDefaults with no alias, so this install would render the chart's defaults instead of its own for every agent built from a harness template. Rename the key to harnessTemplateDefaults in every values file." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The controller decodes AGENT_BASE, AGENT_HARNESS_TEMPLATE_DEFAULTS, AGENT_VM and
+GATEWAY_EGRESS with DisallowUnknownFields and exits on a key its structs do not
+declare, and on a value of another kind than the field it lands in, so an
+install whose values carry one renders fine and then crash-loops.
+The declared keys and their kinds are chart data, controller-config-keys.json,
+which the config package's own test generates from the structs, Kubernetes types
+included: an `object` is a struct, an `array` and a `map` say what their items
+and their free-form values are, an `int32` or an `int64` is a field the decoder
+reads as an int of that width and so refuses a fraction, or a number its field
+cannot hold, and a `string|number` kind is a type that reads its own JSON and
+takes either.
+AGENT_VM is the chart's own dict, so this checks the dict itself — the one the
+Deployment renders, via `platform.controller.agentVM` — rather than the values
+that are meant to reach it: everything an install sets a field from is checked
+with it. Its paths are named as the values would be, apart from the pull
+Secrets, which are checked first under their own name.
+*/}}
+{{- define "platform.validate.controllerConfigKeys" -}}
+{{- $keys := .Files.Get "controller-config-keys.json" | fromJson -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.base "keys" $keys.AGENT_BASE "path" "controller.agent.base" "env" "AGENT_BASE") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.agent.harnessTemplateDefaults "keys" $keys.AGENT_HARNESS_TEMPLATE_DEFAULTS "path" "controller.agent.harnessTemplateDefaults" "env" "AGENT_HARNESS_TEMPLATE_DEFAULTS") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.controller.gatewayEgress "keys" $keys.GATEWAY_EGRESS "path" "controller.gatewayEgress" "env" "GATEWAY_EGRESS") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" .Values.imagePullSecrets "keys" $keys.AGENT_VM.fields.runner.fields.imagePullSecrets "path" "imagePullSecrets" "env" "AGENT_VM") -}}
+{{- $vm := include "platform.controller.agentVM" . | fromJson -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $vm.runner "keys" $keys.AGENT_VM.fields.runner "path" "virtualization.runner" "env" "AGENT_VM") -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $vm.gateway "keys" $keys.AGENT_VM.fields.gateway "path" "virtualization.gateway" "env" "AGENT_VM") -}}
+{{- end -}}
+
+{{/*
+One value against what its key declares: its kind, then its own keys or items.
+A key no struct names fails the render — whether it is a key the controller ever
+read or a typo — and so does a value of the wrong kind, which its decoder
+refuses. A null is neither: Helm drops it and the decoder takes it.
+*/}}
+{{- define "platform.validate.controllerConfigKeysIn" -}}
+{{- $path := .path -}}
+{{- $env := .env -}}
+{{- $keys := .keys -}}
+{{- $kind := include "platform.validate.jsonKind" .value -}}
+{{- if ne $kind "null" -}}
+{{- if kindIs "string" $keys -}}
+{{- $value := .value -}}
+{{- $fits := false -}}
+{{- range $want := splitList "|" $keys -}}
+{{- if or (eq $want "any") (eq $want $kind)
+      (and (eq $want "number") (has $kind (list "integer" "fractional")))
+      (and (has $want (list "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64"))
+           (eq $kind "integer")
+           (eq (include "platform.validate.integerFits" (dict "kind" $want "value" $value)) "true")) -}}
+{{- $fits = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $fits -}}
+{{- $width := "" -}}
+{{- if eq $kind "integer" -}}
+{{- range $want := splitList "|" $keys -}}
+{{- if has $want (list "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64") -}}{{- $width = $want -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $width -}}
+{{- $shown := ternary (printf "%.0f" $value) (printf "%v" $value) (eq (kindOf $value) "float64") -}}
+{{- fail (printf "%s must fit in %s, got %s: the controller decodes %s strictly and exits on a value the field cannot hold, so this install would crash-loop." $path $width $shown $env) -}}
+{{- else -}}
+{{- fail (printf "%s must be %s, got %s: the controller decodes %s strictly and exits on a value that is not the kind its field declares, so this install would crash-loop." $path (include "platform.validate.kindWords" $keys) (include "platform.validate.kindWords" $kind) $env) -}}
+{{- end -}}
+{{- end -}}
+{{- else -}}
+{{- $wanted := ternary "array" "object" (eq $keys.kind "array") -}}
+{{- if ne $kind $wanted -}}
+{{- fail (printf "%s must be %s, got %s: the controller decodes %s strictly and exits on a value that is not the kind its field declares, so this install would crash-loop." $path (include "platform.validate.kindWords" $wanted) (include "platform.validate.kindWords" $kind) $env) -}}
+{{- end -}}
+{{- if eq $keys.kind "array" -}}
+{{- range $i, $item := .value -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" $keys.items "path" (printf "%s[%d]" $path $i) "env" $env) -}}
+{{- end -}}
+{{- else if eq $keys.kind "map" -}}
+{{- range $key, $item := .value -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" $keys.values "path" (printf "%s.%s" $path $key) "env" $env) -}}
+{{- end -}}
+{{- else -}}
+{{- $fields := $keys.fields | default dict -}}
+{{- range $key, $item := .value -}}
+{{- if hasKey $fields $key -}}
+{{- include "platform.validate.controllerConfigKeysIn" (dict "value" $item "keys" (index $fields $key) "path" (printf "%s.%s" $path $key) "env" $env) -}}
+{{- else if and (eq $env "AGENT_BASE") (has $key (list "accessMode" "affinity" "containerSecurityContext" "extraAnnotations" "extraLabels" "idleTimeout" "iptablesInit" "nodeSelector" "npGateInit" "podSecurityContext" "priorityClassName" "probes" "runtimeClassName" "storageClass" "terminationGracePeriod" "tolerations" "topologySpreadConstraints")) -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it configured the agent pod, which went with the container backend, and the controller exits on a key its config does not declare — so this install would crash-loop. Delete it." $path $key) -}}
+{{- else -}}
+{{- fail (printf "%s.%s is not a key the controller reads: it decodes %s strictly and exits on an unknown field, so this install would crash-loop. Delete it, or fix the spelling." $path $key $env) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The kind of a value, in the vocabulary of the generated key list. Helm reads the
+digits of a values file as an int64 or as a float64, so a float with nothing
+behind its point is a whole number too: a values file's `2` and a JSON
+document's `2.0` are the same number to the decoder, while a fraction is one it
+refuses in an int field. A null — a YAML `~` or `null`, or a `--set key=null` —
+is its own.
+*/}}
+{{- define "platform.validate.jsonKind" -}}
+{{- $kind := kindOf . -}}
+{{- if eq $kind "string" -}}string
+{{- else if eq $kind "bool" -}}boolean
+{{- else if eq $kind "map" -}}object
+{{- else if eq $kind "slice" -}}array
+{{- else if has $kind (list "int8" "int16" "int32" "int64" "int" "uint8" "uint16" "uint32" "uint64" "uint") -}}integer
+{{- else if has $kind (list "float32" "float64") -}}{{ ternary "integer" "fractional" (eq (floor .) .) }}
+{{- else -}}null
+{{- end -}}
+{{- end -}}
+
+{{/*
+A kind, and a `string|number` pair of them, as the sentence that names it.
+*/}}
+{{- define "platform.validate.kindWords" -}}
+{{- $names := dict "string" "a string" "number" "a number" "integer" "a whole number" "fractional" "a fractional number" "boolean" "a boolean" "object" "a map" "array" "a list" "map" "a map" "any" "any value" -}}
+{{- range $width := list "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64" -}}
+{{- $_ := set $names $width "a whole number" -}}
+{{- end -}}
+{{- $words := list -}}
+{{- range $kind := splitList "|" . -}}
+{{- $words = append $words (index $names $kind) -}}
+{{- end -}}
+{{- join " or " $words -}}
+{{- end -}}
+
+{{/*
+Whether a whole value fits the int its field declares. Helm holds an integer as
+an int64 and a values file's `2` as a float64, so the rare value is measured
+with the operator that keeps it inside the field: a float at 2^63 renders as
+2^63, one past an int64's last value, and so is out — the bound is the float64
+nearest the field's own limit, not the limit itself.
+*/}}
+{{- define "platform.validate.integerFits" -}}
+{{- $kind := .kind -}}
+{{- $value := .value -}}
+{{- $int := kindOf $value -}}
+{{- if has $int (list "int8" "int16" "int32" "int64" "int" "uint8" "uint16" "uint32" "uint64" "uint") -}}
+{{- $v := int64 $value -}}
+{{- if eq $kind "int64" -}}true
+{{- else if eq $kind "uint64" -}}{{ ge $v 0 }}
+{{- else -}}
+{{- $bounds := index (dict "int8" (list -128 127) "int16" (list -32768 32767) "int32" (list -2147483648 2147483647) "uint8" (list 0 255) "uint16" (list 0 65535) "uint32" (list 0 4294967295)) $kind -}}
+{{- and (ge $v (int64 (index $bounds 0))) (le $v (int64 (index $bounds 1))) -}}
+{{- end -}}
+{{- else -}}
+{{- $v := float64 $value -}}
+{{- $bounds := index (dict "int8" (list -128.0 127.0) "int16" (list -32768.0 32767.0) "int32" (list -2147483648.0 2147483647.0) "uint8" (list 0.0 255.0) "uint16" (list 0.0 65535.0) "uint32" (list 0.0 4294967295.0) "int64" (list -9.223372036854775808e18 9.223372036854775808e18) "uint64" (list 0.0 1.8446744073709552e19)) $kind -}}
+{{- $upper := ternary (lt $v (index $bounds 1)) (le $v (index $bounds 1)) (has $kind (list "int64" "uint64")) -}}
+{{- and (eq (floor $v) $v) (ge $v (index $bounds 0)) $upper -}}
 {{- end -}}
 {{- end -}}

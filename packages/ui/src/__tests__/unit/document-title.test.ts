@@ -53,4 +53,14 @@ describe("documentTitle", () => {
       "Home · Brand",
     );
   });
+
+  test("names an artifact page by the artifact's title", () => {
+    expect(
+      documentTitle(
+        { ...base, view: "artifact" },
+        { artifact: "KPIs" },
+        "Brand",
+      ),
+    ).toBe("KPIs · Brand");
+  });
 });

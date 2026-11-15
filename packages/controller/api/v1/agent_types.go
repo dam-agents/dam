@@ -298,6 +298,15 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonContainerBackendRemoved is stamped on Ready for an Agent whose spec still
+// asks for the container backend, which this release neither runs nor can move:
+// its machine would boot on a home its data is not on, while the volume that
+// holds the home stays unread. The controller reconciles nothing for such an
+// Agent, and only an operator's runtime migration on the release before this one
+// moves it. An Agent whose spec names no backend counts as one of them, since
+// that is how a release before this one wrote a container Agent.
+const ReasonContainerBackendRemoved = "ContainerBackendRemoved"
+
 // ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
 // hibernation has begun but whose machine the runner is still stopping. The
 // runner answers a stop before the guest has powered off, so the agent is not
@@ -336,7 +345,7 @@ const ReasonAwaitingWarmUp = "AwaitingWarmUp"
 // for room and that refusal already hibernated one of the owner's idle agents
 // for it. The room those machines hold frees within seconds, so the start is
 // not ReasonOverBudget: a wake waits for it the way it waits for any start in
-// progress, and the owner is not asked to disable an agent for room the
+// progress, and the owner is not asked to delete an agent for room the
 // platform is making. The wait is bounded: a start nothing has freed room for in
 // the last memoryReclaimWait is a refusal again, and reads ReasonOverBudget.
 const ReasonAwaitingMemory = "AwaitingMemory"

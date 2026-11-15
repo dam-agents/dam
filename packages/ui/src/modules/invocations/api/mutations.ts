@@ -12,6 +12,16 @@ export function useStopDelegation() {
   });
 }
 
+export function useAnswerQuestion() {
+  return useMutation({
+    ...trpc.invocations.answer.mutationOptions(),
+    meta: {
+      invalidates: [trpc.invocations.pathKey()],
+      errorToast: "Couldn't send your answer",
+    },
+  });
+}
+
 export function useDeleteKeptSubAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),

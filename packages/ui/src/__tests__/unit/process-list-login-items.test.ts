@@ -45,7 +45,7 @@ function render(list: ProcessListData) {
     createElement(
       TooltipProvider,
       null,
-      createElement(ProcessList, { agentId: "agent-a", list, alwaysOn: false }),
+      createElement(ProcessList, { agentId: "agent-a", list }),
     ),
   );
 }

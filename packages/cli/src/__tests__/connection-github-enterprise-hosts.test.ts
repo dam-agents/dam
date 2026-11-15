@@ -37,6 +37,7 @@ const GHE: ConnectionTemplateView = {
   inputs: [
     { name: "host", state: "required", presetValue: HOSTS[0] },
     { name: "clientId", state: "overridable" },
+    { name: "clientSecret", state: "overridable", secret: true },
   ],
   extras: { hostChoices: HOSTS },
 };
@@ -98,15 +99,31 @@ describe("dam connection connect github-enterprise", () => {
     expect(startOAuth).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: a user with their own GitHub app may sign in on a host the server does not offer; the CLI leaves that to the server, which still refuses a retired host.
-  it("lets --client-id sign in on another host", async () => {
+  // TEST_SCENARIO: a user with their own GitHub app may sign in on a host the server does not offer, with its client ID and secret; with the ID alone it fails before anything is made, as the server would refuse it. The server still refuses a retired host.
+  it("lets your own app sign in on another host", async () => {
     const { command, create } = connect();
+    await run(
+      command,
+      [
+        "github-enterprise",
+        "--host",
+        "ghe.own.example.com",
+        "--client-id",
+        "Iv1.mine",
+      ],
+      EXIT_INVALID_INPUT,
+    );
+    expect(output.stderr).toMatch(/needs --client-secret too/);
+    expect(create).not.toHaveBeenCalled();
+
     await run(command, [
       "github-enterprise",
       "--host",
       "ghe.own.example.com",
       "--client-id",
       "Iv1.mine",
+      "--client-secret",
+      "mine-secret",
       "--no-browser",
       "--timeout",
       "1",
@@ -116,6 +133,7 @@ describe("dam connection connect github-enterprise", () => {
       expect.objectContaining({
         host: "ghe.own.example.com",
         clientId: "Iv1.mine",
+        clientSecret: "mine-secret",
       }),
     );
   });

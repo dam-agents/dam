@@ -18,6 +18,7 @@ import type {
 import { configureLogger } from "../../core/logger.js";
 import type { SlackMessage } from "../../modules/channels/infrastructure/slack-gateway.js";
 import { agentContextBlock } from "../../modules/channels/infrastructure/agent-footer.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: A Session owns the Slack threads it starts. A reply in such a
@@ -157,6 +158,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

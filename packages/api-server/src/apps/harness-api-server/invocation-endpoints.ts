@@ -8,6 +8,8 @@ import {
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
   stopInvocationRequestSchema,
+  type SetEgressResponse,
+  type SpawnInvocationResponse,
   type StopInvocationResponse,
 } from "api-server-api";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
@@ -82,7 +84,15 @@ export function mountInvocationRoutes(
         REFUSAL_STATUS[outcome.kind],
       );
     }
-    return c.json({ id: outcome.id }, 201);
+    return c.json(
+      {
+        id: outcome.id,
+        ...(outcome.egressWaiting.length > 0 && {
+          egressWaitingForOwner: outcome.egressWaiting,
+        }),
+      } satisfies SpawnInvocationResponse,
+      201,
+    );
   });
 
   app.get("/api/agents/:id/invocations/:invocationId", async (c) => {
@@ -224,7 +234,10 @@ export function mountInvocationRoutes(
       parsed.data.rules,
     );
     return outcome.ok
-      ? c.body(null, 204)
+      ? c.json({
+          waitingForOwner: outcome.waiting,
+          blockedByOwner: outcome.blocked,
+        } satisfies SetEgressResponse)
       : c.json(refused(outcome.message), 409);
   });
 

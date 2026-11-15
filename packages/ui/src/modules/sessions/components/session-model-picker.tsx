@@ -83,7 +83,12 @@ const CONTROL =
 
 interface MenuSection {
   title: string;
-  entries: { key: string; label: string; harness?: string }[];
+  entries: {
+    key: string;
+    label: string;
+    harness?: string;
+    description?: string;
+  }[];
 }
 
 interface Entry extends MenuEntry {
@@ -104,10 +109,13 @@ export function SessionModelPicker({
   note,
   profiles = [],
   selectedProfileId = null,
+  providerTriggerRef,
+  initialFocus,
   onPickProfile,
   onManageProfiles,
   onEditProfile,
   profileHarness,
+  defaultPair,
   agentDefault,
   saveAsProfile,
   onLeaveProfiles,
@@ -130,6 +138,8 @@ export function SessionModelPicker({
   onEditProfile?: (profile: ProfileWithUsage) => void;
   /** UNIT_BOUNDARY_DESCRIPTION: an open session offers only the profiles that run on its harness, and says so when none does. */
   profileHarness?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: the pair this pick follows: with no model picked, the Provider row shows that default's Connection when that default names this harness and the Connection runs it, and a harness or provider pick that keeps no model of its own starts on that default's model where the new harness listing and Connection offer it. */
+  defaultPair?: SessionPair | null;
   onManageProfiles?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: a channel or a schedule follows the agent's default until it is switched off, which copies the default's values into its own pick. */
   agentDefault?: {
@@ -140,6 +150,10 @@ export function SessionModelPicker({
   };
   saveAsProfile?: ReactNode;
   onLeaveProfiles?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the Provider row's trigger, which a caller focuses when the question that opened the panel is which provider to use. */
+  providerTriggerRef?: React.Ref<HTMLButtonElement>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the row a caller asked the panel to land on, which is on the fields and never on the saved profiles. */
+  initialFocus?: "provider";
   onChoose: (pair: SessionPair, intent: PickerIntent) => void;
   onManageProviders: () => void;
 }) {
@@ -152,8 +166,20 @@ export function SessionModelPicker({
   const connectOnPick = useConnectOnPick(agentId);
   const { attach } = useProfileAttach(agentId);
   const [older, setOlder] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the profiles this panel can offer at all: those on the session's own harness, whose harness it can offer — one the agent does not carry, or one its owner's feature leaves out, can never be picked here — and which the owner catalog says can run. */
+  const fitProfiles = sortProfiles(
+    profiles.filter(
+      (profile) =>
+        (profileHarness === undefined || profile.harness === profileHarness) &&
+        (harnesses.length === 0 || harnesses.includes(profile.harness)) &&
+        (profile.availability?.available ?? true),
+    ),
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: the panel opens on the fields while the profile in use is the only one to choose from, since a list of one is a screen with nothing to pick; two or more open on their list, which is what the picker is for then. A caller that asked for the Provider row starts on the fields too, since that row is not on the list. */
   const [view, setView] = useState<"custom" | "profiles">(() =>
-    profiles.length > 0 && selectedProfileId ? "profiles" : "custom",
+    initialFocus !== "provider" && fitProfiles.length > 1 && selectedProfileId
+      ? "profiles"
+      : "custom",
   );
   const [more, setMore] = useState<boolean | null>(null);
   const pair = pairProp;
@@ -222,8 +248,13 @@ export function SessionModelPicker({
     entry === null
       ? providerId !== undefined && runsHarness(harness, providerId)
       : entry.options.some((o) => o.group.connectionId === providerId);
-  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option whose own model name the pair holds; an unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the shown provider is the option that is both on the pair's own Connection and the pair's model, even where another Connection of the same alias lists the same model name; a family tier can hold another provider's name for the model, so the model alone comes next and the Connection alone after it. An unlisted model names its Connection by its qualified alias, and with no match the row shows nothing rather than the stale field a pinned model leaves behind. */
   const currentOption =
+    currentEntry?.options.find(
+      (o) =>
+        o.group.connectionId === pair?.provider &&
+        sameModel(o.model.name, model),
+    ) ??
     currentEntry?.options.find((o) => sameModel(o.model.name, model)) ??
     currentEntry?.options.find(
       (o) => o.group.connectionId === pair?.provider,
@@ -237,7 +268,12 @@ export function SessionModelPicker({
   const provider =
     owned.find((p) => p.id === providerId) ??
     (model === null
-      ? owned.find((p) => runsHarness(harness, p.id))
+      ? (owned.find(
+          (p) =>
+            defaultPair?.harness === harness &&
+            p.id === defaultPair.provider &&
+            runsHarness(harness, p.id),
+        ) ?? owned.find((p) => runsHarness(harness, p.id)))
       : undefined);
   const subOption =
     subEntry?.options.find((o) => o.group.connectionId === subProvider) ??
@@ -378,6 +414,23 @@ export function SessionModelPicker({
     allEntries.find((entry) =>
       entry.options.some((o) => o.group.connectionId === providerId),
     ) ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick that keeps no model of its own — none picked, or the picked one off the new harness or Connection — starts on the model the default it follows names, when that listing and this Connection offer it. */
+  const inheritedEntry = (
+    entries: readonly Entry[],
+    providerId: string | undefined,
+  ): Entry | null => {
+    const inherited = defaultPair?.model ?? null;
+    if (inherited === null) return null;
+    return (
+      entries.find((entry) =>
+        entry.options.some(
+          (o) =>
+            sameModel(o.model.name, inherited) &&
+            (providerId === undefined || o.group.connectionId === providerId),
+        ),
+      ) ?? null
+    );
+  };
   const changeProvider = (providerId: string) => {
     if (currentEntry) {
       const option = currentEntry.options.find(
@@ -385,16 +438,18 @@ export function SessionModelPicker({
       );
       if (option) return pickOption(option);
     }
-    const first = firstEntryOf(providerId);
+    const first =
+      inheritedEntry(allEntries, providerId) ?? firstEntryOf(providerId);
     if (first === null)
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
     const nextProvider =
       fit.granted.find((p) => p.id === provider?.id) ??
+      fit.granted.find((p) => p.id === defaultPair?.provider) ??
       fit.granted[0] ??
       fit.addable[0];
     const nextGroups = catalogModels.forHarness(name) ?? [];
@@ -403,12 +458,13 @@ export function SessionModelPicker({
       ...nextEntries.families.flatMap((section) => section.expanded),
       ...nextEntries.other.models,
     ];
-    const kept =
+    const current =
       model === null
-        ? null
-        : (offered.find((entry) =>
+        ? undefined
+        : offered.find((entry) =>
             entry.options.some((o) => sameModel(o.model.name, model)),
-          ) ?? null);
+          );
+    const kept = current ?? inheritedEntry(offered, nextProvider?.id);
     const keptOption =
       kept?.options.find((o) => o.group.connectionId === nextProvider?.id) ??
       kept?.options[0];
@@ -532,14 +588,6 @@ export function SessionModelPicker({
       ? undefined
       : (option?.choices.find((c) => c.value === value)?.name ?? value);
   const onProfiles = view === "profiles" && profiles.length > 0;
-  const fitProfiles = sortProfiles(
-    profiles.filter(
-      (profile) =>
-        (profileHarness === undefined || profile.harness === profileHarness) &&
-        (profile.availability?.available ?? true),
-    ),
-  );
-
   const effortField =
     effort &&
     (effortChoices.length === 0 ? (
@@ -653,7 +701,9 @@ export function SessionModelPicker({
                     Harness
                   </span>
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <HarnessIcons harnesses={[harness]} size="xs" />
+                    <span aria-hidden="true">
+                      <HarnessIcons harnesses={[harness]} size="xs" />
+                    </span>
                     <span className="truncate">
                       {harnessDisplayName(harness, views) ?? harness}
                     </span>
@@ -675,6 +725,8 @@ export function SessionModelPicker({
                           key: name,
                           label: harnessDisplayName(name, views) ?? name,
                           harness: name,
+                          description: views.find((view) => view.name === name)
+                            ?.description,
                         })),
                       },
                     ]}
@@ -744,6 +796,7 @@ export function SessionModelPicker({
                       reason={(id) => providerReason(currentEntry, id, harness)}
                       onPick={changeProvider}
                       onManage={onManageProviders}
+                      triggerRef={providerTriggerRef}
                     />
                   </div>
                 </div>
@@ -1089,9 +1142,18 @@ export function ValueMenu({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {entry.harness && (
-                      <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      <span aria-hidden="true">
+                        <HarnessIcons harnesses={[entry.harness]} size="xs" />
+                      </span>
                     )}
-                    <span className="truncate">{entry.label}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate">{entry.label}</span>
+                      {entry.description && (
+                        <span className="block whitespace-normal text-[12px] leading-snug text-muted-foreground">
+                          {entry.description}
+                        </span>
+                      )}
+                    </span>
                   </span>
                 </DropdownMenuRadioItem>
               ))}
@@ -1153,6 +1215,7 @@ function ProviderMenu({
   onPick,
   onManage,
   none,
+  triggerRef,
 }: {
   label: string;
   providers: readonly { id: string; name: string }[];
@@ -1161,6 +1224,7 @@ function ProviderMenu({
   reason: (id: string) => string | null;
   onPick: (id: string) => void;
   onManage?: () => void;
+  triggerRef?: React.Ref<HTMLButtonElement>;
   /** UNIT_BOUNDARY_DESCRIPTION: the empty choice a subagent slot has, "Same as agent", which no provider id stands for. */
   none?: { label: string; onPick: () => void };
 }) {
@@ -1178,6 +1242,7 @@ function ProviderMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={`${label}: ${shown}`}
           className={CONTROL}

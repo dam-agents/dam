@@ -1,17 +1,23 @@
 import type { z } from "zod";
+import type { OwnerQuestionNotice } from "../attention/types.js";
 import type {
   invocationHarnessConfigSchema,
   invocationOutputBlobSchema,
   invocationOutputLinkSchema,
   invocationOutputSchema,
   invocationOutputStreamSchema,
+  invocationAnswerInputSchema,
   invocationStopInputSchema,
+  invocationsQuestionsInputSchema,
+  ownerQuestionInputSchema,
   invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
   invocationsTreeInputSchema,
   invocationViewSchema,
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
+  setEgressResponseSchema,
+  egressWaitingSchema,
   stopInvocationRequestSchema,
   stopInvocationResponseSchema,
   spawnScriptInvocationRequestSchema,
@@ -32,6 +38,8 @@ export type InvocationOutputLink = z.infer<typeof invocationOutputLinkSchema>;
 export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
+export type SetEgressResponse = z.infer<typeof setEgressResponseSchema>;
+export type EgressWaiting = z.infer<typeof egressWaitingSchema>;
 export type InvocationView = z.infer<typeof invocationViewSchema>;
 export type StopInvocationRequest = z.infer<typeof stopInvocationRequestSchema>;
 export type StopInvocationResponse = z.infer<
@@ -44,6 +52,11 @@ export type InvocationTranscriptInput = z.infer<
 >;
 
 export type InvocationStopInput = z.infer<typeof invocationStopInputSchema>;
+export type InvocationAnswerInput = z.infer<typeof invocationAnswerInputSchema>;
+export type InvocationsQuestionsInput = z.infer<
+  typeof invocationsQuestionsInputSchema
+>;
+export type OwnerQuestionInput = z.infer<typeof ownerQuestionInputSchema>;
 
 export interface InvocationTranscript {
   frames: string[];
@@ -67,6 +80,29 @@ export interface DelegationStopped {
   reason: string | null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the question a sub-agent waits on: what it asks, the options it offers, the one it takes when nobody answers, and the time it waits until.
+export interface DelegationQuestion {
+  text: string;
+  options: string[];
+  default: string;
+  askedAt: string;
+  answerBy: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the answer a sub-agent's work goes on from: what was answered and who answered, the owner, or nobody, so it took its default at the time it waited until.
+export interface DelegationAnswer {
+  text: string;
+  by: "owner" | "default";
+  at: string;
+  answerBy: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a question a sub-agent under a Driver waits on, for the Driver's chat to put to the owner: the sub-agent's id and what to call it, and the question.
+export interface OwnerQuestion extends DelegationQuestion {
+  id: string;
+  title: string;
+}
+
 export interface DelegationNode {
   id: string;
   label: string | null;
@@ -84,6 +120,10 @@ export interface DelegationNode {
   requestedModel: string | null;
   createdAt: string;
   started: boolean;
+  // UNIT_BOUNDARY_DESCRIPTION: the sub-agent has not started its work because a network rule its driver set for it waits for the owner's answer; it is not working.
+  waitingForOwner?: boolean;
+  question?: DelegationQuestion;
+  answer?: DelegationAnswer;
   completedAt: string | null;
   transcriptAvailable: boolean;
   children: DelegationNode[];
@@ -106,8 +146,14 @@ export interface InvocationsQueryService {
   tree(input: InvocationsTreeInput): Promise<{ nodes: DelegationNode[] }>;
   running(input: InvocationsRunningInput): Promise<{ nodes: DelegationNode[] }>;
   transcript(input: InvocationTranscriptInput): Promise<InvocationTranscript>;
+  questions(
+    input: InvocationsQuestionsInput,
+  ): Promise<{ questions: OwnerQuestion[] }>;
+  // UNIT_BOUNDARY_DESCRIPTION: every question a sub-agent of the owner's waits on, each with the Agent and Session whose chat puts it to them.
+  waitingForOwner(): Promise<OwnerQuestionNotice[]>;
 }
 
 export interface InvocationsControlService {
   stop(input: InvocationStopInput): Promise<void>;
+  answer(input: InvocationAnswerInput): Promise<void>;
 }

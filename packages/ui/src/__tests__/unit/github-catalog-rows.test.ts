@@ -27,6 +27,9 @@ const fake = vi.hoisted(() => ({
 }));
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
+vi.mock("../../modules/features/api/queries.js", () => ({
+  useFeatures: () => ({ data: { damConnection: true } }),
+}));
 vi.mock("../../modules/connections/api/queries.js", () => ({
   useGitHubAppInstallations: (connectionId: string, enabled: boolean) => {
     fake.asked.push({ connectionId, enabled });

@@ -414,7 +414,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 				chains[i].RequireAddress = m.agent.Spec.RequireConnectionAddress
 			}
 			agents = append(agents, ownerGatewayAgent{Name: name, AttributionID: m.agent.Spec.TelemetryAttributionID, ProxyPort: ownerGatewayProxyPort(m.slot), Chains: chains})
-			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP})
+			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP, ClusterService: r.config.APIServerHost()})
 			granted = append(granted, m.secrets)
 			out.leafAgents = append(out.leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}
@@ -1473,8 +1473,16 @@ func (r *AgentReconciler) cutOverToOwnerGateway(ctx context.Context, owner strin
 			if err != nil {
 				return err
 			}
+			// UNIT_BOUNDARY_DESCRIPTION: the move records the agent up when it should run, the wake its reconcile would record, and otherwise carries over whether its own gateway was up, since its reconcile records only a wake: a moved agent with no record would read as asleep, and a turn running past the idle timeout would lose its machine. A first start or a start after a park moves before its own gateway pod is applied, so its own gateway alone reads as down.
+			awake := shouldRun(m.agent.Annotations, effectiveIdleTimeout(m.agent.Spec.HibernationTimeout, r.config.AgentBase), time.Now().UTC())
+			if !awake {
+				if awake, err = r.pairAwake(ctx, name); err != nil {
+					return err
+				}
+			}
 			moved := retargetedGatewayService(svc, owner, m.slot)
 			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annOwnerGatewayServed, "true")
+			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annDesiredUp, strconv.FormatBool(awake))
 			_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, moved, metav1.UpdateOptions{})
 			return err
 		}); err != nil {
