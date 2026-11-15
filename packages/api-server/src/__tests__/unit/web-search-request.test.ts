@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   messagesEndpointOf,
   readWebSearchRequest,
+  shownQuery,
 } from "../../modules/approvals/domain/web-search-request.js";
 
 const SEARCH_TOOL = {
@@ -122,10 +123,12 @@ describe("reading a model call for web search", () => {
     expect(readWebSearchRequest(body)).toEqual({ kind: "none" });
   });
 
-  // TEST_SCENARIO: a query too long to show is shortened for the approval, never refused.
-  it("bounds the query it shows", () => {
+  // TEST_SCENARIO: a query too long to show is read whole, never refused, and only the text an approval shows is shortened.
+  it("reads a long query whole and bounds only what it shows", () => {
     const request = readWebSearchRequest(claudeCodeSearch("q".repeat(5000)));
-    expect(request.kind === "search" && request.query?.length).toBe(1000);
+    const query = request.kind === "search" ? request.query : null;
+    expect(query?.length).toBe(5000);
+    expect(shownQuery(query)?.length).toBe(1000);
   });
 });
 

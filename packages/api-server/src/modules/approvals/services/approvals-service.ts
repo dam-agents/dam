@@ -506,21 +506,23 @@ async function writeRuleAndResolve(
   };
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a permanent answer to a held web search. The answer settles the approval first and writes the agent's web search rule only when it won that settle, so when two answers race, the rule is the winner's and the losing answer changes nothing. A rule write that fails after the settle leaves no rule, and the next search asks again.
 async function writeWebSearchRuleAndResolve(
   deps: CreateApprovalsServiceDeps,
   row: PendingApprovalRow,
   verdict: "allow" | "deny",
 ): Promise<ApprovalActionOutcome> {
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
+  const expiredFlipped = casWon
+    ? false
+    : await deps.repo.resolveExpired(row.id, verdict, deps.actor);
+  if (!casWon && !expiredFlipped) return NOT_ACTIONABLE;
   await deps.webSearchRuleWriter.write({
     agentId: row.agentId,
     verdict,
     decidedBy: deps.actor,
   });
-  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
-  const expiredFlipped = casWon
-    ? false
-    : await deps.repo.resolveExpired(row.id, verdict, deps.actor);
-  if (casWon || expiredFlipped) emitResolved(row, verdict);
+  emitResolved(row, verdict);
   auditVerdict(deps, row, verdict, {
     verdict,
     webSearchRuleWritten: true,

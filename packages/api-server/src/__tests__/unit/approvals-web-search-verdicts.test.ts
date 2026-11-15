@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the owner's verdicts on a held web search. Allow once and deny answer only the held search. Always allow and always deny write the agent's one web search rule, never an egress rule and never anything about the query, and they still write it when the hold already expired, so the agent's next search is answered by the rule. Allowing a whole host has no meaning for a search, so it changes nothing.
+// TEST_OVERVIEW: the owner's verdicts on a held web search. Allow once and deny answer only the held search. Always allow and always deny write the agent's one web search rule, never an egress rule and never anything about the query, and they still write it when the hold already expired, so the agent's next search is answered by the rule. When two permanent answers race, only the one that settles the search writes the rule. Allowing a whole host has no meaning for a search, so it changes nothing.
 import { describe, expect, it } from "vitest";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
@@ -41,7 +41,10 @@ function makeService(seed: PendingApprovalRow) {
       return true;
     };
   const repo = {
-    getPending: async (id: string) => rows.find((r) => r.id === id) ?? null,
+    getPending: async (id: string) => {
+      const row = rows.find((r) => r.id === id);
+      return row ? { ...row } : null;
+    },
     resolvePending: settle("pending"),
     resolveExpired: settle("expired"),
   } as unknown as ApprovalsRepository;
@@ -110,6 +113,22 @@ describe("verdicts on a held web search", () => {
       "rule_written_expired",
     );
     expect(webSearchRules).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: always allow and always deny given at the same time both read the search as waiting; only the answer that settles it writes the rule, so the stored rule matches the settled verdict and the losing answer changes nothing.
+  it("lets only the winning answer write the rule", async () => {
+    const { rows, service, webSearchRules } = makeService(searchRow("pending"));
+    const [allowed, denied] = await Promise.all([
+      service.approvePermanent("search-1"),
+      service.denyForever("search-1"),
+    ]);
+
+    expect(allowed.outcome).toBe("applied");
+    expect(denied.outcome).toBe("not_actionable");
+    expect(rows[0]!.verdict).toBe("allow");
+    expect(webSearchRules).toEqual([
+      { agentId: "agent-1", verdict: "allow", decidedBy: "owner-1" },
+    ]);
   });
 
   // TEST_SCENARIO: allowing a whole host does not apply to a search, so it writes nothing.

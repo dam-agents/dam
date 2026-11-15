@@ -228,6 +228,22 @@ describe("web search control at the gate", () => {
     expect(w.repo.inserts).toBe(2);
   });
 
+  // TEST_SCENARIO: two long searches whose first thousand characters match are two searches: each files its own approval, and each approval shows the shortened query.
+  it("files long searches that share a prefix apart", async () => {
+    const w = world();
+    const prefix = "p".repeat(1000);
+    void w.call(searchBody(`${prefix} weather`));
+    await flushMicrotasks();
+    void w.call(searchBody(`${prefix} exploits`));
+    await flushMicrotasks();
+
+    expect(w.repo.inserts).toBe(2);
+    expect(w.repo.rows.map((row) => row.payload)).toEqual([
+      expect.objectContaining({ query: prefix }),
+      expect.objectContaining({ query: prefix }),
+    ]);
+  });
+
   // TEST_SCENARIO: the model's own search names no query, so a retry is the same body, and the body decides what joins.
   it("joins a search with no query by its body", async () => {
     const w = world();

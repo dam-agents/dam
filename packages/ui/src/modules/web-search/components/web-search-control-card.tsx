@@ -23,13 +23,17 @@ import {
 } from "../lib/rule-choice.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and the agent's one web search rule, which answers every search without asking once the switch is on. The rule shows while the switch is off too when one is stored, and turning the switch on names it, because a stored rule answers in place of the hold the switch promises. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own, and says that Claude Code stops asking about a search while the switch is on, because the chat's Tool approval no longer decides it.
+ * UNIT_BOUNDARY_DESCRIPTION: the agent's Web search control in its network settings: the switch that makes its gateway hold every web search for the owner, which restarts the gateway and so asks first, and the agent's one web search rule, which answers every search without asking once the switch is on. The rule shows while the switch is off too when one is stored, and turning the switch on names it, because a stored rule answers in place of the hold the switch promises; so the switch turns on only once the rule has loaded, and a failed load says so with a retry. The text names which harnesses the control covers, because Codex's hosted search never reaches the gateway as a request of its own, and says that Claude Code stops asking about a search while the switch is on, because the chat's Tool approval no longer decides it.
  */
 export function WebSearchControlCard({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const setControl = useSetWebSearchControl();
   const setRule = useSetWebSearchRule();
-  const { data: state, isPending: stateLoading } = useWebSearchState(agent.id);
+  const {
+    data: state,
+    isPending: stateLoading,
+    refetch: reloadState,
+  } = useWebSearchState(agent.id);
   const editable = holds(agent.access, "egressRules");
   const on =
     (setControl.isPending
@@ -38,6 +42,7 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
   const choice = ruleChoiceOf(state?.rule?.verdict);
   const chosen = WEB_SEARCH_RULE_CHOICES.find((c) => c.value === choice);
   const storedRule = state?.rule ? chosen : undefined;
+  const ruleUnknown = !on && state === undefined;
 
   const toggle = async (next: boolean) => {
     if (
@@ -73,12 +78,28 @@ export function WebSearchControlCard({ agent }: { agent: AgentView }) {
           <Switch
             className="mt-0.5"
             checked={on}
-            disabled={!editable || setControl.isPending || stateLoading}
+            disabled={!editable || setControl.isPending || ruleUnknown}
             onCheckedChange={(next) => void toggle(next)}
             label="Web search control"
           />
         }
       />
+      {ruleUnknown && (
+        <p className="text-sm text-muted-foreground">
+          {stateLoading
+            ? "Loading the web search rule…"
+            : "Couldn't load the web search rule, so the control can't be turned on yet."}
+          {!stateLoading && (
+            <button
+              type="button"
+              onClick={() => void reloadState()}
+              className="ml-1 underline"
+            >
+              Retry
+            </button>
+          )}
+        </p>
+      )}
       {(on || storedRule) && (
         <div className="flex flex-col gap-1.5">
           <label

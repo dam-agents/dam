@@ -6,7 +6,7 @@ const CLAUDE_CODE_SEARCH_PROMPT =
 const NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
 const CONTROL_CHARACTER = /[\u0000-\u001f]/;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a model call's body says about web search. `search` is a call that declares a native web search tool (`web_search_` and a date, the Messages API's server tool), with the query when the call has Claude Code's shape and null when the model chooses it; `stream` and `model` shape the failed search a refusal answers with. `unreadable` is a body that is not one strict JSON document with unique keys, which a provider could still read another way.
+// UNIT_BOUNDARY_DESCRIPTION: what a model call's body says about web search. `search` is a call that declares a native web search tool (`web_search_` and a date, the Messages API's server tool), with the whole query when the call has Claude Code's shape and null when the model chooses it; `stream` and `model` shape the failed search a refusal answers with. `unreadable` is a body that is not one strict JSON document with unique keys, which a provider could still read another way.
 export type WebSearchRequest =
   | { readonly kind: "none" }
   | { readonly kind: "unreadable" }
@@ -196,7 +196,12 @@ function claudeCodeQuery(request: Record<string, unknown>): string | null {
   if (role !== "user") return null;
   const query = CLAUDE_CODE_SEARCH_PROMPT.exec(textOf(content) ?? "")?.[1];
   const trimmed = query?.trim();
-  return trimmed ? trimmed.slice(0, MAX_QUERY_LENGTH) : null;
+  return trimmed || null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the part of a query an approval, a prompt or a refusal shows. Only the shown text is shortened: what joins a waiting approval is the whole query, so two long searches that share their first characters stay two approvals.
+export function shownQuery(query: string | null): string | null {
+  return query === null ? null : query.slice(0, MAX_QUERY_LENGTH);
 }
 
 export function readWebSearchRequest(text: string): WebSearchRequest {

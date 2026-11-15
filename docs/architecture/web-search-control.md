@@ -1,6 +1,6 @@
 # Web search control
 
-Last verified: 2026-11-12
+Last verified: 2026-11-15
 
 ## Overview
 
@@ -49,10 +49,12 @@ The Session comes from the Model Router's stamp, written in the machine, so it c
 The refusal leaves its approval for the owner, and its text says how to add the rule that lets such runs search.
 
 Otherwise the search waits as a **web search approval**, where network approvals show: in every open conversation of the agent, on Home and behind the approvals bell, and as an in-session prompt to attached clients such as the CLI.
-A retry of the same search joins the waiting approval: the same query, or the same body when the model chooses the query; a different search files its own.
+A retry of the same search joins the waiting approval: the same whole query, or the same body when the model chooses the query; a different search files its own.
+The approval shows at most the first thousand characters of a long query, but two queries that differ after that are still two searches.
 Allow once sends the call on to the gate's other checks, and deny refuses it.
 Always allow and always deny write the agent's web search rule, also on an approval whose hold already ended; the owner changes or clears the rule under Web search in the agent's Network settings.
-The rule stays when the setting turns off and answers again when it turns back on, so the Network settings show a stored rule while the setting is off too, and the warning before turning the setting on names it.
+Only the answer that settles the approval writes the rule, so of two answers given at once the losing one changes nothing.
+The rule stays when the setting turns off and answers again when it turns back on, so the Network settings show a stored rule while the setting is off too, and the warning before turning the setting on names it; the setting turns on only once the stored rule has loaded.
 
 ## The harness's own question
 

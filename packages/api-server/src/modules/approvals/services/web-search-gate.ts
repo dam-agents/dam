@@ -10,6 +10,7 @@ import { emit, EventType } from "../../../events.js";
 import {
   messagesEndpointOf,
   readWebSearchRequest,
+  shownQuery,
 } from "../domain/web-search-request.js";
 import {
   bodyNotReadRefusal,
@@ -154,6 +155,7 @@ export function createWebSearchGate(
         return { pass: false, response: unreadableBodyRefusal() };
       }
 
+      const query = shownQuery(request.query);
       const refuse = (
         reason: WebSearchRefusalReason,
       ): WebSearchGateOutcome => ({
@@ -162,11 +164,11 @@ export function createWebSearchGate(
           endpoint,
           stream: request.stream,
           model: request.model,
-          query: request.query,
+          query,
           reason,
         }),
       });
-      const queryKnown = request.query !== null;
+      const queryKnown = query !== null;
       const { identity } = input;
 
       const rule = await deps.rules.verdictOf(identity.agentId);
@@ -212,7 +214,7 @@ export function createWebSearchGate(
           sessionId: null,
           payload: {
             kind: "web_search",
-            query: request.query,
+            query,
             key,
             ...(input.via ? { viaAgentId: input.via } : {}),
             ...(identity.environment
@@ -245,7 +247,7 @@ export function createWebSearchGate(
         injectChannelOf(identity.agentId),
         buildWebSearchSynthFrame({
           approvalId: pendingId,
-          query: request.query,
+          query,
         }),
       );
       log("warn", input, {
