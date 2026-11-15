@@ -49,6 +49,7 @@ import {
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import { createInvocationStart } from "./services/invocation-start.js";
+import { createInvocationEgressHold } from "./services/invocation-egress-hold.js";
 import {
   createScriptOutputs,
   type OutputBlobStore,
@@ -65,6 +66,12 @@ import {
   createSubAgentOutcomeWakeRetry,
   type SubAgentOutcomeDeliveryDeps,
 } from "./services/outcome-delivery.js";
+import { createOwnerQuestions } from "./services/owner-questions.js";
+import { createQuestionDeadlines } from "./services/question-deadlines.js";
+
+const logLine = (msg: string): void => {
+  process.stderr.write(`${msg}\n`);
+};
 
 function composeCancel(
   repo: InvocationsRepository,
@@ -116,6 +123,8 @@ export function composeInvocationsForOwner(opts: {
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: makes a sub-agent that asked its owner a question one that sleeps and stays until the answer, instead of one the Agent Sweep removes asleep.
+  parkTarget: (agentId: string) => Promise<void>;
   keepMaxMs: number;
   idleTimeoutMaxMin: number;
 }): InvocationsService {
@@ -141,6 +150,17 @@ export function composeInvocationsForOwner(opts: {
       opts.openCalls,
       opts.runtimeMutator,
     ),
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      hold: {
+        park: opts.parkTarget,
+        capture: createTargetCapture({ repo, frames: opts.frames }),
+        answerWithinMaxMs: opts.keepMaxMs,
+      },
+      log: logLine,
+    }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
@@ -158,11 +178,15 @@ export function composeInvocationsQueryForOwner(opts: {
   db: Db;
   owner: string;
   frames: DelegationFramesPort;
+  egressWaitingAmong?: (agentIds: readonly string[]) => Promise<Set<string>>;
 }): InvocationsQueryService {
   return createDelegationsQuery({
     repo: createInvocationsRepository(opts.db),
     owner: opts.owner,
     frames: opts.frames,
+    ...(opts.egressWaitingAmong && {
+      egressWaitingAmong: opts.egressWaitingAmong,
+    }),
   });
 }
 
@@ -172,11 +196,18 @@ export function composeInvocationsControlForOwner(opts: {
   agents: AgentsService;
   frames: DelegationFramesPort;
   runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
 }): InvocationsControlService {
   const repo = createInvocationsRepository(opts.db);
   return createDelegationControl({
     repo,
     owner: opts.owner,
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      log: logLine,
+    }),
     stopper: createDelegationStop({
       repo,
       reaper: composeReaper(
@@ -240,9 +271,30 @@ export function composeSubAgentOutcomeDelivery(
   };
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the periodic job that answers each question nobody answered in time with its sub-agent's own default.
+export function composeQuestionDeadlines(opts: {
+  db: Db;
+  runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
+  batchSize: number;
+}): () => Promise<number> {
+  const repo = createInvocationsRepository(opts.db);
+  return createQuestionDeadlines({
+    repo,
+    batchSize: opts.batchSize,
+    log: logLine,
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      log: logLine,
+    }),
+  });
+}
+
 export interface SubAgentAwaitMarks {
   markAwaited(ids: string[], until: Date): Promise<void>;
-  markCollected(ids: string[]): Promise<void>;
+  collect(ids: string[]): Promise<{ inTurn: string[] }>;
 }
 
 export function composeSubAgentAwaitMarks(
@@ -251,7 +303,7 @@ export function composeSubAgentAwaitMarks(
   const repo = createSubAgentOutcomesRepository(db);
   return (driverAgentId) => ({
     markAwaited: (ids, until) => repo.markAwaited(driverAgentId, ids, until),
-    markCollected: (ids) => repo.markCollected(driverAgentId, ids),
+    collect: (ids) => repo.collect(driverAgentId, ids),
   });
 }
 
@@ -271,6 +323,24 @@ export function createInvocationStartAdapter(
   log: (msg: string) => void,
 ): ReturnType<typeof createInvocationStart> {
   return createInvocationStart({ repo: createInvocationsRepository(db), log });
+}
+
+export function createInvocationEgressHoldAdapter(
+  db: Db,
+  waitingRules: (agentId: string) => Promise<readonly unknown[]>,
+): ReturnType<typeof createInvocationEgressHold> {
+  return createInvocationEgressHold({
+    repo: createInvocationsRepository(db),
+    waitingRules,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: records the owner's answer to a child's waiting network rule on the child's invocation, for the approvals context to call when a verdict lands.
+export function recordEgressAnswerAdapter(
+  db: Db,
+): InvocationsRepository["recordEgressAnswer"] {
+  const repo = createInvocationsRepository(db);
+  return (id, answer) => repo.recordEgressAnswer(id, answer);
 }
 
 export function createInvocationTasksAdapter(db: Db): InvocationTasks {

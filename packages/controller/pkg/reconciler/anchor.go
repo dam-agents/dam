@@ -161,6 +161,7 @@ func (r *AgentReconciler) deleteByAnchor(ctx context.Context, name string) error
 func (r *AgentReconciler) forgetAgent(name string) {
 	r.vmRunning.Delete(name)
 	r.vmAnswers.Delete(name)
+	r.allocationWaits.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)

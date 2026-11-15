@@ -11,6 +11,7 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { artifactLinks, type StubArtifact } from "../helpers/artifact-links.js";
 
 /**
  * TEST_OVERVIEW: `/dam whisper` gives anyone in a conversation a private line
@@ -46,6 +47,8 @@ function harness(
     onPrompt?: (instanceName: string, worker: SlackWorker) => Promise<void>;
     failPrompt?: boolean;
     linkedAs?: () => string;
+    ownerSlackLinks?: { id: string; teamId: string | null }[];
+    artifacts?: StubArtifact[];
   } = {},
 ) {
   const gw = createFakeSlackGateway();
@@ -112,6 +115,11 @@ function harness(
     agents: () => agents,
     identityLinks: {
       resolve: async () => hooks.linkedAs?.() ?? null,
+      externalLinksOf: async () =>
+        (hooks.ownerSlackLinks ?? []).map(({ id, teamId }) => ({
+          externalUserId: id,
+          teamId,
+        })),
     } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
@@ -144,6 +152,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: artifactLinks(hooks.artifacts ?? []),
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],
@@ -565,6 +574,100 @@ describe("/dam whisper with no message", () => {
     await h.replyInDm("1500.000001", "reply");
 
     expect(h.prompts.map((p) => p.agent)).toEqual(["agent-mine"]);
+  });
+});
+
+describe("a private artifact's link in a whisper", () => {
+  const PRIVATE = "7c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f";
+  const artifacts: StubArtifact[] = [
+    { id: PRIVATE, title: "Draft plan", shareUrl: null },
+  ];
+  const refused = {
+    error: expect.stringContaining("must be shared from the app"),
+  };
+
+  /**
+   * TEST_SCENARIO: A whisper's answer is an ephemeral in the conversation the
+   * whisper came from, so it reaches a channel and not the owner's DM: a
+   * private artifact's link there is refused, and nothing is shown.
+   */
+  it("refuses a private artifact's link in a whisper's answer", async () => {
+    const answers: unknown[] = [];
+    const h = harness(team, {
+      artifacts,
+      ownerSlackLinks: [{ id: USER, teamId: "" }],
+      onPrompt: async (instanceName, worker) => {
+        answers.push(
+          await worker.reply(instanceName, {
+            text: `Draft: platform://artifacts/${PRIVATE}`,
+          }),
+        );
+      },
+    });
+    await h.command('whisper Reviewer "what is in the draft?"');
+
+    expect(answers).toEqual([refused]);
+    expect(h.outbound().filter((r) => r.kind === "ephemeral")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A whisper thread lives in the whisperer's DM with the bot,
+   * and when that whisperer is the owner the reply lands in the owner's own DM,
+   * so the private artifact's link goes out as the app's own address.
+   */
+  it("posts the app's address in the owner's DM whisper thread", async () => {
+    const answers: unknown[] = [];
+    const h = harness(team, {
+      artifacts,
+      ownerSlackLinks: [{ id: USER, teamId: "" }],
+      onPrompt: async (instanceName, worker) => {
+        answers.push(
+          await worker.reply(instanceName, {
+            text: `Draft: platform://artifacts/${PRIVATE}`,
+          }),
+        );
+      },
+    });
+    const { rootTs } = await openSession(h);
+    await h.replyInDm(rootTs, "so about that bug");
+
+    expect(answers).toEqual([expect.objectContaining({ ok: true })]);
+    expect(h.outbound()).toContainEqual(
+      expect.objectContaining({
+        kind: "message",
+        channel: DM,
+        text: `:robot_face: *Reviewer*\n\nDraft: http://ui/artifacts/${PRIVATE}`,
+      }),
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A reply that names a thread in another conversation is
+   * authorized against that conversation, never against the turn in progress.
+   * A whisper thread keeps a turn open in the owner's DM while the agent's only
+   * binding is a channel, so a reply naming the channel's thread must not carry
+   * the private link the DM would allow.
+   */
+  it("authorizes the conversation a reply names, not the turn it interrupts", async () => {
+    const answers: unknown[] = [];
+    const h = harness(team, {
+      artifacts,
+      ownerSlackLinks: [{ id: USER, teamId: "" }],
+      onPrompt: async (instanceName, worker) => {
+        answers.push(
+          await worker.reply(instanceName, {
+            text: `Draft: platform://artifacts/${PRIVATE}`,
+            threadTs: "1700000000.000100",
+          }),
+        );
+      },
+    });
+    const { rootTs } = await openSession(h);
+    await h.replyInDm(rootTs, "so about that bug");
+
+    expect(answers).toEqual([refused]);
+    expect(h.postedTo(CHANNEL)).toEqual([]);
+    expect(JSON.stringify(h.outbound())).not.toContain("http://ui/artifacts/");
   });
 });
 

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-04
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -202,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 1. Resolve the kit at the catalog's pin.
    Use the kit's own image when it brings one, otherwise the Template the caller names, else the plain create's default Template.
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
-3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
+3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env and egress preset, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
    The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below, and a kit with Startup Items queues them as a `startup-items` event behind it.
 4. Create the declared schedules, toggling suggested ones off; bind each Slack channel given, under the person's own [membership check](channels.md).
@@ -269,7 +269,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
 The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
-An agent whose saved default has no model starts it on the automatic model; one whose default names a model no provider it holds serves, or that has no model provider to run on, cannot start an update, and the request is refused with that reason.
+An agent whose saved default has no model, or names one no provider it holds serves, starts it on the automatic model; only an agent with no model provider to run on cannot start an update, and the request is refused with that reason.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

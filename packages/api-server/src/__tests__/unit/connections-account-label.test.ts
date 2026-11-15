@@ -51,6 +51,7 @@ function fakeRepo() {
   return {
     merged,
     repo: {
+      adoptDamKey: async () => {},
       mergeInputs: async (id: string, patch: Record<string, unknown>) => {
         merged.set(id, { ...(merged.get(id) ?? {}), ...patch });
       },

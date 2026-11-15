@@ -10,6 +10,7 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import { agentContextBlock } from "../../modules/channels/infrastructure/agent-footer.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -138,6 +139,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

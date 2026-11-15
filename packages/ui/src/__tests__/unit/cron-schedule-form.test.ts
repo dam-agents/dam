@@ -49,8 +49,8 @@ function cronIssues(cron: string): string[] {
 describe("the cron schedule editor", () => {
   // TEST_SCENARIO: the edit action used to stop at a notice for a cron schedule; a user's own cron schedule now opens in the editor.
   it("does not lock a user's cron schedule", () => {
-    expect(scheduleLock(cronSchedule)).toBeNull();
-    expect(scheduleLock({ ...cronSchedule, createdBy: "agent" })).toBe(
+    expect(scheduleLock(cronSchedule, false)).toBeNull();
+    expect(scheduleLock({ ...cronSchedule, createdBy: "agent" }, false)).toBe(
       "agent-managed",
     );
   });

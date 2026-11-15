@@ -161,6 +161,7 @@ The class left behind stays under the keep policy, since a pod that outlives the
 The class orders eviction and preemption only: the kernel's OOM killer ignores it, so a runner over the memory its cgroup allows still dies with every machine of its owner ([vm-memory](vm-memory.md)).
 
 **A machine reaches the network without proxy settings.** In the cluster, smolvm relays every guest DNS query, whatever address it went to, to the gateway's resolver, which answers every public name with the gateway's address and never forwards or logs.
+A name no public resolver could answer — one label, or one under `svc`, `local` or `internal` — is refused instead, so a cluster inside the machine keeps its own Services; the install's own api-server Service is the one name answered, because the [DAM Connection](connection-presets.md#platform-preset-this-install-itself) the Agent may hold names it.
 So any connection lands on the gateway, which routes TLS by SNI and HTTP by Host into the chains a CONNECT reaches, each checking egress before it dials a host of the agent's choosing ([security-and-credentials](security-and-credentials.md)).
 
 ## Install preflight

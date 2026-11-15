@@ -11,6 +11,7 @@ const fake = vi.hoisted(() => ({
   state: "running" as string,
   connectionState: "reconnecting" as string,
   retryChannel: vi.fn(),
+  resumeSession: vi.fn(),
   busy: false,
   loadingSession: false,
   sendPrompt: vi.fn(async () => {}),
@@ -31,10 +32,7 @@ function mockModule(path: string, exports: Record<string, unknown>): void {
 
 const components = new Map<string, string[]>();
 for (const [path, names] of [
-  [
-    "../../modules/agents/components/avatar/agent-avatar.js",
-    ["AgentAvatar", "avatarMood"],
-  ],
+  ["../../modules/agents/components/avatar/agent-avatar.js", ["AgentAvatar"]],
   [
     "../../modules/agents/components/agent-start-notice.js",
     ["AgentStartNotice", "hasStartNotice"],
@@ -262,7 +260,7 @@ mockModule("../../modules/sessions/hooks/use-app-side-panel-tabs.js", {
 mockModule("../../modules/sessions/hooks/use-acp-session.js", {
   useAcpSession: () => ({
     resetSession: vi.fn(),
-    resumeSession: vi.fn(),
+    resumeSession: fake.resumeSession,
     loadOlderMessages: vi.fn(),
     sendPrompt: fake.sendPrompt,
     rewriteFrom: vi.fn(),
@@ -323,7 +321,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     id: "a-1",
     name: "Code Guardian",
     state: fake.state,
-    disabled: false,
     overBudget: false,
     features: { liveUpdates: true },
     access: { role: "owner", editors: [], permissions: [] },
@@ -333,7 +330,6 @@ vi.doMock("../../modules/agents/api/queries.js", async (importOriginal) => ({
     startFailure: null,
     podTerminationReason: null,
     podTerminationCode: null,
-    hibernationTimeoutMin: 5,
     avatar: null,
     templateUpdate: null,
     unsupportedContributionKinds: [],
@@ -374,6 +370,7 @@ mockModule("../../modules/sessions/api/background-work.js", {
 });
 mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
   useAssistantGreeting: () => fake.greeting,
+  useAssistantChat: () => fake.greeting.kind === "greeting",
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
@@ -391,6 +388,7 @@ mockModule("../../modules/spend/api/queries.js", {
 mockModule("../../modules/invocations/api/queries.js", {
   useContinuedFrom: () => undefined,
   useDelegationOwners: () => new Map(),
+  useOwnerQuestions: () => ({ data: undefined }),
 });
 mockModule("../../modules/a2ui/api/queries.js", {
   useChatFormPreferences: () => ({ data: undefined }),
@@ -535,7 +533,7 @@ afterEach(() => {
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
   fake.greeting = { kind: "none" };
-  useStore.setState({ pendingPermissions: [] });
+  useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
 });
 
@@ -556,21 +554,23 @@ function openNewChat(): HTMLElement {
 
 function greetingCopy() {
   return {
-    assistantName: "Dambledore",
-    paragraphs: [
-      "Hi Jenna! I'm Dambledore, your new personal DAM agent!",
-      "The more I know about you, the more I can help.",
+    assistantName: "Dammy",
+    opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
+    provider: "You're set up with CurveBender, IBM-hosted open-source models.",
+    learn: "I learn how you work, one task at a time.",
+    settingsLink: "Agent settings",
+    ideas: [
+      {
+        label: "Artifact",
+        text: "Make my next PowerPoint deck the way I make them",
+      },
+      {
+        label: "Skill",
+        text: "Learn how my team writes tickets, then take it over",
+      },
     ],
-    suggestions: [
-      "Explain what you can do",
-      "Remember I like answers short and technical",
-    ],
-    placeholder: "Remember I like answers short and technical",
+    placeholder: "Message Dammy",
   };
-}
-
-function chip(el: HTMLElement, text: string): HTMLButtonElement | undefined {
-  return [...el.querySelectorAll("button")].find((b) => b.textContent === text);
 }
 
 // TEST_SCENARIO: an assistant whose chat has never had a session opens on its greeting — not on the empty page with a big avatar — and the composer hints one of the tasks it offers.
@@ -579,18 +579,20 @@ it("opens an unused assistant's chat on its greeting", () => {
   const el = openNewChat();
   expect(el.querySelector('[data-testid="assistant-greeting"]')).not.toBeNull();
   expect(el.textContent).not.toContain("Send a message to begin.");
-  expect(placeholder(el)).toBe("Remember I like answers short and technical");
+  expect(placeholder(el)).toBe("Message Dammy");
 });
 
-// TEST_SCENARIO: a click on one of its tasks puts the text in the composer of this chat and sends nothing, so no turn runs before the person acts.
-it("fills the composer from a greeting task without sending", () => {
+// TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
+it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
   const el = openNewChat();
-  const task = chip(el, "Explain what you can do");
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
   expect(task).toBeDefined();
   act(() => task!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
-    "Explain what you can do",
+    "Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
 });
@@ -611,6 +613,39 @@ it("keeps a running Agent's chat while it reconnects", () => {
   expect(el.textContent).not.toContain("Restart agent");
 });
 
+// TEST_SCENARIO: a conversation the agent still holds that would not load used to be a dead end with no action; it offers Retry, and one that is gone for good offers none, since trying again cannot bring it back.
+it("offers Retry on a conversation that would not load", () => {
+  fake.connectionState = "live";
+  useStore.setState({ sessionError: { sessionId: "s-1", kind: "other" } });
+  const el = openChat("running", true);
+  const retry = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Retry"),
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(fake.resumeSession).toHaveBeenCalledWith("s-1");
+
+  fake.loadingSession = false;
+  useStore.setState({
+    sessionError: { sessionId: "s-1", kind: "unavailable" },
+  });
+  paint();
+  expect(el.textContent).toContain("Can't open this conversation");
+  expect(
+    [...el.querySelectorAll("button")].some((b) =>
+      b.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
+});
+
+// TEST_SCENARIO: a chat opening on a conversation that is still loading, as when a sleeping agent wakes, says the message waits for it, the way a connecting chat does.
+it("says a message waits for the conversation to load", () => {
+  fake.connectionState = "live";
+  fake.loadingSession = true;
+  const el = openChat("running", true);
+  expect(placeholder(el)).toContain("your message sends once it opens");
+});
+
 // TEST_SCENARIO: the Agent answers again; the notice and the send gate are gone.
 it("drops the notice when the Agent answers", () => {
   fake.connectionState = "live";
@@ -619,12 +654,19 @@ it("drops the notice when the Agent answers", () => {
   expect(placeholder(el)).toBe("Message…");
 });
 
-// TEST_SCENARIO: the Agent is asleep, so there is no chat to keep and the takeover with its Start action appears.
-it("takes over an Agent with no chat to keep", () => {
-  const el = openChat("hibernated", false);
-  expect(notice(el)).toBeNull();
-  expect(el.textContent).toContain("The agent is sleeping.");
-  expect(el.textContent).toContain("Start agent");
+// TEST_SCENARIO: an Agent falling asleep keeps its chat; one stopped for idleness whose wake did not start, as when the wake call failed, gets the takeover that says it isn't running and starts it, with no sleep wording; an Agent in error gets the takeover with its Restart action.
+it("takes over only an Agent with no chat to keep", () => {
+  const falling = openChat("hibernating", false);
+  expect(falling.textContent).not.toContain("Start agent");
+  expect(falling.querySelector("textarea")).not.toBeNull();
+  const idle = openChat("hibernated", false);
+  expect(idle.textContent).toContain("The agent isn't running.");
+  expect(idle.textContent).toContain("Start agent");
+  expect(idle.textContent).not.toMatch(/sleep|Sleeping/i);
+  const failed = openChat("error", false);
+  expect(notice(failed)).toBeNull();
+  expect(failed.textContent).toContain("The agent hit an error");
+  expect(failed.textContent).toContain("Restart agent");
 });
 
 // TEST_SCENARIO: a send typed during a reconnect stays in the draft and never reaches the Agent, so a Stop can never finalize a bubble whose message still goes out.

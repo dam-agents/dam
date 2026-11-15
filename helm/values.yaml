@@ -25,7 +25,7 @@ brand:
   # them, once, when the `dambledore` feature is on for them. It follows
   # `featureDefault` unless `features.dambledore` names it. The name is the
   # greeting's and the app's to show; a person may rename the agent.
-  assistantName: Dambledore
+  assistantName: Dammy
   # What `name` stands for. The sign-in page shows one meaning above its
   # heading and swaps it for another at random every few seconds, never the
   # same one twice in a row. An empty list shows no meaning.
@@ -92,8 +92,9 @@ signUps: open
 links:
   # The documentation site, also on the sign-in page. Complete URL of its
   # root: the UI builds the CLI reference, MCP and LiteLLM key pages under it.
-  # Empty string hides every documentation link.
-  docs: "https://pages.github.ibm.com/dam-agents/docs/"
+  # Empty string hides every documentation link. Not a shortlink: the UI
+  # appends page paths, which a redirector does not pass through.
+  docs: "https://dam-agents.github.io/docs/"
   # Where "Request more" next to the compute meter points — a chat channel,
   # form, or ticket queue. Complete URL. Empty string hides the link.
   computeRequest: "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759"
@@ -490,8 +491,9 @@ virtualization:
     # has (rounded up, at least one), which is what keeps a full roll of a
     # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
-    # before the roll is ready again. `settleTimeout` bounds that wait, so a
-    # machine that never comes back (its agent was stopped mid-roll) does not
+    # before the roll is ready again; a machine whose agent was deleted,
+    # stopped or hibernated mid-roll is not waited for. `settleTimeout` bounds
+    # the wait, so a machine that never comes back for another reason does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
     # A pass visits each runner about once every five minutes while its
     # agents run, and on the controller's ten-minute sweep otherwise, so a
@@ -1329,14 +1331,6 @@ apiServer:
       name: ""
       key: api-key
     apiKey: ""
-  # -- The "Default" profile an owner with no profile is given, and which new
-  # agents start on until the owner picks another default: a harness and an
-  # upstream model id of the shared CurveBender above. Used only where
-  # curveBenderDeployment holds a key; otherwise, or with harness or model
-  # empty, "Default" comes from the owner's first provider.
-  defaultProfile:
-    harness: pi
-    model: rits/deepseek-ai/DeepSeek-V4.1-Flash-1017
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1405,6 +1399,22 @@ apiServer:
   # organizations connected at once would let a conversation reach the wrong
   # Agent and a person inherit another person's platform identity.
   slackEnterpriseId: ""
+  # -- Slack workspace (team) ids an operator vouches for as naming the same
+  # people DAM knows by mailbox: the DM Bridge pairs an owner's verified email
+  # with their Slack account only inside these, and only while the workspace is
+  # installed and active. Empty disables the Bridge, and nothing pairs. A paid
+  # plan lets a workspace admin set a member's email without verification, so
+  # list only a workspace whose addresses you trust as identities.
+  slackEmailPairingWorkspaces: []
+  # -- Slack app ids (A...) of other installs of the platform that share a
+  # workspace with this one, for example a staging install next to production.
+  # A post from a listed app that carries an Agent Footer is read as an agent
+  # of another install, not as an integration. Such a post gets no more
+  # authority than any app's: a channel can ignore the app, and its posts count
+  # toward the bot-post rate limit. An unlisted app's post is never read as an
+  # agent's. List each install in the other for both to see it. The app id is
+  # on the app's Basic Information page.
+  slackCompanionAppIds: []
   # -- Bot token (from @BotFather) for the platform-wide Telegram bot.
   # Leave empty to disable Telegram. Chat admins connect a chat to an agent
   # by sending the bind command in the chat and picking the agent in the web
@@ -2004,7 +2014,7 @@ controller:
     harnessTemplateDefaults:
       # (agentHome is gone: the agent home is fixed at /home/agent. The
       # controller decodes this block strictly, so a key it does not declare —
-      # agentHome included — stops it at startup instead of being ignored.)
+      # agentHome included — fails the render.)
 
       storageSize: "10Gi"
       # The resource limits every Agent's spec is stamped with at create, and
@@ -2355,7 +2365,6 @@ starterKits:
       evox: { enabled: false }
       k-search: { enabled: false }
       spotlights: { enabled: true }
-      software-developer: { enabled: false }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into

@@ -14,6 +14,7 @@ import {
 } from "../lib/function-replies.js";
 import { openSurfaceIds } from "../lib/open-surfaces.js";
 import { withRendererMetadata as attachMetadata } from "../lib/outgoing.js";
+import { type SentBack, sentBackBlocks } from "../lib/sent-back.js";
 
 function lastReply(messages: readonly Message[]): Message | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1)
@@ -35,6 +36,10 @@ export function useA2uiConversation(
     [enabled, messages],
   );
   const conversation = useMemo(() => buildConversation(inputs), [inputs]);
+  const sentBack = useMemo(
+    () => (enabled ? sentBackBlocks(messages) : new Map<string, SentBack>()),
+    [enabled, messages],
+  );
   const last = lastReply(messages);
   const liveMessageId =
     last && last.role === "assistant" && !last.streaming ? last.id : null;
@@ -81,6 +86,7 @@ export function useA2uiConversation(
       answeredCalls,
       pendingResponses: pending,
       autoRepliesPaused,
+      sentBack,
     }),
     [
       conversation,
@@ -91,6 +97,7 @@ export function useA2uiConversation(
       answeredCalls,
       pending,
       autoRepliesPaused,
+      sentBack,
     ],
   );
 }

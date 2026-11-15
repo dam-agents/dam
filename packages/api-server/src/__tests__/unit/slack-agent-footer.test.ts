@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
+  agentAuthor,
   agentContextBlock,
   agentFooterLabel,
   agentFooterMrkdwn,
+  closingBlock,
   footerMarksAmbientRound,
   footerSessionId,
   formatSlackTs,
+  historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
@@ -187,6 +190,44 @@ describe("agent footer", () => {
   });
 });
 
+describe("agentAuthor", () => {
+  const footed: SlackMessage = { blocks: [agentContextBlock(footer)] };
+
+  it("reads the Agent Footer on this install's own post", () => {
+    expect(agentAuthor({ ...footed, origin: "own" })).toEqual({
+      agentId: footer.agentId,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: An Agent id means something only in the install that made
+   * it. A footer on a companion's post, or on a post from any other app, names
+   * no Agent of this install.
+   */
+  it("reads no Agent of this install from a post that is not its own", () => {
+    expect(agentAuthor({ ...footed, origin: "companion" })).toBeNull();
+    expect(agentAuthor(footed)).toBeNull();
+  });
+
+  it("keeps the origin on the block that ends a post", () => {
+    expect(agentAuthor(closingBlock({ ...footed, origin: "own" }))).toEqual({
+      agentId: footer.agentId,
+    });
+    expect(agentAuthor(closingBlock(footed))).toBeNull();
+  });
+});
+
+describe("historyLegend", () => {
+  it("explains the companion label only when a line carries it", () => {
+    expect(historyLegend(false, { botLabel: null })).not.toContain(
+      "another install",
+    );
+    expect(
+      historyLegend(false, { botLabel: null, hasCompanionAgent: true }),
+    ).toContain('"<name> (an agent from another install):"');
+  });
+});
+
 describe("labelHistoryMessage", () => {
   const MARKERS = { showThreadMarkers: true };
   const human: SlackMessage = { text: "hey", user: "U123" };
@@ -253,6 +294,32 @@ describe("labelHistoryMessage", () => {
     expect(
       labelHistoryMessage(app, null, footer.agentId, NO_BOT, MARKERS),
     ).toBe("GitHub (an app): Pull request opened");
+  });
+
+  /**
+   * TEST_SCENARIO: The gateway marks a post from a listed companion app. With
+   * an Agent Footer it is an agent of another install; the same footer on a
+   * post the gateway did not mark names nobody.
+   */
+  it("names a companion app's footed post as an agent from another install", () => {
+    const footed: SlackMessage = {
+      text: "staging is green",
+      botId: "B-STAGING",
+      botName: "Rex",
+      blocks: [agentContextBlock(footer)],
+    };
+    expect(
+      labelHistoryMessage(
+        { ...footed, origin: "companion" },
+        null,
+        footer.agentId,
+        NO_BOT,
+        MARKERS,
+      ),
+    ).toBe("Rex (an agent from another install): staging is green");
+    expect(
+      labelHistoryMessage(footed, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("Rex (an app): staging is green");
   });
 
   it("falls back to the bot id for an app with no name", () => {

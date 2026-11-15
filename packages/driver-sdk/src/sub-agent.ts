@@ -1,9 +1,9 @@
 import type {
   ChildEgressRule,
-  SpawnInvocationResponse,
+  SetEgressResponse,
   SpawnScriptInvocationRequest,
 } from "api-server-api";
-import { log, req, spawningSessionHeaders } from "./http.js";
+import { log, logEgress, req, spawnInvocation } from "./http.js";
 import { s, type SchemaSpec } from "./schema.js";
 import { ScriptFailed, ScriptOutput } from "./script.js";
 import {
@@ -117,10 +117,19 @@ export class SubAgent {
     await req("POST", `/invocations/${encodeURIComponent(this.id)}/wake`, {});
   }
 
-  async setEgress(rules: ChildEgressRule[]): Promise<void> {
-    await req("POST", `/invocations/${encodeURIComponent(this.id)}/egress`, {
-      rules,
-    });
+  // UNIT_BOUNDARY_DESCRIPTION: replaces the rules of a sub-agent spawned with open egress, and answers with the rules that were not set: the ones that wait for the owner's approval, and the hosts the owner blocked on it. Both are logged, since the sub-agent cannot reach those hosts.
+  async setEgress(rules: ChildEgressRule[]): Promise<SetEgressResponse> {
+    const answer = await req<SetEgressResponse | undefined>(
+      "POST",
+      `/invocations/${encodeURIComponent(this.id)}/egress`,
+      { rules },
+    );
+    const outcome = {
+      waitingForOwner: answer?.waitingForOwner ?? [],
+      blockedByOwner: answer?.blockedByOwner ?? [],
+    };
+    logEgress(outcome, this.id);
+    return outcome;
   }
 
   private async start(body: Record<string, unknown>, opts: RunOptions) {
@@ -164,12 +173,7 @@ export async function spawnSlate(opts: SpawnSlateOptions): Promise<SubAgent> {
     ...(resources ? { resources } : {}),
     ...(skills ? { skills } : {}),
   };
-  const { id } = await req<SpawnInvocationResponse>(
-    "POST",
-    "/invocations",
-    body,
-    spawningSessionHeaders(),
-  );
+  const id = await spawnInvocation(body);
   const tag = label ?? harness ?? image ?? id;
   log(`spawned clean slate ${tag} -> ${id}`);
   opts.onSpawned?.(id);

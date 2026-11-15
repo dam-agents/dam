@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-10
+Last verified: 2026-11-13
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -16,6 +16,8 @@ The lane is one variable, `E2E_GATEWAY_PER_OWNER`, which the install reads to tu
 ## Projects and the order between them
 
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
+The assistant ships on for everyone, so the auth project's own teardown stores its switch off for the shared account once that account has accepted the Terms, and then takes away the assistant a create in flight had already made, since a create runs behind the request that asked for one — no later spec counts an Agent it did not make.
+The assistant spec signs in as two accounts of its own that store nothing: one that owns no other Agent and lands in its chat, one that owns an Agent first and keeps its landing.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
 Five specs reach into the machine itself: the harness tools spec runs an agent on the harness tools the default image bakes, the browser tabs spec drives the agent's own browser, the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at the steps of a boot that platform-init reports on the machine's console, once at a running guest with writes synced into HOME, and empties the disk's layout mark — the storage trim spec measures the claim under an agent's machine, and the runner release spec rolls a live machine onto a second runner release and back, with the chart's own upgrade.
 The runner release spec runs after every project the run keeps, whatever the scope drops: a runner pod rolls every machine its owner has, so it waits for the suite, and it leaves the install on the values it found there.
@@ -48,6 +50,7 @@ It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
 The spec that deletes a user's VM runner runs after the rest of the suite, since that runner runs every other machine of that user.
 The tier under `src/tests/full/` is slow scenario specs: a local run asks for it with `--full`, and in CI only the nightly run takes it.
+Every project, the tier's too, starts after the auth project: its first test proves the Terms gate on the shared account before anything accepts the Terms, and `check:auth-first` fails a config where a project could run beside it.
 
 ## Scope: what a pull request runs
 

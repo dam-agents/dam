@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -81,6 +81,18 @@ An image target declares nothing, so nothing is narrowed.
 **Connections from the Driver.** A spawn says which of the Driver's connections its target holds, recorded once, at launch, in what the target inherits: `parent` gives it all of them and keeps them in step with the Driver's own for as long as the target lives, a grant or a revoke on the Driver reaching the target, and through it the target's own mirroring children, once the Driver's change commits; a list copies those connections once, each already granted to the Driver; `none`, the default, leaves it only its provider, and is the only choice for a target whose egress is open.
 Network reach needs no grant of its own: by default a target has no egress identity and runs under its Driver's rules, unless the spawn gives it egress of its own, open or scoped ([detached egress](security-and-credentials.md)), though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 An *open* child follows only the rules its Driver sets and is denied anything else without a prompt, except that a wildcard allow rule (`*`, `*.example.com`) waits for the owner's approval.
+**A child never reaches more than its Driver unless the owner agreed.** An allow rule the Driver sets on an open child, at launch or when it replaces the child's rules, waits for the owner's approval like a wildcard rule when it lets through a request (a host, port, method and path) that the Driver's own rules (as they are at that moment) do not allow, compared as the gate reads them: the most specific host pattern decides, and a Driver limited to one method or path of a host gives its child no more of that host.
+A launch and an update name the rules that wait, each with its request id, to the Driver: in the tool's answer, and in the SDK's answer and log.
+A one-off sub-agent does not start its work while a rule set at its launch waits: its task is held until the owner has answered every one, it shows as waiting for the owner, and a wait nobody answers ends at the spawn's deadline with that reason.
+A kept sub-agent or an Environment keeps working, and a request that a waiting rule would allow is held at the gate until the owner answers, then passes or is refused with the reason.
+The owner's answers are kept on the sub-agent's invocation and returned with its result, so its Driver can tell a declined host from a network fault.
+What the owner approves is that rule, its method and path included: a Driver that later asks for another method or path on the same host asks again, unless the owner approved the whole host.
+A block the owner set on the child stays the owner's: replacing the child's rules never removes it, and a Driver's allow the gate would rank before it is not set, and named back to the Driver as blocked.
+Replacing the child's rules takes back only the Driver's own rules and the owner's approvals of what the Driver asked, which stay the owner's rules for as long as the Driver names them; the platform's own rule and a rule the owner wrote by hand on the child stay.
+The owner agrees once, with a switch on the Driver's network access page, off by default and offered with the Environments feature, "sub-agents and Environments may have network access of their own".
+Approving one such request writes that one rule and leaves the switch as it is; the owner can instead approve it for all of the Driver's sub-agents and Environments, which turns the switch on.
+Turning the switch on, either way, also writes every rule that waits for it under that Agent, as its Driver's own.
+Only the switch of the root Agent of a launch chain counts, so a child never gives its own children more than the owner allowed at the root, and a wildcard rule still waits for the owner each time.
 A *scoped* child starts with a copy of its parent's rules for the hosts named; anything else waits for the user's approval, shown on the parent, which widens the child alone.
 
 **Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)).
@@ -144,12 +156,38 @@ The reasons:
   A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps every target it still has, kept and clean slate ones too, transitively for chains.
-- **Stopped.** The owner stops a running target from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
+- **Stopped.** The owner stops a target that runs, or [waits for an answer](#asking-the-owner), from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
   Every running run of the target and of each target below it fails with that reason and goes through the one reap, so a one-off target is removed, with every target still below it, and a kept one keeps its conversation.
   The delegation view reads who stopped a run from the reason the stop wrote, so a stop shows as stopped, not failed, and a card whose own run ended while sub-agents it started still run counts them and stops only them.
 
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
+
+## Asking the owner
+
+**A sub-agent's run can end on a question.** A decision that is the owner's to make no longer has to be guessed: the target calls the `ask_owner` platform tool with the question, up to eight options when the choice is between fixed answers, and what it goes on with when nobody answers, which is one of the options when it gave any.
+An open question takes no options, and the owner can always answer in their own words.
+The run then ends in a state of its own, `asking`: it is not running, so it no longer pins its Driver awake, its time limit stops, and the watch on its session stands down, because the tool's answer carries the same mark an accepted result does.
+Only a run its Driver started through the tools may ask; a run a script started is told to decide for itself, since a script only polls for an end and nobody would be told of the question.
+A run that may ask is told so in its task, in place of the sentence that nobody will reply.
+
+**The sub-agent waits asleep, like any agent.** Asking takes the target out of the Agent Sweep and gives it a short idle timeout, so its machine sleeps with its disk and its conversation a few minutes later.
+No reap takes a target that waits on a question: not the one after a result, not the liveness sweep's, and a kept target's keep expiry does not either.
+A stop, by the owner or by its Driver, and a deleted Driver still end it: the waiting run fails with the stop's reason and the target goes through the one reap.
+The owner and the Driver see no kept sub-agent in this: it is listed nowhere as kept, and it is removed after its result as before.
+
+**Only the owner answers.** The owner answers in the Driver's chat with an option or their own words, and the answer goes straight to the sub-agent: the Driver has no tool to answer or to pass an answer on.
+With no answer by the deadline, a day by default or the time the question names, at most as long as an Environment may live, a periodic job answers with the sub-agent's own default, so no sub-agent waits forever.
+The answer is one write under the target's lock, so of the owner's answer and the deadline's only the first counts.
+
+**The answer starts the next run.** It is a new run in the same session, with the asking run's schema and the time that run had left (five minutes at least), so the sub-agent goes on with its conversation and its files and reports its result as any run does.
+A Driver that reads the asking run by its id reads the run that continues it.
+
+**The Driver keeps working, and is told nothing in a turn.** A wait that covers the sub-agent returns at once with the question under `needsOwnerAnswer`, the first time, so the Driver stops waiting on it; a later wait on the same sub-agent waits as for a running one.
+No turn is written for a question or for a default taken; the sub-agent's result reaches the Driver as any result does.
+The delegation view shows the target as needing an answer, with the time it waits until, and afterwards what its work went on from: the owner's answer, or the default it took.
+The Driver's chat puts each open question of the sub-agents below it, at any depth, to the owner in its input, one at a time, scoped to the Session like its running children.
+Away from that chat, the owner is told by the [approvals bell](home-feed.md#sub-agent-questions).
 
 ## Script runs
 
@@ -227,13 +265,15 @@ Scripts stay the path for orchestration logic — loops, scoring one result with
 The bound sits under Node's 300-second request timeout, which the harness server does not override, as the [satellite](satellites.md) wait does; no harness's own tool timeout is raised.
 A harness's MCP client often gives up sooner, after a minute, so while a call waits it sends a progress message every 20 seconds to a client that asked for progress, which restarts that client's own timeout.
 The mesh also cuts open calls: every Agent created or removed reloads the proxy in front of the platform, which closes the calls open before it about 45 seconds later.
-A cut call collects nothing, so the agent, told to call again after a connection error, gets the result from its next call, or the sweep below delivers it as a turn.
-The Driver keeps the ids; the platform tracks nothing per call, a finished id asked again answers again, and an id that is not one of the caller's own Invocations answers as unknown.
+A cut call collects nothing and holds its ids for a minute, so the agent, told to call again after a connection error, gets the result from its next call; past that minute the sweep below delivers it as a turn.
+The Driver keeps the ids; the platform tracks nothing per call, a finished id a wait returned answers again when asked again, and an id that is not one of the caller's own Invocations answers as unknown.
 
 **An outcome nobody waited for is delivered as a turn.** An agent that spawned through the tool and ended its turn, or stopped calling await_subagents, is told when each Invocation ends: a short cluster-wide sweep leases such outcomes for one tick, writes one sub-agent-outcome turn per Driver, carrying what await_subagents would have returned, marks them delivered only once the turn is written, and wakes the Driver if it hibernated ([runtime-delivery](runtime-delivery.md)).
 A lease the server died holding expires and the next tick claims the outcome again, so none is lost.
 The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
-A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
+A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing and holds its ids for that minute too.
+An outcome the sweep holds, or wrote whole into a turn, stays the turn's: a later await_subagents takes only what no turn has, in one write, and names the rest as delivered as a turn without the result, so a call the mesh cut does not hand the agent one outcome twice.
+An outcome its turn carried trimmed stays readable in full through await_subagents, as the turn says.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
 A stop its Driver asked for owes no turn, and neither does a run the stop took down below its target, so no stopped child wakes its own Driver; a target the owner stopped still reaches its Driver as a turn.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.

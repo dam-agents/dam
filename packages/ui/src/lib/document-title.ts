@@ -27,7 +27,12 @@ export function documentTitle(
     settingsTab: SettingsTab;
     sandboxSectionTitle?: string;
   },
-  names: { agent?: string; session?: string | null; kit?: string },
+  names: {
+    agent?: string;
+    session?: string | null;
+    kit?: string;
+    artifact?: string;
+  },
   brandName: string,
 ): string {
   const parts: (string | null | undefined)[] = (() => {
@@ -36,6 +41,8 @@ export function documentTitle(
         return ["Home"];
       case "artifacts":
         return ["Artifacts"];
+      case "artifact":
+        return [names.artifact ?? "Artifact"];
       case "starter-kits":
         return ["Starter kits"];
       case "chat":

@@ -638,7 +638,7 @@ async function resolvePair(
   return (await runBoundary.pair(agentId, pair)) ?? undefined;
 }
 
-const refusedForNoModel = (err: unknown): boolean =>
+export const refusedForNoModel = (err: unknown): boolean =>
   (err as { data?: { platform?: { reason?: unknown } } } | null)?.data?.platform
     ?.reason === NO_MODEL_REASON;
 

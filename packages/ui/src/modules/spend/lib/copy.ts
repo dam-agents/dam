@@ -21,7 +21,7 @@ export const OWN_LIMIT_NAME = "Your spend limit (all agents)";
 export const DAILY_LIMIT_TITLE = "Daily spend limit";
 
 export const OWN_LIMIT_HELP =
-  "Counts the paid API calls of all your agents. Subscriptions and Bob do not count: set their limits in Settings › Providers, or for one agent in its Providers section.";
+  "Counts the paid API calls of all your agents. Subscriptions and Bob are not counted here. To limit one of them, click its spend on Settings › Providers, or on an agent's Providers page for that agent.";
 
 export const PROVIDER_LIMITS_TITLE = "Provider limits for all agents";
 
@@ -98,7 +98,7 @@ export function badgeSpend(
       ? `${bareSpend(micros, unit)} Bc`
       : bareSpend(micros, unit);
   return limitMicros === null
-    ? `${amount(spentMicros)} today`
+    ? `${amount(spentMicros)} today · no limit`
     : `${amount(spentMicros)} / ${amount(limitMicros)} today`;
 }
 

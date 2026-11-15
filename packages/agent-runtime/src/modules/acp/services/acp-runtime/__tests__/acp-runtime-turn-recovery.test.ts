@@ -63,7 +63,7 @@ async function boot(resumes: boolean): Promise<World> {
     undeliveredPrompts,
     triggerDriver: createTriggerSessionDriver({
       acpRuntime: world.runtime,
-      modelRequired: () => false,
+      modelReady: async () => true,
       modelMissing: () => false,
     }),
     log: () => {},
@@ -149,7 +149,7 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
       undeliveredPrompts,
       triggerDriver: createTriggerSessionDriver({
         acpRuntime: world.runtime,
-        modelRequired: () => false,
+        modelReady: async () => true,
         modelMissing: () => false,
       }),
       log: () => {},
@@ -207,7 +207,7 @@ describe("acp-runtime: interrupted-turn recovery of a scheduled first turn", () 
       undeliveredPrompts,
       triggerDriver: createTriggerSessionDriver({
         acpRuntime: world.runtime,
-        modelRequired: () => false,
+        modelReady: async () => true,
         modelMissing: () => false,
       }),
       bindScheduleSession: (_scheduleId, sessionId) => bound.push(sessionId),

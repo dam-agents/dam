@@ -46,22 +46,39 @@ export function curveBenderProvider(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: which CurveBender notice a chat shows, and to
- * whom: a chat that does not exist yet, on an install whose shared Connection
- * the person holds, once every read behind its pair has answered, so a chat
- * already on CurveBender never flashes the offer to switch to it.
+ * UNIT_BOUNDARY_DESCRIPTION: which CurveBender notice a chat shows, and to whom:
+ * a chat that does not exist yet, on an install whose shared Connection the person
+ * holds, once every read behind its pair has answered, so a chat already on
+ * CurveBender never flashes the offer to switch to it.
+ * The assistant's own chat never shows it, and neither does an account that was
+ * onboarded with the assistant: its first chat is already set up on CurveBender,
+ * so a notice there tells the person about a world they never had.
  */
 export function curveBenderNotice({
   sessionId,
   shared,
   pair,
   pairSettled,
+  agentId,
+  assistant,
+  assistantKnown,
 }: {
   sessionId: string | null;
   shared: ProviderConnectionRef | undefined;
   pair: SessionPair | null;
   pairSettled: boolean;
+  /* UNIT_BOUNDARY_DESCRIPTION: the chat's Agent. */
+  agentId: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant record — which Agent it is, and whether the account had an Agent of its own before the platform gave it this one — or null for a person who has none. */
+  assistant: { agentId: string; legacy: boolean } | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether that record has been read. An unread or failed read shows nothing, rather than the notice appearing and then vanishing, or staying up for a person it does not belong to. */
+  assistantKnown: boolean;
 }): "setup" | "offer" | null {
   if (sessionId !== null || !shared || !pairSettled) return null;
+  if (!assistantKnown) return null;
+  if (assistant !== null) {
+    if (agentId === assistant.agentId) return null;
+    if (!assistant.legacy) return null;
+  }
   return pair?.provider === shared.id ? "setup" : "offer";
 }

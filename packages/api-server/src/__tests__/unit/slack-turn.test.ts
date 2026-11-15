@@ -29,6 +29,7 @@ import {
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 
@@ -123,6 +124,7 @@ function harness(opts: {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: opts.attendance ?? stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],
@@ -142,12 +144,19 @@ function harness(opts: {
     async start() {
       await worker.connect();
     },
-    async mention(over?: { user?: string; teamId?: string; text?: string }) {
+    async mention(over?: {
+      user?: string;
+      teamId?: string;
+      text?: string;
+      ts?: string;
+      threadTs?: string;
+    }) {
       await worker.connect();
       const handled = gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
-        ts: "1.1",
+        ts: over?.ts ?? "1.1",
+        ...(over?.threadTs ? { threadTs: over.threadTs } : {}),
         text: over?.text ?? "hi agent",
         teamId: "teamId" in (over ?? {}) ? over?.teamId : "T-e2e",
       });
@@ -291,7 +300,7 @@ describe("slack turn presentation — owner turns", () => {
     });
     await h.mention();
     await tick();
-    await h.mention({ text: "are you there?" });
+    await h.mention({ text: "are you there?", ts: "1.2", threadTs: "1.1" });
     await tick();
 
     const msgs = h.records().filter((r) => r.kind === "message");
@@ -515,7 +524,7 @@ describe("slack reply / react tools", () => {
     ).toEqual(["markdown", "context"]);
     expect(sent.metadata).toEqual({
       eventType: "agent_post",
-      payload: { files: ["F2-report.md"] },
+      payload: { files: ["F2-report.md"], byAgent: true },
     });
     expect(
       h
@@ -526,6 +535,7 @@ describe("slack reply / react tools", () => {
 
     h.gw.setMessage("C1", {
       ts: posted.ts,
+      user: "U-BOT",
       threadTs: "1.1",
       text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
       ...(sent.blocks ? { blocks: sent.blocks } : {}),
@@ -1170,7 +1180,9 @@ describe("slack turn — contract framing and attendance", () => {
     expect(prompt).toContain("don't retry the same host in a loop");
     expect(prompt).toContain("<permission-check>");
     expect(prompt).toContain("every tool but the platform's own");
-    expect(prompt).toContain("default tool approval, which no setting changes");
+    expect(prompt).toContain(
+      "the agent's tool approval, which only the agent's owner changes",
+    );
   });
 
   it("scopes the reply contract to the message it arrives with", async () => {

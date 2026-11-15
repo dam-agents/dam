@@ -5,6 +5,8 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  invocationAnswerInputSchema,
+  invocationsQuestionsInputSchema,
   invocationStopInputSchema,
   invocationsKeptInputSchema,
   invocationTranscriptInputSchema,
@@ -36,6 +38,18 @@ export const invocationsRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.driverAgentId);
       return ctx.invocationsQuery.transcript(input);
+    }),
+  questions: readAgentProcedure
+    .input(invocationsQuestionsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsQuery.questions(input);
+    }),
+  answer: operateAgentsProcedure
+    .input(invocationAnswerInputSchema)
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsControl.answer(input);
     }),
   stop: operateAgentsProcedure
     .input(invocationStopInputSchema)

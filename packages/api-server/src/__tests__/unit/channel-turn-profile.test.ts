@@ -1,14 +1,11 @@
-// TEST_OVERVIEW: What a channel's turn starts on (D91, D119). A fresh session in a channel is created on the pair the channel's profile resolves to, a profile that cannot run stops the turn with its reason in the thread instead of running on another model, and a thread that is already running keeps the values it has.
+// TEST_OVERVIEW: What a channel's turn starts on (D91, D119). A fresh session in a channel is created on the pair the channel's profile resolves to, a profile that cannot run leaves the turn on the agent's channel default rather than stopping it, and a thread that is already running keeps the values it has.
 import { slackThreadKey, type SessionPair } from "api-server-api";
 import { drizzle } from "drizzle-orm/pg-proxy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TelegramUser } from "@chat-adapter/telegram";
 import type { Db } from "db";
 import { configureLogger } from "../../core/logger.js";
-import {
-  ChannelProfileRefusedError,
-  createChannelProfiles,
-} from "../../modules/channels/infrastructure/channel-profile.js";
+import { createChannelProfiles } from "../../modules/channels/infrastructure/channel-profile.js";
 import { createChannelProviderOutage } from "../../modules/channels/infrastructure/provider-outage-copy.js";
 import type { ResolvedProfile } from "../../modules/profiles/index.js";
 import { slackWorkerHarness } from "../helpers/slack-worker.js";
@@ -29,12 +26,7 @@ const PAIR: SessionPair = {
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
 };
 
-const refused = async (): Promise<never> => {
-  throw new ChannelProfileRefusedError(
-    "Fast review",
-    "AWS Bedrock is not connected",
-  );
-};
+const unusable = async (): Promise<null> => null;
 
 let stop: () => Promise<void> = async () => {};
 
@@ -103,8 +95,8 @@ const resolvedProfile = (
 });
 
 describe("a channel's turn", () => {
-  /** TEST_SCENARIO: the row's profile resolves to a pair, and a profile that cannot run is a refusal, never the agent's default in its place. */
-  it("resolves the row's profile, and refuses one that cannot run", async () => {
+  /** TEST_SCENARIO: the row's profile resolves to a pair, and a profile that cannot run leaves the channel with no pair of its own, so its turn runs on the agent's channel default. */
+  it("resolves the row's profile, and falls back when it cannot run", async () => {
     await expect(channelRow("p1", resolvedProfile(PAIR))).resolves.toEqual(
       PAIR,
     );
@@ -116,7 +108,7 @@ describe("a channel's turn", () => {
           attachable: true,
         }),
       ),
-    ).rejects.toThrow(ChannelProfileRefusedError);
+    ).resolves.toBeNull();
     await expect(channelRow(null, null)).resolves.toBeNull();
   });
 
@@ -185,9 +177,7 @@ describe("a channel's turn", () => {
     await expect(
       channelRow("p1", profile, { platformSubagentSettings: own }),
     ).resolves.toEqual({ ...PAIR, settings: own });
-    await expect(channelRow("p1", profile)).rejects.toThrow(
-      ChannelProfileRefusedError,
-    );
+    await expect(channelRow("p1", profile)).resolves.toBeNull();
   });
 
   /** TEST_SCENARIO: the channel names a subagent profile that can no longer run, which clears the slot for the agent to pick rather than falling back to the sub-agent the primary profile lends (D193B). */
@@ -220,19 +210,23 @@ describe("a channel's turn", () => {
     });
   });
 
-  /** TEST_SCENARIO: a profile that cannot run stops the turn and the chat is told why. */
-  it("refuses a profile that cannot run, and says why in the chat", async () => {
-    const h = await started(telegramWorkerHarness({ channelPair: refused }));
+  /** TEST_SCENARIO: a channel whose profile cannot run still answers: the turn runs on the agent's channel default the ACP client resolves, and nothing is posted in its place. */
+  it("answers a turn whose profile cannot run on the channel default", async () => {
+    const h = await started(telegramWorkerHarness({ channelPair: unusable }));
     h.sendDirect(JANE, "hello");
-    await vi.waitFor(() => expect(h.posts).toHaveLength(1));
-    expect(h.posts[0]).toContain("AWS Bedrock is not connected");
-    expect(h.prompts).toHaveLength(0);
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    const named = h.prompts[0]?.opts as {
+      platformMeta?: Record<string, unknown>;
+    };
+    expect(named.platformMeta?.harness).toBeUndefined();
+    expect(named.platformMeta?.model).toBeUndefined();
+    expect(h.posts).toHaveLength(0);
   });
 
   /** TEST_SCENARIO: a running Slack thread keeps its values, so a profile that has since become unusable does not refuse it (D94 A, D119). */
   it("does not refuse a resumed Slack thread", async () => {
     const h = slackWorkerHarness({
-      channelPair: refused,
+      channelPair: unusable,
       makeAcp: (base) => ({
         ...base,
         listSessions: async () => [

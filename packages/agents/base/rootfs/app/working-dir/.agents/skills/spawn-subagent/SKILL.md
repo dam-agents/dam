@@ -13,6 +13,7 @@ The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox t
 You (the driver) hand it a prompt plus the result shape you expect, and get the validated result back.
 Or you hand it a shell command (`script`): no model runs, and you get the command's exit code and its exact stdout and stderr.
 It runs unattended and cannot ask you anything.
+A decision that is the user's to make, it puts to the user itself (see "A sub-agent that asks the user" below).
 
 ## Step 1 — Decide: is a platform sub-agent needed?
 
@@ -51,6 +52,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
    A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
    For a script, it gives the exit code and the start and end of stdout and stderr.
+   A sub-agent listed under `deliveredAsTurn` has its result coming to you as a new turn, maybe after this turn ends: read it there, not again.
 4. **Save a script's output in full** with `fetch_subagent_output` and a `path`, then run the command it returns: it downloads the stream byte for byte to that file in this sandbox and checks it.
    Read the file as often as you need; the user can open it too.
    Fetch each stream once, since the platform deletes its copy after the download; one nobody fetches is deleted after seven days.
@@ -59,6 +61,10 @@ For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in 
 
 **You may stop waiting.** If you end your turn or stop calling `await_subagents`, the platform delivers each result to this session as a new turn when its sub-agent ends — on every harness, and also after the user has left.
 So never keep a shell command or a background job alive only to wait for a sub-agent.
+
+**A sub-agent that asks the user.** A sub-agent you started with `spawn_subagent` may stop on a question for the user: `await_subagents` lists it under `needsOwnerAnswer`, with the question, its options and the default it takes when nobody answers in time.
+The user sees the question in this chat's input and answers the sub-agent there, so you cannot answer it and need not relay it: do not wait on it, and carry on with your other work.
+Once it has an answer it goes on, and its result reaches you as usual.
 
 **Stop a sub-agent you no longer need.** When another sub-agent already found the answer, the user changed the request, or you gave it the wrong task, call `stop_subagent` with its id and a short `reason` at once: it stops spending, and so does every sub-agent it started.
 A sub-agent you spawned with `keep` keeps its conversation and needs a reason; any other is removed.

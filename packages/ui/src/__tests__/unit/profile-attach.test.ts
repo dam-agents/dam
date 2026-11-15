@@ -39,7 +39,6 @@ const profile: ProfileWithUsage = {
   model: "bedrock/opus",
   settings: { effort: "high" },
   subagent: null,
-  newAgentDefault: false,
   usage: { agents: 0, channels: 0, schedules: 0 },
   availability: { available: true, reason: null, attachable: true },
 };

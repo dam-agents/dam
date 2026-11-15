@@ -52,3 +52,12 @@ export const egressRuleApplyPresetInputSchema = z.object({
   agentId: z.string().min(1),
   preset: egressPresetSchema,
 });
+
+export const egressChildEgressInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
+export const egressSetChildEgressInputSchema = z.object({
+  agentId: z.string().min(1),
+  on: z.boolean(),
+});

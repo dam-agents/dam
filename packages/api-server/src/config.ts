@@ -87,6 +87,40 @@ const gheHostsSchema = z
     ),
   );
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack workspaces an operator vouches for as
+ * naming the same people DAM knows by mailbox. Empty is the shipped state —
+ * no workspace is trusted, so nothing pairs — and each entry is searched only
+ * while it is installed and active. */
+const slackEmailPairingWorkspacesSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().min(1)));
+
+/* UNIT_BOUNDARY_DESCRIPTION: the Slack app ids of other installs of the
+ * platform that share a workspace with this one. A post from a listed app that
+ * carries an Agent Footer is read as an Agent of another install. Empty is the
+ * shipped state: only this install's own app posts for Agents. */
+const slackCompanionAppIdsSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.array(z.string().regex(/^A[A-Z0-9]+$/, "must be a Slack app id")));
+
 const gheRetiredHostsSchema = z
   .string()
   .default("[]")
@@ -184,12 +218,6 @@ const spendPriceOverridesSchema = z
 const curveBenderDeploymentSchema = z
   .object({ apiKey: z.string().default("") })
   .transform(({ apiKey }) => (apiKey === "" ? null : { apiKey }));
-// UNIT_BOUNDARY_DESCRIPTION: the "Default" profile an owner with no profile is given, on the deployment's shared CurveBender: a harness and an upstream model the deployment serves. Either one empty means no seed.
-const defaultProfileSeedSchema = z
-  .object({ harness: z.string().default(""), model: z.string().default("") })
-  .transform(({ harness, model }) =>
-    harness === "" || model === "" ? null : { harness, model },
-  );
 // UNIT_BOUNDARY_DESCRIPTION: the install's second address set, reached through the Environment Link by the agent that installed it: its app, Keycloak, share and content URLs, all four or none. None is an install with its public addresses alone.
 const backchannelSchema = z
   .object({
@@ -236,6 +264,8 @@ const configSchema = z.object({
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
   harnessServerUrl: z.string().url(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the api-server's own public Service, as a gateway pod reaches it inside the cluster. The Connection that lets an Agent drive this install names that address over HTTPS, and its gateway chain takes the request there; absent means the install offers no such Connection. */
+  apiserverUrl: z.url().optional(),
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   databaseCaCertPath: z.string().optional(),
@@ -259,6 +289,8 @@ const configSchema = z.object({
   slackOauthCallbackUrl: z.string().nullable().default(null),
   slackInstallCallbackUrl: z.string().nullable().default(null),
   slackEnterpriseId: z.string().default(""),
+  slackEmailPairingWorkspaces: slackEmailPairingWorkspacesSchema,
+  slackCompanionAppIds: slackCompanionAppIdsSchema,
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
   slackTokenRotation: z.coerce.boolean().default(false),
@@ -272,7 +304,6 @@ const configSchema = z.object({
   vmMachineCpus: z.coerce.number().int().nonnegative().default(0),
   featureModes: featureModesSchema,
   curveBenderDeployment: curveBenderDeploymentSchema,
-  defaultProfileSeed: defaultProfileSeedSchema,
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -466,6 +497,7 @@ export function loadConfig(): Config {
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
     harnessServerUrl: process.env.PLATFORM_HARNESS_SERVER_URL,
+    apiserverUrl: process.env.PLATFORM_APISERVER_URL,
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,
@@ -481,6 +513,8 @@ export function loadConfig(): Config {
     slackOauthCallbackUrl: process.env.SLACK_OAUTH_CALLBACK_URL,
     slackInstallCallbackUrl: process.env.SLACK_INSTALL_CALLBACK_URL,
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
+    slackEmailPairingWorkspaces: process.env.SLACK_EMAIL_PAIRING_WORKSPACES,
+    slackCompanionAppIds: process.env.SLACK_COMPANION_APP_IDS,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
     slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,
@@ -497,10 +531,6 @@ export function loadConfig(): Config {
     },
     curveBenderDeployment: {
       apiKey: process.env.CURVE_BENDER_DEPLOYMENT_API_KEY,
-    },
-    defaultProfileSeed: {
-      harness: process.env.DEFAULT_PROFILE_HARNESS,
-      model: process.env.DEFAULT_PROFILE_MODEL,
     },
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,

@@ -2,7 +2,6 @@ import { Close } from "@carbon/icons-react";
 import { createContext, type MouseEvent, useContext } from "react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 
@@ -16,9 +15,8 @@ const ClosesSidePanel = createContext(true);
 export const SidePanelCloseScope = ClosesSidePanel.Provider;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The X that ends every side panel's top bar,
- * behind a vertical border so it does not read as one of the panel's own
- * actions. It closes the whole panel and hands focus to the rail's open tab,
+ * UNIT_BOUNDARY_DESCRIPTION: The X that ends every side panel's top bar. It
+ * closes the whole panel and hands focus to the rail's open tab,
  * which stays on screen; with no rail, as in the classic chat, to the top
  * bar's open tab, or to the main region. A section header shows it only where
  * clearing the side-panel tab closes the panel.
@@ -45,11 +43,7 @@ export function PanelCloseButton({ onClose }: { onClose?: () => void }) {
     (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
   };
   return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center justify-center border-l border-border self-stretch pl-2 max-md:hidden",
-      )}
-    >
+    <div className="flex shrink-0 items-center justify-center max-md:hidden">
       <Button
         variant="ghost"
         size="icon-sm"

@@ -60,7 +60,7 @@ it("stretches the frame to the reported height while printing", () => {
   act(() => root.unmount());
 });
 
-// TEST_SCENARIO: In full page on a wide screen the artifact is wider than a sheet of paper. The frame keeps its layout width and is scaled down to the print width, so its right side is not clipped.
+// TEST_SCENARIO: In a wide preview the artifact is wider than a sheet of paper. The frame keeps its layout width and is scaled down to the print width, so its right side is not clipped.
 it("scales a wide frame down to the print width", () => {
   const width = ARTIFACT_PRINT_MAX_WIDTH * 2;
   const { root, frame, reportHeight } = preview(width);

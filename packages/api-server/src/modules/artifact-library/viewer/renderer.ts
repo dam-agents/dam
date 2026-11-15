@@ -116,7 +116,7 @@ function renderViewerRelay(
     const data = event.data;
     if (!data || typeof data !== "object") return;
     if (data.type === ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}) {
-      void post("/prompt", { prompt: data.prompt }).then((result) => {
+      void post("/prompt", { prompt: data.prompt, conversation: data.conversation }).then((result) => {
         show(result && result.ok ? notices.sent : notices[result && result.reason] || notices["agent-unreachable"]);
       });
       return;

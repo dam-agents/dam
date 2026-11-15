@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   A2UI_CHAT_EXTENSION_ID,
   A2UI_PLATFORM_CATALOG_ID,
+  buildConversation,
   checkChatForm,
   DEFAULT_CHAT_FORM_PREFERENCES,
   type ChatFormPreferences,
@@ -18,7 +19,7 @@ function block(messages: unknown[]): string {
 
 const LOCKED_WITHOUT_BUTTON = block([
   {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "pick",
       catalogId: A2UI_PLATFORM_CATALOG_ID,
@@ -41,7 +42,7 @@ const LOCKED_WITHOUT_BUTTON = block([
 
 const TWO_QUESTIONS_LOCKED = block([
   {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "setup",
       catalogId: A2UI_PLATFORM_CATALOG_ID,
@@ -95,7 +96,7 @@ describe("check_chat_form", () => {
     ]);
     const update = checkChatForm(
       JSON.stringify({
-        version: "v1.0",
+        version: "1.0",
         updateComponents: {
           surfaceId: "earlier",
           components: [{ id: "note", component: "Text", text: "Saved" }],
@@ -114,7 +115,7 @@ describe("check_chat_form", () => {
       checkChatForm(
         block([
           {
-            version: "v1.0",
+            version: "1.0",
             createSurface: {
               surfaceId: "ask",
               catalogId: A2UI_PLATFORM_CATALOG_ID,
@@ -166,7 +167,7 @@ describe("check_chat_form", () => {
     const update = (components: unknown[]) =>
       checkChatForm(
         JSON.stringify({
-          version: "v1.0",
+          version: "1.0",
           updateComponents: { surfaceId: "earlier", components },
         }),
       );
@@ -223,7 +224,7 @@ describe("check_chat_form", () => {
       checkChatForm(
         block([
           {
-            version: "v1.0",
+            version: "1.0",
             createSurface: {
               surfaceId: "host",
               catalogId: A2UI_PLATFORM_CATALOG_ID,
@@ -233,7 +234,7 @@ describe("check_chat_form", () => {
                   component: "TextField",
                   label: "Hostname",
                   value: { "@path": "/host" },
-                  checks: [
+                  "@checks": [
                     {
                       condition: {
                         "@call": "regex",
@@ -267,6 +268,66 @@ describe("check_chat_form", () => {
     expect(unsafe.problems.map((problem) => problem.message)).toEqual([
       expect.stringContaining("catastrophic backtracking"),
     ]);
+    expect(withPattern("(?<=@)example").problems[0]?.message).toContain(
+      "lookbehind",
+    );
+  });
+
+  // TEST_SCENARIO: a block in the "v1.0" draft still replays in the chat but the check sends the agent to "1.0", and a "1.0" component with a bare envelope key, a hyphenated id or a TextField without value is reported.
+  it("replays the v1.0 draft but checks replies against A2UI 1.0", () => {
+    const form = (version: string, components: unknown[]) =>
+      block([
+        {
+          version,
+          createSurface: {
+            surfaceId: "ask",
+            catalogId: A2UI_PLATFORM_CATALOG_ID,
+            components,
+          },
+        },
+      ]);
+    const draft = [
+      { id: "root", component: "Column", children: ["user-name"] },
+      {
+        id: "user-name",
+        component: "TextField",
+        label: "Name",
+        checks: [{ condition: { "@call": "required", args: { value: "" } } }],
+      },
+    ];
+    const replayed = buildConversation(
+      [
+        {
+          key: "0",
+          messageId: "m",
+          source: form("v1.0", draft).split("\n")[2] ?? "",
+          closed: true,
+        },
+      ],
+      { callFunction: () => null },
+    );
+    expect(replayed.blocks.get("0")?.errors).toEqual([]);
+    expect(replayed.surfaces.get("ask")?.components.size).toBe(2);
+    expect(checkChatForm(form("v1.0", draft)).problems).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining('send "1.0"'),
+      }),
+    ]);
+    expect(checkChatForm(form("1.0", draft)).problems[0]?.message).toContain(
+      '"checks" is written "@checks"',
+    );
+    const field = (id: string, value?: unknown) =>
+      checkChatForm(
+        form("1.0", [
+          { id: "root", component: "Column", children: [id] },
+          { id, component: "TextField", label: "Name", value },
+        ]),
+      ).problems.map((problem) => problem.message);
+    expect(field("user-name", { "@path": "/name" })[0]).toContain(
+      "not a UAX #31 identifier",
+    );
+    expect(field("userName")[0]).toContain("A TextField needs a value");
+    expect(field("userName", { "@path": "/name" })).toEqual([]);
   });
 
   // TEST_SCENARIO: the third failed check tells the agent to ask in plain text, and a fourth attempt is refused.

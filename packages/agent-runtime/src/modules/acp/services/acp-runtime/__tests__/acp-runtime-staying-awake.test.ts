@@ -174,6 +174,53 @@ describe("acp-runtime: staying awake", () => {
   });
 
   /**
+   * TEST_SCENARIO: A turn that waits on one long tool call — a build, a test run,
+   * a job started in the foreground — sends no update while it waits, and the
+   * viewer that started it may be gone. The turn is still in flight, so the pod
+   * must say so: one quiet period must not read as an idle pod, or the
+   * controller hibernates the machine and kills what the turn waits on.
+   */
+  it("should stay busy while a turn waits on a quiet tool call with nobody connected", () => {
+    vi.useFakeTimers();
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(
+      frames.prompt(2, SESSION, "run this loop in the foreground and wait"),
+    );
+    world.harness().emit({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: SESSION,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "t1",
+          title: "the long loop",
+          status: "in_progress",
+        },
+      },
+    });
+    alice.disconnect();
+
+    expect(world.runtime.status()).toEqual({
+      idle: false,
+      backgroundWork: [],
+    });
+
+    vi.advanceTimersByTime(20 * 60_000);
+
+    expect(world.runtime.status()).toEqual({
+      idle: false,
+      backgroundWork: [],
+    });
+    expect(world.harness().received("session/close")).toEqual([]);
+    expect(world.harness().killed()).toBe(false);
+  });
+
+  /**
    * TEST_SCENARIO: A hold protects work running inside the harness's process tree, so when
    * the harness dies the work dies with it. A hold that survived would be
    * the worst failure this feature can have: an empty pod kept awake

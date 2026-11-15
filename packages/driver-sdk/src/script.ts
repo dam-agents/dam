@@ -7,11 +7,10 @@ import type {
   InvocationOutputBlob,
   InvocationOutputLink,
   InvocationOutputStream,
-  SpawnInvocationResponse,
   SpawnScriptInvocationRequest,
 } from "api-server-api";
 
-import { log, req, spawningSessionHeaders } from "./http.js";
+import { log, req, spawnInvocation } from "./http.js";
 import {
   awaitInvocation,
   defaultTimeoutMs,
@@ -190,12 +189,7 @@ export async function spawnScript(
 
   if (signal?.aborted)
     throw new Stopped(undefined, label ?? "spawnScript", signal.reason);
-  const { id } = await req<SpawnInvocationResponse>(
-    "POST",
-    "/invocations",
-    body,
-    spawningSessionHeaders(),
-  );
+  const id = await spawnInvocation(body);
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
   opts.onSpawned?.(id);

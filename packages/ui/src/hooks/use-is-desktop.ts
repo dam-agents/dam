@@ -11,10 +11,12 @@ function useMediaQuery(query: string): boolean {
   );
 }
 
+export const WIDE_DESKTOP_QUERY = "(min-width: 64rem)";
+
 export function useIsDesktop(): boolean {
   return useMediaQuery("(min-width: 48rem)");
 }
 
 export function useIsWideDesktop(): boolean {
-  return useMediaQuery("(min-width: 64rem)");
+  return useMediaQuery(WIDE_DESKTOP_QUERY);
 }

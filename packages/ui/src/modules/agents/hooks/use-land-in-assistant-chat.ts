@@ -24,6 +24,7 @@ import { landingAssistantId } from "../lib/assistant-landing.js";
 export function useLandInAssistantChat(): void {
   const view = useStore((s) => s.view);
   const spent = useStore((s) => s.assistantLandingSpent);
+  const afterReset = useStore((s) => s.assistantLandingAfterReset);
   const agents = useAgents();
   const install = useInstallCapabilities();
   const gate = useAssistantGate();
@@ -31,6 +32,9 @@ export function useLandInAssistantChat(): void {
   const stateKnown = install.isSuccess && (!gate.on || stateLoaded);
   const listed =
     agents.data?.list.some((agent) => agent.id === state?.agentId) ?? false;
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent of their own is what says the person was here before the assistant: the assistant's chat is the first open, not a redirect for an account that has one. */
+  const ownsOtherAgents =
+    agents.data?.list.some((agent) => agent.id !== state?.agentId) ?? false;
 
   useEffect(() => {
     if (spent) return;
@@ -40,18 +44,23 @@ export function useLandInAssistantChat(): void {
       assistantOn: gate.on,
       listLoaded: agents.isSuccess,
       stateLoaded: stateKnown,
+      recordReady: state?.ready === true,
       assistantId: listed ? (state?.agentId ?? null) : null,
       used: state?.used,
+      ownsOtherAgents,
+      afterReset,
     });
     if (!decision.decide) return;
     useStore.getState().spendAssistantLanding();
     if (decision.landIn !== null)
       useStore.getState().selectAgent(decision.landIn);
   }, [
+    afterReset,
     agents.isSuccess,
     gate.known,
     gate.on,
     listed,
+    ownsOtherAgents,
     spent,
     state,
     stateKnown,

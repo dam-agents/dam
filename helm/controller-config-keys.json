@@ -1,0 +1,584 @@
+{
+  "AGENT_BASE": {
+    "fields": {
+      "imagePullSecrets": {
+        "items": "string",
+        "kind": "array"
+      },
+      "vmIdleTimeout": "string"
+    },
+    "kind": "object"
+  },
+  "AGENT_HARNESS_TEMPLATE_DEFAULTS": {
+    "fields": {
+      "env": {
+        "items": {
+          "fields": {
+            "name": "string",
+            "value": "string"
+          },
+          "kind": "object"
+        },
+        "kind": "array"
+      },
+      "mounts": {
+        "items": {
+          "fields": {
+            "path": "string",
+            "persist": "boolean",
+            "size": "string"
+          },
+          "kind": "object"
+        },
+        "kind": "array"
+      },
+      "nestedVirtualization": "boolean",
+      "resources": {
+        "fields": {
+          "claims": {
+            "items": {
+              "fields": {
+                "name": "string",
+                "request": "string"
+              },
+              "kind": "object"
+            },
+            "kind": "array"
+          },
+          "limits": {
+            "kind": "map",
+            "values": "string|number"
+          },
+          "requests": {
+            "kind": "map",
+            "values": "string|number"
+          }
+        },
+        "kind": "object"
+      },
+      "storageSize": "string"
+    },
+    "kind": "object"
+  },
+  "AGENT_VM": {
+    "fields": {
+      "gateway": {
+        "fields": {
+          "perOwner": "boolean"
+        },
+        "kind": "object"
+      },
+      "runner": {
+        "fields": {
+          "affinity": {
+            "fields": {
+              "nodeAffinity": {
+                "fields": {
+                  "preferredDuringSchedulingIgnoredDuringExecution": {
+                    "items": {
+                      "fields": {
+                        "preference": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchFields": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "weight": "int32"
+                      },
+                      "kind": "object"
+                    },
+                    "kind": "array"
+                  },
+                  "requiredDuringSchedulingIgnoredDuringExecution": {
+                    "fields": {
+                      "nodeSelectorTerms": {
+                        "items": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchFields": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "kind": "array"
+                      }
+                    },
+                    "kind": "object"
+                  }
+                },
+                "kind": "object"
+              },
+              "podAffinity": {
+                "fields": {
+                  "preferredDuringSchedulingIgnoredDuringExecution": {
+                    "items": {
+                      "fields": {
+                        "podAffinityTerm": {
+                          "fields": {
+                            "labelSelector": {
+                              "fields": {
+                                "matchExpressions": {
+                                  "items": {
+                                    "fields": {
+                                      "key": "string",
+                                      "operator": "string",
+                                      "values": {
+                                        "items": "string",
+                                        "kind": "array"
+                                      }
+                                    },
+                                    "kind": "object"
+                                  },
+                                  "kind": "array"
+                                },
+                                "matchLabels": {
+                                  "kind": "map",
+                                  "values": "string"
+                                }
+                              },
+                              "kind": "object"
+                            },
+                            "matchLabelKeys": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "mismatchLabelKeys": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "namespaceSelector": {
+                              "fields": {
+                                "matchExpressions": {
+                                  "items": {
+                                    "fields": {
+                                      "key": "string",
+                                      "operator": "string",
+                                      "values": {
+                                        "items": "string",
+                                        "kind": "array"
+                                      }
+                                    },
+                                    "kind": "object"
+                                  },
+                                  "kind": "array"
+                                },
+                                "matchLabels": {
+                                  "kind": "map",
+                                  "values": "string"
+                                }
+                              },
+                              "kind": "object"
+                            },
+                            "namespaces": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "topologyKey": "string"
+                          },
+                          "kind": "object"
+                        },
+                        "weight": "int32"
+                      },
+                      "kind": "object"
+                    },
+                    "kind": "array"
+                  },
+                  "requiredDuringSchedulingIgnoredDuringExecution": {
+                    "items": {
+                      "fields": {
+                        "labelSelector": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchLabels": {
+                              "kind": "map",
+                              "values": "string"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "matchLabelKeys": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "mismatchLabelKeys": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "namespaceSelector": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchLabels": {
+                              "kind": "map",
+                              "values": "string"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "namespaces": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "topologyKey": "string"
+                      },
+                      "kind": "object"
+                    },
+                    "kind": "array"
+                  }
+                },
+                "kind": "object"
+              },
+              "podAntiAffinity": {
+                "fields": {
+                  "preferredDuringSchedulingIgnoredDuringExecution": {
+                    "items": {
+                      "fields": {
+                        "podAffinityTerm": {
+                          "fields": {
+                            "labelSelector": {
+                              "fields": {
+                                "matchExpressions": {
+                                  "items": {
+                                    "fields": {
+                                      "key": "string",
+                                      "operator": "string",
+                                      "values": {
+                                        "items": "string",
+                                        "kind": "array"
+                                      }
+                                    },
+                                    "kind": "object"
+                                  },
+                                  "kind": "array"
+                                },
+                                "matchLabels": {
+                                  "kind": "map",
+                                  "values": "string"
+                                }
+                              },
+                              "kind": "object"
+                            },
+                            "matchLabelKeys": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "mismatchLabelKeys": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "namespaceSelector": {
+                              "fields": {
+                                "matchExpressions": {
+                                  "items": {
+                                    "fields": {
+                                      "key": "string",
+                                      "operator": "string",
+                                      "values": {
+                                        "items": "string",
+                                        "kind": "array"
+                                      }
+                                    },
+                                    "kind": "object"
+                                  },
+                                  "kind": "array"
+                                },
+                                "matchLabels": {
+                                  "kind": "map",
+                                  "values": "string"
+                                }
+                              },
+                              "kind": "object"
+                            },
+                            "namespaces": {
+                              "items": "string",
+                              "kind": "array"
+                            },
+                            "topologyKey": "string"
+                          },
+                          "kind": "object"
+                        },
+                        "weight": "int32"
+                      },
+                      "kind": "object"
+                    },
+                    "kind": "array"
+                  },
+                  "requiredDuringSchedulingIgnoredDuringExecution": {
+                    "items": {
+                      "fields": {
+                        "labelSelector": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchLabels": {
+                              "kind": "map",
+                              "values": "string"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "matchLabelKeys": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "mismatchLabelKeys": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "namespaceSelector": {
+                          "fields": {
+                            "matchExpressions": {
+                              "items": {
+                                "fields": {
+                                  "key": "string",
+                                  "operator": "string",
+                                  "values": {
+                                    "items": "string",
+                                    "kind": "array"
+                                  }
+                                },
+                                "kind": "object"
+                              },
+                              "kind": "array"
+                            },
+                            "matchLabels": {
+                              "kind": "map",
+                              "values": "string"
+                            }
+                          },
+                          "kind": "object"
+                        },
+                        "namespaces": {
+                          "items": "string",
+                          "kind": "array"
+                        },
+                        "topologyKey": "string"
+                      },
+                      "kind": "object"
+                    },
+                    "kind": "array"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "kind": "object"
+          },
+          "bootMiB": "int64",
+          "devices": {
+            "kind": "map",
+            "values": "string"
+          },
+          "headroomMiB": "int64",
+          "hostAddress": "string",
+          "hostPort": "int64",
+          "image": "string",
+          "imageCacheBudget": "string",
+          "imageCacheHostPath": "string",
+          "imagePullPolicy": "string",
+          "imagePullSecrets": {
+            "items": {
+              "fields": {
+                "name": "string"
+              },
+              "kind": "object"
+            },
+            "kind": "array"
+          },
+          "machineCPUs": "int64",
+          "machineMemoryMiB": "int64",
+          "nestedVirtualization": "boolean",
+          "nodeSelector": {
+            "kind": "map",
+            "values": "string"
+          },
+          "priorityClassName": "string",
+          "releaseHostPath": "string",
+          "reserveMiB": "int64",
+          "resources": {
+            "fields": {
+              "claims": {
+                "items": {
+                  "fields": {
+                    "name": "string",
+                    "request": "string"
+                  },
+                  "kind": "object"
+                },
+                "kind": "array"
+              },
+              "limits": {
+                "kind": "map",
+                "values": "string|number"
+              },
+              "requests": {
+                "kind": "map",
+                "values": "string|number"
+              }
+            },
+            "kind": "object"
+          },
+          "rollout": {
+            "fields": {
+              "idleWait": "string",
+              "maxConcurrent": "int64",
+              "maxConcurrentPercent": "int64",
+              "settleTimeout": "string",
+              "stalledTimeout": "string"
+            },
+            "kind": "object"
+          },
+          "seccomp": "string",
+          "serviceAccountName": "string",
+          "storage": "string",
+          "storageClass": "string",
+          "tolerations": {
+            "items": {
+              "fields": {
+                "effect": "string",
+                "key": "string",
+                "operator": "string",
+                "tolerationSeconds": "int64",
+                "value": "string"
+              },
+              "kind": "object"
+            },
+            "kind": "array"
+          }
+        },
+        "kind": "object"
+      }
+    },
+    "kind": "object"
+  },
+  "GATEWAY_EGRESS": {
+    "fields": {
+      "clusterDns": {
+        "fields": {
+          "namespace": "string",
+          "podLabels": {
+            "kind": "map",
+            "values": "string"
+          },
+          "ports": {
+            "items": "int32",
+            "kind": "array"
+          }
+        },
+        "kind": "object"
+      },
+      "extraCidrs": {
+        "items": "string",
+        "kind": "array"
+      },
+      "peers": {
+        "items": {
+          "fields": {
+            "mesh": "boolean",
+            "namespace": "string",
+            "podLabels": {
+              "kind": "map",
+              "values": "string"
+            },
+            "ports": {
+              "items": "int32",
+              "kind": "array"
+            }
+          },
+          "kind": "object"
+        },
+        "kind": "array"
+      }
+    },
+    "kind": "object"
+  }
+}

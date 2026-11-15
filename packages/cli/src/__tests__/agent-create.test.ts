@@ -63,7 +63,6 @@ function setup(connections: ConnectionView[] = [provider]) {
       get: getAgent,
       deleteAgent: vi.fn(),
       restart: vi.fn(),
-      setDisabled: vi.fn(),
       updateIdentity: vi.fn(),
       unlockedCharacters: vi.fn(),
       customAvatarsEnabled: vi.fn(),
@@ -124,6 +123,11 @@ describe("dam agent create provider selection (#3786)", () => {
       "profile" as const,
       { name: "Default", model: "anthropic/claude-opus-5-5", harness: "pi" },
       'Provider: My provider (conn-provider), from your default for new agents, profile "Default": anthropic/claude-opus-5-5 on pi.',
+    ],
+    [
+      "default" as const,
+      { name: null, model: "cb/some-model", harness: "pi" },
+      "Provider: My provider (conn-provider), from your default for new agents: cb/some-model on pi. Change that default in Settings › Providers",
     ],
     [
       "harness" as const,

@@ -9,6 +9,7 @@ import {
   providerTypeForTemplateId,
   type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
+  DAM_TEMPLATE_ID,
   IBM_LITELLM_HOST,
   type AgentConnections,
   type Connection,
@@ -67,6 +68,11 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
+import {
+  DAM_KEY_INPUT,
+  isDamConnection,
+  type DamKeyPort,
+} from "../domain/dam-connection.js";
 import {
   childAuthOf,
   childScopeOf,
@@ -275,6 +281,10 @@ export function createConnectionsService(deps: {
   } | null>;
   maxSharedKbConnections?: number;
   curveBenderDeploymentKey?: string | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's API keys, as the Connection that drives this install is minted with one; absent means this api-server cannot mint it, so no such Connection is provisioned. */
+  damKey?: DamKeyPort;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the install offers the person the Connection that drives it — its per-user flag — which decides their own create and their own grants of it, and never the platform's provisioning. Required, so no composition root can leave this path ungated by forgetting it, and read as not offered when it fails. */
+  damConnectionOffered: () => Promise<boolean>;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
   providerModelCatalog?: ProviderModelCatalog;
   /* UNIT_BOUNDARY_DESCRIPTION: the Connection a plain create grants from the owner's default for new agents, and the harness that default boots the agent on, in place of the default harness's provider order; null while that default names none the owner holds. */
@@ -311,6 +321,56 @@ export function createConnectionsService(deps: {
         .filter((h) => harnessFits(deps.harnesses, h.name, type, templateId))
         .map((h) => h.name),
     };
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the one gate the flag puts on this Connection: a person may create it and grant it to their Agents only while the install offers it. Existing Connections, their grants, their rotation and their deletion are untouched — the flag decides what is on offer, and taking an offer away must never take a credential away. */
+  async function assertDamConnectionOffered(action: string): Promise<void> {
+    const offered = await deps.damConnectionOffered().catch(() => false);
+    if (offered) return;
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `This install does not offer ${deps.brandName}'s own connection, so it cannot ${action}. Existing connections and grants keep working.`,
+    });
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the key the DAM Connection names is still live. A key its owner revoked in Settings stops working at once, so the Connection has to read as expired rather than active; a key store that cannot answer says nothing, because this is a listing and not a gate. */
+  async function damKeyIsLive(conn: Connection): Promise<boolean> {
+    const keyId = rememberedInput(conn, DAM_KEY_INPUT);
+    if (keyId === null || !deps.damKey) return true;
+    try {
+      return (await deps.damKey.active([keyId])).has(keyId);
+    } catch {
+      return true;
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the install's own API host, which only the DAM Connection may claim: a second Connection there would put another credential, another upstream port and another upstream CA on the same TLS chain, so the install's key could be sent where that Connection points. */
+  function installHost(): string | null {
+    const template = deps.templates.get(DAM_TEMPLATE_ID);
+    return template && "host" in template && template.host
+      ? template.host.toLowerCase()
+      : null;
+  }
+
+  function assertNotInstallHost(
+    templateId: string,
+    contributions: readonly Contribution[],
+  ): void {
+    if (isDamConnection(templateId)) return;
+    const host = installHost();
+    if (host === null) return;
+    const claimed = contributions.some(
+      (c) =>
+        (c.kind === "egress-allow" ||
+          c.kind === "egress-inject" ||
+          c.kind === "egress-sign") &&
+        c.host.toLowerCase() === host,
+    );
+    if (!claimed) return;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `"${host}" is this install's own address, which only the Connection the platform makes for it may reach: an Agent that drives ${deps.brandName} uses that one.`,
+    });
   }
 
   async function firstProviderPerAlias(
@@ -586,6 +646,60 @@ export function createConnectionsService(deps: {
         extraAnnotations: connectionSecretAnnotations(contributions),
       },
     );
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: revokes a key the platform no longer wants, or — when the key store cannot be reached — records it for the sweep, so a failed create or rotation never leaves a live key nobody names. */
+  /* UNIT_BOUNDARY_DESCRIPTION: revokes a key the ledger already holds, and drops its entry only once the revoke went through; a revoke that fails leaves the entry for the sweep, which is the record's whole point. */
+  async function settleQueuedDamKey(keyId: string): Promise<void> {
+    const damKey = deps.damKey;
+    if (!damKey) return;
+    try {
+      await damKey.revoke(keyId);
+    } catch (err) {
+      securityLog("warn", "connection.dam_key_revoke_deferred", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: keyId,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+      return;
+    }
+    await damKey.ledger.settle(keyId).catch(() => {});
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a freshly minted key, written down before anything uses it. A ledger that cannot take the record means the key is revoked at once and the operation fails: nothing may exist that is live and unnamed by both a Connection and the ledger. */
+  async function queueDamKey(
+    keyId: string,
+    connectionId: string,
+  ): Promise<boolean> {
+    const damKey = deps.damKey;
+    if (!damKey) return false;
+    try {
+      await damKey.ledger.queue(keyId, connectionId);
+      return true;
+    } catch (err) {
+      securityLog("warn", "connection.dam_key_queue_failed", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: connectionId,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+      });
+      await damKey.revoke(keyId).catch((revokeErr: unknown) => {
+        securityLog("warn", "connection.dam_key_orphaned", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: keyId,
+          result: "failure",
+          reason: revokeErr instanceof Error ? revokeErr.message : "unknown",
+        });
+      });
+      return false;
+    }
   }
 
   async function rotateHeaderValue(
@@ -1374,6 +1488,7 @@ export function createConnectionsService(deps: {
   async function applyGrants(
     agentId: string,
     desiredFrom: (current: string[]) => string[],
+    opts: { platform?: boolean } = {},
   ): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
       securityLog("warn", "authz.owner_mismatch", {
@@ -1419,6 +1534,11 @@ export function createConnectionsService(deps: {
       const desiredIds = new Set(deduped);
       const toGrant = deduped.filter((id) => !currentIds.has(id));
       for (const id of toGrant) assertGrantable(ownedById.get(id)!);
+      if (
+        !opts.platform &&
+        toGrant.some((id) => isDamConnection(ownedById.get(id)!.templateId))
+      )
+        await assertDamConnectionOffered("be granted to an agent");
       const toRevoke = current
         .map((c) => c.connectionId)
         .filter((id) => !desiredIds.has(id));
@@ -1756,6 +1876,114 @@ export function createConnectionsService(deps: {
     return id;
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: removes a Connection and everything hanging off it — its Secret, its grants, its egress rules and its Agents' state. */
+  async function removeConnection(conn: Connection): Promise<void> {
+    const children = conn.isParent ? await deps.repo.listChildren(conn.id) : [];
+    const removed = [conn, ...children];
+    const affectedAgents = [
+      ...new Set(
+        (
+          await Promise.all(
+            removed.map((c) => deps.repo.listAgentsForConnection(c.id)),
+          )
+        ).flat(),
+      ),
+    ];
+
+    const parent = conn.parentId
+      ? await deps.repo.get(conn.parentId, deps.ownerId)
+      : null;
+    const secretPaths = new Set(
+      removed.flatMap((c) => connectionSecretPath(c.auth) ?? []),
+    );
+    if (
+      parent &&
+      connectionSecretPath(parent.auth) === connectionSecretPath(conn.auth)
+    ) {
+      await retireSharedToken(conn);
+      secretPaths.clear();
+    }
+    for (const path of secretPaths) {
+      await deps.secretStore.delete({ path });
+    }
+
+    await deps.repo.delete(conn.id, deps.ownerId);
+
+    if (affectedAgents.length > 0) {
+      const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
+      const allOwnerConnectionIds = new Set([
+        ...ownerConnsAfter.map((c) => c.id),
+        ...removed.map((c) => c.id),
+      ]);
+      await fanOutToAgents(
+        conn.id,
+        affectedAgents,
+        allOwnerConnectionIds,
+        "connection.delete.fanout_failed",
+      );
+    }
+
+    const template = deps.templates.get(conn.templateId);
+    securityLog("info", "connection.delete", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: conn.id,
+      result: "success",
+      detail: {
+        templateId: conn.templateId,
+        authKind: conn.auth.kind,
+        secretsDeleted: secretPaths.size,
+        affectedAgents: affectedAgents.length,
+        ...(children.length > 0 ? { connectionsRemoved: children.length } : {}),
+      },
+    });
+    for (const c of removed) {
+      if (c.isParent || deriveStatus(c) === "pending") continue;
+      emit({
+        type: EventType.ConnectionRemoved,
+        actorSub: deps.ownerId,
+        connectionKey: c.id,
+        templateId: c.templateId,
+        kind: template?.category === "mcp" ? "mcp" : "oauth_app",
+      });
+    }
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: removes the Connection that drives this install, once every key it names and every key still queued under it is revoked — the delete and a rotation of one Connection take the same lock, so neither acts on a key the other replaced. A revocation that fails removes nothing, so no live key is left behind a row that is gone. */
+  async function deleteDamConnection(id: string): Promise<void> {
+    const conn = await deps.repo.get(id, deps.ownerId);
+    if (!conn) return;
+    const damKey = deps.damKey;
+    if (damKey) {
+      const keys = new Set(
+        await damKey.ledger.pendingFor(conn.id).catch(() => [] as string[]),
+      );
+      const named = rememberedInput(conn, DAM_KEY_INPUT);
+      if (named !== null) keys.add(named);
+      for (const keyId of keys) {
+        try {
+          await damKey.revoke(keyId);
+        } catch (err) {
+          securityLog("warn", "connection.dam_key_revoke_failed", {
+            category: "credential",
+            actor: deps.ownerId,
+            actorKind: "user",
+            target: conn.id,
+            result: "failure",
+            reason: err instanceof Error ? err.message : "unknown",
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `The key this Connection uses could not be revoked, so nothing was removed: the Connection, its key and every agent's grant of it are as they were. Try again in a moment.`,
+          });
+        }
+        await damKey.ledger.settle(keyId).catch(() => {});
+      }
+    }
+    await removeConnection(conn);
+  }
+
   const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async modelCatalog(agentId) {
       const owned = await deps.repo.listByOwner(deps.ownerId);
@@ -1803,6 +2031,10 @@ export function createConnectionsService(deps: {
       await Promise.all(
         views.map(async (view, i) => {
           const conn = conns[i]!;
+          if (isDamConnection(conn.templateId)) {
+            if (!(await damKeyIsLive(conn))) view.status = "expired";
+            return;
+          }
           if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
           if (conn.auth.kind !== "header") return;
           const remembered = rememberedInput(conn, SHARE_NAME_INPUT_KEY);
@@ -1829,9 +2061,12 @@ export function createConnectionsService(deps: {
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return null;
-      return PROVIDER_TEMPLATE_IDS.has(conn.templateId)
+      const view = PROVIDER_TEMPLATE_IDS.has(conn.templateId)
         ? toView(conn, await preferredProviderId())
         : toView(conn);
+      if (isDamConnection(conn.templateId) && !(await damKeyIsLive(conn)))
+        view.status = "expired";
+      return view;
     },
 
     async validateProviderConnection(id: string): Promise<void> {
@@ -1968,13 +2203,19 @@ export function createConnectionsService(deps: {
       return check;
     },
 
-    async validateGrantSet(connectionIds: string[]): Promise<void> {
+    /* UNIT_BOUNDARY_DESCRIPTION: what a grant set must satisfy before anything is written for it — grantable, no unaddressable rival, and, for a grant the person is making, the flag that offers the install's own Connection. It runs before the Agent exists, so a create it refuses leaves no Agent, no registry Secret and no grant behind. */
+    async validateGrantSet(
+      connectionIds: string[],
+      opts?: { platform?: boolean },
+    ): Promise<void> {
       const wanted = new Set(connectionIds);
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
         wanted.has(c.id),
       );
       granted.forEach(assertGrantable);
       assertNoUnaddressableRival(granted, granted);
+      if (!opts?.platform && granted.some((c) => isDamConnection(c.templateId)))
+        await assertDamConnectionOffered("be granted to an agent");
     },
 
     startOAuth(
@@ -1991,12 +2232,20 @@ export function createConnectionsService(deps: {
     ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (isDamConnection(conn.templateId)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `The platform mints this Connection's credential, so it can be neither connected nor changed by hand.`,
+        });
+      }
 
       const configInputs =
         "configInputs" in credential ? credential.configInputs : null;
       const contributions = configInputs
         ? withConfigInputs(conn, configInputs)
         : null;
+      if (contributions !== null)
+        assertNotInstallHost(conn.templateId, contributions);
 
       switch (conn.auth.kind) {
         case "header": {
@@ -2084,81 +2333,13 @@ export function createConnectionsService(deps: {
     async deleteConnection(id: string): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) return;
-
-      const children = conn.isParent
-        ? await deps.repo.listChildren(conn.id)
-        : [];
-      const removed = [conn, ...children];
-      const affectedAgents = [
-        ...new Set(
-          (
-            await Promise.all(
-              removed.map((c) => deps.repo.listAgentsForConnection(c.id)),
-            )
-          ).flat(),
-        ),
-      ];
-
-      const parent = conn.parentId
-        ? await deps.repo.get(conn.parentId, deps.ownerId)
-        : null;
-      const secretPaths = new Set(
-        removed.flatMap((c) => connectionSecretPath(c.auth) ?? []),
-      );
-      if (
-        parent &&
-        connectionSecretPath(parent.auth) === connectionSecretPath(conn.auth)
-      ) {
-        await retireSharedToken(conn);
-        secretPaths.clear();
-      }
-      for (const path of secretPaths) {
-        await deps.secretStore.delete({ path });
-      }
-
-      await deps.repo.delete(id, deps.ownerId);
-
-      if (affectedAgents.length > 0) {
-        const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
-        const allOwnerConnectionIds = new Set([
-          ...ownerConnsAfter.map((c) => c.id),
-          ...removed.map((c) => c.id),
-        ]);
-        await fanOutToAgents(
-          conn.id,
-          affectedAgents,
-          allOwnerConnectionIds,
-          "connection.delete.fanout_failed",
+      if (isDamConnection(conn.templateId) && deps.damKey) {
+        await deps.connectionLock(`dam-key:${id}`, () =>
+          deleteDamConnection(id),
         );
+        return;
       }
-
-      const template = deps.templates.get(conn.templateId);
-      securityLog("info", "connection.delete", {
-        category: "credential",
-        actor: deps.ownerId,
-        actorKind: "user",
-        target: conn.id,
-        result: "success",
-        detail: {
-          templateId: conn.templateId,
-          authKind: conn.auth.kind,
-          secretsDeleted: secretPaths.size,
-          affectedAgents: affectedAgents.length,
-          ...(children.length > 0
-            ? { connectionsRemoved: children.length }
-            : {}),
-        },
-      });
-      for (const c of removed) {
-        if (c.isParent || deriveStatus(c) === "pending") continue;
-        emit({
-          type: EventType.ConnectionRemoved,
-          actorSub: deps.ownerId,
-          connectionKey: c.id,
-          templateId: c.templateId,
-          kind: template?.category === "mcp" ? "mcp" : "oauth_app",
-        });
-      }
+      await removeConnection(conn);
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {
@@ -2184,19 +2365,25 @@ export function createConnectionsService(deps: {
     async setAgentConnections(
       agentId: string,
       connectionIds: string[],
+      opts?: { platform?: boolean },
     ): Promise<void> {
-      await applyGrants(agentId, () => connectionIds);
+      await applyGrants(agentId, () => connectionIds, opts ?? {});
     },
 
     async updateAgentConnections(
       agentId: string,
       change: { grant: string[]; revoke: string[] },
+      opts?: { platform?: boolean },
     ): Promise<void> {
       const revoked = new Set(change.revoke);
-      await applyGrants(agentId, (current) => [
-        ...current.filter((id) => !revoked.has(id)),
-        ...change.grant,
-      ]);
+      await applyGrants(
+        agentId,
+        (current) => [
+          ...current.filter((id) => !revoked.has(id)),
+          ...change.grant,
+        ],
+        opts ?? {},
+      );
     },
 
     async setPreferredConnection(
@@ -2247,12 +2434,18 @@ export function createConnectionsService(deps: {
       });
     },
 
-    async createFromTemplate(input, policy): Promise<string> {
+    async createFromTemplate(input, policy, platform): Promise<string> {
       const template = deps.templates.get(input.templateId);
       if (!template) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `unknown template ${input.templateId}`,
+        });
+      }
+      if (isDamConnection(template.id) && platform === undefined) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `The platform mints this Connection's credential, so it can be neither connected nor changed by hand.`,
         });
       }
       let sharedKbInputs: Record<string, string> = {};
@@ -2325,6 +2518,7 @@ export function createConnectionsService(deps: {
       const contributions = built.contributions.map((c): Contribution =>
         c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
+      assertNotInstallHost(template.id, contributions);
       const secretPath = connectionSecretPath(built.auth);
 
       let auth =
@@ -2526,6 +2720,7 @@ export function createConnectionsService(deps: {
             ? withoutScopeInputs(stripSecretsFromInputs(input))
             : stripSecretsFromInputs(input)),
           ...sharedKbInputs,
+          ...platform?.rememberedInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
           ...(credentialCheck
             ? { [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck }
@@ -2583,6 +2778,138 @@ export function createConnectionsService(deps: {
         }
       }
       return id;
+    },
+
+    async ensureDamConnection(opts?: {
+      platform?: boolean;
+    }): Promise<string | null> {
+      const template = deps.templates.get(DAM_TEMPLATE_ID);
+      if (!template || !deps.damKey) return null;
+      if (!opts?.platform) await assertDamConnectionOffered("be created");
+      const damKey = deps.damKey;
+      return deps.connectionLock(
+        `${DAM_TEMPLATE_ID}:${deps.ownerId}`,
+        async () => {
+          const owned = await deps.repo.listByOwner(deps.ownerId);
+          const held = owned.find((c) => isDamConnection(c.templateId));
+          if (held) return held.id;
+          const name = firstFreeName(
+            template.name,
+            new Set(owned.map((c) => c.name)),
+          );
+          let minted: { id: string; plaintext: string };
+          try {
+            minted = await damKey.mint();
+          } catch (err) {
+            securityLog("warn", "connection.dam_key_mint_failed", {
+              category: "credential",
+              actor: deps.ownerId,
+              actorKind: "user",
+              result: "failure",
+              reason: err instanceof Error ? err.message : "unknown",
+            });
+            return null;
+          }
+          const connectionId = `conn-${randomBytes(6).toString("hex")}`;
+          if (!(await queueDamKey(minted.id, connectionId)))
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: `The key this Connection needs could not be recorded, so nothing was made: try again in a moment.`,
+            });
+          try {
+            const created = await service.createFromTemplate(
+              {
+                id: connectionId,
+                templateId: DAM_TEMPLATE_ID,
+                name,
+                authKind: "header",
+                value: minted.plaintext,
+              },
+              undefined,
+              { rememberedInputs: { [DAM_KEY_INPUT]: minted.id } },
+            );
+            await damKey.ledger.settle(minted.id).catch(() => {});
+            return created;
+          } catch (err) {
+            await settleQueuedDamKey(minted.id);
+            throw withoutKeyMaterial(err, minted.plaintext);
+          }
+        },
+      );
+    },
+
+    async rotateDamConnection(id: string): Promise<void> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!isDamConnection(conn.templateId) || conn.auth.kind !== "header") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Only this install's own Connection is rotated this way.",
+        });
+      }
+      const damKey = deps.damKey;
+      if (!damKey) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This api-server cannot mint the key this Connection uses.",
+        });
+      }
+      await deps.connectionLock(`dam-key:${id}`, async () => {
+        const current = await deps.repo.get(id, deps.ownerId);
+        if (!current || current.auth.kind !== "header") {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        const previous = rememberedInput(current, DAM_KEY_INPUT);
+        const previousValue = await deps.secretStore
+          .getField(current.auth.valueRef)
+          .catch(() => null);
+        const minted = await damKey.mint();
+        if (!(await queueDamKey(minted.id, current.id)))
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `The new key could not be recorded, so the old one is still in use: try again in a moment.`,
+          });
+        try {
+          await rotateHeaderValue(current, current.auth, minted.plaintext);
+          await deps.repo.adoptDamKey({
+            id: current.id,
+            ownerSub: deps.ownerId,
+            keyId: minted.id,
+            previousKeyId: previous,
+          });
+        } catch (err) {
+          /* UNIT_BOUNDARY_DESCRIPTION: the Secret may already hold the new key, so it is put back before that key is revoked: a failed rotation leaves the Connection working on the key it had, never holding one that no longer authenticates. A restore that fails is reported rather than hidden — the Connection is then broken until it is rotated again. */
+          if (previousValue !== null) {
+            await rotateHeaderValue(current, current.auth, previousValue).catch(
+              (restoreErr: unknown) => {
+                securityLog("warn", "connection.dam_key_restore_failed", {
+                  category: "credential",
+                  actor: deps.ownerId,
+                  actorKind: "user",
+                  target: current.id,
+                  result: "failure",
+                  reason:
+                    restoreErr instanceof Error
+                      ? restoreErr.message
+                      : "unknown",
+                });
+              },
+            );
+          }
+          await settleQueuedDamKey(minted.id);
+          throw withoutKeyMaterial(err, minted.plaintext);
+        }
+        await damKey.ledger.settle(minted.id).catch(() => {});
+        if (previous !== null) await settleQueuedDamKey(previous);
+      });
+      securityLog("info", "connection.dam_key_rotated", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { templateId: DAM_TEMPLATE_ID },
+      });
     },
 
     async createFromParent(input): Promise<string> {
@@ -3074,6 +3401,20 @@ export function createConnectionsService(deps: {
     },
     reconcileManagedConnections,
   };
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: an error a failed mint or create is reported with, with the plaintext key taken out of it. Nothing on these paths should carry it, and the one that did would otherwise print it into the log the caller reports. */
+function withoutKeyMaterial(err: unknown, secret: string): unknown {
+  if (!(err instanceof Error) || secret.length === 0) return err;
+  const redact = (text: string) => text.split(secret).join("[redacted]");
+  if (err.message.includes(secret)) err.message = redact(err.message);
+  if (typeof err.stack === "string") err.stack = redact(err.stack);
+  return err;
+}
+
+function firstFreeName(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
 }
 
 /**

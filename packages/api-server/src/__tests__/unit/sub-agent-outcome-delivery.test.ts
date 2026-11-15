@@ -48,6 +48,7 @@ function harness(opts: {
     [];
   const released: string[][] = [];
   const delivered: string[][] = [];
+  const carriedWhole: string[][] = [];
   const leases: Date[] = [];
   const woken: string[][] = [];
   const wakes: string[] = [];
@@ -59,7 +60,7 @@ function harness(opts: {
     pairFields: async () => ({}),
     repo: {
       markAwaited: async () => {},
-      markCollected: async () => {},
+      collect: async () => ({ inTurn: [] }),
       claimUndelivered: async (_limit, until) => {
         claims.push(until);
         return opts.claimed?.[call++] ?? [];
@@ -70,8 +71,9 @@ function harness(opts: {
         released.push(ids);
         leases.push(lease);
       },
-      markDelivered: async (ids, lease) => {
+      markDelivered: async (ids, lease, whole) => {
         delivered.push(ids);
+        carriedWhole.push(whole);
         leases.push(lease);
       },
       markWoken: async (ids) => {
@@ -107,6 +109,7 @@ function harness(opts: {
     bumps,
     released,
     delivered,
+    carriedWhole,
     woken,
     wakes,
     enqueued,
@@ -169,6 +172,21 @@ describe("one outcome owes one turn", () => {
     expect(h.delivered).toEqual([]);
     expect(h.wakes).toEqual([]);
     expect(h.woken).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a turn too big for its budget is trimmed and tells the agent to call await_subagents for the rest; that call must still return the result, so a trimmed outcome is not marked as carried whole.
+  it("marks as carried whole only the outcomes a turn did not trim", async () => {
+    const h = harness({
+      claimed: [
+        [row({ id: "agent-a" })],
+        [row({ id: "agent-big", result: "x".repeat(70_000) })],
+      ],
+    });
+    await h.deliver();
+    await h.deliver();
+    expect(h.delivered).toEqual([["agent-a"], ["agent-big"]]);
+    expect(h.carriedWhole).toEqual([["agent-a"], []]);
+    expect(h.bumps[1]!.payload.task).toContain("trimmed to fit this turn");
   });
 
   it("releases the children past one turn's budget for the next tick", async () => {
@@ -236,7 +254,7 @@ describe("the hourly retry", () => {
       pairFields: async () => ({}),
       repo: {
         markAwaited: async () => {},
-        markCollected: async () => {},
+        collect: async () => ({ inTurn: [] }),
         claimUndelivered: async () => [],
         release: async () => {},
         markDelivered: async () => {},

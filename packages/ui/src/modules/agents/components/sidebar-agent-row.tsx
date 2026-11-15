@@ -8,7 +8,7 @@ import { useAutoWakeOnSidebarOpen } from "../hooks/use-auto-wake-on-sidebar-open
 import { useOrderDrag } from "../hooks/use-order-drag.js";
 import { isSharedAgent } from "../lib/agent-editors.js";
 import type { OrderDrop } from "../lib/sidebar-order.js";
-import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OrderDropIndicator } from "./order-drop-indicator.js";
 import { SharedAgentIcon } from "./shared-agent-icon.js";
 
@@ -82,7 +82,6 @@ export function SidebarAgentRow({
   children,
 }: Props) {
   useAutoWakeOnSidebarOpen(agent, open);
-  const mood = avatarMood(agent.state, agent);
   const layout = ACTIONS_LAYOUT[actionCount];
   const drag = useOrderDrag({
     scope: "agents",
@@ -113,16 +112,13 @@ export function SidebarAgentRow({
               : [layout.padding.revealed, filtered && !unread && "pr-[34px]"],
             open
               ? "text-foreground"
-              : mood !== "awake"
-                ? "text-muted-foreground hover:text-foreground"
-                : "text-foreground/90 hover:text-foreground",
+              : "text-foreground/90 hover:text-foreground",
           )}
         >
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
             size={24}
-            mood={mood}
             className="shrink-0"
           />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">

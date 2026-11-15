@@ -1,4 +1,5 @@
 import {
+  ARTIFACT_PROMPT_CONVERSATION_PATTERN,
   ARTIFACT_PROMPT_MAX_LENGTH,
   ARTIFACT_PROMPT_TYPE,
   ARTIFACT_REQUEST_TYPE,
@@ -41,8 +42,12 @@ window.platform = (() => {
         throw new Error("Provide a nonempty prompt of at most ${ARTIFACT_PROMPT_MAX_LENGTH} characters.");
       if (options !== undefined && (options === null || typeof options !== "object"))
         throw new Error("Provide the options as an object, such as { newSession: true }.");
+      const conversation = options ? options.conversation : undefined;
+      if (conversation !== undefined && (typeof conversation !== "string" || !${ARTIFACT_PROMPT_CONVERSATION_PATTERN}.test(conversation)))
+        throw new Error("Provide the conversation as 1 to 64 letters, digits, dots, underscores or hyphens.");
       const message = { type: ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}, prompt };
       if (options && options.newSession === true) message.newSession = true;
+      if (conversation !== undefined) message.conversation = conversation;
       window.parent.postMessage(message, "*");
     },
     request({ method, path, body, contentType } = {}) {

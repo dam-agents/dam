@@ -8,6 +8,7 @@ import {
   environmentEndpointsSchema,
   environmentNameSchema,
   environmentReadyPathSchema,
+  OWNER_EGRESS_NOTE,
 } from "api-server-api";
 import { json, run } from "../../core/mcp-tool-result.js";
 import type {
@@ -97,7 +98,12 @@ function refuseAccess(access: unknown): void {
  */
 export function registerEnvironmentTools(
   server: McpServer,
-  deps: { environments: OwningAgentEnvironments },
+  deps: {
+    environments: OwningAgentEnvironments;
+    egressWaiting?: (
+      environmentAgentId: string,
+    ) => Promise<{ host: string; id: string }[]>;
+  },
 ): void {
   const envs = deps.environments;
   if (!deps.environments.manage) {
@@ -134,7 +140,7 @@ export function registerEnvironmentTools(
       egress: childEgressSchema
         .optional()
         .describe(
-          'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com) waits for your owner\'s approval; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
+          'Whose egress rules decide its requests: "parent" (the default), yours, live; "open" or {"open": [rules]}, rules of its own that you set (update_subagent_egress), with no prompt to the user and anything else denied, except that a wildcard host (* or *.example.com), and a rule that lets through a request your own rules do not allow (its host, port, method or path) unless your owner lets your sub-agents and Environments have network access of their own, wait for your owner\'s approval, and the answer names them; or {"scoped": [hosts] or "all"}, a copy of your rules for those hosts that only the user can widen.',
         ),
       expires: expiresInput,
       idle_timeout: idleTimeout,
@@ -144,17 +150,25 @@ export function registerEnvironmentTools(
       run(async () => {
         refuseAccess(args.access);
         const idleTimeoutMin = parseIdleTimeout(args.idle_timeout);
+        const created = await envs.create({
+          name: args.name,
+          endpoints: args.endpoints,
+          ...(args.start ? { start: args.start } : {}),
+          ...(args.storage ? { storage: args.storage } : {}),
+          ...(args.connections ? { connections: args.connections } : {}),
+          ...(args.egress ? { egress: args.egress } : {}),
+          ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
+          ...(idleTimeoutMin !== undefined ? { idleTimeoutMin } : {}),
+        });
+        const waiting = (await deps.egressWaiting?.(created.id)) ?? [];
         return json(
-          await envs.create({
-            name: args.name,
-            endpoints: args.endpoints,
-            ...(args.start ? { start: args.start } : {}),
-            ...(args.storage ? { storage: args.storage } : {}),
-            ...(args.connections ? { connections: args.connections } : {}),
-            ...(args.egress ? { egress: args.egress } : {}),
-            ...(args.expires ? { expiresAt: parseExpiry(args.expires)! } : {}),
-            ...(idleTimeoutMin !== undefined ? { idleTimeoutMin } : {}),
-          }),
+          waiting.length > 0
+            ? {
+                ...created,
+                egressWaitingForOwner: waiting,
+                egressNote: OWNER_EGRESS_NOTE,
+              }
+            : created,
         );
       }),
   );

@@ -5,7 +5,7 @@ import { RESERVED_MCP_SERVER_NAMES, resourceNameSchema } from "../shared.js";
 const GATEWAY_HOST =
   /^(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$/;
 
-const isGatewayHostname = (hostname: string): boolean =>
+export const isGatewayHostname = (hostname: string): boolean =>
   hostname.length <= 253 && GATEWAY_HOST.test(hostname);
 
 export const connectionHostSchema = z

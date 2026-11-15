@@ -102,7 +102,7 @@ function longTables(children: readonly CardChild[]): number[] {
   });
 }
 
-function cardIssues(card: CardElement): string[] {
+export function cardIssues(card: CardElement): string[] {
   return [
     ...longTables(card.children).map(
       (chars) =>

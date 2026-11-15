@@ -275,6 +275,76 @@ describe("share viewer app", () => {
     expect(image.headers.get("Content-Disposition")).toBeNull();
   });
 
+  it("names a raw download with a Czech file name instead of 500ing", async () => {
+    const app = appWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({
+              kind: "binary",
+              fileName: "qa-qft weird ž.exe",
+            }),
+          } satisfies SharedResolution),
+      }),
+    );
+    const raw = await app.request("/a/slug-a/raw?download=1");
+    expect(raw.status).toBe(200);
+    expect(raw.headers.get("Content-Disposition")).toContain(
+      "filename*=UTF-8''qa-qft%20weird%20%C5%BE.exe",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: an agent's `curl --data-binary` upload stores a PNG as
+   * `application/x-www-form-urlencoded`; the file name says what it is, so the
+   * share page previews it instead of offering a dead download. A generic
+   * name — HTML, SVG — stays an octet-stream attachment the CSP still sandboxes.
+   */
+  it("resolves a generic stored type from the file name, but never to active content", async () => {
+    const genericStore = (row: ArtifactRow) =>
+      fakeViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: row,
+          } satisfies SharedResolution),
+        contentStream: () =>
+          Promise.resolve({
+            stream: new Blob([Buffer.from([0x89])]).stream(),
+            contentType: row.contentType,
+            sizeBytes: 1,
+          }),
+      });
+
+    const png = artifactRow({
+      kind: "binary",
+      fileName: "qa-qft-img.png",
+      contentType: "application/x-www-form-urlencoded",
+    });
+    const pngRaw = await appWith(genericStore(png)).request("/a/slug-a/raw");
+    expect(pngRaw.headers.get("Content-Type")).toBe("image/png");
+    expect(pngRaw.headers.get("Content-Disposition")).toBeNull();
+    const page = await contentAppWith(genericStore(png)).request("/a/slug-a");
+    expect(await page.text()).toContain('<img src="/a/slug-a/raw?v=1"');
+
+    for (const fileName of ["page.html", "logo.svg"]) {
+      const raw = await appWith(
+        genericStore(
+          artifactRow({
+            kind: "binary",
+            fileName,
+            contentType: "application/x-www-form-urlencoded",
+          }),
+        ),
+      ).request("/a/slug-a/raw");
+      expect(raw.status).toBe(200);
+      expect(raw.headers.get("Content-Type")).toBe("application/octet-stream");
+      expect(raw.headers.get("Content-Disposition")).toContain("attachment");
+      expect(raw.headers.get("Content-Security-Policy")).toContain("sandbox");
+    }
+  });
+
   it("CSP-sandboxes raw responses so an inline SVG can't script the share origin", async () => {
     const app = appWith(
       fakeViewer({

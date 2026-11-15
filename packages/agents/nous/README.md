@@ -39,11 +39,11 @@ The chat harness drives `nous` per `AGENTS.md`:
   Both design/findings gates auto-pass; a bound Slack/Telegram channel still receives gate summaries as progress.
 - **Autonomous launch** → when the launch prompt carries an autonomous directive (no human will reply), the interactive doctrine is suspended: the agent self-authors the campaign, runs `--auto-approve`, and keeps its turn alive until `DONE` — see `AGENTS.md` → "Autonomous sessions".
 
-### Never hibernates; resume-on-restart
+### Kept while it runs; resume-on-restart
 
-The nous template ships this agent with hibernation **disabled** (idle timeout `0` — see [agent-lifecycle](../../../docs/architecture/agent-lifecycle.md)), so an idle session does **not** scale the pod to zero.
+The agent launches every campaign as kept background work (`platform-keep`), which holds the machine awake until the campaign exits ([agent-processes](../../../docs/architecture/agent-processes.md#keeping-work)); after that it sleeps on the install's idle timeout like any agent.
 A background `nous run` runs to completion on its own; no one needs to keep a terminal or SSH session open.
-Should the pod restart for another reason (image upgrade, node eviction, OOM, crash), artifacts persist on `$HOME`, so the agent **resumes on the next turn** (`nous resume --auto-approve`) when it finds a dead `run.pid` whose campaign isn't `DONE`.
+Should the machine stop for another reason (image upgrade, node eviction, OOM, crash), artifacts persist on `$HOME`, so the agent **resumes on the next turn** (`nous resume --auto-approve`) when it finds a dead `run.pid` whose campaign isn't `DONE`.
 
 ### Progress to Slack/Telegram — the channel bridge
 
@@ -84,8 +84,8 @@ The template is enabled by default in `values.yaml` under "Pre-configured Images
 
 ## Known follow-ups (not yet wired)
 
-- **Schedule-driven unattended resume**: now that this pod doesn't hibernate, a backgrounded campaign already runs to completion unattended.
-  A platform *schedule trigger* → a "resume any running campaigns" turn would still add belt-and-suspenders recovery after a non-idle pod restart (upgrade, eviction, crash); Nous also ships a stubbed "Routines" payload builder for this.
+- **Schedule-driven unattended resume**: a kept campaign already runs to completion unattended.
+  A platform *schedule trigger* → a "resume any running campaigns" turn would still add belt-and-suspenders recovery after a machine stop (upgrade, eviction, crash); Nous also ships a stubbed "Routines" payload builder for this.
 - **MCP**: Nous ships a read-only MCP server (`bin/nous-mcp`).
   Registering it in the chat harness would make campaign data `@`-referenceable; left out of this cut to avoid perturbing Claude Code startup.
   (The campaign-authoring/CLI reference is already shipped as the `nous` skill.)

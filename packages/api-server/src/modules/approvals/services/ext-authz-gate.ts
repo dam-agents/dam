@@ -80,6 +80,18 @@ export interface EgressRuleMatcher {
   ): Promise<{ verdict: ExtAuthzVerdict; rule: MatchedEgressRule } | null>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a rule a child's driver asked for, which waits for the owner, would speak for a request once written, read as the gate's own lookup reads a stored rule.
+export type WaitingRuleSpeaksFor = (
+  rule: { host: string; port?: number; method: string; pathPattern: string },
+  request: {
+    host: string;
+    port: number;
+    tls: boolean;
+    method: string;
+    path: string;
+  },
+) => boolean;
+
 export interface ProviderScopes {
   covers(
     agentId: string,
@@ -103,6 +115,7 @@ interface CreateExtAuthzGateDeps {
   questions: SpendLimitQuestions;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
+  waitingRuleSpeaksFor: WaitingRuleSpeaksFor;
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
@@ -256,6 +269,63 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       if (identity.own?.mode === "open") {
+        const waiting = (
+          await deps.repo.listPendingChildEgressRequests(identity.agentId)
+        ).find(
+          (row) =>
+            row.payload.kind === "egress_proposal" &&
+            deps.waitingRuleSpeaksFor(
+              {
+                host: row.payload.host,
+                ...(row.payload.port !== undefined
+                  ? { port: row.payload.port }
+                  : {}),
+                method: row.payload.method,
+                pathPattern: row.payload.path,
+              },
+              { host, port, tls, method, path },
+            ),
+        );
+        if (waiting) {
+          securityLog("warn", "egress.hold", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "hold",
+            correlationId: waiting.id,
+            detail: { method, path, via, basis: "child-rule-waiting" },
+          });
+          const settled = await waitForVerdict(deps, waiting.id, {
+            ownsRequest: false,
+          });
+          securityLog(
+            settled.verdict === "deny" ? "warn" : "info",
+            "egress.decision",
+            {
+              category: "egress",
+              actor: identity.ownerSub,
+              actorKind: "agent",
+              surface: "ext-authz",
+              agentId: identity.agentId,
+              target: host,
+              decision:
+                settled.reason === "hold-expired" ? "expired" : settled.verdict,
+              correlationId: waiting.id,
+              reason: settled.reason,
+              detail: { method, path, basis: "child-rule-waiting", via },
+            },
+          );
+          return settled.verdict === "allow"
+            ? "allow"
+            : {
+                verdict: "refuse",
+                basis: "rule",
+                response: waitingRefusal(host, settled.reason),
+              };
+        }
         securityLog("warn", "egress.decision", {
           category: "egress",
           actor: identity.ownerSub,
@@ -394,11 +464,44 @@ function ruleRefusal(host: string, rule: MatchedEgressRule): DeniedResponse {
 
 type SettledVerdict =
   | { verdict: ExtAuthzVerdict; reason: "hold-resolved" }
+  | { verdict: "deny"; reason: "hold-withdrawn" }
   | { verdict: "deny"; reason: "hold-expired"; flipped: boolean };
 
+function waitingRefusal(
+  host: string,
+  reason: SettledVerdict["reason"],
+): DeniedResponse {
+  const why = match(reason)
+    .with(
+      "hold-resolved",
+      () => "the agent's owner declined the network rule that would allow it",
+    )
+    .with(
+      "hold-withdrawn",
+      () =>
+        "the network rule that would allow it is no longer asked of the agent's owner",
+    )
+    .with(
+      "hold-expired",
+      () =>
+        "the network rule that would allow it still waits for the owner's approval, and the owner did not answer in time",
+    )
+    .exhaustive();
+  return {
+    status: 403,
+    headers: {
+      "content-type": "text/plain",
+      [PLATFORM_REFUSAL_HEADER]: "egress",
+    },
+    body: `Blocked by the egress gateway, not the upstream: this request to ${host} was not allowed because ${why}. The agent that launched this one set the rule; its owner approves it on Home.`,
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: holds a call until its approval is answered or the hold time runs out. A call that owns its request (one the gate filed for it) expires the request when the hold runs out. A call that waits on a request it does not own (a child's rule its driver asked for) leaves the request open for the owner, and gives up when the request is withdrawn or gone.
 async function waitForVerdict(
   deps: CreateExtAuthzGateDeps,
   id: string,
+  { ownsRequest }: { ownsRequest: boolean } = { ownsRequest: true },
 ): Promise<SettledVerdict> {
   return new Promise<SettledVerdict>((resolve) => {
     let settled = false;
@@ -411,6 +514,8 @@ async function waitForVerdict(
 
     const checkResolved = async () => {
       const row = await deps.repo.getPending(id);
+      if (!ownsRequest && (!row || row.status === "expired"))
+        return settle({ verdict: "deny", reason: "hold-withdrawn" });
       if (!row || row.status !== "resolved") return;
       settle({
         verdict:
@@ -431,6 +536,12 @@ async function waitForVerdict(
     poll.unref();
 
     const timeout = setTimeout(async () => {
+      if (!ownsRequest)
+        return settle({
+          verdict: "deny",
+          reason: "hold-expired",
+          flipped: false,
+        });
       const flipped = await deps.repo.expirePending(id).catch((err) => {
         getLogger().error(
           { pendingId: id, reason: formatError(err) },
