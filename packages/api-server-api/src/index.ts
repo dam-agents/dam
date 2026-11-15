@@ -56,6 +56,10 @@ export {
   MAX_STOP_REASON_CHARS,
   stopReasonSchema,
   stopInvocationRequestSchema,
+  MAX_OWNER_ANSWER_CHARS,
+  MAX_OWNER_OPTIONS,
+  ownerAnswerSchema,
+  ownerQuestionInputSchema,
   invocationOutputStreamSchema,
   INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
@@ -90,8 +94,12 @@ export type {
   InvocationHarnessConfig,
   InvocationsQueryService,
   KeptSubAgent,
+  DelegationAnswer,
   DelegationNode,
+  DelegationQuestion,
   DelegationStopped,
+  OwnerQuestion,
+  OwnerQuestionInput,
 } from "./modules/invocations/types.js";
 
 export {
@@ -230,6 +238,8 @@ export {
   type AgentUnreachableBody,
   isProtectedAgentEnvName,
   isStartRefusal,
+  isTelemetryIdentityEnv,
+  TELEMETRY_IDENTITY_ENV,
   TerminationCode,
 } from "./modules/agents/types.js";
 export {
@@ -534,6 +544,7 @@ export {
 export {
   FEATURES_ON_BY_DEFAULT,
   featureOnForUser,
+  hiddenHarnessesFor,
 } from "./modules/features/modes.js";
 export type {
   AssistantFirstResult,
@@ -645,6 +656,7 @@ export {
   SHARED_KB_TEMPLATE_ID,
   S3_COMPATIBLE_TEMPLATE_ID,
   DAM_TEMPLATE_ID,
+  damKeyName,
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,
@@ -705,14 +717,12 @@ export type { DefaultAccountKindId } from "./modules/connections/preference-grou
 export type {
   ProfilesService,
   ProfileWithUsage,
+  NewAgentDefaultView,
   ProfileUsage,
   ProfileCreateInput,
   ProfileUpdateInput,
 } from "./modules/profiles/types.js";
-export {
-  DEFAULT_PROFILE_UNDELETABLE,
-  PROFILE_NAME_MAX_LENGTH,
-} from "./modules/profiles/schemas.js";
+export { PROFILE_NAME_MAX_LENGTH } from "./modules/profiles/schemas.js";
 
 export type {
   CaseStudyStatus,
@@ -840,10 +850,12 @@ export type {
   OutageAlertAffectedBy,
   OutageAlertAgent,
   OutageAlertNotice,
+  OwnerQuestionNotice,
 } from "./modules/attention/types.js";
 export {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
+  ownerQuestionNoticeKey,
 } from "./modules/attention/types.js";
 export type {
   CostReviewOffer,

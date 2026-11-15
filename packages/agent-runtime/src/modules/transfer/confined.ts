@@ -46,8 +46,6 @@ import { isAbsolute, relative, resolve } from "node:path";
  * a native `linkat`/`renameat`/`openat2`.
  */
 
-export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
-
 export const TRANSFER_ROOT = [".dam", "satellite-files"];
 
 export const STAGING_PREFIX = ".incoming-";

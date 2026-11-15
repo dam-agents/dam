@@ -863,4 +863,53 @@ describe("an edit that starts no turn", () => {
     expect(h.turns()[1]).toContain(CHANGED);
     expect(h.turns()[1]).toContain("step 2 of 3");
   });
+
+  /**
+   * TEST_SCENARIO: An Agent of another install corrects its post, which the
+   * reading agent already took. The edit is listed in the next turn under the
+   * name the post had, as an agent from another install, although the record
+   * of an edit keeps none of the post's blocks.
+   */
+  it("lists a companion's edit as an agent's from another install", async () => {
+    const rex: SlackSender = {
+      kind: "companion",
+      botId: "B-STAGING",
+      name: "Rex",
+    };
+    const h = harness({ ambient: true });
+    await h.worker.connect();
+
+    await h.gw.fireMessage({ sender: rex, channel: BOUND, ts: T1, text: BLUE });
+    expect(await h.settled(() => h.turns().length === 1)).toBe(true);
+
+    await h.gw.fireMessageEdited({
+      sender: rex,
+      channel: BOUND,
+      ts: T1,
+      text: GREEN,
+      message: {
+        ts: T1,
+        botId: "B-STAGING",
+        botName: "Rex",
+        origin: "companion",
+        text: GREEN,
+        edited: true,
+      },
+    });
+    await pause(5);
+
+    h.gw.setHistory([{ ts: T2, user: USER, text: "anything new?" }]);
+    await h.gw.fireMessage({
+      user: USER,
+      channel: BOUND,
+      ts: T2,
+      text: "anything new?",
+    });
+    expect(
+      await h.settled(() => h.turns().some((turn) => turn.includes(CHANGED))),
+    ).toBe(true);
+    const listed = h.turns().find((turn) => turn.includes(CHANGED))!;
+    expect(listed).toContain("Rex (an agent from another install) [");
+    expect(listed).toContain(GREEN);
+  });
 });

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { ChannelConfig } from "api-server-api";
 import { ChannelType } from "api-server-api";
-import { type AgentView, displayState } from "../domain/agent-view.js";
+import type { AgentView } from "../domain/agent-view.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import {
@@ -97,7 +97,7 @@ function renderAgent(
     ["ID", agent.id],
     ["TEMPLATE", agent.templateId ?? "<custom>"],
     ["IMAGE", agent.image],
-    ["STATE", displayState(agent)],
+    ["STATE", agent.state],
     ["AVATAR", renderAvatar(agent.avatar)],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);

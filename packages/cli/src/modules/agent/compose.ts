@@ -8,7 +8,6 @@ import { buildAvatarsCommand } from "./commands/avatars.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
-import { buildDisableCommand } from "./commands/disable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildKeptCommand } from "./commands/kept.js";
@@ -91,8 +90,6 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   parent.addCommand(buildModelsCommand(withModels));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
-  parent.addCommand(buildDisableCommand(shared, true));
-  parent.addCommand(buildDisableCommand(shared, false));
 
   return { commands: [parent], exports: { createService } };
 }

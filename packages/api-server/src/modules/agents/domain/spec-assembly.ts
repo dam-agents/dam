@@ -57,7 +57,6 @@ export function assembleSpecFromTemplate(
     resources: concreteResources(tmplSpec.resources, defaultLimits),
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
-    hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
     backend: { type: "vm" },

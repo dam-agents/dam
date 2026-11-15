@@ -11,7 +11,6 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -39,7 +38,6 @@ import {
 import {
   useCreateProfile,
   useDeleteProfile,
-  useSetDefaultProfile,
   useUpdateProfile,
 } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
@@ -60,7 +58,6 @@ export function ProfileSection({
 } = {}) {
   const { data: profiles = [], isPending } = useProfiles();
   const remove = useDeleteProfile();
-  const setDefault = useSetDefaultProfile();
   const showConfirm = useStore((s) => s.showConfirm);
   const showAlert = useStore((s) => s.showAlert);
   const agents = useAgents().data;
@@ -86,10 +83,14 @@ export function ProfileSection({
       );
       return;
     }
-    void showConfirm("It cannot be recovered.", `Delete “${profile.name}”?`, {
-      kind: "destructive",
-      confirmLabel: "Delete",
-    }).then((ok) => ok && remove.mutate({ id: profile.id }));
+    void showConfirm(
+      "It cannot be recovered.",
+      `Delete profile “${profile.name}”?`,
+      {
+        kind: "destructive",
+        confirmLabel: "Delete profile",
+      },
+    ).then((ok) => ok && remove.mutate({ id: profile.id }));
   };
 
   return (
@@ -100,23 +101,13 @@ export function ProfileSection({
           New profile
         </Button>
       </SectionHeader>
-      {creating && (
-        <NewProfileDialog
-          from={profiles.find((p) => p.newAgentDefault) ?? profiles[0] ?? null}
-          onClose={() => setCreating(false)}
-        />
-      )}
+      {creating && <NewProfileDialog onClose={() => setCreating(false)} />}
       {renaming && (
         <RenameProfileDialog
           profile={renaming}
           onClose={() => setRenaming(null)}
         />
       )}
-      <p className="mb-3 text-sm text-muted-foreground">
-        Save harness, provider and model settings as profiles to quickly set and
-        change them in agents. Update a profile here to quickly change settings
-        on all agents using that profile.
-      </p>
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading profiles…</p>
       ) : (
@@ -129,17 +120,6 @@ export function ProfileSection({
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-foreground">
                   {profile.name}
-                  {profile.newAgentDefault && (
-                    <Badge
-                      variant="muted"
-                      size="sm"
-                      title="Default for new agents"
-                      className="ml-2 align-middle"
-                    >
-                      Default
-                      <span className="sr-only"> for new agents</span>
-                    </Badge>
-                  )}
                 </p>
                 <ProfileValues
                   profile={profile}
@@ -167,20 +147,12 @@ export function ProfileSection({
                 >
                   Rename
                 </DropdownMenuItem>
-                {!profile.newAgentDefault && (
-                  <DropdownMenuItem
-                    disabled={setDefault.isPending}
-                    onSelect={() => setDefault.mutate({ id: profile.id })}
-                  >
-                    Set as default
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem
                   tone="danger"
-                  disabled={profile.newAgentDefault || remove.isPending}
+                  disabled={remove.isPending}
                   onSelect={() => void confirmDelete(profile)}
                 >
-                  {profile.newAgentDefault ? "Can't remove default" : "Delete"}
+                  Delete
                 </DropdownMenuItem>
               </RowActionsMenu>
             </li>
@@ -288,33 +260,32 @@ function ProfileValues({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a profile made in Settings: a name and the same
- * Custom screen every pick uses, listing every provider the owner holds,
- * starting from the default profile's values.
+ * Custom screen every pick uses, listing every provider the owner holds. It
+ * opens on the owner's default for new agents, which is what a profile made
+ * without a reason of its own should run.
  */
-function NewProfileDialog({
-  from,
-  onClose,
-}: {
-  from: ProfileWithUsage | null;
-  onClose: () => void;
-}) {
+function NewProfileDialog({ onClose }: { onClose: () => void }) {
   const { data: status } = useQuery(trpc.connections.catalog.queryOptions());
+  const { data: chosen } = useQuery(
+    trpc.profiles.newAgentDefault.queryOptions(),
+  );
   const providers = useProviderConnections(null);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const create = useCreateProfile();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pair, setPair] = useState<SessionPair | null>(
-    from &&
-      profileEditPair(
-        from,
-        providers.owned.find((p) => p.templateId === from.providerTemplate)
-          ?.id ?? null,
-      ),
-  );
-  const providerTemplate =
-    providers.owned.find((p) => p.id === pair?.provider)?.templateId ??
-    (pair?.model === from?.model ? from?.providerTemplate : undefined);
+  const [draft, setDraft] = useState<SessionPair | null>(null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner's default, and, while it names a
+   * Connection the owner no longer holds, the base default in its place: a
+   * profile cannot be made on a Connection that is gone. */
+  const held =
+    !!chosen?.pair &&
+    providers.owned.some((p) => p.id === chosen.pair?.provider);
+  const defaultPair = chosen ? (held ? chosen.pair : chosen.base) : null;
+  const pair = draft ?? defaultPair;
+  const providerTemplate = providers.owned.find(
+    (p) => p.id === pair?.provider,
+  )?.templateId;
   const save = () => {
     const trimmed = name.trim();
     if (trimmed === "") return setError("Give the profile a name.");
@@ -348,7 +319,10 @@ function NewProfileDialog({
             aria-label="Profile name"
             placeholder="e.g. Fast review"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
           />
         </FormField>
         <div className="mt-3 flex flex-col gap-2 rounded-md border border-border p-1 text-sm">
@@ -359,7 +333,8 @@ function NewProfileDialog({
               harnesses={status.harnesses.map((h) => h.name)}
               pair={pair}
               defaultHarness={status.defaultHarness}
-              onChoose={setPair}
+              defaultPair={defaultPair}
+              onChoose={setDraft}
               onManageProviders={() => {
                 if (create.isPending) return;
                 onClose();

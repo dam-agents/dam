@@ -1,4 +1,5 @@
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
 import type {
   InvocationRow,
   InvocationsRepository,
@@ -20,7 +21,8 @@ export interface DelegationStop {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one stop for a target and every target below it,
- * whoever asks: each running run in that tree fails with the stop's reason,
+ * whoever asks: each run in that tree that runs, or waits for its owner's
+ * answer, fails with the stop's reason,
  * and each target goes through the one reap path, which removes a one-off
  * target, and with it what it still has below, and ends a kept one's runs
  * on their own, so a kept target keeps its conversation. The walk crosses
@@ -35,7 +37,7 @@ export interface DelegationStop {
 export function createDelegationStop(deps: {
   repo: Pick<
     InvocationsRepository,
-    "listRunningRunsOf" | "listTreeOfRoot" | "failStopped"
+    "listOpenRunsOf" | "listTreeOfRoot" | "failStopped"
   >;
   reaper: TargetReaper;
 }): DelegationStop {
@@ -67,7 +69,7 @@ export function createDelegationStop(deps: {
     collected: boolean,
   ): Promise<InvocationRow[]> {
     const failed: InvocationRow[] = [];
-    for (const run of await deps.repo.listRunningRunsOf(ids)) {
+    for (const run of await deps.repo.listOpenRunsOf(ids)) {
       if (await deps.repo.failStopped(run.runId!, reason, collected))
         failed.push(run);
     }
@@ -77,7 +79,7 @@ export function createDelegationStop(deps: {
   return {
     async running(target) {
       const ids = [target.id, ...(await below(target))];
-      return (await deps.repo.listRunningRunsOf(ids)).length > 0;
+      return (await deps.repo.listOpenRunsOf(ids)).length > 0;
     },
 
     async stop(target, by) {
@@ -100,6 +102,12 @@ export function createDelegationStop(deps: {
         },
       });
       for (const run of stopped) await deps.reaper.reap(run);
+      if (stopped.some((run) => run.status === "asking"))
+        emit({
+          type: EventType.AttentionChanged,
+          ownerSub: target.owner,
+          agentId: target.rootDriverId,
+        });
       return { stopped: true };
     },
   };

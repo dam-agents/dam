@@ -779,7 +779,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the sentence the owner reads when the kill is what took this agent's machine down. It is one string so that every path that takes a vm agent down tells the same story: the notice, the Slack alert and the history all read the reason on AgentPodReady.
-const runnerOOMNotice = "Your VM agents ran out of memory together, so the ones that were running restarted. Disable agents you aren't using to free memory."
+const runnerOOMNotice = "Your VM agents ran out of memory together, so the ones that were running restarted. Delete agents you no longer use to free memory."
 
 // UNIT_BOUNDARY_DESCRIPTION: the marks an agent carries about the kills of its owner's runner and the machine it ran on, all persisted so that a kill is decided once: the kill it was attributed, which is the record that it was decided; the kill that is over for it, so a later pass never names it again; when its machine last began holding memory; and when it was last seen stopped. An absent stop is a machine that may still be holding memory, and an absent start one whose start went before the platform wrote these marks, so a kill goes to an agent whose stamps do not put its machine away from the runner at the kill.
 const (

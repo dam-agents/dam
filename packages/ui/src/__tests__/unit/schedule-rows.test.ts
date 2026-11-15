@@ -24,6 +24,9 @@ vi.mock("@/components/ui/tooltip", () => ({
 vi.mock("../../store.js", () => ({ useStore: () => undefined }));
 vi.mock("../../modules/agents/api/harness-config.js", () => ({}));
 vi.mock("../../modules/agents/api/queries.js", () => ({}));
+vi.mock("../../modules/profiles/api/queries.js", () => ({
+  useProfiles: () => ({ data: [] }),
+}));
 vi.mock("../../modules/schedules/api/session-model.js", () => ({}));
 vi.mock("../../modules/sessions/components/awake-models-gate.js", () => ({}));
 vi.mock(

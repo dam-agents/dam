@@ -35,6 +35,15 @@ virtualization:
     resources:
       requests:
         cpu: 50m
+    # Every e2e owner shares one roll a runner wide, and an owner's runner that
+    # waits for a machine which never comes back holds its place for the whole
+    # settle timeout. The chart's 10m is as long as the runner release spec
+    # waits for its own reboot, so one such runner made that spec fail at
+    # random. A roll or hand-off here takes 20 s to 1 minute, so 2m still
+    # lets the slowest one settle, and bounds a stuck one well inside the
+    # spec's own timeouts.
+    rollout:
+      settleTimeout: 2m
 
 # Keycloak's first boot is the longest step of the e2e install: the chart's
 # realm import hook, and so the install, waits for it. On a CI run at the

@@ -163,7 +163,12 @@ function PanelBody({
           </DelegationOwnersProvider>
         )}
       </div>
-      {finished && (
+      {node.status === "asking" && (
+        <div className="shrink-0 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+          This agent waits for your answer. Answer it in the chat's input.
+        </div>
+      )}
+      {finished && node.status !== "asking" && (
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Locked size={14} aria-hidden />
           <span className="min-w-0 flex-1">

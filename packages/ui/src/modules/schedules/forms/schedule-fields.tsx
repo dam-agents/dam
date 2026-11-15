@@ -31,6 +31,7 @@ import { FormField } from "../../../components/form-field.js";
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
   type Choice,
@@ -544,24 +545,18 @@ interface ChoicesControl {
  * profile or the harness, model and settings of its own, the subagent a
  * profile or the platform sub-agent values its settings carry. Empty primary
  * fields are the scheduled default — what the agent's Schedules page picks,
- * which the chat default answers until it does — and only a row already
- * following it keeps them empty (D123), saying what it is now in the hint. On
- * a runtime without the Model Router the old single model field stands.
+ * which the chat default answers until it does — kept empty by any schedule
+ * that follows it, saying what it is now in the hint. On a runtime without the
+ * Model Router the old single model field stands.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
   agentId,
   control,
   migrationNote,
-  inheritChoice = false,
 }: {
   agentId: string;
   control: Control<T>;
   migrationNote: string | null;
-  /* UNIT_BOUNDARY_DESCRIPTION: the empty choice is offered only where it is the
-   * schedule's own current selection — a schedule written before profiles that
-   * follows the scheduled default — so such a row opens and saves untouched, and
-   * every other form asks for concrete values (D123). */
-  inheritChoice?: boolean;
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
@@ -588,6 +583,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "platformSubagentProfile",
   });
+  const { data: profiles = [] } = useProfiles(agentId || null);
   const { data: fallback } = useScheduleDefault(
     routed && agentId ? agentId : null,
     null,
@@ -616,18 +612,18 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     settings: settingsField.value ?? {},
     platformSubagentProfile: subagentField.value,
   });
-  const follows =
-    inheritChoice &&
-    !slots.profileId &&
-    !harnessField.value &&
-    !modelField.value;
+  const follows = !slots.profileId && !harnessField.value && !modelField.value;
+  /* UNIT_BOUNDARY_DESCRIPTION: with nothing picked, the panel opens on what the
+   * schedule follows, its own harness first, so its Provider row names the
+   * Connection that default runs on. */
+  const defaultHarness = fallback?.harness ?? status?.defaultHarness ?? "";
   return (
     <div role="group" aria-label="Runs on" className="flex flex-col gap-2">
       <SectionLabel>Runs on</SectionLabel>
       <SessionPairPicker
         agentId={agentId}
         carried={status?.harnesses ?? []}
-        defaultHarness={status?.defaultHarness ?? ""}
+        defaultHarness={defaultHarness}
         routed
         onConnectProviders={() =>
           agentId && navigateToSandboxHome(agentId, "providers")
@@ -636,6 +632,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           slots,
           label: "Schedule harness and model",
           placeholder: "The agent's model for schedules",
+          defaultPair: fallback ?? null,
           onChoose: (pair, references) => {
             const next = scheduleFields(
               nextSlots(slots, pair, references),
@@ -649,7 +646,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           },
         }}
       />
-      {inheritChoice && !follows && (
+      {!follows && (
         <button
           type="button"
           onClick={() => {
@@ -682,11 +679,17 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
                 {")"}
               </>
             )}
-            , which the agent&apos;s Schedules page sets. Pick a profile or a
-            model to give it values of its own.
+            , which the agent&apos;s Schedules page sets.{" "}
+            {profiles.length > 0
+              ? "Pick a profile or a model to give it values of its own."
+              : "Pick a model to give it values of its own."}
           </>
         ) : (
-          "What this schedule runs on, picked as a chat's model is. Editing a profile changes every schedule that names it; a pick of its own applies to this schedule only."
+          <>
+            The model this schedule runs on.
+            {profiles.length > 0 &&
+              " Pick a profile to follow its later edits."}
+          </>
         )}
       </span>
       <FormError

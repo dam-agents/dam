@@ -12,7 +12,7 @@ import {
 
 const CREATE = JSON.stringify([
   {
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId: "team",
       catalogId: BASIC_CATALOG_ID,
@@ -23,7 +23,7 @@ const CREATE = JSON.stringify([
 ]);
 
 const DELETE = JSON.stringify([
-  { version: "v1.0", deleteSurface: { surfaceId: "team" } },
+  { version: "1.0", deleteSurface: { surfaceId: "team" } },
 ]);
 
 function replay(...replies: { messageId: string; source: string }[]) {

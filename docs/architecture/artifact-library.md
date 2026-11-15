@@ -210,6 +210,7 @@ Rendering is entirely client-side — the server never compiles or sanitizes use
 - **Markdown** renders client-side through a sanitizer; **code and text** render as highlighted source.
 - **Images** preview inline; other binaries get a download page.
   Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
+  An artifact's type is the one its upload stated; when that is missing or generic — the `application/x-www-form-urlencoded` a plain `curl --data-binary` sends, for example — a fixed list of image extensions and PDF decides it, and a name never upgrades bytes to HTML or SVG.
 
 The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
 No search engine may index user content: every response of a share page, the share sign-in routes and the content host, errors included, carries `X-Robots-Tag: noindex, nofollow, noarchive`, and both hosts answer `robots.txt` with `Disallow: /`.

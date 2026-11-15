@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-11-02
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -11,7 +11,7 @@ A Channel Binding never makes an Agent shared: that is Shared Access, a differen
 
 An editor is not a second owner.
 The Agent keeps running on its owner's budget and connections, and only the owner changes the Editor List or deletes the Agent.
-An editor changes the Agent's set-up much as its owner does: its settings, environment variables, Egress Rules, skills, schedules, chat forms, Environments and spend limits, and they can disable, restart and update it.
+An editor changes the Agent's set-up much as its owner does: its settings, environment variables, Egress Rules, skills, schedules, chat forms, Environments and spend limits, and they can restart and update it.
 An editor also uses its sessions as its owner does: they start and continue them, chat, and answer the approvals the Agent asks for in the chat.
 What reaches the owner's credentials or decides who can talk to the Agent stays with the owner: its connections and providers, the credential injection switch, a Secret named by secretRef, its Channel Bindings and whispers, and its skill library.
 So do its terminals and SSH.

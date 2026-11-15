@@ -57,7 +57,7 @@ function agentPost(
 ): SlackMessage & { ts: string } {
   return {
     ts,
-    user: "UBOT",
+    user: "U-BOT",
     text: "step 1 of 3",
     blocks: [
       { type: "markdown", text: "step 1 of 3" } as never,

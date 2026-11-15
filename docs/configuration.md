@@ -198,6 +198,10 @@ On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id —
 Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one.
 Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
 
+Where another install of the platform shares a workspace with this one, list that install's Slack app id (Basic Information → App ID) in `apiServer.slackCompanionAppIds`.
+Its agents' posts are then read as agents' posts and not as an integration's ([slack-companion-apps](architecture/slack-companion-apps.md)).
+Each install lists the other for both to read each other's agents, and an unlisted app's post is never read as an agent's.
+
 Connecting a channel does not change: you still paste a conversation id.
 One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out.
 Public channels resolve whether or not the bot has been invited; a **private** channel needs the bot invited first, which posting required anyway.

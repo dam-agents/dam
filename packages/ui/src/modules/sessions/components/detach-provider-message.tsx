@@ -1,13 +1,27 @@
+import { Button } from "@/components/ui/button";
+
+import { useStore } from "../../../store.js";
 import type { ProviderUsage } from "../hooks/use-provider-usage.js";
 import { DEFAULT_KIND_LABEL } from "../lib/default-kind.js";
 
 export function DetachProviderMessage({
+  agentId,
   name,
   usage,
 }: {
+  agentId: string | null;
   name: string;
   usage: ProviderUsage;
 }) {
+  const closeDialog = useStore((s) => s.closeDialog);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const seeAll = agentId
+    ? () => {
+        closeDialog(false);
+        navigateToSandboxHome(agentId, "schedules");
+      }
+    : undefined;
+  const turnedOff = usage.turnedOffSchedules;
   return (
     <div className="flex flex-col gap-2">
       <p>
@@ -24,32 +38,63 @@ export function DetachProviderMessage({
       {usage.profiles.length > 0 && (
         <div>
           <p>These profiles run on it:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.profiles.map((profile) => (
-              <li key={profile}>{profile}</li>
-            ))}
-          </ul>
+          <NameList names={usage.profiles} />
         </div>
       )}
       {usage.schedules.length > 0 && (
         <div>
           <p>These schedules won&rsquo;t run:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.schedules.map((schedule) => (
-              <li key={schedule}>{schedule}</li>
-            ))}
-          </ul>
+          <NameList names={usage.schedules} onSeeAll={seeAll} />
         </div>
+      )}
+      {turnedOff > 0 && (
+        <p>
+          {turnedOff === 1
+            ? "1 turned-off schedule uses it too. Turned back on, it won\u2019t run"
+            : `${turnedOff} turned-off schedules use it too. Turned back on, they won\u2019t run`}{" "}
+          until {name} is attached again or{" "}
+          {turnedOff === 1 ? "it gets" : "they get"} another model.
+        </p>
       )}
       {usage.pages.length > 0 && (
         <div>
           <p>Prompts from these pages won&rsquo;t run:</p>
-          <ul className="mt-1 list-disc pl-5">
-            {usage.pages.map((page) => (
-              <li key={page}>{page}</li>
-            ))}
-          </ul>
+          <NameList names={usage.pages} />
         </div>
+      )}
+    </div>
+  );
+}
+
+const MAX_LISTED = 5;
+
+function NameList({
+  names,
+  onSeeAll,
+}: {
+  names: readonly string[];
+  onSeeAll?: () => void;
+}) {
+  const hidden = names.length > MAX_LISTED ? names.length - MAX_LISTED + 1 : 0;
+  return (
+    <div className="mt-1 text-left">
+      <ul className="list-disc pl-5">
+        {names.slice(0, names.length - hidden).map((name) => (
+          <li key={name}>{name}</li>
+        ))}
+      </ul>
+      {hidden > 0 && (
+        <p className="mt-1 text-xs">
+          and {hidden} more
+          {onSeeAll && (
+            <>
+              {" · "}
+              <Button variant="link" size="inline" onClick={onSeeAll}>
+                See all in Schedules
+              </Button>
+            </>
+          )}
+        </p>
       )}
     </div>
   );
