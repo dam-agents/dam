@@ -41,7 +41,6 @@ vi.mock("node:fs/promises", async (original) => {
 import type { TokenProvider } from "../modules/auth/index.js";
 import type { CallOutcome } from "../modules/satellite/services/backend.js";
 import {
-  MAX_TRANSFER_BYTES,
   pathSegments,
   pinRoot,
 } from "../modules/satellite/services/confined-files.js";
@@ -52,6 +51,8 @@ import {
 import {
   createFilesBackend,
   DOWNLOAD_TOOL,
+  LIST_TOOL,
+  STAT_TOOL,
   UPLOAD_TOOL,
 } from "../modules/satellite/services/files-backend.js";
 
@@ -214,7 +215,7 @@ describe("a download from the machine into the agent's workspace", () => {
     });
   });
 
-  it("refuses a .. segment, an absolute path, a symlink out, a hard link out, a FIFO and a directory", async () => {
+  it("refuses a .. segment, an absolute path, a symlink out, a hard link out and a FIFO", async () => {
     const transfer = fakeTransfer();
     const backend = createFilesBackend({ root, allowUpload: false, transfer });
 
@@ -224,7 +225,6 @@ describe("a download from the machine into the agent's workspace", () => {
       { path: "escape.txt" },
       { path: "hard.txt" },
       { path: "fifo" },
-      { path: "logs" },
       { path: "" },
     ]) {
       const outcome = outcomeOf(
@@ -325,9 +325,15 @@ describe("an upload from the agent's workspace onto the machine", () => {
     const transfer = fakeTransfer();
     const backend = createFilesBackend({ root, allowUpload: false, transfer });
 
-    expect(backend.tools.map((tool) => tool.name)).toEqual([DOWNLOAD_TOOL]);
+    expect(backend.tools.map((tool) => tool.name)).toEqual([
+      DOWNLOAD_TOOL,
+      LIST_TOOL,
+      STAT_TOOL,
+    ]);
     expect(backend.tools.map((tool) => tool.transfer ?? null)).toEqual([
       "download",
+      null,
+      null,
     ]);
     const outcome = outcomeOf(
       await backend.call({
@@ -731,12 +737,5 @@ describe("the requests the platform receives", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow("the job this transfer belongs to is no longer running");
-  });
-});
-
-describe("the cap the satellite declares", () => {
-  it("is the same one the platform enforces", () => {
-    expect(MAX_TRANSFER_BYTES).toBe(50 * 1024 * 1024);
-    expect(MAX_TRANSFER_BYTES).toBe(50 * 1024 * 1024);
   });
 });

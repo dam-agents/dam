@@ -1,5 +1,5 @@
 {
-  "id": "d5ee52bc-4b29-494d-ad8c-c0b8aa8479b6",
+  "id": "c1e27e3d-69e4-49f7-ae84-cb27ac7b6323",
   "prevId": "95c8cd22-e110-4a38-89bf-d58d83331083",
   "version": "7",
   "dialect": "postgresql",
@@ -6369,6 +6369,44 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.slack_untagged_reply_notes": {
+      "name": "slack_untagged_reply_notes",
+      "schema": "",
+      "columns": {
+        "actor_hash": {
+          "name": "actor_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "first_used_at": {
+          "name": "first_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_noted_at": {
+          "name": "last_noted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "graduated_at": {
+          "name": "graduated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.spend_agent_names": {
       "name": "spend_agent_names",
       "schema": "",
@@ -7364,49 +7402,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.web_search_rules": {
-      "name": "web_search_rules",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "web_search_rules_verdict": {
-          "name": "web_search_rules_verdict",
-          "value": "\"web_search_rules\".\"verdict\" IN ('allow', 'deny')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "control.agent_conditions": {
       "name": "agent_conditions",
       "schema": "control",
@@ -8182,13 +8177,6 @@
         },
         "require_connection_address": {
           "name": "require_connection_address",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "web_search_control": {
-          "name": "web_search_control",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

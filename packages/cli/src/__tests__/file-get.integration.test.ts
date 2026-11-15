@@ -37,7 +37,6 @@ describe("dam file get --stdout (integration)", () => {
           effectiveHibernationTimeoutMin: 60,
           features: { liveUpdates: true },
           stopRequested: false,
-          disabled: false,
           overBudget: false,
           podRestarts: 0,
           contributionFailures: [],

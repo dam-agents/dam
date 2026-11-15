@@ -1106,21 +1106,33 @@ describe("surviving a drop", () => {
   /**
    * TEST_SCENARIO: A worker that runs for weeks completes millions of calls.
    * Each one racing the shutdown must not leave its losing subscription behind,
-   * or the process grows until it is restarted for no reason.
+   * or the process grows until it is restarted for no reason. A subscription
+   * lives exactly as long as the platform call it names, so once every call has
+   * settled the count equals the calls this spec itself left open.
    */
   it("keeps no shutdown subscription once a call has settled", async () => {
     const queue = pollQueue();
     let claims = 0;
+    let awaiting = 0;
+    const open = <T>(work: Promise<T>): Promise<T> => {
+      awaiting += 1;
+      return work.finally(() => {
+        awaiting -= 1;
+      });
+    };
     const transport: WorkerTransport = {
       connect: async () => ({ incarnation: "reg-1" }),
-      claim: async () => {
+      claim: () => {
         claims += 1;
-        if (claims > 30) return queue.binding();
-        return [runItem(claims, ["/bin/echo", "hello"])];
+        return open(
+          claims > 30
+            ? queue.binding()
+            : Promise.resolve([runItem(claims, ["/bin/echo", "hello"])]),
+        );
       },
-      heartbeat: async () => {},
+      heartbeat: () => open(Promise.resolve()),
       drain: async () => queue.release(),
-      report: async () => {},
+      report: () => open(Promise.resolve()),
     };
     const { worker } = workerWith(transport);
 
@@ -1128,7 +1140,10 @@ describe("surviving a drop", () => {
     await vi.waitFor(() => expect(claims).toBeGreaterThan(30), {
       timeout: 15_000,
     });
-    expect(worker.waitingOnPlatform).toBeLessThanOrEqual(1);
+    await vi.waitFor(() => expect(worker.runningCount).toBe(0), {
+      timeout: 15_000,
+    });
+    expect(worker.waitingOnPlatform).toBe(awaiting);
     await worker.drain();
     await running;
   }, 30_000);

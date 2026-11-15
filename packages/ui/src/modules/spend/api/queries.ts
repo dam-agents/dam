@@ -9,6 +9,7 @@ import {
   type SpendBreakdownInput,
   type SpendCallCost,
   type SpendCalls,
+  type SpendDailyRow,
   type SpendSessionRow,
   type SpendSessions,
   type SpendTurns,
@@ -69,6 +70,17 @@ export function useSpendMetering() {
   return useQuery({
     ...trpc.spend.metering.queryOptions(),
     staleTime: Infinity,
+  });
+}
+
+const anyCovered = (rows: SpendDailyRow[]): boolean =>
+  rows.some((row) => row.unit === "usd_list" && row.costMicros > 0);
+
+export function useAnyCoveredSpend(range: { from: string; to: string }) {
+  return useQuery({
+    ...trpc.spend.daily.queryOptions(range),
+    staleTime: SPEND_REFRESH_MS * 4,
+    select: anyCovered,
   });
 }
 

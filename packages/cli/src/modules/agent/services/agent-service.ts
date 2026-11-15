@@ -38,12 +38,6 @@ export interface AgentService {
   restart(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
-  setDisabled(
-    id: string,
-    disabled: boolean,
-  ): Promise<
-    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
-  >;
   updateIdentity(
     input: Pick<AgentUpdateInput, "id" | "name" | "avatar">,
   ): Promise<
@@ -100,13 +94,6 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       try {
         await deps.trpc.agents.restart.mutate({ id });
         return ok(undefined);
-      } catch (e) {
-        return notFoundOnMutate(e, id);
-      }
-    },
-    async setDisabled(id, disabled) {
-      try {
-        return ok(await deps.trpc.agents.setDisabled.mutate({ id, disabled }));
       } catch (e) {
         return notFoundOnMutate(e, id);
       }

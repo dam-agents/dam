@@ -1,11 +1,7 @@
 import { useCallback } from "react";
 
-import { getErrorMessage } from "@/lib/errors";
-
 import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
-import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
-import { fetchFileContent } from "../api/queries.js";
 
 export function useFileTree(selectedAgent: string | null) {
   const openFilePath = useStore((s) =>
@@ -33,16 +29,8 @@ export function useFileTree(selectedAgent: string | null) {
         return;
       }
       if (!(await confirmDiscard())) return;
-      try {
-        await fetchFileContent(selectedAgent, path);
-        setDock({ kind: "file", path }, opts);
-        revealFiles();
-      } catch (err) {
-        emitToast({
-          kind: "error",
-          message: getErrorMessage(err, `Couldn't open ${path}`),
-        });
-      }
+      setDock({ kind: "file", path }, opts);
+      revealFiles();
     },
     [
       selectedAgent,

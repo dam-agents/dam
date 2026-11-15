@@ -22,7 +22,8 @@ export function useActWhenAwake(agentId: string) {
       readiness: () => agentReadinessNow(agentId),
       wake: () => wake(agentId),
       untilOperable: () => untilAgentOperable(agentId),
-      onWaiting: () => emitToast({ kind: "info", message: `Waking ${name}…` }),
+      onWaiting: () =>
+        emitToast({ kind: "info", message: `Starting ${name}…` }),
       onFailed: () =>
         emitToast({
           kind: "error",

@@ -29,20 +29,21 @@ Builds published before these accounts were added have only `qa-owner`; there an
 
 ## Vocabulary a user sees
 
-- **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
+- **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
-- **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
-- **Asleep** — an agent hibernated after being idle for the install's idle timeout (5 minutes by default; the UI has no setting for it), shown in the owner's list of agents.
-  While waiting for an agent to fall asleep, watch only that list: opening its chat may wake it.
+- **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and starts an agent that stopped while idle.
+- **Idle** — what the owner's list of agents says of an agent with nothing to do, whether it still runs or has stopped after the install's idle timeout (5 minutes by default; the UI has no setting for it).
+  The UI shows no sleep state and no button to wake an agent: opening an agent's chat, or a page that needs it running, starts it, with a short "starting" wait at most.
+  While waiting for an agent to stop, watch only that list: opening its chat starts it.
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **DAM connection** — the connection that lets an agent act as its owner on the install; an account's own, made from an agent's Connections page once the experimental feature `damConnection` is on for it.
   Turning that switch off leaves every connection and grant working and only stops new ones being offered.
 - **Home** — what changed since the user last looked; agents, usage, spend.
-- **Assistant** — an ordinary agent the platform makes for a person when the install offers it: it is created under the install's assistant name (Dammy by default) and tracked from then on by a small record per account, so it appears in the agent list and the sidebar like any other agent and can be renamed, disabled, shared, bound to a channel and deleted as any other agent can.
+- **Assistant** — an ordinary agent the platform makes for a person when the install offers it: it is created under the install's assistant name (Dammy by default) and tracked from then on by a small record per account, so it appears in the agent list and the sidebar like any other agent and can be renamed, shared, bound to a channel and deleted as any other agent can.
   The record, not the name, is what makes it the assistant: renaming it keeps it one, and an agent the account makes under the same name is never it — that agent only stops a new one being created, and never opens on the greeting.
-  It is the experimental feature `dambledore`, and the one feature **on by default**: an account that stored nothing has it on, so a fresh account and an existing one both get Dammy at their next request, and the switch under Settings → Experimental features (its row is labelled with the install's assistant name and described as *Smart assistant that can control DAM for you*) is how they decline.
+  It is the experimental feature `dambledore`, and the one feature **on by default**: an account that stored nothing has it on, so a fresh account and an existing one both get Dammy at their next request, and the switch under Settings → Experimental features (its row is labelled with the install's assistant name and described as *An assistant that can control DAM for you.*) is how they decline.
   Switching it on after turning it off makes Dammy, unless the account already has an agent under that exact name, matched case-sensitively: the name belongs to whoever holds it, so nothing is made beside it.
   Deleting the Dammy the platform made and switching the feature off and on again makes a new one, unused; renaming it does not, since the record still names it, and the renamed assistant keeps its greeting while it has never been used.
   There is never a numbered second name like "Dammy 2", and no agent is ever renamed to free the name.
@@ -69,7 +70,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
     An agent reaches it through a **GitHub** connection, made either way a user makes one:
-    **Authorize with GitHub** (OAuth, its button *Continue to GitHub*), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*, its button *Create token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
+    **Authorize with GitHub** (OAuth, its button *Continue to GitHub*), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*, its button *Connect*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
     DAM checks a token when it is saved and shows the test user's login as the connection's account.
     With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
     Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.

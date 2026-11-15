@@ -14,7 +14,7 @@ import {
   type TerminalDrop,
 } from "api-server-api";
 
-import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
+import { wsClientOptions } from "../../shared/ws-proxy.js";
 import {
   createTitleFilter,
   setTitle,
@@ -127,7 +127,7 @@ export async function connectTerminalBridge(options: {
 
   const connect = (url: string, afterDrop: boolean) =>
     new Promise<ConnectionEnd>((resolve) => {
-      const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
+      const ws = new WebSocket(url, wsClientOptions(url));
       socket = ws;
       let live = false;
       let exitCode: number | null = null;

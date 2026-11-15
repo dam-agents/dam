@@ -28,7 +28,6 @@ function makeService(
     get: vi.fn(async () => getResult()),
     deleteAgent: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
-    setDisabled: vi.fn(),
     updateIdentity: vi.fn(),
     unlockedCharacters: vi.fn(),
     customAvatarsEnabled: vi.fn(),

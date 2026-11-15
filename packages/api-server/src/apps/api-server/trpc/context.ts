@@ -1,5 +1,10 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType, editorEmailOf, featureOnForUser } from "api-server-api";
+import {
+  ChannelType,
+  editorEmailOf,
+  featureOnForUser,
+  hiddenHarnessesFor,
+} from "api-server-api";
 import {
   childEgressGrants,
   childrenMirroringConnections,
@@ -19,6 +24,7 @@ import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit
 import { TRPCError } from "@trpc/server";
 import {
   composeHarnessConfigModule,
+  defaultSettingsProblem,
   createDefaultModelNoticeReader,
   createRunBoundary,
   isNoDefaultModelError,
@@ -268,7 +274,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ),
       damConnectionOffered,
       newAgentProvider: async () => {
-        const chosen = await defaultProfile();
+        const chosen = await newAgentDefault();
         return chosen
           ? { connectionId: chosen.connectionId, harness: chosen.harness }
           : null;
@@ -348,20 +354,23 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
-    const { profiles, resolveProfile, defaultProfile } =
+    const { profiles, resolveProfile, newAgentDefault } =
       composeProfilesForOwner({
         db,
         subPseudonymizer,
         owner: user.sub,
         agentBinding: user.agentIds,
         catalog: harnesses,
-        seed: config.curveBenderDeployment && config.defaultProfileSeed,
-        ownerCatalog: () => connections.modelCatalog(),
+        sharedCurveBender: config.curveBenderDeployment !== null,
         // UNIT_BOUNDARY_DESCRIPTION: the deployment owns that Connection only while its key is set, so only then does a create reconcile it.
         ...(config.curveBenderDeployment && {
           reconcileConnections: () => connections.reconcileManagedConnections(),
         }),
         republish: (agentId) => harnessConfig.republishDefaults(agentId),
+        settingsProblem: async (pair) => {
+          const catalog = await connections.modelCatalog();
+          return defaultSettingsProblem(catalog.harnesses, catalog, pair);
+        },
       });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -419,7 +428,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       contributionsProgress,
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
-      defaultProfile,
+      newAgentDefault,
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -441,6 +450,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agents,
       frames: delegationFrames,
       runtimeMutator,
+      wakeAgent,
     });
     const { kbShares } = composeKbSharesForOwner({
       owner: user.sub,
@@ -641,6 +651,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
       costReviews: () => costReviews.offers(),
+      ownerQuestions: () => invocationsQuery.waitingForOwner(),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -677,8 +688,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
-      hiddenHarnesses: async () =>
-        new Set((await features.flags()).hermes ? [] : ["hermes"]),
+      hiddenHarnesses: async () => hiddenHarnessesFor(await features.flags()),
     });
     const artifactLibrary = artifactLibraryFor(user.sub, surface, {
       agentExists,
