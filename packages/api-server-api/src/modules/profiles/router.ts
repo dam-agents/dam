@@ -6,15 +6,18 @@ import {
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 import type { ApiContext } from "../../context.js";
 import {
+  newAgentDefaultSchema,
   profileCreateInputSchema,
   profileIdInputSchema,
   profileListInputSchema,
   profileUpdateInputSchema,
   profileUsageSchema,
   profileViewSchema,
+  setNewAgentDefaultInputSchema,
 } from "./schemas.js";
 
 export const profilesRouter = t.router({
@@ -52,12 +55,14 @@ export const profilesRouter = t.router({
       return ctx.profiles.update(input);
     }),
 
-  setDefault: manageAgentsProcedure
-    .input(profileIdInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      await refuseEditorWrite(ctx, input.agentId);
-      return ctx.profiles.setDefault(input.id);
-    }),
+  newAgentDefault: readAgentProcedure
+    .use(requireWildcardBinding)
+    .output(newAgentDefaultSchema)
+    .query(({ ctx }) => ctx.profiles.newAgentDefault()),
+
+  setNewAgentDefault: manageAgentsProcedure
+    .input(setNewAgentDefaultInputSchema)
+    .mutation(({ ctx, input }) => ctx.profiles.setNewAgentDefault(input)),
 
   delete: manageAgentsProcedure
     .input(profileIdInputSchema)

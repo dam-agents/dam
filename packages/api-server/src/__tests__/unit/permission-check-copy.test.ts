@@ -9,12 +9,14 @@ describe("channel permission-check guidance", () => {
     expect(text.trimEnd().endsWith("</permission-check>")).toBe(true);
   });
 
-  it("names the mode as the cause, and no setting that changes it", () => {
+  it("names the mode as the cause, and the agent's tool approval as its owner's to change", () => {
     const text = channelPermissionCheckGuidance;
 
     expect(text).toContain("permission mode");
     expect(text).toContain("Nothing in this conversation can approve the rest");
-    expect(text).toContain("default tool approval, which no setting changes");
+    expect(text).toContain(
+      "the agent's tool approval, which only the agent's owner changes",
+    );
   });
 
   it("keeps the platform's own tools out of the refusal rule", () => {
@@ -27,7 +29,9 @@ describe("channel permission-check guidance", () => {
   it("forbids inventing a setting for it", () => {
     const text = channelPermissionCheckGuidance;
 
-    expect(text).toContain("no platform setting grants it");
+    expect(text).toContain(
+      "no Connection's scope or repository's permissions grants it",
+    );
     expect(text).toContain("never name a setting that does not exist");
   });
 });

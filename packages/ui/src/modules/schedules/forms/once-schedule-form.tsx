@@ -22,6 +22,7 @@ import {
   onceLocalMoment,
 } from "./once-form-schema.js";
 import { ScheduleDialog } from "./schedule-dialog.js";
+import { ScheduleSessionTitleField } from "./schedule-fields.js";
 import { scheduleChoices } from "./schedule-form-schema.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
@@ -105,11 +106,18 @@ export function OnceScheduleForm({
       namePlaceholder="e.g. Release notes"
       deleteCopy={{
         body: "It will not run.",
+        noun: "task",
         confirmLabel: "Delete task",
         buttonLabel: "Delete task",
       }}
       showSessionFields={existing?.inSession !== "continue"}
       leadingFields={leadingFields}
+      afterChoices={
+        <ScheduleSessionTitleField
+          registration={form.register("sessionTitle")}
+          error={errors.sessionTitle?.message}
+        />
+      }
       extraFields={
         <>
           {!existing && (

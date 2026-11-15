@@ -3,6 +3,7 @@ import {
   harnessConfigCatalog,
   harnessConfigChoice,
   sessionSettingsSchema,
+  toolApprovalSchema,
 } from "agent-runtime-api";
 import { z } from "zod";
 
@@ -94,6 +95,13 @@ export const sessionDefaultsSchema = z.object({
   chat: sessionPairSchema.nullable(),
   channel: sessionPairSchema.nullable(),
   scheduled: sessionPairSchema.nullable(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the agent's own tool approval, which every session that picked none runs on; null leaves each harness on its own start. It is no part of a pair, so no profile, channel or schedule carries one. */
+  toolApproval: toolApprovalSchema.nullable().optional(),
+});
+
+export const setToolApprovalInputSchema = z.object({
+  agentId: z.string().min(1),
+  toolApproval: toolApprovalSchema.nullable(),
 });
 
 /* UNIT_BOUNDARY_DESCRIPTION: the saved defaults, plus the profile the chat

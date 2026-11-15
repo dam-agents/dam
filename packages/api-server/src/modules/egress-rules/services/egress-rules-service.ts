@@ -150,7 +150,7 @@ export function createEgressRulesService(
       if (outcome.kind === "verdict-clash") {
         throw new TRPCError({
           code: "CONFLICT",
-          message: `an equivalent rule already exists with verdict '${outcome.existing.verdict}' — edit the existing rule instead`,
+          message: `an equivalent rule already exists with verdict '${outcome.existing.verdict}' — revoke it and create the rule again`,
         });
       }
       const row = outcome.row;

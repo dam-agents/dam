@@ -66,6 +66,12 @@ import {
   createSubAgentOutcomeWakeRetry,
   type SubAgentOutcomeDeliveryDeps,
 } from "./services/outcome-delivery.js";
+import { createOwnerQuestions } from "./services/owner-questions.js";
+import { createQuestionDeadlines } from "./services/question-deadlines.js";
+
+const logLine = (msg: string): void => {
+  process.stderr.write(`${msg}\n`);
+};
 
 function composeCancel(
   repo: InvocationsRepository,
@@ -117,6 +123,8 @@ export function composeInvocationsForOwner(opts: {
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: makes a sub-agent that asked its owner a question one that sleeps and stays until the answer, instead of one the Agent Sweep removes asleep.
+  parkTarget: (agentId: string) => Promise<void>;
   keepMaxMs: number;
   idleTimeoutMaxMin: number;
 }): InvocationsService {
@@ -142,6 +150,17 @@ export function composeInvocationsForOwner(opts: {
       opts.openCalls,
       opts.runtimeMutator,
     ),
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      hold: {
+        park: opts.parkTarget,
+        capture: createTargetCapture({ repo, frames: opts.frames }),
+        answerWithinMaxMs: opts.keepMaxMs,
+      },
+      log: logLine,
+    }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
@@ -177,11 +196,18 @@ export function composeInvocationsControlForOwner(opts: {
   agents: AgentsService;
   frames: DelegationFramesPort;
   runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
 }): InvocationsControlService {
   const repo = createInvocationsRepository(opts.db);
   return createDelegationControl({
     repo,
     owner: opts.owner,
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      log: logLine,
+    }),
     stopper: createDelegationStop({
       repo,
       reaper: composeReaper(
@@ -243,6 +269,27 @@ export function composeSubAgentOutcomeDelivery(
     deliver: createSubAgentOutcomeDelivery(deps),
     retry: createSubAgentOutcomeWakeRetry(deps),
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the periodic job that answers each question nobody answered in time with its sub-agent's own default.
+export function composeQuestionDeadlines(opts: {
+  db: Db;
+  runtimeMutator: RuntimeMutator;
+  wakeAgent: (agentId: string) => Promise<void>;
+  batchSize: number;
+}): () => Promise<number> {
+  const repo = createInvocationsRepository(opts.db);
+  return createQuestionDeadlines({
+    repo,
+    batchSize: opts.batchSize,
+    log: logLine,
+    questions: createOwnerQuestions({
+      repo,
+      runtimeMutator: opts.runtimeMutator,
+      wakeAgent: opts.wakeAgent,
+      log: logLine,
+    }),
+  });
 }
 
 export interface SubAgentAwaitMarks {

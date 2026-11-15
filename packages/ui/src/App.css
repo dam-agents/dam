@@ -568,6 +568,8 @@
   line-height: 1.6;
   color: var(--foreground);
   box-shadow: none;
+  /* A block, so its own line height sets the lines and not the pre's prose one. */
+  display: block;
 }
 .prose .code-block {
   position: relative;

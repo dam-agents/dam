@@ -21,6 +21,8 @@ AI teammates that work with you in Slack.
   ·
   <a href="docs/architecture/security-and-credentials.md"><strong>Security</strong></a>
   ·
+  <a href="https://ibm.biz/dam-docs"><strong>Docs</strong></a>
+  ·
   <a href="https://github.com/dam-agents/dam/issues"><strong>Contribute</strong></a>
 </p>
 
@@ -55,7 +57,6 @@ Use DAM through IBM Research without managing your own cluster.
 Sign in with your IBM login to start.
 
 - [Launch DAM](https://ibm.biz/dam-agents)
-- [IBM documentation](https://ibm.biz/dam-docs)
 
 The hosted deployment includes IBM internal model endpoints and integrations not included in the open-source deployment.
 

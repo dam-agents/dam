@@ -15,6 +15,7 @@ import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import { useAttention } from "../../home/api/queries.js";
 import type { ActivityFilters } from "../../home/lib/activity-filter.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionSpend } from "../../spend/api/queries.js";
@@ -104,12 +105,15 @@ export function useAgentSessionList(agentId: string, filter?: ActivityFilters) {
 
   const costs = useSessionSpend(agentId, sessions);
   const { data: approvals = EMPTY } = useApprovalsForAgent(agentId);
+  const questions = useAttention().data?.ownerQuestions;
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
     for (const a of approvals)
       if (a.status === "pending" && a.sessionId) set.add(a.sessionId);
+    for (const q of questions ?? [])
+      if (q.agentId === agentId && q.sessionId) set.add(q.sessionId);
     return set;
-  }, [approvals]);
+  }, [approvals, questions, agentId]);
 
   const backgroundWork = useAgentBackgroundWork(agentId);
   const backgroundWorkBySession = useMemo(

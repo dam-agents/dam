@@ -22,3 +22,8 @@ export function pickNextMeaning(
   if (candidates.length === 0) return meanings[0];
   return candidates[Math.floor(random() * candidates.length)];
 }
+
+export function splitMeaningLines(meaning: string): string[] {
+  const lines = meaning.match(/^(\S.*?)\s+(A.*?)\s+(M.*)$/);
+  return lines ? lines.slice(1) : [meaning];
+}

@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-11
+Last verified: 2026-11-14
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -11,11 +11,11 @@ In an Agent's chat the bell sits in the chat's top bar and opens that same drawe
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts) and the [cost review offer](#cost-review-offer) are read beside them.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts), [sub-agent questions](#sub-agent-questions) and the [cost review offer](#cost-review-offer) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
-A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and shows in the Agent's chat beside its held network requests.
+A rule an Agent proposes is an approval too ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)): its card shows the rule and the Agent's reason, offers "Allow", the whole host or "Decline", and, with the `chat-network-approvals` [experimental feature](features.md) on, shows in the Agent's chat beside its held network requests.
 The rules an Agent asks for on one of its sub-agents or Environments share one card, named after the asking Agent: a line per rule with its own "Allow" and "Decline", one button that allows them all, and, for a rule wider than the Agent's own, "Allow, and stop asking", which turns on the Agent's switch for its children's network access ([invocations](invocations.md#spawning)).
 A one-off sub-agent whose start is held for such a rule shows as "Waiting for you", not as working.
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
@@ -66,7 +66,7 @@ Opening a Session from Activity leaves its Agent's row as it was, closed or open
 
 The sidebar lists Agents in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down, oldest created first until they do.
 An Agent the order does not name yet, a new Agent, joins the foot of the list, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
+Hibernated Agents fold under **See all (N more)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
 An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
 The filter goes with each page request, so the Agent's runtime pages only the Sessions of the chosen types, and only those in progress or unread when that status is chosen.
@@ -141,6 +141,14 @@ A dismissal is dropped once its alert is gone.
 The banner on Home does not count an outage alert, because the provider status banner already names a live outage on every page but the chat.
 A new or recovered alert reaches open tabs through the attention hint.
 
+## Sub-agent questions
+
+The bell also lists the questions the owner's sub-agents [wait on](invocations.md#asking-the-owner), as one card per Agent they work for, which counts once: who asks, the question, and the time it waits until.
+The card does not take an answer; a dismissal hides it from the bell alone, while the question still waits in its chat, and a later question of the same sub-agent is told again.
+Each question opens the chat of that Agent, in the Session that started the sub-agent, whose input takes the answer.
+That Session shows as waiting in Activity and in the Agent's session list, like one with an approval.
+A question asked or answered reaches open tabs through the attention hint.
+
 ## Cost review offer
 
 The bell offers the owner a cost review of the Agents that run on their own and spend enough to be worth a look, as one card for all of them.
@@ -172,6 +180,10 @@ Read state is **per session, not per person**, and it is the owner's.
 An [Agent Editor](agent-editors.md) using a Shared Agent's session is a viewer that never stamps it seen, so an editor reading a session leaves it unread for the owner.
 An editor gets no Home feed items or unread marks for a Shared Agent.
 The dismissal watermarks are already keyed per user, so per-person read state would need no migration for that half.
+
+The browser tab's title carries a "● " while the tab is in the background and something arrived after it went there: a Session that is now unread, a Session that came back from working, or an approval that started waiting.
+The working case is what the rule above leaves open: a viewer attached to a chat stamps its Session seen as the turn ends, so a user who prompts and switches tabs would otherwise see no mark.
+A Session that was already unread when the tab went to the background stays quiet, and showing the tab clears the mark.
 
 ## Terminal sessions
 

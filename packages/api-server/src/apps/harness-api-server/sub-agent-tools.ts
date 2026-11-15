@@ -66,7 +66,7 @@ A need the request does not bear out is refused: different-harness on your own h
 
 When the work is a command whose output you need (a test suite, an eval, a benchmark, a build, a data transform), pass script instead of prompt. No model runs: the sub-agent runs the command once and you get its exit code and its exact stdout and stderr. A non-zero exit fails the sub-agent with the exit code and the tail of stderr. Write a prompt only when the work needs judgment. Pass prompt (with schema) or script, never both; a script takes no schema, model, mode or configOptions.
 
-With a prompt, the sub-agent runs it to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); it holds your connections unless you pass connections. The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason.${kept ? KEPT_SPAWN_SENTENCES : ""} Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
+With a prompt, the sub-agent runs it to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own; a decision that is your owner's to make it puts to the owner itself, who answers it in your chat (await_subagents then lists it under needsOwnerAnswer, and you carry on). It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); it holds your connections unless you pass connections. The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason.${kept ? KEPT_SPAWN_SENTENCES : ""} Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
 const KEPT_SPAWN_SENTENCES =
   " With neither prompt nor script it boots a clean slate that runs nothing: enter it with ssh sub-<id>, copy files in and out with scp, then start work with run_subagent. With keep it outlives its result, asleep, so you can enter it or run in it again (run_subagent), several runs at once too; without, it is removed after its result.";
@@ -75,7 +75,7 @@ const KEPT_AWAIT_SENTENCE =
   " Pass a sub-agent id for its latest run, or a run id from run_subagent for that run; a kept sub-agent's result also names its run and the session it ran in, which run_subagent can continue.";
 
 const awaitDescription = (kept: boolean): string =>
-  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} A finished sub-agent whose result goes to you as a new turn comes back under deliveredAsTurn, without the result: read it in that turn when it reaches you, which may be after your current turn ends. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+  `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Under needsOwnerAnswer, a sub-agent that stopped on a question for its owner, with the question, its options and the default it takes when nobody answers in time: the owner sees it in your chat and answers the sub-agent there, so you cannot answer it and need not relay it: do not wait on it, carry on with your other work; once it has its answer it goes on, and its result comes as usual. Under waitingToStart, a running sub-agent that has not started yet says why: it waits for room in the memory your user's agents share, and starts on its own once room frees, with its whole time limit still ahead of it. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn.${kept ? KEPT_AWAIT_SENTENCE : ""} A finished sub-agent whose result goes to you as a new turn comes back under deliveredAsTurn, without the result: read it in that turn when it reaches you, which may be after your current turn ends. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const FETCH_DESCRIPTION = `Save the full stdout or stderr of a finished script sub-agent to a file in your sandbox, as await_subagents only shows its start and end. Returns one shell command: run it, and it downloads the stream byte for byte to the path you give and checks its sha256. Then read the file as often as you need. The platform deletes its copy once the download is checked, so fetch each stream once; one nobody fetches is deleted after seven days.`;
 
@@ -332,6 +332,11 @@ type Settled =
       egress?: EgressAnswersView;
     } & RunOf)
   | ({ id: string; status: "running"; waiting?: string } & RunOf)
+  | ({
+      id: string;
+      status: "asking";
+      question: NonNullable<InvocationView["question"]>;
+    } & RunOf)
   | { id: string; status: "idle" }
   | { id: string; status: "unknown" };
 
@@ -375,6 +380,8 @@ async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
           ...runOf,
         };
       if (view.status === "idle") return { id, status: "idle" };
+      if (view.status === "asking" && view.question)
+        return { id, status: "asking", question: view.question, ...runOf };
       return {
         id,
         status: "running",
@@ -434,6 +441,15 @@ function runFields(s: { id: string } & RunOf): RunOf {
   };
 }
 
+const OWNER_QUESTION_NOTE =
+  "your owner sees this question in your chat and answers the sub-agent there. You cannot answer it and need not relay it: do not wait on it, carry on with your other work";
+
+// UNIT_BOUNDARY_DESCRIPTION: a question the driver has not been handed yet ends a wait like a finished sub-agent does; one it was handed keeps the wait open like a running one, since the sub-agent goes on once it is answered.
+const newlyAsking = (s: Settled): boolean =>
+  s.status === "asking" && !s.question.told;
+const stillAsking = (s: Settled): boolean =>
+  s.status === "asking" && s.question.told;
+
 async function summarize(
   ops: DriverOps,
   all: Settled[],
@@ -482,6 +498,20 @@ async function summarize(
     waitingToStart: settled.flatMap((s) =>
       s.status === "running" && s.waiting
         ? [{ id: s.id, reason: s.waiting }]
+        : [],
+    ),
+    needsOwnerAnswer: settled.flatMap((s) =>
+      s.status === "asking"
+        ? [
+            {
+              id: s.id,
+              question: s.question.text,
+              options: s.question.options,
+              default: s.question.default,
+              answerBy: s.question.answerBy,
+              note: OWNER_QUESTION_NOTE,
+            },
+          ]
         : [],
     ),
     idle: settled.flatMap((s) => (s.status === "idle" ? [s.id] : [])),
@@ -920,12 +950,15 @@ export function registerSubAgentTools(
         };
         let settled = await readAll(ops, unique);
         await awaits.markAwaited(
-          runIdsOf(settled, ["running", "done", "failed"]),
+          runIdsOf(settled, ["running", "done", "failed", "asking"]),
           new Date(Date.now() + pollMs * LEASE_POLLS),
         );
         while (
-          !settled.some((s) => s.status === "done" || s.status === "failed") &&
-          settled.some((s) => s.status === "running") &&
+          !settled.some(
+            (s) =>
+              s.status === "done" || s.status === "failed" || newlyAsking(s),
+          ) &&
+          settled.some((s) => s.status === "running" || stillAsking(s)) &&
           Date.now() < deadline &&
           !signal.aborted
         ) {
@@ -940,13 +973,18 @@ export function registerSubAgentTools(
         const grace = () => new Date(Date.now() + AWAIT_AGAIN_GRACE_MS);
         if (signal.aborted) {
           await awaits.markAwaited(
-            runIdsOf(settled, ["running", "done", "failed"]),
+            runIdsOf(settled, ["running", "done", "failed", "asking"]),
             grace(),
           );
           return json({});
         }
         const inTurn = new Set(
-          (await awaits.collect(runIdsOf(settled, ["done", "failed"]))).inTurn,
+          (
+            await awaits.collect([
+              ...runIdsOf(settled, ["done", "failed"]),
+              ...runIdsOf(settled.filter(newlyAsking), ["asking"]),
+            ])
+          ).inTurn,
         );
         const running = runIdsOf(settled, ["running"]);
         if (running.length > 0) await awaits.markAwaited(running, grace());

@@ -1,6 +1,6 @@
 # Owner model catalog
 
-Last verified: 2026-11-05
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -24,6 +24,7 @@ The source stays the agent runtime manifests.
 The api-server image build copies each one under its harness name, and the api-server parses only the `modelRouter` and `harness-config` facts it needs ([runtime delivery](runtime-delivery.md#the-manifest)).
 A manifest the image lacks leaves that harness without capabilities rather than failing the catalog.
 This is what lets Settings › Profiles offer effort, mode and Bedrock tiers with no agent.
+A harness whose feature flag is off is left out of the list, as it is of an agent's harness-config status, since the flag decides what is offered; the agent's own catalog keeps it, so a session that names it still runs ([features](features.md)).
 
 ## Cost and freshness
 

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -94,6 +94,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles.
   Each binding carries its own ambient, channel history and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
+  `slack_untagged_reply_notes` holds, per person, what decides the note about an untagged reply in an Agent's thread: when they first used the platform in Slack, when they last got the note, and when they tagged the bot after one; the person is keyed by the activity log's keyed hash of their Slack user id.
   `slack_loop_guard_drops` holds, per conversation, the bot and app posts the loop guard dropped: a count, the last drop's time and the newest five.
   `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by a hash of the image.
   `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its hash.
@@ -152,7 +153,7 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
 
 - **the Agent store** — one schema of its own (`control`), separate from the rest because its writers are separate and because the pseudonymized usage mirror in this one must keep its name and its readers.
   A definition row per Agent carries what the controller renders: image, harness, the install default's resource limits, the idle timeout, the nested-virtualization and connection-address flags, the L7 hosts, and the compatibility values a machine still falls back on.
-  A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, a disable, the restart revision, and the reclaim mark the controller writes.
+  A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, the restart revision, and the reclaim mark the controller writes.
   Observation tables carry what the controller sees — conditions with their original transition times, machine restarts and the OOM attribution that goes with them — and it is their only writer.
   A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.
   A store row records where an install is in the move, and the snapshot table holds the archive the rollback window depends on.
@@ -204,7 +205,7 @@ An install with no object store fails closed: bulk-blob features are unavailable
 
 The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
 Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
-Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
+Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the reclaim mark, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
 From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
 A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
 An install may delete its own resources with `delete-crs`, an optional cleanup that refuses without a real-clock contract gate and orphans the children through their anchors.

@@ -2,7 +2,15 @@ import { z } from "zod";
 
 import { ICON_NAMES } from "./icon-names.js";
 
-export const A2UI_VERSION = "v1.0";
+export const A2UI_VERSION = "1.0";
+export const LEGACY_A2UI_VERSION = "v1.0";
+
+export const ENVELOPE_KEYS = [
+  "catalogId",
+  "accessibility",
+  "metadata",
+  "checks",
+] as const;
 
 const RESERVED_KEY = /^@([^@]|$)/;
 
@@ -346,7 +354,10 @@ export const A2uiComponent = z.discriminatedUnion("component", [
   Switch,
 ]);
 
-const Version = z.literal(A2UI_VERSION);
+const Version = z.union([
+  z.literal(A2UI_VERSION),
+  z.literal(LEGACY_A2UI_VERSION),
+]);
 const SurfaceId = z.string().min(1);
 
 const CreateSurfaceMessage = z.strictObject({
@@ -388,6 +399,7 @@ const DeleteSurfaceMessage = z.strictObject({
 const CallRendererFunctionMessage = z.strictObject({
   version: Version,
   callRendererFunction: z.strictObject({
+    surfaceId: SurfaceId.optional(),
     functionCallId: z.string().min(1),
     callFunction: FunctionCall,
   }),
