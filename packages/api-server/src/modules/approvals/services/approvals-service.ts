@@ -188,7 +188,7 @@ function verdictConflict(
   });
   return new TRPCError({
     code: "CONFLICT",
-    message: `an equivalent rule already exists with verdict '${existing.verdict}' — edit the agent's network rules instead`,
+    message: `an equivalent rule already exists with verdict '${existing.verdict}' — revoke it under the agent's Network access, then answer again`,
   });
 }
 

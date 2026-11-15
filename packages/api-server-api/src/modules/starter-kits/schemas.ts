@@ -182,7 +182,6 @@ export const starterKitSchema = z.object({
   skills: agentSetupShape.skills,
   bundledSkills: starterKitBundledSkillsSchema.optional(),
   env: agentSetupShape.env,
-  hibernationTimeoutMin: z.number().int().min(0).optional(),
   requireConnectionAddress: z.boolean().optional(),
   startupItems: starterKitStartupItemsSchema,
 });

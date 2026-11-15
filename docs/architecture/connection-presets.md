@@ -37,10 +37,7 @@ The model they all share — a template, a grant, and which rail each Contributi
 
 An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry` carrying the server URL.
 OAuth adds a placeholder Authorization header on the `mcp-entry`; a static-header credential instead adds an `egress-inject` (as Custom Header does), keeping the secret gateway-side.
-The OAuth client is found at create time, in the order the MCP authorization spec gives: a client ID the user entered, else the platform's **Client ID Metadata Document** when the authorization server says it accepts one, else Dynamic Client Registration.
-The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
-An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
-One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
+[MCP connections](mcp-connections.md) owns OAuth client discovery, resource binding, and reconnect compatibility.
 
 ## Shared knowledge base
 
@@ -97,7 +94,8 @@ Every key is written to a ledger before anything uses it and taken out only once
 A delete revokes every key the Connection names and every key still queued under it, and a revoke the key store could not complete fails the delete and removes nothing; the delete and a rotation of one Connection take the same lock, so neither acts on a key the other has just replaced.
 The Agent holds only placeholders: `DAM_SERVER`, the HTTPS name of the install's own api-server Service, and `DAM_TOKEN`, the Connection's token placeholder ([addressing](#addressing-a-connection)).
 
-Its contributions are that Service's name allowed under `/api/*` and injected under `/api/`, and the image's `dam` skill as a `file` contribution, so an Agent that holds the Connection reads it and one that does not never does.
+Its contributions are that Service's name allowed under `/api/*` and injected under `/api/`, and the `dam` skill the api-server image carries — the files it serves a person's own agent ([CLI](cli.md#agent-skill)), `SKILL.md` and the pages beside it, never a second text — as one `file` contribution each, so an Agent that holds the Connection reads it and one that does not never does.
+The Agent's runtime state is built with the files the install ships now rather than the ones the Connection was made with, so an upgrade reaches every Agent without a write; what the in-agent case needs, the personal assistant's onboarding guide included, is said in that skill.
 
 **Which host.** The name is the api-server's own public Service, as the api-server learns it from `PLATFORM_APISERVER_URL`: the Agent dials it over HTTPS, its gateway terminates that TLS with the install's own leaf and [takes the request to that Service inside the cluster](credential-gateway.md#the-chain-to-the-installs-own-service).
 So the route needs no public address of its own and works on every install, a plain-HTTP localhost one included — the leaf covers the name, and the DNS answer the machine gets for it is its gateway's, as for any host.
@@ -109,7 +107,7 @@ Nothing mints a replacement by itself, so a key revoked on purpose stays revoked
 **Who acts as the owner.** Granting it lets the Agent act as its owner, and the owner may still share that Agent or bind it to a chat: whoever can drive it then acts as the owner too, and each surface that decides it says so.
 
 **The client's limits.** `dam` has the whole surface a person has, and every command acts as the owner.
-The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — pass their credential in a WebSocket's query string instead of in the header this Connection injects, so they stay the person's own and fail from inside an Agent.
+The doors that open a live conversation or a shell — `dam chat`, `dam run`, `dam ssh`, a session's stream — open a WebSocket and send their credential in the header this Connection injects as well as in its query string, so they work from inside an Agent too: `dam run` there prompts the Agent itself or another of the owner's Agents ([CLI](cli.md)).
 
 ## App preset: IBM LiteLLM proxy
 
@@ -152,7 +150,7 @@ It keeps off the assistant's chats, and off the accounts onboarded with the assi
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 Until the agent's and the owner's provider lists are read, the composer waits, and says so when the read fails, so a send never plans on lists it has not read; a failed refetch over lists already read leaves it open.
 With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
-The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on the default profile while the user holds none.
+The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, and so does an agent create that would start on it as the [default for new agents](profiles.md#the-default-for-new-agents) while the user holds none.
 It follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.

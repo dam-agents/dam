@@ -97,8 +97,7 @@ export function createTerminalRelay(
       );
       if (isAgentWakeTimeoutError(err))
         return `${AGENT_NOT_READY_REASON}: ${err.failure.kind}`;
-      if (isAgentStoppedError(err))
-        return `${AGENT_NOT_READY_REASON}: ${err.disabled ? "disabled" : "stopped"}`;
+      if (isAgentStoppedError(err)) return `${AGENT_NOT_READY_REASON}: stopped`;
       return "failed to connect to agent";
     },
     closeOnUpstreamClose: (code, reason) => ({

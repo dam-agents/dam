@@ -166,7 +166,7 @@ func TestIdleSweepWaitsForAHealthyStore(t *testing.T) {
 	idle.Annotations = map[string]string{annLastActivity: timeAgo(2 * time.Hour)}
 	r, client := setupReconciler(t, idle)
 	checker := NewIdleChecker(client, r.dynamic, r.config)
-	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.idleProbe = func(context.Context, string) (bool, bool) { return true, true }
 	backend := newRecordingBackend(crAgentBackend{dynamic: r.dynamic, namespace: r.config.Namespace})
 	checker.WithAgentBackend(backend)
 

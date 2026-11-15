@@ -16,6 +16,7 @@ import {
 } from "../api/session-model.js";
 import {
   clampText,
+  CRON_TIMEZONE,
   declinedSummary,
   formatRunTime,
   runOutcomeLine,
@@ -125,7 +126,9 @@ export function ScheduleDetails({
             )}
           </div>
         </DetailCard>
-        <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
+        <DetailCard label="Timezone">
+          {timezone ?? (schedule.type === "cron" ? CRON_TIMEZONE : "—")}
+        </DetailCard>
         {schedule.type !== "once" && (
           <DetailCard label="Session mode">
             <span className="capitalize">{sessionMode ?? "fresh"}</span>

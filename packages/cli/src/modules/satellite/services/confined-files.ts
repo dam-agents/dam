@@ -3,13 +3,22 @@ import { constants } from "node:fs";
 import {
   linkSync,
   lstatSync,
+  mkdirSync,
   realpathSync,
   renameSync,
   rmSync,
   statSync,
 } from "node:fs";
+import type { Dir, Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  opendir,
+  open,
+  realpath,
+  unlink,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -38,8 +47,6 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
  * The upgrade path for all three is a native `linkat`/`renameat`/`openat2`.
  */
 
-export const MAX_TRANSFER_BYTES = 50 * 1024 * 1024;
-
 export function platformRefusal(): string | null {
   return process.platform === "win32"
     ? "a files satellite needs a POSIX machine — this build cannot confine a path on Windows"
@@ -49,7 +56,6 @@ export function platformRefusal(): string | null {
 export type Refusal =
   | "outside"
   | "not-a-file"
-  | "too-large"
   | "exists"
   | "no-such-file"
   | "not-writable"
@@ -58,6 +64,15 @@ export type Refusal =
 export type Opened =
   | { ok: true; handle: FileHandle; size: number }
   | { ok: false; reason: Refusal };
+
+export type FileKind = "file" | "dir" | "link" | "other";
+
+function kindOf(info: Stats): FileKind {
+  if (info.isSymbolicLink()) return "link";
+  if (info.isDirectory()) return "dir";
+  if (info.isFile()) return "file";
+  return "other";
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The root as it was typed is refused unless it is a
@@ -120,7 +135,7 @@ async function sameFile(handle: FileHandle, path: string): Promise<boolean> {
   return entry !== null && entry.dev === opened.dev && entry.ino === opened.ino;
 }
 
-async function realDirectory(path: string): Promise<boolean> {
+export async function realDirectory(path: string): Promise<boolean> {
   const entry = await lstat(path).catch(() => null);
   if (entry === null || !entry.isDirectory() || entry.isSymbolicLink())
     return false;
@@ -145,27 +160,35 @@ export function resolveInside(
   return resolved;
 }
 
-async function walk(
+type Walked = { ok: true; path: string } | { ok: false; reason: Refusal };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Every directory a call names before the last
+ * segment, walked from the root and proved one component at a time. A component
+ * that is missing, is a link, or whose path does not resolve to itself ends the
+ * walk, so no later step ever sees a directory the root's guarantee did not
+ * cover.
+ */
+export async function walkInRoot(
   root: string,
   segments: readonly string[],
   create: boolean,
-): Promise<string | null> {
-  if ((await realpath(root).catch(() => null)) !== root) return null;
+): Promise<Walked> {
+  if ((await realpath(root).catch(() => null)) !== root)
+    return { ok: false, reason: "outside" };
   let current = root;
   for (const segment of segments) {
     const next = resolveInside(current, [segment]);
-    if (next === null) return null;
+    if (next === null) return { ok: false, reason: "outside" };
     if ((await lstat(next).catch(() => null)) === null) {
-      if (
-        !create ||
-        (await mkdir(next, { mode: 0o700 }).catch(() => null)) === null
-      )
-        return null;
+      if (!create) return { ok: false, reason: "no-such-file" };
+      if ((await mkdir(next, { mode: 0o700 }).catch(() => null)) === null)
+        return { ok: false, reason: "not-writable" };
     }
-    if (!(await realDirectory(next))) return null;
+    if (!(await realDirectory(next))) return { ok: false, reason: "outside" };
     current = next;
   }
-  return current;
+  return { ok: true, path: current };
 }
 
 /**
@@ -201,13 +224,12 @@ function insideDirectory<T>(
 export async function openInRoot(
   root: string,
   segments: readonly string[],
-  cap: number,
 ): Promise<Opened> {
-  const parent = await walk(root, segments.slice(0, -1), false);
+  const parent = await walkInRoot(root, segments.slice(0, -1), false);
   const name = segments.at(-1);
-  if (parent === null || name === undefined)
-    return { ok: false, reason: "outside" };
-  const path = resolveInside(parent, [name]);
+  if (!parent.ok) return { ok: false, reason: parent.reason };
+  if (name === undefined) return { ok: false, reason: "outside" };
+  const path = resolveInside(parent.path, [name]);
   if (path === null) return { ok: false, reason: "outside" };
   let handle: FileHandle;
   try {
@@ -229,11 +251,190 @@ export async function openInRoot(
     await handle.close().catch(() => {});
     return { ok: false, reason: "not-a-file" };
   }
-  if (opened.size > cap) {
-    await handle.close().catch(() => {});
-    return { ok: false, reason: "too-large" };
-  }
   return { ok: true, handle, size: opened.size };
+}
+
+export interface Facts {
+  kind: FileKind;
+  size: number | null;
+  mtimeMs: number;
+  nlink: number;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What one entry is, read without following it: a
+ * link is reported as a link, and only a regular file carries a size. The
+ * parent directories are the ones the walk proved, so the last component is the
+ * only thing read here.
+ */
+export async function lstatInRoot(
+  root: string,
+  segments: readonly string[],
+): Promise<{ ok: true; facts: Facts } | { ok: false; reason: Refusal }> {
+  const parent = await walkInRoot(root, segments.slice(0, -1), false);
+  const name = segments.at(-1);
+  if (!parent.ok) return parent;
+  if (name === undefined) return { ok: false, reason: "outside" };
+  const path = resolveInside(parent.path, [name]);
+  if (path === null) return { ok: false, reason: "outside" };
+  const info = await lstat(path).catch(() => null);
+  if (info === null) return { ok: false, reason: "no-such-file" };
+  const kind = kindOf(info);
+  return {
+    ok: true,
+    facts: {
+      kind,
+      size: kind === "file" ? info.size : null,
+      mtimeMs: info.mtimeMs,
+      nlink: info.nlink,
+    },
+  };
+}
+
+export interface ListedEntry extends Facts {
+  path: string;
+}
+
+export type ListCut = "limit" | "time" | null;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A directory's entries, walked the same way a
+ * transfer is: the root re-resolved, every directory on the way proved, and a
+ * directory entered only after it was proved again, so a link is listed and
+ * never descended into. A directory is iterated rather than read whole, so a
+ * directory with more entries than the limit stops at the limit; the walk also
+ * stops at the deadline, because on a network mount every `lstat` is remote.
+ * Nested directories are visited in filesystem order, not sorted.
+ *
+ * The deadline and the signal are checked after every awaited filesystem call,
+ * not only before one, so a call that comes back after the budget is a
+ * truncation rather than a success. The ceiling is one stalled operation: a
+ * filesystem call already in flight is not interrupted, so a listing can overrun
+ * the budget by however long that single call takes to return.
+ */
+export async function listInRoot(
+  root: string,
+  segments: readonly string[],
+  options: {
+    depth: number;
+    limit: number;
+    deadline: number;
+    matches: (entry: { path: string; kind: FileKind }) => boolean;
+    signal?: AbortSignal;
+  },
+): Promise<
+  | { ok: true; entries: ListedEntry[]; cut: ListCut }
+  | { ok: false; reason: Refusal }
+> {
+  const entries: ListedEntry[] = [];
+  let cut: ListCut = null;
+
+  const stop = (): boolean => {
+    if (options.signal?.aborted) throw new Error("cancelled");
+    if (Date.now() > options.deadline) cut = "time";
+    return cut !== null;
+  };
+  const stopped = (): { ok: true; entries: ListedEntry[]; cut: ListCut } => ({
+    ok: true,
+    entries,
+    cut,
+  });
+
+  const resolved = await realpath(root).catch(() => null);
+  if (stop()) return stopped();
+  if (resolved !== root) return { ok: false, reason: "outside" };
+
+  const parent =
+    segments.length === 0
+      ? ({ ok: true, path: root } as const)
+      : await walkInRoot(root, segments.slice(0, -1), false);
+  if (stop()) return stopped();
+  if (!parent.ok) return parent;
+  const name = segments.at(-1);
+  const start = name === undefined ? root : resolveInside(parent.path, [name]);
+  if (start === null) return { ok: false, reason: "outside" };
+
+  const info = await lstat(start).catch(() => null);
+  if (stop()) return stopped();
+  if (info === null) return { ok: false, reason: "no-such-file" };
+  if (!info.isDirectory()) {
+    if (name === undefined) return { ok: false, reason: "outside" };
+    const kind = kindOf(info);
+    return {
+      ok: true,
+      entries: options.matches({ path: name, kind })
+        ? [
+            {
+              path: name,
+              kind,
+              size: kind === "file" ? info.size : null,
+              mtimeMs: info.mtimeMs,
+              nlink: info.nlink,
+            },
+          ]
+        : [],
+      cut: null,
+    };
+  }
+
+  const visit = async (
+    handle: Dir,
+    dir: string,
+    prefix: string,
+    depthLeft: number,
+  ): Promise<void> => {
+    for await (const entry of handle) {
+      if (stop()) return;
+      const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      const child = join(dir, entry.name);
+      const found = await lstat(child).catch(() => null);
+      if (stop()) return;
+      if (found === null) continue;
+      const kind = kindOf(found);
+      if (options.matches({ path, kind })) {
+        entries.push({
+          path,
+          kind,
+          size: kind === "file" ? found.size : null,
+          mtimeMs: found.mtimeMs,
+          nlink: found.nlink,
+        });
+        if (entries.length > options.limit) {
+          cut = "limit";
+          return;
+        }
+      }
+      if (kind !== "dir" || depthLeft <= 1) continue;
+      const proved = await realDirectory(child);
+      if (stop()) return;
+      if (!proved) continue;
+      const nested = await opendir(child).catch(() => null);
+      if (nested === null) continue;
+      try {
+        if (stop()) return;
+        await visit(nested, child, path, depthLeft - 1);
+      } finally {
+        await nested.close().catch(() => {});
+      }
+      if (cut !== null) return;
+    }
+  };
+
+  const proved = await realDirectory(start);
+  if (stop()) return stopped();
+  if (!proved) return { ok: false, reason: "outside" };
+  const opened = await opendir(start).catch(() => null);
+  try {
+    if (stop()) return stopped();
+    if (opened === null) return { ok: false, reason: "outside" };
+    await visit(opened, start, "", options.depth);
+    if (cut === null) stop();
+  } finally {
+    if (opened !== null) await opened.close().catch(() => {});
+  }
+
+  if (cut === "limit") entries.length = options.limit;
+  return stopped();
 }
 
 export interface Staged {
@@ -254,16 +455,16 @@ export async function stageInRoot(
   root: string,
   target: readonly string[],
 ): Promise<{ ok: true; staged: Staged } | { ok: false; reason: Refusal }> {
-  const parent = await walk(root, target.slice(0, -1), true);
+  const parent = await walkInRoot(root, target.slice(0, -1), true);
   const name = target.at(-1);
-  if (parent === null || name === undefined)
-    return { ok: false, reason: "outside" };
-  const info = await lstat(parent).catch(() => null);
+  if (!parent.ok) return { ok: false, reason: parent.reason };
+  if (name === undefined) return { ok: false, reason: "outside" };
+  const info = await lstat(parent.path).catch(() => null);
   if (info === null || !info.isDirectory() || info.isSymbolicLink())
     return { ok: false, reason: "outside" };
 
   const path = join(
-    parent,
+    parent.path,
     `.${name}.incoming-${randomBytes(6).toString("hex")}`,
   );
   let handle: FileHandle;
@@ -289,8 +490,8 @@ export async function stageInRoot(
     staged: {
       handle,
       path,
-      target: join(parent, name),
-      dir: parent,
+      target: join(parent.path, name),
+      dir: parent.path,
       proved: { dev: info.dev, ino: info.ino },
     },
   };
@@ -416,4 +617,132 @@ export async function publishInRoot(
 async function discard(staged: Staged): Promise<void> {
   await staged.handle.close().catch(() => {});
   await unlink(staged.path).catch(() => {});
+}
+
+export interface StagedDir {
+  path: string;
+  name: string;
+  dir: string;
+  proved: Proved;
+  inode: Proved;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An empty directory beside the name a directory
+ * upload will land as, created exclusively, so a destination that already exists
+ * is refused before any byte is received and the whole tree can be unpacked
+ * beside it and published in one step. The parent is proved before it is used,
+ * and the creation and the proof of the new directory happen in one synchronous
+ * step inside that parent's inode, so a parent swapped for a link cannot make
+ * this create or remove anything somewhere else.
+ *
+ * The ceiling, stated: a same-user local process can race the destination's
+ * `lstat` and the cleanup's recursive remove, which gains it nothing it did not
+ * already have over a directory it can write to. Node exposes no `openat2`,
+ * which is the upgrade path for both.
+ */
+export async function stageDirInRoot(
+  root: string,
+  target: readonly string[],
+): Promise<{ ok: true; staged: StagedDir } | { ok: false; reason: Refusal }> {
+  const parent = await walkInRoot(root, target.slice(0, -1), true);
+  const name = target.at(-1);
+  if (!parent.ok) return { ok: false, reason: parent.reason };
+  if (name === undefined) return { ok: false, reason: "outside" };
+  if ((await lstat(join(parent.path, name)).catch(() => null)) !== null)
+    return { ok: false, reason: "exists" };
+
+  if (!(await realDirectory(parent.path)))
+    return { ok: false, reason: "outside" };
+  const parentInfo = await lstat(parent.path).catch(() => null);
+  if (parentInfo === null || !parentInfo.isDirectory())
+    return { ok: false, reason: "outside" };
+  const proved = { dev: parentInfo.dev, ino: parentInfo.ino };
+
+  const staging = `.${name}.incoming-${randomBytes(6).toString("hex")}`;
+  const made = insideDirectory(parent.path, proved, () => {
+    mkdirSync(staging, { mode: 0o700 });
+    const info = lstatSync(staging, { throwIfNoEntry: false });
+    if (info === undefined || !info.isDirectory()) return null;
+    return { dev: info.dev, ino: info.ino };
+  });
+  if (!made.ok || made.value === null)
+    return { ok: false, reason: "not-writable" };
+  return {
+    ok: true,
+    staged: {
+      path: join(parent.path, staging),
+      name,
+      dir: parent.path,
+      proved,
+      inode: made.value,
+    },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Publishes a whole unpacked tree onto its name with
+ * one rename taken inside the parent's proved inode, after the staging entry is
+ * proved to be the directory that was created and the name is shown absent, and
+ * the renamed entry is proved again afterwards. Nothing is merged and nothing is
+ * replaced: a name that is there fails the publish, and what sits at the name
+ * after a failed proof is never removed, because it may not be ours.
+ *
+ * The ceilings, stated: POSIX renames onto an **empty** directory that a
+ * same-user local process creates between the check and the rename, because Node
+ * exposes no `renameat2(RENAME_NOREPLACE)`; onto a non-empty directory, a file or
+ * a link the rename fails instead. A native `renameat2`/`openat2` is the upgrade
+ * path.
+ */
+export async function publishDirInRoot(
+  root: string,
+  staged: StagedDir,
+): Promise<Refusal | null> {
+  if ((await realpath(root).catch(() => null)) !== root) return "outside";
+  const from = basename(staged.path);
+  const anchored = insideDirectory(staged.dir, staged.proved, () => {
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current === undefined ||
+      !current.isDirectory() ||
+      current.dev !== staged.inode.dev ||
+      current.ino !== staged.inode.ino
+    )
+      return "changed" as const;
+    if (lstatSync(staged.name, { throwIfNoEntry: false }) !== undefined)
+      return "exists" as const;
+    try {
+      renameSync(from, staged.name);
+    } catch {
+      return "not-writable" as const;
+    }
+    const published = lstatSync(staged.name, { throwIfNoEntry: false });
+    return published !== undefined &&
+      published.dev === staged.inode.dev &&
+      published.ino === staged.inode.ino
+      ? ("published" as const)
+      : ("changed" as const);
+  });
+  if (!anchored.ok) return "outside";
+  return anchored.value === "published" ? null : anchored.value;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Removes an unpack that was not published, from
+ * inside the parent that was proved when the staging directory was created, so a
+ * path renamed on top of that parent cannot steer the remove. Nothing is removed
+ * when the parent is no longer the proved inode or the staging entry is no longer
+ * the directory that was created.
+ */
+export async function discardDirInRoot(staged: StagedDir): Promise<void> {
+  insideDirectory(staged.dir, staged.proved, () => {
+    const from = basename(staged.path);
+    const current = lstatSync(from, { throwIfNoEntry: false });
+    if (
+      current?.isDirectory() === true &&
+      current.dev === staged.inode.dev &&
+      current.ino === staged.inode.ino
+    )
+      rmSync(from, { recursive: true, force: true });
+  });
 }

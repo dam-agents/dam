@@ -3,7 +3,9 @@
  * Agents post through the one bot, so an Agent's post is told apart by its
  * Agent Footer, and it never starts a turn for the Agent that wrote it. Posts
  * by other apps and incoming webhooks reach the Agents too, unless the channel
- * ignores that app with `/dam ignore <link to one of its posts>`. Bot posts in
+ * ignores that app with `/dam ignore <link to one of its posts>`. A post by an
+ * Agent of another install, sent through a companion app, reaches them as an
+ * agent's words, and its app can be ignored like any other. Bot posts in
  * one conversation start turns only up to a rate limit; past it they start
  * none for a while, and the conversation is told once. Bot senders get no
  * private notices, because a notice needs a person.
@@ -44,6 +46,11 @@ const fromAlpha: SlackSender = {
   ambientRound: false,
 };
 const fromFlux: SlackSender = { kind: "app", botId: "B-FLUX", name: "FluxCD" };
+const fromRex: SlackSender = {
+  kind: "companion",
+  botId: "B-STAGING",
+  name: "Rex",
+};
 
 function harness(
   opts: {
@@ -62,7 +69,7 @@ function harness(
   const echo = (args: Parameters<typeof fake.postMessage>[0]) => {
     const sender = classifySlackSender(
       { user: "U-BOT", blocks: args.blocks },
-      { userId: "U-BOT", botId: null },
+      { userId: "U-BOT", botId: null, companionAppIds: new Set<string>() },
     );
     if (!sender) return;
     const event = {
@@ -410,6 +417,55 @@ describe("a post by another app or webhook", () => {
   });
 });
 
+describe("a post by an agent of another install", () => {
+  /** TEST_SCENARIO: A second install of the platform shares the channel, and
+   *  its Agent Rex posts where both Agents here read along. Both get the post,
+   *  labelled as an agent's and not as an app's. */
+  it("reaches ambient readers, labelled as an agent from another install", async () => {
+    const h = harness({ a: { ambient: true }, b: { ambient: true } });
+    await h.message(fromRex, "staging is green again");
+    expect(h.prompts["agent-a"]).toHaveLength(1);
+    expect(h.prompts["agent-b"]).toHaveLength(1);
+    expect(h.prompts["agent-a"]![0]).toContain(
+      "Rex (an agent from another install):",
+    );
+    expect(h.prompts["agent-a"]![0]).not.toContain("(an app)");
+  });
+
+  /** TEST_SCENARIO: The other install's Agent tags the bot and names Beta, the
+   *  way an Agent here asks a peer. Beta gets the turn. */
+  it("starts a turn for the agent it names", async () => {
+    const h = harness();
+    await h.mention(fromRex, "<@UBOT> Beta, can you check the logs?");
+    expect(h.prompts["agent-b"]).toHaveLength(1);
+    expect(h.prompts["agent-a"]).toHaveLength(0);
+  });
+
+  /** TEST_SCENARIO: The channel ignores the other install's app. A companion
+   *  post gets no more than an app's post does, so it reaches no Agent. */
+  it("reaches no agent once the channel ignores its app", async () => {
+    const h = harness({
+      a: { ambient: true },
+      b: { ambient: true },
+      ignored: [{ botId: "B-STAGING", name: "Rex" }],
+    });
+    await h.message(fromRex, "staging is green again");
+    await h.mention(fromRex, "<@UBOT> Beta, look at this", "3.3");
+    expect(h.prompts["agent-a"]).toHaveLength(0);
+    expect(h.prompts["agent-b"]).toHaveLength(0);
+  });
+
+  /** TEST_SCENARIO: Two installs can wake each other without end, the way two
+   *  Agents can. A companion's posts count toward the bot-post rate limit. */
+  it("counts toward the bot-post rate limit", async () => {
+    const h = harness({ a: { ambient: true } });
+    for (let i = 0; i < 11; i++)
+      await h.message(fromRex, `echo ${i}`, { ts: `5.${i}` });
+    expect(h.prompts["agent-a"]).toHaveLength(10);
+    expect(h.rateLimitHits()).toBe(1);
+  });
+});
+
 describe("the bot-post rate limit", () => {
   const burst = (from: number, count: number) =>
     Array.from({ length: count }, (_, i) => `9.${from + i}`);
@@ -497,6 +553,32 @@ describe("/dam ignore and /dam unignore", () => {
     const reply = await h.command(`ignore ${FLUX_LINK}`);
     expect(h.ignored).toEqual([{ botId: "B-FLUX", name: "FluxCD" }]);
     expect(reply).toContain("now ignore posts from `FluxCD`");
+  });
+
+  /** TEST_SCENARIO: Another install's posts carry an Agent Footer too. Its
+   *  app is still an app here, so a link to one of its posts ignores it. The
+   *  same holds for an unlisted app that copies an Agent Footer. */
+  it.each([
+    ["a companion app", { origin: "companion" as const }],
+    ["an unlisted app that copies an Agent Footer", {}],
+  ])("ignores %s by a link to its footed post", async (_what, origin) => {
+    const h = harness({ linkedSub: OWNER });
+    withPost(h, {
+      botId: "B-STAGING",
+      botName: "Rex",
+      ...origin,
+      blocks: [
+        {
+          type: "context",
+          elements: [
+            { type: "mrkdwn", text: "<http://staging/a/agent-a|Sent by Rex>" },
+          ],
+        },
+      ],
+    });
+    const reply = await h.command(`ignore ${FLUX_LINK}`);
+    expect(h.ignored).toEqual([{ botId: "B-STAGING", name: "Rex" }]);
+    expect(reply).toContain("now ignore posts from `Rex`");
   });
 
   /** TEST_SCENARIO: Only apps and webhooks can be ignored. A link to an

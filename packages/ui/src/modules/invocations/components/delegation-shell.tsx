@@ -46,6 +46,11 @@ export function DelegationShell({
           {counts.running > 0 && (
             <span className="shrink-0 text-2xs">{counts.running} working</span>
           )}
+          {counts.asking > 0 && (
+            <span className="shrink-0 text-2xs text-warning-fg">
+              {counts.asking} need{counts.asking === 1 ? "s" : ""} your answer
+            </span>
+          )}
           {counts.stopped > 0 && (
             <span className="shrink-0 text-2xs">{counts.stopped} stopped</span>
           )}

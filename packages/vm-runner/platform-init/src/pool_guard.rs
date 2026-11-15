@@ -131,7 +131,7 @@ pub fn guard_note(sized: bool, held: u64, room: u64) -> String {
          unnamed files that PID 1 (/mnt/init) keeps open under /system/{}, which `lsof +L1` lists as deleted. They are not a leak.\n\
          {shared}{how}: it may write {} more now.\n\
          The hold follows the shared storage within a minute, and a restart does not release it. To get room, delete files in \
-         this or another VM agent, delete or put to sleep VM agents you no longer need, or request more storage.\n",
+         this or another VM agent, delete VM agents you no longer need, or request more storage.\n",
         gib(held),
         crate::guest::STORAGE_GUARD_DIR,
         gib(room),

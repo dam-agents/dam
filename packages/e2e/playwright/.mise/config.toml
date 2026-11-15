@@ -29,3 +29,11 @@ sources = ["src/lib/trpc-failures.ts"]
 outputs = []
 deny_net = true
 deny_write = true
+
+[tasks."check:auth-first"]
+description = "No Playwright project starts before the auth project ends, with or without the full/ tier"
+run = "node src/lib/auth-first.ts"
+sources = ["src/lib/auth-first.ts", "playwright.config.ts", "pr-scope.json"]
+outputs = []
+deny_net = true
+deny_write = true

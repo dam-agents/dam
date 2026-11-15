@@ -86,13 +86,15 @@ export function CatalogConnectionRow({
             >
               {connection.name}
             </span>
-            <Badge
-              variant="muted"
-              className="min-w-0 max-w-full font-normal"
-              title={tag}
-            >
-              <span className="truncate">{tag}</span>
-            </Badge>
+            {tag && (
+              <Badge
+                variant="muted"
+                className="min-w-0 max-w-full font-normal"
+                title={tag}
+              >
+                <span className="truncate">{tag}</span>
+              </Badge>
+            )}
             <StatusBadges connection={connection} />
           </div>
           <ConnectionRowActions

@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-11-11
+Last verified: 2026-11-14
 
 ## Session inside the machine
 
@@ -50,6 +50,7 @@ A harness can send the same output twice: Claude Code answers a local command su
 So in a prompt turn whose prompt is one text block starting with `/`, an agent message whose whole text, trailing white space aside, is that of the message just before it, with no thought or tool call between them, never enters the log, and the output shows once, live and on every load.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
+A turn boot recovery resumes after it cut one short carries no unattended flag, so a chat Session starts no run of its own for it and the chat draws no boundary over the resume; a Session a schedule owns keeps the run that fire began, which its row, its run totals and its billing read.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 
@@ -59,6 +60,7 @@ A permission answer that carries who answered in `result._meta.platform.answered
 Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts, and the running turn's Sender and the time it started, and the session list carries the Session Starter.
 A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
 A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps the Senders and the verdicts, and its Session Starter is whoever sent its first prompt.
+A prompt the runtime sends into a Session on its own, such as the one that sends a broken [chat form](chat-forms.md#the-conversation-is-the-transport) back to the agent, carries no Sender; it is a new turn of that Session, delivered the way a one-time task's result is.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
 The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).
@@ -199,7 +201,8 @@ A client fails a prompt on evidence instead:
 
 A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, except steer-only entries, which belong to their sender.
 The queue keeps running with nobody engaged, so a person who opens another session while a message waits finds its answer when they come back.
-A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
+A queue leaves the scheduler by three routes — the session forgotten, the scheduler cleared when the harness goes down, or a session whose settings the harness refuses — and each writes the queue's prompts down as **undelivered** in a durable document on the machine, whole, inline images capped.
+The refusal also errors each sender, so the person reads the harness's own reason, and the record is what hands the text back once a session the harness never stored is retired.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
 Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
@@ -271,7 +274,7 @@ There is no append-only log, no fan-out, and no `session/resume` — terminal se
 A terminal viewer whose connection drops connects again to the same session by itself; `dam chat` and the web terminal follow one set of rules from the contract package.
 It reconnects only after a connection that carried a frame, so a first connect that fails is reported at once.
 A drop is transient when the socket is lost, the relay goes away or restarts, the upgrade meets a server error, or the relay loses the agent's end of the connection.
-The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, disabled, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
+The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
 The relay closes for those last ones with an "agent not ready" reason, which is how a viewer tells them apart from a lost agent connection.
 Attempts back off at 1, 2, 5, 10 and then every 30 seconds, as `dam run` does, and stop two minutes after the drop of the last connection that carried a frame.
 A reconnect never asks for a reset and never wakes the Agent: it only waits out a wake asked for elsewhere, so a retry can neither kill the session it is trying to reach nor wake an Agent its owner put to sleep meanwhile.

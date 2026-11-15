@@ -204,6 +204,20 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: what decides whether a person in Slack still gets
+ * the note that an untagged reply did not reach the Agent: when they first
+ * used the platform in Slack, when they last got the note, and when they
+ * stopped needing it. A person is keyed by the same keyed hash of their Slack
+ * user id that the activity log uses, so no raw Slack id is stored here. */
+export const slackUntaggedReplyNotes = pgTable("slack_untagged_reply_notes", {
+  actorHash: text("actor_hash").primaryKey(),
+  firstUsedAt: timestamp("first_used_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastNotedAt: timestamp("last_noted_at", { withTimezone: true }),
+  graduatedAt: timestamp("graduated_at", { withTimezone: true }),
+});
+
 /* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
  * start_thread, so every message in it reaches that Session as a turn of its
  * own. A thread has at most one owner across the install. The row lives in
@@ -514,9 +528,6 @@ export const profiles = pgTable(
     id: text("id").primaryKey(),
     owner: text("owner").notNull(),
     name: text("name").notNull(),
-    /* UNIT_BOUNDARY_DESCRIPTION: marks the one profile the platform seeds for
-     * an owner, which is never seeded again after a rename or a delete. */
-    seed: text("seed"),
     harness: text("harness").notNull(),
     providerTemplate: text("provider_template").notNull(),
     model: text("model").notNull(),
@@ -536,9 +547,6 @@ export const profiles = pgTable(
   },
   (table) => [
     uniqueIndex("profiles_owner_name_idx").on(table.owner, table.name),
-    uniqueIndex("profiles_owner_seed_idx")
-      .on(table.owner, table.seed)
-      .where(sql`${table.seed} is not null`),
     index("profiles_owner_idx").on(table.owner),
     check(
       "profiles_subagent_xor_template",
@@ -547,25 +555,26 @@ export const profiles = pgTable(
   ],
 );
 
-/* UNIT_BOUNDARY_DESCRIPTION: one row per owner, written the first time the
- * owner's profiles are listed. It is what keeps a renamed or deleted seeded
- * profile from being seeded again. */
-export const profileSeeds = pgTable("profile_seeds", {
-  owner: text("owner").primaryKey(),
-  seededAt: timestamp("seeded_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* UNIT_BOUNDARY_DESCRIPTION: each owner's one default for new agents; the
- * restrictive foreign key keeps that profile from being deleted while it is
- * the default. */
-export const profileDefaults = pgTable("profile_defaults", {
-  owner: text("owner").primaryKey(),
-  profileId: text("profile_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "restrict" }),
-});
+/* UNIT_BOUNDARY_DESCRIPTION: the default for new agents an owner chose, a
+ * profile or values of their own, never both; a new agent's chat default is
+ * initialised from it. Deleting the profile removes the row, and new agents
+ * then start on the base default. */
+export const newAgentDefaults = pgTable(
+  "profile_defaults",
+  {
+    owner: text("owner").primaryKey(),
+    profileId: text("profile_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    sessionPair: jsonb("session_pair"),
+  },
+  (table) => [
+    check(
+      "profile_defaults_profile_xor_pair",
+      sql`(${table.profileId} is null) <> (${table.sessionPair} is null)`,
+    ),
+  ],
+);
 
 export const agents = pgTable(
   "agents",
@@ -586,6 +595,7 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     channelSessionPair: jsonb("channel_session_pair"),
     scheduledSessionPair: jsonb("scheduled_session_pair"),
+    toolApproval: text("tool_approval"),
     sessionProfile: text("session_profile").references(() => profiles.id, {
       onDelete: "restrict",
     }),
@@ -1490,6 +1500,24 @@ export const invocationRuns = pgTable(
     /* UNIT_BOUNDARY_DESCRIPTION: the outcome went to its driver whole in a sub-agent-outcome turn, not as an await_subagents answer, so a later wait points to that turn instead of repeating the result; a turn that carried it trimmed leaves it false, so a wait still returns it in full. */
     deliveredInTurn: boolean("delivered_in_turn").notNull().default(false),
     wokeAt: timestamp("woke_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a run that ended by asking its owner asked: the question, the options it offers, the one it takes when nobody answers in time, and how much of its time limit was left, which the run that continues from the answer gets. Null for a run that asked nothing. */
+    question: jsonb("question").$type<{
+      text: string;
+      options: string[];
+      defaultOption: string;
+      remainingMs: number;
+    }>(),
+    answerBy: timestamp("answer_by", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the run that continues this one's work from the answer to its question, in the same session; a driver that waits on this run by its id reads that one. */
+    continuedBy: text("continued_by"),
+    /* UNIT_BOUNDARY_DESCRIPTION: the answer this run continues from, on the run an answer started: the question, what was answered, who answered (the owner, or nobody, so the default was taken) and the time the question had to be answered by. */
+    answer: jsonb("answer").$type<{
+      question: string;
+      text: string;
+      by: "owner" | "default";
+      at: string;
+      answerBy: string;
+    }>(),
   },
   (table) => [
     index("invocation_runs_invocation_idx").on(
@@ -1510,6 +1538,9 @@ export const invocationRuns = pgTable(
     index("invocation_runs_cancel_idx")
       .on(table.invocationId)
       .where(sql`${table.cancelPending}`),
+    index("invocation_runs_asking_idx")
+      .on(table.answerBy)
+      .where(sql`${table.status} = 'asking'`),
   ],
 );
 

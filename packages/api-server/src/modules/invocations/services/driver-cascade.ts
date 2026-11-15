@@ -5,7 +5,8 @@ import type { TargetReaper } from "./target-reaper.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a deleted Agent leaves of its delegations. A
- * deleted target fails its own record and its running children, and reaps
+ * deleted target fails its own record and its children that run or wait for
+ * their owner's answer, and reaps
  * every child it still has, kept and clean slate ones too, whose
  * conversations are still kept for the root. A deleted root reaps every
  * target of its tree whose Agent may still exist, reported ones included, and
@@ -23,9 +24,13 @@ export function createDriverCascade(deps: {
     invocationId: string,
     reason: string,
   ): Promise<number> {
-    const running = await deps.repo.listRunningRuns(invocationId);
-    for (const run of running) await deps.repo.fail(run.runId!, reason);
-    return running.length;
+    const open = await deps.repo.listOpenRunsOf([invocationId]);
+    for (const run of open) {
+      if (run.status === "asking")
+        await deps.repo.failStopped(run.runId!, reason, false);
+      else await deps.repo.fail(run.runId!, reason);
+    }
+    return open.length;
   }
 
   async function failDriven(row: { id: string }, driverAgentId: string) {

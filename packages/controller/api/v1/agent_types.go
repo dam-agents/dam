@@ -345,7 +345,7 @@ const ReasonAwaitingWarmUp = "AwaitingWarmUp"
 // for room and that refusal already hibernated one of the owner's idle agents
 // for it. The room those machines hold frees within seconds, so the start is
 // not ReasonOverBudget: a wake waits for it the way it waits for any start in
-// progress, and the owner is not asked to disable an agent for room the
+// progress, and the owner is not asked to delete an agent for room the
 // platform is making. The wait is bounded: a start nothing has freed room for in
 // the last memoryReclaimWait is a refusal again, and reads ReasonOverBudget.
 const ReasonAwaitingMemory = "AwaitingMemory"

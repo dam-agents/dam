@@ -197,13 +197,21 @@ export function ConnectionCatalogModal({
     });
 
   const grantCreated = async (id: string) => {
-    const created = sandbox && (await fetchConnection(id).catch(() => null));
+    const created = await fetchConnection(id).catch(() => null);
+    const toast = (stem: string) =>
+      created?.check?.status === "failed"
+        ? {
+            kind: "warning" as const,
+            message:
+              `${stem}, but the check failed. ${created.check.reason ?? ""}`.trim(),
+          }
+        : { kind: "success" as const, message: `${stem}.` };
     if (
       sandbox &&
       !createShareConfirmed.current &&
       !(await confirmShare(created ?? undefined))
     ) {
-      emitToast({ kind: "success", message: "Connection created." });
+      emitToast(toast("Connection created"));
       onClose();
       return;
     }
@@ -216,12 +224,9 @@ export function ConnectionCatalogModal({
       }
       sandbox.onToggleGrant(id, true);
     }
-    emitToast({
-      kind: "success",
-      message: sandbox
-        ? "Connection added to this agent."
-        : "Connection created.",
-    });
+    emitToast(
+      toast(sandbox ? "Connection added to this agent" : "Connection created"),
+    );
     onClose();
   };
   const onCreated = (id: string) => void grantCreated(id);

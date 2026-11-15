@@ -14,6 +14,7 @@ import {
   type ChildConnections,
   type ChildEgress,
   type HarnessFamily,
+  type OwnerQuestionInput,
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
@@ -38,11 +39,14 @@ import {
   missingProviderMessage,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
+import { shownStatus } from "../domain/delegation-tree.js";
 import { scriptDeadline } from "../domain/script-output.js";
 import {
   invocationScheduleId,
   invocationTargetName,
+  runEventId,
 } from "../domain/target-name.js";
+import type { AskOutcome, OwnerQuestions } from "./owner-questions.js";
 import { createSetupFailure } from "./setup-failure.js";
 import {
   HARNESS_CONFIG_STEP,
@@ -307,6 +311,12 @@ export interface InvocationsService {
     driverAgentId: string,
     change: { keepForMs?: number; idleTimeoutMin?: number },
   ): Promise<{ keepUntil: Date; idleTimeoutMin?: number }>;
+  // UNIT_BOUNDARY_DESCRIPTION: a sub-agent's question to its owner, from the run the reporting session works on, which ends on it; the sub-agent then waits, asleep, for the answer.
+  askOwner(
+    invocationId: string,
+    input: OwnerQuestionInput,
+    reporting?: { run: string; sessionId: string | null } | null,
+  ): Promise<AskOutcome>;
 }
 
 function skillsSkippedReason(
@@ -349,6 +359,7 @@ export function createInvocationsService(deps: {
   stopper: DelegationStop;
   cancel: Pick<RunCancel, "settled">;
   reportedReap: Pick<ReportedTargetReap, "afterReport">;
+  questions: OwnerQuestions;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
   readStartWait?: (agentId: string) => Promise<string | null>;
@@ -413,10 +424,6 @@ export function createInvocationsService(deps: {
       Math.max(1, requested),
       deps.idleTimeoutMaxMin ?? requested,
     );
-  }
-
-  function taskEventId(agentId: string, at: Date): string {
-    return `${invocationScheduleId(agentId)}:${at.getTime()}`;
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: the model a run names, written as <provider>/<model id>, and the provider it runs on, which must be one the target may use; a run on a routed provider that names no model is refused, as its runtime would refuse the turn.
@@ -484,6 +491,7 @@ export function createInvocationsService(deps: {
       harnessConfig: InvocationHarnessConfig | undefined;
       session?: string | null;
       modelNamed?: boolean;
+      canAsk: boolean;
     },
   ): TargetEvent {
     const continues = !!turn.session;
@@ -496,6 +504,7 @@ export function createInvocationsService(deps: {
           prompt: turn.prompt,
           resultSchema: turn.schema,
           continues,
+          canAsk: turn.canAsk,
         }),
         sessionMode: "fresh",
         invocation: true,
@@ -555,6 +564,10 @@ export function createInvocationsService(deps: {
       await deps.repo.listRuns(row.id, SESSION_SEARCH_RUNS)
     ).filter((r) => r.script === null);
     const latest = turns[0];
+    if (named === undefined && latest?.status === "asking")
+      throw new RunError(
+        `${row.id} waits for its owner's answer in its latest session and goes on by itself once it has it; await it, or pass session "${NEW_SESSION}" to run beside it`,
+      );
     if (named === undefined && latest?.status === "running")
       throw new RunError(
         `${row.id}'s latest prompt run ${latest.runId} is still running in its session; await it, or pass session "${NEW_SESSION}" to run beside it`,
@@ -574,6 +587,11 @@ export function createInvocationsService(deps: {
     if (busy)
       throw new RunError(
         `run ${busy.runId} is still working in session ${session}; await it, or pass session "${NEW_SESSION}" to run beside it`,
+      );
+    const asking = inSession.find((r) => r.status === "asking");
+    if (asking)
+      throw new RunError(
+        `session ${session} waits for its owner's answer and goes on by itself once it has it; await it, or pass session "${NEW_SESSION}"`,
       );
     const ending = inSession.find((r) => r.cancelPending);
     if (ending && !(await awaitCancel(ending)))
@@ -596,7 +614,7 @@ export function createInvocationsService(deps: {
 
     const targetId = generateK8sName("agent");
     const at = now();
-    const runId = work.task ? taskEventId(targetId, at) : null;
+    const runId = work.task ? runEventId(targetId, at) : null;
     const ttlMs =
       input.ttlMs === undefined
         ? DEFAULT_INVOCATION_TTL_MS
@@ -789,6 +807,7 @@ export function createInvocationsService(deps: {
             harness: input.target.harness,
             provider,
             harnessConfig,
+            canAsk: input.origin === "tool",
           }),
       });
     },
@@ -874,7 +893,7 @@ export function createInvocationsService(deps: {
               Math.max(MIN_INVOCATION_TTL_MS, caller.ttlMs),
             );
       const startAt = now();
-      const runId = taskEventId(invocationId, startAt);
+      const runId = runEventId(invocationId, startAt);
       const expiresAt = new Date(startAt.getTime() + limit);
       const tasksExpireAt = new Date(expiresAt.getTime() + limit);
       const begun = await deps.repo.beginRun(invocationId, {
@@ -904,11 +923,20 @@ export function createInvocationsService(deps: {
               provider: turn!.provider,
               harnessConfig: turn!.harnessConfig,
               session,
+              canAsk: caller.origin === "tool",
               ...(run.modelNamed !== undefined && {
                 modelNamed: run.modelNamed,
               }),
             }),
       ]);
+      await deps.runtimeMutator
+        .enqueueAfterCommit(invocationId)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            { agentId: invocationId, err },
+            "invocations: the run was not pushed; the outbox sweep will carry it",
+          );
+        });
       await deps.wakeAgent(invocationId).catch(() => {});
       return { run: runId, session };
     },
@@ -960,7 +988,18 @@ export function createInvocationsService(deps: {
       return {
         ...(row.runId && { run: row.runId }),
         ...(row.sessionId && { session: row.sessionId }),
-        status: row.status,
+        status: shownStatus(row.status),
+        ...(row.status === "asking" &&
+          row.question &&
+          row.answerBy && {
+            question: {
+              text: row.question.text,
+              options: row.question.options,
+              default: row.question.defaultOption,
+              answerBy: row.answerBy.toISOString(),
+              told: row.deliveredAt !== null,
+            },
+          }),
         result: row.result,
         errorReason: row.errorReason ?? undefined,
         ...(row.exitCode !== null && { exitCode: row.exitCode }),
@@ -1001,6 +1040,10 @@ export function createInvocationsService(deps: {
         hibernationTimeoutMin: idleTimeoutMin,
       });
       return { keepUntil: until, idleTimeoutMin };
+    },
+
+    askOwner(invocationId, input, reporting) {
+      return deps.questions.ask(invocationId, input, reporting ?? null);
     },
 
     async recordResult(invocationId, result, reporting) {

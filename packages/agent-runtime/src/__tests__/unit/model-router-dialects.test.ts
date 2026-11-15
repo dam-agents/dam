@@ -860,11 +860,12 @@ describe("replay rules", () => {
       ],
     },
   ];
-  /** TEST_SCENARIO: A Messages body carrying a GLM-made thinking block in a
-   * prior turn reaches a Claude model with that block as text; the last
-   * assistant message keeps its blocks; a GLM target gets the body as is. */
-  it("turns prior-turn thinking into text for a Claude target only", () => {
-    const out = applyReplayRules(
+  /** TEST_SCENARIO: A Messages history reaches a Claude model and a GLM
+   * model as the harness wrote it, thinking blocks included: removing them
+   * from every call loses the model's reasoning and stops the provider's
+   * prompt cache from matching. */
+  it("leaves the thinking blocks of a Messages history in place", () => {
+    const claude = applyReplayRules(
       { messages: history },
       {
         dialect: "anthropic-messages",
@@ -872,12 +873,7 @@ describe("replay rules", () => {
         upstreamId: "aws/claude-opus-4-8",
       },
     );
-    const messages = out.messages as { content: unknown }[];
-    expect(messages[1]!.content).toEqual([
-      { type: "text", text: "<thinking>fake</thinking>" },
-      { type: "text", text: "a" },
-    ]);
-    expect(messages[3]!.content).toEqual(history[3]!.content);
+    expect(claude.messages).toBe(history);
     const glm = applyReplayRules(
       { messages: history },
       {
@@ -887,11 +883,6 @@ describe("replay rules", () => {
       },
     );
     expect(glm.messages).toBe(history);
-    const noAssistant = applyReplayRules(
-      { messages: [{ role: "user", content: "x" }] },
-      { dialect: "anthropic-messages", alias: "ibm", upstreamId: "claude-x" },
-    );
-    expect(noAssistant.messages).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: A Responses body with a Curve Bender bridge reasoning

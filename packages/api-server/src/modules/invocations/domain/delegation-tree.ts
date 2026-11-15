@@ -1,4 +1,5 @@
 import type {
+  DelegationAnswer,
   DelegationNode,
   InvocationHarnessConfig,
   InvocationStatus,
@@ -17,24 +18,60 @@ export interface DelegationRecord {
   image: string | null;
   connections: string[];
   harnessConfig: InvocationHarnessConfig | null;
-  status: InvocationStatus;
+  status: InvocationStatus | "answered";
   errorReason: string | null;
   result: unknown;
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
   transcriptCaptured: boolean;
+  question: { text: string; options: string[]; defaultOption: string } | null;
+  answerBy: Date | null;
+  answer: (DelegationAnswer & { question: string }) | null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a run's state as its readers see it: a run whose question was answered is read through the run that continues it, so on its own it only shows for the moment between the two, as still going.
+export const shownStatus = (
+  status: DelegationRecord["status"],
+): InvocationStatus => (status === "answered" ? "running" : status);
+
+// UNIT_BOUNDARY_DESCRIPTION: the question a record waits on, as its owner reads it; only a run that is still asking has one.
+export function questionOf(
+  row: Pick<
+    DelegationRecord,
+    "status" | "question" | "answerBy" | "completedAt"
+  >,
+): DelegationNode["question"] {
+  if (row.status !== "asking" || !row.question || !row.answerBy)
+    return undefined;
+  return {
+    text: row.question.text,
+    options: row.question.options,
+    default: row.question.defaultOption,
+    askedAt: (row.completedAt ?? row.answerBy).toISOString(),
+    answerBy: row.answerBy.toISOString(),
+  };
 }
 
 function toNode(
   row: DelegationRecord,
   children: DelegationNode[],
 ): DelegationNode {
+  const question = questionOf(row);
   return {
     id: row.id,
     label: row.label,
     driverAgentId: row.driverAgentId,
-    status: row.status,
+    status: shownStatus(row.status),
+    ...(question && { question }),
+    ...(row.answer && {
+      answer: {
+        text: row.answer.text,
+        by: row.answer.by,
+        at: row.answer.at,
+        answerBy: row.answer.answerBy,
+      },
+    }),
     errorReason: row.errorReason,
     stopped: row.status === "failed" ? stoppedOf(row.errorReason) : null,
     result: row.status === "done" ? row.result : null,

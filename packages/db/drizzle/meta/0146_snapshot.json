@@ -1,5 +1,5 @@
 {
-  "id": "2407a061-aa8e-46f1-90c7-4ce7e39ada58",
+  "id": "c1e27e3d-69e4-49f7-ae84-cb27ac7b6323",
   "prevId": "95c8cd22-e110-4a38-89bf-d58d83331083",
   "version": "7",
   "dialect": "postgresql",
@@ -6369,6 +6369,44 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.slack_untagged_reply_notes": {
+      "name": "slack_untagged_reply_notes",
+      "schema": "",
+      "columns": {
+        "actor_hash": {
+          "name": "actor_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "first_used_at": {
+          "name": "first_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_noted_at": {
+          "name": "last_noted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "graduated_at": {
+          "name": "graduated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.spend_agent_names": {
       "name": "spend_agent_names",
       "schema": "",
@@ -7123,12 +7161,6 @@
         },
         "bundled_skills": {
           "name": "bundled_skills",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "publisher": {
-          "name": "publisher",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

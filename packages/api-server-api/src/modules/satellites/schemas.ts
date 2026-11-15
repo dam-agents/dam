@@ -292,14 +292,15 @@ export const jobRefSchema = z.object({
 });
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One file crossing between the machine and the
- * Agent's workspace, in either direction. The cap is the agent runtime's own
- * per-file ceiling, so a transfer can never carry a file the workspace would
- * refuse to hold. The bytes travel over their own request, never through a
- * Job's arguments or its 1 MiB result, which is what keeps a transfer out of
- * the Agent's context.
+ * UNIT_BOUNDARY_DESCRIPTION: The satellite transfer ceiling, and the only
+ * declaration of it: one file crossing between the machine and the Agent's
+ * workspace, in either direction, carries at most this many bytes. A transfer
+ * is streamed and never buffered, so the ceiling bounds a transfer rather than
+ * a file held in memory, and it is counted while the bytes move. The bytes
+ * travel over their own request, never through a Job's arguments or its 1 MiB
+ * result, which is what keeps a transfer out of the Agent's context.
  */
-export const SATELLITE_FILE_MAX_BYTES = 50 * 1024 * 1024;
+export const SATELLITE_FILE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The transfer token a worker is handed with the
