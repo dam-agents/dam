@@ -90,6 +90,7 @@ function check(invocation: string): string | undefined {
       valueFollows = false;
       continue;
     }
+    if (token === "--") return undefined;
     if (token.startsWith("-")) {
       const [flag, inlineValue] = token.split("=");
       if (!knowsFlag(command, flag!)) {
@@ -162,5 +163,7 @@ describe("the dam skill", () => {
     expect(check("dam agent create my-agent --cron 5")).toBeDefined();
     expect(check("dam auth login --server https://x.test")).toBeUndefined();
     expect(check("dam auth --server https://x.test login")).toBeDefined();
+    expect(check("dam ssh connect my-agent -- uptime")).toBeUndefined();
+    expect(check("dam ssh connect my-agent --nope -- uptime")).toBeDefined();
   });
 });

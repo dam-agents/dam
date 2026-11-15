@@ -93,7 +93,7 @@ rules:
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # per-agent Istio AuthorizationPolicies (gateway admission,
-  # harness path-prefix at the waypoint, ext-authz Service principal).
+  # harness path-prefix at the waypoint, an unenforced ext-authz policy).
   - apiGroups: ["security.istio.io"]
     resources: ["authorizationpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   parseNameMeanings,
   pickNextMeaning,
+  splitMeaningLines,
 } from "../login/lib/name-meanings.js";
 
 const first = () => 0;
@@ -31,6 +32,43 @@ describe("parseNameMeanings", () => {
       "A",
       "B",
     ]);
+  });
+});
+
+describe("splitMeaningLines", () => {
+  // TEST_SCENARIO: a meaning with more than one word between its letters: the line breaks fall before the word that starts with A and before the word that starts with M, not after every space.
+  test("starts a line at the first word with A, then at the first word with M", () => {
+    expect(splitMeaningLines("Deploy Agents Massively")).toEqual([
+      "Deploy",
+      "Agents",
+      "Massively",
+    ]);
+    expect(splitMeaningLines("Digital Army of Minions")).toEqual([
+      "Digital",
+      "Army of",
+      "Minions",
+    ]);
+    expect(splitMeaningLines("Denier of AI Mischief")).toEqual([
+      "Denier of",
+      "AI",
+      "Mischief",
+    ]);
+    expect(splitMeaningLines("Drive Agents, Make Coffee")).toEqual([
+      "Drive",
+      "Agents,",
+      "Make Coffee",
+    ]);
+    expect(splitMeaningLines("Distributed Actors of Malevolence")).toEqual([
+      "Distributed",
+      "Actors of",
+      "Malevolence",
+    ]);
+  });
+
+  // TEST_SCENARIO: a name that is not a meaning of the product's letters, as an install sets its brand name differently: it is not cut up.
+  test("keeps a meaning without the three letters on one line", () => {
+    expect(splitMeaningLines("Platform")).toEqual(["Platform"]);
+    expect(splitMeaningLines("Platform Name")).toEqual(["Platform Name"]);
   });
 });
 

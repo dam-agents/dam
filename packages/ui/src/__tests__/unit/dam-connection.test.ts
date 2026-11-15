@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { getBrand } from "../../brand.js";
 import { filterOfferedTemplates } from "../../modules/connections/internal-only.js";
+import { connectionKindSubtitle } from "../../modules/connections/lib/catalog-providers.js";
 import { connectionDetail } from "../../modules/connections/lib/connection-detail.js";
 import {
   canGrantConnection,
@@ -52,6 +53,30 @@ describe("the DAM connection", () => {
     expect(canGrantConnection(true, { templateId: "dam" })).toBe(true);
     expect(canGrantConnection(false, { templateId: "dam" })).toBe(false);
     expect(canGrantConnection(false, { templateId: "github" })).toBe(true);
+  });
+
+  // TEST_SCENARIO: the tag beside a Connection's name never shows the address the Connection that drives this install reaches, while another header Connection still shows its own host.
+  it("keeps the install's own address off its row", () => {
+    expect(
+      connectionKindSubtitle(
+        {
+          templateId: "dam",
+          authKind: "header",
+          host: "dam-platform-apiserver.dam-dev.svc.cluster.local",
+        } as never,
+        undefined,
+      ),
+    ).toBe("");
+    expect(
+      connectionKindSubtitle(
+        {
+          templateId: "wiki",
+          authKind: "header",
+          host: "wiki.example.com",
+        } as never,
+        undefined,
+      ),
+    ).toBe("wiki.example.com");
   });
 
   // TEST_SCENARIO: whoever can steer the agent acts as the owner, so each flow names who that is.

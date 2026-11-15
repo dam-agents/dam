@@ -29,6 +29,8 @@ describe("feature modes", () => {
         "github-enterprise-hosts": "experimental",
         damConnection: "experimental",
         dambledore: "experimental",
+        "chat-network-approvals": "experimental",
+        "one-time-tasks": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
@@ -58,6 +60,8 @@ describe("feature modes", () => {
           hermes: "experimental",
           dambledore: "experimental",
           damConnection: "experimental",
+          "chat-network-approvals": "experimental",
+          "one-time-tasks": "experimental",
         },
       }).flags();
     expect(await flags({})).toMatchObject({

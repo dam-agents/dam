@@ -19,9 +19,15 @@ import type {
   InvocationOutputStream,
 } from "api-server-api";
 
-export type InvocationStatus = "idle" | "running" | "done" | "failed";
+// UNIT_BOUNDARY_DESCRIPTION: where a run stands: `asking` once it ended on a question for its owner, which nobody has answered yet, and `answered` once an answer started the run that continues it.
+export type InvocationStatus =
+  "idle" | "running" | "done" | "failed" | "asking" | "answered";
 
 export type RunStatus = Exclude<InvocationStatus, "idle">;
+
+type RunRecordQuestion = NonNullable<typeof runsTable.$inferSelect.question>;
+
+export type RunAnswer = NonNullable<typeof runsTable.$inferSelect.answer>;
 
 export type InvocationOrigin = "tool" | "script";
 
@@ -64,8 +70,13 @@ export interface InvocationRow extends InvocationSpec {
   egressAnswers: EgressAnswer[] | null;
   runId: string | null;
   sessionId: string | null;
+  origin: InvocationOrigin;
   cancelPending: boolean;
   completedAt: Date | null;
+  deliveredAt: Date | null;
+  question: RunRecordQuestion | null;
+  answerBy: Date | null;
+  answer: RunAnswer | null;
   reapedAt: Date | null;
   transcriptCaptured: boolean;
   transcriptTruncated: boolean;
@@ -122,11 +133,12 @@ export interface InvocationsRepository {
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
   getRun(runId: string): Promise<InvocationRow | null>;
-  // UNIT_BOUNDARY_DESCRIPTION: a run named by its own id, or a target's latest run named by the target's id, as a driver names either.
+  // UNIT_BOUNDARY_DESCRIPTION: a run named by its own id, or a target's latest run named by the target's id, as a driver names either; a run whose question was answered reads as the run that continues it.
   find(id: string): Promise<InvocationRow | null>;
   listRuns(invocationId: string, limit: number): Promise<InvocationRow[]>;
-  listRunningRuns(invocationId: string): Promise<InvocationRow[]>;
   listRunningRunsOf(invocationIds: readonly string[]): Promise<InvocationRow[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the runs of these targets that have not ended for good: the running ones, and the ones that wait for their owner's answer.
+  listOpenRunsOf(invocationIds: readonly string[]): Promise<InvocationRow[]>;
   markStarted(
     invocationId: string,
     eventId: string,
@@ -147,12 +159,32 @@ export interface InvocationsRepository {
     reason: string,
     now: Date,
   ): Promise<{ cancelPending: boolean } | null>;
-  // UNIT_BOUNDARY_DESCRIPTION: fails a running run that was stopped; a collected one is never delivered to its driver as a turn and never wakes it, since nobody needs its outcome.
+  // UNIT_BOUNDARY_DESCRIPTION: fails a run that was stopped, whether it runs or waits for its owner's answer; a collected one is never delivered to its driver as a turn and never wakes it, since nobody needs its outcome.
   failStopped(
     runId: string,
     reason: string,
     collected: boolean,
   ): Promise<{ cancelPending: boolean } | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: ends a running prompt run on a question for its owner, in the session it ran in; false when the run is no longer running.
+  ask(
+    runId: string,
+    asked: {
+      question: RunRecordQuestion;
+      answerBy: Date;
+      sessionId: string;
+    },
+  ): Promise<boolean>;
+  // UNIT_BOUNDARY_DESCRIPTION: answers a waiting question and starts the run that continues from the answer, in one write under the target's lock, so of an owner's answer, a driver's and the deadline's default only the first counts; `closed` when the question is no longer open or its target is gone.
+  answerQuestion(
+    runId: string,
+    next: InvocationRun & { answer: RunAnswer },
+  ): Promise<"answered" | "closed">;
+  listAskingRuns(invocationId: string): Promise<InvocationRow[]>;
+  listAskingDue(now: Date, limit: number): Promise<InvocationRow[]>;
+  // UNIT_BOUNDARY_DESCRIPTION: the runs that wait for their owner's answer in the targets under a root that still exist.
+  listAskingByRoot(rootDriverId: string): Promise<InvocationRow[]>;
+  listAskingByOwner(owner: string): Promise<InvocationRow[]>;
+  hasAsking(invocationId: string): Promise<boolean>;
   finishScript(runId: string, finish: ScriptFinish): Promise<boolean>;
   dropOutputStream(
     runId: string,
@@ -229,8 +261,13 @@ export function toRow(
     egressAnswers: target.egressAnswers ?? null,
     runId: run?.id ?? null,
     sessionId: run?.sessionId ?? null,
+    origin: (run?.origin as InvocationOrigin | undefined) ?? "script",
     cancelPending: run?.cancelPending ?? false,
     completedAt: run?.completedAt ?? null,
+    deliveredAt: run?.deliveredAt ?? null,
+    question: run?.question ?? null,
+    answerBy: run?.answerBy ?? null,
+    answer: run?.answer ?? null,
     reapedAt: target.reapedAt,
     transcriptCaptured: target.transcriptCaptured,
     transcriptTruncated: target.transcriptTruncated,
@@ -246,6 +283,8 @@ const keptTarget = (invocationId: typeof runsTable.invocationId) =>
 
 const runningRun = sql<boolean>`exists (select 1 from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id} and ${runsTable.status} = 'running')`;
 
+const askingRun = sql<boolean>`exists (select 1 from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id} and ${runsTable.status} = 'asking')`;
+
 const noRun = sql<boolean>`not exists (select 1 from ${runsTable} where ${runsTable.invocationId} = ${invocationsTable.id})`;
 
 /**
@@ -253,6 +292,10 @@ const noRun = sql<boolean>`not exists (select 1 from ${runsTable} where ${runsTa
  * or, for a target whose only run is from before runs had their own rows
  * (that run carries the target's id), that run, which no event names.
  */
+const OPEN_STATUSES: RunStatus[] = ["running", "asking"];
+
+const MAX_CONTINUATIONS = 50;
+
 const namedRun = (invocationId: string, eventId: string) =>
   and(
     eq(runsTable.invocationId, invocationId),
@@ -312,6 +355,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     reason: string,
     sessionId?: string | null,
     collected = false,
+    statuses: RunStatus[] = ["running"],
   ): Promise<{ cancelPending: boolean } | null> {
     const now = new Date();
     const rows = await db
@@ -326,9 +370,19 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           : {}),
         ...(collected ? { deliveredAt: now, wokeAt: now } : {}),
       })
-      .where(and(where, eq(runsTable.status, "running")))
+      .where(and(where, inArray(runsTable.status, statuses)))
       .returning({ cancelPending: runsTable.cancelPending });
     return rows[0] ?? null;
+  }
+
+  async function continuationOf(runId: string): Promise<InvocationRow | null> {
+    const rows = await db
+      .select({ continuedBy: runsTable.continuedBy })
+      .from(runsTable)
+      .where(eq(runsTable.id, runId))
+      .limit(1);
+    const next = rows[0]?.continuedBy;
+    return next ? repo.getRun(next) : null;
   }
 
   const repo: InvocationsRepository = {
@@ -381,16 +435,14 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     },
 
     async find(id) {
-      return (await repo.getRun(id)) ?? (await repo.get(id));
-    },
-
-    listRunningRuns(invocationId) {
-      return runRows(
-        and(
-          eq(runsTable.invocationId, invocationId),
-          eq(runsTable.status, "running"),
-        ),
-      );
+      let run = await repo.getRun(id);
+      for (let hops = 0; run && hops < MAX_CONTINUATIONS; hops++) {
+        if (run.status !== "answered" || run.runId === null) break;
+        const next = await continuationOf(run.runId);
+        if (!next) break;
+        run = next;
+      }
+      return run ?? (await repo.get(id));
     },
 
     async listRunningRunsOf(invocationIds) {
@@ -399,6 +451,16 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         and(
           inArray(runsTable.invocationId, [...invocationIds]),
           eq(runsTable.status, "running"),
+        ),
+      );
+    },
+
+    async listOpenRunsOf(invocationIds) {
+      if (invocationIds.length === 0) return [];
+      return runRows(
+        and(
+          inArray(runsTable.invocationId, [...invocationIds]),
+          inArray(runsTable.status, OPEN_STATUSES),
         ),
       );
     },
@@ -455,7 +517,154 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
     },
 
     failStopped(runId, reason, collected) {
-      return failWith(and(eq(runsTable.id, runId)), reason, null, collected);
+      return failWith(
+        and(eq(runsTable.id, runId)),
+        reason,
+        null,
+        collected,
+        OPEN_STATUSES,
+      );
+    },
+
+    async ask(runId, asked) {
+      const updated = await db
+        .update(runsTable)
+        .set({
+          status: "asking",
+          question: asked.question,
+          answerBy: asked.answerBy,
+          completedAt: new Date(),
+          sessionId: sql`coalesce(${runsTable.sessionId}, ${asked.sessionId})`,
+        })
+        .where(
+          and(
+            eq(runsTable.id, runId),
+            eq(runsTable.status, "running"),
+            isNull(runsTable.script),
+          ),
+        )
+        .returning({ id: runsTable.id });
+      return updated.length > 0;
+    },
+
+    async answerQuestion(runId, next) {
+      return db.transaction(async (tx) => {
+        const asking = await tx
+          .select({ invocationId: runsTable.invocationId })
+          .from(runsTable)
+          .where(eq(runsTable.id, runId))
+          .limit(1);
+        const invocationId = asking[0]?.invocationId;
+        if (!invocationId) return "closed";
+        const locked = await tx
+          .select({ id: invocationsTable.id })
+          .from(invocationsTable)
+          .where(
+            and(
+              eq(invocationsTable.id, invocationId),
+              isNull(invocationsTable.reapedAt),
+            ),
+          )
+          .for("update");
+        if (locked.length === 0) return "closed";
+        const now = new Date();
+        const answered = await tx
+          .update(runsTable)
+          .set({
+            status: "answered",
+            continuedBy: next.runId,
+            deliveredAt: sql`coalesce(${runsTable.deliveredAt}, ${now.toISOString()}::timestamptz)`,
+            wokeAt: sql`coalesce(${runsTable.wokeAt}, ${now.toISOString()}::timestamptz)`,
+            claimedUntil: null,
+          })
+          .where(and(eq(runsTable.id, runId), eq(runsTable.status, "asking")))
+          .returning({ id: runsTable.id });
+        if (answered.length === 0) return "closed";
+        await tx.insert(runsTable).values({
+          id: next.runId,
+          invocationId,
+          prompt: next.prompt,
+          script: next.script,
+          resultSchema: next.resultSchema,
+          ttlMs: next.ttlMs,
+          expiresAt: next.expiresAt,
+          origin: next.origin,
+          driverSessionId: next.driverSessionId,
+          sessionId: next.sessionId,
+          answer: next.answer,
+        });
+        return "answered";
+      });
+    },
+
+    listAskingRuns(invocationId) {
+      return runRows(
+        and(
+          eq(runsTable.invocationId, invocationId),
+          eq(runsTable.status, "asking"),
+        ),
+      );
+    },
+
+    listAskingDue(now, limit) {
+      return runRows(
+        and(eq(runsTable.status, "asking"), lte(runsTable.answerBy, now)),
+        limit,
+      );
+    },
+
+    listAskingByRoot(rootDriverId) {
+      return runRows(
+        and(
+          eq(runsTable.status, "asking"),
+          inArray(
+            runsTable.invocationId,
+            db
+              .select({ id: invocationsTable.id })
+              .from(invocationsTable)
+              .where(
+                and(
+                  eq(invocationsTable.rootDriverId, rootDriverId),
+                  isNull(invocationsTable.reapedAt),
+                ),
+              ),
+          ),
+        ),
+      );
+    },
+
+    listAskingByOwner(owner) {
+      return runRows(
+        and(
+          eq(runsTable.status, "asking"),
+          inArray(
+            runsTable.invocationId,
+            db
+              .select({ id: invocationsTable.id })
+              .from(invocationsTable)
+              .where(
+                and(
+                  eq(invocationsTable.owner, owner),
+                  isNull(invocationsTable.reapedAt),
+                ),
+              ),
+          ),
+        ),
+      );
+    },
+
+    async hasAsking(invocationId) {
+      const rows = await db
+        .select({ id: runsTable.id })
+        .from(runsTable)
+        .where(
+          and(
+            eq(runsTable.invocationId, invocationId),
+            eq(runsTable.status, "asking"),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
     },
 
     failExpired(runId, reason, now) {
@@ -565,7 +774,12 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           driverAgentId: invocationsTable.driverAgentId,
         })
         .from(invocationsTable)
-        .where(and(lt(invocationsTable.createdAt, olderThan), runningRun));
+        .where(
+          and(
+            lt(invocationsTable.createdAt, olderThan),
+            or(runningRun, askingRun),
+          ),
+        );
       const ids = new Set<string>();
       for (const r of rows) {
         ids.add(r.id);
@@ -584,6 +798,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
             and(
               isNull(invocationsTable.reapedAt),
               sql`not ${runningRun}`,
+              sql`not ${askingRun}`,
               sql`${lastEnd} < ${before.toISOString()}::timestamptz`,
               or(
                 isNull(invocationsTable.keepUntil),
@@ -639,7 +854,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
                 eq(runsTable.invocationId, invocationId),
                 eq(runsTable.sessionId, run.sessionId),
                 or(
-                  eq(runsTable.status, "running"),
+                  inArray(runsTable.status, OPEN_STATUSES),
                   eq(runsTable.cancelPending, true),
                 ),
               ),

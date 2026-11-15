@@ -48,6 +48,7 @@ function recoveryWorld(
   );
   const resumed: string[] = [];
   const tasks: string[] = [];
+  const resumedUnattended: (boolean | undefined)[] = [];
   const fresh: { meta: unknown; unattended: boolean | undefined }[] = [];
   const bound: { scheduleId: string; sessionId: string }[] = [];
   let minted = 0;
@@ -59,6 +60,7 @@ function recoveryWorld(
       if (resumeSessionId) {
         resumed.push(resumeSessionId);
         tasks.push(task);
+        resumedUnattended.push(unattended);
         onResume(resumeSessionId);
       } else {
         fresh.push({ meta: platformMeta, unattended });
@@ -75,6 +77,7 @@ function recoveryWorld(
     undeliveredPrompts,
     resumed,
     tasks,
+    resumedUnattended,
     fresh,
     bound,
     recover: (store: ReturnType<typeof createActiveTurnStore>) =>
@@ -106,6 +109,7 @@ describe("interrupted-turn recovery", () => {
     await world.recover(booted);
 
     expect(world.resumed).toEqual(["interrupted"]);
+    expect(world.resumedUnattended).toEqual([undefined]);
   });
 
   /**
@@ -171,7 +175,7 @@ describe("interrupted-turn recovery", () => {
 
     expect(world.resumed).toEqual(["killed", "slept"]);
     expect(world.tasks).toEqual([INTERRUPTION_NOTICE, STOPPED_NOTICE]);
-    expect(STOPPED_NOTICE).toContain("put to sleep");
+    expect(STOPPED_NOTICE).toContain("the agent was stopped");
     expect(STOPPED_NOTICE).not.toContain("memory");
     expect(STOPPED_NOTICE).toContain("Nobody rejected it");
   });

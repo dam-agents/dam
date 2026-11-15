@@ -2,6 +2,8 @@ import {
   effectiveSubagentSettings,
   harnessCapability,
   isPlatformSubagentSetting,
+  platformSubagentSettingsError,
+  sessionSettingsError,
   withoutApproval,
   type HarnessCapability,
   type HarnessConfigCatalog,
@@ -185,6 +187,34 @@ export function runSubagentSettings(
     platform,
     runsNativelyIn(catalog, pair),
   );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: why a saved default's settings cannot run, or null: a save checks the settings a run would take, native subagent values derived by the one rule against the owner catalog the picker lists, yet it neither returns nor stores them, so the default stays platform-level (D193B). */
+export function defaultSettingsProblem(
+  carried: readonly HarnessCapability[],
+  catalog: Pick<OwnerModelCatalogView, "providers"> | null | undefined,
+  pair: SessionPair,
+): string | null {
+  const harness = carried.find((h) => h.name === pair.harness);
+  const derived = runSubagentSettings(harness, catalog, pair, pair.settings);
+  const unsupported = Object.keys(derived).find(
+    (id) =>
+      !(isPlatformSubagentSetting(id)
+        ? harness?.platformSubagentSettings
+        : harness?.sessionSettings?.includes(id)),
+  );
+  return unsupported
+    ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
+    : (sessionSettingsError(
+        harness?.harnessConfigCatalog,
+        derived,
+        pair.model,
+      ) ??
+        platformSubagentSettingsError(
+          derived,
+          (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
+        ) ??
+        null);
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: the pair a run on stored slots starts on, the same for a chat, a channel and a schedule: the primary profile resolved, else the values, with the subagent slot composed; a primary profile that cannot run, or a lent sub-agent that would run and cannot, refuses with its reason rather than running on another model, and still answers the pair it names, so a run falls back on that harness. */

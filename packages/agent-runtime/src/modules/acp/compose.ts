@@ -54,6 +54,7 @@ import {
   type SessionHarness,
 } from "./services/session-setting-frames.js";
 import type { AgentRequestObserver } from "./services/acp-runtime/pending-agent-requests.js";
+import { createChatFormFixer } from "./services/chat-form-fixer.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
@@ -317,6 +318,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const sessionChanges = createSessionChanges();
   const platformMcpEntry = createPlatformMcpEntryStore(opts.stateBackend);
   let reportTurn: (report: ReportableTurn) => void = () => {};
+  let fixChatForm: (sessionId: string, prompt: string) => void = () => {};
   const sessionMetadata = notifyingSessionMetadataStore(
     createSessionMetadataStore(opts.stateBackend),
     sessionChanges,
@@ -461,15 +463,18 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const settingInput = (sessionId: string) => {
         const model = runtime.sessionChoice(sessionId).model;
         const meta = sessionMetadata.get(sessionId)?.meta;
+        const unattended = UNATTENDED_TYPES.has(meta?.type ?? "");
         return {
           sessionId,
           harness,
           model,
           native: pair.native !== undefined,
+          agentApproval: runtime.defaults()?.toolApproval ?? null,
+          unattended,
           settings: {
             ...manifestDefaults(harness, "session", model),
-            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session runs on the default tool approval; only a chat session picks its own. */
-            ...(UNATTENDED_TYPES.has(meta?.type ?? "")
+            /* UNIT_BOUNDARY_DESCRIPTION: a channel or schedule session keeps no tool approval of its own, so it runs on the agent's, or on the default one; only a chat session picks its own. */
+            ...(unattended
               ? withoutApproval(harness?.catalog, meta?.settings)
               : meta?.settings),
           },
@@ -484,6 +489,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),
         sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
         onReportableTurnEnded: (report) => reportTurn(report),
+        onChatFormFix: (sessionId, prompt) => fixChatForm(sessionId, prompt),
         spawnAgent: () => {
           scoped.harnessSpawned();
           return createChildAgentProcess({
@@ -568,6 +574,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
     modelMissing: (sessionId) => runtime.modelMissing(sessionId),
     modelReady: (sessionId) => runtime.modelReady(sessionId),
     log: opts.log,
+  });
+  fixChatForm = createChatFormFixer({
+    driver: triggerDriver,
+    log: (msg) => opts.log?.(msg),
   });
   reportTurn = createOnceReporter({
     driver: triggerDriver,

@@ -72,7 +72,7 @@ export function startModeFor(
 export const COPILOT_AUTOPILOT =
   "https://agentclientprotocol.com/protocol/session-modes#autopilot";
 
-/** UNIT_BOUNDARY_DESCRIPTION: the option that holds tool approval: Bob's approvals, or a mode that can bypass (Claude Code's) or run on Autopilot (Copilot's); a harness with neither runs every tool unasked. Approval is one session's own pick, so no default, profile, channel or schedule carries it. */
+/** UNIT_BOUNDARY_DESCRIPTION: the option that holds tool approval: Bob's approvals, or a mode that can bypass (Claude Code's) or run on Autopilot (Copilot's); a harness with neither runs every tool unasked. A session picks its own and an agent may hold one for all its sessions, so no pair, profile, channel or schedule carries it. */
 export function approvalOption(catalog: HarnessConfigCatalog | undefined) {
   const options = catalog?.options ?? [];
   return (
@@ -95,6 +95,76 @@ export function withoutApproval(
   const id = approvalOption(catalog)?.id;
   if (settings === undefined || id === undefined) return settings;
   return Object.fromEntries(Object.entries(settings).filter(([k]) => k !== id));
+}
+
+export const toolApprovalSchema = z.enum(["ask", "auto", "bypass"]);
+
+export type ToolApproval = z.infer<typeof toolApprovalSchema>;
+
+const TOOL_APPROVAL_VALUES: Record<ToolApproval, readonly string[]> = {
+  ask: ["acceptEdits", "ask"],
+  auto: ["auto", COPILOT_AUTOPILOT],
+  bypass: ["bypassPermissions"],
+};
+
+export interface ToolApprovalChoice {
+  approval: ToolApproval;
+  value: string;
+  needsApproval: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the tool approvals a harness offers, each with
+ * the value its own option takes. Claude Code keeps approval in its
+ * permission mode, where asking is Accept edits (edits never prompt); Bob
+ * keeps it in its approvals option and has no bypass; Copilot's Autopilot is
+ * its auto. A Plan mode is not a tool approval.
+ */
+export function toolApprovalChoices(
+  catalog: HarnessConfigCatalog | undefined,
+): ToolApprovalChoice[] {
+  const option = approvalOption(catalog);
+  return toolApprovalSchema.options.flatMap((approval) => {
+    const choice = option?.choices.find((c) =>
+      TOOL_APPROVAL_VALUES[approval].includes(c.value),
+    );
+    return choice
+      ? [
+          {
+            approval,
+            value: choice.value,
+            needsApproval: choice.needsApproval === true,
+          },
+        ]
+      : [];
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the value the agent's own tool approval gives a
+ * session that picked none, as the setting of the harness that holds it. Null
+ * leaves the session on the start the harness gets without one: the harness
+ * offers no such approval or keeps it outside its mode (Bob's approvals are a
+ * flag of its process), the session's model cannot use it, or nobody is there
+ * to answer a choice that asks, as on a channel turn or a schedule fire. The
+ * runtime, the api-server's check and the chat's picker all ask this one
+ * rule, so what is saved and shown is what a session starts on.
+ */
+export function agentToolApprovalSetting(
+  catalog: HarnessConfigCatalog | undefined,
+  approval: ToolApproval | null | undefined,
+  session: { model: string | null; unattended: boolean },
+): { id: string; value: string } | null {
+  const option = approvalOption(catalog);
+  const choice = toolApprovalChoices(catalog).find(
+    (c) => c.approval === approval,
+  );
+  if (option?.category !== "mode" || choice === undefined) return null;
+  const id = option.id;
+  if (choice.needsApproval && session.unattended) return null;
+  const allowed = modelConstraintsFor(catalog, session.model)?.[id];
+  if (allowed && !allowed.includes(choice.value)) return null;
+  return { id, value: choice.value };
 }
 
 export function sessionSettingsError(
