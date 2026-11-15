@@ -161,7 +161,9 @@ export function EnvironmentRow({
             />
           ))}
         {several && (
-          <Tooltip content={addressesOpen ? "Hide addresses" : "Show addresses"}>
+          <Tooltip
+            content={addressesOpen ? "Hide addresses" : "Show addresses"}
+          >
             <Button
               variant="ghost"
               size="icon-sm"
