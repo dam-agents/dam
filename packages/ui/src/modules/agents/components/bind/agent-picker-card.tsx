@@ -3,14 +3,11 @@ import { isStartRefusal } from "api-server-api";
 import { Badge } from "@/components/ui/badge";
 import { CardButton } from "@/components/ui/card-button";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../../components/status-indicator.js";
+import { StatusBadge } from "../../../../components/status-indicator.js";
 import type { AgentView } from "../../../../types.js";
 import { AgentChannelChips } from "../../../sandboxes/components/channels/agent-channel-chips.js";
 import { resolveAgentDisplay } from "../../utils/agent-resolver.js";
-import { AgentAvatar, avatarMood } from "../avatar/agent-avatar.js";
+import { AgentAvatar } from "../avatar/agent-avatar.js";
 import { ContributionFailuresBadge } from "../contribution-failures-badge.js";
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -28,7 +25,7 @@ export function AgentPickerCard({
   activeSchedules,
   onSelect,
 }: Props) {
-  const { name, hibernationTimeoutMin, contributionFailures } = agent;
+  const { name, contributionFailures } = agent;
   const display = resolveAgentDisplay(agent, NO_IDS);
 
   return (
@@ -37,12 +34,7 @@ export function AgentPickerCard({
       onClick={onSelect}
       className="flex w-full items-start justify-between gap-4 p-5"
     >
-      <AgentAvatar
-        name={name}
-        avatar={agent.avatar}
-        size={40}
-        mood={avatarMood(display.state, agent)}
-      />
+      <AgentAvatar name={name} avatar={agent.avatar} size={40} />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
           <span className="truncate text-base font-semibold text-foreground">
@@ -60,7 +52,6 @@ export function AgentPickerCard({
         </AgentChannelChips>
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        {hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <StatusBadge
           state={display.state}
           refused={isStartRefusal(agent.podTerminationCode)}

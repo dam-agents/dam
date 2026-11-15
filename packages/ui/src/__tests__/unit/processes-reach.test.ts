@@ -60,7 +60,6 @@ function panel() {
       null,
       createElement(ProcessesPanel, {
         agentId: "agent-a",
-        alwaysOn: false,
         open: true,
         onToggle: () => {},
       }),

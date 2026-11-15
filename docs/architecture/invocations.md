@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -156,12 +156,38 @@ The reasons:
   A script's task carries its stop and report times, which are set from the start when the task is delivered, so an old runtime keeps working unchanged.
 - **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps every target it still has, kept and clean slate ones too, transitively for chains.
-- **Stopped.** The owner stops a running target from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
+- **Stopped.** The owner stops a target that runs, or [waits for an answer](#asking-the-owner), from the Driver's chat or the Kept sub-agents group, and a Driver stops one of its own (`stop_subagent`, the SDK's abort signal or cancel event, or `stop` on its handle), with a reason the user reads, which a kept target needs.
   Every running run of the target and of each target below it fails with that reason and goes through the one reap, so a one-off target is removed, with every target still below it, and a kept one keeps its conversation.
   The delegation view reads who stopped a run from the reason the stop wrote, so a stop shows as stopped, not failed, and a card whose own run ended while sub-agents it started still run counts them and stops only them.
 
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
+
+## Asking the owner
+
+**A sub-agent's run can end on a question.** A decision that is the owner's to make no longer has to be guessed: the target calls the `ask_owner` platform tool with the question, up to eight options when the choice is between fixed answers, and what it goes on with when nobody answers, which is one of the options when it gave any.
+An open question takes no options, and the owner can always answer in their own words.
+The run then ends in a state of its own, `asking`: it is not running, so it no longer pins its Driver awake, its time limit stops, and the watch on its session stands down, because the tool's answer carries the same mark an accepted result does.
+Only a run its Driver started through the tools may ask; a run a script started is told to decide for itself, since a script only polls for an end and nobody would be told of the question.
+A run that may ask is told so in its task, in place of the sentence that nobody will reply.
+
+**The sub-agent waits asleep, like any agent.** Asking takes the target out of the Agent Sweep and gives it a short idle timeout, so its machine sleeps with its disk and its conversation a few minutes later.
+No reap takes a target that waits on a question: not the one after a result, not the liveness sweep's, and a kept target's keep expiry does not either.
+A stop, by the owner or by its Driver, and a deleted Driver still end it: the waiting run fails with the stop's reason and the target goes through the one reap.
+The owner and the Driver see no kept sub-agent in this: it is listed nowhere as kept, and it is removed after its result as before.
+
+**Only the owner answers.** The owner answers in the Driver's chat with an option or their own words, and the answer goes straight to the sub-agent: the Driver has no tool to answer or to pass an answer on.
+With no answer by the deadline, a day by default or the time the question names, at most as long as an Environment may live, a periodic job answers with the sub-agent's own default, so no sub-agent waits forever.
+The answer is one write under the target's lock, so of the owner's answer and the deadline's only the first counts.
+
+**The answer starts the next run.** It is a new run in the same session, with the asking run's schema and the time that run had left (five minutes at least), so the sub-agent goes on with its conversation and its files and reports its result as any run does.
+A Driver that reads the asking run by its id reads the run that continues it.
+
+**The Driver keeps working, and is told nothing in a turn.** A wait that covers the sub-agent returns at once with the question under `needsOwnerAnswer`, the first time, so the Driver stops waiting on it; a later wait on the same sub-agent waits as for a running one.
+No turn is written for a question or for a default taken; the sub-agent's result reaches the Driver as any result does.
+The delegation view shows the target as needing an answer, with the time it waits until, and afterwards what its work went on from: the owner's answer, or the default it took.
+The Driver's chat puts each open question of the sub-agents below it, at any depth, to the owner in its input, one at a time, scoped to the Session like its running children.
+Away from that chat, the owner is told by the [approvals bell](home-feed.md#sub-agent-questions).
 
 ## Script runs
 

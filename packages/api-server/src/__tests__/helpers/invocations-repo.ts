@@ -2,6 +2,18 @@ import type {
   InvocationRow,
   InvocationsRepository,
 } from "../../modules/invocations/infrastructure/invocations-repository.js";
+import type { OwnerQuestions } from "../../modules/invocations/services/owner-questions.js";
+
+export function fakeOwnerQuestions(
+  overrides: Partial<OwnerQuestions> = {},
+): OwnerQuestions {
+  return {
+    ask: async () => ({ ok: false, errors: "not asked in this test" }),
+    answer: async () => false,
+    waitingOf: async () => null,
+    ...overrides,
+  };
+}
 
 export function invocationRow(
   overrides: Partial<InvocationRow> = {},
@@ -34,8 +46,13 @@ export function invocationRow(
     egressAnswers: null,
     runId: id,
     sessionId: null,
+    origin: "tool",
     cancelPending: false,
     completedAt: null,
+    deliveredAt: null,
+    question: null,
+    answerBy: null,
+    answer: null,
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
@@ -54,13 +71,20 @@ export function fakeInvocationsRepo(
     getRun: async () => null,
     find: async () => null,
     listRuns: async () => [],
-    listRunningRuns: async () => [],
     listRunningRunsOf: async () => [],
+    listOpenRunsOf: async () => [],
     markStarted: async () => null,
     complete: async () => false,
     fail: async () => null,
     failExpired: async () => null,
     failStopped: async () => null,
+    ask: async () => false,
+    answerQuestion: async () => "closed",
+    listAskingRuns: async () => [],
+    listAskingDue: async () => [],
+    listAskingByRoot: async () => [],
+    listAskingByOwner: async () => [],
+    hasAsking: async () => false,
     finishScript: async () => false,
     dropOutputStream: async () => {},
     clearOutput: async () => {},

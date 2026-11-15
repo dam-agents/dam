@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-10-23
+Last verified: 2026-11-12
 
 ## Overview
 
@@ -289,7 +289,7 @@ A sender who never linked an identity counts toward no one.
 The api-server reads them, applies the windows, which a view cannot take as parameters, and builds every panel in one pure computation.
 The current-state panels read the in-memory Agent replica; they count only Agents a non-core user created, which leaves out the core team's Agents and Agents another Agent started.
 "Always on" is read against the install's default idle timeout, so an install that never hibernates by default reports every Agent without an override as always on.
-An Agent without an override is read against the install's idle timeout; one that carries an override is read against that, as everywhere else.
+An Agent without an override is read against the install's idle timeout; one that carries an override, which only an Environment or an Invocation target does, is read against that, as everywhere else.
 
 ### Source passthrough views
 

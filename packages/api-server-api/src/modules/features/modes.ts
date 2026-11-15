@@ -11,6 +11,18 @@ export const FEATURES_ON_BY_DEFAULT: ReadonlySet<FeatureId> = new Set([
 ]);
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: the harnesses an owner's flags keep out of every
+ * list a picker reads: the Hermes harness while its flag is off
+ * (docs/architecture/features.md). Only what is offered is gated — a change or
+ * a session that names one still goes through.
+ */
+export function hiddenHarnessesFor(
+  flags: Partial<Record<FeatureId, boolean>>,
+): ReadonlySet<string> {
+  return new Set(flags.hermes ? [] : ["hermes"]);
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: whether one person has a feature on: the install's
  * mode decides, except in `experimental`, where the person's own switch does —
  * and, where nothing is stored, whether the feature is on by default. Nothing is

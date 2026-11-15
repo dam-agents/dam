@@ -31,6 +31,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { type KeepAwake, keepAwake } from "../../lib/keep-awake.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -75,6 +76,8 @@ const KILLS = [
 let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
+let keeping: KeepAwake | undefined;
+const wake = () => api.agents.wake.mutate({ id: agentId });
 const marker = `home-survives-${randomUUID()}`;
 const synced = `home-synced-${randomUUID()}`;
 let claimFilled = false;
@@ -93,7 +96,10 @@ function after(output: string, marker: string): string {
   return at === -1 ? "" : (lines[at + 1] ?? "").trim();
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a deliberate sleep stops the keep-awake wakes first, since a wake would cancel it; the case that slept the machine runs without them, and the next case starts them again.
 async function hibernate(): Promise<void> {
+  await keeping?.stop();
+  keeping = undefined;
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
 }
@@ -270,9 +276,8 @@ test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await acceptTerms(api);
-  agentId = await createAgentOn(api, "e2e-boot-matrix", harnessName, {
-    neverIdle: true,
-  });
+  agentId = await createAgentOn(api, "e2e-boot-matrix", harnessName);
+  keeping = keepAwake(wake);
   await waitAgentState(api, agentId, "running");
   await writeHomeFile(token, agentId, markerPath, marker);
   await expectHomeFile(token, agentId, markerPath, marker, {
@@ -398,7 +403,12 @@ function stopFillerAndClear(): string {
   ].join("\n");
 }
 
+test.beforeEach(() => {
+  keeping ??= keepAwake(wake);
+});
+
 test.afterAll(async () => {
+  await keeping?.stop();
   if (!agentId) return;
   try {
     if (claimFilled) {

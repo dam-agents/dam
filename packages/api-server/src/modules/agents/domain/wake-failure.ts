@@ -68,7 +68,7 @@ export function classifyWakeFailure(
       kind: "over-budget",
       message:
         s.overBudgetMessage ||
-        "starting this agent would exceed your compute budget — disable agents you aren't using to free room",
+        "starting this agent would exceed your compute budget — delete an agent you no longer use to free room",
     };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
@@ -160,7 +160,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         case "MachineAllocationUnreadable":
           return "the server running its owner's agents has not reported how much memory it gave them — tell an admin";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and the ones that were running restarted — disabling agents that aren't in use frees memory";
+          return "its owner's VM agents ran out of memory together and the ones that were running restarted — deleting an agent you no longer use frees memory";
         case "MachineStorageFull":
           return storageFullMessage();
         default:

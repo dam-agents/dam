@@ -12,12 +12,12 @@ export function visibleEnvironments(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an Environment's row says of its machine: running, starting, or sleeping, which it does when nobody uses it; any other state is not running, and opening a link wakes it.
+// UNIT_BOUNDARY_DESCRIPTION: what an Environment's row says of its machine: running, starting, or idle, which a machine stopped because nobody uses it reads as; any other state is not running, and opening a link wakes it.
 export function environmentStateLabel(state: string): string {
   if (state === "running") return "Running";
   if (state === "starting" || state === "preparing_workspace")
     return "Starting";
-  if (state === "hibernating" || state === "hibernated") return "Sleeping";
+  if (state === "hibernating" || state === "hibernated") return "Idle";
   return "Not running";
 }
 

@@ -4,6 +4,7 @@ import {
   ATTENTION_FEED_LIMIT,
   type AttentionItem,
   type AttentionListCursor,
+  type OwnerQuestionNotice,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -24,6 +25,8 @@ export type AgentActivitySession = ActivitySession & { agent: AgentView };
 
 const FEED_STALE_MS = 5_000;
 
+const NO_QUESTIONS: readonly OwnerQuestionNotice[] = [];
+
 function useOpenSessionKey() {
   return useStore((s) =>
     s.view === "chat" && s.selectedAgent && s.sessionId
@@ -36,19 +39,23 @@ function agentActivitySessions(
   attention: readonly AttentionItem[],
   agents: readonly AgentView[],
   approvals: readonly ApprovalView[],
+  questions: readonly OwnerQuestionNotice[],
   openSessionKey: string | null,
 ): AgentActivitySession[] {
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   const running = new Set(
     agents.filter((a) => a.state === "running").map((a) => a.id),
   );
-  const waiting = new Set(
-    approvals.flatMap((a) =>
+  const waiting = new Set([
+    ...approvals.flatMap((a) =>
       a.status === "pending" && a.sessionId
         ? [activitySessionKey(a.agentId, a.sessionId)]
         : [],
     ),
-  );
+    ...questions.flatMap((q) =>
+      q.sessionId ? [activitySessionKey(q.agentId, q.sessionId)] : [],
+    ),
+  ]);
   return toActivitySessions(attention, running, waiting).flatMap((item) => {
     const agent = byId.get(item.session.agentId);
     if (!agent) return [];
@@ -73,6 +80,7 @@ export function useActivitySessions() {
         attention.data?.items ?? [],
         agents,
         approvals.data ?? [],
+        attention.data?.ownerQuestions ?? [],
         openSessionKey,
       ),
     [attention.data, approvals.data, agents, openSessionKey],
@@ -93,6 +101,7 @@ export function useActivitySessions() {
  */
 export function useActivityFeed(enabled: boolean) {
   const approvals = useApprovalsForOwner();
+  const questions = useAttention().data?.ownerQuestions ?? NO_QUESTIONS;
   const agents = useAgentsList();
   const openSessionKey = useOpenSessionKey();
   const pages = useInfiniteQuery({
@@ -123,9 +132,10 @@ export function useActivityFeed(enabled: boolean) {
       rows,
       agents,
       approvals.data ?? [],
+      questions,
       openSessionKey,
     );
-  }, [pages.data, agents, approvals.data, openSessionKey]);
+  }, [pages.data, agents, approvals.data, questions, openSessionKey]);
 
   return {
     items,

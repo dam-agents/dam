@@ -22,12 +22,14 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
@@ -548,6 +550,115 @@ func TestAMachineWhoseAgentIsGoneDoesNotHoldTheRoll(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: puts a second vm Agent of owner-a beside the one the setup made, with its own machine ready on the owner's runner, so a roll has two machines to wait for.
+func addRolloutAgent(t *testing.T, r *AgentReconciler, node *fakeNode, name string) {
+	t.Helper()
+	agent := vmAgentCR()
+	agent.Name, agent.UID = name, types.UID(name+"-uid")
+	agent.Labels = map[string]string{envoyOwnerLabel: "owner-a"}
+	u, err := agentToUnstructured(agent)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	node.specs[name] = vmrunner.MachineSpec{Running: true}
+	node.set(name, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: changes a stored Agent as an API write would, so the roll reads it the way it reads any Agent: off the store, never off the runner.
+func editRolloutAgent(t *testing.T, r *AgentReconciler, name string, edit func(*unstructured.Unstructured)) {
+	t.Helper()
+	ctx := context.Background()
+	cli := r.dynamic.Resource(AgentsGVR).Namespace("test-agents")
+	u, err := cli.Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	edit(u)
+	_, err = cli.Update(ctx, u, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+func requestStop(u *unstructured.Unstructured) {
+	ann := u.GetAnnotations()
+	ann[annStopRequested] = time.Now().UTC().Format(time.RFC3339)
+	u.SetAnnotations(ann)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agent as the idle checker leaves it once it has hibernated it: its last activity older than the idle timeout, and its hibernation published on the Ready condition. activity is when it last did anything.
+func hibernated(activity time.Time) func(*unstructured.Unstructured) {
+	return func(u *unstructured.Unstructured) {
+		ann := u.GetAnnotations()
+		ann[annLastActivity] = activity.UTC().Format(time.RFC3339)
+		u.SetAnnotations(ann)
+		_ = unstructured.SetNestedSlice(u.Object, []any{map[string]any{
+			"type": apiv1.ConditionReady, "status": string(metav1.ConditionFalse), "reason": apiv1.ReasonHibernated,
+			"lastTransitionTime": time.Now().UTC().Format(time.RFC3339), "message": "",
+		}}, "status", "conditions")
+	}
+}
+
+// TEST_SCENARIO: an owner's runner rolls with two machines ready, and the new runner has booted neither of them yet, so both read stopped there. One Agent is then stopped by its user, and the other's machine comes back late. The stopped one is dropped from the wait at once, but the roll still waits for the other: the runner's own word that a machine is stopped is not taken, since right after a pod roll every machine reads that way. The next owner rolls once the second machine is ready, well inside the settle timeout.
+func TestAMachineWhoseAgentStoppedDoesNotHoldTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	nodes["owner-a"].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	addRolloutAgent(t, r, nodes["owner-a"], "late-agent")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	nodes["owner-a"].set("late-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent})
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "machines the new runner has not booted yet still hold the roll")
+
+	editRolloutAgent(t, r, "my-agent", requestStop)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the machine still on its way back holds the roll")
+
+	nodes["owner-a"].set("late-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the stopped machine is not waited for, so the roll settles once the other is back")
+}
+
+// TEST_SCENARIO: a machine the roll waits on belongs to an Agent the idle sweep hibernated during the roll, which a roll that started before the sweep read its pin can meet. Its hibernation is published and nothing woke it since, so it will not come back and the roll does not wait out the settle timeout for it. An Agent woken again after its hibernation asks to run, so its machine holds the roll until it is back.
+func TestAMachineWhoseAgentHibernatedDoesNotHoldTheRoll(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		woken   bool
+		settles bool
+	}{
+		{name: "asleep", settles: true},
+		{name: "woken again", woken: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+			nodes["owner-a"].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+			nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+			changeRunnerPod(r)
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			settleRunnerPod(t, r, "owner-a")
+			nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+
+			activity := time.Now().Add(-2 * time.Hour)
+			if tc.woken {
+				activity = time.Now()
+			}
+			editRolloutAgent(t, r, "my-agent", hibernated(activity))
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			want := runnerV1
+			if tc.settles {
+				want = runnerV2
+			}
+			assert.Equal(t, want, runnerImageOf(t, r, "owner-b"))
+		})
+	}
 }
 
 // TEST_SCENARIO: an install with many owners raises the roll's width. That many runners roll together, and the next one still waits.

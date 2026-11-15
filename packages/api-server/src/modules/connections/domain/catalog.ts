@@ -39,7 +39,11 @@ import {
   MODAL_FAMILY,
 } from "./families.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
-import { damContributions, damTargetOf } from "./dam-connection.js";
+import {
+  damContributions,
+  damTargetOf,
+  type DamSkillFile,
+} from "./dam-connection.js";
 import { DEFAULT_S3_SIGNING_REGION } from "./s3-contributions.js";
 
 function envContributions(mappings: EnvMapping[]): Contribution[] {
@@ -1020,6 +1024,7 @@ function sharedKnowledgeBase(shareBaseUrl?: string): HeaderConnectionTemplate {
 function dam(
   baseUrl: string,
   brandName: string,
+  skill: readonly DamSkillFile[],
 ): HeaderConnectionTemplate | null {
   const target = damTargetOf(baseUrl);
   if (!target) return null;
@@ -1034,7 +1039,7 @@ function dam(
     host: target.host,
     headerName: "Authorization",
     valueFormat: "Bearer {value}",
-    contributions: damContributions(target, brandName),
+    contributions: damContributions(target, skill),
   };
 }
 
@@ -1061,11 +1066,13 @@ export function buildCatalog(
     curveBenderDeployment?: boolean;
     damBaseUrl?: string;
     brandName?: string;
+    /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, which the DAM Connection writes into an Agent. */
+    damSkill?: readonly DamSkillFile[];
   } = {},
 ): ConnectionTemplate[] {
   const damTemplate =
     opts.damBaseUrl && opts.brandName
-      ? dam(opts.damBaseUrl, opts.brandName)
+      ? dam(opts.damBaseUrl, opts.brandName, opts.damSkill ?? [])
       : null;
   return assertContributionsParse([
     ...(damTemplate ? [damTemplate] : []),

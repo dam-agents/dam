@@ -1,7 +1,6 @@
-import type { EnvVar } from "api-server-api";
+import { type EnvVar, TELEMETRY_IDENTITY_ENV } from "api-server-api";
 
 const AGENT_NAME_ATTR = "platform.agent.name";
-const RESOURCE_ATTRS_ENV = "OTEL_RESOURCE_ATTRIBUTES";
 const TELEMETRY_MARKER_ENV = "CLAUDE_CODE_ENABLE_TELEMETRY";
 
 function upsertNameAttr(value: string | undefined, agentName: string): string {
@@ -20,9 +19,9 @@ export function seedTelemetryIdentity(
 ): EnvVar[] {
   if (!telemetry && !env.some((e) => e.name === TELEMETRY_MARKER_ENV))
     return env;
-  const existing = env.find((e) => e.name === RESOURCE_ATTRS_ENV);
+  const existing = env.find((e) => e.name === TELEMETRY_IDENTITY_ENV);
   const next = {
-    name: RESOURCE_ATTRS_ENV,
+    name: TELEMETRY_IDENTITY_ENV,
     value: upsertNameAttr(existing?.value, agentName),
   };
   return existing
@@ -35,7 +34,8 @@ export function renamedTelemetryIdentity(
   agentName: string,
 ): EnvVar[] | null {
   const existing = env.find(
-    (e) => e.name === RESOURCE_ATTRS_ENV && e.value.includes(AGENT_NAME_ATTR),
+    (e) =>
+      e.name === TELEMETRY_IDENTITY_ENV && e.value.includes(AGENT_NAME_ATTR),
   );
   if (!existing) return null;
   const value = upsertNameAttr(existing.value, agentName);

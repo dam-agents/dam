@@ -17,6 +17,7 @@ export {
 } from "./services/harness-config-service.js";
 export { harnessConfigEvent } from "./domain/harness-config-event.js";
 export {
+  defaultSettingsProblem,
   harnessCapabilityOf,
   runSubagentSettings,
   type RunSettingsSource,

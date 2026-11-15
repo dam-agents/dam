@@ -4,6 +4,7 @@ import {
   DEFAULT_CONTENT_TYPE,
   defaultFileName,
   detectKind,
+  effectiveContentType,
   extensionOf,
 } from "../../modules/artifact-library/domain/artifact-kind.js";
 import { generateSlug } from "../../modules/artifact-library/domain/share-crypto.js";
@@ -38,6 +39,53 @@ describe("artifact-kind detection", () => {
     expect(detectKind({ fileName: "main.py" })).toBe("code");
     expect(detectKind({ fileName: "data.csv" })).toBe("text");
     expect(detectKind({ fileName: "photo.png" })).toBe("binary");
+  });
+
+  it("takes a generic stored type from the file name's extension", () => {
+    for (const generic of [
+      "application/x-www-form-urlencoded",
+      "application/octet-stream",
+      "",
+    ]) {
+      expect(effectiveContentType("chart.png", generic)).toBe("image/png");
+      expect(effectiveContentType("photo.JPG", generic)).toBe("image/jpeg");
+      expect(effectiveContentType("diagram.pdf", generic)).toBe(
+        "application/pdf",
+      );
+    }
+  });
+
+  it("keeps a type the uploader stated", () => {
+    expect(effectiveContentType("chart.png", "image/webp")).toBe("image/webp");
+    expect(effectiveContentType("report.pdf", "application/pdf")).toBe(
+      "application/pdf",
+    );
+    expect(effectiveContentType("notes.txt", "text/plain; charset=utf-8")).toBe(
+      "text/plain; charset=utf-8",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: resolving a type from the name must never turn a stored
+   * generic blob into active content the share page would render inline where
+   * it served an attachment before — HTML, and SVG with its scripts.
+   */
+  it("never resolves active content from the name", () => {
+    expect(effectiveContentType("page.html", "application/octet-stream")).toBe(
+      "application/octet-stream",
+    );
+    expect(
+      effectiveContentType("logo.svg", "application/x-www-form-urlencoded"),
+    ).toBe("application/octet-stream");
+  });
+
+  it("reports a generic blob it cannot name as octet-stream", () => {
+    expect(
+      effectiveContentType("bundle.zip", "application/x-www-form-urlencoded"),
+    ).toBe("application/octet-stream");
+    expect(effectiveContentType("bundle.zip", "")).toBe(
+      "application/octet-stream",
+    );
   });
 
   it("sniffs content when there is no useful extension", () => {

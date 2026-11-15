@@ -544,11 +544,6 @@ export function createEnvironmentsService(
       async wake(name) {
         const woke = await deps.agents.wake((await byName(name)).agentId);
         if (woke.ok) return;
-        if (woke.error.type === "AgentDisabled")
-          refuse(
-            `${name} is turned off by your owner; it does not wake until they turn it on`,
-            "PRECONDITION_FAILED",
-          );
         refuse(`no Environment named ${name}`, "NOT_FOUND");
       },
 
