@@ -17,7 +17,7 @@ export async function createCustomHeaderConnection(
 ): Promise<void> {
   await page
     .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Settings" })
+    .getByRole("button", { name: "Settings", exact: true })
     .click();
   await page.getByRole("tab", { name: "Connections", exact: true }).click();
   await page.getByTestId("open-connection-catalog").click();
