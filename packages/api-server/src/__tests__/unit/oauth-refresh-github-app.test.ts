@@ -83,8 +83,6 @@ function makeDeps(opts: {
       set: (row: { auth: unknown }) => {
         const update: { auth: unknown; where?: SQL } = { ...row };
         dbUpdates.push(update);
-        // Answers as postgres.js does: awaited alone it names no row, and
-        // only `.returning()` says which rows the write changed.
         return {
           where: (where: SQL) => {
             update.where = where;

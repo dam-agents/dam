@@ -154,9 +154,7 @@ function makeLoop(opts?: {
     }
   };
 
-  // A write answers as postgres.js does: awaited alone it is a row list that
-  // names no row, and only `.returning()` says which rows it changed.
-  const writeResult = (hit: readonly { id: string }[]) =>
+  const postgresJsWriteResult = (hit: readonly { id: string }[]) =>
     Object.assign(Promise.resolve([]), {
       returning: async () => hit.map(({ id }) => ({ id })),
     });
@@ -179,7 +177,7 @@ function makeLoop(opts?: {
         where: () => {
           const kind = fragmentPath(patch.auth);
           if (kind === "marker" && opts?.markerWriteMatches === false) {
-            return writeResult([]);
+            return postgresJsWriteResult([]);
           }
           for (const r of rows) {
             r.auth = applyAuthWrite(r.auth as MarkableAuth, patch.auth);
@@ -187,7 +185,7 @@ function makeLoop(opts?: {
           if (kind !== "backoff") {
             written.push((rows[0]?.auth ?? patch.auth) as ConnectionAuthConfig);
           }
-          return writeResult(rows);
+          return postgresJsWriteResult(rows);
         },
       }),
     }),
