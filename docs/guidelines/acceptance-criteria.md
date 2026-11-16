@@ -85,7 +85,7 @@ The second criterion starts from the first one's outcome, so the tester runs the
 ## Done when
 
 - Slack requests work properly and are faster than before.
-- The channel worker writes the request to the session table and the GitHub token never reaches the agent pod.
+- The channel worker writes the request to the session table and the GitHub token never reaches the agent's machine.
 - The agent files the issue and answers in Slack and the chat is updated.
 ```
 

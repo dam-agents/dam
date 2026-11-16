@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs as root on the agent's machine.
+# Runs as the agent in a container, as root on a vm Backend machine.
 set -eu
 
 home="${HOME:-/home/agent}"
