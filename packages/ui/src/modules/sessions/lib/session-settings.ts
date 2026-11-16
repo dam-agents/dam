@@ -3,6 +3,7 @@ import type {
   HarnessConfigCurrent,
 } from "agent-runtime-api";
 import {
+  isPlatformSubagentSetting,
   modelConstraintsFor,
   startModeFor,
   SUBAGENT_MODEL_SETTING,
@@ -86,10 +87,82 @@ export const isModelOption = (o: {
 }) => o.category === "model" && o.choices.length === 0;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the settings a newly picked model keeps. A value
- * the model's constraints exclude (Haiku takes no effort) and a subagent
- * model on the other side of the router/native split are dropped, since the
- * runtime refuses either; a value it cannot judge stays.
+ * UNIT_BOUNDARY_DESCRIPTION: the settings a harness can take for one session:
+ * a key it offers per session, with a value among its choices (any value for
+ * a model option, which lists none). Another harness's key, or a value its key
+ * does not mean here (Pi's `mode=high` on Claude Code, whose mode is tool
+ * approval), is dropped, since the runtime and the chat default's save refuse
+ * either. The platform sub-agent slot is the platform's, checked against its
+ * own harness, and stays. Without a catalog nothing can be judged, so all
+ * stays.
+ */
+export function offeredSettings(
+  capability: HarnessCapability | undefined,
+  settings: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const catalog = capability?.harnessConfigCatalog;
+  if (!catalog) return { ...settings };
+  return Object.fromEntries(
+    Object.entries(settings).filter(([id, value]) => {
+      if (isPlatformSubagentSetting(id)) return true;
+      if (capability.sessionSettings?.includes(id) !== true) return false;
+      const option = catalog.options.find((o) => o.id === id);
+      return (
+        option !== undefined &&
+        (isModelOption(option) || option.choices.some((c) => c.value === value))
+      );
+    }),
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the primary reasoning effort a harness offers per session, whatever key it keeps it under (Claude Code's `effort`, Pi's `mode`). */
+export function effortOption(capability: HarnessCapability | undefined) {
+  return sessionSettingOptions(capability).find(
+    (o) => o.category === "thought_level" && !o.subagents,
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the settings a harness change carries to the new
+ * harness, before the new model's own constraints apply. Effort carries by
+ * what it is, not its key: Claude Code's `effort=high` becomes Pi's
+ * `mode=high`, and back. Any other key carries only where the new harness
+ * has the same option with the same meaning (its category), so Claude Code's
+ * tool approval never lands in Pi's thinking level; what the new harness does
+ * not offer is dropped.
+ */
+export function harnessChangeSettings(
+  from: HarnessCapability | undefined,
+  to: HarnessCapability | undefined,
+  settings: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const fromEffort = effortOption(from);
+  const toEffort = effortOption(to);
+  const option = (capability: HarnessCapability | undefined, id: string) =>
+    capability?.harnessConfigCatalog?.options.find((o) => o.id === id);
+  const carried = Object.fromEntries(
+    Object.entries(settings).filter(([id]) => {
+      if (isPlatformSubagentSetting(id)) return true;
+      if (id === fromEffort?.id || id === toEffort?.id) return false;
+      const before = option(from, id);
+      const after = option(to, id);
+      return (
+        after !== undefined &&
+        (before === undefined || before.category === after.category)
+      );
+    }),
+  );
+  const effort = fromEffort ? settings[fromEffort.id] : undefined;
+  if (toEffort && effort !== undefined) carried[toEffort.id] = effort;
+  return offeredSettings(to, carried);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the settings a newly picked model keeps: only
+ * those the harness offers (offeredSettings), and of those, a value the
+ * model's constraints exclude (Haiku takes no effort) and a subagent model on
+ * the other side of the router/native split are dropped, since the runtime
+ * refuses either; a value it cannot judge stays.
  */
 export function settingsForModel(
   capability: HarnessCapability | undefined,
@@ -100,22 +173,24 @@ export function settingsForModel(
   const allowed = modelConstraintsFor(capability?.harnessConfigCatalog, model);
   const side = sameSideGroups(groups, model);
   return Object.fromEntries(
-    Object.entries(settings).filter(([id, value]) => {
-      const option = capability?.harnessConfigCatalog?.options.find(
-        (o) => o.id === id,
-      );
-      if (option && isModelOption(option)) {
-        const hit = findModel(groups, value);
-        return !hit || side.includes(hit.group);
-      }
-      const only = option?.subagents
-        ? modelConstraintsFor(
-            capability?.harnessConfigCatalog,
-            settings[SUBAGENT_MODEL_SETTING] ?? null,
-          )?.[id]
-        : allowed?.[id];
-      return !only || only.includes(value);
-    }),
+    Object.entries(offeredSettings(capability, settings)).filter(
+      ([id, value]) => {
+        const option = capability?.harnessConfigCatalog?.options.find(
+          (o) => o.id === id,
+        );
+        if (option && isModelOption(option)) {
+          const hit = findModel(groups, value);
+          return !hit || side.includes(hit.group);
+        }
+        const only = option?.subagents
+          ? modelConstraintsFor(
+              capability?.harnessConfigCatalog,
+              settings[SUBAGENT_MODEL_SETTING] ?? null,
+            )?.[id]
+          : allowed?.[id];
+        return !only || only.includes(value);
+      },
+    ),
   );
 }
 
