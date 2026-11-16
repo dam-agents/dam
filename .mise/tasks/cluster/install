@@ -1244,7 +1244,7 @@ fi
 # images outgrow. The MongoDB agent stays on the 108 line, which still runs the
 # MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
 # dropped 5.0. Move it with that MongoDB version.
-# The 1.14.0 chart runs its own 1.14.0 operator image, so the dated
+# The 1.15.0 chart runs its own 1.15.0 operator image, so the dated
 # operator.version override this install carried while the chart lagged is gone.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
@@ -1262,7 +1262,7 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.14.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.15.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
     --set community.agent.version=108.0.27.9091-1 \
