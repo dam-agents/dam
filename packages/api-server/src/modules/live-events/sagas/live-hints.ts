@@ -114,6 +114,7 @@ export function hintFor(event: DomainEvent): {
     case EventType.ChannelMessageSent:
     case EventType.ConnectionCreated:
     case EventType.ConnectionRemoved:
+    case EventType.ConnectionCredentialChanged:
     case EventType.FilesImported:
     case EventType.ContributionApplyFailed:
     case EventType.ContributionRecovered:

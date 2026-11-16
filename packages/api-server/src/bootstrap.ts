@@ -273,6 +273,8 @@ import {
 import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
 import { readAgentSkill } from "./apps/api-server/routes/agent-discovery.js";
+import { createBrandIconRoutes } from "./apps/api-server/routes/brand.js";
+import { createAgentFavicon } from "./modules/artifact-library/infrastructure/agent-favicon.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
@@ -396,6 +398,7 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createPricedConnections,
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
@@ -1766,6 +1769,7 @@ export async function bootstrap() {
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
+    meter: metrics.getMeter("platform-apiserver"),
     priceOverrides: config.spendPriceOverrides,
     owners: {
       ownerOf: async (agentId) =>
@@ -1802,7 +1806,19 @@ export async function bootstrap() {
     sessions: sessionDirectory,
     subAgents: createSpawnSessionsAdapter(db),
     telemetryStoreOn: metricsReader !== null,
+    pricedConnections: createPricedConnections({ db, secretStore }),
   });
+  await periodicJobs.register("spend-provider-prices", 60 * 60_000, () =>
+    spend.readAllPrices(),
+  );
+  void spend
+    .readPricesIfEmpty()
+    .catch((err: unknown) =>
+      getLogger().error(
+        { reason: formatError(err) },
+        "spend.first_price_read_failed",
+      ),
+    );
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
@@ -1938,6 +1954,11 @@ export async function bootstrap() {
     getAgent: (id) => agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
+  const brandIcon = createBrandIconRoutes();
+  const agentFavicon = createAgentFavicon({
+    getAgent: (id, owner) => agentsRepo.get(id, owner),
+    loadImage: createAvatarImagesRepository(db).load,
+  });
   const shareHostGate = createByLinkHostGate(
     shareSignIns.map((signIn) => ({
       share: {
@@ -1948,6 +1969,7 @@ export async function bootstrap() {
             brandName: config.brand.name,
             sessionCookie: signIn.cookie,
           }),
+          brandIcon,
           viewer: createShareViewerApp({
             viewer: shareViewer,
             auth: signIn.auth,
@@ -1959,6 +1981,7 @@ export async function bootstrap() {
             contentBaseUrl: signIn.set.contentBaseUrl,
             shareBaseUrl: signIn.set.shareBaseUrl,
             bridge: shareBridge,
+            agentFavicon,
           }),
           environments:
             signIn === publicShareSignIn ? environmentFrontDoor : null,
@@ -3100,6 +3123,8 @@ export async function bootstrap() {
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();
+    spend.readPricesSaga.unsubscribe();
+    spend.priceBookReload.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
     spendAlertsSaga.unsubscribe();

@@ -17,7 +17,10 @@ import {
 import { watchApiKey } from "../admission/api-key-watch.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
 import { getLogger } from "../../../core/logger.js";
-import { MAX_USER_REQUEST_BODY_BYTES } from "../../../core/request-body-bounds.js";
+import {
+  MAX_TRPC_BATCH_SIZE,
+  MAX_USER_REQUEST_BODY_BYTES,
+} from "../../../core/request-body-bounds.js";
 import { logInternalError } from "./log-internal-error.js";
 
 const trpcDenial: Record<
@@ -108,6 +111,7 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
   const handler = applyWSSHandler({
     wss,
     router: appRouter,
+    maxBatchSize: MAX_TRPC_BATCH_SIZE,
     onError: (opts) =>
       (opts.error.cause as { code?: string } | undefined)?.code ===
       "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"

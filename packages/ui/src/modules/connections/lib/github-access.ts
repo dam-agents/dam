@@ -58,7 +58,7 @@ export function fullAccessLine(
 
 const NAMES_SHOWN = 3;
 
-function repositoriesPhrase(
+export function repositoriesPhrase(
   names: readonly string[] | undefined,
   count: number,
 ): string {
@@ -73,7 +73,7 @@ function repositoriesPhrase(
 
 export type PermissionsStyle = "count" | "list";
 
-function permissionsPhrase(
+export function permissionsPhrase(
   permissions: Record<string, string> | undefined,
   style: PermissionsStyle,
 ): string {

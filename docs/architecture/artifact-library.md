@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-11
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -31,6 +31,17 @@ An artifact's **kind is settled when it is created** and no revision can move it
 The share link outlives every revision, so a mutable kind would let a URL vetted while it served inert text later serve executing HTML or JSX to the same audience; publishing executable content is fine, silently changing what an already-shared link *does* is not.
 It also keeps a version history coherent, since every version renders through the artifact's one kind.
 Title and file name stay editable, and both describe the whole artifact rather than one revision: the history snapshots bytes, so a past version downloads under the artifact's current name.
+
+An artifact also carries an **icon**, one emoji, so the user tells it apart from the others in the library and in its browser tab.
+The Agent picks it when it publishes, as it picks the title, without being asked: the publish tool tells it to pick one that sets this artifact apart from the others it published, and the update tool gives one to an artifact that has none.
+The icon is optional, so an Agent on an older skill still publishes, with no icon.
+The platform stores exactly one emoji and refuses anything else, so a stored icon always draws.
+Emoji only, rather than also an icon set: an emoji brings its own colours, which light and dark tab strips both show, and needs no dependency.
+Like the title, it describes the whole artifact, a new version keeps it, and the owner changes or clears it in the Rename dialog.
+The list row and the docked preview's top bar show it before the title.
+The share page and the app's own artifact page use it as the tab favicon, an SVG drawn in the page from the emoji alone; the framed document carries it too, for when its address is opened by itself.
+An HTML artifact that names its own favicon keeps it.
+An artifact without an icon, such as an upload or one published before icons, shows on its share page what the [share host](#the-share-host--trust-boundary) gives any share page, its Agent's avatar or the brand icon, and in the app the brand icon.
 
 The design is a port of a proven external tool (the "slop" artifact vault) onto platform rails: content bytes live in the S3-compatible object store ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing surface is the per-agent platform MCP server, and by-link serving happens on two dedicated hosts — a **share host** for the pages and a **content host** for the framed artifact itself.
 
@@ -165,7 +176,11 @@ A sharing change — visibility, retention date, and the viewer allowlist — is
 User-generated content is never served from the app origin.
 Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint and the front door of [Environments](environments.md#addresses) (`/e/<address>`) — never an app route.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint, the front door of [Environments](environments.md#addresses) (`/e/<address>`) and the brand icon the share pages show in the browser tab (`/brand/`) — never an app route.
+  The icon is the operator's SVG, so it is served sandboxed: it cannot run script as the share origin.
+  An artifact cannot set the tab icon itself, because the browser takes it only from the top-level share page, never from the frame.
+  A share page of an artifact with its own [icon](#overview) shows that emoji in the tab; one without shows its Agent's [avatar](agent-avatars.md) instead, inlined in the page so it reaches only viewers the page lets in; an uploaded artifact without an icon, an artifact whose Agent is gone and a folder page keep the brand icon.
+  A public link therefore shows its Agent's avatar, never its name.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
   The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.
@@ -277,7 +292,7 @@ flowchart LR
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
   The docked preview's top bar shows only the actions users take most: the title, the version switcher, **Share** with the current visibility ("Private", "Restricted", "Public") and a chevron, which opens the sharing dialog, Download, **Open in new tab**, a ⋮ menu and the side panel's close X, which the docked preview in a chat with both experiments off does not show.
-  The ⋮ menu holds the rest, in groups: Rename and Move first; then **Edit source** and Start a new session, where the artifact offers them; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
+  The ⋮ menu holds the rest, in groups: Rename, which also changes the icon, and Move first; then **Edit source** and Start a new session, where the artifact offers them; then View source, for a rendered artifact, which shows its source in place of the preview and back; then Set expiration and Delete.
   Edit source names what it changes, the artifact's text, which may be Markdown as well as code, so it does not read as asking the Agent for a change.
   So opening an artifact is a place to start sharing or continuing it rather than a dead end, and the bar stays short enough to scan.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does; it has no full page of its own, because a wider panel or Open in new tab covers that.

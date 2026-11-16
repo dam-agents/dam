@@ -26,6 +26,7 @@ export const modelDiscoverySpec = modelListing.extend({
   namePrefix: z.string().min(1).optional(),
   lowercaseNames: z.boolean().optional(),
   extendsCatalog: z.boolean().optional(),
+  allModes: z.boolean().optional(),
   fallback: modelListing.optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
@@ -93,12 +94,14 @@ export interface DiscoveredModelInfo {
     cacheReadPerToken: number | null;
     cacheWritePerToken: number | null;
   };
+  priceFields?: Record<string, unknown>;
 }
 
 export interface DiscoveredModel {
   id: string;
   name: string;
   info?: DiscoveredModelInfo;
+  priceConflict?: boolean;
 }
 
 export type ModelDiscoveryOutcome =
@@ -109,7 +112,7 @@ export type ModelDiscoveryOutcome =
       entries?: DiscoveredModel[];
       via: string;
     }
-  | { status: "unavailable" };
+  | { status: "unavailable"; httpStatus?: number };
 
 export type ModelDiscovery = (
   spec: ModelDiscoverySources | undefined,
@@ -133,9 +136,13 @@ function openAiModelId(entry: Record<string, unknown>): string | null {
   return typeof id === "string" && id.length > 0 ? id : null;
 }
 
-function liteLlmModelName(entry: Record<string, unknown>): string | null {
+function liteLlmModelName(
+  entry: Record<string, unknown>,
+  allModes: boolean,
+): string | null {
   const mode = (entry.model_info as Record<string, unknown> | null)?.mode;
-  if (typeof mode === "string" && !CONVERSATIONAL_MODES.has(mode)) return null;
+  if (!allModes && typeof mode === "string" && !CONVERSATIONAL_MODES.has(mode))
+    return null;
   const name = entry.model_name;
   return typeof name === "string" && name.length > 0 ? name : null;
 }
@@ -182,7 +189,29 @@ function liteLlmModelInfo(
         asNumber(info.cache_creation_input_token_cost) ?? null,
     };
   }
+  const priceFields = Object.fromEntries(
+    Object.entries(info).filter(
+      ([key, value]) => PRICE_FIELD.test(key) && value !== null,
+    ),
+  );
+  if (Object.keys(priceFields).length > 0) out.priceFields = priceFields;
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+const PRICE_FIELD =
+  /cost|_above_|search|reasoning|uplift|free_requests|billing_unit/;
+
+function pricedHigher(
+  next: DiscoveredModelInfo | undefined,
+  kept: DiscoveredModelInfo | undefined,
+): boolean {
+  const a = next?.prices;
+  const b = kept?.prices;
+  if (!a || !b) return !!a && !b;
+  return (
+    a.inputPerToken > b.inputPerToken ||
+    (a.inputPerToken === b.inputPerToken && a.outputPerToken > b.outputPerToken)
+  );
 }
 
 /**
@@ -199,7 +228,7 @@ const listReaders: Record<
   ModelListShape,
   {
     listKey: string;
-    id: (entry: Record<string, unknown>) => string | null;
+    id: (entry: Record<string, unknown>, allModes: boolean) => string | null;
     info?: (entry: Record<string, unknown>) => DiscoveredModelInfo | undefined;
   }
 > = {
@@ -225,11 +254,15 @@ function publishedName(spec: ModelDiscoverySpec, id: string): string {
   return name.startsWith(prefix) ? name : prefix + name;
 }
 
-function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
+function modelIdOf(
+  entry: unknown,
+  shape: ModelListShape,
+  allModes: boolean,
+): string | null {
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as Record<string, unknown>;
-  const id = listReaders[shape].id(record);
-  return id && !/embed/i.test(id) ? id : null;
+  const id = listReaders[shape].id(record, allModes);
+  return id && (allModes || !/embed/i.test(id)) ? id : null;
 }
 
 export function createModelDiscovery(deps: {
@@ -244,7 +277,7 @@ export function createModelDiscovery(deps: {
     spec: ModelDiscoverySpec,
     via: string,
     credentials: Record<string, string>,
-  ): Promise<ModelDiscoveryOutcome | "refused"> => {
+  ): Promise<ModelDiscoveryOutcome | { refused: number }> => {
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++) {
       const last = attempt === DISCOVERY_ATTEMPTS;
       try {
@@ -254,7 +287,7 @@ export function createModelDiscovery(deps: {
         });
         if (!res.ok) {
           deps.log(`[harness-config] model discovery ${url} → ${res.status}`);
-          return "refused";
+          return { refused: res.status };
         }
         const body = (await res.json()) as Record<string, unknown>;
         const raw = body[listReaders[shape].listKey];
@@ -262,13 +295,19 @@ export function createModelDiscovery(deps: {
         if (!data) return { status: "unavailable" };
         const byId = new Map<string, DiscoveredModel>();
         for (const m of data) {
-          const id = chatModelIdOf(m, shape);
-          if (!id || byId.has(id)) continue;
+          const id = modelIdOf(m, shape, spec.allModes ?? false);
+          if (!id) continue;
           const info = listReaders[shape].info?.(m as Record<string, unknown>);
+          const kept = byId.get(id);
+          if (kept) {
+            kept.priceConflict = true;
+            if (!pricedHigher(info, kept.info)) continue;
+          }
           byId.set(id, {
             id,
             name: publishedName(spec, id),
             ...(info && { info }),
+            ...(kept && { priceConflict: true }),
           });
         }
         const entries = [...byId.values()].sort((a, b) =>
@@ -305,6 +344,7 @@ export function createModelDiscovery(deps: {
     const { spec, via, base } = selected;
     const credentials = credentialHeaders(spec, env);
 
+    let httpStatus: number | undefined;
     for (const listing of spec.fallback ? [spec, spec.fallback] : [spec]) {
       const outcome = await list(
         discoveryUrl(listing, base),
@@ -313,8 +353,11 @@ export function createModelDiscovery(deps: {
         via,
         credentials,
       );
-      if (outcome !== "refused") return outcome;
+      if ("refused" in outcome) httpStatus = outcome.refused;
+      else if (outcome.status === "observed") return outcome;
     }
-    return { status: "unavailable" };
+    return httpStatus === undefined
+      ? { status: "unavailable" }
+      : { status: "unavailable", httpStatus };
   };
 }

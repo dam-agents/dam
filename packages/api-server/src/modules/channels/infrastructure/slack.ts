@@ -184,6 +184,7 @@ import type {
   SlackSlashCommand,
   SlackThreadRead,
   SlackUserInfo,
+  SlackClickedPost,
   SlackMessageAction,
   SlackMessageReplacement,
   SlackReplaceMessage,
@@ -197,12 +198,13 @@ import {
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import { slackBlocksRefusal } from "./slack-refused-blocks.js";
 import {
-  agentButtonAgent,
-  channelBlockChoiceButtons,
+  agentActionOf,
+  channelBlockInteractive,
+  channelFieldValue,
+  channelFieldValues,
   channelBlocksText,
   countChannelBlocks,
-  withChoiceMade,
-  type ChannelBlock,
+  type AgentAction,
 } from "../domain/channel-blocks.js";
 import { mentionedCommand, parseSwitchArgs } from "./slack-mention-commands.js";
 import {
@@ -1435,7 +1437,9 @@ const PENDING_POST_DELETE_TTL_MS = 15 * 60_000;
 
 const SLACK_MAX_BLOCKS = 50;
 
-const ANSWERED_POST_TTL_MS = 60 * 60_000;
+const PASSED_CLICK_TTL_MS = 60_000;
+
+const FIELD_CHANGE_QUIET_MS = 1_500;
 
 const FILE_SHARE_TS_ATTEMPTS = 10;
 
@@ -1606,6 +1610,7 @@ export type SlackWorkerDeps = {
   listWorkspaces: () => Promise<SlackWorkspace[]>;
   emit?: (event: DomainEvent) => void;
   settleMs?: number;
+  fieldChangeQuietMs?: number;
   wakeWait?: WakeWaitOptions;
   agentIcon?: AgentIconUrl | null;
   readPodRestarts?: (agentId: string) => Promise<PodRestartState | null>;
@@ -1667,6 +1672,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     listWorkspaces,
     emit = defaultEmit,
     settleMs = 0,
+    fieldChangeQuietMs = FIELD_CHANGE_QUIET_MS,
     wakeWait = {},
     agentIcon = null,
     readPodRestarts = async () => null,
@@ -3548,12 +3554,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
-    const choices = args.card
-      ? channelBlockChoiceButtons(args.card.blocks)
+    const interactive = args.card
+      ? channelBlockInteractive(args.card.blocks)
       : [];
-    if (choices.length > 0)
+    if (interactive.length > 0)
       return {
-        error: `A private answer to a whisper carries link buttons only: a click on "${choices[0]}" could not reach you. Give each button a url, or ask for the choice in the text.`,
+        error: `A private answer to a whisper carries link buttons only: ${interactive[0]} could not reach you from it. Give each button a url, or ask in the text.`,
       };
     const linked = await linkForTarget(
       gw,
@@ -5258,127 +5264,184 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: A click on a choice button of an Agent's post
-   * behaves as a message in that post's thread, addressed to the Agent that
-   * made the post. The Agent comes from the button's identifier, which only
-   * the platform writes, never from the post's content. The click enters the
-   * same inbound path as a typed message, so the binding check, the gates,
-   * thread ownership, burst gathering and steering all apply to it. A click
-   * has no message of its own: its time stands in for one, so catch-up reads
-   * up to the moment of the click. A post takes one answer: once the click
-   * is handed to the Agent, the post loses its choice buttons and names who
-   * chose what, and a click on a post that holds no choice button any more
-   * is not passed on. Two people can click before the post changes, so a
-   * post being answered is also held in process until its update is done,
-   * and for a while longer when the update fails, so it still takes one
-   * answer.
+   * UNIT_BOUNDARY_DESCRIPTION: An interaction with an element of an Agent's
+   * post behaves as a message in that post's thread, addressed to the Agent
+   * that made the post: a click on a choice button, or a change of a select,
+   * a checkbox or another field. The Agent comes from the element's
+   * identifier, which only the platform writes, never from the post's
+   * content. The interaction enters the same inbound path as a typed
+   * message, so the binding check, the gates, thread ownership, burst
+   * gathering and steering all apply to it. It has no message of its own:
+   * its time stands in for one, so catch-up reads up to that moment. The
+   * platform never changes the post: what it shows after an answer is the
+   * Agent's to decide, with an edit. So the person who clicked a button is
+   * told privately once the click is passed on, and the same click by the
+   * same person, with the same field values, is not passed on again for a
+   * minute or until the Agent changes the post. A field that reports each
+   * change, such as one that sends every keystroke, is passed on once it has
+   * been quiet, with its last value, so typing does not start a turn per
+   * character.
    */
-  const answeredPosts = createTtlMap<string, true>({
-    ttlMs: ANSWERED_POST_TTL_MS,
+  const passedClicks = createTtlMap<string, Map<string, number>>({
+    ttlMs: PASSED_CLICK_TTL_MS,
   });
 
-  async function handleAgentButtonClick(
+  const clicksInFlight = new Set<string>();
+
+  const fieldChangesWaiting = new Map<string, ReturnType<typeof setTimeout>>();
+
+  async function passInteractionOn(
     event: SlackMessageAction,
+    post: SlackClickedPost,
+    instanceName: string,
+    what: string,
+    onDelivered: () => void,
+  ): Promise<void> {
+    const fields = channelFieldValues(post.fields, instanceName);
+    const held =
+      Object.keys(fields).length > 0
+        ? ` The post's fields hold ${JSON.stringify(fields)}.`
+        : "";
+    await handleInbound(
+      {
+        user: event.userId,
+        sender: { kind: "person", user: event.userId },
+        channel: event.channelId,
+        ts: post.clickedAt,
+        threadTs: post.threadTs ?? post.ts,
+        text: `${what}${held} This is not a typed message, so it has no message of its own: to react, name your post's ts. Slack does not check a form, so an empty field comes as null. The post stays as it is until you change it with edit_post.`,
+        teamId: event.teamId,
+      },
+      {
+        directMessage: isDirectMessageId(event.channelId),
+        click: { instanceName, onDelivered },
+      },
+    );
+  }
+
+  async function handleButtonClick(
+    event: SlackMessageAction,
+    post: SlackClickedPost,
     instanceName: string,
   ): Promise<void> {
-    const post = event.post;
-    if (!post || !gateway) return;
+    if (!gateway) return;
     const gw = gateway;
-    const key = messageKey(event.channelId, post.ts);
+    const label = post.label ?? "";
     const tell = (text: string) =>
-      gw.postEphemeral({
-        channel: event.channelId,
-        user: event.userId,
-        teamId: event.teamId,
-        ...(post.threadTs ? { threadTs: post.threadTs } : {}),
-        text,
-      });
-    const alreadyAnswered = () =>
-      tell("This was already answered, so your click was not passed on.");
-    if (answeredPosts.get(key)) return alreadyAnswered();
-    answeredPosts.set(key, true);
-    let delivered = false;
-    try {
-      const current = await gw
-        .getMessage({
+      gw
+        .postEphemeral({
           channel: event.channelId,
-          ts: post.ts,
-          ...(post.threadTs ? { threadTs: post.threadTs } : {}),
+          user: event.userId,
           teamId: event.teamId,
+          ...(post.threadTs ? { threadTs: post.threadTs } : {}),
+          text,
         })
-        .catch((err: unknown) => {
+        .catch((err: unknown) =>
           getLogger().warn(
             { channelId: event.channelId, error: formatError(err) },
-            "slack.button_click.post_unread",
-          );
-          return null;
-        });
-      if (!current)
-        return await tell(
-          "Couldn't read this post from Slack, so your click was not passed on. Click again in a moment.",
-        );
-      const blocks = (current.blocks ?? []) as ChannelBlock[];
-      if (channelBlockChoiceButtons(blocks).length === 0)
-        return await alreadyAnswered();
-      const showChoice = async () => {
-        const choice = `<@${event.userId}> chose: ${escapeMrkdwn(post.label)}`;
-        const answered = withChoiceMade(blocks, choice);
-        await gw.updateMessage({
-          channel: event.channelId,
-          ts: post.ts,
-          teamId: event.teamId,
-          text: [current.text ?? "", choice].filter(Boolean).join("\n"),
-          blocks:
-            countChannelBlocks(answered) > SLACK_MAX_BLOCKS
-              ? answered.filter((block) => block !== answered.at(-2))
-              : answered,
-          metadata: agentPostMetadata(
-            filesPostedApart(current),
-            madeByAgent(current),
+            "slack.interaction.notice_failed",
           ),
-        });
-        answeredPosts.delete(key);
-      };
-      const value = event.value ? ` Its value is "${event.value}".` : "";
-      await handleInbound(
-        {
-          user: event.userId,
-          sender: { kind: "person", user: event.userId },
-          channel: event.channelId,
-          ts: post.clickedAt,
-          threadTs: post.threadTs ?? post.ts,
-          text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message, so it has no message of its own: to react, name your post's ts.`,
-          teamId: event.teamId,
-        },
-        {
-          directMessage: isDirectMessageId(event.channelId),
-          click: {
-            instanceName,
-            onDelivered: () => {
-              if (delivered) return;
-              delivered = true;
-              void showChoice().catch((err: unknown) =>
-                getLogger().warn(
-                  { channelId: event.channelId, error: formatError(err) },
-                  "slack.button_click.update_failed",
-                ),
-              );
-            },
-          },
+        );
+    const postKey = messageKey(event.channelId, post.ts);
+    const fields = channelFieldValues(post.fields, instanceName);
+    const click = `${event.userId} ${event.actionId} ${JSON.stringify(fields)}`;
+    const inFlight = `${postKey} ${click}`;
+    if (clicksInFlight.has(inFlight)) return;
+    const now = Date.now();
+    if ((passedClicks.get(postKey)?.get(click) ?? 0) > now) {
+      await tell(
+        `Your click on "${label}" was already passed on. Wait for the answer.`,
+      );
+      return;
+    }
+    clicksInFlight.add(inFlight);
+    const value = event.value ? ` Its value is "${event.value}".` : "";
+    let delivered = false;
+    try {
+      await passInteractionOn(
+        event,
+        post,
+        instanceName,
+        `[button click] The button "${label}" on your post (ts ${post.ts}) was clicked.${value}`,
+        () => {
+          if (delivered) return;
+          delivered = true;
+          const stillHeld = [...(passedClicks.get(postKey) ?? [])].filter(
+            ([, until]) => until > now,
+          );
+          passedClicks.set(
+            postKey,
+            new Map([...stillHeld, [click, now + PASSED_CLICK_TTL_MS]]),
+          );
+          clicksInFlight.delete(inFlight);
+          void resolveAgentName(instanceName)
+            .catch(() => instanceName)
+            .then((name) =>
+              tell(`Your click on "${label}" was passed to ${name}.`),
+            );
         },
       );
     } finally {
-      if (!delivered) answeredPosts.delete(key);
+      clicksInFlight.delete(inFlight);
     }
+  }
+
+  function handleFieldChange(
+    event: SlackMessageAction,
+    post: SlackClickedPost,
+    instanceName: string,
+    name: string,
+  ): void {
+    const pass = () =>
+      passInteractionOn(
+        event,
+        post,
+        instanceName,
+        `[field change] The "${name}" field (${post.elementType}) on your post (ts ${post.ts}) changed to ${JSON.stringify(channelFieldValue(post.changed))}.`,
+        () => {},
+      ).catch((err: unknown) =>
+        getLogger().warn(
+          { channelId: event.channelId, error: formatError(err) },
+          "slack.interaction.field_change_failed",
+        ),
+      );
+    if (fieldChangeQuietMs <= 0) {
+      void pass();
+      return;
+    }
+    const key = `${messageKey(event.channelId, post.ts)} ${event.userId} ${event.actionId}`;
+    clearTimeout(fieldChangesWaiting.get(key));
+    const timer = setTimeout(() => {
+      fieldChangesWaiting.delete(key);
+      void pass();
+    }, fieldChangeQuietMs);
+    timer.unref();
+    fieldChangesWaiting.set(key, timer);
+  }
+
+  async function handleAgentInteraction(
+    event: SlackMessageAction,
+    action: AgentAction,
+  ): Promise<void> {
+    const post = event.post;
+    if (!post) return;
+    await match(action)
+      .with({ kind: "button" }, ({ agentId }) =>
+        handleButtonClick(event, post, agentId),
+      )
+      .with({ kind: "field" }, ({ agentId, name }) =>
+        handleFieldChange(event, post, agentId, name),
+      )
+      .exhaustive();
   }
 
   async function handleMessageAction(
     event: SlackMessageAction,
     replace: SlackReplaceMessage,
   ): Promise<void> {
-    const clickedAgent = agentButtonAgent(event.actionId);
-    if (clickedAgent !== null) {
-      if (!event.ephemeral) await handleAgentButtonClick(event, clickedAgent);
+    const agentAction = agentActionOf(event.actionId);
+    if (agentAction !== null) {
+      if (!event.ephemeral) await handleAgentInteraction(event, agentAction);
       return;
     }
     if (!event.ephemeral || !isCommandMenuAction(event.actionId)) return;
@@ -7447,7 +7510,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         channel: event.channel,
         user: slackUserId,
         teamId: event.teamId,
-        text: "The agent that posted this is not connected to this conversation any more, so your click did not reach it.",
+        text: "The agent that posted this is not connected to this conversation any more, so it did not get what you did here.",
       });
       return;
     }
@@ -9746,6 +9809,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
       if (replacement)
         await dropFiles(gw, target.teamId, deletePostFileIds(found.post));
+      passedClicks.delete(messageKey(target.id, edit.messageId));
       const threadTs = found.post.threadTs ?? found.post.ts;
       noteEngagedTurn(
         instanceName,

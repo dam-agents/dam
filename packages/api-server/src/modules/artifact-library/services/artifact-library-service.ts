@@ -3,6 +3,8 @@ import { match } from "ts-pattern";
 import {
   artifactSharingInputSchema,
   VIEWER_ALLOWLIST_MAX,
+  ARTIFACT_ICON_RULE,
+  isArtifactIcon,
 } from "api-server-api";
 import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
@@ -74,6 +76,13 @@ import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+function storedIcon(raw: string): string {
+  const icon = raw.trim();
+  if (!isArtifactIcon(icon))
+    throw new TRPCError({ code: "BAD_REQUEST", message: ARTIFACT_ICON_RULE });
+  return icon;
+}
+
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
 
 export interface ArtifactAgentDownloadTicket {
@@ -221,6 +230,7 @@ export function toLibraryArtifact(
   return {
     id: row.id,
     title: row.title,
+    icon: row.icon,
     slug: row.slug,
     kind: row.kind as ArtifactKind,
     contentType: effectiveContentType(row.fileName, row.contentType),
@@ -539,6 +549,7 @@ export function createArtifactLibraryService(
         blob.content.toString("utf8"),
         {
           title: row.title,
+          icon: row.icon,
           fileName: ref.fileName,
           ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
@@ -560,6 +571,7 @@ export function createArtifactLibraryService(
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
       if (attribution?.agentId) await ensureAgent(attribution.agentId);
+      const icon = input.icon === undefined ? null : storedIcon(input.icon);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;
@@ -602,6 +614,7 @@ export function createArtifactLibraryService(
           agentId,
           folderId: input.folderId ?? null,
           title: input.title,
+          icon,
           slug: generateSlug(),
           kind,
           contentType: stored.contentType,
@@ -661,6 +674,8 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
+      if (input.icon !== undefined)
+        patch.icon = input.icon === null ? null : storedIcon(input.icon);
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {

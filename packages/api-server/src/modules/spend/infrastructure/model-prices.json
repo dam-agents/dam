@@ -1,7 +1,7 @@
 {
-  "source": "https://github.com/BerriAI/litellm/blob/ff3983c1f627ad09a5e36e45cc92a0cec91afb72/model_prices_and_context_window.json",
-  "commit": "ff3983c1f627ad09a5e36e45cc92a0cec91afb72",
-  "committedAt": "2026-11-02T06:29:14Z",
+  "source": "https://github.com/BerriAI/litellm/blob/21215cebac633da4b2d4d0d29ef5557a240bf141/model_prices_and_context_window.json",
+  "commit": "21215cebac633da4b2d4d0d29ef5557a240bf141",
+  "committedAt": "2026-11-15T00:28:42Z",
   "models": {
     "claude-fable-5": {
       "cache_creation_input_token_cost": 0.0000125,
@@ -22,6 +22,18 @@
       "output_cost_per_token": 0.00005,
       "web_search_cost_per_query": 0.01,
       "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-fable-5-2": {
+      "cache_creation_input_token_cost": 0.00001,
+      "cache_creation_input_token_cost_above_1hr": 0.000016,
+      "cache_read_input_token_cost": 2e-7,
+      "input_cost_per_token": 0.000008,
+      "output_cost_per_token": 0.00004,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "fast": 2,
         "us": 1.1
       }
     },
@@ -74,6 +86,18 @@
       "output_cost_per_token": 0.00005,
       "web_search_cost_per_query": 0.01,
       "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-mythos-5-2": {
+      "cache_creation_input_token_cost": 0.00001,
+      "cache_creation_input_token_cost_above_1hr": 0.000016,
+      "cache_read_input_token_cost": 2e-7,
+      "input_cost_per_token": 0.000008,
+      "output_cost_per_token": 0.00004,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "fast": 2,
         "us": 1.1
       }
     },

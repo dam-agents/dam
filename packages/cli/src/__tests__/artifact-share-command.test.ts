@@ -68,6 +68,7 @@ function artifact(overrides: Partial<LibraryArtifact>): LibraryArtifact {
   return {
     id: "art-1",
     title: "Quarterly report",
+    icon: null,
     slug: "slug-1",
     kind: "markdown",
     contentType: "text/markdown",

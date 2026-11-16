@@ -199,10 +199,10 @@ export function alsoSpent(amounts: readonly SpendAmount[]): string {
   return `Also ${joinNames(amounts.map((amount) => ALSO_SPENT[amount.unit](amount.costMicros)))}.`;
 }
 
-export function highEstimates(calls: number): string {
+export function callsAreEstimates(calls: number): string {
   return calls === 1
-    ? "1 call is a high estimate."
-    : `${calls.toLocaleString("en-US")} calls are high estimates.`;
+    ? "1 call is an estimate."
+    : `${calls.toLocaleString("en-US")} calls are estimates.`;
 }
 
 export function apiSpendHelp(dayStart: string): string {
@@ -329,8 +329,8 @@ export const TOKENS_IN_OUT = "Tokens in / out";
 
 export function estimatedCallsNote(calls: number): string {
   return calls === 1
-    ? "1 call in these totals is a high estimate. Its real cost is likely lower."
-    : `${calls.toLocaleString("en-US")} calls in these totals are high estimates. Their real cost is likely lower.`;
+    ? "1 call in these totals is an estimate."
+    : `${calls.toLocaleString("en-US")} calls in these totals are estimates.`;
 }
 
 export const SPEND_BY_DAY = "Spend by day";

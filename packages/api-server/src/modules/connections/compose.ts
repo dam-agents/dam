@@ -1,14 +1,19 @@
 import type { Db } from "db";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  type Connection,
   type ConnectionsService,
   type HarnessCatalog,
   type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import { connectionEnv } from "./domain/connection-env.js";
 import { getLogger } from "../../core/logger.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
-import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import {
+  createConnectionsRepository,
+  listConnectionsByTemplate,
+} from "./infrastructure/connections-repository.js";
 import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
 import { createProviderBalanceSource } from "./infrastructure/provider-balance-source.js";
 import {
@@ -215,6 +220,47 @@ export function createGrantedConnectionTemplates(db: Db): {
         connectionId: c.id,
         templateId: c.templateId,
       }));
+    },
+  };
+}
+
+interface PricedConnection {
+  readonly connectionId: string;
+  readonly provider: string;
+  readonly env: Readonly<Record<string, string>>;
+  credential(): Promise<string | null>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Connections of one provider template with
+ * their env and a way to read their key, for the spend module's price
+ * reader. The key is read from the secret store only when a read asks for
+ * it, and only a key-header Connection has one.
+ */
+export function createPricedConnections(deps: {
+  db: Db;
+  secretStore: SecretStore;
+}): {
+  list(provider: string): Promise<PricedConnection[]>;
+  one(connectionId: string): Promise<PricedConnection | null>;
+} {
+  const repo = createConnectionsRepository(deps.db);
+  const priced = (connection: Connection): PricedConnection => ({
+    connectionId: connection.id,
+    provider: connection.templateId,
+    env: connectionEnv(connection),
+    credential: async () =>
+      connection.auth.kind === "header"
+        ? deps.secretStore.getField(connection.auth.valueRef)
+        : null,
+  });
+  return {
+    async list(provider) {
+      return (await listConnectionsByTemplate(deps.db, provider)).map(priced);
+    },
+    async one(connectionId) {
+      const connection = await repo.getById(connectionId);
+      return connection ? priced(connection) : null;
     },
   };
 }

@@ -1072,6 +1072,27 @@
       "when": 1794762475524,
       "tag": "0152_graduate_agent_telemetry",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794831873004,
+      "tag": "0153_provider_model_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1794831892596,
+      "tag": "0154_spend_calls_price_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794840726423,
+      "tag": "0155_artifact_icon",
+      "breakpoints": true
     }
   ]
 }

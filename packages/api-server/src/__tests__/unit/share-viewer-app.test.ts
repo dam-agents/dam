@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
 import { createByLinkHostGate } from "../../modules/artifact-library/viewer/by-link-host-gate.js";
-import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_REQUEST_TYPE,
+  artifactIconDataUrl,
+} from "api-server-api";
 
 import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
@@ -24,6 +28,7 @@ import {
   type ShareSession,
 } from "../../modules/artifact-library/domain/share-session.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import type { AgentFavicon } from "../../modules/artifact-library/infrastructure/agent-favicon.js";
 
 function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
   return {
@@ -32,6 +37,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     agentId: "agent-1",
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "Weekly digest",
     slug: "slug-a",
     kind: "html",
@@ -107,6 +113,7 @@ const unusedBridge: ShareBridgeService = {
 function appWith(
   viewer: ShareViewerService,
   tokens: Pick<RenderTokenService, "mint"> = renderTokens,
+  agentFavicon: AgentFavicon = () => Promise.resolve(null),
 ) {
   return createShareViewerApp({
     viewer,
@@ -121,6 +128,7 @@ function appWith(
     contentBaseUrl: "https://content.example.com",
     shareBaseUrl: "https://share.example.com",
     bridge: unusedBridge,
+    agentFavicon,
   });
 }
 
@@ -177,9 +185,66 @@ describe("share viewer app", () => {
     expect(html).toContain('src="https://content.example.com/a/slug-a?v=1"');
     expect(html).not.toContain("srcdoc=");
     expect(html).not.toContain("<h1>hello</h1>");
+    expect(html).toContain(
+      '<link rel="icon" type="image/svg+xml" href="/brand/icon.svg"/>',
+    );
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
+  });
+
+  // TEST_SCENARIO: The tab shows the avatar of the Agent that published the artifact; an uploaded artifact has no Agent and keeps the brand icon.
+  it("shows the publishing Agent's avatar as the tab icon", async () => {
+    const asked: string[] = [];
+    const favicon: AgentFavicon = (agentId, owner) => {
+      asked.push(`${owner}/${agentId}`);
+      return Promise.resolve("data:image/svg+xml,%3Csvg%2F%3E");
+    };
+    const published = await (
+      await appWith(publicViewer(), renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(published).toContain(
+      '<link rel="icon" href="data:image/svg+xml,%3Csvg%2F%3E"/>',
+    );
+    expect(published).not.toContain("/brand/icon.svg");
+
+    const uploaded = publicViewer({
+      resolveArtifact: () =>
+        Promise.resolve({
+          state: "ok",
+          artifact: artifactRow({ agentId: null }),
+        } satisfies SharedResolution),
+    });
+    const html = await (
+      await appWith(uploaded, renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(html).toContain("/brand/icon.svg");
+    expect(asked).toEqual(["o1/agent-1"]);
+  });
+
+  // TEST_SCENARIO: An artifact with its own icon shows that emoji in the tab, before its Agent's avatar, so the Agent's artifacts can be told apart; the avatar is not even looked up.
+  it("shows the artifact's own icon before the Agent's avatar", async () => {
+    const asked: string[] = [];
+    const favicon: AgentFavicon = (agentId) => {
+      asked.push(agentId);
+      return Promise.resolve("data:image/svg+xml,avatar");
+    };
+    const withIcon = publicViewer({
+      resolveArtifact: () =>
+        Promise.resolve({
+          state: "ok",
+          artifact: artifactRow({ icon: "📊" }),
+        } satisfies SharedResolution),
+    });
+    const html = await (
+      await appWith(withIcon, renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(html).toContain(
+      `<link rel="icon" href="${artifactIconDataUrl("📊")}"/>`,
+    );
+    expect(html).not.toContain("avatar");
+    expect(html).not.toContain("/brand/icon.svg");
+    expect(asked).toEqual([]);
   });
 
   /**

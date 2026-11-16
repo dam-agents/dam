@@ -37,6 +37,30 @@ const COST_CHART: ChannelBlock = {
   },
 };
 
+const REASON_FIELD: ChannelBlock = {
+  type: "input",
+  label: { type: "plain_text", text: "Reason" },
+  optional: true,
+  element: {
+    type: "plain_text_input",
+    action_id: "reason",
+    multiline: true,
+  },
+};
+
+const REGION_FIELD: ChannelBlock = {
+  type: "input",
+  label: { type: "plain_text", text: "Region" },
+  element: {
+    type: "static_select",
+    action_id: "region",
+    options: [
+      { text: { type: "plain_text", text: "EU west" }, value: "eu-west" },
+      { text: { type: "plain_text", text: "US east" }, value: "us-east" },
+    ],
+  },
+};
+
 export const BLOCK_REFERENCE: BlockReference[] = [
   {
     type: "layout",
@@ -143,7 +167,7 @@ export const BLOCK_REFERENCE: BlockReference[] = [
     type: "actions",
     purpose: "A row of buttons.",
     fields:
-      'elements: at most 25 buttons. A button: { type: "button", text: plain_text, url } opens a page; without url it sends a choice back and may carry a value of at most 2000 characters.',
+      'elements: at most 25 buttons, select menus or other elements. A button: { type: "button", text: plain_text, url } opens a page; without url its click reaches you and may carry a value of at most 2000 characters.',
     example: {
       type: "actions",
       elements: [
@@ -154,6 +178,28 @@ export const BLOCK_REFERENCE: BlockReference[] = [
         },
       ],
     },
+  },
+  {
+    type: "input",
+    purpose:
+      "A labelled field of a form. Its value reaches you with the click on a button of the same post.",
+    fields:
+      "label: required plain_text, at most 2000 characters. element: required, one field such as plain_text_input, number_input, static_select, checkboxes, radio_buttons or datepicker. hint: plain_text, at most 2000 characters. optional: boolean. dispatch_action: boolean; true sends each change at once in place of waiting for a button.",
+    example: REASON_FIELD,
+  },
+  {
+    type: "plain_text_input",
+    purpose: "A text field. It goes only in an input block.",
+    fields:
+      "action_id: the name its value comes back under. initial_value: string. multiline: boolean. min_length: 0 to 3000. max_length: 1 to 3000. placeholder: plain_text, at most 150 characters.",
+  },
+  {
+    type: "static_select",
+    purpose:
+      "A select menu. It goes in an input block, in an actions block, or beside a section as its accessory.",
+    fields:
+      "action_id: the name its value comes back under. options: at most 100 of { text: plain_text, value }. initial_option: one of the options. placeholder: plain_text, at most 150 characters. You get the selected option's value.",
+    example: REGION_FIELD,
   },
 ];
 
@@ -214,6 +260,34 @@ export const BLOCK_EXAMPLES: BlockExample[] = [
                 },
               },
             ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    shows:
+      "A form: two fields and a button. The click brings both values, as region and reason.",
+    blocks: [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "Deploy *2.4*?" },
+      },
+      REGION_FIELD,
+      REASON_FIELD,
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Deploy" },
+            style: "primary",
+            value: "deploy",
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Cancel" },
+            value: "cancel",
           },
         ],
       },

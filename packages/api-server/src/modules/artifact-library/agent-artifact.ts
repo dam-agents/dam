@@ -4,6 +4,7 @@ export function toAgentArtifact(artifact: LibraryArtifact) {
   return {
     id: artifact.id,
     title: artifact.title,
+    icon: artifact.icon,
     slug: artifact.slug,
     kind: artifact.kind,
     contentType: artifact.contentType,

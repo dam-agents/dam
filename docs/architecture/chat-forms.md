@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -153,6 +153,7 @@ The specification requires a reply to each call, and the chat sends it on its ow
 ## Where forms do not render
 
 - **Channels** — Slack and Telegram never announce the capability; see above.
+  In Slack an agent asks with the buttons and fields of a [Channel Card](channel-cards.md#interactions) instead.
 - **Read-only views**, such as a delegated agent's transcript, render surfaces without input.
 - **Feature off** — a collapsed note with the block's source.
 

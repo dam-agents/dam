@@ -10,6 +10,8 @@ description: >
 ---
 
 Publish with `create_artifact({ ..., interactive: true })`.
+Give every artifact an `icon`, as you give it a title, without being asked: exactly one emoji (`"📊"`) that tells it apart from the other artifacts you published, even ones on the same subject.
+It marks the artifact in the library and is the favicon of its browser tab.
 Only HTML supports prompt buttons and shared state.
 The artifact can never be public.
 The owner can share it with named people in the app's Share dialog; you cannot.

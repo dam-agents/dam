@@ -360,7 +360,7 @@ export function createMcpSession(
   const blocksInput = blocksSchema
     .optional()
     .describe(
-      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button with a url opens a page; one without a url sends the click back to you. Call describe_blocks for the rules and the newer blocks.",
+      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button with a url opens a page; any other button or field sends the answer back to you. Call describe_blocks for the rules and the newer blocks.",
     );
 
   const blocksOf = async (
@@ -444,7 +444,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_blocks",
-    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, buttons. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
+    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, buttons, a form. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
     {},
     async () =>
       textResult(
@@ -452,14 +452,18 @@ export function createMcpSession(
           format:
             "blocks is a list of Slack Block Kit blocks, written exactly as Slack defines them. The message text stays above the blocks, and reply and post may send blocks alone. Use blocks when structure helps the reader, such as numbers in tiles, a table or a chart; a conversational answer reads better as plain text.",
           rules: [
-            "Any Block Kit block is allowed, also one this reference does not list.",
-            "A button with a url opens a page. A button without a url sends a choice back to you: the click arrives as a message in the post's thread, and it names who clicked, the button's label and the value you set on it.",
-            "A click goes where a message in that thread goes. To get it in this session, ask with start_thread; a click on a plain post opens a new session, as a tagged reply under it does.",
-            "Anyone who sees the post may click. You decide whose click counts.",
-            "A post takes one answer: after the first click the platform removes the buttons that send a choice and adds a line that names who chose what. For an answer from several people, ask each one, post again, or put new buttons on the post with edit_post.",
-            "Buttons that send a choice work in Slack only. In Telegram they show in the text as options, and the person answers by typing. A private answer to a whisper takes link buttons only.",
-            "Selects, inputs, checkboxes, radio buttons, date and time pickers, overflow menus and workflow buttons are refused, because their answer cannot reach you.",
-            "The platform writes its own action_id on every button and drops the value of a button with a url.",
+            "Any Block Kit block and element is allowed, also one this reference does not list: buttons, select menus, checkboxes, radio buttons, date and time pickers, and input blocks with text, number, email and URL fields.",
+            "A button with a url opens a page. Every other interaction reaches you as a message in the post's thread: it names who acted, and what they did.",
+            "A click on a button without a url names the button's label and the value you set on it, and carries the values of every field of the post, under the action_id you gave each field. So a form is input blocks and one button: the values arrive with the click.",
+            "An element outside an input block, such as a select beside a section, sends each change at once, as a message of its own. Put a field in an input block when you want its value only with the form's button.",
+            "Slack does not check a form in a message: a click arrives also when a field is empty, and an empty field comes as null. Check the values yourself, and ask again by editing the post.",
+            "A field that sends each change is passed on once it has been quiet for a moment, with its last value. A file a person adds in a form does not reach you, only its name: ask for the file in the thread.",
+            "The platform never changes your post. After an answer, change it yourself with edit_post, passing the post's ts from the message: show the result, remove or replace the buttons, mark a field that needs a fix. Until you do, the buttons stay live.",
+            "The person who clicks a button gets a private note that the click was passed to you. The same click by the same person with the same field values is not passed on again for a minute, or until you edit the post.",
+            "An interaction goes where a message in that thread goes. To get it in this session, ask with start_thread; an interaction with a plain post opens a new session, as a tagged reply under it does.",
+            "Anyone who sees the post may act on it. You decide whose answer counts.",
+            "Buttons without a url and fields work in Slack only. In Telegram they show in the text, and the person answers by typing. A private answer to a whisper takes link buttons only.",
+            "The platform writes its own action_id on every button and field, drops the value of a button with a url, and gives each field's value back under the action_id you wrote. Give each field of a post its own action_id: a repeated one gets a number added, and a field with none is named by its type and position.",
             "A message holds at most 50 blocks: its text, your blocks with the blocks nested in them, and the footer.",
             "Slack checks the blocks. When it refuses them, nothing is sent and you get Slack's own error: fix the blocks, or send the message as text.",
           ],

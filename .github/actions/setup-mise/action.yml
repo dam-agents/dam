@@ -82,9 +82,9 @@ runs:
     # GitHub scopes a non-default ref's entry to that ref, so a release reads
     # main's entry and its own tag's, and nothing else.
     # jactionlint ignore=cache-poisoning
-    - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+    - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
       with:
-        version: "2026.10.5"
+        version: "2026.11.5"
         install_args: ${{ inputs.install_args }}
         cache: ${{ inputs.cache == 'true' && inputs.install_args == '' && runner.arch == 'X64' }}
         cache_save: ${{ github.event_name != 'pull_request' }}

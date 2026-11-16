@@ -4,7 +4,7 @@
 # until whoever moved it decides the key and re-declares these lines. That is a
 # tripwire, not a check: nothing compares the key, and `platform-init` and the
 # loader take the same decision with no file to fail on.
-tag=v1.33.0
-libkrun-commit=2b0b86da373f5fb500d2c284929dfc41d265bd19
-libkrunfw-commit=eab8d72d0778c8dd60ed9c97859145096670cc79
+tag=v1.35.1
+libkrun-commit=e8fed93d25c340c91cf7e9d2cbbbda06f67c7a7f
+libkrunfw-commit=0fae3853989a7fe5bf9921bc8e0d013e86c630e8
 libkrunfw-kernel-sha256=3c2f44ef6acc021a7ad444d9a2e6ec1ef488ff09368793d0004a6080f69d621e

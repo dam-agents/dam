@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn the_key_this_release_ships_rolls_a_pod_onto_the_loader_that_becomes_another() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert_eq!(reboot_id(dir).as_deref(), Some("runner-4"));
+        assert_eq!(reboot_id(dir).as_deref(), Some("runner-5"));
     }
 
     // TEST_SCENARIO: the runtime is what a machine booted, so a release built against another one reaches a running machine only by rebooting it. `reboot-id.pins` records the pins the key in `reboot-id` was declared for, and a `smolvm.pin` that no longer names one fails here: the failure is a tripwire, since nothing else makes whoever moves a pin decide the key. It compares no key, and it says nothing about `platform-init` or the loader, which take the same decision.
