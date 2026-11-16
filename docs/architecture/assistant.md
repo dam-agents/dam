@@ -1,11 +1,11 @@
 # Assistant
 
-Last verified: 2026-11-11
+Last verified: 2026-11-12
 
 ## Overview
 
 The **assistant** is the Agent the platform gives a person under its own brand's assistant name: it appears in their agent list and their sidebar like any other Agent, has its own avatar, chat, sessions, schedules, skills, providers and model, and it is the first thing they land in while it has never been used.
-It is not a second kind of Agent — it is an [Agent](agent-lifecycle.md), created through the ordinary create, so everything on [agent-lifecycle](agent-lifecycle.md), [sessions](sessions.md), [agent-editors](agent-editors.md), [channels](channels.md) and [agent-avatars](agent-avatars.md) applies to it unchanged: its owner may rename it, change its model and provider, disable it, give it editors, bind it to a Slack or Telegram conversation, and delete it.
+It is not a second kind of Agent — it is an [Agent](agent-lifecycle.md), created through the ordinary create, so everything on [agent-lifecycle](agent-lifecycle.md), [sessions](sessions.md), [agent-editors](agent-editors.md), [channels](channels.md) and [agent-avatars](agent-avatars.md) applies to it unchanged: its owner may rename it, change its model and provider, give it editors, bind it to a Slack or Telegram conversation, and delete it.
 What makes it different is who creates it, and the greeting its first chat opens with.
 
 Its name is the install's, not the code's: it comes from the brand (`brand.assistantName`, `Dammy` in the chart) and reaches the api-server and the UI the way every other brand value does ([platform-topology](platform-topology.md)).
@@ -53,7 +53,7 @@ The platform never acts on it alone either: an install never deletes a person's 
 
 ## Where it appears
 
-The record is the only thing that identifies it: the UI learns which Agent it is from the api-server and treats it as the assistant by that identity, so an Agent renamed, disabled, asleep or copied keeps being recognised.
+The record is the only thing that identifies it: the UI learns which Agent it is from the api-server and treats it as the assistant by that identity, so an Agent renamed, asleep or copied keeps being recognised.
 A person whose assistant has never been used lands in its chat rather than on Home; once it has been used, Home is where they land again.
 That answer is the record's own mark, set by the first Session that began after the person's last onboarding reset — and only while the install offers assistants — so an asleep assistant is decided without waking it, and an install that offers none writes nothing.
 A Session that began before the reset does not count however late it is reported: a runtime that boots re-reports the Sessions it already had, and those are no use of a first-timer's assistant.

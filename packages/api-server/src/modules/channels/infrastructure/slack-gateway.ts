@@ -1,4 +1,5 @@
 import type { SlackConversationLabel } from "api-server-api";
+import type { SlackPostOrigin } from "./slack-post-origin.js";
 import type { SlackSender } from "./slack-sender.js";
 
 export interface SlackImageFile {
@@ -74,7 +75,35 @@ export interface SlackMessageEditedEvent {
 
 export type SlackAck = (response?: { text: string }) => Promise<void>;
 
-export type SlackRespond = (text: string) => Promise<void>;
+export type SlackRespond = (
+  text: string,
+  blocks?: SlackBlock[],
+) => Promise<void>;
+
+export interface SlackMessageAction {
+  actionId: string;
+  value: string;
+  ephemeral: boolean;
+  userId: string;
+  channelId: string;
+  channelName?: string;
+  teamId: SlackWorkspace;
+}
+
+export interface SlackMessageReplacement {
+  text: string;
+  blocks: SlackBlock[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Puts new content in place of the message a
+ * clicked button sits in, or removes that message when given null. It goes
+ * through the response URL Slack sends with the click, so it works on an
+ * ephemeral message, which no other call can change.
+ */
+export type SlackReplaceMessage = (
+  message: SlackMessageReplacement | null,
+) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
@@ -106,6 +135,10 @@ export interface SlackGatewayHandlers {
   onMessageEdited: (event: SlackMessageEditedEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+  onMessageAction: (
+    event: SlackMessageAction,
+    replace: SlackReplaceMessage,
+  ) => Promise<void>;
   onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
 }
 
@@ -164,6 +197,7 @@ export interface SlackMessage {
   subtype?: string;
   botId?: string;
   botName?: string;
+  origin?: SlackPostOrigin;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
   attachments?: SlackImageFile[];

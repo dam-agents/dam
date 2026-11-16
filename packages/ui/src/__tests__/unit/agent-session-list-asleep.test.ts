@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An Agent's sidebar session list never waits for ever on an Agent that stays asleep. When the Agent is hibernated, no wake runs and the attention record holds none of its Sessions, because its wake failed or was never allowed (disabled, over its budget), the list reports a failed load whose retry wakes the Agent. While a wake runs, or while the record has not answered, it keeps loading instead.
+// TEST_OVERVIEW: An Agent's sidebar session list never waits for ever on an Agent that stays asleep. When the Agent is hibernated, no wake runs and the attention record holds none of its Sessions, because its wake failed or was never allowed (over its budget), the list reports a failed load whose retry wakes the Agent. While a wake runs, or while the record has not answered, it keeps loading instead.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";

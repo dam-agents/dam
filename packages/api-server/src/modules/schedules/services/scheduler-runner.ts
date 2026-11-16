@@ -89,7 +89,6 @@ export interface SchedulerRunnerDeps {
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   spendHold?: SpendHoldGate;
-  agentDisabled: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
 }
@@ -399,13 +398,6 @@ export function createSchedulerRunner(
       await emitChanged(sched.agentId, sched.id);
       return;
     }
-    if (action.kind !== "poke" && (await deps.agentDisabled(sched.agentId))) {
-      log(`fire: one-time schedule ${sched.id}'s agent is disabled; missed`);
-      noteFire("missed");
-      await deps.repo.writeStatus(sched.id, missedStatus());
-      await emitChanged(sched.agentId, sched.id);
-      return;
-    }
     const eventId = `${sched.id}:${fireAt.getTime()}`;
     if (action.kind === "poke") {
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
@@ -497,12 +489,6 @@ export function createSchedulerRunner(
       log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
       noteFire("held", { holdReason: "onboarding" });
       await hold("held: onboarding not complete");
-      return;
-    }
-    if (await deps.agentDisabled(sched.agentId)) {
-      log(`fire: agent ${sched.agentId} is disabled; holding`);
-      noteFire("held", { holdReason: "agent_disabled" });
-      await hold("held: agent disabled");
       return;
     }
 

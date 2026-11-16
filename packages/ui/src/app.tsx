@@ -28,6 +28,7 @@ import {
 import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
 import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
+import { useBackgroundUnread } from "./modules/platform/hooks/use-background-unread.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
@@ -53,6 +54,7 @@ import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
 import { useStore } from "./store.js";
 
 function useDocumentTitle() {
+  const marked = useBackgroundUnread();
   const view = useStore((s) => s.view);
   const settingsTab = useStore((s) => s.settingsTab);
   const sandboxSection = useStore((s) => s.sandboxSection);
@@ -85,8 +87,8 @@ function useDocumentTitle() {
     getBrand().name,
   );
   useEffect(() => {
-    document.title = title;
-  }, [title]);
+    document.title = marked ? `● ${title}` : title;
+  }, [title, marked]);
 }
 
 export default function App() {

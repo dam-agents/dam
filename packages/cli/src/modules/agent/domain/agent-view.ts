@@ -14,7 +14,6 @@ export interface AgentView {
   avatar?: string | null;
   env?: EnvVar[];
   state: AgentState;
-  disabled?: boolean;
   error?: string;
   overBudgetMessage?: string;
   podTerminationReason?: string;
@@ -23,10 +22,6 @@ export interface AgentView {
   starterKit?: string | null;
   defaultProvider?: AgentDefaultProvider;
   access?: { editors: readonly string[] };
-}
-
-export function displayState(agent: AgentView): string {
-  return agent.disabled ? "disabled" : agent.state;
 }
 
 const HARNESS_ORDER = "the first of yours its harness runs on";

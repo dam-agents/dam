@@ -28,7 +28,7 @@ describe("the assistant's row in Experimental features", () => {
     expect(assistantFeatureRow(brand)).toEqual({
       id: "dambledore",
       label: "Dambledore",
-      description: "Smart assistant that can control DAM for you",
+      description: "An assistant that can control DAM for you.",
     });
   });
 
@@ -37,7 +37,7 @@ describe("the assistant's row in Experimental features", () => {
     const other = { ...brand, name: "Platform", assistantName: "Ada" };
     expect(assistantFeatureRow(other)).toMatchObject({
       label: "Ada",
-      description: "Smart assistant that can control Platform for you",
+      description: "An assistant that can control Platform for you.",
     });
   });
 });

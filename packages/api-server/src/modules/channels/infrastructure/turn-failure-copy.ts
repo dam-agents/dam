@@ -74,10 +74,7 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
     return {
       kind: "plain",
       reason: "agent-stopped",
-      copy: () =>
-        err.disabled
-          ? "This agent is disabled by its owner — ask them to enable it."
-          : "This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.",
+      copy: () => "This agent is stopped right now — try again in a moment.",
     };
   /* UNIT_BOUNDARY_DESCRIPTION: the runtime refuses a turn for lack of a model only when no provider the agent holds serves it, so its refusal reads as the api-server's own no-provider failure. */
   if (isNoDefaultModelError(err) || refusedForNoModel(err)) {

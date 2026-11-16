@@ -330,6 +330,9 @@ export const S3_COMPATIBLE_TEMPLATE_ID = "s3-compatible";
 
 export const DAM_TEMPLATE_ID = "dam";
 
+/* UNIT_BOUNDARY_DESCRIPTION: the name the key minted for the Connection that drives this install carries. It is how a surface that is not the server tells that key from the owner's own, since the key list does not say which Connection holds a key. */
+export const damKeyName = (brandName: string) => `${brandName} connection`;
+
 export function providerTypeForTemplateId(
   templateId: string,
 ): ProviderPresetType | null {

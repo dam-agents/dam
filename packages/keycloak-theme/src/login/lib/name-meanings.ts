@@ -33,11 +33,6 @@ export function planMeaningSequence(
 export const MEANING_LINES = 3;
 
 export function splitMeaningLines(meaning: string): string[] {
-  const lines: string[] = [];
-  for (const word of meaning.split(/\s+/).filter(Boolean)) {
-    const startsLine = /^\p{Lu}/u.test(word) && lines.length < MEANING_LINES;
-    if (startsLine || lines.length === 0) lines.push(word);
-    else lines[lines.length - 1] += ` ${word}`;
-  }
-  return lines;
+  const lines = meaning.match(/^(\S.*?)\s+(A.*?)\s+(M.*)$/);
+  return lines ? lines.slice(1) : [meaning];
 }

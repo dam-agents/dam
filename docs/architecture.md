@@ -73,10 +73,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [channel-cards](architecture/channel-cards.md) — structured cards in agents' Slack and Telegram posts: the catalog, the check, native rendering and the text form.
-- [slack-threads](architecture/slack-threads.md) — a Slack thread a Session started: replies come back to it as turns.
-- [slack-channel-history](architecture/slack-channel-history.md) — an opted-in Slack binding lets its Agent read older messages and threads.
-- [slack-edits](architecture/slack-edits.md) — what a Slack message edit does.
-- [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
+- Slack in depth: [threads](architecture/slack-threads.md) a Session started, the [channel history](architecture/slack-channel-history.md) an Agent may read, [message edits](architecture/slack-edits.md), the [companion apps](architecture/slack-companion-apps.md) of other installs, and [what is guaranteed](architecture/slack-guarantees.md).
 - [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
@@ -86,7 +83,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs or from a link to one kit's repository, never from cluster state.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes; the [presets](architecture/connection-presets.md) catalogue; [GitHub](architecture/github-connections.md) sign-ins and App installations and the Connections made from them.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
-- [harness configuration](architecture/harness-config.md) — harness defaults and the session model list: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
+- [harness configuration](architecture/harness-config.md) — defaults and the model list: how a choice reaches the harness's file, where models are found, what shows for a stopped agent; [tool approval](architecture/tool-approval.md).
 - [profiles](architecture/profiles.md) — an owner's named harness, provider and model settings: what follows one, and the default a new agent starts on.
 - [owner model catalog](architecture/owner-model-catalog.md) — every model an owner's providers offer, listed by the api-server with no agent, for every routed picker.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.

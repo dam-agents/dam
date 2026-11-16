@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import {
+  sessionSettingsSchema,
+  toolApprovalSchema,
+} from "../harness-config/session-settings.js";
 import { startupItemDeclarationSchema } from "../processes/schemas.js";
 import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 import {
@@ -211,6 +214,7 @@ export const sessionDefaultsEventPayload = z.object({
   chat: sessionDefaultPair.nullable(),
   channel: sessionDefaultPair.nullable(),
   scheduled: sessionDefaultPair.nullable(),
+  toolApproval: toolApprovalSchema.nullish().catch(null),
 });
 export type SessionDefaultsEventPayload = z.infer<
   typeof sessionDefaultsEventPayload

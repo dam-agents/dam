@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-11-11
+Last verified: 2026-11-13
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -84,6 +84,7 @@ A Slack binding can also carry **channel history**, which lets its Agent read th
 A post by another Agent, another app or an incoming webhook starts turns the same way a person's post does: a tag routes it to one Agent, and in ambient mode it reaches the readers.
 This is what lets one Agent ask another for help, and an Agent react to a CI, alerting or deployment post, without a person posting again.
 Every Agent posts as the one bot, so the worker tells an Agent's post from the platform's own by its [Agent Footer](channel-turns.md#the-agent-footer); a footer-less bot post (a notice, a whisper root) is not any Agent's words and starts nothing.
+A footer on any other app's post is not read, except a listed [companion app's](slack-companion-apps.md), whose post is an agent's of another install.
 An Agent's own post **never starts a turn for that Agent**; every other Agent in the conversation still gets it.
 The exception is an Agent's **reply in an ambient round**: the round already hands it to the readers after it, so feeding it back as a new post would spend a second turn on words they were given — and a reply in the thread under a top-level message would run alongside the round, in that thread's own queue.
 So a reply an ambient turn posts with its reply tool is marked in its Agent Footer link, and a marked post reaches no reader; the mark travels with the post, so the check needs no timing and spares the same Agent's other posts.
@@ -265,7 +266,7 @@ The differences are transport, identity model, and where the bot token comes fro
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
   A notice that reaches nobody in Slack goes to Telegram instead (below), so a person gets one copy.
   Only the channel leader sends; other replicas reach it over the channel RPC.
-  `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
+  `login`/`logout` stay working but are not listed in the usage help (which advertises the other nine); the flows that need a linked identity still point users at `/platform login` in context.
 - **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.
@@ -283,6 +284,7 @@ The differences are transport, identity model, and where the bot token comes fro
   The list is never put on each post: a tag notifies the owner, and a name on every post is noise to everyone else.
   The owner lookups may outlast the three seconds Slack gives a slash command, so a slow list arrives through the command's response URL after an empty acknowledgement rather than in part; the response URL reaches the person even where the bot can no longer post.
   The notice is best-effort and never holds up the connect, and a Starter Kit posts its notices only once every channel it names is connected, since a later refusal deletes the Agent.
+- **The command menu.** `/platform` with no text answers with a private menu of the commands as buttons ([slack-commands](slack-commands.md)).
 - **Command look-alikes.** Commands run only from `/platform`; every mention reaches an Agent, `@bot whisper …` included, which opens no whisper.
   A person whose mention reads as a valid command also gets an ephemeral tip naming the `/platform` form; a mention opening with an Agent's name, and an Agent's or app's post, get none.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
@@ -315,7 +317,7 @@ The differences are transport, identity model, and where the bot token comes fro
   Name matching is over the Agents connected to that conversation only, whole-name and case-insensitive, longest name first — Agent names are not unique, so a name matching two of them resolves to the default rather than a guess.
   An addressed message in an unconnected conversation is refused with an ephemeral.
 - **Message intake.** The gateway subscribes to plain messages on three surfaces and pre-filters them all the same way: joins and other subtypes never reach the worker, and neither do the bot's own footer-less posts; an edit reaches it apart ([slack-edits](slack-edits.md)).
-  Every post that passes carries its **sender** — a person, an Agent (the bot's own post, named by its footer), or an app (any other bot or webhook, named by its username).
+  Every post that passes carries its **sender** — a person, an Agent (the bot's own post, named by its footer), a companion (a companion app's footed post), or an app (any other bot or webhook, named by its username).
   While the bot's own ids are unknown, every bot post is dropped, so an Agent's reply can never pass for an app's.
   A person's tag arrives on the mention path, so their plain-message copy is dropped; a bot post that tags the bot is handed to the mention path too, because Slack may not send it as a mention, and the worker takes each such post once.
   Surface then decides the route: **channel/group** messages feed ambient mode (relayed only when the binding has ambient on; everything else drops silently); **1:1 DM** messages feed the bound-DM relay (no mention needed); **group DM** plain messages are ignored — group DMs are mention-driven, so they arrive on the mention path.

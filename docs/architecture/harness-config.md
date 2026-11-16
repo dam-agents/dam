@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -18,7 +18,7 @@ It shows loading, unavailable and empty listings explicitly, with a retry for fa
 The catalog remains usable where discovery is not configured.
 Before a session starts, a routed picker picks harness, model, provider and effort in turn: a harness an owner provider runs, its models by family, each once, and a provider, one lacking the model disabled, with the reason; a model the provider lacks moves the pick to one with it, and a provider the agent lacks connects on pick.
 The old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
-A web terminal starts from a menu of harnesses: the empty chat's Browser Terminal card opens it, and so does the Web terminal row on the agent's General page.
+A web terminal starts from a menu of harnesses: the empty chat's Web terminal card opens it, and so does the Web terminal row on the agent's General page.
 The menu lists the harnesses the agent carries that a provider the owner holds accepts.
 Picking one stores its harness, with the first attached provider it accepts and no model, as the next terminal pair, and the terminal sends that pair when it connects.
 The terminal pair is its own: the menu neither reads nor changes the pair the session picker holds.
@@ -45,7 +45,7 @@ A session may also pick the settings its harness manifest lists under `sessionSe
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 An agent remembers one **chat default**, which preselects the next session, and two pairs of its own, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on; unset, they follow it.
 A pick in a chat saves the chat default, with the slots [profiles](profiles.md) describes.
-**Tool approval** (Claude Code's permission mode, Bob's approvals, Copilot's mode, whose Autopilot is Auto mode) is one session's own pick, in a picker shown where there are two choices: no default, profile, channel, schedule or Config panel holds one, a session that picks none runs on Auto mode (else Bypass), and Plan modes are offered nowhere.
+**Tool approval** is no part of a pair: a session picks its own, an agent may hold one for all its sessions, and no default, profile, channel, schedule or Config panel holds one ([tool approval](tool-approval.md)).
 An owner's named pairs, the defaults that follow them and a new agent's start are [profiles](profiles.md).
 Detaching a provider lists the defaults, channels, schedules and interactive pages that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
@@ -95,7 +95,7 @@ A default the model does not take is not sent, e.g. an effort on Haiku 4.5; Haik
 The picker offers no unset choice, so a change always names a value the harness applies.
 The Config panel shows only the settings a harness keeps for all its sessions, such a setting among them; the others are chosen in a session or in its default.
 The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.
-A session that names no mode starts on one the runtime derives from the catalog, whatever the agent's config file names — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
+A session that names no mode starts on the agent's tool approval, else on one the runtime derives from the catalog, whatever the agent's config file names — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
 A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
 Claude Code opts in, and its catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
@@ -213,17 +213,18 @@ The router stamps each forwarded call with `x-platform-session` (the session it 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
-No retries, as a second call is a second bill, but one: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn.
+No retries, as a second call is a second bill, but two: a call a model refuses for its images goes again with a note for each, as do that model's later calls, since a Session's history sends an image on every turn; one Claude refuses for another model's thinking goes again without the earlier thinking, later calls too.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
 
-**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
+**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions and Messages replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort that the model or its deployment refuses, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
 The effort level Claude Code persists, sent as `output_config.effort`, is rewritten to the nearest level a DeepSeek target's chat template knows, since that template refuses the whole call on a level it does not: Claude Code's `medium` default becomes `high`.
 
 Beyond the model routes the router serves each harness's **catalog endpoint** in the shape it reads, Claude Code's probe, and Pi's measured session cost from the ledger; before the first listing it answers 503, which a harness retries, and a harness with no router binding gets the same view under plain qualified names, the preferred work model first.
 A Bob call it has no route for (profile, team budget, docs search) goes to the Bob Shell Connection's gateway with its placeholder, outside the [meter](spend-limits.md#meter); the profile loses the region that would move Bob off the router and puts the pinned team and instance first, the agent's env over the Connection's; any other unrouted path gets a 404 and one log line.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for, and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
+Bob's `security` check, still named that, runs on CurveBender's Nemotron where none lists it.
 Claude Code's tier slots (manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
 The router moves such a **side call**, one Claude Code classes as auxiliary, a subagent's, a workflow agent's or a side reply (`x-claude-code-request-class`, sent since the image turns its gateway hint headers on) or stamps with a subagent's id, to the session provider's model of the same tier, else to the session's own model, when it names a tier of another provider, or a model its own provider no longer lists: the tier of the slot the id fills on that provider, the smallest where one id fills several, else the tier its word carries.
 A bare id Claude Code sends for a skill or an agent definition goes the same way when the session's provider lists neither that id nor a deployment of it; a bare id the provider lists resolves as any bare name does, on the session's provider first.

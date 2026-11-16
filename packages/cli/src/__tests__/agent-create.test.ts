@@ -63,7 +63,6 @@ function setup(connections: ConnectionView[] = [provider]) {
       get: getAgent,
       deleteAgent: vi.fn(),
       restart: vi.fn(),
-      setDisabled: vi.fn(),
       updateIdentity: vi.fn(),
       unlockedCharacters: vi.fn(),
       customAvatarsEnabled: vi.fn(),

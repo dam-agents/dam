@@ -1845,28 +1845,6 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async setDisabled(id, disabled) {
-      if (!(await ownsOrDeny(id, "agent.setDisabled")))
-        return err({ type: "AgentNotFound" });
-      const current = await deps.repo.get(id, deps.owner);
-      if (!current) return err({ type: "AgentNotFound" });
-      const infra = await deps.repo.setDisabled(id, disabled);
-      if (!infra) return err({ type: "AgentNotFound" });
-      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
-        category: "privileged",
-        actor: deps.actor ?? null,
-        actorKind: "user",
-        agentId: id,
-        result: "success",
-      });
-      emit({
-        type: EventType.AgentUpdated,
-        agentId: id,
-        ...(deps.owner ? { ownerSub: deps.owner } : {}),
-      });
-      return ok(await project(infra));
-    },
-
     async upgrade(id, expectedToImage) {
       const result = await executeTemplateUpgrade({
         actor: deps.actor,

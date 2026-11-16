@@ -6,7 +6,7 @@ import type {
 
 type ContainerRole = ProcessContainer["role"];
 
-export type ProcessGroupId = "turn" | "awake" | "hibernates" | "always-on";
+export type ProcessGroupId = "turn" | "awake" | "hibernates";
 
 export interface ProcessGroup {
   id: ProcessGroupId;
@@ -38,24 +38,16 @@ function byKindThenStart(a: ProcessRow, b: ProcessRow): number {
   );
 }
 
-export function groupProcesses(
-  running: readonly ProcessRow[],
-  alwaysOn: boolean,
-): ProcessGroup[] {
+export function groupProcesses(running: readonly ProcessRow[]): ProcessGroup[] {
   const sorted = running
     .filter((row) => row.kind !== "startup-item")
     .sort(byKindThenStart);
   const turn = sorted.filter((row) => row.kind === "turn");
   const background = sorted.filter((row) => row.kind !== "turn");
-  const groups: ProcessGroup[] = alwaysOn
-    ? [
-        { id: "turn", rows: turn },
-        { id: "always-on", rows: background },
-      ]
-    : [
-        { id: "turn", rows: turn },
-        { id: "awake", rows: background.filter((row) => row.keepsAwake) },
-        { id: "hibernates", rows: background.filter((row) => !row.keepsAwake) },
-      ];
+  const groups: ProcessGroup[] = [
+    { id: "turn", rows: turn },
+    { id: "awake", rows: background.filter((row) => row.keepsAwake) },
+    { id: "hibernates", rows: background.filter((row) => !row.keepsAwake) },
+  ];
   return groups.filter((group) => group.rows.length > 0);
 }

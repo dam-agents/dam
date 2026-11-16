@@ -4,6 +4,7 @@ import {
   harnessCapability,
   harnessConfigCatalog,
   routesByModelName,
+  agentToolApprovalSetting,
   routesSessionPairs,
   type HarnessCapability,
   type HarnessConfigCatalog,
@@ -198,6 +199,26 @@ export function createHarnessConfigService(deps: {
     async clearSessionDefault(agentId, kind) {
       await requireOwned(agentId);
       await deps.pairRepo.clear(agentId, kind);
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+    },
+
+    async setToolApproval(agentId, toolApproval) {
+      await requireOwned(agentId);
+      const carried = harnessesOf(await deps.getCapabilities(agentId)) ?? [];
+      const taken = carried.some(
+        (h) =>
+          agentToolApprovalSetting(h.harnessConfigCatalog, toolApproval, {
+            model: null,
+            unattended: false,
+          }) !== null,
+      );
+      if (toolApproval !== null && carried.length > 0 && !taken)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `none of this agent's harnesses takes the ${toolApproval} tool approval from the agent`,
+        });
+      await deps.pairRepo.writeToolApproval(agentId, toolApproval);
       await deps.publishDefaults(agentId);
       notifyDefaultChanged(agentId);
     },

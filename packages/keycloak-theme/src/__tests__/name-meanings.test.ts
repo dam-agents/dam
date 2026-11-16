@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: the sign-in page's heading spells out what the product name stands for.
-// TEST_OVERVIEW: The install sets the meanings as a JSON list of strings. The page starts on the first one, rolls through a few others picked at random, then comes back to the first one and stays there. Each meaning is drawn on three lines, a new line at each capitalized word.
+// TEST_OVERVIEW: The install sets the meanings as a JSON list of strings. The page starts on the first one, rolls through a few others picked at random, then comes back to the first one and stays there. Each meaning is drawn on three lines: a new line before the word that starts with A and before the word that starts with M.
 import { describe, expect, test } from "vitest";
 
 import {
@@ -74,32 +74,38 @@ describe("planMeaningSequence", () => {
 });
 
 describe("splitMeaningLines", () => {
-  test("puts each capitalized word on its own line", () => {
+  // TEST_SCENARIO: a meaning with more than one word between its letters: the line breaks fall before the word that starts with A and before the word that starts with M, not after every space.
+  test("starts a line at the first word with A, then at the first word with M", () => {
     expect(splitMeaningLines("Deploy Agents Massively")).toEqual([
       "Deploy",
       "Agents",
       "Massively",
     ]);
-  });
-
-  // TEST_SCENARIO: the heading is three lines tall, so a meaning with more capitalized words keeps the rest on the last line.
-  test("keeps the words after the third line on the last line", () => {
-    expect(splitMeaningLines("Drive Agents, Make Coffee")).toEqual([
-      "Drive",
-      "Agents,",
-      "Make Coffee",
-    ]);
-  });
-
-  test("keeps a lower-case word on the line before it", () => {
     expect(splitMeaningLines("Digital Army of Minions")).toEqual([
       "Digital",
       "Army of",
       "Minions",
     ]);
+    expect(splitMeaningLines("Denier of AI Mischief")).toEqual([
+      "Denier of",
+      "AI",
+      "Mischief",
+    ]);
+    expect(splitMeaningLines("Drive Agents, Make Coffee")).toEqual([
+      "Drive",
+      "Agents,",
+      "Make Coffee",
+    ]);
+    expect(splitMeaningLines("Distributed Actors of Malevolence")).toEqual([
+      "Distributed",
+      "Actors of",
+      "Malevolence",
+    ]);
   });
 
-  test("starts a line even when the meaning opens in lower case", () => {
-    expect(splitMeaningLines("  dam it ")).toEqual(["dam it"]);
+  // TEST_SCENARIO: a name that is not a meaning of the product's letters, as an install sets its brand name differently: it is not cut up.
+  test("keeps a meaning without the three letters on one line", () => {
+    expect(splitMeaningLines("Platform")).toEqual(["Platform"]);
+    expect(splitMeaningLines("Platform Name")).toEqual(["Platform Name"]);
   });
 });

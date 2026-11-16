@@ -71,7 +71,7 @@ import type { SecretStore } from "../secret-store/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
-import type { DamKeyPort } from "./domain/dam-connection.js";
+import type { DamKeyPort, DamSkillFile } from "./domain/dam-connection.js";
 
 export interface SecretRequestStores {
   pending: TtlStore<PendingSecretRequest>;
@@ -100,6 +100,7 @@ export interface ComposeConnectionsAtBootOpts {
   curveBenderDeployment?: boolean;
   damBaseUrl?: string;
   brandName?: string;
+  damSkill?: readonly DamSkillFile[];
   e2eEnabled?: boolean;
 }
 
@@ -111,6 +112,7 @@ export function composeConnectionsAtBoot(
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
       ...(opts.damBaseUrl ? { damBaseUrl: opts.damBaseUrl } : {}),
       ...(opts.brandName ? { brandName: opts.brandName } : {}),
+      ...(opts.damSkill ? { damSkill: opts.damSkill } : {}),
       curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );

@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 
 ## Overview
 
@@ -54,7 +54,6 @@ When a fire is due:
 
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
 The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
-A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
 A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
 That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
 
@@ -93,7 +92,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence.
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
-  Neither the onboarding hold nor the disabled hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; a task due while its Agent is disabled waits out the enable inside its delivery window.
+  The onboarding hold does not apply — a hold guards a cadence, and skipping a single occurrence would lose the task outright.
   A [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) only delays it the same way: the fire records nothing and re-arms for the next UTC midnight, when the limit starts again, and the owner setting or continuing a limit re-arms it at once.
   A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
@@ -114,6 +113,7 @@ If that session is gone by then, *continue* runs the task in a fresh session ins
 An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply.
 Since an agent may create one from any Session, a scheduled one included (a retry, the next check-back), a buggy task could schedule itself without end; agent-created one-time schedules are therefore bounded by how many may wait at once and how many may be created in an hour, both deployment settings.
 Users are not bound by them.
+The web UI's schedule form offers one, beside Repeat, only with the `one-time-tasks` [experimental feature](features.md) on; without it the schedules list still shows each one-time task, as a row that can be deleted but not edited, so its owner can see and cancel work that will wake the Agent.
 A starter kit cannot declare one: an absolute moment means nothing in a kit applied at any time.
 
 ## Precheck
@@ -196,6 +196,7 @@ A new schedule names a **profile** rather than its own choices: one harness, mod
 Its form opens on the profile the agent's most recently created schedule runs on, else the chat profile, else none, so it follows the agent's default, and picks in the chat's own picker panel for a schedule with a reason of its own.
 The picker sets the subagent slot beside the primary, kept as the chat default keeps it: a profile, values of its own, or neither, which lets the agent pick, and a fire runs on both slots.
 The form saves an own pick only with a model; a schedule that keeps no choice of its own, and so follows the agent's model for schedules, is the one exception, and its form shows that default's values as a hint, not as a selection.
+The panel names the default's Connection while nothing is picked, and a harness or provider picked there starts on the default's model where the new harness and Connection offer it, as a profile's panel does.
 A schedule names a profile or its own values, never both: a save that names the profile keeps it, and one that gives values detaches it, keeping the profile's values for the choices it did not give.
 A profile that cannot run on the agent leaves the fire on the pair it resolves, the agent's scheduled default, and the schedule's row still names the reason its profile cannot run.
 Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
@@ -243,7 +244,7 @@ The runtime cannot tell the two apart, which is the point — a check that allow
 What it does not do is behave like an occurrence:
 
 - **The cadence is untouched.** No next occurrence is computed and none is armed, so trying a schedule out never shifts when it next fires — and the fire carries an identity of its own rather than an occurrence's, so the Agent's per-fire dedup cannot conflate it with the occurrence it lands beside.
-- **Quiet hours do not suppress it, and neither does being disabled.** Both govern *occurrences*; this run was asked for by hand.
+- **Quiet hours do not suppress it.** They govern *occurrences*; this run was asked for by hand.
   A paused schedule is also the one most likely to be under construction, and enabling it just to try it would move its next occurrence — the thing the action exists to avoid.
 - **A run that happens stamps the last-run pair** like any other, because that stamp means *the last fire that actually ran* and is what the next Precheck's "anything new since last time?"
   measures from — a manual run that did the work must not leave the next check to find it again.

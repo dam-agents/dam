@@ -13,6 +13,7 @@ import {
   type PropsWithChildren,
   type ReactElement,
   type ReactNode,
+  useEffect,
   useState,
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -248,10 +249,22 @@ vi.mock("@radix-ui/react-dropdown-menu", async (importOriginal) => {
 vi.mock("@/components/ui/popover", () => {
   const passthrough = ({ children }: PropsWithChildren) =>
     createElement(Fragment, null, children);
+  const Content = ({
+    children,
+    onOpenAutoFocus,
+  }: PropsWithChildren<{ onOpenAutoFocus?: (event: unknown) => void }>) => {
+    useEffect(() => {
+      onOpenAutoFocus?.({
+        preventDefault: () => {},
+        currentTarget: document.body,
+      });
+    }, [onOpenAutoFocus]);
+    return createElement(Fragment, null, children);
+  };
   return {
     Popover: passthrough,
     PopoverTrigger: passthrough,
-    PopoverContent: passthrough,
+    PopoverContent: Content,
     PopoverClose: passthrough,
   };
 });
@@ -283,6 +296,7 @@ vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
   useProviderUsage: () => () => ({
     kinds: [],
     schedules: [],
+    turnedOffSchedules: 0,
     pages: [],
     profiles: [],
   }),
@@ -326,12 +340,18 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         {
           name: "claude-code",
           displayName: "Claude Code",
-          providers: ["ibm-litellm", "anthropic"],
+          description: "Anthropic's coding agent",
+          providers: ["ibm-litellm", "curve-bender", "anthropic", "bedrock"],
         },
         {
           name: "codex",
           displayName: "Codex",
-          providers: ["ibm-litellm"],
+          providers: ["ibm-litellm", "curve-bender", "openai"],
+        },
+        {
+          name: "hermes",
+          displayName: "Hermes",
+          providers: ["ibm-litellm", "curve-bender", "openai"],
         },
       ],
     },
@@ -632,6 +652,45 @@ describe("the new session panel", () => {
     expect(document.activeElement).toBe(curve);
   });
 
+  /** TEST_SCENARIO: the panel opens on the fields while the profile in use is the only profile there is (QA: every new agent runs on the one profile "Default", so the chip and "Use a different provider" opened a list with one entry, and the provider choice was one hop further). */
+  it("opens on the fields while one profile is the only one", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    profilesState = [profile()];
+    const node = mount(picker());
+    expect(node.textContent).not.toContain("Saved profiles");
+    expect(node.textContent).toContain("Using profile");
+    expect(menuTrigger(node, "harness")).toBeDefined();
+  });
+
+  /** TEST_SCENARIO: once there are two profiles to choose between, the panel opens on their list, which is what a picker following a profile is for then. */
+  it("opens on the saved profiles once there are two", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    profilesState = [profile(), profile({ id: "p2", name: "Second" })];
+    const node = mount(picker());
+    expect(node.textContent).toContain("Saved profiles");
+  });
+
+  /** TEST_SCENARIO: "Use a different provider" in the CurveBender notice asks which provider to use, so the panel it opens lands on that row rather than on the harness above it. */
+  it("opens on the Provider row when the notice asked for a provider", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+    };
+    mount(picker({ initialFocus: "provider" }));
+    expect(document.activeElement?.getAttribute("aria-label")).toContain(
+      "Provider:",
+    );
+  });
+
   /** TEST_SCENARIO: a greyed provider cannot be picked at all: clicking it or pressing Enter or Space on it changes no chat default and saves nothing; an enabled provider is applied exactly once. */
   it("picks a provider once, and never a greyed one", () => {
     state.chosen = {
@@ -711,6 +770,14 @@ describe("the new session panel", () => {
         provider: "curve",
         model: "cb/rits/zai-org/glm-5-3",
       }),
+    );
+  });
+
+  /** TEST_SCENARIO: the Harness menu says what each harness is, so a person picking between six names has a sentence to go on (QA: "Harness" was the first field of every picker with no hint what any of the names means). */
+  it("describes each harness in the harness menu", () => {
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    expect(openMenu(node, "Harness").textContent).toContain(
+      "Anthropic's coding agent",
     );
   });
 
@@ -933,7 +1000,7 @@ describe("the new session panel", () => {
     );
   });
 
-  /** TEST_SCENARIO: Save as a profile sits in the More options header, and a pick that came from a profile offers to update it there. */
+  /** TEST_SCENARIO: Save as a profile sits in the More options header. */
   it("offers Save as a profile in the More options header", () => {
     const collapsed = renderToStaticMarkup(picker());
     expect(collapsed).not.toContain("Save as profile");
@@ -946,21 +1013,22 @@ describe("the new session panel", () => {
     const node = mount(picker());
     openMore(node);
     expect(node.textContent).toContain("Save as profile");
+  });
 
+  /** TEST_SCENARIO: a pick that came from a profile offers to update it, not only to save a new one. */
+  it("offers to update the profile a pick came from", () => {
     profilesState = [profile()];
     state.chosen = {
       harness: "pi",
-      provider: "curve",
-      model: "cb/rits/zai-org/glm-5-3",
+      provider: "ibm",
+      model: "ibm/azure/gpt-5.5",
     };
-    act(() => root!.unmount());
-    root = null;
-    container.remove();
-    const picked = mount(picker());
-    profileRow(picked, "Fast review");
-    click(picked, "Back to custom");
-    openMore(picked);
-    expect(picked.textContent).toContain("Save as a new profile");
+    const node = mount(picker());
+    click(node, "Use a profile");
+    profileRow(node, "Fast review");
+    click(node, "Back to custom");
+    openMore(node);
+    expect(node.textContent).toContain("Save as a new profile");
   });
 
   /** TEST_SCENARIO: a harness picked without a model clears it, and the pair waits for a model there instead of saving a chat default the server would refuse. */
@@ -1075,6 +1143,7 @@ describe("the saved profiles behind Use a profile", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     click(node, "Edit profile");
     expect(state.navigateSettings).toHaveBeenCalledWith("profiles", {
       profileId: "p1",
@@ -1092,6 +1161,7 @@ describe("the saved profiles behind Use a profile", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     act(() =>
       [...node.querySelectorAll<HTMLElement>("button")]
         .find((b) => b.textContent?.includes("Back to custom"))
@@ -1167,7 +1237,6 @@ describe("the saved profiles behind Use a profile", () => {
       model: "cb/rits/zai-org/glm-5-3",
     };
     const node = mount(picker());
-    click(node, "Back to custom");
     expect(node.textContent).toContain("Using profile “Deep review”");
     act(() =>
       [...node.querySelectorAll<HTMLElement>("button")]
@@ -1221,8 +1290,20 @@ describe("the saved profiles behind Use a profile", () => {
     });
   });
 
-  /** TEST_SCENARIO: a profile that cannot run here stays listed, disabled, with its reason and the one action that fixes it. */
-  it("keeps an unavailable profile listed with its reason", () => {
+  /** TEST_SCENARIO: a profile whose harness this agent cannot offer is not offered at all, so nobody picks it into a pair that cannot run (QA: a Hermes profile, with the Hermes feature off, was offered in a Codex agent's chip, and picking it silently ran the agent on Pi). */
+  it("leaves out a profile whose harness this agent cannot run", () => {
+    profilesState = [
+      profile({ harness: "hermes", name: "qa-hermes" }),
+      profile({ id: "p2", name: "runs here" }),
+    ];
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    click(node, "Use a profile");
+    expect(node.textContent).toContain("runs here");
+    expect(node.textContent).not.toContain("qa-hermes");
+  });
+
+  /** TEST_SCENARIO: a profile the owner catalog says cannot run here is left out too, rather than offered and refused on the pick. */
+  it("leaves out a profile that cannot run here", () => {
     profilesState = [
       profile({
         id: "p2",
@@ -1379,6 +1460,296 @@ describe("a config page's picker", () => {
     expect(menuTrigger(node, "model")).toBeDefined();
     act(() => toggle.click());
     expect(target.agentDefault.onClear).toHaveBeenCalled();
+  });
+});
+
+describe("a pick that follows a default", () => {
+  /* UNIT_BOUNDARY_DESCRIPTION: one family tier, two names for its model: CurveBender's and IBM's. */
+  const tierCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("cb", "rits/zai-org/glm-5-3")],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "ibm",
+        alias: "ibm",
+        template: "ibm-litellm",
+        displayName: "IBM",
+        status: "listed" as const,
+        listedAt: null,
+        models: [modelView("ibm", "zai-org/glm-5-3")],
+      },
+    ],
+  });
+  const deepseek = "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash";
+  const glm = "cb/rits/zai-org/glm-5-3";
+  const shared = {
+    id: "shared",
+    name: "Shared",
+    type: "curve-bender",
+    templateId: "curve-bender-deployment",
+  };
+  const twoCurveCatalog = () => ({
+    harness: "pi",
+    routed: true,
+    providers: [
+      {
+        connectionId: "curve",
+        alias: "cb",
+        template: "curve-bender",
+        displayName: "Curve",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+      {
+        connectionId: "shared",
+        alias: "cb",
+        template: "curve-bender-deployment",
+        displayName: "Shared",
+        status: "listed" as const,
+        listedAt: null,
+        models: [
+          modelView("cb", "rits/zai-org/glm-5-3"),
+          modelView("cb", "rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+        ],
+      },
+    ],
+  });
+  const emptySlots = {
+    profileId: null,
+    pair: null,
+    platformSubagentProfileId: null,
+    platformSubagentSettings: null,
+  };
+  const targetOf = (overrides: Record<string, unknown> = {}) => ({
+    slots: emptySlots,
+    label: "Schedule harness and model",
+    placeholder: "The agent's model for schedules",
+    defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    onChoose: vi.fn(),
+    ...overrides,
+  });
+  const providerRow = (node: ParentNode) =>
+    node.querySelector<HTMLElement>('[aria-label^="Provider:"]');
+
+  /** TEST_SCENARIO: with nothing picked, the panel's Provider row names the Connection the default runs on, not the first one that runs the harness (QA: two CurveBender Connections list one alias). */
+  it("shows the default's provider while no model is picked", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(picker({ target: targetOf() }));
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a provider with no model picked starts on the default's model, which both Connections offer, not on the menu's first model. */
+  it("starts a picked provider on the default's model", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    pickMenu(node, "Provider", "Curve");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "pi",
+        provider: "curve",
+        model: deepseek,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a pair's own Connection is what the Provider row shows, even where another Connection of the same alias lists the same model name, so a pick reads back as the Connection it was made on. */
+  it("reads a pair's provider beside its twin", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: glm };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: a harness switch whose current Connection cannot run the new harness lands on the default's Connection, not the first one that can, so a pick never moves to the own-key twin by accident. */
+  it("keeps the default's Connection when the current one cannot run the harness", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared, { id: "oai", name: "OpenAI", type: "openai" }];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
+      },
+      defaultPair: { harness: "codex", provider: "shared", model: deepseek },
+    });
+    const node = mount(
+      picker({
+        target,
+        defaultHarness: "codex",
+        carried: [...carried, { ...carried[0]!, name: "codex" }, claudeCode],
+      }),
+    );
+    pickMenu(node, "Harness", "Claude Code");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ harness: "claude-code", provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: saving a pick on the shared CurveBender as a profile keeps that Connection's template, so the profile runs where the pick does and never on the own-key twin. */
+  it("saves a pick as a profile on its own template", () => {
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    state.chosen = { harness: "pi", provider: "shared", model: deepseek };
+    const node = mount(picker());
+    openMore(node);
+    click(node, "Save as profile");
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Profile name"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Shared review");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(document.body, "Save profile");
+    expect(state.profileMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+        model: deepseek,
+      }),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a schedule or a channel following a profile on the shared CurveBender reads that Connection, not the own-key twin that also lists the model. */
+  it("reads a profile's own Connection beside its twin", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const node = mount(
+      picker({
+        target: targetOf({ slots: { ...emptySlots, profileId: "p1" } }),
+      }),
+    );
+    expect(providerRow(node)?.textContent).toBe("Shared");
+  });
+
+  /** TEST_SCENARIO: picking a profile takes the Connection of the profile's template, so a pick on the shared CurveBender never moves to the own-key twin that lists the same model. */
+  it("picks a profile onto its own Connection", () => {
+    profilesState = [
+      profile({
+        name: "Shared review",
+        providerTemplate: "curve-bender-deployment",
+      }),
+    ];
+    state.catalog = twoCurveCatalog();
+    state.granted = [shared];
+    const target = targetOf();
+    const node = mount(picker({ target }));
+    click(node, "Use a profile");
+    profileRow(node, "Shared review");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "shared" }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a family tier that holds another provider's name for the model still reads the pair's own model, so a stale Connection never names the row while the pair holds another provider's name for it. */
+  it("reads the pair's model inside a shared family tier", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "cb/rits/zai-org/glm-5-3",
+    };
+    const node = mount(picker());
+    expect(providerRow(node)?.textContent).toBe("Curve");
+  });
+
+  /** TEST_SCENARIO: a harness switch inherits the default's model only where the Connection it keeps offers the model; otherwise it takes that Connection's first model instead of moving the pick to another Connection. */
+  it("keeps the chosen Connection when it does not offer the default's model", () => {
+    state.catalog = tierCatalog();
+    state.granted = [shared];
+    const target = targetOf({
+      slots: {
+        ...emptySlots,
+        pair: { harness: "pi", provider: "ibm", model: null },
+      },
+    });
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        provider: "ibm",
+        model: "ibm/zai-org/glm-5-3",
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  /** TEST_SCENARIO: a harness switch takes the default's model where the new harness offers it, not the first model the harness lists. */
+  it("takes the default's model on a harness switch", () => {
+    state.catalog = twoCurveCatalog();
+    state.owned = [shared];
+    state.granted = [shared];
+    const target = targetOf({
+      defaultPair: { harness: "pi", provider: "shared", model: deepseek },
+    });
+    const node = mount(
+      picker({
+        target,
+        carried: [...carried, { ...carried[0]!, name: "codex" }],
+      }),
+    );
+    pickMenu(node, "Harness", "Codex");
+    expect(target.onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        provider: "shared",
+        model: deepseek,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });
 
@@ -1643,6 +2014,7 @@ describe("an open session's picker", () => {
       }),
     ];
     const node = mount(session({ model: "ibm/aws/claude-opus-5-5" }));
+    click(node, "Using profile");
     profileRow(node, "Fast review");
     click(node, "Back to custom");
     openMore(node);
@@ -1835,7 +2207,6 @@ describe("the slots a pick stores", () => {
       settings: { mode: "high" },
     };
     const node = mount(picker());
-    click(node, "Back to custom");
     openMore(node);
     pickMenu(node, "Subagent model", "Claude Opus 5.5");
     const [, , , , references] = lastCall(state.remember);
@@ -1872,7 +2243,6 @@ describe("the subagent a page inherits from its profile", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
-    click(node, "Back to custom");
     expect(node.textContent).toContain("Subagents");
     expect(menuTrigger(node, "subagent-model")).toContain("GLM 5.3");
     pickMenu(node, "Model", "Claude Haiku 5.5");
@@ -1896,6 +2266,7 @@ describe("the subagent a page inherits from its profile", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
+    click(node, "Using profile");
     profileRow(node, "Deep review");
     click(node, "Back to custom");
     click(node, "Save as a new profile");
@@ -2035,6 +2406,7 @@ describe("the profiles view", () => {
       model: "ibm/aws/claude-opus-5-5",
     };
     const node = mount(picker());
+    click(node, "Using profile");
     expect(node.textContent).toContain("Saved profiles");
     expect(node.textContent).not.toContain("More options");
     expect(node.querySelector('[id$="-model"]')).toBeNull();
@@ -2103,7 +2475,6 @@ describe("references kept apart from effective values", () => {
       settings: { mode: "high" },
     };
     const first = mount(picker());
-    click(first, "Back to custom");
     pickMenu(first, "Model", "Claude Haiku 5.5");
     const [, customPair, , , customReferences] = lastCall(state.remember);
     expect(customPair.model).toBe("ibm/aws/claude-haiku-5-5");
@@ -2135,7 +2506,6 @@ describe("references kept apart from effective values", () => {
       slots: { ...emptySlots, profileId: "p1" },
     });
     const node = mount(picker({ row: true, target }));
-    click(node, "Back to custom");
     pickMenu(node, "Subagent model", "Same as agent");
     const [stored, references, effective] = lastCall(target.onChoose);
     expect(stored.settings?.["platformSubagent.model"]).toBeUndefined();

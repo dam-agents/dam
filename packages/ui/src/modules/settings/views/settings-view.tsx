@@ -20,6 +20,7 @@ import { NewAgentDefaultPicker } from "../../profiles/components/new-agent-defau
 import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
+import { ThinkingSetting } from "../../sessions/components/thinking-setting.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AboutTab } from "../components/about-tab.js";
@@ -130,6 +131,7 @@ export function SettingsView() {
             </div>
 
             <ToolActivitySetting />
+            <ThinkingSetting />
           </div>
         )}
 

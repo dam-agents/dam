@@ -23,24 +23,24 @@ export function RevealToken({ plaintext, onClose }: Props) {
 
   return (
     <>
-      <DialogHeader title="Save this token now" />
+      <DialogHeader title="Save this key now" />
       <DialogBody>
         <p className="text-sm text-muted-foreground mb-4">
-          This is the only time the token will be shown. If you lose it, revoke
+          This is the only time the key will be shown. If you lose it, revoke
           this key and create a new one.
         </p>
         <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border border-border font-mono text-xs">
           <code className="flex-1 break-all">{plaintext}</code>
           <CopyButton
             value={plaintext}
-            label="Copy token"
+            label="Copy key"
             size="icon-sm"
             onResult={setCopyState}
           />
         </div>
         {copyState === "failed" && (
           <p className="text-xs text-danger mt-2">
-            Couldn't copy automatically. Select the token above and copy it
+            Couldn't copy automatically. Select the key above and copy it
             manually.
           </p>
         )}

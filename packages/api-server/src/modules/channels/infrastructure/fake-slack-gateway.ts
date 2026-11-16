@@ -3,6 +3,8 @@ import { FileTooLargeError } from "./slack-gateway.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import type { SlackSender } from "./slack-sender.js";
 import type {
+  SlackMessageAction,
+  SlackMessageReplacement,
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackGateway,
@@ -81,6 +83,13 @@ export type FiredSlackCommand = Omit<
   teamId?: string;
   triggerId?: string;
 };
+export type FiredSlackMessageAction = Omit<
+  SlackMessageAction,
+  "teamId" | "ephemeral"
+> & {
+  ephemeral?: boolean;
+  teamId?: string;
+};
 export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
   teamId?: string;
 };
@@ -101,6 +110,8 @@ export interface FakeSlackGateway extends SlackGateway {
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
+  fireMessageAction(event: FiredSlackMessageAction): Promise<void>;
+  readCommandMessage(): SlackMessageReplacement | null;
   fireSessionStopped(event: FiredSlackSessionStop): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   readUpdates(): SlackUpdateMessage[];
@@ -225,6 +236,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
   const updates: SlackUpdateMessage[] = [];
+  let commandMessage: SlackMessageReplacement | null = null;
   const channelsByWorkspace = new Map<string, FakeSlackChannel[]>();
   let history: SlackMessage[] = [];
   let modelsThreads = false;
@@ -240,6 +252,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
+  const withOrigin = <T extends SlackMessage>(message: T): T =>
+    message.origin === undefined &&
+    botUserId !== null &&
+    message.user === botUserId
+      ? { ...message, origin: "own" }
+      : message;
   const fileBytes = new Map<string, Buffer>();
   const fileInfos = new Map<string, SlackFileInfo>();
 
@@ -285,6 +303,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       messagesByRef.set(`${args.channel}:${ts}`, {
         ts,
         text: args.text,
+        origin: "own",
         ...(botUserId ? { user: botUserId } : {}),
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
         ...(args.blocks ? { blocks: args.blocks } : {}),
@@ -359,11 +378,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      return threadPageOf(history, args, modelsThreads);
+      const page = threadPageOf(history, args, modelsThreads);
+      return { ...page, messages: page.messages.map(withOrigin) };
     },
 
     async getMessage(args) {
-      return messagesByRef.get(`${args.channel}:${args.ts}`) ?? null;
+      const found = messagesByRef.get(`${args.channel}:${args.ts}`);
+      return found ? withOrigin(found) : null;
     },
 
     async getChannelHistory(args) {
@@ -373,7 +394,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         modelsThreads,
       ).reverse();
       return {
-        messages: newestFirst.slice(0, args.limit),
+        messages: newestFirst.slice(0, args.limit).map(withOrigin),
         hasMore: newestFirst.length > args.limit,
       };
     },
@@ -394,6 +415,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       messagesByRef.set(`${args.channelId}:${ts}`, {
         ts,
         text: text ?? "",
+        origin: "own",
         ...(botUserId ? { user: botUserId } : {}),
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
         ...(args.blocks ? { blocks: args.blocks } : {}),
@@ -524,6 +546,23 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       await requireHandlers().onViewSubmission(event);
     },
 
+    async fireMessageAction(input) {
+      await requireHandlers().onMessageAction(
+        {
+          ...input,
+          ephemeral: input.ephemeral ?? true,
+          teamId: input.teamId ?? FAKE_WORKSPACE,
+        },
+        async (message) => {
+          commandMessage = message;
+        },
+      );
+    },
+
+    readCommandMessage() {
+      return commandMessage;
+    },
+
     async fireSessionStopped(input) {
       await requireHandlers().onSessionStopped({
         ...input,
@@ -556,7 +595,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         async (response) => {
           ackText = response?.text ?? "";
         },
-        async (text) => {
+        async (text, blocks) => {
+          if (blocks) {
+            commandMessage = { text, blocks };
+            return;
+          }
           outbound.push({
             kind: "ephemeral",
             teamId: command.teamId,
