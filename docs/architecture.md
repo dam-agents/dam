@@ -72,7 +72,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
-- [channel-cards](architecture/channel-cards.md) — structured cards in agents' Slack and Telegram posts: the catalog, the check, native rendering and the text form.
+- [channel-cards](architecture/channel-cards.md) — Slack Block Kit blocks in agents' Slack and Telegram posts: the check, rendering and the text form.
 - Slack in depth: [threads](architecture/slack-threads.md) a Session started, the [channel history](architecture/slack-channel-history.md) an Agent may read, [message edits](architecture/slack-edits.md), the [companion apps](architecture/slack-companion-apps.md) of other installs, and [what is guaranteed](architecture/slack-guarantees.md).
 - [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
