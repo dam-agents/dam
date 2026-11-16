@@ -32,6 +32,6 @@ The old agent page's address, `/sandboxes/<id>/<section>`, which the server stil
 
 ## The composer's + menu
 
-The composer's + menu is the other way to change an Agent from its chat: next to attaching a file, it lists the Agent's skills, schedules and Connections as the design draws them — the Agent's skills surface in a compact form, each schedule as a card with its switch and the Schedules section's ⋮ menu, the Connections the Agent holds in one card per service with each row's menu — and opens each one's usual create dialog.
+The composer's + menu is the other way to change an Agent from its chat: next to attaching a file, it lists the Agent's skills, schedules and Connections as the design draws them — the Agent's skills surface in a compact form, with the same groups as its settings, each schedule as a card with its switch and the Schedules section's ⋮ menu, the Connections the Agent holds in one card per service with each row's menu — and opens each one's usual create dialog.
 For skills and schedules it also offers to describe one, which leaves a starting prompt in the composer, in place of any draft, and sends nothing, so a person learns that the Agent can set these up itself.
 Every switch is the same call the Agent's settings make, under the same permissions, so the menu adds no rule of its own.

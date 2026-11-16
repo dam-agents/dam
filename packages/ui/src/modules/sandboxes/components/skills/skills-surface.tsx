@@ -257,7 +257,7 @@ export function SkillsSurface({
               />
             )}
 
-            {!compact && shownPlatform.length > 0 && (
+            {shownPlatform.length > 0 && (
               <PlatformSkillsGroup
                 skills={shownPlatform}
                 onOpenSkill={
@@ -266,13 +266,13 @@ export function SkillsSurface({
                     : undefined
                 }
                 onOpenSection={
-                  agentId
+                  agentId && !compact
                     ? (section) => openAgentSettings(agentId, section)
                     : undefined
                 }
               />
             )}
-            {!compact && shownBuiltIn.length > 0 && (
+            {shownBuiltIn.length > 0 && (
               <LocalSkillsGroup
                 label="Included with sandbox image"
                 skills={shownBuiltIn}

@@ -12,8 +12,9 @@ import { DescribeButton, PlusMenuPanelFrame } from "./plus-menu-panel.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Skills panel of the composer's + menu, as the
  * design draws it: the Agent's own skills surface in its compact form — the
- * search, the counts, the skills created in the Agent, and a card per GitHub
- * source with its switches — and a footer to add a source or describe one.
+ * search, the counts, the skills created in the Agent, a card per GitHub
+ * source with its switches, then the skills from platform features and the
+ * sandbox image, always on — and a footer to add a source or describe one.
  * Switches are off limits while the Agent cannot take a change. A viewer who
  * may not change its skills gets the design's read-only state: the names
  * alone, no footer and no Manage.
