@@ -177,6 +177,9 @@ describe("share viewer app", () => {
     expect(html).toContain('src="https://content.example.com/a/slug-a?v=1"');
     expect(html).not.toContain("srcdoc=");
     expect(html).not.toContain("<h1>hello</h1>");
+    expect(html).toContain(
+      '<link rel="icon" type="image/svg+xml" href="/brand/icon.svg"/>',
+    );
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");

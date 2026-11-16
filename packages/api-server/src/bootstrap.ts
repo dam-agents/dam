@@ -273,6 +273,7 @@ import {
 import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
 import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
 import { readAgentSkill } from "./apps/api-server/routes/agent-discovery.js";
+import { createBrandIconRoutes } from "./apps/api-server/routes/brand.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
@@ -1940,6 +1941,7 @@ export async function bootstrap() {
     getAgent: (id) => agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
+  const brandIcon = createBrandIconRoutes();
   const shareHostGate = createByLinkHostGate(
     shareSignIns.map((signIn) => ({
       share: {
@@ -1950,6 +1952,7 @@ export async function bootstrap() {
             brandName: config.brand.name,
             sessionCookie: signIn.cookie,
           }),
+          brandIcon,
           viewer: createShareViewerApp({
             viewer: shareViewer,
             auth: signIn.auth,

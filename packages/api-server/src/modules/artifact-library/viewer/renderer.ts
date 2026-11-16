@@ -40,6 +40,9 @@ const CHROME_CSS = `
   .error { color: #dc2626; font-size: 13px; margin-bottom: 12px; }
 `;
 
+const SHARE_ICON_LINK =
+  '<link rel="icon" type="image/svg+xml" href="/brand/icon.svg"/><link rel="apple-touch-icon" href="/brand/icon-180.png"/>';
+
 function chromePage(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -47,6 +50,7 @@ function chromePage(title: string, body: string): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex, nofollow"/>
+${SHARE_ICON_LINK}
 <title>${escapeHtml(title)}</title>
 <style>${CHROME_CSS}</style>
 </head>
@@ -162,6 +166,7 @@ export function renderWrapper(input: WrapperInput): string {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex, nofollow"/>
+${SHARE_ICON_LINK}
 <title>${escapeHtml(input.title)}</title>
 <style>
   :root { color-scheme: light dark; }
