@@ -129,6 +129,7 @@ A call without input tokens never changes either, because its cost came from the
 Each re-priced batch writes one `spend.repriced` log line with the number of calls, the total difference and its kind, and the counter `platform.spend.repriced` counts the calls by provider and kind.
 DAM compares its cost with the proxy's own cost on every completed dollar call whose reply carries that cost, cache reads and writes included, except a response-cache replay.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
+It is rounded up to a whole micro-dollar, as DAM rounds its own cost, so rounding alone is never a difference.
 When these headers give no cost, as on a chat stream, the proxy's cost is the cost in the reply's usage.
 A call that DAM priced with LiteLLM's own cost is not compared.
 A difference above 5% writes a `spend.proxy_cost_mismatch` log line, which shows a price or a cost rule that is wrong or old.

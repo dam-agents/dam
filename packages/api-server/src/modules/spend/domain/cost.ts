@@ -70,9 +70,8 @@ export function proxyCostDifference(
   ourMicros: number,
   headers: ProxyCostHeaders,
 ): number | null {
-  const proxy = proxyCostDollars(headers);
-  if (proxy === null || proxy <= 0) return null;
-  const proxyMicros = proxy * 1_000_000;
+  const proxyMicros = proxyCostMicros(headers);
+  if (proxyMicros === null || proxyMicros <= 0) return null;
   return Math.abs(ourMicros - proxyMicros) / proxyMicros;
 }
 
