@@ -773,12 +773,12 @@ describe("the new session panel", () => {
     );
   });
 
-  /** TEST_SCENARIO: the Harness menu says what each harness is, so a person picking between six names has a sentence to go on (QA: "Harness" was the first field of every picker with no hint what any of the names means). */
-  it("describes each harness in the harness menu", () => {
+  /** TEST_SCENARIO: the Harness menu lists each harness by icon and name only; a second line of description under each name overlapped the next entry. */
+  it("names each harness in the harness menu without a description", () => {
     const node = mount(picker({ carried: [...carried, claudeCode] }));
-    expect(openMenu(node, "Harness").textContent).toContain(
-      "Anthropic's coding agent",
-    );
+    const menu = openMenu(node, "Harness").textContent;
+    expect(menu).toContain("Claude Code");
+    expect(menu).not.toContain("Anthropic's coding agent");
   });
 
   /** TEST_SCENARIO: the Harness dropdown carries each harness's icon on its option and on the selected value, and its accessible name stays "Harness". */
