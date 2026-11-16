@@ -33,6 +33,7 @@ Icons come from `@carbon/icons-react`.
 | Agent menu: Add editors, Agent settings                     | `Share`, `Settings`                            |
 | Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
+| More actions on a + menu connection card, as designed       | `OverflowMenuHorizontal` (`horizontal`)        |
 | "About X" hint                                              | `Information`                                  |
 | How-to explainer popover                                    | `Help`                                         |
 

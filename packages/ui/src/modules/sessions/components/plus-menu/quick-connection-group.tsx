@@ -18,7 +18,7 @@ import {
  * UNIT_BOUNDARY_DESCRIPTION: One provider's Connections in the + menu, as the
  * chat refresh design's ConnectionGroupCard draws them: a card with the
  * provider's icon, name and count, then one row per Connection with its name,
- * its status, what kind it is under it, and its menu. A viewer who may not
+ * its status, what kind it is under it, and its menu behind the design's ⋯. A viewer who may not
  * change the Agent's Connections sees the rows with no menu.
  */
 export function QuickConnectionGroup({
@@ -85,6 +85,7 @@ export function QuickConnectionGroup({
                   connection={c}
                   grant={grantControls}
                   maintenance={actions}
+                  horizontal
                 />
               )}
             </div>

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: One provider's Connections in the composer's + menu, as the chat refresh design's ConnectionGroupCard draws them: a card titled with the provider and its count, then a row per Connection with its name, its status, and what kind it is under it, with no host chip; the row's menu shows only for a viewer who may change the Agent's Connections.
+// TEST_OVERVIEW: One provider's Connections in the composer's + menu, as the chat refresh design's ConnectionGroupCard draws them: a card titled with the provider and its count, then a row per Connection with its name, its status, and what kind it is under it, with no host chip; the row's menu, behind the design's horizontal ⋯, shows only for a viewer who may change the Agent's Connections.
 import type { ConnectionView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -11,8 +11,14 @@ vi.mock("../../modules/connections/components/connection-icon.js", () => ({
 vi.mock(
   "../../modules/connections/components/connection-row-actions.js",
   () => ({
-    ConnectionRowMenu: (props: { connection: { id: string } }) =>
-      createElement("button", { "data-testid": `menu-${props.connection.id}` }),
+    ConnectionRowMenu: (props: {
+      connection: { id: string };
+      horizontal?: boolean;
+    }) =>
+      createElement("button", {
+        "data-testid": `menu-${props.connection.id}`,
+        "data-horizontal": String(!!props.horizontal),
+      }),
   }),
 );
 vi.mock("../../modules/connections/lib/catalog-providers.js", () => ({
@@ -66,6 +72,7 @@ describe("a provider's card in the + menu", () => {
     expect(html).toContain("Personal access token");
     expect(html).toContain("Authorizing…");
     expect(html).toContain('data-testid="menu-c-oauth"');
+    expect(html).toContain('data-horizontal="true"');
   });
 
   // TEST_SCENARIO: a viewer who may not change the Agent's Connections sees the same rows with no menu.

@@ -113,12 +113,14 @@ export function ConnectionRowMenu({
   onManage,
   onDelete,
   deleting = false,
-}: Omit<Props, "onNewChild">) {
+  horizontal = false,
+}: Omit<Props, "onNewChild"> & { horizontal?: boolean }) {
   const reauthLabel = reauthLabelOf(connection);
   return (
     <RowActionsMenu
       label={`Actions for ${connection.name}`}
       testId={`catalog-menu-${connection.id}`}
+      horizontal={horizontal}
     >
       {maintenance?.onReauthenticate && (
         <DropdownMenuItem

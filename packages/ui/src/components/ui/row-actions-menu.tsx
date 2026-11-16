@@ -1,4 +1,7 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import {
+  OverflowMenuHorizontal,
+  OverflowMenuVertical,
+} from "@carbon/icons-react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ export function RowActionsMenu({
   open,
   onOpenChange,
   contentProps,
+  horizontal = false,
   children,
 }: {
   label: string;
@@ -37,6 +41,8 @@ export function RowActionsMenu({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   contentProps?: ComponentProps<typeof DropdownMenuContent>;
+  /** UNIT_BOUNDARY_DESCRIPTION: the horizontal ⋯ a design draws in place of the vertical one, as the chat refresh's connection cards do. */
+  horizontal?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -54,7 +60,11 @@ export function RowActionsMenu({
             onMouseDown: (e) => e.stopPropagation(),
           })}
         >
-          <OverflowMenuVertical size={16} />
+          {horizontal ? (
+            <OverflowMenuHorizontal size={16} />
+          ) : (
+            <OverflowMenuVertical size={16} />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent {...contentProps}>{children}</DropdownMenuContent>
