@@ -25,6 +25,7 @@ import {
 } from "api-server-api";
 import { VENDORED_PRICE_TABLE } from "api-server-api/model-prices";
 import { getLogger } from "../../../core/logger.js";
+import { connectionEnv as envOf } from "../domain/connection-env.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import {
   harnessCapabilityOf,
@@ -76,15 +77,6 @@ export function createProviderModelCatalog(deps: {
   function logListing(message: string): void {
     getLogger().info(message);
   }
-
-  const envOf = (connection: Connection): Record<string, string> => {
-    const env: Record<string, string> = {};
-    for (const contribution of connection.contributions) {
-      if (contribution.kind === "env")
-        env[contribution.name] = contribution.placeholder;
-    }
-    return env;
-  };
 
   const list = async (
     connection: Connection,

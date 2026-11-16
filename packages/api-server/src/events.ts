@@ -35,6 +35,7 @@ export enum EventType {
   ScheduleFired = "ScheduleFired",
   ConnectionCreated = "ConnectionCreated",
   ConnectionRemoved = "ConnectionRemoved",
+  ConnectionCredentialChanged = "ConnectionCredentialChanged",
   FilesImported = "FilesImported",
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
@@ -204,6 +205,12 @@ export type ConnectionRemoved = {
   connectionKey: string;
   templateId: string;
   kind: ConnectionKind;
+};
+
+export type ConnectionCredentialChanged = {
+  type: EventType.ConnectionCredentialChanged;
+  connectionKey: string;
+  templateId: string;
 };
 
 export type FilesImported = {
@@ -635,6 +642,7 @@ export type DomainEvent =
   | SchedulePrecheckReported
   | ConnectionCreated
   | ConnectionRemoved
+  | ConnectionCredentialChanged
   | FilesImported
   | ContributionApplyFailed
   | ContributionRecovered

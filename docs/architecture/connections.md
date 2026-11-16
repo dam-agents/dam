@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -138,6 +138,7 @@ A connect fires wherever the Connection actually reaches its connected state —
 Emitting at both points would double-count OAuth; emitting only at the callback leaves every other mode invisible.
 A connection abandoned before that state raises neither event, so removals cannot outnumber connects.
 A parent raises neither event either: the Connections made from it do, when made and when removed, also when they go with their parent.
+A new header key raises `ConnectionCredentialChanged`, so the [spend module](spend-limits.md#prices) reads that Connection's prices again.
 The event names the provider, not just the grant, because the Connection record is destroyed on disconnect and a grant identifier alone would die with it.
 
 ### Contribution

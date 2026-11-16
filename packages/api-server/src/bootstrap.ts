@@ -398,6 +398,7 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createPricedConnections,
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
@@ -1768,6 +1769,7 @@ export async function bootstrap() {
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
+    meter: metrics.getMeter("platform-apiserver"),
     priceOverrides: config.spendPriceOverrides,
     owners: {
       ownerOf: async (agentId) =>
@@ -1804,7 +1806,19 @@ export async function bootstrap() {
     sessions: sessionDirectory,
     subAgents: createSpawnSessionsAdapter(db),
     telemetryStoreOn: metricsReader !== null,
+    pricedConnections: createPricedConnections({ db, secretStore }),
   });
+  await periodicJobs.register("spend-provider-prices", 60 * 60_000, () =>
+    spend.readAllPrices(),
+  );
+  void spend
+    .readPricesIfEmpty()
+    .catch((err: unknown) =>
+      getLogger().error(
+        { reason: formatError(err) },
+        "spend.first_price_read_failed",
+      ),
+    );
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
   );
@@ -3109,6 +3123,8 @@ export async function bootstrap() {
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();
+    spend.readPricesSaga.unsubscribe();
+    spend.priceBookReload.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
     spendAlertsSaga.unsubscribe();
