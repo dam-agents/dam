@@ -1,5 +1,6 @@
 import { Add, Checkmark, WarningAlt } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { parentNoun } from "../lib/connection-hierarchy.js";
+import { childRepair } from "../lib/github-card.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
@@ -22,7 +24,6 @@ interface Props {
   onManage?: () => void;
   onDelete?: () => void;
   deleting?: boolean;
-  onNewChild?: () => void;
 }
 
 const ROW_BUTTON =
@@ -41,11 +42,19 @@ export function ConnectionRowActions({
   connection,
   grant,
   maintenance,
-  onNewChild,
-}: Pick<Props, "connection" | "grant" | "maintenance" | "onNewChild">) {
+  chooseAccessAgain = false,
+  usedBy,
+}: Pick<Props, "connection" | "grant" | "maintenance"> & {
+  chooseAccessAgain?: boolean;
+  usedBy?: ReactNode;
+}) {
   const narrow = connection.fullAccess ? maintenance?.onEditScope : undefined;
-  const inlineFix =
-    connection.status === "disconnected" && maintenance?.onMoveHost
+  const repair = chooseAccessAgain
+    ? childRepair(connection, maintenance)
+    : null;
+  const inlineFix = repair
+    ? repair
+    : connection.status === "disconnected" && maintenance?.onMoveHost
       ? { label: "Move to another host", run: maintenance.onMoveHost }
       : connection.status !== "expired"
         ? undefined
@@ -64,29 +73,6 @@ export function ConnectionRowActions({
               : undefined;
   return (
     <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-1.5 @max-md:ml-0 @max-md:justify-start empty:hidden">
-      {narrow && (
-        <Button
-          variant="outline"
-          size="sm"
-          className={cn(ROW_BUTTON, "@max-md:hidden")}
-          onClick={narrow}
-          data-testid={`catalog-narrow-${connection.id}`}
-        >
-          Narrow access
-        </Button>
-      )}
-      {onNewChild && (
-        <Button
-          variant="outline"
-          size="sm"
-          className={ROW_BUTTON}
-          onClick={onNewChild}
-          data-testid={`connection-new-child-${connection.id}`}
-        >
-          <Add size={16} />
-          New connection
-        </Button>
-      )}
       {inlineFix && (
         <Button
           variant="outline"
@@ -102,6 +88,18 @@ export function ConnectionRowActions({
       {grant && !grant.actionHidden && (
         <RowGrantAction rowId={connection.id} grant={grant} />
       )}
+      {usedBy}
+      {narrow && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(ROW_BUTTON, "@max-md:hidden")}
+          onClick={narrow}
+          data-testid={`catalog-narrow-${connection.id}`}
+        >
+          Narrow access
+        </Button>
+      )}
     </div>
   );
 }
@@ -114,7 +112,7 @@ export function ConnectionRowMenu({
   onDelete,
   deleting = false,
   horizontal = false,
-}: Omit<Props, "onNewChild"> & { horizontal?: boolean }) {
+}: Props & { horizontal?: boolean }) {
   const reauthLabel = reauthLabelOf(connection);
   return (
     <RowActionsMenu
