@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -383,7 +383,8 @@ The screens:
   While the period runs, the range ends at today and says "so far".
   A period wholly before T shows no total.
   The card keeps one height for each period and checkbox state, so it has one reserved line under the range.
-  When the checkbox "Show what subscriptions cover" is on, this line gives the subscription value at API prices.
+  The checkbox "Show what subscriptions cover" is on Home only while the user has subscription-covered calls in any of the card's three periods; the card reads them as one daily range, so the checkbox does not move between the periods.
+  When it is on, this line gives the subscription value at API prices.
   When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
   The checkbox also adds the subscription value to the bars of the top agents, never to the total.
   The browser keeps the choice for Home and for the Usage pages.

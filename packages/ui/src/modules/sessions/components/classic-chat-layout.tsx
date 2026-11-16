@@ -67,6 +67,7 @@ function PanelDivider({
 export function ClassicChatLayout({
   identity,
   status,
+  newChat,
   activity,
   notices,
   agentId,
@@ -82,6 +83,8 @@ export function ClassicChatLayout({
 }: {
   identity: ReactNode;
   status: ReactNode;
+  /** UNIT_BOUNDARY_DESCRIPTION: the header's New chat button, at its end, as the design draws it; absent while there is nothing to start afresh from. */
+  newChat?: ReactNode;
   activity: ReactNode;
   notices: ReactNode;
   agentId: string | null;
@@ -239,11 +242,10 @@ export function ClassicChatLayout({
             <MobileMenuButton />
             {identity}
             <div className="flex min-w-0 items-center gap-2">{status}</div>
-            {!desktop && (
-              <div className="ml-auto flex shrink-0 items-center">
-                {activity}
-              </div>
-            )}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {newChat}
+              {!desktop && activity}
+            </div>
           </header>
           {(!desktop || !column.open) && notices}
           {children}

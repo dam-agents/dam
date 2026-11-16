@@ -1,5 +1,6 @@
-import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
+import { Add, ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  assistantIdeas,
   type DefaultKind,
   SessionMode,
   type SessionPair,
@@ -16,6 +17,7 @@ import {
   useState,
 } from "react";
 
+import { getBrand } from "@/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -81,7 +83,10 @@ import {
   assistantAudienceKnown,
   useAssistantState,
 } from "../../assistants/api/assistant-state.js";
-import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import {
+  AssistantGreeting,
+  AssistantIdeas,
+} from "../../assistants/components/assistant-greeting.js";
 import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
 import {
   useAssistantChat,
@@ -459,6 +464,7 @@ export function ChatView() {
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
   /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
   const assistantChat = useAssistantChat(selectedAgent);
+  const ideas = assistantIdeas(getBrand().name);
 
   const {
     messagesRef,
@@ -1029,6 +1035,16 @@ export function ChatView() {
                       onNewTerminal={handleNewTerminal}
                     />
                   )}
+                  {assistantChat && selectedAgent && (
+                    <div className="mt-5">
+                      <AssistantIdeas
+                        ideas={ideas}
+                        agentId={selectedAgent}
+                        sessionId={sessionId}
+                        onPicked={() => textareaRef.current?.focus()}
+                      />
+                    </div>
+                  )}
                   {startNotice && <div className="mt-6">{startNotice}</div>}
                 </div>
               )}
@@ -1473,6 +1489,18 @@ export function ChatView() {
               processesEnabled={processesEnabled}
             />
           </>
+        }
+        newChat={
+          selectedAgent && (sessionId !== null || messages.length > 0) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleNewSession()}
+            >
+              <Add size={16} />
+              New chat
+            </Button>
+          ) : null
         }
         activity={
           <SidePanelTabButtons

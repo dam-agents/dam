@@ -8,6 +8,7 @@ vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
 const viewport = vi.hoisted(() => ({ desktop: true }));
 vi.mock("../../hooks/use-is-desktop.js", () => ({
+  WIDE_DESKTOP_QUERY: "(min-width: 64rem)",
   useIsDesktop: () => viewport.desktop,
 }));
 vi.mock("../../modules/processes/api/queries.js", () => ({

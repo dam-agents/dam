@@ -54,6 +54,7 @@ vi.mock(
   () => ({ MobileMenuButton: () => null }),
 );
 vi.mock("../../hooks/use-is-desktop.js", () => ({
+  WIDE_DESKTOP_QUERY: "(min-width: 64rem)",
   useIsDesktop: () => viewport.desktop,
 }));
 

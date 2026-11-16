@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-13
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -93,6 +93,7 @@ A setting always holds a value: one that neither the session nor its default nam
 A setting whose manifest default a person must approve stays the harness's own, since such a default would stall every unattended turn; its picker starts on the agent's configured value, else the manifest's `default`.
 A default the model does not take is not sent, e.g. an effort on Haiku 4.5; Haiku 5.5 takes it.
 The picker offers no unset choice, so a change always names a value the harness applies.
+A harness change keeps only the settings the new harness offers, effort carried over by meaning.
 The Config panel shows only the settings a harness keeps for all its sessions, such a setting among them; the others are chosen in a session or in its default.
 The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.
 A session that names no mode starts on the agent's tool approval, else on one the runtime derives from the catalog, whatever the agent's config file names — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
@@ -224,6 +225,7 @@ The effort level Claude Code persists, sent as `output_config.effort`, is rewrit
 Beyond the model routes the router serves each harness's **catalog endpoint** in the shape it reads, Claude Code's probe, and Pi's measured session cost from the ledger; before the first listing it answers 503, which a harness retries, and a harness with no router binding gets the same view under plain qualified names, the preferred work model first.
 A Bob call it has no route for (profile, team budget, docs search) goes to the Bob Shell Connection's gateway with its placeholder, outside the [meter](spend-limits.md#meter); the profile loses the region that would move Bob off the router and puts the pinned team and instance first, the agent's env over the Connection's; any other unrouted path gets a 404 and one log line.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for, and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
+Bob's `security` check, still named that, runs on CurveBender's Nemotron where none lists it.
 Claude Code's tier slots (manifest `claudeTiers`) are filled per process from the agent's default provider, and Claude Code resolves its own aliases through them, so a session moved to another provider would send its titles, WebFetch summaries and alias-named subagents to the provider it left.
 The router moves such a **side call**, one Claude Code classes as auxiliary, a subagent's, a workflow agent's or a side reply (`x-claude-code-request-class`, sent since the image turns its gateway hint headers on) or stamps with a subagent's id, to the session provider's model of the same tier, else to the session's own model, when it names a tier of another provider, or a model its own provider no longer lists: the tier of the slot the id fills on that provider, the smallest where one id fills several, else the tier its word carries.
 A bare id Claude Code sends for a skill or an agent definition goes the same way when the session's provider lists neither that id nor a deployment of it; a bare id the provider lists resolves as any bare name does, on the session's provider first.

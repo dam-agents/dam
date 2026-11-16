@@ -29,6 +29,7 @@ import {
   createBedrockUsageScanner,
   type BedrockRoute,
 } from "../domain/bedrock.js";
+import { bobSecurityStandIn } from "../domain/bob-security.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
 import { processClassifierName } from "../domain/harness-env.js";
 import {
@@ -42,7 +43,10 @@ import {
   verifiesThinking,
   withoutEarlierThinking,
 } from "../domain/replay.js";
-import { resolveTarget } from "../domain/resolve-target.js";
+import {
+  resolveTarget,
+  type ResolveOutcome,
+} from "../domain/resolve-target.js";
 import {
   classifierModelOnSessionProvider,
   tierModelOnSessionProvider,
@@ -361,21 +365,30 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       ? await deps.bookedSessionOf({ req, harness, routed: session })
       : session;
     const binding = deps.harnesses[harness];
-    const target = resolveTarget({
-      model: modelFor(
-        body.model,
-        binding,
-        handle,
-        isSideCall(req),
-        isAuxiliaryCall(req),
-        harness,
-      ),
-      dialect,
-      harness: binding,
-      harnessName: harness,
-      providers: deps.catalog.providers(),
-      sessionModel: session ? (choiceOf(session)?.model ?? null) : null,
-    });
+    const providers = deps.catalog.providers();
+    const sessionModel = session ? (choiceOf(session)?.model ?? null) : null;
+    const resolve = (model: string): ResolveOutcome =>
+      resolveTarget({
+        model,
+        dialect,
+        harness: binding,
+        harnessName: harness,
+        providers,
+        sessionModel,
+      });
+    const requested = modelFor(
+      body.model,
+      binding,
+      handle,
+      isSideCall(req),
+      isAuxiliaryCall(req),
+      harness,
+    );
+    const direct = resolve(requested);
+    const standIn = direct.ok
+      ? null
+      : bobSecurityStandIn({ binding, model: requested, providers });
+    const target = direct.ok || standIn === null ? direct : resolve(standIn);
     if (!target.ok) {
       deps.onRefused?.({
         session,
