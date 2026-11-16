@@ -258,7 +258,7 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
 export function telegramPayload(
   text: string,
   options?: Pick<PostMessageOptions, "attachment" | "card">,
-): string | PostableCard | { markdown: string; files: FileUpload[] } {
+): string | { markdown: string; files?: FileUpload[] } {
   const { attachment, card } = options ?? {};
   const files: FileUpload[] | undefined = attachment
     ? [
@@ -270,37 +270,10 @@ export function telegramPayload(
       ]
     : undefined;
   if (card) {
-    const { title, subtitle, ...rest } = card.card;
-    return {
-      card: text.trim()
-        ? {
-            ...rest,
-            children: [
-              { type: "text" as const, content: text },
-              ...(title
-                ? [
-                    {
-                      type: "text" as const,
-                      content: title,
-                      style: "bold" as const,
-                    },
-                  ]
-                : []),
-              ...(subtitle
-                ? [
-                    {
-                      type: "text" as const,
-                      content: subtitle,
-                      style: "muted" as const,
-                    },
-                  ]
-                : []),
-              ...card.card.children,
-            ],
-          }
-        : card.card,
-      ...(files ? { files } : {}),
-    };
+    const markdown = [text, card.text]
+      .filter((part) => part.trim())
+      .join("\n\n");
+    return { markdown, ...(files ? { files } : {}) };
   }
   return files ? { markdown: text, files } : text;
 }
@@ -327,7 +300,7 @@ export function telegramCardTooLong(
     message.length + (message.match(MARKDOWN_V2_ESCAPED)?.length ?? 0);
   return length > limit
     ? {
-        error: `With its card the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the card or the text, or send them as two messages.`,
+        error: `With the text of its blocks the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the blocks or the text, or send them as two messages.`,
       }
     : null;
 }

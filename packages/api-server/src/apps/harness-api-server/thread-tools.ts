@@ -12,8 +12,8 @@ import type { ChannelCard } from "../../modules/channels/services/worker-contrac
 
 export interface ThreadToolPorts {
   callerSessionId(): Promise<string | null>;
-  cardOf(
-    tree: Record<string, unknown> | undefined,
+  blocksOf(
+    blocks: Record<string, unknown>[] | undefined,
   ): Promise<{ card?: ChannelCard } | { error: string }>;
   startThread(
     channel: ChannelType,
@@ -34,7 +34,7 @@ export interface ThreadToolPorts {
   ): void;
 }
 
-export const cardTreeSchema = z.record(z.string(), z.unknown());
+export const blocksSchema = z.array(z.record(z.string(), z.unknown()));
 
 const UNIDENTIFIED =
   "this session could not be identified, so it cannot own a thread; post the message with post instead, and its replies open a session of their own.";
@@ -66,17 +66,17 @@ export function registerThreadTools(
         .describe(
           "The opening message, in standard Markdown. Say who should answer, and tag them when they should be notified.",
         ),
-      card: cardTreeSchema
+      blocks: blocksSchema
         .optional()
         .describe(
-          "Optional card shown under the opening message. Call describe_card_components for its components.",
+          "Optional Slack Block Kit blocks shown under the opening message, written as Slack defines them. A button needs a url.",
         ),
     },
-    ({ channel, chatId, text, card: tree }) =>
+    ({ channel, chatId, text, blocks }) =>
       run(async () => {
         const sessionId = await ports.callerSessionId();
         if (!sessionId) return errorResult(UNIDENTIFIED);
-        const built = await ports.cardOf(tree);
+        const built = await ports.blocksOf(blocks);
         if ("error" in built) {
           ports.audit("start", built, { hasCard: true });
           return errorResult(built.error);

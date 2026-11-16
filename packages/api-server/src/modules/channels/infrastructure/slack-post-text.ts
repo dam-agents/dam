@@ -1,4 +1,4 @@
-import { richTextOf } from "../domain/channel-blocks.js";
+import { channelBlocksText, richTextOf } from "../domain/channel-blocks.js";
 import { parseAgentFooter } from "./agent-footer.js";
 import type { SlackBlock } from "./slack-gateway.js";
 
@@ -52,8 +52,17 @@ function blockText(block: SlackBlock, textIsEmpty: boolean): string {
       return textIsEmpty && Array.isArray(block.elements)
         ? block.elements.map(richTextOf).join("\n")
         : "";
-    default:
+    case "divider":
+    case "image":
+    case "actions":
+    case "file":
+    case "video":
+    case "input":
       return "";
+    default:
+      return typeof block.type === "string"
+        ? channelBlocksText([{ ...block, type: block.type }])
+        : "";
   }
 }
 

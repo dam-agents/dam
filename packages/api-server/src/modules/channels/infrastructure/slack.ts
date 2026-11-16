@@ -195,12 +195,8 @@ import {
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
-import {
-  slackCardBlocks,
-  slackCardIssues,
-  slackCardText,
-  slackRefusedBlocks,
-} from "./slack-card-blocks.js";
+import { slackBlocksRefusal } from "./slack-refused-blocks.js";
+import { countChannelBlocks } from "../domain/channel-blocks.js";
 import { mentionedCommand, parseSwitchArgs } from "./slack-mention-commands.js";
 import {
   agentContextBlock,
@@ -2955,9 +2951,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   type AgentPost = {
     text: string;
     cardBlocks: SlackBlock[] | undefined;
-    cardIssues: string[];
     blocks: SlackBlock[];
-    asText: SlackBlock[] | null;
     replyText: string;
   };
 
@@ -2967,34 +2961,22 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     footer: AgentFooter,
     sign: (text: string, bold: "*" | "**") => string,
   ): AgentPost {
-    const withCard = (cardText: string) =>
-      [text, cardText].filter((part) => part.trim()).join("\n\n");
-    const cardBlocks = card ? slackCardBlocks(card) : undefined;
+    const withCard = [text, card?.text ?? ""]
+      .filter((part) => part.trim())
+      .join("\n\n");
     return {
-      text: sign(card ? withCard(slackCardText(card)) : text, "*"),
-      cardBlocks,
-      cardIssues: card ? slackCardIssues(card) : [],
-      blocks: renderAssistantBlocks(footer, sign(text, "**"), cardBlocks),
-      asText: card
-        ? renderAssistantBlocks(footer, sign(withCard(card.text), "**"))
-        : null,
-      replyText: card ? withCard(card.text) : text,
+      text: sign(withCard, "*"),
+      cardBlocks: card?.blocks,
+      blocks: renderAssistantBlocks(footer, sign(text, "**"), card?.blocks),
+      replyText: withCard,
     };
   }
 
   function postRefusal(post: AgentPost): { error: string } | null {
-    if (post.cardIssues.length > 0)
-      return {
-        error: `The card was not sent: ${post.cardIssues.join("; ")}.`,
-      };
-    if (post.cardBlocks && post.blocks.length === 1)
-      return {
-        error:
-          "The message shows nothing in Slack: its text is empty and its card renders no block. Add text or content to the card.",
-      };
-    return post.blocks.length > SLACK_MAX_BLOCKS
+    const length = countChannelBlocks(post.blocks);
+    return length > SLACK_MAX_BLOCKS
       ? {
-          error: `With its card the message is ${post.blocks.length} Slack blocks long, and Slack takes at most ${SLACK_MAX_BLOCKS}. Shorten the card, or move part of it to a second message.`,
+          error: `With its blocks the message is ${length} Slack blocks long, nested blocks included, and Slack takes at most ${SLACK_MAX_BLOCKS}. Shorten the blocks, or move part of them to a second message.`,
         }
       : null;
   }
@@ -3007,12 +2989,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     try {
       return await send(post.blocks);
     } catch (err) {
-      if (!post.asText || !slackRefusedBlocks(err)) throw err;
+      const refusal = post.cardBlocks ? slackBlocksRefusal(err) : null;
+      if (!refusal) throw err;
       getLogger().warn(
         { channelId, err: formatError(err) },
-        "slack.card.refused: posting the card as text",
+        "slack.card.refused",
       );
-      return send(post.asText);
+      throw refusal;
     }
   }
 
@@ -8996,7 +8979,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         options ?? {};
       if (!text && !card && !attachment) {
         return {
-          error: "nothing to send — pass text, a card or an attachment",
+          error: "nothing to send — pass text, blocks or an attachment",
         };
       }
       const target = await resolveOutboundTarget(
@@ -9322,7 +9305,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const attachmentOnly = hasBody ? undefined : args.attachment;
       if (!hasBody && !attachmentOnly)
         return {
-          error: "nothing to send — reply needs text, a card or an attachment",
+          error: "nothing to send — reply needs text, blocks or an attachment",
         };
       if (attachmentOnly && args.alsoSendToChannel)
         return {

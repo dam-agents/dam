@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildChannelCard } from "../../modules/channels/infrastructure/channel-card.js";
+import {
+  channelBlocksText,
+  type ChannelBlock,
+} from "../../modules/channels/domain/channel-blocks.js";
 import {
   telegramCardTooLong,
   telegramPayload,
@@ -7,72 +10,56 @@ import {
 
 /**
  * TEST_OVERVIEW: What an Agent post sends to Telegram through the Chat SDK
- * adapter. Plain text goes as it is, a file goes with its text as Markdown,
- * and a Channel Card goes as a card whose first element is the agent's text,
- * so the adapter shows the text above the card's text form and turns each
- * link button into a Telegram button.
+ * adapter. Plain text goes as it is, and a file goes with its text as
+ * Markdown. Telegram has no Block Kit, so a Channel Card goes as its text
+ * form under the Agent's text.
  */
 
-function channelCard(tree: Record<string, unknown>) {
-  const built = buildChannelCard(tree);
-  if (!("card" in built)) throw new Error(built.issues.join("; "));
-  return built.card;
-}
+const blocks: ChannelBlock[] = [
+  { type: "header", text: { type: "plain_text", text: "Deploys" } },
+  {
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Open" },
+        url: "https://example.com",
+      },
+    ],
+  },
+];
 
-const card = channelCard({
-  type: "Card",
-  props: { title: "Deploys" },
-  children: [
-    {
-      type: "Actions",
-      props: {},
-      children: [
-        {
-          type: "LinkButton",
-          props: { label: "Open", url: "https://example.com" },
-        },
-      ],
-    },
-  ],
-});
+const card = { blocks, text: channelBlocksText(blocks) };
 
 describe("telegramPayload", () => {
   it("sends plain text as it is", () => {
     expect(telegramPayload("hello")).toBe("hello");
   });
 
-  // TEST_SCENARIO: the adapter shows a card's title above its children, so the title moves under the agent's text to keep the text first, as in Slack.
-  it("puts the agent's text first, then the card's title, and keeps its link buttons", () => {
-    const payload = telegramPayload("This week", { card });
-    if (typeof payload === "string" || !("card" in payload))
-      throw new Error("expected a card");
-    expect(payload.card.title).toBeUndefined();
-    expect(payload.card.children.slice(0, 2)).toEqual([
-      { type: "text", content: "This week" },
-      { type: "text", content: "Deploys", style: "bold" },
-    ]);
-    expect(payload.card.children[2]).toMatchObject({
-      type: "actions",
-      children: [{ type: "link-button", url: "https://example.com" }],
+  /**
+   * TEST_SCENARIO: The answer must not depend on where the person asked. In
+   * Telegram the card's content arrives as Markdown text under the Agent's
+   * text, in the same order as in Slack.
+   */
+  it("puts the agent's text first, then the card's text form", () => {
+    expect(telegramPayload("This week", { card })).toEqual({
+      markdown: "This week\n\nDeploys\n[Open](https://example.com)",
     });
   });
 
-  it("sends a card without text as the card alone, with its file", () => {
+  it("sends a card without text as its text form, with its file", () => {
     const payload = telegramPayload("", {
       card,
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    if (typeof payload === "string" || !("card" in payload))
-      throw new Error("expected a card");
-    expect(payload.card.children.map((child) => child.type)).toEqual([
-      "actions",
-    ]);
+    if (typeof payload === "string") throw new Error("expected Markdown");
+    expect(payload.markdown).toBe("Deploys\n[Open](https://example.com)");
     expect(payload.files?.[0]?.filename).toBe("report.md");
   });
 });
 
 describe("telegramCardTooLong", () => {
-  // TEST_SCENARIO: the adapter cuts a card message at Telegram's length limit instead of splitting it, so a card that would lose its end is refused before it posts.
+  // TEST_SCENARIO: the adapter cuts a message at Telegram's length limit instead of splitting it, so a card whose text would lose its end is refused before it posts.
   it("refuses text and card longer than one Telegram message, and a shorter limit beside a file", () => {
     const long = "x".repeat(3000);
     expect(telegramCardTooLong(long, { card })).toBeNull();
