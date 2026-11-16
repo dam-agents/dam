@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -309,7 +309,7 @@ See [`helm/`](../../helm/) for the install layout.
   An HTTP body over the limit gets 413; a WebSocket message over it closes the connection with code 1009.
   Each limit sits well above the largest legitimate input: a `skills.createLocal` call for users, a 20 000-file kb-publish plan for agents.
   The MCP SDK also holds each MCP endpoint to 4 MiB and 100 messages per JSON-RPC batch.
-  A tRPC HTTP batch, user or agent, holds at most 1 000 calls; a tRPC WebSocket batch is bounded only by the message byte limit, because the WebSocket adapter has no batch limit.
+  A tRPC batch holds at most 1 000 calls, over HTTP (user or agent) and over the user WebSocket.
 - **Credential isolation.** Agents never hold real upstream credentials.
   The gateway intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the machine has no path anywhere except through its gateway.
   See [security-and-credentials](security-and-credentials.md).

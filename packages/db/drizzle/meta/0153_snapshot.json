@@ -1,5 +1,5 @@
 {
-  "id": "cd11e08c-5952-4de6-a29c-27dbda4ce0f9",
+  "id": "c4bc05fb-97d6-49f7-9f4d-0ca5a4a117a0",
   "prevId": "5e6897f9-7fe9-42b9-8553-98e7b0425a78",
   "version": "7",
   "dialect": "postgresql",
@@ -4148,12 +4148,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "slug": {
           "name": "slug",
           "type": "text",
@@ -4895,6 +4889,121 @@
           "value": "(\"profiles\".\"subagent_provider_template\" is null) = (\"profiles\".\"subagent_model\" is null)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.provider_model_prices": {
+      "name": "provider_model_prices",
+      "schema": "",
+      "columns": {
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row": {
+          "name": "row",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "free_search_quota": {
+          "name": "free_search_quota",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "incomplete": {
+          "name": "incomplete",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "provider_model_prices_pk": {
+          "name": "provider_model_prices_pk",
+          "columns": [
+            "provider",
+            "model"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.provider_price_reads": {
+      "name": "provider_price_reads",
+      "schema": "",
+      "columns": {
+        "connection_id": {
+          "name": "connection_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_ok_at": {
+          "name": "last_ok_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_refused_at": {
+          "name": "last_refused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_status": {
+          "name": "last_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_count": {
+          "name": "model_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.public_image_urls": {

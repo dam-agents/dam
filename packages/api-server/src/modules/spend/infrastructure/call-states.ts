@@ -46,6 +46,11 @@ export interface CallStates {
   reclaim(callId: string): Promise<void>;
   forget(callId: string, agentId: string | null): Promise<void>;
   rebook(callId: string, sessionId: string): Promise<void>;
+  reprice(
+    callId: string,
+    costMicros: number,
+    estimatedCalls: number,
+  ): Promise<void>;
   heard(callId: string): Promise<void>;
   openCount(agentId: string): Promise<number>;
 }
@@ -121,6 +126,12 @@ if redis.call('HGET', KEYS[1], 'r_sessionId') == '' then
   redis.call('HSET', KEYS[1], 'r_sessionId', ARGV[1])
 end
 return 0
+`;
+
+const REPRICE_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('HSET', KEYS[1], 'a_costMicros', ARGV[1], 'a_estimatedCalls', ARGV[2])
+return 1
 `;
 
 const callKey = (callId: string) => `spend:call:${callId}`;
@@ -247,6 +258,16 @@ export function createRedisCallStates(redis: Redis): CallStates {
 
     async rebook(callId, sessionId) {
       await redis.eval(REBOOK_SCRIPT, 1, callKey(callId), sessionId);
+    },
+
+    async reprice(callId, costMicros, estimatedCalls) {
+      await redis.eval(
+        REPRICE_SCRIPT,
+        1,
+        callKey(callId),
+        String(costMicros),
+        String(estimatedCalls),
+      );
     },
 
     async heard(callId) {
