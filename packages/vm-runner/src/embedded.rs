@@ -573,6 +573,7 @@ fn embedded_spec(
             target: PathBuf::from(SHARE_PATH),
             read_only: true,
             staged: false,
+            recorded_ownership: false,
         }],
         ports: vec![PortMapping::new(machine.host_port, GUEST_AGENT_PORT)],
         resources,
