@@ -653,7 +653,7 @@ it("keeps Try something new out of the greeting", () => {
   expect(tryRow(el)).toBeNull();
 });
 
-// TEST_SCENARIO: a later new chat of the assistant has the ideas in a collapsed "Try something new" row above the composer, not under the cards for opening a new session elsewhere; opened, it shows three ideas and "Show all", and a pick fills the composer without sending.
+// TEST_SCENARIO: a later new chat of the assistant has the ideas in a collapsed "Try something new" row above the composer, not under the cards for opening a new session elsewhere; opened, it shows three ideas and "Show all", which hands keyboard focus to the first idea it reveals, and a pick fills the composer without sending.
 it("offers the assistant's ideas in a collapsed row on a later new chat", () => {
   fake.assistantChat = true;
   const el = openNewChat();
@@ -669,7 +669,9 @@ it("offers the assistant's ideas in a collapsed row on a later new chat", () => 
     buttonWithText(row, "Learn how my team writes tickets"),
   ).toBeUndefined();
   act(() => buttonWithText(row, "Show all 5")!.click());
-  expect(buttonWithText(row, "Learn how my team writes tickets")).toBeDefined();
+  expect(document.activeElement?.textContent).toContain(
+    "Learn how my team writes tickets",
+  );
 
   act(() => buttonWithText(row, "Make my next PowerPoint deck")!.click());
   expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(

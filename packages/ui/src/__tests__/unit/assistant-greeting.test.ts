@@ -305,7 +305,7 @@ describe("which ideas Try something new offers", () => {
       },
     ] as never;
 
-  // TEST_SCENARIO: a chat that started from a chip, even one the person finished typing after, leaves that idea out; a chat they started in their own words, and one with nothing said yet, keeps all five.
+  // TEST_SCENARIO: a chat that started from a chip, even one the person finished typing after or added to what they had typed, leaves that idea out; a chat they started in their own words, and one with nothing said yet, keeps all five.
   it("leaves out only the idea the chat started from", () => {
     expect(
       ideasNotStarted(
@@ -313,6 +313,12 @@ describe("which ideas Try something new offers", () => {
         said("I have a question about DAM: what is a kit?"),
       ).map((idea) => idea.label),
     ).toEqual(["Artifact", "Schedule", "Knowledge base", "Skill"]);
+    expect(
+      ideasNotStarted(
+        ideas,
+        said("Hi.\n\nMake my next PowerPoint deck the way I make them"),
+      ).map((idea) => idea.label),
+    ).not.toContain("Artifact");
     expect(ideasNotStarted(ideas, said("Draft my weekly update"))).toEqual(
       ideas,
     );

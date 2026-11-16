@@ -366,9 +366,12 @@ describe("the DAM connection template", () => {
       expect(skill).toContain(words(line));
   });
 
-  // TEST_SCENARIO: the design asks after a schedule whether to send its results to the DMs instead, and after an artifact whether to draft the next one on a schedule and send it there, so each offer stays under its own kind of result.
+  // TEST_SCENARIO: the design asks after a schedule whether to send its results to the DMs instead, and after an artifact whether to draft the next one on a schedule and send it there, so each offer stays under its own kind of result; after a ticket only the GitHub offer is made.
   it("pairs each Bridge offer with the result the design gives it", () => {
     const skill = words(assistantGuide());
+    expect(skill).toContain(
+      "After a ticket, the GitHub offer replaces this one.",
+    );
     expect(skill).toContain(
       words('- A schedule: "Want them sent to your Slack DMs instead?'),
     );
@@ -379,13 +382,16 @@ describe("the DAM connection template", () => {
     );
   });
 
-  // TEST_SCENARIO: a knowledge base in onboarding is what the assistant saves to its own memory, never a Knowledge Base Agent, and the one-off rule names the single thing it adds when it cannot answer, so the two rules no longer contradict.
+  // TEST_SCENARIO: a knowledge base in onboarding is the assistant's notes about the person's project in its own memory, never a Knowledge Base Agent, and saving how they work is no result of its own; the one-off rule names the single thing it adds when nothing it knows or looks up answers, once per topic, so the two rules no longer contradict.
   it("saves a knowledge base to memory and offers one only when it can't answer", () => {
     expect(ASSISTANT_ONBOARDING_RULES).toContain(
-      "saved in your memory file; it is never a new Agent",
+      "These notes about their project, in your memory file, are the result; never create a new Agent for them.",
+    );
+    expect(ASSISTANT_ONBOARDING_RULES).toContain(
+      "Saving how they work is not a result.",
     );
     expect(ASSISTANT_ONBOARDING_RULES).toMatch(
-      /A one-off question gets its answer and nothing more[^\n]*When you can't answer it from what you know, say only:/,
+      /A one-off question gets its answer and nothing more[^\n]*When neither what you know nor what you can look up answers it, say only:[^\n]*Make that offer once per topic/,
     );
   });
 });

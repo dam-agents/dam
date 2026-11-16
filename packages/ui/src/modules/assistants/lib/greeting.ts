@@ -121,15 +121,14 @@ export function preferredProviderTemplate(
   return chosen?.connection?.templateId;
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the ideas "Try something new" offers in a chat: all of them but the one the chat started from, which is the idea whose text opens the chat's first message from the person, as a click on its chip puts it there. A long chat whose start is not loaded reads its first loaded message instead, which at worst hides an idea the person picked later in that chat. */
+/* UNIT_BOUNDARY_DESCRIPTION: the ideas "Try something new" offers in a chat: all of them but the one the chat started from, which is the idea whose text is in the chat's first message from the person, as a click on its chip puts it there. A long chat whose start is not loaded reads its first loaded message instead, which at worst hides an idea the person picked later in that chat. */
 export function ideasNotStarted(
   ideas: readonly AssistantIdea[],
   messages: readonly Message[],
 ): readonly AssistantIdea[] {
-  const opening = messages
+  const first = messages
     .find((m) => m.role === "user")
     ?.parts.flatMap((p) => (p.kind === "text" ? [p.text] : []))
-    .join("")
-    .trimStart();
-  return ideas.filter((idea) => !opening?.startsWith(idea.text.trim()));
+    .join("");
+  return ideas.filter((idea) => !first?.includes(idea.text.trim()));
 }

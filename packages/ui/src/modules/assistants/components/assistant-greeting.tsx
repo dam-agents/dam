@@ -1,6 +1,6 @@
 import { ChevronDown } from "@carbon/icons-react";
 import type { AssistantIdea } from "api-server-api";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ function IdeaChip({
     <Button
       variant="outline"
       size="sm"
+      data-idea
       onClick={() => {
         const key = draftKey(agentId, sessionId);
         const typed = useStore.getState().drafts[key]?.text ?? "";
@@ -39,7 +40,7 @@ function IdeaChip({
       }}
       className="h-auto min-h-10 max-w-full gap-1 rounded-full px-5 py-2 whitespace-normal text-left"
     >
-      <span className="shrink-0 font-semibold">{idea.label}:</span>
+      <span className="shrink-0 font-semibold">{idea.label}:</span>{" "}
       <span>{idea.text}</span>
     </Button>
   );
@@ -98,9 +99,17 @@ export function TrySomethingNew({
 }) {
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (all)
+      rowRef.current
+        ?.querySelectorAll<HTMLButtonElement>("[data-idea]")
+        [FIRST_IDEAS]?.focus();
+  }, [all]);
   const shown = all ? ideas : ideas.slice(0, FIRST_IDEAS);
   return (
     <div
+      ref={rowRef}
       data-testid="try-something-new"
       className="flex flex-wrap items-center gap-2 pb-3"
     >

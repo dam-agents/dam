@@ -80,11 +80,17 @@ export function ClassicChatIdentity({
             onClick={onStartNewSession}
             className={cn(
               "mr-1",
-              crowded && "@max-[299px]:size-8 @max-[299px]:px-0",
+              crowded
+                ? "@max-[339px]:size-8 @max-[339px]:px-0"
+                : "@max-[269px]:size-8 @max-[269px]:px-0",
             )}
           >
             <AddComment size={16} />
-            <span className={cn(crowded && "@max-[299px]:hidden")}>
+            <span
+              className={
+                crowded ? "@max-[339px]:hidden" : "@max-[269px]:hidden"
+              }
+            >
               New chat
             </span>
           </Button>
