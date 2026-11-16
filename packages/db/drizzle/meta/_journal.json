@@ -1100,6 +1100,13 @@
       "when": 1794848360952,
       "tag": "0156_web_search_control",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794855915805,
+      "tag": "0157_starter_kit_publisher",
+      "breakpoints": true
     }
   ]
 }

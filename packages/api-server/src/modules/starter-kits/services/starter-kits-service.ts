@@ -48,9 +48,10 @@ import { createOnboardingMarker } from "./onboarding-marker.js";
 import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { KitUpstream } from "../infrastructure/kit-upstream.js";
-import type { LinkedKits } from "../infrastructure/linked-kits.js";
+import type { LinkedKit, LinkedKits } from "../infrastructure/linked-kits.js";
 
 export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
+type KitToApply = Omit<LoadedKit, "publisher">;
 
 function slackConnectRefusal(
   reason: ConnectSlackError["type"],
@@ -135,23 +136,23 @@ function withSeedStamp(
   return stamp ? { starterKitSeed: stamp } : {};
 }
 
-function toView(
-  loaded: LoadedKit & { link?: { url: string } },
-): StarterKitView {
+function toView(loaded: LoadedKit | LinkedKit): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
-    ...(loaded.link ? { link: loaded.link } : {}),
+    ...("link" in loaded
+      ? { link: loaded.link }
+      : { publisher: loaded.publisher }),
   };
 }
 
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  async function requireKit(input: StarterKitApplyInput): Promise<LoadedKit> {
+  async function requireKit(input: StarterKitApplyInput): Promise<KitToApply> {
     const { catalog, kitId, link } = input;
     if (link) {
       const linked = await deps.linkedKits.read(link.url, link.commit);
@@ -213,7 +214,7 @@ export function createStarterKitsService(
 
   async function seedSchedules(
     agentId: string,
-    loaded: LoadedKit,
+    loaded: KitToApply,
     skip: readonly string[],
     overrides: readonly StarterKitScheduleOverride[],
   ): Promise<void> {
@@ -255,7 +256,7 @@ export function createStarterKitsService(
 
   async function enqueueOnboardingTurn(
     created: Agent,
-    loaded: LoadedKit,
+    loaded: KitToApply,
     version: string,
     harness: TemplateHarness | undefined,
   ): Promise<void> {

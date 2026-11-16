@@ -66,6 +66,11 @@ flowchart LR
   A built-in kit can be switched off per install (`starterKits.builtin.kits.<id>.enabled`), the same switch the workload Templates had: the chart then leaves the kit out of the rendered catalog, so an image the install does not build never reaches the UI.
   A kit that brings its own image can also be pointed at another ref per install (`starterKits.builtin.kits.<id>.image`, swapped into the kit's `image.ref` at render): the local cluster uses it to run the workload kits on the images this checkout builds, and its install builds and loads the image of every enabled kit that names a local `platform-*` tag, exactly as it does for the harness Templates.
   The built-in catalog's workload images carry the same `@ci-pin` marker the chart uses for its own images, rewritten to the release's source sha by the same publish step, so the versioning mechanics are unchanged — only the declaration moved from Helm values into kit files.
+- **Kit Publisher** — who stands behind a catalog kit: the platform team, or a user its catalog entry names, with an optional https page.
+  The entry says it, never the kit: the catalog's reviewers write the index, while a kit's own file could claim anything, so a user's kit cannot pass as the team's.
+  An entry naming no one is the team's, and every built-in kit is the team's whatever its entry says, since that catalog ships with the release.
+  The refresh stores the resolution in the kit's row; the catalog tile and the kit modal show it as a byline in the one list, the team's under the install's brand.
+  A Linked Kit has none, as its notice already says nobody reviewed it, and an Agent does not carry it.
 - **Readable Hosts** — the git hosts an install may read a catalog and its kits from.
   Public GitHub is always one, and is always read anonymously.
   An install may name **one GitHub Enterprise host** besides, so a team whose agent already lives in an enterprise repository offers it as a kit instead of rebuilding it in-platform: the repository stays the source of truth, and the refresh resolves and re-reads it exactly like any other, so what the team changes there reaches the catalog without the kit being recreated.
