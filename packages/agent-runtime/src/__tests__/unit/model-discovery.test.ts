@@ -129,10 +129,13 @@ describe("createModelDiscovery", () => {
       },
     });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
-    const outcome = await discover(listingForTemplate("curve-bender")!.spec, {
-      OPENAI_BASE_URL: "https://litellm.cb.example",
-      OPENAI_API_KEY: "platform:conn:conn-cb",
-    });
+    const outcome = await discover(
+      listingForTemplate("curve-bender-deployment")!.spec,
+      {
+        OPENAI_BASE_URL: "https://litellm.cb.example",
+        OPENAI_API_KEY: "platform:conn:conn-cb",
+      },
+    );
     expect(urls[0]).toBe("https://litellm.cb.example/v1/models");
     expect(headers[0]?.authorization).toBe("Bearer platform:conn:conn-cb");
     expect(outcome).toMatchObject({

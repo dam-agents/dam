@@ -174,9 +174,10 @@ Which choices a harness offers is its catalog's to say: Codex's offers no mode, 
 ## The model catalog
 
 agent-runtime keeps one **Model Catalog** per agent: every granted provider Connection's models, listed from that Connection's env layer (the api-server tags each provider layer with its Connection and template), under the **qualified name** `<alias>/<upstream id>`, the alias fixed per preset ([connections](connections.md)).
-Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info.
-A LiteLLM proxy is listed from `/v1/models` on its root with the Connection's placeholder, so the gateway adds the key, and the maximum model length each entry reports, where it reports one, is its context window.
-Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then a deployment the platform measured, then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer.
+Each preset lists the way its key allows: LiteLLM's model info for the LiteLLM proxies and Bob's gateway, Anthropic's and OpenAI's model lists.
+A LiteLLM proxy is listed from `/v1/model/info` on its root with the Connection's placeholder, so the gateway adds the key, and from `/v1/models` when its key is refused there.
+In a model list, the maximum model length an entry reports is its context window.
+Metadata is layered per model, first answer wins: the listing itself (model info carries limits, reasoning, vision and prices, and a vLLM deployment's list the context window), then a deployment the platform measured, then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: the router lists no models for it, and every harness but Claude Code and Pi sees it as unsupported.
 Claude Code and Pi run on it in their own Bedrock mode with the router as their Bedrock endpoint (`/bedrock/<connection id>`), and the router passes those calls on unchanged.
