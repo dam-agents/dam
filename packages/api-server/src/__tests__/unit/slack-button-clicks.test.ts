@@ -16,6 +16,7 @@ import type {
   SendPromptOpts,
 } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import { agentContextBlock } from "../../modules/channels/infrastructure/agent-footer.js";
 import { noArtifacts } from "../helpers/artifact-links.js";
 
 /**
@@ -24,7 +25,8 @@ import { noArtifacts } from "../helpers/artifact-links.js";
  * addressed to the Agent that made the post: it starts a turn that names the
  * button and its value, under the thread routing a typed message follows.
  * The Agent comes from the identifier the platform wrote on the button, so
- * only a click on a choice button of an Agent's own post is delivered.
+ * only a click on a choice button of an Agent's own post is delivered. A
+ * post takes one answer: after it the post names who chose what.
  */
 
 const OWNER = "kc|owner-1";
@@ -33,6 +35,28 @@ const ASKER = "agent-asker";
 const WEB_SESSION = "web-1";
 const POST_TS = "1700000000.000100";
 const CLICKED_AT = "1700000060.000000";
+
+const button = (label: string, id: string, url?: string) => ({
+  type: "button",
+  text: { type: "plain_text", text: label },
+  action_id: id,
+  ...(url ? { url } : { value: label.toLowerCase() }),
+});
+
+const CHOICES = {
+  type: "actions",
+  elements: [
+    button("Approve", `agent-button:${ASKER}:0`),
+    button("Reject", `agent-button:${ASKER}:1`),
+    button("Open the PR", `agent-link:${ASKER}:2`, "https://example.com/pr/1"),
+  ],
+};
+
+const FOOTER = agentContextBlock({
+  uiBaseUrl: "http://ui",
+  agentId: ASKER,
+  label: "Sent by Asker",
+});
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -176,6 +200,7 @@ describe("a click on a choice button of an agent's post", () => {
       sessionId: WEB_SESSION,
       conversationId: HOME,
       text: "Deploy 2.4?",
+      card: { blocks: [CHOICES], text: "Approve / Reject" },
     });
     if ("error" in started) throw new Error(started.error);
 
@@ -202,6 +227,54 @@ describe("a click on a choice button of an agent's post", () => {
 
     for (let i = 0; i < 20; i++) await tick();
     expect(h.prompts).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A post takes one answer. Once the click is handed to the
+   * Agent, the post loses its choice buttons, keeps its link button, and
+   * names who chose what above the Agent Footer, which stays the last block.
+   * A second person who clicks on a copy still open in their client starts
+   * no second turn and is told the post was already answered.
+   */
+  it("shows the choice on the post and takes no second answer", async () => {
+    const h = harness();
+    await h.worker.start(ASKER);
+    const question = { type: "markdown", text: "Deploy 2.4?" };
+    h.gw.setMessage(HOME, {
+      ts: POST_TS,
+      text: "Deploy 2.4?\n\nApprove / Reject",
+      user: "U-BOT",
+      blocks: [question, CHOICES, FOOTER],
+    });
+
+    await h.click();
+
+    expect(await settled(() => h.gw.readUpdates().length === 1)).toBe(true);
+    expect(h.gw.readUpdates()[0]).toMatchObject({
+      channel: HOME,
+      ts: POST_TS,
+      text: "Deploy 2.4?\n\nApprove / Reject\n<@U-PERSON> chose: Approve",
+      blocks: [
+        question,
+        { type: "actions", elements: [CHOICES.elements[2]] },
+        {
+          type: "context",
+          elements: [{ type: "mrkdwn", text: "<@U-PERSON> chose: Approve" }],
+        },
+        FOOTER,
+      ],
+    });
+    expect(await settled(() => h.prompts.length === 1)).toBe(true);
+
+    await h.click({ actionId: `agent-button:${ASKER}:1`, value: "reject" });
+
+    for (let i = 0; i < 20; i++) await tick();
+    expect(h.prompts).toHaveLength(1);
+    expect(h.gw.readUpdates()).toHaveLength(1);
+    expect(h.gw.readOutbound().at(-1)).toMatchObject({
+      channel: HOME,
+      text: expect.stringContaining("already answered"),
+    });
   });
 
   /**

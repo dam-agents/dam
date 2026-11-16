@@ -52,6 +52,11 @@ A **choice button** sends a choice back: a click on it reaches the agent.
 - **The Agent comes from the button, not from the post.** The platform's identifier on a choice button names the Agent, and the platform writes a different one on a link button.
   So a click is delivered only for a choice button of an Agent's own post, and never on the strength of what a post's content says.
   A click has no message of its own: the moment of the click stands in for one, so catch-up reads the thread up to it.
+- **A post takes one answer.** Once a click is handed to the Agent, the platform removes the post's choice buttons, keeps its link buttons, and adds a line that names who chose what, above the Agent Footer.
+  Everyone in the conversation then sees the answer, and a later click cannot wake the Agent again.
+  A click on a post that holds no choice button any more is not passed on, and the person is told the post was already answered; two clicks that race are settled the same way, the first one wins.
+  The post changes when the click is handed over, not when the turn ends: a turn that then cannot start, such as one for an Agent at its spend limit, leaves the post answered, and the person gets that gate's own notice.
+  An agent that wants several answers asks each person, posts again, or puts new buttons on the post with an edit.
 - **Where a click cannot reach.** A click on a post in a conversation the Agent is no longer connected to starts no turn, and the person who clicked is told privately.
   A private answer to a whisper is seen by one person and has no thread, so it takes link buttons only.
   Choice buttons work in Slack only: in Telegram one shows in the text as an option, and the person answers by typing.

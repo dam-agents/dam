@@ -65,7 +65,7 @@ An element that carries an `action_id` and is not a button is refused as an inpu
 | 03 ✅ | Telegram                                        | Derived text with link buttons as Telegram buttons, and the length check.                                                     | 02         |
 | 04 ✅ | `describe_blocks` and the docs                  | The on-demand tool with rules and a block reference; the architecture page and the glossary.                                  | 02         |
 | 05 ✅ | A button click reaches the Agent                | Choice buttons pass the check; a click becomes an addressed message in the post's thread.                                     | 02, 04     |
-| 06    | The post shows the choice                       | After the first click the choice buttons go and a line names who chose what; a second click is not delivered.                 | 05         |
+| 06 ✅ | The post shows the choice                       | After the first click the choice buttons go and a line names who chose what; a second click is not delivered.                 | 05         |
 
 ```mermaid
 graph LR

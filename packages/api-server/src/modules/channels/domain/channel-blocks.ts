@@ -298,6 +298,51 @@ export function channelBlockChoiceButtons(
   return found(blocks);
 }
 
+const REMOVED = Symbol("removed");
+
+const EMPTIED_REMOVES_OWNER = new Set([
+  "elements",
+  "items",
+  "rows",
+  "child_blocks",
+]);
+
+function withoutChoiceButtons(node: unknown): unknown {
+  if (Array.isArray(node))
+    return node.map(withoutChoiceButtons).filter((item) => item !== REMOVED);
+  if (!isRecord(node)) return node;
+  if (isChoiceButton(node)) return REMOVED;
+  const kept: [string, unknown][] = [];
+  for (const [key, value] of Object.entries(node)) {
+    const next = withoutChoiceButtons(value);
+    if (next === REMOVED) {
+      if (key === "block") return REMOVED;
+      continue;
+    }
+    const emptied =
+      Array.isArray(value) &&
+      value.length > 0 &&
+      Array.isArray(next) &&
+      next.length === 0;
+    if (emptied && EMPTIED_REMOVES_OWNER.has(key)) return REMOVED;
+    if (!emptied) kept.push([key, next]);
+  }
+  return Object.fromEntries(kept);
+}
+
+export function withChoiceMade(
+  blocks: readonly ChannelBlock[],
+  choice: string,
+): ChannelBlock[] {
+  const kept = withoutChoiceButtons([...blocks]) as ChannelBlock[];
+  const line: ChannelBlock = {
+    type: "context",
+    elements: [{ type: "mrkdwn", text: choice }],
+  };
+  const closing = kept.at(-1);
+  return closing ? [...kept.slice(0, -1), line, closing] : [line];
+}
+
 function nestedBlocks(block: Json): unknown[] {
   switch (block.type) {
     case "layout":

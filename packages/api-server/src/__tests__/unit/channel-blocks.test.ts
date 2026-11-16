@@ -14,6 +14,7 @@ import {
   channelBlocksText,
   checkChannelBlocks,
   countChannelBlocks,
+  withChoiceMade,
   type ChannelBlock,
 } from "../../modules/channels/domain/channel-blocks.js";
 
@@ -391,5 +392,88 @@ describe("countChannelBlocks", () => {
         },
       ]),
     ).toBe(5);
+  });
+});
+
+describe("withChoiceMade", () => {
+  const choice = (label: string) => ({
+    type: "button",
+    text: { type: "plain_text", text: label },
+    value: label,
+  });
+  const link = {
+    type: "button",
+    text: { type: "plain_text", text: "Logs" },
+    url: "https://example.com/logs",
+  };
+  const footer = {
+    type: "context",
+    elements: [{ type: "mrkdwn", text: "Sent by an agent" }],
+  };
+
+  /**
+   * TEST_SCENARIO: A post takes one answer. After it, every choice button
+   * goes, wherever it sits: in a tile inside a layout, in a row of its own,
+   * as a section's accessory. A link button stays. The line that names the
+   * choice goes before the last block, because the Agent Footer must stay
+   * the block that ends the post.
+   */
+  it("removes choice buttons at any depth and names the choice before the footer", () => {
+    const blocks: ChannelBlock[] = [
+      {
+        type: "layout",
+        label: "Deploy",
+        rows: [
+          {
+            items: [
+              {
+                block: {
+                  type: "card",
+                  title: { type: "plain_text", text: "Build 7" },
+                  actions: [choice("Approve"), link],
+                },
+              },
+              { block: { type: "actions", elements: [choice("Later")] } },
+            ],
+          },
+        ],
+      },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "Or decide here" },
+        accessory: choice("Reject"),
+      },
+      { type: "actions", elements: [choice("Skip")] },
+      footer,
+    ];
+
+    expect(withChoiceMade(blocks, "<@U1> chose: Approve")).toEqual([
+      {
+        type: "layout",
+        label: "Deploy",
+        rows: [
+          {
+            items: [
+              {
+                block: {
+                  type: "card",
+                  title: { type: "plain_text", text: "Build 7" },
+                  actions: [link],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      { type: "section", text: { type: "mrkdwn", text: "Or decide here" } },
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: "<@U1> chose: Approve" }],
+      },
+      footer,
+    ]);
+    expect(
+      channelBlockChoiceButtons(withChoiceMade(blocks, "<@U1> chose: Approve")),
+    ).toEqual([]);
   });
 });

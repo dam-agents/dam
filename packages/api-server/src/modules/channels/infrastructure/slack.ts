@@ -200,6 +200,8 @@ import {
   agentButtonAgent,
   channelBlockChoiceButtons,
   countChannelBlocks,
+  withChoiceMade,
+  type ChannelBlock,
 } from "../domain/channel-blocks.js";
 import { mentionedCommand, parseSwitchArgs } from "./slack-mention-commands.js";
 import {
@@ -5251,30 +5253,92 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
    * same inbound path as a typed message, so the binding check, the gates,
    * thread ownership, burst gathering and steering all apply to it. A click
    * has no message of its own: its time stands in for one, so catch-up reads
-   * up to the moment of the click.
+   * up to the moment of the click. A post takes one answer: once the click
+   * is handed to the Agent, the post loses its choice buttons and names who
+   * chose what, and a click on a post that holds no choice button any more
+   * is not passed on. Two people can click before the post changes, so a
+   * post being answered is also held in process until its update is done.
    */
+  const answeringPosts = new Set<string>();
+
   async function handleAgentButtonClick(
     event: SlackMessageAction,
     instanceName: string,
   ): Promise<void> {
     const post = event.post;
-    if (!post) return;
-    const value = event.value ? ` Its value is "${event.value}".` : "";
-    await handleInbound(
-      {
-        user: event.userId,
-        sender: { kind: "person", user: event.userId },
+    if (!post || !gateway) return;
+    const gw = gateway;
+    const key = messageKey(event.channelId, post.ts);
+    const alreadyAnswered = () =>
+      gw.postEphemeral({
         channel: event.channelId,
-        ts: post.clickedAt,
-        threadTs: post.threadTs ?? post.ts,
-        text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message.`,
+        user: event.userId,
         teamId: event.teamId,
-      },
-      {
-        directMessage: isDirectMessageId(event.channelId),
-        click: { instanceName },
-      },
-    );
+        ...(post.threadTs ? { threadTs: post.threadTs } : {}),
+        text: "This was already answered, so your click was not passed on.",
+      });
+    if (answeringPosts.has(key)) return alreadyAnswered();
+    answeringPosts.add(key);
+    let delivered = false;
+    try {
+      const current = await gw
+        .getMessage({
+          channel: event.channelId,
+          ts: post.ts,
+          ...(post.threadTs ? { threadTs: post.threadTs } : {}),
+          teamId: event.teamId,
+        })
+        .catch(() => null);
+      const blocks = (current?.blocks ?? []) as ChannelBlock[];
+      if (current && channelBlockChoiceButtons(blocks).length === 0)
+        return await alreadyAnswered();
+      const showChoice = async () => {
+        if (!current) return;
+        const choice = `<@${event.userId}> chose: ${post.label}`;
+        await gw.updateMessage({
+          channel: event.channelId,
+          ts: post.ts,
+          teamId: event.teamId,
+          text: [current.text ?? "", choice].filter(Boolean).join("\n"),
+          blocks: withChoiceMade(blocks, choice),
+          metadata: agentPostMetadata(
+            filesPostedApart(current),
+            madeByAgent(current),
+          ),
+        });
+      };
+      const value = event.value ? ` Its value is "${event.value}".` : "";
+      await handleInbound(
+        {
+          user: event.userId,
+          sender: { kind: "person", user: event.userId },
+          channel: event.channelId,
+          ts: post.clickedAt,
+          threadTs: post.threadTs ?? post.ts,
+          text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message.`,
+          teamId: event.teamId,
+        },
+        {
+          directMessage: isDirectMessageId(event.channelId),
+          click: {
+            instanceName,
+            onDelivered: () => {
+              delivered = true;
+              void showChoice()
+                .catch((err: unknown) =>
+                  getLogger().warn(
+                    { channelId: event.channelId, error: formatError(err) },
+                    "slack.button_click.update_failed",
+                  ),
+                )
+                .finally(() => answeringPosts.delete(key));
+            },
+          },
+        },
+      );
+    } finally {
+      if (!delivered) answeringPosts.delete(key);
+    }
   }
 
   async function handleMessageAction(
@@ -7256,7 +7320,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleInbound(
     signedEvent: SlackMentionEvent,
-    opts: { directMessage: boolean; click?: { instanceName: string } },
+    opts: {
+      directMessage: boolean;
+      click?: { instanceName: string; onDelivered?: () => void };
+    },
     rerouted = false,
   ) {
     if (!gateway) return;
@@ -7329,8 +7396,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (
       owned.owner !== null &&
       (!routed?.target || routed.target.instanceName === owned.owner)
-    )
+    ) {
+      opts.click?.onDelivered?.();
       return;
+    }
     if (!routed && opts.click) {
       await gateway.postEphemeral({
         channel: event.channel,
@@ -7411,6 +7480,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const queue = addressedQueue(conversation, slackUserId);
     reception.queue = queue;
     reception.conversation = addressedConversations.get(queue) ?? conversation;
+    opts.click?.onDelivered?.();
 
     await queue.submit({
       text: reception.text + fetched.withheldNote,

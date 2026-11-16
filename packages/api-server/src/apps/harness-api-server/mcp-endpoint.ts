@@ -456,6 +456,7 @@ export function createMcpSession(
             "A button with a url opens a page. A button without a url sends a choice back to you: the click arrives as a message in the post's thread, and it names who clicked, the button's label and the value you set on it.",
             "A click goes where a message in that thread goes. To get it in this session, ask with start_thread; a click on a plain post opens a new session, as a tagged reply under it does.",
             "Anyone who sees the post may click. You decide whose click counts.",
+            "A post takes one answer: after the first click the platform removes the buttons that send a choice and adds a line that names who chose what. For an answer from several people, ask each one, post again, or put new buttons on the post with edit_post.",
             "Buttons that send a choice work in Slack only. In Telegram they show in the text as options, and the person answers by typing. A private answer to a whisper takes link buttons only.",
             "Selects, inputs, checkboxes, radio buttons, date and time pickers, overflow menus and workflow buttons are refused, because their answer cannot reach you.",
             "The platform writes its own action_id on every button and drops the value of a button with a url.",
