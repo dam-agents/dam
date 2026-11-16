@@ -29,7 +29,8 @@ On the wire:
 
 Whatever chain forwards it, the gateway pod's own egress NetworkPolicy bounds where the dial may land — public addresses plus the platform pods and private ranges it names — so no approved name can resolve into the cluster or the metadata endpoint ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
-**L7 promotion.** An egress rule that narrows a host by path, method, or port is invisible to the L4 catch-all (it sees only SNI), so the rule's host must be *promoted* onto a TLS-terminating chain to be enforceable over HTTPS.
+**L7 promotion.** An egress rule that narrows a host by path, method, or a port other than 443 is invisible to the L4 catch-all (it sees only SNI), so the rule's host must be *promoted* onto a TLS-terminating chain to be enforceable over HTTPS.
+A rule that names port 443 and nothing else narrows nothing the catch-all cannot check — it dials 443, and its Check reads the request as TLS on 443 — so its host stays on passthrough, exactly as with no port.
 The promotion signal is the Agent resource's `l7Hosts` spec list — per-agent intent, exactly like connection grants: promoting a host on one agent rolls only that agent's gateway, never a sibling's; an [Environment](environments.md#network-access) is the one exception, and carries its Owning Agent's list.
 Promoted hosts get an uncredentialed L7 chain (gate sees method/path; nothing is injected) and extend the leaf certificate's SAN list.
 
