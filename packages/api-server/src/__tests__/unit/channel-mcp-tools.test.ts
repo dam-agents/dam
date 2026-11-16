@@ -308,12 +308,7 @@ describe("edit_post MCP tool — an agent changes its own post (#6406)", () => {
         chatId: "C-BOUND",
         ts: "1.1",
         text: "status",
-        blocks: [
-          {
-            type: "actions",
-            elements: [{ type: "static_select", options: [] }],
-          },
-        ],
+        blocks: [{ text: "a block needs a type" }],
       },
     });
 
@@ -832,12 +827,12 @@ describe("outbound MCP tools — channel cards", () => {
       name: "reply",
       arguments: {
         text: "Approve?",
-        blocks: withButton({ type: "static_select", options: [] }),
+        blocks: [{ text: "a block needs a type" }],
       },
     })) as { content: { text: string }[]; isError?: boolean };
 
     expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain('"static_select" element');
+    expect(res.content[0]!.text).toContain('each an object with a "type"');
     expect(res.content[0]!.text).toContain("describe_blocks");
     expect(replies).toEqual([]);
   });
