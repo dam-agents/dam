@@ -15,14 +15,36 @@ const AGENT_BUTTON_PREFIX = "agent-button:";
 
 const AGENT_LINK_PREFIX = "agent-link:";
 
-export function agentButtonAgent(actionId: string): string | null {
-  if (!actionId.startsWith(AGENT_BUTTON_PREFIX)) return null;
-  const rest = actionId.slice(AGENT_BUTTON_PREFIX.length);
-  const end = rest.lastIndexOf(":");
-  return end > 0 ? rest.slice(0, end) : null;
+const AGENT_FIELD_PREFIX = "agent-field:";
+
+const ACTION_ID_CHARS = 255;
+
+export type AgentAction =
+  | { kind: "button"; agentId: string }
+  | { kind: "field"; agentId: string; name: string };
+
+export function agentActionOf(actionId: string): AgentAction | null {
+  const kind = actionId.startsWith(AGENT_BUTTON_PREFIX)
+    ? "button"
+    : actionId.startsWith(AGENT_FIELD_PREFIX)
+      ? "field"
+      : null;
+  if (kind === null) return null;
+  const rest = actionId.slice(actionId.indexOf(":") + 1);
+  const end = rest.indexOf(":");
+  if (end <= 0) return null;
+  const agentId = rest.slice(0, end);
+  return match(kind)
+    .with("button", (): AgentAction => ({ kind: "button", agentId }))
+    .with("field", (): AgentAction => ({
+      kind: "field",
+      agentId,
+      name: rest.slice(end + 1),
+    }))
+    .exhaustive();
 }
 
-const INPUT_ELEMENTS = new Set([
+const FIELD_ELEMENTS = new Set([
   "static_select",
   "external_select",
   "users_select",
@@ -71,8 +93,6 @@ const UNREAD_KEYS = new Set([
 
 const SLACK_LINK = /<([a-z][a-z0-9+.-]*:[^>|\s]+)\|([^>]+)>/gi;
 
-const CARD_CONTENT = new Set(["hero_image", "title", "body", "actions"]);
-
 type Json = Record<string, unknown>;
 
 function isRecord(value: unknown): value is Json {
@@ -100,6 +120,14 @@ function isChoiceButton(node: unknown): node is Json {
   return isRecord(node) && isButton(node) && !isLinkButton(node);
 }
 
+function isField(node: Json): boolean {
+  return (
+    !isButton(node) &&
+    typeof node.type === "string" &&
+    (FIELD_ELEMENTS.has(node.type) || "action_id" in node)
+  );
+}
+
 export function checkChannelBlocks(
   input: unknown,
   check: ChannelBlockCheck,
@@ -110,14 +138,32 @@ export function checkChannelBlocks(
         'blocks must be a non-empty list of Slack Block Kit blocks, each an object with a "type", such as { "type": "section", "text": { "type": "mrkdwn", "text": "…" } }',
       ],
     };
-  const issues = new Set<string>();
   let buttons = 0;
+  let fields = 0;
   const button = (node: Json): Json => {
     const id = `${check.agentId}:${buttons++}`;
     if (!isLinkButton(node))
       return { ...node, action_id: `${AGENT_BUTTON_PREFIX}${id}` };
     const { value: _value, ...link } = node;
     return { ...link, action_id: `${AGENT_LINK_PREFIX}${id}` };
+  };
+  const names = new Set<string>();
+  const field = (node: Json): Json => {
+    const position = fields++;
+    const wanted =
+      typeof node.action_id === "string" && node.action_id !== ""
+        ? node.action_id
+        : `${String(node.type)}-${position}`;
+    let name = wanted;
+    for (let copy = 2; names.has(name); copy++) name = `${wanted}-${copy}`;
+    names.add(name);
+    return {
+      ...node,
+      action_id: `${AGENT_FIELD_PREFIX}${check.agentId}:${name}`.slice(
+        0,
+        ACTION_ID_CHARS,
+      ),
+    };
   };
   const checked = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(checked);
@@ -126,19 +172,78 @@ export function checkChannelBlocks(
       Object.entries(node).map(([key, value]) => [key, checked(value)]),
     );
     if (isButton(inner)) return button(inner);
-    const type = typeof node.type === "string" ? node.type : "unnamed";
-    if (type === "input")
-      issues.add(
-        `the blocks hold an "input" block, which needs an answer to reach you, and a channel cannot carry one yet: use a button, or ask in the text`,
-      );
-    else if (INPUT_ELEMENTS.has(type) || "action_id" in node)
-      issues.add(
-        `the blocks hold a "${type}" element, which needs an answer to reach you, and a channel cannot carry one yet: use a button, or ask in the text`,
-      );
-    return inner;
+    return isField(inner) ? field(inner) : inner;
   };
-  const blocks = input.map(checked) as ChannelBlock[];
-  return issues.size > 0 ? { issues: [...issues] } : { blocks };
+  return { blocks: input.map(checked) as ChannelBlock[] };
+}
+
+const FIELD_VALUE_KEYS = [
+  "value",
+  "selected_option",
+  "selected_options",
+  "selected_user",
+  "selected_users",
+  "selected_conversation",
+  "selected_conversations",
+  "selected_channel",
+  "selected_channels",
+  "selected_date",
+  "selected_time",
+  "selected_date_time",
+];
+
+function optionValue(option: unknown): unknown {
+  return isRecord(option) && "value" in option ? option.value : option;
+}
+
+function held(value: unknown): boolean {
+  return value !== undefined && value !== null;
+}
+
+function fileName(file: unknown): unknown {
+  return isRecord(file) ? (file.name ?? file.title ?? file.id ?? null) : null;
+}
+
+export function channelFieldValue(state: unknown): unknown {
+  if (!isRecord(state)) return null;
+  if (isRecord(state.rich_text_value))
+    return richTextLines(state.rich_text_value).join("\n");
+  if (Array.isArray(state.files)) return state.files.map(fileName);
+  const key = FIELD_VALUE_KEYS.find((candidate) => held(state[candidate]));
+  if (key === undefined) {
+    const {
+      type: _type,
+      action_id: _id,
+      block_id: _block,
+      action_ts: _at,
+      ...rest
+    } = state;
+    return Object.values(rest).some(held) ? rest : null;
+  }
+  const value = state[key];
+  return Array.isArray(value) ? value.map(optionValue) : optionValue(value);
+}
+
+export function channelFieldValues(
+  state: unknown,
+  agentId: string,
+): Record<string, unknown> {
+  if (!isRecord(state)) return {};
+  const seen = new Set<string>();
+  const values: [string, unknown][] = [];
+  for (const [blockId, fields] of Object.entries(state)) {
+    if (!isRecord(fields)) continue;
+    for (const [actionId, element] of Object.entries(fields)) {
+      const action = agentActionOf(actionId);
+      if (action?.kind !== "field" || action.agentId !== agentId) continue;
+      const name = seen.has(action.name)
+        ? `${blockId}.${action.name}`
+        : action.name;
+      seen.add(name);
+      values.push([name, channelFieldValue(element)]);
+    }
+  }
+  return Object.fromEntries(values);
 }
 
 export function richTextOf(element: unknown): string {
@@ -300,65 +405,20 @@ export function channelBlockLinkButtons(
   return found(blocks);
 }
 
-export function channelBlockChoiceButtons(
+export function channelBlockInteractive(
   blocks: readonly ChannelBlock[],
 ): string[] {
   const found = (node: unknown): string[] => {
     if (Array.isArray(node)) return node.flatMap(found);
     if (!isRecord(node)) return [];
-    if (isChoiceButton(node)) return [textOf(node.text)];
-    return Object.values(node).flatMap(found);
+    if (isButton(node) && !isLinkButton(node))
+      return [`the button "${textOf(node.text)}"`];
+    return [
+      ...(isField(node) ? [`a "${String(node.type)}" element`] : []),
+      ...Object.values(node).flatMap(found),
+    ];
   };
   return found(blocks);
-}
-
-const REMOVED = Symbol("removed");
-
-const EMPTIED_REMOVES_OWNER = new Set([
-  "elements",
-  "items",
-  "rows",
-  "child_blocks",
-]);
-
-function withoutChoiceButtons(node: unknown): unknown {
-  if (Array.isArray(node))
-    return node.map(withoutChoiceButtons).filter((item) => item !== REMOVED);
-  if (!isRecord(node)) return node;
-  if (isButton(node) && !isLinkButton(node)) return REMOVED;
-  const kept: [string, unknown][] = [];
-  for (const [key, value] of Object.entries(node)) {
-    const next = withoutChoiceButtons(value);
-    if (next === REMOVED) {
-      if (key === "block") return REMOVED;
-      continue;
-    }
-    const emptied =
-      Array.isArray(value) &&
-      value.length > 0 &&
-      Array.isArray(next) &&
-      next.length === 0;
-    if (emptied && EMPTIED_REMOVES_OWNER.has(key)) return REMOVED;
-    if (!emptied) kept.push([key, next]);
-  }
-  const lostItsActions =
-    node.type === "card" &&
-    "actions" in node &&
-    !kept.some(([key]) => CARD_CONTENT.has(key));
-  return lostItsActions ? REMOVED : Object.fromEntries(kept);
-}
-
-export function withChoiceMade(
-  blocks: readonly ChannelBlock[],
-  choice: string,
-): ChannelBlock[] {
-  const kept = withoutChoiceButtons([...blocks]) as ChannelBlock[];
-  const line: ChannelBlock = {
-    type: "context",
-    elements: [{ type: "mrkdwn", text: choice }],
-  };
-  const closing = kept.at(-1);
-  return closing ? [...kept.slice(0, -1), line, closing] : [line];
 }
 
 function nestedBlocks(block: Json): unknown[] {

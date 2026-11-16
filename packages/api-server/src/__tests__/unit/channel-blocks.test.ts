@@ -2,19 +2,19 @@
  * TEST_OVERVIEW: A Channel Card is the Slack Block Kit blocks an Agent sends
  * with a post. The platform does not render them: it checks them, derives
  * their text form, finds their link buttons and counts them. The check lets
- * any block through, refuses an element whose answer cannot reach the Agent,
- * and writes its own `action_id` on every button, because a click is routed
- * by that id.
+ * any block and any element through. It writes its own `action_id` on every
+ * button and field, because an interaction is routed by that id, and it
+ * gives a field's value back under the name the Agent chose.
  */
 import { describe, expect, it } from "vitest";
 import {
-  agentButtonAgent,
-  channelBlockChoiceButtons,
+  agentActionOf,
+  channelBlockInteractive,
+  channelFieldValues,
   channelBlockLinkButtons,
   channelBlocksText,
   checkChannelBlocks,
   countChannelBlocks,
-  withChoiceMade,
   type ChannelBlock,
 } from "../../modules/channels/domain/channel-blocks.js";
 
@@ -70,11 +70,12 @@ describe("checkChannelBlocks", () => {
   });
 
   /**
-   * TEST_SCENARIO: A select has no way to send its value to the Agent. It is
-   * refused wherever it sits, here as a section's accessory inside a layout
-   * item, and the issue names it.
+   * TEST_SCENARIO: The Agent decides what its post holds, so a select, a
+   * text input and an input block pass, wherever they sit. A field's value
+   * comes back keyed by its identifier, so the platform's identifier keeps
+   * the name the Agent gave it, or makes one from the element's type.
    */
-  it("refuses an input element at any depth", () => {
+  it("passes fields at any depth and keeps their names in the platform's id", () => {
     const result = checkChannelBlocks(
       [
         {
@@ -87,38 +88,83 @@ describe("checkChannelBlocks", () => {
                   block: {
                     type: "section",
                     text: { type: "mrkdwn", text: "Environment" },
-                    accessory: { type: "static_select", options: [] },
+                    accessory: {
+                      type: "static_select",
+                      action_id: "environment",
+                      options: [],
+                    },
                   },
                 },
               ],
             },
           ],
         },
+        {
+          type: "input",
+          label: { type: "plain_text", text: "Reason" },
+          element: { type: "plain_text_input" },
+        },
       ],
       { agentId: AGENT },
     );
-    expect(result).toEqual({
-      issues: [expect.stringContaining('"static_select" element')],
+    expect(result).toMatchObject({
+      blocks: [
+        {
+          rows: [
+            {
+              items: [
+                {
+                  block: {
+                    accessory: {
+                      type: "static_select",
+                      action_id: `agent-field:${AGENT}:environment`,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "input",
+          element: {
+            type: "plain_text_input",
+            action_id: `agent-field:${AGENT}:plain_text_input-1`,
+          },
+        },
+      ],
     });
   });
 
   /**
    * TEST_SCENARIO: An element Slack adds later is not in the named set, but
-   * an element that sends something carries an `action_id`. That id on
-   * anything but a button is enough to refuse it.
+   * an element that sends something carries an `action_id`. The platform
+   * takes that identifier over too, so no element of an Agent's post reaches
+   * Slack under an identifier the Agent chose, such as the private menu's.
    */
-  it("refuses an unknown element that carries an action_id", () => {
-    const result = checkChannelBlocks(
-      [
+  it("takes over the id of an unknown element that carries one", () => {
+    expect(
+      checkChannelBlocks(
+        [
+          {
+            type: "actions",
+            elements: [{ type: "color_picker", action_id: "command-menu:0" }],
+          },
+        ],
+        { agentId: AGENT },
+      ),
+    ).toEqual({
+      blocks: [
         {
           type: "actions",
-          elements: [{ type: "color_picker", action_id: "pick" }],
+          elements: [
+            {
+              type: "color_picker",
+              action_id: `agent-field:${AGENT}:command-menu:0`,
+            },
+          ],
         },
       ],
-      { agentId: AGENT },
-    );
-    expect(result).toEqual({
-      issues: [expect.stringContaining('"color_picker" element')],
     });
   });
 
@@ -183,10 +229,18 @@ describe("checkChannelBlocks", () => {
         ],
       },
     ];
-    expect(channelBlockChoiceButtons(blocks)).toEqual(["Approve"]);
-    expect(agentButtonAgent(`agent-button:${AGENT}:0`)).toBe(AGENT);
-    expect(agentButtonAgent("command-menu:1")).toBeNull();
-    expect(agentButtonAgent(`agent-link:${AGENT}:0`)).toBeNull();
+    expect(channelBlockInteractive(blocks)).toEqual(['the button "Approve"']);
+    expect(agentActionOf(`agent-button:${AGENT}:0`)).toEqual({
+      kind: "button",
+      agentId: AGENT,
+    });
+    expect(agentActionOf(`agent-field:${AGENT}:a:b`)).toEqual({
+      kind: "field",
+      agentId: AGENT,
+      name: "a:b",
+    });
+    expect(agentActionOf("command-menu:1")).toBeNull();
+    expect(agentActionOf(`agent-link:${AGENT}:0`)).toBeNull();
     expect(checkChannelBlocks(blocks, { agentId: AGENT })).toEqual({
       blocks: [
         {
@@ -431,85 +485,154 @@ describe("countChannelBlocks", () => {
   });
 });
 
-describe("withChoiceMade", () => {
-  const choice = (label: string) => ({
-    type: "button",
-    text: { type: "plain_text", text: label },
-    value: label,
+describe("channelFieldValues", () => {
+  /**
+   * TEST_SCENARIO: Slack sends the state of a post's fields keyed by block
+   * and by element identifier, each in the shape of its element. The Agent
+   * gets one flat object under the names it chose, with plain values. A
+   * field of another Agent, and an element the platform did not name, are
+   * left out. Two fields that share a name are told apart by their block.
+   */
+  it("gives the Agent's fields by name, with plain values", () => {
+    const field = (name: string) => `agent-field:${AGENT}:${name}`;
+    expect(
+      channelFieldValues(
+        {
+          b1: { [field("reason")]: { type: "plain_text_input", value: "ok" } },
+          b2: {
+            [field("region")]: {
+              type: "static_select",
+              selected_option: {
+                text: { type: "plain_text", text: "EU west" },
+                value: "eu-west",
+              },
+            },
+          },
+          b3: {
+            [field("teams")]: {
+              type: "multi_static_select",
+              selected_options: [{ value: "a" }, { value: "b" }],
+            },
+            [field("day")]: { type: "datepicker", selected_date: "2026-11-17" },
+            [field("empty")]: { type: "plain_text_input", value: null },
+          },
+          b4: { [field("reason")]: { type: "plain_text_input", value: "two" } },
+          b5: {
+            "agent-field:agent-other:secret": { type: "plain_text_input" },
+            "command-menu:0": { type: "plain_text_input", value: "x" },
+          },
+        },
+        AGENT,
+      ),
+    ).toEqual({
+      reason: "ok",
+      region: "eu-west",
+      teams: ["a", "b"],
+      day: "2026-11-17",
+      empty: null,
+      "b4.reason": "two",
+    });
+    expect(channelFieldValues(undefined, AGENT)).toEqual({});
   });
-  const link = {
-    type: "button",
-    text: { type: "plain_text", text: "Logs" },
-    url: "https://example.com/logs",
-  };
-  const footer = {
-    type: "context",
-    elements: [{ type: "mrkdwn", text: "Sent by an agent" }],
-  };
+});
+
+describe("channelBlockInteractive", () => {
+  /**
+   * TEST_SCENARIO: A private answer to a whisper can carry nothing a person
+   * acts on, because an interaction with it cannot reach the Agent. The
+   * elements that would need one are named, and a link button is not one.
+   */
+  it("names the choice buttons and the fields, not the link buttons", () => {
+    expect(
+      channelBlockInteractive([
+        {
+          type: "actions",
+          elements: [
+            { type: "button", text: { type: "plain_text", text: "Approve" } },
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Logs" },
+              url: "https://example.com/logs",
+            },
+            { type: "static_select", options: [] },
+          ],
+        },
+      ]),
+    ).toEqual(['the button "Approve"', 'a "static_select" element']);
+  });
+});
+
+describe("field names and values", () => {
+  /**
+   * TEST_SCENARIO: Slack lets two fields in different blocks share an
+   * identifier, and then keys their values by a block identifier the Agent
+   * never chose. The check gives a repeated name a number, in the order the
+   * Agent wrote the fields, so every value comes back under a name the Agent
+   * can predict.
+   */
+  it("numbers a repeated field name in the order of the post", () => {
+    const text = (label: string) => ({
+      type: "input",
+      label: { type: "plain_text", text: label },
+      element: { type: "plain_text_input", action_id: "value" },
+    });
+    expect(
+      checkChannelBlocks([text("First"), text("Second"), text("Third")], {
+        agentId: AGENT,
+      }),
+    ).toMatchObject({
+      blocks: [
+        { element: { action_id: `agent-field:${AGENT}:value` } },
+        { element: { action_id: `agent-field:${AGENT}:value-2` } },
+        { element: { action_id: `agent-field:${AGENT}:value-3` } },
+      ],
+    });
+  });
 
   /**
-   * TEST_SCENARIO: A post takes one answer. After it, every choice button
-   * goes, wherever it sits: in a tile inside a layout, in a row of its own,
-   * as a section's accessory. A link button stays. The line that names the
-   * choice goes before the last block, because the Agent Footer must stay
-   * the block that ends the post.
+   * TEST_SCENARIO: Some fields hold more than a plain value. Formatted text
+   * comes as its text, an attached file as its name, because the file itself
+   * does not reach the Agent, and a field of a kind the platform does not
+   * know as what Slack sent for it. A field named like a built-in property
+   * of an object is a field like any other.
    */
-  it("removes choice buttons at any depth and names the choice before the footer", () => {
-    const blocks: ChannelBlock[] = [
-      {
-        type: "layout",
-        label: "Deploy",
-        rows: [
-          {
-            items: [
-              {
-                block: {
-                  type: "card",
-                  title: { type: "plain_text", text: "Build 7" },
-                  actions: [choice("Approve"), link],
-                },
-              },
-              { block: { type: "actions", elements: [choice("Later")] } },
-            ],
-          },
-        ],
-      },
-      {
-        type: "section",
-        text: { type: "mrkdwn", text: "Or decide here" },
-        accessory: choice("Reject"),
-      },
-      { type: "actions", elements: [choice("Skip")] },
-      footer,
-    ];
-
-    expect(withChoiceMade(blocks, "<@U1> chose: Approve")).toEqual([
-      {
-        type: "layout",
-        label: "Deploy",
-        rows: [
-          {
-            items: [
-              {
-                block: {
-                  type: "card",
-                  title: { type: "plain_text", text: "Build 7" },
-                  actions: [link],
-                },
-              },
-            ],
-          },
-        ],
-      },
-      { type: "section", text: { type: "mrkdwn", text: "Or decide here" } },
-      {
-        type: "context",
-        elements: [{ type: "mrkdwn", text: "<@U1> chose: Approve" }],
-      },
-      footer,
-    ]);
+  it("reads formatted text, file names, unknown fields and odd names", () => {
+    const field = (name: string) => `agent-field:${AGENT}:${name}`;
     expect(
-      channelBlockChoiceButtons(withChoiceMade(blocks, "<@U1> chose: Approve")),
-    ).toEqual([]);
+      channelFieldValues(
+        {
+          b1: {
+            [field("notes")]: {
+              type: "rich_text_input",
+              rich_text_value: {
+                type: "rich_text",
+                elements: [
+                  {
+                    type: "rich_text_section",
+                    elements: [{ type: "text", text: "Ship it" }],
+                  },
+                ],
+              },
+            },
+            [field("proof")]: {
+              type: "file_input",
+              files: [{ id: "F1", name: "report.pdf", url_private: "x" }],
+            },
+            [field("shade")]: { type: "color_picker", color: "#ff0000" },
+            [field("constructor")]: { type: "plain_text_input", value: "c" },
+            [field("__proto__")]: { type: "plain_text_input", value: "p" },
+          },
+        },
+        AGENT,
+      ),
+    ).toEqual(
+      Object.fromEntries([
+        ["notes", "Ship it"],
+        ["proof", ["report.pdf"]],
+        ["shade", { color: "#ff0000" }],
+        ["constructor", "c"],
+        ["__proto__", "p"],
+      ]),
+    );
   });
 });

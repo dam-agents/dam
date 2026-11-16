@@ -4,7 +4,7 @@ Last verified: 2026-11-16
 
 ## Overview
 
-An agent can attach a **Channel Card** to a message it posts to Slack or Telegram: tiles side by side, columns, a table, a chart, an image, buttons.
+An agent can attach a **Channel Card** to a message it posts to Slack or Telegram: tiles side by side, columns, a table, a chart, an image, buttons, a form.
 The card is Slack Block Kit, written by the agent exactly as Slack defines it.
 The platform does not render it: it checks the blocks, derives their text, and hands them to Slack as they are.
 So every block Slack has, and every block it adds later, is usable without a platform change.
@@ -16,53 +16,58 @@ Plain text stays the default; a card is for an answer whose structure helps the 
 - **The posting tools take it.** `reply`, `post` and `start_thread` take optional blocks beside the text, on the per-Agent MCP endpoint ([channel-turns](channel-turns.md#outbound--agent-to-channel)).
   The text shows above the blocks; a reply or a post may carry blocks alone, while a new thread opens with text.
   An edit of an Agent's own post takes blocks the same way, under the same check ([slack-edits](slack-edits.md#an-agent-changes-its-own-post)).
-- **The rules are disclosed on demand.** What the platform refuses, what each messenger shows, and a reference of the newer blocks with worked examples come from `describe_blocks`, not from every session's tool list, because most agents never post a card.
+- **The rules are disclosed on demand.** The rules the platform applies, what each messenger shows, and a reference of the newer blocks with worked examples come from `describe_blocks`, not from every session's tool list, because most agents never post a card.
   The reference is written by hand from Slack's own reference and is a starting point, not a boundary: a block it does not list is allowed.
 - **A removed argument is refused, not dropped.** A tool's input drops an argument it does not declare, so a call that still sends the component card of the earlier design is answered with an error that names the blocks, and nothing posts.
 
 ## The check
 
-Every card is checked before anything posts, and a card that fails comes back as a tool error that lists every problem and points at `describe_blocks`.
+Every card is checked before anything posts, and a card that fails comes back as a tool error that points at `describe_blocks`.
 Nothing is posted, so the channel never shows half an answer; the agent fixes the blocks or sends text.
 
-- **Any block passes.** The platform keeps no list of allowed blocks, and does not know their schema.
-- **No element whose answer cannot reach the agent.** A channel has no way yet for a selection or typed input to reach the agent, so a select menu, an input, checkboxes, radio buttons, a date or time picker, an overflow menu and a workflow button are refused, at any depth.
-  An element Slack adds later is refused too when it carries the identifier Slack routes a click by.
-  A button is the one element that passes, see [buttons](#buttons).
-- **The platform owns the button identifiers.** A click is routed by the identifier on the button, and the private command menu runs its commands by that identifier ([slack-commands](slack-commands.md)).
-  So the platform writes its own identifier on every button, in place of whatever the agent wrote, and drops the value of a link button.
-  An agent can therefore not post a button that acts as one of the platform's own.
+- **Any block and any element passes.** The platform keeps no list of allowed blocks or elements, and does not know their schema.
+  What a post holds, a set of buttons, a select menu, a form of input blocks, is the agent's to decide.
+- **The platform owns the element identifiers.** An interaction is routed by the identifier on the element, and the private command menu runs its commands by that identifier ([slack-commands](slack-commands.md)).
+  So the platform writes its own identifier on every button and every field, in place of whatever the agent wrote, and drops the value of a link button.
+  An agent can therefore not post an element that acts as one of the platform's own.
+  A field's identifier keeps the name the agent gave it, so the field's value comes back to the agent under that name.
+  A name used twice in one post gets a number, in the order the agent wrote the fields.
 - **Artifact links.** An in-app artifact link inside a card becomes the artifact's share URL, under the same rule as links in the text.
 - **Slack's block cap.** In Slack, a message whose text, card and footer exceed 50 blocks is refused with its length; blocks nested inside a layout or a container count.
 - **Slack is the judge of the rest.** A block's fields and limits are Slack's to check, see [rendering](#rendering).
   In Telegram, a text and card longer than one message, or than a file's caption, is refused.
 
-## Buttons
+## Interactions
 
-A card carries two kinds of button.
+A card can hold elements a person acts on.
 A **link button** opens a page and sends nothing to the agent.
-A **choice button** sends a choice back: a click on it reaches the agent.
+A **choice button** and a **field**, such as a select menu, a checkbox or a text input, send what the person did back to the agent.
 
-- **A click is a message.** A click on a choice button behaves as a message in the post's thread, addressed to the Agent that made the post.
+- **An interaction is a message.** A click on a choice button, or a change of a field, behaves as a message in the post's thread, addressed to the Agent that made the post.
   It enters the same inbound path as a typed message ([channel-turns](channel-turns.md#inbound--channel-message-to-acp-session)), so the binding check, the gates, wake, burst gathering and steering apply to it unchanged.
-  The turn names the button, the value the agent set on it, and the post; who clicked is the turn's sender.
-- **It goes where a message in that thread goes.** A click on a post inside a turn's thread reaches that thread's session; a click on the opening post of an owned thread reaches the Session that owns it ([slack-threads](slack-threads.md)); a click on a plain post, which is one-way, opens a fresh session with the thread's history ([threading model](channel-turns.md#threading-model)).
+  The turn names the element and the post; who acted is the turn's sender.
+- **A form is fields and a button.** A click carries the button's label, the value the agent set on it, and the values of every field of the post, each under the name the agent chose.
+  A field inside an input block waits for that click; an element outside one, such as a select beside a section, sends each change at once.
+  A field that reports every change, as one that sends each keystroke does, is passed on once it has been quiet, with its last value.
+  Slack does not check a form in a message, so an empty field arrives empty and the agent checks the values itself.
+  A file a person adds in a form does not reach the agent, only its name.
+- **It goes where a message in that thread goes.** An interaction with a post inside a turn's thread reaches that thread's session; with the opening post of an owned thread, the Session that owns it ([slack-threads](slack-threads.md)); with a plain post, which is one-way, a fresh session with the thread's history ([threading model](channel-turns.md#threading-model)).
   So an agent that wants the answer in the session that asked uses `start_thread`, as for a typed answer.
-  A click belongs to the Agent whose post it is on: inside a thread another Agent's Session owns, it goes to the Agent that made the post and not to the thread's owner.
-- **Anyone who sees the post may click.** A click resolves no more identity than a message does; the agent decides whose click counts.
-- **The Agent comes from the button, not from the post.** The platform's identifier on a choice button names the Agent, and the platform writes a different one on a link button.
-  So a click is delivered only for a choice button of an Agent's own post, and never on the strength of what a post's content says.
-  A click has no message of its own: the moment of the click stands in for one, so catch-up reads the thread up to it.
-- **A post takes one answer.** Once a click is handed to the Agent, the platform removes the post's choice buttons, keeps its link buttons, and adds a line that names who chose what, above the Agent Footer.
-  Everyone in the conversation then sees the answer, and a later click cannot wake the Agent again.
-  A click on a post that holds no choice button any more is not passed on, and the person is told the post was already answered; two clicks that race are settled the same way, the first one wins.
-  The post is the record of an answer, so a click on a post Slack does not hand back is not passed on either, and the person is asked to click again.
-  When Slack refuses the change to the post, the worker remembers the answer for a while, so the post still takes one.
-  The post changes when the click is handed over, not when the turn ends: a turn that then cannot start, such as one for an Agent at its spend limit, leaves the post answered, and the person gets that gate's own notice.
-  An agent that wants several answers asks each person, posts again, or puts new buttons on the post with an edit.
-- **Where a click cannot reach.** A click on a post in a conversation the Agent is no longer connected to starts no turn, and the person who clicked is told privately.
-  A private answer to a whisper is seen by one person and has no thread, so it takes link buttons only.
-  Choice buttons work in Slack only: in Telegram one shows in the text as an option, and the person answers by typing.
+  An interaction belongs to the Agent whose post it is on: inside a thread another Agent's Session owns, it goes to the Agent that made the post and not to the thread's owner.
+- **Anyone who sees the post may act.** An interaction resolves no more identity than a message does; the agent decides whose answer counts.
+- **The Agent comes from the element, not from the post.** The platform's identifier on a choice button or a field names the Agent, and the platform writes a different one on a link button.
+  So an interaction is delivered only for an element of an Agent's own post, and never on the strength of what a post's content says.
+  An interaction has no message of its own: its moment stands in for one, so catch-up reads the thread up to it.
+- **The post is the agent's.** The platform never changes a post after an interaction.
+  What it shows next, the result, an error beside a field, no buttons, new buttons, is the agent's to decide, with an edit of its own post ([slack-edits](slack-edits.md#an-agent-changes-its-own-post)).
+  Until the agent edits it, the post stays as it was and its buttons stay live, so several people can each answer.
+- **The person is told, and a repeat is held back.** A post that does not change gives a click no visible effect, so the person who clicked a button gets a private notice that the click was passed to the Agent.
+  The same click by the same person, with the same field values, is not passed on again for a minute, and the person is told it was already passed on.
+  A different person, another button, or changed field values count as a new answer, and an edit of the post by the agent ends the hold.
+  A changed field shows its new value in the post itself, so it gets no notice and is never held back.
+- **Where an interaction cannot reach.** In a conversation the Agent is no longer connected to it starts no turn, and the person is told privately.
+  A private answer to a whisper is seen by one person, has no thread and cannot be edited, so it takes link buttons only.
+  Choice buttons and fields work in Slack only: in Telegram they show in the text, and the person answers by typing.
 
 ## Rendering
 
