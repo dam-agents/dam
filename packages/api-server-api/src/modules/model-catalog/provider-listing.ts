@@ -133,6 +133,28 @@ export function listingForTemplate(
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: where the spend meter reads a provider's own
+ * prices: IBM LiteLLM's `/v1/model/info`, which an ordinary key reads, lists
+ * every model the key may use with IBM's price of each kind of token. Every
+ * mode is read, embeddings included, because the meter bills them too. Null
+ * for a provider with no price route.
+ */
+export function priceListingForTemplate(
+  templateId: string,
+): ProviderListingSpec | null {
+  if (templateId !== "ibm-litellm") return null;
+  return {
+    spec: {
+      urlEnv: ["OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],
+      tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+      path: "/v1/model/info",
+      shape: "litellm-model-info",
+      allModes: true,
+    },
+  };
+}
+
 const BEDROCK_NON_CHAT = /(^|\.)(stability|twelvelabs)\./i;
 
 /**

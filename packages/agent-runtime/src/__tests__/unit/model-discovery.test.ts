@@ -213,16 +213,19 @@ describe("createModelDiscovery", () => {
   });
 
   it("reports unavailable (never throws) on a bad body, a non-2xx response or a failed fetch", async () => {
-    for (const opts of [
-      { body: { data: "nope" } },
-      { ok: false, status: 502, body: {} },
-      { throws: true },
-    ]) {
+    for (const [opts, outcome] of [
+      [{ body: { data: "nope" } }, { status: "unavailable" }],
+      [
+        { ok: false, status: 502, body: {} },
+        { status: "unavailable", httpStatus: 502 },
+      ],
+      [{ throws: true }, { status: "unavailable" }],
+    ] as const) {
       const { fetchImpl } = stubFetch(opts);
       const discover = createModelDiscovery({ log: noop, fetchImpl });
       await expect(
         discover({ urlEnv: ["U"] }, { U: "https://p" }),
-      ).resolves.toEqual({ status: "unavailable" });
+      ).resolves.toEqual(outcome);
     }
   });
 

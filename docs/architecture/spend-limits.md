@@ -116,6 +116,24 @@ They carry only the provider and the model, which is the reply's model group whe
 The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
 Operator prices change through the chart.
 
+**Reading prices.** The api-server reads IBM LiteLLM's own prices from its model info (`/v1/model/info`) with the key of each IBM LiteLLM Connection.
+It reads every hour, once at start when it keeps no IBM price yet, and at once when a Connection is created or its key is replaced.
+An ordinary key may read the model info, which lists every model that the key may use, embeddings included, with IBM's price of each kind of token.
+The api-server keeps only the price fields of each model, never its deployment settings, and it never logs a key.
+Postgres keeps one IBM list by model group, filled from the reads of all Connections, because every IBM key reaches the same proxy and a price belongs to the proxy, not to the key.
+An hourly read replaces each model that it lists.
+When two keys give one model different prices, the higher price wins and `spend.price_conflict` is logged.
+A read of a new or changed Connection only adds the models that the list lacks.
+A model that no read lists keeps its last price.
+A refusal or an error removes no price: it only writes the Connection's status row, which keeps the last good read, the last refusal and the number of models.
+A model without an input or an output price, such as a RITS model, is left out of the list.
+The web-search price is the price per query, else the price for a medium search context.
+Each model also records whether its price has a free search quota, and which price fields change LiteLLM's cost but are not applied by DAM: a reasoning-token price unlike the output price, a regional uplift, web-search prices that differ by context size, and a free search quota.
+Each read logs such fields as `spend.price_incomplete`.
+After each hourly read, an operator price that differs from the list logs `spend.operator_price_differs`.
+The counters `platform.spend.price_reads`, by provider and outcome, and `platform.spend.operator_price_differs`, by provider and model, count the reads and the differences.
+The list does not price calls yet.
+
 ## Ledger
 
 **Receiving.** The api-server ties a stream of records to its agent by the Service address, as it ties a check.

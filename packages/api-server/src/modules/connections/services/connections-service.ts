@@ -712,6 +712,11 @@ export function createConnectionsService(deps: {
       ...buildConnectionSdsFields(conn.contributions, value),
     });
     await recordAccountLabel(conn, value, deps);
+    emit({
+      type: EventType.ConnectionCredentialChanged,
+      connectionKey: conn.id,
+      templateId: conn.templateId,
+    });
   }
 
   async function rotateClientSecret(

@@ -110,6 +110,7 @@ export {
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  priceListingForTemplate,
   nativePinOf,
   withNativePin,
   lookupPrice,

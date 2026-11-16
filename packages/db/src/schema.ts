@@ -1819,6 +1819,37 @@ export const spendAgentNames = pgTable("spend_agent_names", {
   removedAt: timestamp("removed_at", { withTimezone: true }).notNull(),
 });
 
+export const providerModelPrices = pgTable(
+  "provider_model_prices",
+  {
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    row: jsonb("row").notNull(),
+    freeSearchQuota: boolean("free_search_quota").notNull().default(false),
+    incomplete: text("incomplete")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    runId: text("run_id").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "provider_model_prices_pk",
+      columns: [table.provider, table.model],
+    }),
+  ],
+);
+
+export const providerPriceReads = pgTable("provider_price_reads", {
+  connectionId: text("connection_id").primaryKey(),
+  provider: text("provider").notNull(),
+  lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+  lastRefusedAt: timestamp("last_refused_at", { withTimezone: true }),
+  lastStatus: integer("last_status"),
+  modelCount: integer("model_count").notNull().default(0),
+});
+
 export const spendMetering = pgTable(
   "spend_metering",
   {

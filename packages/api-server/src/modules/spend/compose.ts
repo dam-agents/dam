@@ -14,6 +14,17 @@ import {
 } from "./infrastructure/operator-prices.js";
 import { createLastKnownNames } from "./infrastructure/last-known-names.js";
 import { createOtelPriceMetrics } from "./infrastructure/price-metrics.js";
+import {
+  createModelInfoPriceFetch,
+  hasPriceListing,
+} from "./infrastructure/model-info-prices.js";
+import { createProviderPriceStore } from "./infrastructure/provider-prices.js";
+import { startReadPricesOnConnectionSaga } from "./sagas/read-prices-on-connection.js";
+import {
+  createPriceReader,
+  type PriceReader,
+  type PricedConnections,
+} from "./services/price-reader.js";
 import { createSpendLedger } from "./infrastructure/spend-ledger.js";
 import { createSpendLimits } from "./infrastructure/spend-limits.js";
 import { createSpendCeilingStore } from "./infrastructure/spend-ceilings.js";
@@ -67,6 +78,8 @@ function composePriceBook(
 
 export interface SpendSystem {
   ingest: SpendIngest;
+  prices: PriceReader;
+  readPricesSaga: Subscription;
   openCalls(agentId: string): Promise<number>;
   check: SpendCheck;
   extendSaga: Subscription;
@@ -101,6 +114,7 @@ export function composeSpendSystem(deps: {
   sessions: SessionOwnership & SessionCategories;
   subAgents: SpawnedSubAgents;
   telemetryStoreOn: boolean;
+  pricedConnections: PricedConnections;
 }): SpendSystem {
   const ledger = createSpendLedger(deps.db);
   const counters = createRedisDayCounters(deps.redis);
@@ -118,17 +132,31 @@ export function composeSpendSystem(deps: {
       throw error;
     }));
   const calls = createRedisCallStates(deps.redis);
+  const priceBook = composePriceBook(deps.priceOverrides);
+  const metrics = createOtelPriceMetrics(deps.meter);
   const ingest = createSpendIngest({
-    priceBook: composePriceBook(deps.priceOverrides),
+    priceBook,
     calls,
     ledger,
     counters,
     owners: deps.owners,
     sessions: deps.sessions,
-    metrics: createOtelPriceMetrics(deps.meter),
+    metrics,
+  });
+  const prices = createPriceReader({
+    connections: deps.pricedConnections,
+    fetch: createModelInfoPriceFetch(),
+    store: createProviderPriceStore(deps.db),
+    operatorPrices: priceBook.operatorPrices,
+    metrics,
   });
   return {
     ingest,
+    prices,
+    readPricesSaga: startReadPricesOnConnectionSaga({
+      reader: prices,
+      hasPriceListing,
+    }),
     openCalls: (agentId) => calls.openCount(agentId),
     agentSpend: createAgentSpend({
       ledger,
