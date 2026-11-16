@@ -1,6 +1,6 @@
 # 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
 # mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
-min_version = "2026.10.5"
+min_version = "2026.11.5"
 monorepo_root = true
 
 [monorepo]
@@ -57,7 +57,7 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 # panache formats Markdown with semantic line breaks; config in panache.toml.
-"github:jolars/panache" = "3.17.0"
+"github:jolars/panache" = "3.17.2"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.23.0"
@@ -70,7 +70,7 @@ gum = "latest"
 helm = "latest"
 # 2.4.0 (2026-10-29) is under the 7-day floor until 2026-11-05; 2.3.0 is the
 # newest release past it. The check is check:actions.
-jactionlint = "2.3.0"
+jactionlint = "2.5.0"
 java = "temurin-25"
 jq = "latest"
 kubeconform = "latest"
@@ -93,7 +93,7 @@ uv = "latest"
 yq = "latest"
 # check:zizmor runs it beside jactionlint: the default profile leaves parts of
 # some zizmor audits out, the dynamic-matrix injection among them.
-zizmor = "1.31.1"
+zizmor = "1.32.0"
 
 # Cargo runs through mr boxington, which is what makes a build here restore the
 # crates another checkout or worktree already compiled. This is the wrapper
