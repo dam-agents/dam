@@ -133,6 +133,20 @@ What it restores is the first open: the record says the assistant has never been
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
 The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
 
+## Questions about the platform
+
+A person asks the assistant about the platform itself privately, in their own chat, rather than in a public channel: what it is, what a feature does, how to set something up, what changed in a release.
+It answers from the `platform-docs` skill, which every agent image ships in its workspace seed ([agent-skills](agent-skills.md#image-skill-lifecycle)), so any Agent can answer the same way and the assistant has nothing of its own to keep current.
+It is an image built-in, not a [platform skill](skills.md#platform-skill): no feature owns it.
+The onboarding rules send the assistant to the skill for such a question, rather than leaving the choice to the skill's description alone.
+
+The skill holds no copy of the docs: it says where they are and the agent reads them at the moment it answers, so an answer follows the docs as they change, without a new image.
+The sources are public GitHub files that the default network rules admit: the user docs (the `dam-agents/docs` site's source, indexed by its `mkdocs.yml`), the release notes (the `dam-agents/dam` releases feed), and these architecture pages at the tag of the release the person's install runs.
+The agent learns that release from the [CLI](cli.md) it has over the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), and checks a feature against the architecture pages at that tag, so a feature the release does not have is described as not there yet.
+An Agent without that Connection reads the latest published release instead, and says it could not see the person's version.
+The answer is plain language with the pages it used as links.
+The documentation requests do not carry the question, and the agent posts it nowhere; it still reaches the Agent's model provider, as every message does.
+
 ## Boundaries
 
 It holds no special standing: it knows what any Agent knows, with the access any Agent has.
