@@ -437,21 +437,21 @@ checksum = "sha256:6b4e61c8cd27d99e5a801e63ff25dd5c70b36875c2cd659d3e9ce6b76fc23
 url = "https://get.helm.sh/helm-v4.3.1-darwin-arm64.tar.gz"
 
 [[tools."http:mend"]]
-version = "26.9.2.4"
+version = "26.10.1.6"
 backend = "http:mend"
-specifiers = ["26.9.2.4"]
+specifiers = ["26.10.1.6"]
 
 [tools."http:mend"."platforms.linux-arm64"]
-checksum = "sha256:55a9735342dea6877ed78af7ae14520d46119d1f93685343b934785c503023ad"
-url = "https://downloads.mend.io/production/unified/26.9.2.4/linux_arm64/mend"
+checksum = "sha256:162a74e2aa704de93a84c736942b8100dc3609298a06f076c8a2f766ee98e3c9"
+url = "https://downloads.mend.io/production/unified/26.10.1.6/linux_arm64/mend"
 
 [tools."http:mend"."platforms.linux-x64"]
-checksum = "sha256:2361e798bb1796b5ae89b871294d264d8804a639a36b75498df3cceeddd6b0d1"
-url = "https://downloads.mend.io/production/unified/26.9.2.4/linux_amd64/mend"
+checksum = "sha256:bf7f2a68f758d3df390a32f5fa710de2e88d8a48eb2ac450280ea73e405c4a3d"
+url = "https://downloads.mend.io/production/unified/26.10.1.6/linux_amd64/mend"
 
 [tools."http:mend"."platforms.macos-arm64"]
-checksum = "sha256:6b54a3cfc229fd33c2b88569257beb52377ee95ecc31f8f1bad32948934baed9"
-url = "https://downloads.mend.io/production/unified/26.9.2.4/darwin_arm64/mend"
+checksum = "sha256:c171727b7e7701abf467237f46cc406555c6b402b96cd17f4d96bcc5914ff3b0"
+url = "https://downloads.mend.io/production/unified/26.10.1.6/darwin_arm64/mend"
 
 [[tools.jactionlint]]
 version = "2.5.0"
