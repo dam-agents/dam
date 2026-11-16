@@ -815,7 +815,7 @@ describe("outbound MCP tools — channel cards", () => {
               type: "button",
               text: { type: "plain_text", text: "Open" },
               url: "https://example.com",
-              action_id: expect.stringMatching(/^agent-button:.+:0$/),
+              action_id: expect.stringMatching(/^agent-link:.+:0$/),
             },
           ],
         },
@@ -832,17 +832,48 @@ describe("outbound MCP tools — channel cards", () => {
       name: "reply",
       arguments: {
         text: "Approve?",
-        blocks: withButton({
-          type: "button",
-          text: { type: "plain_text", text: "Approve" },
-          value: "approve",
-        }),
+        blocks: withButton({ type: "static_select", options: [] }),
       },
     })) as { content: { text: string }[]; isError?: boolean };
 
     expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain('the button "Approve"');
+    expect(res.content[0]!.text).toContain('"static_select" element');
+    expect(res.content[0]!.text).toContain("describe_blocks");
     expect(replies).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A button with no url sends a choice back to the Agent. It
+   * reaches the channel with the Agent's value, which the click hands back,
+   * and with the platform's id, which names the Agent the click goes to.
+   */
+  it("passes a choice button to the channel under the platform's id", async () => {
+    const { client, replies } = await mcpHarness();
+
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Approve?",
+        blocks: withButton({
+          type: "button",
+          text: { type: "plain_text", text: "Approve" },
+          action_id: "command-menu:0",
+          value: "approve",
+        }),
+      },
+    });
+
+    expect(replies[0]?.card?.blocks[1]).toEqual({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Approve" },
+          action_id: expect.stringMatching(/^agent-button:.+:0$/),
+          value: "approve",
+        },
+      ],
+    });
   });
 
   /**
@@ -893,7 +924,6 @@ describe("outbound MCP tools — channel cards", () => {
       expect(
         checkChannelBlocks(blocks, {
           agentId: "agent-1",
-          choiceButtons: "refuse",
         }),
       ).toHaveProperty("blocks");
   });

@@ -469,7 +469,6 @@ describe("slack outbound — cross-workspace reach", () => {
 function channelCard(blocks: ChannelBlock[]) {
   const checked = checkChannelBlocks(blocks, {
     agentId: "agent-1",
-    choiceButtons: "refuse",
   });
   if (!("blocks" in checked)) throw new Error(checked.issues.join("; "));
   return { blocks: checked.blocks, text: channelBlocksText(checked.blocks) };

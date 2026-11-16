@@ -1,5 +1,3 @@
-import { match } from "ts-pattern";
-
 export type ChannelBlock = { type: string } & Record<string, unknown>;
 
 export interface ChannelLinkButton {
@@ -9,10 +7,18 @@ export interface ChannelLinkButton {
 
 export interface ChannelBlockCheck {
   agentId: string;
-  choiceButtons: "allow" | "refuse";
 }
 
-export const AGENT_BUTTON_PREFIX = "agent-button:";
+const AGENT_BUTTON_PREFIX = "agent-button:";
+
+const AGENT_LINK_PREFIX = "agent-link:";
+
+export function agentButtonAgent(actionId: string): string | null {
+  if (!actionId.startsWith(AGENT_BUTTON_PREFIX)) return null;
+  const rest = actionId.slice(AGENT_BUTTON_PREFIX.length);
+  const end = rest.lastIndexOf(":");
+  return end > 0 ? rest.slice(0, end) : null;
+}
 
 const INPUT_ELEMENTS = new Set([
   "static_select",
@@ -101,26 +107,13 @@ export function checkChannelBlocks(
       ],
     };
   const issues = new Set<string>();
-  const instead = match(check.choiceButtons)
-    .with("allow", () => "use a button")
-    .with("refuse", () => "use a button with a url")
-    .exhaustive();
   let buttons = 0;
   const button = (node: Json): Json => {
-    const actionId = `${AGENT_BUTTON_PREFIX}${check.agentId}:${buttons++}`;
-    if (isLinkButton(node)) {
-      const { value: _value, ...link } = node;
-      return { ...link, action_id: actionId };
-    }
-    return match(check.choiceButtons)
-      .with("allow", () => ({ ...node, action_id: actionId }))
-      .with("refuse", () => {
-        issues.add(
-          `the blocks hold the button "${textOf(node.text)}", which has no url and needs a click to reach you, and a channel cannot carry one yet: give it a url, or ask in the text`,
-        );
-        return node;
-      })
-      .exhaustive();
+    const id = `${check.agentId}:${buttons++}`;
+    if (!isLinkButton(node))
+      return { ...node, action_id: `${AGENT_BUTTON_PREFIX}${id}` };
+    const { value: _value, ...link } = node;
+    return { ...link, action_id: `${AGENT_LINK_PREFIX}${id}` };
   };
   const checked = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(checked);
@@ -132,11 +125,11 @@ export function checkChannelBlocks(
     const type = typeof node.type === "string" ? node.type : "unnamed";
     if (type === "input")
       issues.add(
-        `the blocks hold an "input" block, which needs an answer to reach you, and a channel cannot carry one yet: ${instead}, or ask in the text`,
+        `the blocks hold an "input" block, which needs an answer to reach you, and a channel cannot carry one yet: use a button, or ask in the text`,
       );
     else if (INPUT_ELEMENTS.has(type) || "action_id" in node)
       issues.add(
-        `the blocks hold a "${type}" element, which needs an answer to reach you, and a channel cannot carry one yet: ${instead}, or ask in the text`,
+        `the blocks hold a "${type}" element, which needs an answer to reach you, and a channel cannot carry one yet: use a button, or ask in the text`,
       );
     return inner;
   };
@@ -289,6 +282,18 @@ export function channelBlockLinkButtons(
     return Object.entries(node).flatMap(([key, value]) =>
       UNREAD_KEYS.has(key) ? [] : found(value),
     );
+  };
+  return found(blocks);
+}
+
+export function channelBlockChoiceButtons(
+  blocks: readonly ChannelBlock[],
+): string[] {
+  const found = (node: unknown): string[] => {
+    if (Array.isArray(node)) return node.flatMap(found);
+    if (!isRecord(node)) return [];
+    if (isChoiceButton(node)) return [textOf(node.text)];
+    return Object.values(node).flatMap(found);
   };
   return found(blocks);
 }

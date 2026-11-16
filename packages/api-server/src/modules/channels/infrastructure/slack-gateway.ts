@@ -80,6 +80,13 @@ export type SlackRespond = (
   blocks?: SlackBlock[],
 ) => Promise<void>;
 
+export interface SlackClickedPost {
+  ts: string;
+  threadTs?: string;
+  clickedAt: string;
+  label: string;
+}
+
 export interface SlackMessageAction {
   actionId: string;
   value: string;
@@ -88,6 +95,7 @@ export interface SlackMessageAction {
   channelId: string;
   channelName?: string;
   teamId: SlackWorkspace;
+  post?: SlackClickedPost;
 }
 
 export interface SlackMessageReplacement {

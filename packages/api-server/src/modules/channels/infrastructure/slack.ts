@@ -196,7 +196,11 @@ import {
 } from "./slack-turn-presenter.js";
 import { escapeMrkdwn, markdownToSections } from "./slack-mrkdwn.js";
 import { slackBlocksRefusal } from "./slack-refused-blocks.js";
-import { countChannelBlocks } from "../domain/channel-blocks.js";
+import {
+  agentButtonAgent,
+  channelBlockChoiceButtons,
+  countChannelBlocks,
+} from "../domain/channel-blocks.js";
 import { mentionedCommand, parseSwitchArgs } from "./slack-mention-commands.js";
 import {
   agentContextBlock,
@@ -3530,6 +3534,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
+    const choices = args.card
+      ? channelBlockChoiceButtons(args.card.blocks)
+      : [];
+    if (choices.length > 0)
+      return {
+        error: `A private answer to a whisper carries link buttons only: a click on "${choices[0]}" could not reach you. Give each button a url, or ask for the choice in the text.`,
+      };
     const linked = await linkForTarget(
       gw,
       instanceName,
@@ -5232,10 +5243,49 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     await once(null);
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A click on a choice button of an Agent's post
+   * behaves as a message in that post's thread, addressed to the Agent that
+   * made the post. The Agent comes from the button's identifier, which only
+   * the platform writes, never from the post's content. The click enters the
+   * same inbound path as a typed message, so the binding check, the gates,
+   * thread ownership, burst gathering and steering all apply to it. A click
+   * has no message of its own: its time stands in for one, so catch-up reads
+   * up to the moment of the click.
+   */
+  async function handleAgentButtonClick(
+    event: SlackMessageAction,
+    instanceName: string,
+  ): Promise<void> {
+    const post = event.post;
+    if (!post) return;
+    const value = event.value ? ` Its value is "${event.value}".` : "";
+    await handleInbound(
+      {
+        user: event.userId,
+        sender: { kind: "person", user: event.userId },
+        channel: event.channelId,
+        ts: post.clickedAt,
+        threadTs: post.threadTs ?? post.ts,
+        text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message.`,
+        teamId: event.teamId,
+      },
+      {
+        directMessage: isDirectMessageId(event.channelId),
+        click: { instanceName },
+      },
+    );
+  }
+
   async function handleMessageAction(
     event: SlackMessageAction,
     replace: SlackReplaceMessage,
   ): Promise<void> {
+    const clickedAgent = agentButtonAgent(event.actionId);
+    if (clickedAgent !== null) {
+      if (!event.ephemeral) await handleAgentButtonClick(event, clickedAgent);
+      return;
+    }
     if (!event.ephemeral || !isCommandMenuAction(event.actionId)) return;
     const action = parseCommandMenuAction(event.value);
     if (!action) return;
@@ -7206,7 +7256,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleInbound(
     signedEvent: SlackMentionEvent,
-    opts: { directMessage: boolean },
+    opts: { directMessage: boolean; click?: { instanceName: string } },
     rerouted = false,
   ) {
     if (!gateway) return;
@@ -7216,7 +7266,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (opts.directMessage && sender.kind !== "person") return;
     if (sender.kind === "person" && !rerouted)
       void noteSlackUse(sender.user, { tagged: !opts.directMessage });
-    if (!opts.directMessage && sender.kind === "person" && !rerouted)
+    if (
+      !opts.directMessage &&
+      !opts.click &&
+      sender.kind === "person" &&
+      !rerouted
+    )
       await tipSlashCommand(event, sender.user);
     if (
       !rerouted &&
@@ -7263,12 +7318,28 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     }
     const roster = await resolveRoster(event.channel);
-    const routed = routeMention(event.text, roster);
+    const clicked = opts.click
+      ? roster.find((entry) => entry.instanceName === opts.click?.instanceName)
+      : undefined;
+    const routed = opts.click
+      ? clicked
+        ? { target: clicked, addressedByName: true, ambiguousName: null }
+        : null
+      : routeMention(event.text, roster);
     if (
       owned.owner !== null &&
       (!routed?.target || routed.target.instanceName === owned.owner)
     )
       return;
+    if (!routed && opts.click) {
+      await gateway.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        teamId: event.teamId,
+        text: "The agent that posted this is not connected to this conversation any more, so your click did not reach it.",
+      });
+      return;
+    }
     if (!routed) {
       await gateway.postEphemeral({
         channel: event.channel,

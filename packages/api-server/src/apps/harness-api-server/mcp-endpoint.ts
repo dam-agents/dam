@@ -360,7 +360,7 @@ export function createMcpSession(
   const blocksInput = blocksSchema
     .optional()
     .describe(
-      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button needs a url. Call describe_blocks for the rules and the newer blocks.",
+      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button with a url opens a page; one without a url sends the click back to you. Call describe_blocks for the rules and the newer blocks.",
     );
 
   const blocksOf = async (
@@ -369,7 +369,6 @@ export function createMcpSession(
     if (!blocks) return {};
     const checked = checkChannelBlocks(blocks, {
       agentId,
-      choiceButtons: "refuse",
     });
     if ("issues" in checked)
       return {
@@ -445,7 +444,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_blocks",
-    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, link buttons. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
+    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, buttons. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
     {},
     async () =>
       textResult(
@@ -454,9 +453,12 @@ export function createMcpSession(
             "blocks is a list of Slack Block Kit blocks, written exactly as Slack defines them. The message text stays above the blocks, and reply and post may send blocks alone. Use blocks when structure helps the reader, such as numbers in tiles, a table or a chart; a conversational answer reads better as plain text.",
           rules: [
             "Any Block Kit block is allowed, also one this reference does not list.",
-            "A button needs a url: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
+            "A button with a url opens a page. A button without a url sends a choice back to you: the click arrives as a message in the post's thread, and it names who clicked, the button's label and the value you set on it.",
+            "A click goes where a message in that thread goes. To get it in this session, ask with start_thread; a click on a plain post opens a new session, as a tagged reply under it does.",
+            "Anyone who sees the post may click. You decide whose click counts.",
+            "Buttons that send a choice work in Slack only. In Telegram they show in the text as options, and the person answers by typing. A private answer to a whisper takes link buttons only.",
             "Selects, inputs, checkboxes, radio buttons, date and time pickers, overflow menus and workflow buttons are refused, because their answer cannot reach you.",
-            "The platform writes its own action_id on every button and drops a link button's value.",
+            "The platform writes its own action_id on every button and drops the value of a button with a url.",
             "A message holds at most 50 blocks: its text, your blocks with the blocks nested in them, and the footer.",
             "Slack checks the blocks. When it refuses them, nothing is sent and you get Slack's own error: fix the blocks, or send the message as text.",
           ],

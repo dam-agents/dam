@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  agentButtonAgent,
+  channelBlockChoiceButtons,
   channelBlockLinkButtons,
   channelBlocksText,
   checkChannelBlocks,
@@ -51,7 +53,6 @@ describe("checkChannelBlocks", () => {
     expect(
       checkChannelBlocks(KPI_TILES, {
         agentId: AGENT,
-        choiceButtons: "refuse",
       }),
     ).toEqual({ blocks: KPI_TILES });
   });
@@ -64,9 +65,7 @@ describe("checkChannelBlocks", () => {
     const blocks = [
       { type: "timeline", title: { type: "plain_text", text: "Rollout" } },
     ];
-    expect(
-      checkChannelBlocks(blocks, { agentId: AGENT, choiceButtons: "refuse" }),
-    ).toEqual({ blocks });
+    expect(checkChannelBlocks(blocks, { agentId: AGENT })).toEqual({ blocks });
   });
 
   /**
@@ -95,7 +94,7 @@ describe("checkChannelBlocks", () => {
           ],
         },
       ],
-      { agentId: AGENT, choiceButtons: "allow" },
+      { agentId: AGENT },
     );
     expect(result).toEqual({
       issues: [expect.stringContaining('"static_select" element')],
@@ -115,7 +114,7 @@ describe("checkChannelBlocks", () => {
           elements: [{ type: "color_picker", action_id: "pick" }],
         },
       ],
-      { agentId: AGENT, choiceButtons: "allow" },
+      { agentId: AGENT },
     );
     expect(result).toEqual({
       issues: [expect.stringContaining('"color_picker" element')],
@@ -144,7 +143,7 @@ describe("checkChannelBlocks", () => {
           ],
         },
       ],
-      { agentId: AGENT, choiceButtons: "refuse" },
+      { agentId: AGENT },
     );
     expect(result).toEqual({
       blocks: [
@@ -155,7 +154,7 @@ describe("checkChannelBlocks", () => {
               type: "button",
               text: { type: "plain_text", text: "Open the PR" },
               url: "https://example.com/pr/1",
-              action_id: `agent-button:${AGENT}:0`,
+              action_id: `agent-link:${AGENT}:0`,
             },
           ],
         },
@@ -164,12 +163,12 @@ describe("checkChannelBlocks", () => {
   });
 
   /**
-   * TEST_SCENARIO: A button with no url sends a choice back. Where a click
-   * cannot reach the Agent it is refused with its label; where it can, it
-   * keeps the Agent's value, which the click hands back, under the
-   * platform's id.
+   * TEST_SCENARIO: A button with no url sends a choice back, and a click on
+   * it reaches the Agent. It keeps the Agent's value, which the click hands
+   * back as data, but never the Agent's id: the platform's id names the
+   * Agent, so a click finds it without reading the post.
    */
-  it("refuses or allows a choice button as the caller says", () => {
+  it("keeps a choice button's value under the platform's id", () => {
     const blocks = [
       {
         type: "actions",
@@ -183,12 +182,11 @@ describe("checkChannelBlocks", () => {
         ],
       },
     ];
-    expect(
-      checkChannelBlocks(blocks, { agentId: AGENT, choiceButtons: "refuse" }),
-    ).toEqual({ issues: [expect.stringContaining('the button "Approve"')] });
-    expect(
-      checkChannelBlocks(blocks, { agentId: AGENT, choiceButtons: "allow" }),
-    ).toEqual({
+    expect(channelBlockChoiceButtons(blocks)).toEqual(["Approve"]);
+    expect(agentButtonAgent(`agent-button:${AGENT}:0`)).toBe(AGENT);
+    expect(agentButtonAgent("command-menu:1")).toBeNull();
+    expect(agentButtonAgent(`agent-link:${AGENT}:0`)).toBeNull();
+    expect(checkChannelBlocks(blocks, { agentId: AGENT })).toEqual({
       blocks: [
         {
           type: "actions",
@@ -211,9 +209,9 @@ describe("checkChannelBlocks", () => {
    */
   it("refuses input that is not a list of blocks", () => {
     for (const input of [undefined, [], "text", [{ text: "no type" }]])
-      expect(
-        checkChannelBlocks(input, { agentId: AGENT, choiceButtons: "refuse" }),
-      ).toEqual({ issues: [expect.stringContaining("non-empty list")] });
+      expect(checkChannelBlocks(input, { agentId: AGENT })).toEqual({
+        issues: [expect.stringContaining("non-empty list")],
+      });
   });
 });
 

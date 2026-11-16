@@ -143,7 +143,7 @@ export const BLOCK_REFERENCE: BlockReference[] = [
     type: "actions",
     purpose: "A row of buttons.",
     fields:
-      'elements: at most 25 buttons. A button: { type: "button", text: plain_text, url }.',
+      'elements: at most 25 buttons. A button: { type: "button", text: plain_text, url } opens a page; without url it sends a choice back and may carry a value of at most 2000 characters.',
     example: {
       type: "actions",
       elements: [
