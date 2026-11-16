@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
 import { createByLinkHostGate } from "../../modules/artifact-library/viewer/by-link-host-gate.js";
-import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_REQUEST_TYPE,
+  artifactIconDataUrl,
+} from "api-server-api";
 
 import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
@@ -33,6 +37,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     agentId: "agent-1",
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "Weekly digest",
     slug: "slug-a",
     kind: "html",
@@ -215,6 +220,31 @@ describe("share viewer app", () => {
     ).text();
     expect(html).toContain("/brand/icon.svg");
     expect(asked).toEqual(["o1/agent-1"]);
+  });
+
+  // TEST_SCENARIO: An artifact with its own icon shows that emoji in the tab, before its Agent's avatar, so the Agent's artifacts can be told apart; the avatar is not even looked up.
+  it("shows the artifact's own icon before the Agent's avatar", async () => {
+    const asked: string[] = [];
+    const favicon: AgentFavicon = (agentId) => {
+      asked.push(agentId);
+      return Promise.resolve("data:image/svg+xml,avatar");
+    };
+    const withIcon = publicViewer({
+      resolveArtifact: () =>
+        Promise.resolve({
+          state: "ok",
+          artifact: artifactRow({ icon: "📊" }),
+        } satisfies SharedResolution),
+    });
+    const html = await (
+      await appWith(withIcon, renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(html).toContain(
+      `<link rel="icon" href="${artifactIconDataUrl("📊")}"/>`,
+    );
+    expect(html).not.toContain("avatar");
+    expect(html).not.toContain("/brand/icon.svg");
+    expect(asked).toEqual([]);
   });
 
   /**

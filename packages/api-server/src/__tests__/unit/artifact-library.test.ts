@@ -173,6 +173,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     agentId: null,
     folderId: null,
     sourcePath: null,
+    icon: null,
     title: "T",
     slug: "slug-a",
     kind: "html",

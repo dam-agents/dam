@@ -1315,6 +1315,7 @@ export const libraryArtifacts = pgTable(
       onDelete: "set null",
     }),
     title: text("title").notNull(),
+    icon: text("icon"),
     slug: text("slug").notNull(),
     sourcePath: text("source_path"),
     kind: text("kind").notNull(),

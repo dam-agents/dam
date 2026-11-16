@@ -1,5 +1,5 @@
 {
-  "id": "0ed5970f-5b55-439c-939b-6b08480f9671",
+  "id": "fc64e552-21fc-4824-bfa2-ad37a5201a23",
   "prevId": "7f196396-b62d-4dfc-81d7-5116039ce0fd",
   "version": "7",
   "dialect": "postgresql",
@@ -4148,6 +4148,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "slug": {
           "name": "slug",
           "type": "text",
@@ -7563,49 +7569,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.web_search_rules": {
-      "name": "web_search_rules",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "verdict": {
-          "name": "verdict",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "web_search_rules_verdict": {
-          "name": "web_search_rules_verdict",
-          "value": "\"web_search_rules\".\"verdict\" IN ('allow', 'deny')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "control.agent_conditions": {
       "name": "agent_conditions",
       "schema": "control",
@@ -8381,13 +8344,6 @@
         },
         "require_connection_address": {
           "name": "require_connection_address",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "web_search_control": {
-          "name": "web_search_control",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
