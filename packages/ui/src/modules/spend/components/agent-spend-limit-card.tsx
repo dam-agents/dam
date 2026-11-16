@@ -14,7 +14,7 @@ import { agentLimitOf } from "../lib/agent-limit.js";
 import {
   AGENT_LIMIT_HELP,
   alsoSpent,
-  highEstimates,
+  callsAreEstimates,
   usedToday,
 } from "../lib/copy.js";
 import {
@@ -145,7 +145,7 @@ function OtherSpendLine({
   );
   const text = [
     others.length > 0 ? alsoSpent(others) : null,
-    estimated > 0 ? highEstimates(estimated) : null,
+    estimated > 0 ? callsAreEstimates(estimated) : null,
   ]
     .filter(Boolean)
     .join(" ");

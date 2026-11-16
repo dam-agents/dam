@@ -47,6 +47,7 @@ import {
   readShareSignIn,
   type ShareSignIn,
 } from "./share-auth-routes.js";
+import type { AgentFavicon } from "../infrastructure/agent-favicon.js";
 
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
@@ -59,6 +60,7 @@ export interface ShareViewerAppDeps {
   contentBaseUrl: string;
   shareBaseUrl: string;
   bridge: ShareBridgeService;
+  agentFavicon: AgentFavicon;
 }
 
 type Surface = "page" | "raw";
@@ -254,10 +256,15 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
           }
         : undefined;
 
+    const iconHref = artifact.agentId
+      ? await deps.agentFavicon(artifact.agentId, artifact.owner)
+      : null;
+
     viewer.recordView(artifact);
     return c.html(
       renderWrapper({
         title: artifact.title,
+        iconHref,
         brandName: deps.brandName,
         contentUrl: contentUrl.href,
         slug,

@@ -112,6 +112,7 @@ export function composeAgentsModule(deps: {
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
   childEgress?: AgentsServiceDeps["childEgress"];
   newAgentDefault?: AgentsServiceDeps["newAgentDefault"];
+  startPair?: AgentsServiceDeps["startPair"];
   editorEmail: string | null;
   actor?: string;
   resolveUserEmail: (sub: string) => Promise<string | null>;
@@ -156,6 +157,7 @@ export function composeAgentsModule(deps: {
       inheritance: createInheritanceRepository(deps.db),
       childEgress: deps.childEgress,
       newAgentDefault: deps.newAgentDefault,
+      startPair: deps.startPair,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: (agentId, agentOwner) =>
         listChannelsByAgent(deps.db, agentOwner)(agentId),
@@ -333,6 +335,14 @@ export function connectionGrantProvisioner(
         await connections.setAgentConnections(agentId, sel.connectionIds, {
           ...(sel.platform ? { platform: true } : {}),
         });
+    },
+    async providerHarnesses(connectionIds) {
+      const wanted = new Set(connectionIds);
+      return new Map(
+        (await connections.listConnections()).flatMap((c) =>
+          wanted.has(c.id) && c.provider ? [[c.id, c.provider.harnesses]] : [],
+        ),
+      );
     },
   };
 }

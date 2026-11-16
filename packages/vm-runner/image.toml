@@ -5,8 +5,8 @@
 # the pod's device grant differs per cluster. The task compiles the runner, the
 # image cache service, the seed uploader (/usr/local/bin/vm-seed, which the
 # controller's migration Job runs from this image) and platform-init from this
-# crate, fetches the smolvm release smolvm.pin names and crane, and copies them
-# in.
+# crate, fetches the smolvm release smolvm.pin names, and copies them in; the
+# runner's crane is the one that release ships.
 
 # tar unpacks image archives, zstd expands each new machine's btrfs disk from
 # its template. crane fetches images over TLS, against the system trust store.

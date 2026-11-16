@@ -665,4 +665,21 @@ describe("the vendored price table", () => {
     ).not.toBeNull();
     expect(lookupPrice(VENDORED_PRICE_TABLE, "no-such-model-9000")).toBeNull();
   });
+
+  /** TEST_SCENARIO: The IBM proxy serves Gemini under `gcp/…`; the table
+   * describes gemini-4-argon, newer than the table's first vendoring, and
+   * gemini-3.1-pro as reasoning models with a 1,048,576-token window, so they
+   * do not fall back to the preset's defaults. */
+  it("describes the IBM proxy's Gemini models as reasoning with a 1 M window", () => {
+    for (const id of [
+      "gcp/gemini-4-argon",
+      "gemini-4-argon",
+      "gcp/gemini-3.1-pro-preview",
+    ]) {
+      expect(lookupPrice(VENDORED_PRICE_TABLE, id)).toMatchObject({
+        supports_reasoning: true,
+        max_input_tokens: 1_048_576,
+      });
+    }
+  });
 });
