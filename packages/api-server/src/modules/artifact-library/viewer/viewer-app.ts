@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { match } from "ts-pattern";
 
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
-import type { ArtifactKind } from "api-server-api";
+import { artifactIconDataUrl, type ArtifactKind } from "api-server-api";
 import type {
   ShareSession,
   ShareSessionCookie,
@@ -256,9 +256,11 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
           }
         : undefined;
 
-    const iconHref = artifact.agentId
-      ? await deps.agentFavicon(artifact.agentId, artifact.owner)
-      : null;
+    const iconHref =
+      (artifact.icon ? artifactIconDataUrl(artifact.icon) : null) ??
+      (artifact.agentId
+        ? await deps.agentFavicon(artifact.agentId, artifact.owner)
+        : null);
 
     viewer.recordView(artifact);
     return c.html(
