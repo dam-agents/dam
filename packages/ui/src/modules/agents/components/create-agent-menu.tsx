@@ -1,4 +1,5 @@
 import { Add, DataEnrichmentAdd } from "@carbon/icons-react";
+import { useRef } from "react";
 
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ export function CreateAgentMenu({ onChoose }: { onChoose?: () => void }) {
   const defaultAgent = useCreateDefaultAgent();
   const recordEntryPoint = useRecordEntryPoint();
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
+  const kitBrowserAfterMenu = useRef(false);
   return (
     <DropdownMenu>
       <Tooltip content="Create agent" side="right">
@@ -41,7 +43,17 @@ export function CreateAgentMenu({ onChoose }: { onChoose?: () => void }) {
           </button>
         </DropdownMenuTrigger>
       </Tooltip>
-      <DropdownMenuContent side="right" align="start" className="min-w-56">
+      <DropdownMenuContent
+        side="right"
+        align="start"
+        className="min-w-56"
+        onCloseAutoFocus={() => {
+          // UNIT_BOUNDARY_DESCRIPTION: The kit browser opens only when the closed menu hands focus back to the +, so the kit browser returns focus there on close. The menu item it was picked from is gone by then.
+          if (!kitBrowserAfterMenu.current) return;
+          kitBrowserAfterMenu.current = false;
+          setKitBrowserOpen(true);
+        }}
+      >
         <DropdownMenuItem
           disabled={!defaultAgent.ready}
           onSelect={() => {
@@ -61,7 +73,7 @@ export function CreateAgentMenu({ onChoose }: { onChoose?: () => void }) {
         <DropdownMenuItem
           onSelect={() => {
             recordEntryPoint.mutate({ choice: "starter-kit" });
-            setKitBrowserOpen(true);
+            kitBrowserAfterMenu.current = true;
             onChoose?.();
           }}
           data-testid="sidebar-create-from-kit"

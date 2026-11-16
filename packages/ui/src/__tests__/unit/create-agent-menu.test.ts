@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: the + of the sidebar's Agents section opens a menu with two ways to start, Blank agent and From a starter kit, and creates nothing until the user picks one. Blank agent creates the default agent, From a starter kit opens the kit browser and creates no agent, and each pick is recorded as the entry point the user chose.
-import { act, createElement, type ReactElement } from "react";
+// TEST_OVERVIEW: the + of the sidebar's Agents section opens a menu with two ways to start, Blank agent and From a starter kit, and creates nothing until the user picks one. Blank agent creates the default agent, From a starter kit opens the kit browser and creates no agent, each pick is recorded as the entry point the user chose, and the + has focus again after the user closes the kit browser.
+import { act, createElement, type ReactElement, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -27,6 +27,7 @@ vi.mock("../../modules/usage/api/mutations.js", () => ({
 
 const { CreateAgentMenu } =
   await import("../../modules/agents/components/create-agent-menu.js");
+const { useFocusTrap } = await import("../../components/modal.js");
 
 let root: Root;
 let container: HTMLDivElement;
@@ -121,4 +122,42 @@ it("disables Blank agent until a default agent can be created", async () => {
   expect(item("sidebar-create-from-kit").hasAttribute("data-disabled")).toBe(
     false,
   );
+});
+
+function KitBrowser({ onClose }: { onClose: () => void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useFocusTrap(panel);
+  return createElement(
+    "div",
+    { ref: panel },
+    createElement("button", {
+      "data-testid": "kit-browser-close",
+      onClick: onClose,
+    }),
+  );
+}
+
+function SidebarWithKitBrowser() {
+  const [open, setOpen] = useState(false);
+  fake.store.setKitBrowserOpen.mockImplementation(setOpen);
+  return createElement(
+    "div",
+    null,
+    createElement(CreateAgentMenu),
+    open && createElement(KitBrowser, { onClose: () => setOpen(false) }),
+  );
+}
+
+// TEST_SCENARIO: the user picks From a starter kit and then closes the kit browser. The + has focus again, so a keyboard user continues from the place in the sidebar where they started.
+it("returns focus to the + when the kit browser closes", async () => {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  act(() => root.render(createElement(SidebarWithKitBrowser)));
+  openMenu();
+  await choose("sidebar-create-from-kit");
+  expect(item("kit-browser-close")).not.toBeNull();
+  act(() => item("kit-browser-close").click());
+  await settle();
+  expect(document.activeElement).toBe(trigger());
 });
