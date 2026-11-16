@@ -5,12 +5,6 @@ bypass_actors:
   - actor_id: 5
     actor_type: RepositoryRole
     bypass_mode: always
-  # Mergify's GitHub App. `exempt` is the one mode that covers its queue
-  # branches and its merges; it still enforces this ruleset's approval and
-  # required checks as queue conditions.
-  - actor_id: 10562
-    actor_type: Integration
-    bypass_mode: exempt
 conditions:
   ref_name:
     exclude: []

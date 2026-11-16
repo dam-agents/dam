@@ -3,8 +3,8 @@
 #MISE hide=true
 # A pull request's e2e run defers the specs that rarely fail for real there
 # (E2E_SCOPE=pr), and the owner-gateway lane. A change to the code one of them
-# alone covers still needs it: the merge queue is optional, so a pull request
-# that merges directly would otherwise reach main with that spec never run.
+# alone covers still needs it: a pull request merges on its own run, so it
+# would otherwise reach main with that spec never run.
 # packages/e2e/playwright/pr-scope.json is the one place that says which
 # paths each deferred spec and lane covers; the Playwright config reads the
 # same file for the list it defers. Paths are git pathspecs, `exclude` taken

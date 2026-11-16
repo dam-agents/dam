@@ -235,7 +235,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, so a fire that never lands names that channel as the broken part. This spec runs alone at the end of the suite, and a pull request runs a reduced set, so both fire the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron; the merge queue's and the nightly run's full run waits for the cron itself, so the scheduler's own fire stays covered there. The schedule's next occurrence is read either way: on the cron path it shows the fire scheduled the next occurrence, and run-now leaves the cron where it was.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, so a fire that never lands names that channel as the broken part. This spec runs alone at the end of the suite, and a pull request runs a reduced set, so both fire the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron; the full run on a push to main and the nightly run waits for the cron itself, so the scheduler's own fire stays covered there. The schedule's next occurrence is read either way: on the cron path it shows the fire scheduled the next occurrence, and run-now leaves the cron where it was.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
