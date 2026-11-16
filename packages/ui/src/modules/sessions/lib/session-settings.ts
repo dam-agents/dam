@@ -122,8 +122,9 @@ export function settingsForModel(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how a pick reads under the chat input, on the
  * trigger and in Settings › Profiles: the family's name (else the upstream
- * id), the effort the harness offers for that model, and the provider. A part
- * that does not exist is left out.
+ * id), the effort the harness offers for that model and the provider. A part
+ * that does not exist is left out, and so is the effort while it is the
+ * option's own default, since naming it says nothing the person chose.
  */
 export function pairSummary(
   model: string | null,
@@ -153,12 +154,12 @@ export function pairSummary(
     option &&
     modelConstraintsFor(capability?.harnessConfigCatalog, model)?.[option.id];
   const effort =
-    value && (!allowed || allowed.includes(value))
+    value && value !== option?.default && (!allowed || allowed.includes(value))
       ? (option?.choices.find((c) => c.value === value)?.name ?? value)
       : null;
   return [
     effort
-      ? `${name} · ${effort.charAt(0).toUpperCase()}${effort.slice(1)}`
+      ? `${name} · ${effort.charAt(0).toUpperCase()}${effort.slice(1)} thinking`
       : name,
     provider,
   ]
