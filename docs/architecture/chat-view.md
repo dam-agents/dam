@@ -15,6 +15,7 @@ Its Files and Artifacts sections start closed, and the browser keeps each choice
 The Agent's avatar, name and state dot are one button, the **agent menu**, as the design's chat refresh draws it: *Rename* (a dialog), *Artifacts* and *File tree* (checked while open, opening their section in a 320 px column beside the conversation, stacked when both are open), *Git Changes* once the Agent has answered that it has a repository, *Add editors* (the settings' People) and *Agent settings*.
 The design has no other way to open the browser or the processes, so *Browser* and *Processes* are items of the same menu, checked the same way, for an Agent that has them.
 The Agent's processes dock beside the conversation, as its running count opens them too; a phone keeps them in its sections screen, with Files and Artifacts.
+The header ends with *New chat*, as the design draws it, once the chat holds a session or a message; a new, empty chat has nothing to start afresh from.
 The strip across the top shows its border while anything is open beside the conversation.
 A new chat's empty composer has focus and shows example prompts in place of its placeholder, one at a time, to show what an Agent can be asked; Tab puts the one showing in.
 The examples are the design's list, the same for every Agent.
