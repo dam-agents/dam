@@ -915,7 +915,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: mirror.gcr.io/chrislusf/seaweedfs:4.51
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.53
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
