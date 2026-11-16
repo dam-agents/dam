@@ -6,11 +6,14 @@ import {
 
 import type { DialogSlice } from "../platform/store/dialog.js";
 import { fetchEgressRulesForAgent } from "./api/queries.js";
+import {
+  AGENT_KEEPS_RUNNING,
+  describeWebSearchControlRestart,
+  GATEWAY_RESTART_TITLE,
+} from "./gateway-restart-copy.js";
 import { splitHostPort } from "./host-port.js";
 
 type ShowConfirm = DialogSlice["showConfirm"];
-
-export const GATEWAY_RESTART_TITLE = "Restart network access?";
 
 interface StagedGatewayRestart {
   promoted: string[];
@@ -58,9 +61,6 @@ export function stagedGatewayRestart(input: {
   };
 }
 
-const AGENT_KEEPS_RUNNING =
-  "The agent keeps running — its outbound requests are briefly interrupted.";
-
 export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   const clauses = [
     impact.promoted.length > 0 &&
@@ -80,6 +80,22 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
     return `Network access ${timing}. ${AGENT_KEEPS_RUNNING}`;
   }
   return `Network access ${timing} to ${joinClauses(clauses)}. ${AGENT_KEEPS_RUNNING}`;
+}
+
+export async function confirmWebSearchControlRestart(
+  showConfirm: ShowConfirm,
+  on: boolean,
+  storedRuleLabel?: string,
+): Promise<boolean> {
+  try {
+    return await showConfirm(
+      describeWebSearchControlRestart(on, storedRuleLabel),
+      GATEWAY_RESTART_TITLE,
+      { confirmLabel: on ? "Turn on & restart" : "Turn off & restart" },
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function confirmGatewayRestart(

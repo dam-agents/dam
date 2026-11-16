@@ -22,6 +22,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   starterKitOnboarded: null,
   image: "x:latest",
   requireConnectionAddress: false,
+  webSearchControl: false,
   whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
