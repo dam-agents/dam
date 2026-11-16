@@ -25,8 +25,6 @@ export type {
   Resources,
 } from "./modules/templates/types.js";
 
-export { repoSchema } from "./modules/repos/schemas.js";
-export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
