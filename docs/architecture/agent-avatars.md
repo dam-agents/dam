@@ -1,6 +1,6 @@
 # Agent avatars
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -42,3 +42,4 @@ Motion stops when the user's system asks for reduced motion.
 The drawing is shared by the UI and the api-server, so every surface shows the same character.
 Slack replies are the one place an avatar leaves the browser: where a workspace grants the persona scope, the api-server renders the character to a PNG, or reads the uploaded one, and uploads it to a public image host for the message icon ([channels](channels.md#slack-scopes-required-vs-optional)).
 An emoji avatar is never uploaded: Slack gets the public Twemoji PNG for it, so it looks different from the UI's system emoji.
+The share page of an artifact an Agent published shows the Agent's avatar as its tab icon, unless the artifact has an icon of its own ([artifact library](artifact-library.md#the-share-host--trust-boundary)).

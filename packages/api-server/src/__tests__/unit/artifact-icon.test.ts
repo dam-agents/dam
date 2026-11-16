@@ -1,7 +1,7 @@
-// TEST_OVERVIEW: An artifact carries the icon its Agent picked, one emoji, and
-// TEST_OVERVIEW: every page that shows the artifact alone in a browser tab uses
-// TEST_OVERVIEW: it as the tab's favicon: the share page and the framed
-// TEST_OVERVIEW: document. With no icon the share page shows the brand icon.
+// TEST_OVERVIEW: An artifact carries the icon its Agent picked, one emoji. The
+// TEST_OVERVIEW: library keeps it across versions, the agent's tools take it,
+// TEST_OVERVIEW: and the framed document carries it as its favicon. The share
+// TEST_OVERVIEW: page's tab icon is tested with the share viewer app.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
@@ -17,10 +17,7 @@ import type {
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createArtifactLibraryService } from "../../modules/artifact-library/services/artifact-library-service.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
-import {
-  renderTextKindInner,
-  renderWrapper,
-} from "../../modules/artifact-library/viewer/renderer.js";
+import { renderTextKindInner } from "../../modules/artifact-library/viewer/renderer.js";
 
 function faviconHref(html: string): string | null {
   const match = html.match(/<link rel="icon" href="([^"]*)"\/>/);
@@ -56,31 +53,7 @@ describe("the icon an agent may pick", () => {
   });
 });
 
-const BRAND_ICON = "https://app.example.com/api/brand/icon.svg";
-
-const wrapperBase = {
-  title: "Costs",
-  brandIconUrl: BRAND_ICON,
-  brandName: "Platform",
-  contentUrl: "https://content.example.com/a/s?v=1",
-  slug: "s",
-  version: 1,
-  downloadName: "costs.html",
-};
-
 describe("the favicon of an artifact's pages", () => {
-  it("is the artifact's icon on its share page", () => {
-    const svg = faviconSvg(renderWrapper({ ...wrapperBase, icon: "📊" }));
-    expect(svg).toBe(artifactIconSvg("📊"));
-  });
-
-  // TEST_SCENARIO: An artifact published before icons existed, or uploaded by the user, has none; its share page shows the brand icon, as the app does.
-  it("is the brand icon when the artifact has no icon", () => {
-    expect(faviconHref(renderWrapper({ ...wrapperBase, icon: null }))).toBe(
-      BRAND_ICON,
-    );
-  });
-
   it.each(["html", "jsx", "markdown", "code"] as const)(
     "is in the framed %s document too",
     (kind) => {

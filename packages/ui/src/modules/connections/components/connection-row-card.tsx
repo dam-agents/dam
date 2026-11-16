@@ -1,5 +1,6 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
+import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
@@ -16,7 +17,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
-  onNewChild?: () => void;
+  usedBy?: readonly ConnectionHolder[];
   bare?: boolean;
 }
 
@@ -29,7 +30,7 @@ export function ConnectionRowCard({
   deleting,
   maintenance,
   onRemove,
-  onNewChild,
+  usedBy,
   bare = false,
 }: Props) {
   return (
@@ -44,7 +45,7 @@ export function ConnectionRowCard({
         deleting={deleting}
         maintenance={maintenance}
         onRemove={onRemove}
-        onNewChild={onNewChild}
+        usedBy={usedBy}
       />
     </div>
   );

@@ -69,7 +69,7 @@ export function registerThreadTools(
       blocks: blocksSchema
         .optional()
         .describe(
-          "Optional Slack Block Kit blocks shown under the opening message, written as Slack defines them. A button with a url opens a page; one without a url sends the click back to you. Call describe_blocks for the rules and the newer blocks.",
+          "Optional Slack Block Kit blocks shown under the opening message, written as Slack defines them. A button with a url opens a page; any other button or field sends the answer back to you. Call describe_blocks for the rules and the newer blocks.",
         ),
     },
     ({ channel, chatId, text, blocks }) =>

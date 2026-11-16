@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -39,9 +39,9 @@ The platform stores exactly one emoji and refuses anything else, so a stored ico
 Emoji only, rather than also an icon set: an emoji brings its own colours, which light and dark tab strips both show, and needs no dependency.
 Like the title, it describes the whole artifact, a new version keeps it, and the owner changes or clears it in the Rename dialog.
 The list row and the docked preview's top bar show it before the title.
-Every page that shows the artifact alone in a tab uses it as the favicon, an SVG drawn in the page from the emoji alone: the share page, the framed document and the app's own artifact page.
+The share page and the app's own artifact page use it as the tab favicon, an SVG drawn in the page from the emoji alone; the framed document carries it too, for when its address is opened by itself.
 An HTML artifact that names its own favicon keeps it.
-An artifact without an icon, such as an upload or one published before icons, shows the brand icon, on its share page and in the app alike.
+An artifact without an icon, such as an upload or one published before icons, shows on its share page what the [share host](#the-share-host--trust-boundary) gives any share page, its Agent's avatar or the brand icon, and in the app the brand icon.
 
 The design is a port of a proven external tool (the "slop" artifact vault) onto platform rails: content bytes live in the S3-compatible object store ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing surface is the per-agent platform MCP server, and by-link serving happens on two dedicated hosts — a **share host** for the pages and a **content host** for the framed artifact itself.
 
@@ -170,7 +170,11 @@ A sharing change — visibility, retention date, and the viewer allowlist — is
 User-generated content is never served from the app origin.
 Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint and the front door of [Environments](environments.md#addresses) (`/e/<address>`) — never an app route.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint, the front door of [Environments](environments.md#addresses) (`/e/<address>`) and the brand icon the share pages show in the browser tab (`/brand/`) — never an app route.
+  The icon is the operator's SVG, so it is served sandboxed: it cannot run script as the share origin.
+  An artifact cannot set the tab icon itself, because the browser takes it only from the top-level share page, never from the frame.
+  A share page of an artifact with its own [icon](#overview) shows that emoji in the tab; one without shows its Agent's [avatar](agent-avatars.md) instead, inlined in the page so it reaches only viewers the page lets in; an uploaded artifact without an icon, an artifact whose Agent is gone and a folder page keep the brand icon.
+  A public link therefore shows its Agent's avatar, never its name.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
   The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.

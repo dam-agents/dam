@@ -915,7 +915,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: mirror.gcr.io/chrislusf/seaweedfs:4.51
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.53
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -968,7 +968,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.163.2
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.165.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -999,7 +999,7 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.42.0"
+        tag: "2.43.1"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
@@ -1012,13 +1012,13 @@ clickstack:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-keeper
-            tag: "26.8-alpine"
+            tag: "26.8.36.3-alpine"
     cluster:
       spec:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-server
-            tag: "26.8-alpine"
+            tag: "26.8.36.3-alpine"
         dataVolumeClaimSpec:
           resources:
             requests:

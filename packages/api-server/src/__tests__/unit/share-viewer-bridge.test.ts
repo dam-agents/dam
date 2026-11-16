@@ -184,6 +184,7 @@ function world(overrides: Partial<World> = {}) {
     contentBaseUrl: "https://content.example.com",
     shareBaseUrl: SHARE,
     bridge,
+    agentFavicon: () => Promise.resolve(null),
   });
   return { w, app };
 }
@@ -679,8 +680,7 @@ describe("the share page relay", () => {
   const page = (relay: boolean) =>
     renderWrapper({
       title: "Team dashboard",
-      icon: null,
-      brandIconUrl: "https://app.example.com/api/brand/icon.svg",
+      iconHref: null,
       brandName: "Platform",
       contentUrl: "https://content.example.com/a/slug-a?v=1&t=tok",
       slug: "slug-a",
