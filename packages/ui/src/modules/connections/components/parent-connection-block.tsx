@@ -58,59 +58,66 @@ export function ParentConnectionBlock({
         >
           {title.charAt(0).toUpperCase()}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <h4
-              className="min-w-0 max-w-full truncate text-md font-medium text-foreground"
-              title={title}
-              data-testid={`connection-parent-title-${parent.id}`}
-            >
-              {title}
-            </h4>
-            {repair && (
-              <WarningMark
-                label={repair.badge}
-                testId={`connection-parent-status-${parent.id}`}
-              />
-            )}
-          </div>
-          <div
-            className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
-            data-testid={`connection-parent-lead-${parent.id}`}
-          >
-            <span>{parentCardLead(parent)}</span>
-            {appLabel && (
-              <GithubAppInstallations connection={parent} appLabel={appLabel} />
-            )}
-          </div>
-          <RetiredHostNote connection={parent} />
-        </div>
-        <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-end gap-2">
-          {repair
-            ? repair.fix && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  disabled={parentMaintenance?.busy}
-                  onClick={repair.fix.run}
-                  data-testid={`catalog-fix-${parent.id}`}
-                >
-                  {repair.fix.label}
-                </Button>
-              )
-            : onNewChild && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={onNewChild}
-                  data-testid={`connection-new-child-${parent.id}`}
-                >
-                  New connection
-                  <Add size={16} />
-                </Button>
+        <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-[1_1_220px]">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <h4
+                className="min-w-0 max-w-full truncate text-md font-medium text-foreground"
+                title={title}
+                data-testid={`connection-parent-title-${parent.id}`}
+              >
+                {title}
+              </h4>
+              {repair && (
+                <WarningMark
+                  label={repair.badge}
+                  testId={`connection-parent-status-${parent.id}`}
+                />
               )}
+            </div>
+            <div
+              className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
+              data-testid={`connection-parent-lead-${parent.id}`}
+            >
+              <span>{parentCardLead(parent)}</span>
+              {appLabel && (
+                <GithubAppInstallations
+                  connection={parent}
+                  appLabel={appLabel}
+                />
+              )}
+            </div>
+            <RetiredHostNote connection={parent} />
+          </div>
+          <div className="ml-auto flex shrink-0 items-center empty:hidden">
+            {repair
+              ? repair.fix && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={parentMaintenance?.busy}
+                    onClick={repair.fix.run}
+                    data-testid={`catalog-fix-${parent.id}`}
+                  >
+                    {repair.fix.label}
+                  </Button>
+                )
+              : onNewChild && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={onNewChild}
+                    data-testid={`connection-new-child-${parent.id}`}
+                  >
+                    New connection
+                    <Add size={16} />
+                  </Button>
+                )}
+          </div>
+        </div>
+        <div className="flex h-8 shrink-0 items-center">
           <ConnectionRowMenu
             connection={parent}
             maintenance={parentMaintenance}
