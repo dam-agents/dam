@@ -1,6 +1,6 @@
 # MCP connections
 
-Last verified: 2026-11-07
+Last verified: 2026-11-16
 
 A custom MCP server is a [Connection](connections.md) whose endpoint becomes an MCP entry when an Agent holds it.
 Credentials stay gateway-side, as other Connection credentials do.
@@ -19,6 +19,7 @@ Discovery takes the requested scopes from the MCP endpoint's Protected Resource 
 Discovery validates the metadata's resource identifier against the endpoint and carries it through authorization, code exchange and refresh requests.
 When metadata omits the identifier, the endpoint's scheme, host and path supply its canonical form.
 Each interactive sign-in rediscovers the MCP resource and requested scopes before authorization starts; the callback keeps that configuration and stores it separately from the scopes the server grants.
+Sign-in rediscovers from the same endpoint the create path used: the catalog template's fixed MCP address when it has one, such as Figma's, else the URL the user entered.
 If only authorization-server metadata is available, a Connection with stored resource binding keeps that binding and its requested scopes.
 Refresh uses the stored configuration, so it does not depend on the MCP metadata endpoint being available.
 An older Connection acquires resource binding when its user signs in again and Protected Resource Metadata is available.
