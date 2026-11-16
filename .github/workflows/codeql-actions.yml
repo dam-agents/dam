@@ -23,8 +23,6 @@ concurrency:
 
 jobs:
   analyze:
-    # A Mergify queue PR holds PRs this workflow already scanned.
-    if: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
       contents: read
       security-events: write

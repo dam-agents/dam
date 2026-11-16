@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-11-14
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -176,7 +176,7 @@ Which choices a harness offers is its catalog's to say: Codex's offers no mode, 
 agent-runtime keeps one **Model Catalog** per agent: every granted provider Connection's models, listed from that Connection's env layer (the api-server tags each provider layer with its Connection and template), under the **qualified name** `<alias>/<upstream id>`, the alias fixed per preset ([connections](connections.md)).
 Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info.
 A LiteLLM proxy is listed from `/v1/models` on its root with the Connection's placeholder, so the gateway adds the key, and the maximum model length each entry reports, where it reports one, is its context window.
-Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
+Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, and a vLLM deployment's list the context window), then a deployment the platform measured, then the vendored LiteLLM price table, then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: the router lists no models for it, and every harness but Claude Code and Pi sees it as unsupported.
 Claude Code and Pi run on it in their own Bedrock mode with the router as their Bedrock endpoint (`/bedrock/<connection id>`), and the router passes those calls on unchanged.
@@ -243,7 +243,7 @@ A harness that carries no models of its own, such as Pi or Hermes or an image's 
 A model matches by its family, the version right behind it and the variant behind that where the list names one, across the spellings providers use: a deployment prefix, case, separators, a build stamp.
 Another version or another variant is another model, so an older DeepSeek, gpt-6.1-nano or Nemotron 3 Nano never stands in for the one the list names.
 The **context window** reaches a routed Claude Code twice, because it keeps none from `/v1/models`: an env value that is the widest window among the models the harness may run on, which is not a cap but the window an id it does not recognise runs with, and a per-model window in the harness's settings file, re-read per model so a mid-session switch compacts at the right ceiling.
-A model's window comes from the provider's own listing, else the vendored price table, else a window the platform measured for it, else the endpoint-wide constant its Connection declares; a model whose Connection declares none gets 200000 rather than the widest one, and the process-wide override is never set, since it replaces every per-model entry.
+A model's window is layered like [all its metadata](#the-model-catalog); a model whose Connection declares none gets 200000 rather than the widest one, and the process-wide override is never set, since it replaces every per-model entry.
 A repository's own `.claude/settings.json` that sets a window replaces the map, as settings precedence gives the project file the last word.
 A session's **subagent model** is one setting delivered three ways: Claude Code reads it from the env at process start, forced over the Agent tool's own model argument and an agent definition's model, so the session runs in a process of its own; Bob's and Codex's subagent calls carry a parent marker and the router sends them to the session's choice, nothing written to the harness (manifest binding `router: true`).
 A session's **subagent effort** (Claude Code, Codex) is a `router: true` setting too: the router writes it over the effort a call marked as a subagent's carries, and leaves a call that carries none alone.

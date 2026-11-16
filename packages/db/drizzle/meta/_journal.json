@@ -1069,8 +1069,15 @@
     {
       "idx": 152,
       "version": "7",
-      "when": 1794500461905,
-      "tag": "0152_artifact_icon",
+      "when": 1794762475524,
+      "tag": "0152_graduate_agent_telemetry",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794826260716,
+      "tag": "0153_artifact_icon",
       "breakpoints": true
     }
   ]

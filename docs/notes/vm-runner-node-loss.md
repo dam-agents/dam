@@ -9,7 +9,7 @@ Every agent of every owner with a runner on that node is down, and it stays down
 
 - The `VMRunnerNodeLost` alert fires for a node the cluster has not reported ready for five minutes.
 - Each affected agent carries the reason `MachineRunnerNodeLost` on its `AgentPodReady` condition, instead of the "still starting" it used to show; the Warning Event on the agent names the node.
-- One Warning Event per affected user, reason `MachineRunnerNodeLost`, on each of their vm Agents: `kubectl get events -n <agent namespace> --field-selector reason=MachineRunnerNodeLost`.
+- One Warning Event per affected user, reason `MachineRunnerNodeLost`, on each of their Agents: `kubectl get events -n <agent namespace> --field-selector reason=MachineRunnerNodeLost`.
 - `kubectl get pods -n <agent namespace> -l app.kubernetes.io/component=vm-runner -o wide` shows the runner pod of an affected owner `Terminating` on the lost node, and its replacement `Pending`.
 
 Read the pod's status and its events.

@@ -75,6 +75,10 @@ const cachedCatalog = z.object({
             vision: z.boolean().nullable(),
             cacheControl: z.literal("anthropic").nullable(),
             thinkingFormat: z.literal("zai").nullable(),
+            thinkingLevelMap: z
+              .record(z.string(), z.string().nullable())
+              .nullable()
+              .optional(),
             prices: z
               .object({
                 inputPerToken: z.number(),

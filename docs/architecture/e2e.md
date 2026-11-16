@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-11-13
+Last verified: 2026-11-16
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so a full-suite run takes it twice, once per lane.
@@ -59,7 +59,7 @@ The reduction is measured, not guessed: over five weeks of CI ending 2026-10-18,
 A spec that never fails for real earns nothing on a pull request.
 
 A deferred spec still runs on a pull request whose change touches the code it alone covers.
-The merge queue is optional, so a pull request can merge directly on its own run, and a spec deferred there would otherwise first run on main, after the merge.
+A pull request merges on its own run, so a spec deferred there would otherwise first run on main, after the merge.
 [`packages/e2e/playwright/pr-scope.json`](../../packages/e2e/playwright/pr-scope.json) is the one place that says it: each deferred spec with the paths it covers, as git pathspecs, the owner-gateway lane with the paths only that lane reaches, and the paths no entry counts — tests, Markdown and the skills an image ships, which no deferred spec boots.
 A change to `packages/agents/base/` or `packages/vm-runner/`, for example, takes `19-agent-machine`, the spec that boots a machine and reads its openrc runlevels.
 `e2e:pr-scope` diffs the pull request against its base with those pathspecs; the workflow's `docs-only` job runs it and passes the names it prints to both lanes as `E2E_PR_SPECS`, and starts the owner-gateway lane when its paths moved.
@@ -71,12 +71,8 @@ A spec may read that same scope for its own route: the scheduled-fire case waits
 What that route leaves out is proved by the full set on the push to main and on the nightly run.
 Each lane's job summary states the scope beside its timings, with the deferred specs a pull request's paths added, so a green pull request is never read as a green full suite.
 The nightly run on main is the one run that also takes the `full/` tier, in the default lane alone: `cd.yml` passes it as `full-tier`, `e2e.yml` sets `E2E_FULL` for that lane, and the config adds the tier's projects.
-A pull request, the merge queue, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
+A pull request, a push to main, a dispatch and a tag never take it, and that lane's summary names the tier beside the scope.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
-
-The merge queue is Mergify's.
-It tests each queued pull request on top of `main` and the pull requests queued ahead of it, as a draft pull request from a `mergify/merge-queue/*` branch, so its run is a `pull_request` run.
-`cd.yml` tells that run from a pull request's own run by the branch name, and gives it the merge queue's scope: both lanes, every spec, and the `verify-queue` check the queue merges on.
 
 ## Running it
 
