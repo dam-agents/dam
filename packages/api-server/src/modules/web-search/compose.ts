@@ -16,7 +16,7 @@ export function composeWebSearchForOwner(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the ext_authz gate reads for web search: an agent's switch and its rule, and how a permanent verdict on a held search writes that rule.
+// UNIT_BOUNDARY_DESCRIPTION: what the ext_authz gate reads for web search: an agent's switch, from the Agent's spec, and its rule.
 export function createWebSearchGatePorts(
   db: Db,
   controlOf: (agentId: string) => Promise<boolean>,
@@ -28,14 +28,19 @@ export function createWebSearchGatePorts(
       verdictOf: async (agentId: string) =>
         (await repo.ruleOf(agentId))?.verdict ?? null,
     },
-    ruleWriter: {
-      write: async (input: {
-        agentId: string;
-        verdict: "allow" | "deny";
-        decidedBy: string;
-      }) => {
-        await repo.writeRule(input);
-      },
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how a permanent verdict on a held search writes the agent's web search rule.
+export function createWebSearchRuleWriter(db: Db) {
+  const repo = createWebSearchRepository(db);
+  return {
+    write: async (input: {
+      agentId: string;
+      verdict: "allow" | "deny";
+      decidedBy: string;
+    }) => {
+      await repo.writeRule(input);
     },
   };
 }

@@ -100,7 +100,7 @@ import {
 } from "../../../modules/egress-rules/compose.js";
 import {
   composeWebSearchForOwner,
-  createWebSearchGatePorts,
+  createWebSearchRuleWriter,
 } from "../../../modules/web-search/compose.js";
 import { createL7HostsPortFor } from "../../../modules/agent-store/l7-hosts.js";
 import {
@@ -214,8 +214,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const slackDmBridges = createSlackDmBridgesRepository(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
-  const webSearchControlOf = async (agentId: string) =>
-    (await agentsRepo.get(agentId))?.spec.webSearchControl === true;
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
@@ -604,8 +602,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter,
-      webSearchRuleWriter: createWebSearchGatePorts(db, webSearchControlOf)
-        .ruleWriter,
+      webSearchRuleWriter: createWebSearchRuleWriter(db),
       wrapperFrameSender,
       childEgressAnswered: recordEgressAnswerAdapter(db),
       childEgressSwitch: {
@@ -617,7 +614,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const webSearch = composeWebSearchForOwner({
       db,
-      controlOf: webSearchControlOf,
+      controlOf: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.webSearchControl === true,
       ownerSub: user.sub,
       actor: user.actingEditor ?? user.sub,
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),

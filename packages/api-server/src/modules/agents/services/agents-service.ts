@@ -1699,25 +1699,23 @@ export function createAgentsService(deps: {
           : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
 
+      let runtimeStateChanged = input.webSearchControl !== undefined;
       let env = input.env;
       if (env !== undefined) {
         env = dropProtectedEnvs(env);
         if (input.name !== undefined)
           env = renamedTelemetryIdentity(env, input.name) ?? env;
         await deps.agentEnvRepo.replace(input.id, env);
-        await deps.runtimeMutator.bump(input.id, []);
-        await deps.runtimeMutator.enqueueAfterCommit(input.id);
+        runtimeStateChanged = true;
       } else if (input.name !== undefined) {
         const refreshed = renamedTelemetryIdentity(
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
         if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
-        if (refreshed || renamed || input.webSearchControl !== undefined) {
-          await deps.runtimeMutator.bump(input.id, []);
-          await deps.runtimeMutator.enqueueAfterCommit(input.id);
-        }
-      } else if (input.webSearchControl !== undefined) {
+        runtimeStateChanged ||= refreshed !== null || renamed;
+      }
+      if (runtimeStateChanged) {
         await deps.runtimeMutator.bump(input.id, []);
         await deps.runtimeMutator.enqueueAfterCommit(input.id);
       }
