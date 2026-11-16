@@ -181,6 +181,7 @@ export function useAcpSession(
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
+    useStore.getState().setQueuedPrompts([]);
     useStore.getState().setHarnessForks(false);
     useStore.getState().setSessionSteering(null);
     setMessages(
@@ -205,6 +206,7 @@ export function useAcpSession(
         setLoad((current) => (current === started ? null : current));
       setLoad(started);
       setMessages([]);
+      useStore.getState().setQueuedPrompts([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setHarnessForks(false);
       useStore.getState().setSessionSteering(null);

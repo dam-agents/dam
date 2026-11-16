@@ -42,6 +42,7 @@ func testRow(t *testing.T) agentRow {
 		HibernationTimeoutNs:  ptr(int64(90 * time.Minute)),
 		NestedVirtualization:  true,
 		RequireConnectionAddr: true,
+		WebSearchControl:      true,
 		TelemetryAttribution:  ptr("root"),
 		CPULimit:              "2",
 		MemoryLimit:           "4Gi",
@@ -115,6 +116,7 @@ func TestHydrateCarriesEveryFieldTheControllerReads(t *testing.T) {
 	if spec["image"] != "agent:1" ||
 		spec["hibernationTimeout"] != "1h30m0s" ||
 		spec["requireConnectionAddress"] != true ||
+		spec["webSearchControl"] != true ||
 		spec["storageSize"] != "30Gi" ||
 		spec["environmentOf"] != "parent" ||
 		spec["telemetryAttributionId"] != "root" {

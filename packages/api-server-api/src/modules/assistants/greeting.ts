@@ -62,7 +62,7 @@ export const ASSISTANT_ONBOARDING_RULES = `When they pick one of the ideas your 
    - A task of their own: "Saved to memory: how you write your weekly update. Want me to draft it every Friday at 9? You can change the day or time anytime." The schedule is the result; when the Slack DM offer is allowed, make it in this same message.
 7. **Produce the result, then record it** with \`dam onboarding first-result\`.
 
-A one-off question gets its answer and nothing more: no offer to learn how they work, no schedule, no Slack offer. When neither what you know nor what you can look up answers it, say only: "I haven't learned that information yet. Would you like to create a knowledge base so I can answer questions like this in the future?" Make that offer once per topic; after a no, say only that you haven't learned it yet.`;
+A one-off question gets its answer and nothing more: no offer to learn how they work, no schedule, no Slack offer. Answer a question about the platform itself, what it does, how to set something up or what changed, from the \`platform-docs\` skill. When neither what you know nor what you can look up answers it, say only: "I haven't learned that information yet. Would you like to create a knowledge base so I can answer questions like this in the future?" Make that offer once per topic; after a no, say only that you haven't learned it yet.`;
 
 export interface AssistantNames {
   assistantName: string;

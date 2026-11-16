@@ -99,6 +99,10 @@ import {
   createEgressRuleWriterAdapter,
   createKitRulesSeederAdapter,
 } from "../../../modules/egress-rules/compose.js";
+import {
+  composeWebSearchForOwner,
+  createWebSearchRuleWriter,
+} from "../../../modules/web-search/compose.js";
 import { createL7HostsPortFor } from "../../../modules/agent-store/l7-hosts.js";
 import {
   findAgentByConversation,
@@ -604,6 +608,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter,
+      webSearchRuleWriter: createWebSearchRuleWriter(db),
       wrapperFrameSender,
       childEgressAnswered: recordEgressAnswerAdapter(db),
       childEgressSwitch: {
@@ -612,6 +617,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           if (root) await turnOnChildEgress(root, decidedBy);
         },
       },
+    });
+    const webSearch = composeWebSearchForOwner({
+      db,
+      controlOf: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.webSearchControl === true,
+      ownerSub: user.sub,
+      actor: user.actingEditor ?? user.sub,
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
+      isAgentOwnedBy,
     });
     const costReviews = composeCostReviewsForOwner({
       db,
@@ -828,6 +842,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       attention,
       costReviews,
       egressRules,
+      webSearch,
       invocationsQuery,
       environments: environmentsFor(user.sub),
       invocationsControl,

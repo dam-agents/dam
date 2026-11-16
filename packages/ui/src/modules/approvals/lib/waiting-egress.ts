@@ -8,10 +8,13 @@ export function egressApprovalsWaiting(
   return approvals
     .filter(
       (a) =>
-        (a.type === "ext_authz" || a.type === "egress_proposal") &&
+        (a.type === "ext_authz" ||
+          a.type === "egress_proposal" ||
+          a.type === "web_search") &&
         (a.agentId === agentId ||
           ((a.payload.kind === "ext_authz" ||
-            a.payload.kind === "egress_proposal") &&
+            a.payload.kind === "egress_proposal" ||
+            a.payload.kind === "web_search") &&
             a.payload.forAgentId === agentId)) &&
         a.status === "pending" &&
         new Date(a.expiresAt).getTime() > now.getTime(),

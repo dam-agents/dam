@@ -51,6 +51,7 @@ export const controlAgents = control.table(
     requireConnectionAddress: boolean("require_connection_address")
       .notNull()
       .default(false),
+    webSearchControl: boolean("web_search_control").notNull().default(false),
     telemetryAttributionId: text("telemetry_attribution_id"),
     cpuLimit: text("cpu_limit").notNull(),
     memoryLimit: text("memory_limit").notNull(),
