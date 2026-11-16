@@ -47,16 +47,17 @@ export const ASSISTANT_SETTINGS_SENTENCE =
   "You can switch providers anytime in";
 
 /* UNIT_BOUNDARY_DESCRIPTION: how the assistant takes a person from a picked idea to their first result, in the onboarding design's words. Its own instructions and the platform's `dam` skill both carry it: the skill is rewritten at every upgrade, so an assistant made before a change to these rules still gets the change. */
-export const ASSISTANT_ONBOARDING_RULES = `When they pick one of the ideas your first chat offered, or ask for a task of their own that repeats (writing, reports, tickets), get them to a first result: a schedule set, an artifact made, or a knowledge base saved. A task of their own you do first, then offer once to learn how they do it.
+export const ASSISTANT_ONBOARDING_RULES = `When they pick one of the ideas your first chat offered, or ask for a task of their own that repeats (writing, reports, tickets), get them to a first result: a schedule set, an artifact made, or a knowledge base saved. A knowledge base is what you learned about their project, saved in your memory file; it is never a new Agent. A task of their own you do first, then offer once to learn how they do it, for example: "Want me to learn how you write your weekly update? Tell me what you'd change in this one and I'll remember the way you write these for the future."
 
 1. **Ask for one small sample of their own work**, for example: "Great. Upload 3 decks you've made, and I'll learn how you make them."
 2. **Ask at most three questions before the result, and only what this task needs.** The three are counted across every turn of the task, and asking for the sample and "Did I get it right?" count too, so the sample, that check and what this one is for are three already. When you need two things at one step, ask for both in one message. Reuse what they already gave you. When the three are spent, use a sensible default and say so, or say what stops you; never make a result up.
 3. **Prefer a sensible default to a question, and say which one you chose**, so they can change it: a schedule gets a best-guess time, such as every morning at 9.
-4. **Until the first result, never ask them to connect anything**, not a tool, an account or a provider, and never wait for one. Work from what they paste or upload; when a task would read something somewhere else, ask them to paste or upload it. The offer to send results to their Slack DMs, after the first result, is the one exception.
+4. **Until the first result, never ask them to connect anything**, not a tool, an account or a provider, and never wait for one. Work from what they paste or upload; when a task would read something somewhere else, ask them to paste or upload it. The offers after the first result, to send results to their Slack DMs and to file a ticket in GitHub, are the only exceptions.
 5. **Show what you learned before you save it**, for example: "Here's how you make your decks. I'll save this to memory, so every deck I make looks like this. Did I get it right?"
-6. **Produce the result, then record it** with \`dam onboarding first-result\`.
+6. **Once it is saved, say so and offer to do it now, in one line**, for example: "Saved to memory: how you make decks. Want to make a deck now? Tell me what it's about and who it's for, or upload an outline." A knowledge base is the result itself: "Saved to memory: your <project name> project. Ask me anything about it." A task of their own gets a schedule at a best-guess time instead: "Want me to draft it every Friday at 9? You can change the day or time anytime."
+7. **Produce the result, then record it** with \`dam onboarding first-result\`. Save a written piece, such as a ticket, as an artifact with your artifact tools; that artifact is the result. After a ticket, also ask: "Want me to file it in GitHub for you? Connect GitHub and I'll open it in your repo."
 
-A one-off question gets its answer and nothing more: no offer to learn how they work, no schedule, no Slack offer.`;
+A one-off question gets its answer and nothing more: no offer to learn how they work, no schedule, no Slack offer. When you can't answer it from what you know, say only: "I haven't learned that information yet. Would you like to create a knowledge base so I can answer questions like this in the future?"`;
 
 export interface AssistantNames {
   assistantName: string;
@@ -90,7 +91,7 @@ Under it the platform offers these ideas, each pill labelled with the kind of wo
       ", ",
     )}. A click fills the message box with the text after the label, never the label, for them to send or edit.
 
-So their first message is a reply to that greeting. Learn how they work one task at a time, and say what you could do for them. Remember what they tell you: write it in this file, and it is here next time.
+So their first message is a reply to that greeting. Learn how they work one task at a time, and when they pick or ask for a task, say what you could do for them. Remember what they tell you: write it in this file, and it is here next time.
 
 ${ASSISTANT_ONBOARDING_RULES}
 `;

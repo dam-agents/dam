@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-14
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -79,7 +79,9 @@ Until both answers are in, the chat shows neither the greeting nor the ordinary 
 A person the feature is off for, and any other Agent, open on the ordinary new-chat page with the ordinary placeholder.
 
 **What the agent receives.** The platform opened the conversation, so the assistant is told what it said: its `~/AGENTS.md` carries the greeting it opens with, the ideas it offers, and what to do about them — learn how the person works one task at a time, say what it could do for them, and remember what they tell it.
-It also carries the **onboarding rules** that take a picked idea to a first result: one small sample of the person's own work, at most three questions before the result, a default it names rather than a question, nothing to connect, and what it learned shown before it is saved.
+It also carries the **onboarding rules** that take a picked idea to a first result: one small sample of the person's own work, at most three questions before the result, a default it names rather than a question, nothing to connect, what it learned shown before it is saved, and once saved an offer to do the task now.
+A knowledge base there is what the assistant learned, saved in its own memory file, not a [Knowledge Base](knowledge-bases.md) Agent, and a ticket is saved as an artifact, after which the assistant offers to file it in GitHub.
+A one-off question gets its answer and nothing more, except that a question the assistant cannot answer gets one offer to learn the topic as a knowledge base.
 The same rules are a personal-assistant-only section of the `dam` skill, which an upgrade rewrites; the platform never rewrites the `~/AGENTS.md` it wrote at create, so the skill is how an assistant made earlier gets a change to them, and the skill's description asks the assistant to read it before it starts on a task.
 The instructions carry no name of the person: the given name stays the UI's, and the file describes the greeting as the platform fills it in.
 Nothing runs on the person's behalf: there is no `initialization` Session and no platform-composed first turn, because either would run the model before the owner asked anything, and the greeting itself costs no tokens at all.
