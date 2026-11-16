@@ -152,49 +152,51 @@ vi.mock("../../modules/connections/hooks/use-catalog-groups.js", () => ({
     ].filter((g) => g.connections.length > 0),
   }),
 }));
-vi.mock("../../modules/connections/components/connection-group.js", () => ({
-  ConnectionGroup: (props: {
-    group: { provider: { title: string }; connections: { id: string }[] };
-    showCount?: boolean;
-    grant?: (c: { id: string }) => { onToggle: (on: boolean) => void };
-    maintenance?: (c: {
-      id: string;
-    }) => { onUpdateCredential?: () => void } | undefined;
-  }) =>
-    createElement(
-      "section",
-      {
-        "data-testid": "connection-group",
-        "data-provider": props.group.provider.title,
-        "data-ids": props.group.connections.map((c) => c.id).join(","),
-        "data-count": String(!!props.showCount),
-        "data-menus": String(!!props.grant && !!props.maintenance),
-      },
-      props.grant &&
-        props.group.connections.flatMap((c) => [
-          createElement(
-            "button",
-            {
-              key: c.id,
-              type: "button",
-              "aria-label": `Remove ${c.id}`,
-              onClick: () => props.grant!(c).onToggle(false),
-            },
-            "remove",
-          ),
-          createElement(
-            "button",
-            {
-              key: `${c.id}-update`,
-              type: "button",
-              "aria-label": `Update ${c.id}`,
-              onClick: () => props.maintenance?.(c)?.onUpdateCredential?.(),
-            },
-            "update",
-          ),
-        ]),
-    ),
-}));
+vi.mock(
+  "../../modules/sessions/components/plus-menu/quick-connection-group.js",
+  () => ({
+    QuickConnectionGroup: (props: {
+      group: { provider: { title: string }; connections: { id: string }[] };
+      grant?: (c: { id: string }) => { onToggle: (on: boolean) => void };
+      maintenance?: (c: {
+        id: string;
+      }) => { onUpdateCredential?: () => void } | undefined;
+    }) =>
+      createElement(
+        "section",
+        {
+          "data-testid": "connection-group",
+          "data-provider": props.group.provider.title,
+          "data-ids": props.group.connections.map((c) => c.id).join(","),
+          "data-count": "true",
+          "data-menus": String(!!props.grant && !!props.maintenance),
+        },
+        props.grant &&
+          props.group.connections.flatMap((c) => [
+            createElement(
+              "button",
+              {
+                key: c.id,
+                type: "button",
+                "aria-label": `Remove ${c.id}`,
+                onClick: () => props.grant!(c).onToggle(false),
+              },
+              "remove",
+            ),
+            createElement(
+              "button",
+              {
+                key: `${c.id}-update`,
+                type: "button",
+                "aria-label": `Update ${c.id}`,
+                onClick: () => props.maintenance?.(c)?.onUpdateCredential?.(),
+              },
+              "update",
+            ),
+          ]),
+      ),
+  }),
+);
 vi.mock(
   "../../modules/connections/components/connection-update-credential-dialog.js",
   () => ({

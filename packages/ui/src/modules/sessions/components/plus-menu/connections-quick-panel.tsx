@@ -5,16 +5,17 @@ import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 
 import type { RowMaintenanceActions } from "../../../connections/components/catalog-connection-row.js";
-import { ConnectionGroup } from "../../../connections/components/connection-group.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
 import { useAgentConnectionGrants } from "../../../sandboxes/hooks/use-agent-connection-grants.js";
 import { excludeProviderConnections } from "../../../sandboxes/lib/provider-connections.js";
 import { PlusMenuNote, PlusMenuPanelFrame } from "./plus-menu-panel.js";
+import { QuickConnectionGroup } from "./quick-connection-group.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Connections panel of the composer's + menu,
  * as the design draws it: the Connections the Agent holds, other than model
- * providers, in one card per service with its count, each row with its ⋯ menu
+ * providers, in one card per service with its count (the design's
+ * ConnectionGroupCard), each row with its ⋯ menu
  * (re-authenticate, update the credential, remove it from the Agent), and Add
  * connection, which opens the catalog to grant more. The menu's dialogs are the
  * + menu's to draw, after it closes. A viewer who may not
@@ -64,11 +65,10 @@ export function ConnectionsQuickPanel({
       {ready && groups.length > 0 && (
         <div className="flex flex-col gap-3 py-2">
           {groups.map((group) => (
-            <ConnectionGroup
+            <QuickConnectionGroup
               key={group.provider.id}
               group={group}
               templateById={templateById}
-              showCount
               grant={
                 manages
                   ? (c) => ({
