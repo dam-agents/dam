@@ -1,4 +1,10 @@
-import { type CarbonIconType, Earth, Link, Locked } from "@carbon/icons-react";
+import {
+  type CarbonIconType,
+  Earth,
+  Information,
+  Link,
+  Locked,
+} from "@carbon/icons-react";
 import {
   type ArtifactVisibility,
   artifactVisibilitySchema,
@@ -25,7 +31,7 @@ export const VISIBILITY_OPTIONS: Record<
   },
   public: {
     label: "Public",
-    description: "Anyone with the link",
+    description: "Anyone with the link, no sign-in",
     Icon: Earth,
   },
 };
@@ -49,6 +55,19 @@ export function ShareVisibilityChoice({
       {artifactVisibilitySchema.options.map((visibility) => {
         const { label, description, Icon } = VISIBILITY_OPTIONS[visibility];
         const unavailableReason = unavailable[visibility];
+        if (unavailableReason !== undefined) {
+          return (
+            <p
+              key={visibility}
+              role="note"
+              data-testid={`share-visibility-${visibility}-unavailable`}
+              className="flex gap-2 p-2 text-sm text-muted-foreground"
+            >
+              <Information size={16} className="mt-0.5 shrink-0" />
+              {unavailableReason}
+            </p>
+          );
+        }
         return (
           <div key={visibility} className="flex flex-col gap-1">
             <RadioGroupItem
@@ -60,8 +79,7 @@ export function ShareVisibilityChoice({
                   className="ml-1.5 inline align-[-2px] text-muted-foreground"
                 />
               }
-              description={unavailableReason ?? description}
-              disabled={unavailableReason !== undefined}
+              description={description}
               testId={`share-visibility-${visibility}`}
               className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
             />

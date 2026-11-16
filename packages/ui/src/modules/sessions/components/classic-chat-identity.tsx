@@ -1,4 +1,4 @@
-import { Branch, Document, Globe, Tools } from "@carbon/icons-react";
+import { AddComment, Branch, Document, Globe } from "@carbon/icons-react";
 
 import { stateDotClass } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,8 @@ import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
  * state dot, its avatar and name, editable in place, the Shared badge of a
- * Shared Agent, and the buttons that toggle the browser and the changes beside
- * the conversation, open the sections on a phone, and open the Agent's
- * configuration.
+ * Shared Agent, and the buttons that start a new session, toggle the browser
+ * and the changes beside the conversation, and open the sections on a phone.
  */
 export function ClassicChatIdentity({
   agent,
@@ -25,11 +24,12 @@ export function ClassicChatIdentity({
   display,
   canOpenBrowser,
   canShowChanges,
+  canStartNewSession,
   browserOpen,
   changesOpen,
   onToggleBrowser,
   onToggleChanges,
-  onConfigure,
+  onStartNewSession,
 }: {
   agent: AgentView | null;
   agentId: string | null;
@@ -37,11 +37,12 @@ export function ClassicChatIdentity({
   display: AgentDisplay | null;
   canOpenBrowser: boolean;
   canShowChanges: boolean;
+  canStartNewSession: boolean;
   browserOpen: boolean;
   changesOpen: boolean;
   onToggleBrowser: () => void;
   onToggleChanges: () => void;
-  onConfigure: () => void;
+  onStartNewSession: () => void;
 }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   return (
@@ -69,6 +70,17 @@ export function ClassicChatIdentity({
         </span>
       )}
       <div className="ml-auto flex shrink-0">
+        {canStartNewSession && agentId && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="New session"
+            tooltip="New session"
+            onClick={onStartNewSession}
+          >
+            <AddComment size={16} />
+          </Button>
+        )}
         {canOpenBrowser && agentId && (
           <Button
             variant="ghost"
@@ -103,16 +115,6 @@ export function ClassicChatIdentity({
           onClick={() => setMobileScreen("files")}
         >
           <Document size={16} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Configure agent"
-          tooltip="Configure agent"
-          className="max-md:hidden"
-          onClick={onConfigure}
-        >
-          <Tools size={16} />
         </Button>
       </div>
     </div>

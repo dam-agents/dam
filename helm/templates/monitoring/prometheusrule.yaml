@@ -2,7 +2,7 @@
 {{- /*
 Alerts on the users' VM pools and on what the cluster holds for them. No series
 names a user: a runner alert names the runner's scrape address, and the Warning
-Events on the user's vm Agents name the user. See docs/architecture/observability.md.
+Events on the user's Agents name the user. See docs/architecture/observability.md.
 */ -}}
 {{- $t := .Values.monitoring.thresholds }}
 {{- $events := printf "kubectl get events -n %s --field-selector reason=%%s finds the user's agents." .Values.agentNamespace }}
@@ -63,7 +63,7 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: A user's VM agents are slowed down by their CPU limit.
+            summary: A user's agents are slowed down by their CPU limit.
             description: >-
               The runner at {{ "{{ $labels.instance }}" }} was throttled in {{ "{{ $value | humanizePercentage }}" }} of its scheduler periods.
         - alert: VMRunnerMemoryPressure

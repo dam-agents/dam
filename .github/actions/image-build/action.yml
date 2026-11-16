@@ -17,7 +17,7 @@ inputs:
     required: true
   cacheonly:
     description: >-
-      "true" on a PR or a merge group: every component builds without pushing,
+      "true" on a PR: every component builds without pushing,
       which proves it builds.
     default: "false"
   apt-base-cache:
@@ -62,7 +62,7 @@ runs:
         MISE_GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        # A PR or a merge group only proves its images build.
+        # A PR only proves its images build.
         read -r -a components <<< "$COMPONENTS"
         [ "$CACHEONLY" != true ] || components=("${components[@]/%/:cacheonly}")
         .mise/tasks/image/ci-build --serial "$ARCH" "${components[@]}"

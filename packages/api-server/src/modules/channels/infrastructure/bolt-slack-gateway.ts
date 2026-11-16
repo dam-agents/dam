@@ -496,8 +496,12 @@ export function createBoltSlackGateway(
             response
               ? ack({ response_type: "ephemeral", text: response.text })
               : ack(),
-          async (text) => {
-            await respond({ response_type: "ephemeral", text });
+          async (text, blocks) => {
+            await respond({
+              response_type: "ephemeral",
+              text,
+              ...(blocks ? { blocks } : {}),
+            } as Parameters<typeof respond>[0]);
           },
         );
       });
@@ -515,6 +519,55 @@ export function createBoltSlackGateway(
           teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
           inputs,
         });
+      });
+
+      bolt.action(/.+/, async ({ ack, body, action, context, respond }) => {
+        await ack();
+        if (body.type !== "block_actions" || !body.channel) return;
+        const channel = body.channel;
+        const value =
+          action.type === "button"
+            ? (action.value ?? "")
+            : action.type === "overflow"
+              ? action.selected_option.value
+              : null;
+        if (value === null || !("action_id" in action)) return;
+        const postTs = body.message?.ts ?? body.container?.["message_ts"];
+        const threadTs =
+          body.message?.["thread_ts"] ?? body.container?.["thread_ts"];
+        await handlers.onMessageAction(
+          {
+            actionId: action.action_id,
+            value,
+            ephemeral: body.container?.["is_ephemeral"] === true,
+            userId: body.user.id,
+            channelId: channel.id,
+            ...(channel.name ? { channelName: channel.name } : {}),
+            teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
+            ...(typeof postTs === "string" && action.type === "button"
+              ? {
+                  post: {
+                    ts: postTs,
+                    ...(typeof threadTs === "string" ? { threadTs } : {}),
+                    clickedAt: action.action_ts,
+                    label: action.text.text,
+                  },
+                }
+              : {}),
+          },
+          async (message) => {
+            await respond(
+              (message
+                ? {
+                    replace_original: true,
+                    response_type: "ephemeral",
+                    text: message.text,
+                    blocks: message.blocks,
+                  }
+                : { delete_original: true }) as Parameters<typeof respond>[0],
+            );
+          },
+        );
       });
 
       const forgetWorkspace = async (teamId: string | undefined) => {

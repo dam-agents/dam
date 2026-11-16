@@ -240,3 +240,43 @@ a {
     transform: translateY(0);
   }
 }
+
+/* The sign-in heading's roll (name-meaning-heading.tsx). The old word leaves in 180 ms: it stays
+   sharp at first and blurs evenly, while its opacity holds and falls away mainly at the end. The
+   new word rises in sharp. Each property has its own animation, so each keeps its own curve. */
+.name-roll-out {
+  animation:
+    name-roll-out-move 180ms cubic-bezier(0.4, 0, 1, 1) forwards,
+    name-roll-out-blur 180ms linear forwards,
+    name-roll-out-fade 180ms cubic-bezier(0.75, 0, 0.9, 0.4) forwards;
+}
+.name-roll-in {
+  animation:
+    name-roll-in-move 340ms cubic-bezier(0.2, 0.75, 0.2, 1) both,
+    name-roll-in-fade 240ms ease-out both;
+}
+@keyframes name-roll-out-move {
+  to {
+    transform: translateY(-0.3em);
+  }
+}
+@keyframes name-roll-out-blur {
+  to {
+    filter: blur(3px);
+  }
+}
+@keyframes name-roll-out-fade {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes name-roll-in-move {
+  from {
+    transform: translateY(0.3em);
+  }
+}
+@keyframes name-roll-in-fade {
+  from {
+    opacity: 0;
+  }
+}

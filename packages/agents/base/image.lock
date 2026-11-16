@@ -210,10 +210,10 @@ backend = "npm:@agentclientprotocol/sdk"
 specifiers = ["2.0.2"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
-version = "1.4.0"
-aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.4.0", digest = "sha256:869e87cb7cde76dc8dc9d2c7c3d8c877a43b9b542c979ac964b38c7812024680" }
+version = "1.5.1"
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.5.1", digest = "sha256:2a580dd230a516d8c3cc98eb37ec6cdf4f2941ebbec955b9ec3db5e06321f8da" }
 backend = "npm:@earendil-works/pi-coding-agent"
-specifiers = ["1.4.0"]
+specifiers = ["1.5.1"]
 
 [[tools."npm:@github/copilot"]]
 version = "1.0.103"

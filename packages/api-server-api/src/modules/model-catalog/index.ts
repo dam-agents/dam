@@ -25,7 +25,11 @@ export {
   type HarnessBinding,
   type HarnessOffer,
 } from "./render.js";
-export { layerMetadata, type ProviderModelInfo } from "./metadata.js";
+export {
+  internalModel,
+  layerMetadata,
+  type ProviderModelInfo,
+} from "./metadata.js";
 export {
   lookupPrice,
   normalizeModelKey,
