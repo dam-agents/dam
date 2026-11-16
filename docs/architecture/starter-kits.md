@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-12
+Last verified: 2026-11-14
 
 ## Overview
 
@@ -98,7 +98,7 @@ flowchart LR
   The list is a preference, never a filter: any provider the kit's harness runs on can create the kit's Agent.
   The requirement list is for the connections the *job* needs; the apply form keeps a provider that a kit from an external catalog still declares under `accepts` out of the Connections section.
   The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, one of the kit's `providers` when the user holds one, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
-- **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
+- **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed, and the kit modal names the harness the kit starts the Agent on.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
 - **Kit Default Model** — optional `defaultModel`: the model the kit's job needs the Agent itself to run on, named the way the model is known whatever provider serves it (`claude-opus-5` for IBM's `aws/claude-opus-5`).
@@ -214,7 +214,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
-A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
+A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings — including the harness, or the model, the kit pins — and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
 Every kit shows at one size.
 The CLI reaches the same kits through the same procedures ([CLI](cli.md#command-surface)): it lists the catalog, shows a kit's setup and what it needs, and applies it with the connections the modal would preselect — for each required need, the one connection the user owns that it accepts — then names each step left, since it has no modal to walk the user through them.
 Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into.
