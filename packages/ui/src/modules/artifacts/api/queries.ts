@@ -64,3 +64,20 @@ export function useArtifactPreview(id: string | null, version?: number) {
     meta: { errorToast: "Couldn't render artifact preview" },
   });
 }
+
+export function useArtifactPromptChoice(id: string | null) {
+  return useQuery({
+    ...trpc.artifactLibrary.promptChoice.queryOptions(id ? { id } : skipToken),
+    retry: false,
+    meta: { errorToast: "Couldn't load the page's model" },
+  });
+}
+
+export function useAgentPromptChoices(agentId: string | null) {
+  return useQuery({
+    ...trpc.artifactLibrary.agentPromptChoices.queryOptions(
+      agentId ? { agentId } : skipToken,
+    ),
+    retry: false,
+  });
+}

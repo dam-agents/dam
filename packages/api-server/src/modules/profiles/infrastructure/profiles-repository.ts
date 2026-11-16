@@ -9,9 +9,9 @@ import {
   eq,
   inArray,
   isNull,
+  libraryArtifacts,
   or,
-  profileDefaults,
-  profileSeeds,
+  newAgentDefaults,
   profiles,
   schedules,
   sql,
@@ -21,9 +21,11 @@ import {
 } from "db";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
 import type { SessionSettings } from "agent-runtime-api";
-import { PROVIDER_TEMPLATE_IDS, type AliasedConnection } from "api-server-api";
-
-export const SEEDED_DEFAULT = "seeded-default";
+import {
+  PROVIDER_TEMPLATE_IDS,
+  type AliasedConnection,
+  type SessionPair,
+} from "api-server-api";
 
 export type ProfileRow = Omit<typeof profiles.$inferSelect, "settings"> & {
   settings: SessionSettings;
@@ -33,7 +35,7 @@ export type ProfileWrite = Pick<
   ProfileRow,
   "name" | "harness" | "providerTemplate" | "model" | "settings"
 > & {
-  /* UNIT_BOUNDARY_DESCRIPTION: the sub-agent a profile names, absent where it names none, so a seed or a new-agent default writes no sub-agent. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the sub-agent a profile names, absent where it names none, so a profile made without one writes none. */
   subagentProviderTemplate?: string | null;
   subagentModel?: string | null;
 };
@@ -43,6 +45,12 @@ export interface ProfileReferences {
   agents: { id: string; chat: string | null; platform: string | null }[];
   channels: { profileId: string; agentId: string; label: string }[];
   schedules: { profileId: string; id: string; name: string; agentId: string }[];
+  artifacts: {
+    profileId: string;
+    id: string;
+    title: string;
+    agentId: string;
+  }[];
 }
 
 const toRow = (row: typeof profiles.$inferSelect): ProfileRow => ({
@@ -60,7 +68,7 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
     profileId?: string,
   ): Promise<ProfileReferences> {
     if (agentIds?.length === 0)
-      return { agents: [], channels: [], schedules: [] };
+      return { agents: [], channels: [], schedules: [], artifacts: [] };
     const scoped = (column: Parameters<typeof inArray>[0]) =>
       agentIds === undefined ? undefined : inArray(column, [...agentIds]);
     const scheduleProfile = sql<string | null>`${schedules.spec}->>'profile'`;
@@ -88,7 +96,7 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
           )
           .map((id) => ({ ...row, profileId: id })),
       );
-    const [agentRows, channelRows, telegramRows, scheduleRows] =
+    const [agentRows, channelRows, telegramRows, scheduleRows, artifactRows] =
       await Promise.all([
         executor
           .select({
@@ -160,11 +168,31 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
               scoped(schedules.agentId),
             ),
           ),
+        executor
+          .select({
+            primary: libraryArtifacts.promptProfileId,
+            subagent: libraryArtifacts.promptSubagentProfile,
+            id: libraryArtifacts.id,
+            title: libraryArtifacts.title,
+            agentId: sql<string>`${libraryArtifacts.agentId}`,
+          })
+          .from(libraryArtifacts)
+          .where(
+            and(
+              eq(libraryArtifacts.owner, owner),
+              naming(
+                libraryArtifacts.promptProfileId,
+                libraryArtifacts.promptSubagentProfile,
+              ),
+              scoped(libraryArtifacts.agentId),
+            ),
+          ),
       ]);
     return {
       agents: agentRows,
       channels: [...perProfile(channelRows), ...perProfile(telegramRows)],
       schedules: perProfile(scheduleRows),
+      artifacts: perProfile(artifactRows),
     };
   }
 
@@ -204,28 +232,38 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       return rows[0] ? toRow(rows[0]) : null;
     },
 
-    async defaultOf(owner: string): Promise<ProfileRow | null> {
+    /** UNIT_BOUNDARY_DESCRIPTION: the default for new agents the owner chose: the profile it names, or its own values; null while they chose none. */
+    async newAgentDefaultOf(
+      owner: string,
+    ): Promise<
+      | { profile: ProfileRow; pair: null }
+      | { profile: null; pair: SessionPair }
+      | null
+    > {
       const rows = await db
-        .select({ profile: profiles })
-        .from(profileDefaults)
-        .innerJoin(profiles, eq(profiles.id, profileDefaults.profileId))
-        .where(eq(profileDefaults.owner, owner));
-      return rows[0] ? toRow(rows[0].profile) : null;
+        .select({ profile: profiles, pair: newAgentDefaults.sessionPair })
+        .from(newAgentDefaults)
+        .leftJoin(profiles, eq(profiles.id, newAgentDefaults.profileId))
+        .where(eq(newAgentDefaults.owner, owner));
+      const row = rows[0];
+      if (!row) return null;
+      return row.profile
+        ? { profile: toRow(row.profile), pair: null }
+        : { profile: null, pair: row.pair as SessionPair };
     },
 
-    /** UNIT_BOUNDARY_DESCRIPTION: `onlyIfNone` marks a default only for an owner who has none yet, so two first reads cannot both pick one. */
-    async setDefault(
+    async setNewAgentDefault(
       owner: string,
-      profileId: string,
-      { onlyIfNone = false } = {},
+      chosen: { profileId: string } | { sessionPair: SessionPair },
     ): Promise<void> {
-      const insert = db.insert(profileDefaults).values({ owner, profileId });
-      await (onlyIfNone
-        ? insert.onConflictDoNothing()
-        : insert.onConflictDoUpdate({
-            target: profileDefaults.owner,
-            set: { profileId },
-          }));
+      const set =
+        "profileId" in chosen
+          ? { profileId: chosen.profileId, sessionPair: null }
+          : { profileId: null, sessionPair: chosen.sessionPair };
+      await db
+        .insert(newAgentDefaults)
+        .values({ owner, ...set })
+        .onConflictDoUpdate({ target: newAgentDefaults.owner, set });
     },
 
     async insert(owner: string, profile: ProfileWrite): Promise<ProfileRow> {
@@ -272,7 +310,10 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
         if (held.length === 0) return "missing";
         const used = await references(tx, owner, agentIds, id);
         if (
-          used.agents.length + used.channels.length + used.schedules.length >
+          used.agents.length +
+            used.channels.length +
+            used.schedules.length +
+            used.artifacts.length >
           0
         )
           return used;
@@ -281,35 +322,19 @@ export function createProfilesRepository(db: Db, pseudo: SubPseudonymizer) {
       });
     },
 
-    /** UNIT_BOUNDARY_DESCRIPTION: the marker and the profile commit together, so a renamed or deleted seed never returns and a failed seed retries. */
-    async seed(owner: string, profile: ProfileWrite): Promise<void> {
-      await db.transaction(async (tx: DbTx) => {
-        const claimed = await tx
-          .insert(profileSeeds)
-          .values({ owner })
-          .onConflictDoNothing()
-          .returning({ owner: profileSeeds.owner });
-        if (claimed.length === 0) return;
-        await tx
-          .insert(profiles)
-          .values({ id: newId(), owner, seed: SEEDED_DEFAULT, ...profile })
-          .onConflictDoNothing();
-      });
-    },
-
     /** UNIT_BOUNDARY_DESCRIPTION: a new agent's row is written by the agent-created saga, which can run after the create returns, so the bind inserts it when it is not there yet; the saga's upsert keeps the reference. False when the agent already holds a chat default. */
-    async bindChatProfile(
+    async bindChatDefault(
       owner: string,
       agentId: string,
-      profileId: string,
+      chat: { sessionProfile: string } | { sessionPair: SessionPair },
     ): Promise<boolean> {
       const ownerSub = pseudo.hashSub(owner);
       const bound = await db
         .insert(agents)
-        .values({ id: agentId, ownerSub, sessionProfile: profileId })
+        .values({ id: agentId, ownerSub, ...chat })
         .onConflictDoUpdate({
           target: agents.id,
-          set: { sessionProfile: profileId },
+          set: chat,
           setWhere: and(
             eq(agents.ownerSub, ownerSub),
             isNull(agents.sessionProfile),

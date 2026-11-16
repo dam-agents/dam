@@ -1,7 +1,7 @@
 import { splitA2uiBlocks } from "api-server-api/chat-forms";
 import { useMemo } from "react";
 
-import { Markdown } from "@/components/markdown";
+import { CAPPED_CODE_BLOCK, Markdown } from "@/components/markdown";
 
 import { blockKey } from "../lib/collect-blocks.js";
 import { A2uiBlock } from "./a2ui-block.js";
@@ -28,7 +28,11 @@ interface ViewProps {
 
 function SegmentView({ view, interactive, onFileClick }: ViewProps) {
   if (view.kind === "markdown")
-    return <Markdown onFileClick={onFileClick}>{view.text}</Markdown>;
+    return (
+      <Markdown className={CAPPED_CODE_BLOCK} onFileClick={onFileClick}>
+        {view.text}
+      </Markdown>
+    );
   return (
     <A2uiBlock
       blockKey={view.key}

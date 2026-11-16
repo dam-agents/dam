@@ -29,6 +29,7 @@ import {
   createBedrockUsageScanner,
   type BedrockRoute,
 } from "../domain/bedrock.js";
+import { bobSecurityStandIn } from "../domain/bob-security.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
 import { processClassifierName } from "../domain/harness-env.js";
 import {
@@ -37,7 +38,15 @@ import {
   SESSION_HEADER,
   type SessionHandle,
 } from "../domain/session-of.js";
-import { resolveTarget } from "../domain/resolve-target.js";
+import {
+  refusesThinking,
+  verifiesThinking,
+  withoutEarlierThinking,
+} from "../domain/replay.js";
+import {
+  resolveTarget,
+  type ResolveOutcome,
+} from "../domain/resolve-target.js";
 import {
   classifierModelOnSessionProvider,
   tierModelOnSessionProvider,
@@ -45,6 +54,11 @@ import {
 import { withSubagentEffort } from "../domain/subagent-effort.js";
 import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
+import {
+  imageNote,
+  refusesImages,
+  withoutImages,
+} from "../domain/image-blocks.js";
 import { createSseModelRewrite, rewriteBody } from "../domain/model-rewrite.js";
 import {
   createUsageScanner,
@@ -146,7 +160,13 @@ export interface ModelRouter {
   close(): Promise<void>;
 }
 
-const REQ_DROP = new Set([
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the request headers that never go upstream, the
+ * hop-by-hop set plus the client's own credential and the platform's stamps,
+ * and the reply headers that never come back, since the router re-frames the
+ * body; one list for the model calls and the Bob gateway pass-through alike.
+ */
+export const REQ_DROP = new Set([
   "host",
   "connection",
   "keep-alive",
@@ -164,7 +184,7 @@ const REQ_DROP = new Set([
   SESSION_HEADER,
   CALL_HEADER,
 ]);
-const RES_DROP = new Set([
+export const RES_DROP = new Set([
   "content-encoding",
   "content-length",
   "transfer-encoding",
@@ -177,6 +197,7 @@ const RES_DROP = new Set([
  * so the router adds `x-should-retry: false` where the provider set none.
  */
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 422]);
+const FOREIGN_THINKING_SESSIONS = 1000;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a stamp the gateway's meter accepts: at most 128
@@ -208,7 +229,7 @@ function reply(
     .end(errorBody(dialect, `model-router: ${message}`));
 }
 
-const keep = (
+export const keepHeaders = (
   entries: Iterable<[string, string | string[] | undefined]>,
   drop: Set<string>,
 ): Record<string, string> =>
@@ -218,20 +239,32 @@ const keep = (
         !drop.has(pair[0]) && typeof pair[1] === "string",
     ),
   );
+const keep = keepHeaders;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Model Router, the loopback listener every
  * harness process points its one base URL at. It resolves each call's model
  * to a catalog entry and forwards the call to that provider Connection's host
  * with the Connection's credential placeholder, which Envoy swaps for the
- * key; the client's own credential never leaves the pod. No retries: a
- * second model call is a second bill.
+ * key; the client's own credential never leaves the pod. No retries, since
+ * a second model call is a second bill, but two: a model that refuses a call
+ * for its images gets it once more with each image as a text note, and the
+ * router keeps the model as text-only, so later calls go without them from
+ * the start; and a Claude model that refuses a call for a thinking block
+ * another model wrote gets it once more without the earlier thinking, and the
+ * router keeps how long that Session's history was, so its later calls leave
+ * the thinking out of that part from the start and keep it in the rest. The
+ * length only grows: a shorter call of the same Session, such as a side call
+ * or a compacted history, never lowers it, since a lost length costs a
+ * refused call and the prompt cache of everything after it.
  */
 export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
   const wantPort = deps.port ?? MODEL_ROUTER_DEFAULT_PORT;
   let port = wantPort;
   const sessionModels = new Map<string, SessionModelChoice>();
+  const textOnlyModels = new Set<string>();
+  const foreignThinking = new Map<string, number>();
   const choiceOf = (sessionId: string): SessionModelChoice | null =>
     sessionModels.get(sessionId) ?? deps.sessionModelOf?.(sessionId) ?? null;
 
@@ -332,21 +365,30 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       ? await deps.bookedSessionOf({ req, harness, routed: session })
       : session;
     const binding = deps.harnesses[harness];
-    const target = resolveTarget({
-      model: modelFor(
-        body.model,
-        binding,
-        handle,
-        isSideCall(req),
-        isAuxiliaryCall(req),
-        harness,
-      ),
-      dialect,
-      harness: binding,
-      harnessName: harness,
-      providers: deps.catalog.providers(),
-      sessionModel: session ? (choiceOf(session)?.model ?? null) : null,
-    });
+    const providers = deps.catalog.providers();
+    const sessionModel = session ? (choiceOf(session)?.model ?? null) : null;
+    const resolve = (model: string): ResolveOutcome =>
+      resolveTarget({
+        model,
+        dialect,
+        harness: binding,
+        harnessName: harness,
+        providers,
+        sessionModel,
+      });
+    const requested = modelFor(
+      body.model,
+      binding,
+      handle,
+      isSideCall(req),
+      isAuxiliaryCall(req),
+      harness,
+    );
+    const direct = resolve(requested);
+    const standIn = direct.ok
+      ? null
+      : bobSecurityStandIn({ binding, model: requested, providers });
+    const target = direct.ok || standIn === null ? direct : resolve(standIn);
     if (!target.ok) {
       deps.onRefused?.({
         session,
@@ -375,9 +417,29 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       : body;
     const prepared =
       deps.prepareBody?.(asked, { entry, dialect, stream }) ?? asked;
-    const outgoing = Buffer.from(
-      JSON.stringify({ ...prepared, model: entry.upstreamId }),
-    );
+    const modelKey = `${entry.connectionId}/${entry.upstreamId}`;
+    const imageless = (): Record<string, unknown> | null =>
+      withoutImages(prepared, dialect, imageNote(entry.upstreamId));
+    const known = textOnlyModels.has(modelKey) ? imageless() : null;
+    const checksThinking = verifiesThinking({
+      dialect,
+      upstreamId: entry.upstreamId,
+    });
+    const thinkingKey = handle?.sessionId ?? null;
+    const imagesFitted = known ?? prepared;
+    const historyLength = Array.isArray(imagesFitted.messages)
+      ? imagesFitted.messages.length
+      : 0;
+    const foreignUpTo =
+      checksThinking && thinkingKey !== null
+        ? (foreignThinking.get(thinkingKey) ?? 0)
+        : 0;
+    let sent =
+      (foreignUpTo > 0
+        ? withoutEarlierThinking(imagesFitted, foreignUpTo)
+        : null) ?? imagesFitted;
+    const outgoing = () =>
+      Buffer.from(JSON.stringify({ ...sent, model: entry.upstreamId }));
     const headers: Record<string, string> = {
       ...keep(Object.entries(req.headers), REQ_DROP),
       "content-type": "application/json",
@@ -386,7 +448,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       headers[wire.credential.header] = wire.credential.value;
     if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
     if (booked && STAMP_VALUE.test(booked)) headers[SESSION_HEADER] = booked;
-    const callId = randomUUID();
+    let callId = randomUUID();
     headers[CALL_HEADER] = callId;
     const beta = anthropicBetaFor(
       headers["anthropic-beta"],
@@ -400,10 +462,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const trace = traceOf(req.headers.traceparent);
     let recorded = false;
     let upstreamHeaders: Headers | null = null;
-    const record = (status: number, usage: ModelUsage | null): void => {
-      if (recorded) return;
-      recorded = true;
-      deps.onCallEnded?.(session, status < 400);
+    const report = (status: number, usage: ModelUsage | null): void => {
       if (!billed) return;
       const uncounted: UncountedReason | null =
         usage === null
@@ -433,6 +492,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         trace,
       });
     };
+    const record = (status: number, usage: ModelUsage | null): void => {
+      if (recorded) return;
+      recorded = true;
+      deps.onCallEnded?.(session, status < 400);
+      report(status, usage);
+    };
     let streamed: { usage(): ModelUsage | null; completed(): boolean } | null =
       null;
     let upstreamStatus = 499;
@@ -457,14 +522,54 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
 
     deps.onCallStarted?.(session);
     if (res.destroyed) return record(499, null);
-    let upstream: Response;
-    try {
-      upstream = await doFetch(upstreamUrl(wire, dialect, path, search), {
+    const send = (): Promise<Response> =>
+      doFetch(upstreamUrl(wire, dialect, path, search), {
         method: "POST",
         headers,
-        body: outgoing,
+        body: outgoing(),
         signal: ac.signal,
       });
+    let upstream: Response;
+    let refusalText: string | null = null;
+    try {
+      upstream = await send();
+      if (
+        upstream.status >= 400 &&
+        !upstream.headers.has(PLATFORM_REFUSAL_HEADER)
+      ) {
+        refusalText = await upstream.text().catch(() => "");
+        const imagesOut =
+          known === null && refusesImages(refusalText) ? imageless() : null;
+        const history = historyLength;
+        const thinkingOut =
+          imagesOut === null && checksThinking && refusesThinking(refusalText)
+            ? withoutEarlierThinking(imagesFitted, history)
+            : null;
+        const retry = imagesOut ?? thinkingOut;
+        if (retry) {
+          if (imagesOut) textOnlyModels.add(modelKey);
+          else if (thinkingKey !== null) {
+            const upTo = Math.max(history, foreignUpTo);
+            foreignThinking.delete(thinkingKey);
+            foreignThinking.set(thinkingKey, upTo);
+            if (foreignThinking.size > FOREIGN_THINKING_SESSIONS)
+              for (const oldest of foreignThinking.keys()) {
+                foreignThinking.delete(oldest);
+                break;
+              }
+          }
+          deps.log(
+            `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${imagesOut ? "the model takes no images, sent again without them" : "the history holds thinking another model wrote, sent again without the earlier thinking"}`,
+          );
+          upstreamHeaders = upstream.headers;
+          report(upstream.status, null);
+          sent = retry;
+          callId = randomUUID();
+          headers[CALL_HEADER] = callId;
+          refusalText = null;
+          upstream = await send();
+        }
+      }
     } catch (err) {
       if (ac.signal.aborted) return record(499, null);
       const reason =
@@ -483,7 +588,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const contentType = upstream.headers.get("content-type") ?? "";
     const isSse = contentType.includes("text/event-stream");
     if (upstream.status >= 400) {
-      const text = await upstream.text().catch(() => "");
+      const text = refusalText ?? (await upstream.text().catch(() => ""));
       deps.log(
         `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
       );
@@ -728,6 +833,9 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
   const bobHarness = Object.entries(deps.harnesses).find(
     ([, binding]) => binding?.bobGateway,
   )?.[0];
+  /* UNIT_BOUNDARY_DESCRIPTION: a path no route and no extension serves is logged once per method and path, so the log names what a harness relies on without a retry loop filling it; the oldest entry leaves when the set is full, so a path carrying an id per call cannot grow it without bound. */
+  const loggedUnrouted = new Set<string>();
+  const LOGGED_UNROUTED_MAX = 200;
   /* UNIT_BOUNDARY_DESCRIPTION: Pi names itself on its Bedrock calls and Claude Code does not, so an unnamed call is from the harness that runs Bedrock on names of its own. */
   const bedrockHarness =
     Object.entries(deps.harnesses).find(
@@ -774,12 +882,16 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       for (const ext of deps.extensions ?? []) {
         if (await ext.handle({ req, res, path: route.path, harness })) return;
       }
-      reply(
-        res,
-        404,
-        null,
-        `no route for ${req.method ?? "GET"} ${route.path}`,
-      );
+      const unrouted = `${req.method ?? "GET"} ${route.path}`;
+      if (!loggedUnrouted.has(unrouted)) {
+        if (loggedUnrouted.size >= LOGGED_UNROUTED_MAX)
+          loggedUnrouted.delete(loggedUnrouted.values().next().value!);
+        loggedUnrouted.add(unrouted);
+        deps.log(
+          `[model-router] ${harness}: no route for ${unrouted}, answered 404 (logged once per path)`,
+        );
+      }
+      reply(res, 404, null, `no route for ${unrouted}`);
     })().catch((err: Error) => {
       deps.log(
         `[model-router] ${req.method ?? ""} ${url.pathname}: ${err.message}`,

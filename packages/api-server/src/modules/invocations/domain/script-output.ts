@@ -11,11 +11,14 @@ export function scriptDeadline(start: Date, expiresAt: Date): Date {
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where a script run's stream is kept: under its target, and under its own run, since a kept target runs several scripts, at once too; a run from before runs had their own rows (its id is the target's) keeps the key it was uploaded to.
 export function outputKey(
-  invocation: { id: string; rootDriverId: string },
+  run: { id: string; rootDriverId: string; runId: string | null },
   stream: InvocationOutputStream,
 ): string {
-  return `invocation-outputs/${invocation.rootDriverId}/${invocation.id}/${stream}`;
+  const target = `invocation-outputs/${run.rootDriverId}/${run.id}`;
+  if (run.runId === null || run.runId === run.id) return `${target}/${stream}`;
+  return `${target}/runs/${run.runId.replace(/[^A-Za-z0-9_.-]/g, "_")}/${stream}`;
 }
 
 export function heldStreams(

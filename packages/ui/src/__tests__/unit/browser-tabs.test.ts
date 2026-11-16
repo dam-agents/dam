@@ -95,6 +95,9 @@ describe("tabLabel", () => {
     expect(tabLabel(tab("a"))).toBe("A");
     expect(tabLabel(tab("b", "about:blank", "about:blank"))).toBe("New tab");
     expect(tabLabel(tab("c", "chrome://newtab/", ""))).toBe("New tab");
+    expect(tabLabel(tab("e", "chrome://new-tab-page-third-party/", ""))).toBe(
+      "New tab",
+    );
     expect(tabLabel(tab("d", "http://d/x", ""))).toBe("http://d/x");
   });
 });

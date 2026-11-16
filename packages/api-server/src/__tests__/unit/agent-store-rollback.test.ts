@@ -39,7 +39,7 @@ const agent = (overrides: {
     labels: { "agent-platform.ai/owner": "sub-1" },
     annotations: overrides.annotations ?? {},
   } as KubeObject["metadata"],
-  spec: overrides.spec ?? { image: "agent:1" },
+  spec: { image: "agent:1", backend: { type: "vm" }, ...overrides.spec },
   status: {},
 });
 
@@ -147,6 +147,22 @@ describe("what a rollback may do", () => {
 });
 
 describe("the object a rollback writes", () => {
+  // TEST_SCENARIO: A VM Agent the rows hold has no nesting to project, and the projection used to leave its backend out altogether, which is how a release before this one wrote a container Agent. The export always writes the discriminator, so a restore cannot hand the controller an Agent it refuses to run.
+  it("exports a plain VM with its backend discriminator", () => {
+    const mapped = rowsFromResource(
+      agent({ spec: { image: "agent:1", backend: { type: "vm" } } }),
+      DEFAULTS,
+      AT,
+    );
+    expect(mapped.refusal).toBeUndefined();
+    const exported = exportCrds({ agents: [mapped.rows!], budgets: [] })[0]!;
+    const restored = restoreBody({
+      resource: exported,
+      live: null,
+      namespace: "platform-agents",
+    });
+    expect(restored.body).toMatchObject({ spec: { backend: { type: "vm" } } });
+  });
   // TEST_SCENARIO: A grant revoked, a host removed and a flag turned off after the switch come back cleared, not with the value the frozen custom resource still carries. A merge patch would keep them; the replace writes the rows' whole object, and keeps the finalizers and version the cluster owns.
   it("writes cleared fields whole rather than omitting them", () => {
     const spaced = rowsFromResource(
@@ -193,7 +209,7 @@ describe("the object a rollback writes", () => {
     const spec = restored.body.spec as Record<string, unknown>;
     expect(spec.grantedConnectionIds).toEqual([]);
     expect(spec.l7Hosts).toEqual([]);
-    expect(spec.backend).toBeUndefined();
+    expect(spec.backend).toEqual({ type: "vm" });
     expect(spec.requireConnectionAddress).toBe(false);
     expect(spec.whispersOff).toBe(false);
     expect(restored.body.metadata).toMatchObject({

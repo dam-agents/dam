@@ -3,11 +3,13 @@ import {
   agentPermission,
   agentTarget,
   checkAgentBinding,
+  manageAgentsProcedure,
   operateAgentsProcedure,
 } from "../../auth-procedures.js";
 import type { AgentTarget } from "../agents/permissions.js";
 import {
   approvalApproveHostInputSchema,
+  approvalApproveForChildrenInputSchema,
   approvalApproveOnceInputSchema,
   approvalApprovePermanentInputSchema,
   approvalDenyForeverInputSchema,
@@ -51,6 +53,11 @@ export const approvalsRouter = t.router({
     .input(approvalApproveHostInputSchema)
     .use(agentPermission("view", (input) => approvalsTarget([input.id])))
     .mutation(({ ctx, input }) => ctx.approvals.approveHost(input.id)),
+
+  approveForChildren: manageAgentsProcedure
+    .input(approvalApproveForChildrenInputSchema)
+    .use(agentPermission("egressRules", (input) => approvalsTarget([input.id])))
+    .mutation(({ ctx, input }) => ctx.approvals.approveForChildren(input.id)),
 
   denyForever: operateAgentsProcedure
     .input(approvalDenyForeverInputSchema)

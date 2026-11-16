@@ -8,6 +8,7 @@ import {
   createInvocationLivenessSweep,
   type TargetRestartState,
 } from "../../modules/invocations/services/invocation-liveness.js";
+import { invocationRow } from "../helpers/invocations-repo.js";
 
 /**
  * TEST_OVERVIEW: Crash fast-fail (step 1b) reads the target's restart count off the Agent CR
@@ -17,35 +18,10 @@ import {
  * into `status.agentPodRestarts`) is covered in the controller's own tests.
  */
 function runningRow(id: string): InvocationRow {
-  return {
+  return invocationRow({
     id,
-    driverAgentId: "driver-1",
-    rootDriverId: "driver-1",
-    label: null,
-    prompt: "",
-    templateId: null,
-    image: null,
-    connections: [],
-    ttlMs: null,
-    createdAt: new Date(),
-    owner: "owner-1",
-    resultSchema: null,
-    result: null,
-    status: "running",
-    errorReason: null,
     expiresAt: new Date(Date.now() + 60 * 60_000),
-    completedAt: null,
-    reapedAt: null,
-    transcriptCaptured: false,
-    transcriptTruncated: false,
-    script: null,
-    exitCode: null,
-    output: null,
-    outputExpiresAt: null,
-    startedAt: null,
-    harnessConfig: null,
-    driverSessionId: null,
-  };
+  });
 }
 
 function makeSweep(
@@ -61,10 +37,15 @@ function makeSweep(
   const droppedRoots: string[] = [];
   const repo = {
     listExpiredRunning: async () => [],
+    listExpiredIdle: async () => [],
+    listUnreapedByDriver: async () => [],
+    listCancelPending: async () => [],
+    clearCancel: async () => {},
     listRunning: async () => rows,
     listTerminalUnreaped: async () => opts.unreaped ?? [],
     fail: async (id: string, reason: string) => {
       failed.push({ id, reason });
+      return { cancelPending: false };
     },
     delete: async () => {},
     deleteReapedByRoot: async (root: string) => {
@@ -81,6 +62,7 @@ function makeSweep(
       },
     },
     reportedReap: { due: async () => true },
+    cancel: { settled: async () => true },
     readTargetRestart,
     readStartWait: async () => null,
     hasAgent: opts.hasAgent ?? (async () => true),

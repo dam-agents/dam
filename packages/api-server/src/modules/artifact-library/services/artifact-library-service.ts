@@ -1,6 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
-import { artifactSharingInputSchema } from "api-server-api";
+import {
+  artifactSharingInputSchema,
+  ARTIFACT_ICON_RULE,
+  isArtifactIcon,
+} from "api-server-api";
 import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
@@ -11,6 +15,7 @@ import type {
   ArtifactKind,
   ArtifactLibraryService,
   ArtifactListFilter,
+  ArtifactPromptChoiceInput,
   ArtifactSendPromptResult,
   ArtifactSharingInput,
   ArtifactUpdateInput,
@@ -20,6 +25,9 @@ import type {
   ArtifactWriteAttribution,
   FolderUpdateInput,
   LibraryArtifact,
+  SessionChoiceReferences,
+  SessionChoiceSlots,
+  SessionPair,
 } from "api-server-api";
 
 import {
@@ -32,6 +40,7 @@ import {
   defaultFileName,
   detectKind,
   downloadFileName,
+  effectiveContentType,
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
@@ -53,12 +62,20 @@ import type {
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
 import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
+import type { ArtifactPromptChoices } from "../infrastructure/artifact-prompt-profile.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import type { ViewerPromptDelivery } from "./share-bridge-service.js";
 import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+function storedIcon(raw: string): string {
+  const icon = raw.trim();
+  if (!isArtifactIcon(icon))
+    throw new TRPCError({ code: "BAD_REQUEST", message: ARTIFACT_ICON_RULE });
+  return icon;
+}
+
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
 
 export interface ArtifactAgentDownloadTicket {
@@ -112,8 +129,13 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: () => Promise<boolean>;
   prompts: ViewerPromptDelivery;
+  promptChoices?: ArtifactPromptChoices;
+  validateChoice?: (
+    agentId: string,
+    pair: SessionPair | null,
+    references: SessionChoiceReferences,
+  ) => Promise<void>;
 }
 
 type AgentApiAccess =
@@ -170,9 +192,10 @@ export function toLibraryArtifact(
   return {
     id: row.id,
     title: row.title,
+    icon: row.icon,
     slug: row.slug,
     kind: row.kind as ArtifactKind,
-    contentType: row.contentType,
+    contentType: effectiveContentType(row.fileName, row.contentType),
     fileName: row.fileName,
     sizeBytes: row.sizeBytes,
     version: row.version,
@@ -219,6 +242,34 @@ export function createArtifactLibraryService(
       .with({ kind: "library" }, () => true)
       .with({ kind: "agent" }, ({ agentId }) => row.agentId === agentId)
       .exhaustive();
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a page whose prompts open Sessions, the ones a model pick applies to: the caller's own interactive HTML that an Agent published, never public, within an API key's agent binding. */
+  async function promptPage(
+    id: string,
+    agentIds: readonly string[] | "*",
+  ): Promise<string> {
+    const access = agentApiAccess(await findArtifact(id), agentIds);
+    if (!access.allowed)
+      throw new TRPCError({
+        code: access.denial === "missing" ? "NOT_FOUND" : "PRECONDITION_FAILED",
+        message:
+          access.denial === "missing"
+            ? "artifact not found"
+            : "only an interactive page an agent published picks a model",
+      });
+    return access.agentId;
+  }
+
+  const pickedOnlyInApp = () =>
+    new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "a page's model can be picked only in the app",
+    });
+
+  function choiceStore(): ArtifactPromptChoices {
+    if (!deps.promptChoices) throw pickedOnlyInApp();
+    return deps.promptChoices;
   }
 
   async function findArtifact(id: string): Promise<ArtifactRow | null> {
@@ -311,7 +362,7 @@ export function createArtifactLibraryService(
       return {
         storageRef: row.storageRef,
         fileName: row.fileName,
-        contentType: row.contentType,
+        contentType: effectiveContentType(row.fileName, row.contentType),
         sizeBytes: row.sizeBytes,
         version: row.version,
       };
@@ -321,7 +372,7 @@ export function createArtifactLibraryService(
     return {
       storageRef: past.storageRef,
       fileName: row.fileName,
-      contentType: past.contentType,
+      contentType: effectiveContentType(row.fileName, past.contentType),
       sizeBytes: past.sizeBytes,
       version: past.version,
     };
@@ -429,6 +480,7 @@ export function createArtifactLibraryService(
         blob.content.toString("utf8"),
         {
           title: row.title,
+          icon: row.icon,
           fileName: ref.fileName,
           ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
@@ -450,6 +502,7 @@ export function createArtifactLibraryService(
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
       if (attribution?.agentId) await ensureAgent(attribution.agentId);
+      const icon = input.icon === undefined ? null : storedIcon(input.icon);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;
@@ -492,6 +545,7 @@ export function createArtifactLibraryService(
           agentId,
           folderId: input.folderId ?? null,
           title: input.title,
+          icon,
           slug: generateSlug(),
           kind,
           contentType: stored.contentType,
@@ -551,6 +605,8 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
+      if (input.icon !== undefined)
+        patch.icon = input.icon === null ? null : storedIcon(input.icon);
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
@@ -820,16 +876,12 @@ export function createArtifactLibraryService(
     },
 
     async sendPrompt(
-      { artifactId, prompt },
+      { artifactId, prompt, conversation },
       { agentIds },
     ): Promise<ArtifactSendPromptResult> {
       const row = await findArtifact(artifactId);
       const access = agentApiAccess(row, agentIds);
-      const denial = !access.allowed
-        ? access.denial
-        : (await deps.featureOn())
-          ? null
-          : "feature-off";
+      const denial = access.allowed ? null : access.denial;
       securityLog(denial === null ? "info" : "warn", "artifact.owner_prompt", {
         category: "authz",
         actor: owner,
@@ -839,13 +891,14 @@ export function createArtifactLibraryService(
         target: artifactId,
         ...(row?.agentId ? { agentId: row.agentId } : {}),
         ...(denial === null ? {} : { reason: denial }),
+        ...(conversation === undefined ? {} : { detail: { conversation } }),
       });
-      if (!row || !access.allowed || denial !== null)
-        return { ok: false, reason: "not-allowed" };
+      if (!row || !access.allowed) return { ok: false, reason: "not-allowed" };
       const outcome = await deps.prompts.deliver({
         agentId: access.agentId,
-        sessionKey: viewerSessionKey(row.id, owner),
-        sessionTitle: ownerSessionTitle(row.title),
+        artifactId: row.id,
+        sessionKey: viewerSessionKey(row.id, owner, conversation),
+        sessionTitle: ownerSessionTitle(row.title, conversation),
         prompt: ownerPromptText({
           artifactId: row.id,
           artifactTitle: row.title,
@@ -855,6 +908,42 @@ export function createArtifactLibraryService(
       return outcome.ok
         ? { ok: true, agentId: access.agentId, sessionId: outcome.sessionId }
         : outcome;
+    },
+
+    async promptChoice(id, { agentIds }): Promise<SessionChoiceSlots> {
+      await promptPage(id, agentIds);
+      const slots = await choiceStore().slots(id, owner);
+      if (!slots) throw new TRPCError({ code: "NOT_FOUND" });
+      return slots;
+    },
+
+    async agentPromptChoices(agentId, { agentIds }) {
+      if (agentIds !== "*" && !agentIds.includes(agentId)) return [];
+      return deps.promptChoices?.forAgent(owner, agentId) ?? [];
+    },
+
+    async setPromptChoice(
+      { id, pair, ...references }: ArtifactPromptChoiceInput,
+      { agentIds },
+    ) {
+      const agentId = await promptPage(id, agentIds);
+      const store = choiceStore();
+      if (pair !== null || references.profileId) {
+        if (!deps.validateChoice) throw pickedOnlyInApp();
+        await deps.validateChoice(agentId, pair, references);
+      }
+      await store.set({
+        artifactId: id,
+        owner,
+        pair,
+        references,
+      });
+      emit({
+        type: EventType.ArtifactUpdated,
+        artifactId: id,
+        ownerSub: owner,
+        agentId,
+      });
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

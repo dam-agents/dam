@@ -8,11 +8,17 @@ import type { ArtifactCallAgentApiResult } from "./types.js";
 
 export const ARTIFACT_PROMPT_TYPE = "artifact.prompt";
 export const ARTIFACT_PROMPT_MAX_LENGTH = 16_384;
+export const ARTIFACT_PROMPT_CONVERSATION_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+export const artifactPromptConversationSchema = z
+  .string()
+  .regex(ARTIFACT_PROMPT_CONVERSATION_PATTERN);
 
 export const artifactPromptSchema = z.object({
   type: z.literal(ARTIFACT_PROMPT_TYPE),
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
   newSession: z.boolean().optional(),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export type ArtifactPrompt = z.infer<typeof artifactPromptSchema>;

@@ -41,6 +41,7 @@ const agent = (
   } as KubeObject["metadata"],
   spec: {
     image: "agent:1",
+    backend: { type: "vm" },
     resources: { limits: { cpu: "1500m", memory: "6Gi" } },
     l7Hosts: ["api.example.test"],
     hibernationTimeout: "90m0s",
@@ -188,6 +189,33 @@ describe("what stops an absorb", () => {
       mapBudget({ ...budget("sub-empty"), spec: { owner: "sub-empty" } })
         .refusal,
     ).toBeDefined();
+  });
+});
+
+describe("an Agent this release cannot run", () => {
+  // TEST_SCENARIO: The rows hold no backend — a row is a machine — so an Agent on the container backend, or one that names no backend at all (how a release before this one wrote a container Agent), cannot become a row. Absorbing it would relabel it a machine and boot it on a home its data is not on, so it is refused with its reason, the switch is stopped before it runs, and no row is written.
+  it("is refused, reported and absorbed as no row", () => {
+    for (const [name, spec] of [
+      ["agent-container", { backend: { type: "container" } }],
+      ["agent-no-backend", { backend: undefined }],
+    ] as const) {
+      const cr = agent(name, { spec: { image: "agent:1", ...spec } });
+      const mapped = rowsFromResource(cr, DEFAULTS, AT);
+      expect(mapped.rows).toBeUndefined();
+      expect(mapped.refusal).toMatch(/this release runs only machines/u);
+
+      const preview = previewAgentStore({
+        agents: [cr],
+        budgets: [],
+        grants: [],
+        defaults: DEFAULTS,
+        switchedAt: AT,
+      });
+      expect(preview.agents.importable).toBe(0);
+      expect(blockingRefusals(preview)).toEqual([
+        `Agent ${name}: ${mapped.refusal}`,
+      ]);
+    }
   });
 });
 

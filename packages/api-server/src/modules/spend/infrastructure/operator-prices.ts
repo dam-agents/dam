@@ -1,5 +1,6 @@
 import type {
   PricedModel,
+  PriceStep,
   ServiceTierName,
   TierPrices,
   TokenPrices,
@@ -13,8 +14,13 @@ interface DollarTokenPrices {
   readonly cacheWrite1h?: number;
 }
 
+interface DollarPriceStep extends DollarTokenPrices {
+  readonly promptTokens: number;
+}
+
 interface DollarTierPrices extends DollarTokenPrices {
   readonly aboveThreshold?: DollarTokenPrices;
+  readonly thresholds?: readonly DollarPriceStep[];
 }
 
 export interface OperatorPriceInput extends DollarTokenPrices {
@@ -23,7 +29,8 @@ export interface OperatorPriceInput extends DollarTokenPrices {
   readonly input: number;
   readonly output: number;
   readonly webSearch?: number;
-  readonly threshold?: DollarTokenPrices & { readonly promptTokens: number };
+  readonly threshold?: DollarPriceStep;
+  readonly thresholds?: readonly DollarPriceStep[];
   readonly flex?: DollarTierPrices;
   readonly priority?: DollarTierPrices;
   readonly factors?: Readonly<Record<string, number>>;
@@ -40,13 +47,26 @@ export function operatorPrices(
     for (const tier of TIERS) {
       const prices = input[tier];
       if (!prices) continue;
-      tiers[tier] = prices.aboveThreshold
-        ? {
-            prices: tokenPrices(prices),
-            aboveThreshold: tokenPrices(prices.aboveThreshold),
-          }
-        : { prices: tokenPrices(prices) };
+      const tierSteps = priceSteps([
+        ...(prices.aboveThreshold && input.threshold
+          ? [
+              {
+                ...prices.aboveThreshold,
+                promptTokens: input.threshold.promptTokens,
+              },
+            ]
+          : []),
+        ...(prices.thresholds ?? []),
+      ]);
+      tiers[tier] =
+        tierSteps.length > 0
+          ? { prices: tokenPrices(prices), thresholds: tierSteps }
+          : { prices: tokenPrices(prices) };
     }
+    const steps = priceSteps([
+      ...(input.threshold ? [input.threshold] : []),
+      ...(input.thresholds ?? []),
+    ]);
     return {
       provider: input.provider,
       model: input.model,
@@ -59,19 +79,21 @@ export function operatorPrices(
         ...(input.webSearch === undefined
           ? {}
           : { webSearchMicros: micros(input.webSearch) }),
-        ...(input.threshold
-          ? {
-              threshold: {
-                promptTokens: input.threshold.promptTokens,
-                prices: tokenPrices(input.threshold),
-              },
-            }
-          : {}),
+        ...(steps.length > 0 ? { thresholds: steps } : {}),
         ...(Object.keys(tiers).length > 0 ? { tiers } : {}),
         ...(input.factors ? { factors: input.factors } : {}),
       },
     };
   });
+}
+
+function priceSteps(steps: readonly DollarPriceStep[]): PriceStep[] {
+  return [...steps]
+    .sort((a, b) => a.promptTokens - b.promptTokens)
+    .map((step) => ({
+      promptTokens: step.promptTokens,
+      prices: tokenPrices(step),
+    }));
 }
 
 function tokenPrices(prices: DollarTokenPrices): TokenPrices {

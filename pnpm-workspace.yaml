@@ -6,9 +6,21 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # qs 6.16.2 (2026-10-27) fixes CVE-2026-110910, reached through express under
-  # @slack/bolt. Drop this once it ages past the floor (2026-11-03).
-  - "qs@6.16.2"
+  # The pi-agent image pins @earendil-works/pi-coding-agent 1.5.1 (2026-11-09
+  # 23:45 UTC), the first release that keeps a margin for the input estimate
+  # when it asks for the rest of a model's window as output, which the
+  # CurveBender models' output limits rely on; the extensions type-check and
+  # the Pi tests run against the same version, and the fork publishes all its
+  # packages in lockstep. Drop these once the release ages past the floor
+  # (2026-11-16 23:45 UTC).
+  - "@earendil-works/pi-agent-core@1.5.1"
+  - "@earendil-works/pi-ai@1.5.1"
+  - "@earendil-works/pi-codemode@1.5.1"
+  - "@earendil-works/pi-coding-agent@1.5.1"
+  - "@earendil-works/pi-mcp@1.5.1"
+  - "@earendil-works/pi-schema@1.5.1"
+  - "@earendil-works/pi-telemetry@1.5.1"
+  - "@earendil-works/pi-tui@1.5.1"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -41,16 +53,6 @@ allowBuilds:
   sharp: true
 overrides:
   "esbuild@<0.25.0": "0.25.12"
-  "esbuild@>=0.27.3 <0.28.1": "0.28.1"
-  # CVE-2026-109383, -109829, -109869 and -87018 are fixed only in undici
-  # 7.30.1 and 8.12.2. The vulnerable copies come from peer resolutions no
-  # direct bump reaches: @slack/socket-mode's ^7 peer and pi-ai's optional 8
-  # peer. Drop both once those peers resolve at or above the fix.
-  "undici@^7": "7.30.1"
-  "undici@^8": "8.12.2"
-  # CVE-2026-111997 is fixed in ip-address 10.7.4. socks and
-  # express-rate-limit both allow it, and keep 10.7.2 in the lock.
-  "ip-address@<10.7.4": "10.7.4"
 
 packageExtensions:
   "drizzle-kit":

@@ -11,12 +11,22 @@ manifestVersion: 1
 # unmarkedOpeningCall: the first call of a new task (model `background`)
 # carries no X-Task-Id, so its spend is booked to the running turn still
 # waiting for its first call; its model is not touched.
+# connectionEnv: the Bob Shell Connection's Advanced settings, which
+# bob-settings.mjs and harness-terminal read from the process env; a routed
+# Connection's other variables stay out, and the agent's own env and the
+# router's variables outrank these.
 modelRouter:
   dialects: [openai-chat]
   modelFromSession: true
   tierAliases: [premium-ide, explorer, fast, premium, ultra]
   unmarkedOpeningCall: true
   bobGateway: true
+  connectionEnv:
+    - BOB_SHELL_MODEL
+    - BOB_CHAT_MODE
+    - BOB_MAX_COINS
+    - BOB_INSTANCE_ID
+    - BOB_TEAM_ID
 
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities.

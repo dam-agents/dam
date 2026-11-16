@@ -13,6 +13,7 @@ import {
   type DbTx,
 } from "db";
 import { match } from "ts-pattern";
+import { toolApprovalSchema, type ToolApproval } from "agent-runtime-api";
 import {
   orderByAlias,
   PROVIDER_TEMPLATE_IDS,
@@ -46,6 +47,10 @@ export interface SessionPairRepo {
     },
   ): Promise<void>;
   clear(agentId: string, kind: Exclude<DefaultKind, "chat">): Promise<void>;
+  writeToolApproval(
+    agentId: string,
+    toolApproval: ToolApproval | null,
+  ): Promise<void>;
   grantedProviders(agentId: string): Promise<GrantedProvider[]>;
 }
 
@@ -78,6 +83,7 @@ export function createSessionPairRepo(
         chat: agentsTable.sessionPair,
         channel: agentsTable.channelSessionPair,
         scheduled: agentsTable.scheduledSessionPair,
+        toolApproval: agentsTable.toolApproval,
         sessionProfile: agentsTable.sessionProfile,
         platformSubagentProfile: agentsTable.platformSubagentProfile,
         platformSubagentSettings: agentsTable.platformSubagentSettings,
@@ -110,8 +116,12 @@ export function createSessionPairRepo(
     );
     return {
       chat: plain(chat.refused ? null : chat.pair),
+      /* UNIT_BOUNDARY_DESCRIPTION: the pair the chat default's profile names, kept while that profile cannot run, so a run falls back on the profile's own harness and provider rather than the agent's default harness. */
+      chatProfilePair: plain(chat.refused ? (chat.pair ?? null) : null),
       channel: plain(parsePair(row?.channel)),
       scheduled: plain(parsePair(row?.scheduled)),
+      toolApproval:
+        toolApprovalSchema.nullable().safeParse(row?.toolApproval).data ?? null,
       chatProfileId,
       platformSubagentProfileId: slots.platformSubagentProfileId,
       platformSubagentSettings: slots.platformSubagentSettings,
@@ -161,6 +171,13 @@ export function createSessionPairRepo(
             .with("scheduled", () => ({ scheduledSessionPair: null }))
             .exhaustive(),
         )
+        .where(eq(agentsTable.id, agentId));
+    },
+
+    async writeToolApproval(agentId, toolApproval) {
+      await db
+        .update(agentsTable)
+        .set({ toolApproval })
         .where(eq(agentsTable.id, agentId));
     },
 

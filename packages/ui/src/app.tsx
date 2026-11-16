@@ -5,12 +5,16 @@ import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { useAppViewport } from "./hooks/use-app-viewport.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
+import { applyDocumentIcon, documentIconHref } from "./lib/document-icon.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { useLandInAssistantChat } from "./modules/agents/hooks/use-land-in-assistant-chat.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
+import { useArtifact } from "./modules/artifacts/api/queries.js";
+import { ArtifactPageView } from "./modules/artifacts/views/artifact-page-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { CommandPalette } from "./modules/command-palette/components/command-palette.js";
 import { SignInFollowUp } from "./modules/connections/components/sign-in-follow-up.js";
@@ -25,6 +29,7 @@ import {
 import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
 import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
+import { useBackgroundUnread } from "./modules/platform/hooks/use-background-unread.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
@@ -50,6 +55,7 @@ import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
 import { useStore } from "./store.js";
 
 function useDocumentTitle() {
+  const marked = useBackgroundUnread();
   const view = useStore((s) => s.view);
   const settingsTab = useStore((s) => s.settingsTab);
   const sandboxSection = useStore((s) => s.sandboxSection);
@@ -59,9 +65,13 @@ function useDocumentTitle() {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
+  const pageArtifactId = useStore((s) =>
+    s.view === "artifact" ? s.pageArtifactId : null,
+  );
   const agent = useAgent(agentId);
   const session = useAgentSession(agentId, sessionId).data;
   const kit = useStarterKit(kitCatalog, kitId).data;
+  const artifact = useArtifact(pageArtifactId).data;
   const title = documentTitle(
     {
       view,
@@ -69,12 +79,21 @@ function useDocumentTitle() {
       sandboxSectionTitle: SECTIONS.find((e) => e.section === sandboxSection)
         ?.title,
     },
-    { agent: agent?.name, session: session?.title, kit: kit?.name },
+    {
+      agent: agent?.name,
+      session: session?.title,
+      kit: kit?.name,
+      artifact: artifact?.title,
+    },
     getBrand().name,
   );
   useEffect(() => {
-    document.title = title;
-  }, [title]);
+    document.title = marked ? `● ${title}` : title;
+  }, [title, marked]);
+  const iconHref = documentIconHref(artifact?.icon);
+  useEffect(() => {
+    applyDocumentIcon(document, iconHref);
+  }, [iconHref]);
 }
 
 export default function App() {
@@ -122,10 +141,25 @@ export default function App() {
     );
   if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
+  if (view === "artifact") return <ArtifactPageRoute />;
   return (
     <>
       <MainApp />
       <CommandPalette />
+    </>
+  );
+}
+
+function ArtifactPageRoute() {
+  const artifactId = useStore((s) => s.pageArtifactId);
+  useAppViewport();
+  useLiveEvents();
+  useDocumentTitle();
+  if (!artifactId) return null;
+  return (
+    <>
+      <ArtifactPageView artifactId={artifactId} />
+      <DialogOverlay />
     </>
   );
 }
@@ -155,6 +189,7 @@ function MainApp() {
   useSyncRestartingAgents();
   useDocumentTitle();
   useAgentCrashToasts();
+  useLandInAssistantChat();
   useApprovalToasts();
 
   useEffect(() => {
@@ -188,7 +223,7 @@ function MainApp() {
           <main
             id="main"
             tabIndex={-1}
-            className="relative z-content has-[[data-full-page]]:z-overlay flex-1 min-w-0 outline-none"
+            className="relative z-content flex-1 min-w-0 outline-none"
           >
             <ChatRoute />
           </main>

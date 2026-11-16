@@ -8,11 +8,13 @@ import {
 } from "../../auth-procedures.js";
 import { editorEmailOf } from "../agents/editor-email.js";
 import {
+  artifactAgentInputSchema,
   artifactCallAgentApiInputSchema,
   artifactContentInputSchema,
   artifactCreateInputSchema,
   artifactIdInputSchema,
   artifactListInputSchema,
+  artifactPromptChoiceInputSchema,
   artifactSendPromptInputSchema,
   artifactSharingInputSchema,
   artifactTouchListInputSchema,
@@ -129,5 +131,30 @@ export const artifactLibraryRouter = t.router({
     .input(artifactSendPromptInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.artifactLibrary.sendPrompt(input, { agentIds: ctx.user.agentIds }),
+    ),
+
+  promptChoice: readAgentProcedure
+    .input(artifactIdInputSchema)
+    .query(({ ctx, input }) =>
+      ctx.artifactLibrary.promptChoice(input.id, {
+        agentIds: ctx.user.agentIds,
+      }),
+    ),
+
+  agentPromptChoices: readAgentProcedure
+    .input(artifactAgentInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.artifactLibrary.agentPromptChoices(input.agentId, {
+        agentIds: ctx.user.agentIds,
+      });
+    }),
+
+  setPromptChoice: manageAgentsProcedure
+    .input(artifactPromptChoiceInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.artifactLibrary.setPromptChoice(input, {
+        agentIds: ctx.user.agentIds,
+      }),
     ),
 });

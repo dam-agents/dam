@@ -43,3 +43,13 @@ export function useRestorePlatformRule() {
     },
   });
 }
+
+export function useSetChildEgress() {
+  return useMutation({
+    ...trpc.egressRules.setChildEgress.mutationOptions(),
+    meta: {
+      invalidates: [egressRulesKeys.all],
+      errorToast: "Couldn't change the setting",
+    },
+  });
+}

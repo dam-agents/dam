@@ -1,6 +1,7 @@
-import { SessionType } from "api-server-api";
+import { SessionType, type SessionPair } from "api-server-api";
 import {
   AcpSessionLoadError,
+  pairFields,
   type AcpClient,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
@@ -11,12 +12,14 @@ import type {
   ViewerPromptDelivery,
   ViewerPromptOutcome,
 } from "../services/share-bridge-service.js";
+import type { ArtifactPromptPair } from "./artifact-prompt-profile.js";
 
 interface ViewerTurn {
   agentId: string;
   sessionKey: string;
   sessionTitle: string;
   prompt: string;
+  pair: SessionPair | null;
 }
 
 const SESSION_NAMED_WAIT_MS = 10_000;
@@ -46,6 +49,7 @@ async function runTurn(
       type: SessionType.Artifact,
       threadTs: turn.sessionKey,
       customTitle: turn.sessionTitle,
+      ...pairFields(turn.pair),
     },
     onSession,
   });
@@ -67,6 +71,7 @@ export function createViewerPromptDelivery(deps: {
   ensureReady: (agentId: string) => Promise<void>;
   spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
   attendance: ChannelTurnAttendance;
+  promptPair: ArtifactPromptPair;
 }): ViewerPromptDelivery {
   const sessionKnown = new Map<string, Promise<string | null>>();
 
@@ -108,15 +113,26 @@ export function createViewerPromptDelivery(deps: {
   }
 
   return {
-    async deliver(turn): Promise<ViewerPromptOutcome> {
+    async deliver({ artifactId, ...turn }): Promise<ViewerPromptOutcome> {
       if ((await deps.spendHold(turn.agentId)) !== null)
         return { ok: false, reason: "spend-limit" };
+      const choice = await deps.promptPair(turn.agentId, artifactId);
+      if ("refused" in choice) {
+        getLogger().warn(
+          { agentId: turn.agentId, artifactId, ...choice.refused },
+          "artifact.prompt.profile_refused",
+        );
+        return { ok: false, reason: "profile-unavailable" };
+      }
       try {
         await deps.ensureReady(turn.agentId);
       } catch {
         return { ok: false, reason: "agent-unreachable" };
       }
-      return { ok: true, sessionId: await named(start(turn)) };
+      return {
+        ok: true,
+        sessionId: await named(start({ ...turn, pair: choice.pair })),
+      };
     },
   };
 }

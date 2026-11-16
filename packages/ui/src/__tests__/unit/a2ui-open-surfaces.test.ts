@@ -10,7 +10,7 @@ import type { Message } from "../../types.js";
 
 function form(surfaceId: string): string {
   const block = JSON.stringify({
-    version: "v1.0",
+    version: "1.0",
     createSurface: {
       surfaceId,
       catalogId: BASIC_CATALOG_ID,
@@ -39,7 +39,7 @@ function reply(id: string, text: string): Message {
 
 function answer(id: string, surfaceId: string): Message {
   const text = formatRendererMessage({
-    version: "v1.0",
+    version: "1.0",
     action: {
       name: "go",
       surfaceId,

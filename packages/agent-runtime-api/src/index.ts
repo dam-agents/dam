@@ -12,6 +12,7 @@ export type {
   SessionType,
   SessionPurpose,
   SessionCategory,
+  SessionChannelType,
   SessionDirectoryEntry,
   SessionHistory,
   SessionListCursor,
@@ -35,6 +36,9 @@ export {
   approvalOption,
   COPILOT_AUTOPILOT,
   withoutApproval,
+  toolApprovalSchema,
+  toolApprovalChoices,
+  agentToolApprovalSetting,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,
   SUBAGENT_EFFORT_SETTING,
@@ -48,6 +52,8 @@ export {
   platformSubagentSettingsError,
   type SessionSettings,
   type SubAgentHarnessConfig,
+  type ToolApproval,
+  type ToolApprovalChoice,
 } from "./modules/harness-config/session-settings.js";
 export {
   senderSchema,
@@ -56,7 +62,9 @@ export {
   sessionPurposeSchema,
   sessionTypeSchema,
   SESSION_CATEGORIES,
+  SESSION_CHANNEL_TYPES,
   SESSION_LIST_MAX_LIMIT,
+  SESSION_LIST_STATUSES,
   SESSION_TITLE_MAX_LENGTH,
   sessionTitleSchema,
   sessionDirectoryReportSchema,
@@ -65,6 +73,8 @@ export {
 } from "./modules/sessions/schemas.js";
 export {
   sessionCategoryOf,
+  isUnseenActivity,
+  sessionChannelTypeOf,
   sessionMatchesQuery,
 } from "./modules/sessions/session-query.js";
 export {
@@ -259,6 +269,7 @@ export {
   satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   invocationScriptEventPayload,
+  invocationCancelEventPayload,
   sessionMessageEventPayload,
   startupItemsEventPayload,
   workspaceCommandEventPayload,
@@ -268,6 +279,7 @@ export {
 } from "./modules/runtime/types.js";
 export type {
   InvocationScriptEventPayload,
+  InvocationCancelEventPayload,
   HarnessConfigCurrent,
   HarnessCapability,
   Contribution,

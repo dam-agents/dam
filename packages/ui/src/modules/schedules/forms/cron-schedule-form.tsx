@@ -30,14 +30,11 @@ import {
 import {
   ScheduleChoicesField,
   SchedulePrecheckField,
+  ScheduleRowGroup,
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
-import {
-  customChoiceError,
-  scheduleChoices,
-  scheduleInheritsChoices,
-} from "./schedule-form-schema.js";
+import { customChoiceError, scheduleChoices } from "./schedule-form-schema.js";
 
 interface Props {
   agentId: string;
@@ -121,7 +118,7 @@ export function CronScheduleForm({
   const handleDelete = async () => {
     const confirmed = await showConfirm(
       "It stops running and cannot be recovered.",
-      `Delete “${existing.name}”?`,
+      `Delete schedule “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
@@ -131,7 +128,7 @@ export function CronScheduleForm({
 
   const routed = useHarnessConfigStatus(agentId).data?.modelRouter ?? false;
   const onSubmit = handleSubmit((v) => {
-    const missing = customChoiceError(v, existing, routed);
+    const missing = customChoiceError(v, routed);
     if (missing) return setError("model", { message: missing });
     const draft = draftOf(v);
     updateSchedule.mutate(
@@ -221,16 +218,17 @@ export function CronScheduleForm({
           agentId={agentId}
           control={control}
           migrationNote={existing.migrationNote}
-          inheritChoice={scheduleInheritsChoices(existing)}
         />
+
+        <ScheduleRowGroup label="Options">
+          <ScheduleSessionTypeField control={control} />
+        </ScheduleRowGroup>
 
         <SchedulePrecheckField
           layout="stacked"
           registration={register("precheck")}
           error={errors.precheck?.message}
         />
-
-        <ScheduleSessionTypeField layout="stacked" control={control} />
 
         <ScheduleSessionTitleField
           registration={register("sessionTitle")}

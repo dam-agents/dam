@@ -11,6 +11,7 @@ import type {
   storeDelegationFramesInputSchema,
   delegationFramesSchema,
   sessionCategorySchema,
+  sessionChannelTypeSchema,
   sessionDirectoryEntrySchema,
   sessionListCursorSchema,
   sessionListInputSchema,
@@ -33,6 +34,7 @@ export type Session = z.infer<typeof sessionSchema>;
 export type Sender = z.infer<typeof senderSchema>;
 export type SessionNotice = z.infer<typeof sessionNoticeSchema>;
 export type SessionCategory = z.infer<typeof sessionCategorySchema>;
+export type SessionChannelType = z.infer<typeof sessionChannelTypeSchema>;
 export type SessionListCursor = z.infer<typeof sessionListCursorSchema>;
 export type SessionListQuery = NonNullable<
   z.infer<typeof sessionListInputSchema>
@@ -66,6 +68,10 @@ export interface SessionsService {
   // UNIT_BOUNDARY_DESCRIPTION: null for a session the platform does not track; read by the api-server when the session spawns a platform sub-agent, which follows the session's platform sub-agent settings and, on the session's own harness, takes the session's model and settings.
   settings(input: SessionSettingsInput): Promise<SessionSubAgentContext | null>;
   byRef(ref: string): Promise<string | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: the task event of the sub-agent run this session is working on, which the api-server checks a reported result against, so a result from another run never lands on this one, and the session itself, which a later run may continue; null for any other session.
+  invocationRun(
+    ref: string,
+  ): Promise<{ run: string; sessionId: string } | null>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;

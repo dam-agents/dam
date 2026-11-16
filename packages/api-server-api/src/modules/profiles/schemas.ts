@@ -3,6 +3,7 @@ import {
   sessionSettingsSchema,
 } from "agent-runtime-api";
 import { z } from "zod";
+import { sessionPairSchema } from "../harness-config/schemas.js";
 
 export const PROFILE_NAME_MAX_LENGTH = 64;
 
@@ -56,6 +57,9 @@ export const profileUsageSchema = z.object({
   schedules: z.array(
     z.object({ id: z.string(), name: z.string(), agentId: z.string() }),
   ),
+  artifacts: z
+    .array(z.object({ id: z.string(), title: z.string(), agentId: z.string() }))
+    .optional(),
 });
 
 const count = z.number().int().nonnegative();
@@ -68,9 +72,12 @@ export const profileViewSchema = z.object({
   model: z.string(),
   subagent: profileSubagentSchema.nullable(),
   settings: z.record(z.string(), z.string()),
-  /* UNIT_BOUNDARY_DESCRIPTION: the owner's one default for new agents, which cannot be deleted while it is. */
-  newAgentDefault: z.boolean(),
-  usage: z.object({ agents: count, channels: count, schedules: count }),
+  usage: z.object({
+    agents: count,
+    channels: count,
+    schedules: count,
+    artifacts: count.optional(),
+  }),
   /* UNIT_BOUNDARY_DESCRIPTION: asked for one agent, whether the profile runs
    * there; `attachable` is a provider the owner holds and the agent does not,
    * which a pick grants first. */
@@ -83,9 +90,27 @@ export const profileViewSchema = z.object({
     .nullable(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: the default for new agents an owner chose in
+ * Settings, a profile or values of their own, which a new agent's chat default
+ * is initialised from; `pair` holds the values, a chosen profile's too, so a
+ * picker shows what it runs on. `base` is what a new agent starts on while they
+ * chose neither, null where the install offers none. */
+export const newAgentDefaultSchema = z.object({
+  profileId: z.string().nullable(),
+  pair: sessionPairSchema.nullable(),
+  base: sessionPairSchema.nullable(),
+});
+
+export const setNewAgentDefaultInputSchema = z.union([
+  z.object({ profileId: z.string().min(1) }),
+  z.object({
+    pair: sessionPairSchema.extend({
+      provider: z.string().min(1),
+      model: z.string().min(1),
+    }),
+  }),
+]);
+
 export const profileListInputSchema = z
   .object({ agentId: z.string().min(1).optional() })
   .optional();
-
-export const DEFAULT_PROFILE_UNDELETABLE =
-  "This profile is the default for new agents. Make another profile the default first.";

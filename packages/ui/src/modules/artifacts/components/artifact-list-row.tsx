@@ -23,6 +23,7 @@ import {
 } from "../hooks/use-artifact-row-drag.js";
 import {
   ArtifactDeletionChip,
+  ArtifactIcon,
   ArtifactInteractiveBadge,
   ArtifactVisibilityButton,
 } from "./artifact-badges.js";
@@ -41,6 +42,7 @@ export function ArtifactListRow({
   onMove,
   onShare,
   onSetRetention,
+  onSetPromptModel,
 }: {
   artifact: LibraryArtifact;
   depth: number;
@@ -54,6 +56,7 @@ export function ArtifactListRow({
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
+  onSetPromptModel: (artifact: LibraryArtifact) => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const startDrag = useCallback(
@@ -72,7 +75,14 @@ export function ArtifactListRow({
     onEnd: endDrag,
   });
 
-  const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+  const menuActions = {
+    onEdit,
+    onRename,
+    onMove,
+    onShare,
+    onSetRetention,
+    onSetPromptModel,
+  };
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
@@ -104,6 +114,7 @@ export function ArtifactListRow({
             />
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <ArtifactIcon icon={artifact.icon} />
             <span className="min-w-12 shrink-[100000] truncate">
               {artifact.title}
             </span>

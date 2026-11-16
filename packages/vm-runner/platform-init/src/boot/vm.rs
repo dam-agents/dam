@@ -389,6 +389,10 @@ fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = grow_btrfs(target) {
         logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
     }
+    match File::open(STORAGE_DEVICE).and_then(|mut disk| disk.seek(SeekFrom::End(0))) {
+        Ok(bytes) => DISK_BYTES.store(bytes, std::sync::atomic::Ordering::Relaxed),
+        Err(e) => logf!("WARNING: reading the storage disk's size ({e}); its filesystem keeps the size it has, and the guard files alone hold the agent to its room"),
+    }
     if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
         fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
     }
@@ -403,12 +407,15 @@ struct VolArgs {
 }
 
 fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
+    btrfs_ioctl_at(&File::open(dir)?, request, name)
+}
+
+fn btrfs_ioctl_at(dir: &File, request: u8, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
         fd: 0,
         name: [0; 4088],
     };
     args.name[..name.len()].copy_from_slice(name.as_bytes());
-    let dir = File::open(dir)?;
     // SAFETY: _IOW(0x94, request, struct btrfs_ioctl_vol_args), on an open directory of the filesystem, with `args` alive for the call.
     succeeded(
         unsafe {
@@ -424,6 +431,81 @@ fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE with "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
 fn grow_btrfs(mount: &Path) -> io::Result<()> {
     btrfs_ioctl(mount, 3, "max")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the storage disk's whole size, read from the block device at mount and not from btrfs, so a growth refused at mount does not become the most a resize may ask for (resize_btrfs). Nothing until the disk is mounted, or when the device could not be read.
+pub static DISK_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+// UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE of device 1 to `bytes`, through any descriptor on the filesystem, so it works through the guard's descriptor after the disk's mount is detached. A growth only moves the end; a shrink past the end of the last chunk (allocated_end) moves it as well, while a smaller one would relocate those chunks first, which callers never ask for.
+pub fn resize_btrfs(dir: &File, bytes: u64) -> io::Result<()> {
+    btrfs_ioctl_at(dir, 3, &bytes.to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_search_args: the key that selects the items of one tree, and the buffer the kernel fills with them, each after a 32-byte header of its transid, objectid, offset, type and length in the CPU's order; the items themselves are on-disk structures, little-endian.
+#[repr(C)]
+struct SearchArgs {
+    tree_id: u64,
+    min_objectid: u64,
+    max_objectid: u64,
+    min_offset: u64,
+    max_offset: u64,
+    min_transid: u64,
+    max_transid: u64,
+    min_type: u32,
+    max_type: u32,
+    nr_items: u32,
+    unused: u32,
+    unused1: [u64; 4],
+    buf: [u8; 3992],
+}
+
+const DEV_TREE: u64 = 4;
+const DEV_EXTENT_KEY: u32 = 204;
+
+// UNIT_BOUNDARY_DESCRIPTION: where the last chunk btrfs placed on device 1 ends, and the largest chunk it placed: the largest end and length of its dev extents (BTRFS_IOC_TREE_SEARCH of the device tree, key type DEV_EXTENT, whose item holds the extent's length 24 bytes in). A filesystem resized to the end or past it moves no data, and one resized below it relocates every chunk past the new end first. The device's own used bytes would not do, since a chunk btrfs removed leaves a hole below the end that they do not count. The read is no barrier: the guest may place another chunk before a resize that follows it, which is what the margin in pool_guard::disk_size is for.
+pub fn allocated_end(dir: &File) -> io::Result<(u64, u64)> {
+    let (mut end, mut largest, mut from) = (0u64, 0u64, 0u64);
+    loop {
+        let mut args = SearchArgs {
+            tree_id: DEV_TREE,
+            min_objectid: 1,
+            max_objectid: 1,
+            min_offset: from,
+            max_offset: u64::MAX,
+            min_transid: 0,
+            max_transid: u64::MAX,
+            min_type: DEV_EXTENT_KEY,
+            max_type: DEV_EXTENT_KEY,
+            nr_items: u32::MAX,
+            unused: 0,
+            unused1: [0; 4],
+            buf: [0; 3992],
+        };
+        // SAFETY: _IOWR(0x94, 17, struct btrfs_ioctl_search_args) on an open descriptor of the filesystem, with `args` alive and writable for the call.
+        succeeded(
+            unsafe {
+                libc::ioctl(
+                    dir.as_raw_fd(),
+                    libc::_IOWR::<SearchArgs>(0x94, 17),
+                    &mut args,
+                )
+            } == 0,
+        )?;
+        if args.nr_items == 0 {
+            return Ok((end, largest));
+        }
+        let mut at = 0;
+        for _ in 0..args.nr_items {
+            let bytes = |at: usize| -> [u8; 8] { args.buf[at..at + 8].try_into().unwrap() };
+            let offset = u64::from_ne_bytes(bytes(at + 16));
+            let len = u32::from_ne_bytes(args.buf[at + 28..at + 32].try_into().unwrap()) as usize;
+            let length = u64::from_le_bytes(bytes(at + 32 + 24));
+            end = end.max(offset.saturating_add(length));
+            largest = largest.max(length);
+            from = offset.saturating_add(1);
+            at += 32 + len;
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
@@ -460,6 +542,67 @@ pub fn serve(env: Vec<(String, String)>) {
         std::thread::spawn(move || answer(conn, &env));
     });
     ring_doorbell();
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the accepting end of the link on a machine that accepts it, which the controller marks with guest::LINK_FROM_ENV, or guest::ENVIRONMENT_OF_ENV alone on an Environment of an older controller. The runner hands each connection the named agent opens to the guest's listener on guest::LINK_ACCEPT_VSOCK_PORT, and each is served by a process of its own, this init's binary started as platform-link (link::session), so no SSH runs inside PID 1 and a failed connection takes nothing else with it. It runs in the part of the launch record's env that link::SESSION_ENV names, with link::LINK_MARK on top. It starts once the image's root and the home are in place, since a command over the link runs in them. A machine that accepts from no one does not listen at all, and one that cannot listen boots without the link and says so.
+pub fn serve_link(launch_env: &[(String, String)]) {
+    if !launch_env.iter().any(|(key, value)| {
+        (key == guest::LINK_FROM_ENV || key == guest::ENVIRONMENT_OF_ENV) && !value.is_empty()
+    }) {
+        return;
+    }
+    let listener = match vsock_listener(guest::LINK_ACCEPT_VSOCK_PORT) {
+        Ok(listener) => listener,
+        Err(e) => {
+            announce(&format!(
+                "WARNING: the link cannot listen, so no agent can reach this machine: {e}"
+            ));
+            return;
+        }
+    };
+    let env = crate::link::session_env(launch_env, DEFAULT_PATH);
+    std::thread::spawn(move || loop {
+        // SAFETY: accept4 writes no address, since none is asked for, and returns a new descriptor or -1.
+        let fd = unsafe {
+            libc::accept4(
+                listener.as_raw_fd(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                libc::SOCK_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            continue;
+        }
+        // SAFETY: accept4 returned a descriptor nothing else owns.
+        let conn = unsafe { OwnedFd::from_raw_fd(fd) };
+        if let Err(e) = start_link_session(conn, &env) {
+            logf!("link: starting a session: {e}");
+        }
+    });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a link session says why it failed, in the image's root, as the image's own SSH service once wrote there. A root with no /var/log gives the session no log rather than no session.
+const LINK_LOG: &str = "/var/log/platform-link.log";
+
+fn start_link_session(conn: OwnedFd, env: &[(String, String)]) -> io::Result<()> {
+    use std::process::Stdio;
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(LINK_LOG)
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null());
+    let mut session = std::process::Command::new(guest::INIT_PATH);
+    session
+        .arg0(crate::link::PROCESS_NAME)
+        .env_clear()
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .current_dir("/")
+        .stdin(Stdio::from(conn.try_clone()?))
+        .stdout(Stdio::from(conn))
+        .stderr(log);
+    super::unblocked(&mut session).spawn().map(drop)
 }
 
 fn vsock_listener(port: u32) -> io::Result<File> {

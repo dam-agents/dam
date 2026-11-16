@@ -31,11 +31,11 @@ function makeService(stub: {
     get: vi.fn(async (id: string) => stub.get?.(id) ?? ok(null)),
     deleteAgent: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
-    setDisabled: vi.fn(),
     updateIdentity: vi.fn(),
     unlockedCharacters: vi.fn(),
     customAvatarsEnabled: vi.fn(),
     runtimeFleet: vi.fn(async () => ok({ onCurrent: 0, outdated: [] })),
+    kept: vi.fn(),
   };
 }
 

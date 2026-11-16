@@ -10,7 +10,11 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
-import type { AgentUpdateInput, RuntimeFleet } from "api-server-api";
+import type {
+  KeptSubAgent,
+  AgentUpdateInput,
+  RuntimeFleet,
+} from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
@@ -26,15 +30,14 @@ export interface AgentService {
   deleteAgent(
     agentId: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
+  kept(
+    driverAgentId: string,
+  ): Promise<
+    Result<readonly KeptSubAgent[], TransportError | AuthRequiredError>
+  >;
   restart(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
-  setDisabled(
-    id: string,
-    disabled: boolean,
-  ): Promise<
-    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
-  >;
   updateIdentity(
     input: Pick<AgentUpdateInput, "id" | "name" | "avatar">,
   ): Promise<
@@ -62,6 +65,12 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
     async list() {
       return trpcCall(() => deps.trpc.agents.list.query());
     },
+    async kept(driverAgentId) {
+      const result = await trpcCall(() =>
+        deps.trpc.invocations.kept.query({ driverAgentId }),
+      );
+      return result.ok ? ok(result.value.subAgents) : result;
+    },
     async runtimeFleet() {
       return trpcCall(() => deps.trpc.agents.runtimeFleet.query());
     },
@@ -85,13 +94,6 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       try {
         await deps.trpc.agents.restart.mutate({ id });
         return ok(undefined);
-      } catch (e) {
-        return notFoundOnMutate(e, id);
-      }
-    },
-    async setDisabled(id, disabled) {
-      try {
-        return ok(await deps.trpc.agents.setDisabled.mutate({ id, disabled }));
       } catch (e) {
         return notFoundOnMutate(e, id);
       }

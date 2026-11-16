@@ -15,17 +15,6 @@ import {
 import type { RunBoundary } from "../../harness-config/domain/run-boundary.js";
 import type { ProfileResolver } from "../../profiles/index.js";
 
-/** UNIT_BOUNDARY_DESCRIPTION: a channel whose profile cannot run on its agent refuses the turn with the reason, rather than running on a substitute the owner never chose (D91). */
-export class ChannelProfileRefusedError extends Error {
-  constructor(
-    readonly profileName: string,
-    readonly detail: string,
-  ) {
-    super(`this channel's profile "${profileName}" cannot run: ${detail}`);
-    this.name = "ChannelProfileRefusedError";
-  }
-}
-
 /** UNIT_BOUNDARY_DESCRIPTION: a Slack channel by its channel id, a Telegram chat by its conversation id; each keeps its profile on its own binding row. */
 export interface ChannelRef {
   type: "slack" | "telegram";
@@ -42,7 +31,8 @@ export type ChannelPair = (
  * chat default's two slots and resolved as a chat start resolves them. Read
  * only when a turn creates a session, so a resumed thread keeps the values it
  * runs on (D94 A, D119); null is a binding with no pick of its own, as one bound
- * before profiles, which keeps the agent's channel default.
+ * before profiles, or a profile that cannot run on its agent, and either keeps
+ * the agent's channel default: a turn is never refused while that can serve it.
  */
 export function createChannelProfiles(
   db: Db,
@@ -102,12 +92,7 @@ export function createChannelProfiles(
         resolveProfile,
         agentId,
       );
-      if (resolved.refused)
-        throw new ChannelProfileRefusedError(
-          resolved.refused.profile,
-          resolved.refused.detail,
-        );
-      if (!resolved.pair) return null;
+      if (resolved.refused || !resolved.pair) return null;
       if (!boundary) return resolved.pair;
       /* UNIT_BOUNDARY_DESCRIPTION: a channel's turn is a run, so the pair it starts on is settled by the one helper, native subagent keys included (D193B). */
       return (await boundary.pair(agentId, resolved.pair)) ?? resolved.pair;

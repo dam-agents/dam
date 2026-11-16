@@ -13,6 +13,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { recordingWorkspaceFiles } from "../helpers/workspace-files.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 const USER = "U-SENDER";
@@ -100,6 +101,7 @@ function harness(opts?: {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -110,6 +112,7 @@ function harness(opts?: {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: workspace.factory,
     listWorkspaces: async () => [],

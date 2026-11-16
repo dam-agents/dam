@@ -8,9 +8,9 @@ import { buildAvatarsCommand } from "./commands/avatars.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
-import { buildDisableCommand } from "./commands/disable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildKeptCommand } from "./commands/kept.js";
 import { buildModelsCommand } from "./commands/models.js";
 import { buildRestartCommand } from "./commands/restart.js";
 import { buildUpdateCommand } from "./commands/update.js";
@@ -72,6 +72,7 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     "Address Agents by name or ID",
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
+  parent.addCommand(buildKeptCommand(shared));
   parent.addCommand(
     buildGetCommand({ ...withModels, createKitService: opts.kitService }),
   );
@@ -89,8 +90,6 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   parent.addCommand(buildModelsCommand(withModels));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
-  parent.addCommand(buildDisableCommand(shared, true));
-  parent.addCommand(buildDisableCommand(shared, false));
 
   return { commands: [parent], exports: { createService } };
 }

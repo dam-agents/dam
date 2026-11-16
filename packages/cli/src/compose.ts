@@ -20,10 +20,12 @@ import { composeSpendModule } from "./modules/spend/compose.js";
 import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
+import { composeOnboardingModule } from "./modules/onboarding/compose.js";
 import { composeTelemetryModule } from "./modules/telemetry/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { composeTermsModule } from "./modules/terms/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
+import { createSharingService } from "./modules/sharing/index.js";
 
 export function compose(): Command {
   const cli = composeCliModule();
@@ -31,6 +33,8 @@ export function compose(): Command {
   const auth = composeAuthModule({ compatService, configService });
   const { tokenProvider } = auth.exports;
   const buildTrpc = (host: string) => createTrpcClient({ host, tokenProvider });
+  const sharingService = (host: string) =>
+    createSharingService({ trpc: buildTrpc(host) });
 
   const template = composeTemplateModule({
     buildTrpc,
@@ -53,6 +57,7 @@ export function compose(): Command {
     configService,
     compatService,
     createAgentService: agent.exports.createService,
+    createSharingService: sharingService,
   };
   const egress = composeEgressModule(base);
   const connection = composeConnectionModule({
@@ -99,6 +104,7 @@ export function compose(): Command {
       ...base,
       createSpendService: spend.exports.createService,
     }),
+    composeOnboardingModule(base),
     composeTermsModule(base),
   ]) {
     for (const command of module.commands) program.addCommand(command);

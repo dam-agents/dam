@@ -57,8 +57,15 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
     ref,
   ) {
     const { onFocus, ...triggerProps } = rest;
+    const [open, setOpen] = React.useState(false);
+    const mouseFocus = React.useRef(false);
     return (
-      <TooltipPrimitive.Root>
+      <TooltipPrimitive.Root
+        open={open && content != null}
+        onOpenChange={(next) => {
+          if (!(next && mouseFocus.current)) setOpen(next);
+        }}
+      >
         {}
         <TooltipPrimitive.Trigger
           asChild
@@ -66,8 +73,12 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
           {...triggerProps}
           onFocus={(event) => {
             onFocus?.(event);
-            if (!event.currentTarget.matches(":focus-visible"))
-              event.preventDefault();
+            mouseFocus.current =
+              !event.currentTarget.matches(":focus-visible") &&
+              !event.currentTarget.matches(":hover");
+            queueMicrotask(() => {
+              mouseFocus.current = false;
+            });
           }}
         >
           {children}

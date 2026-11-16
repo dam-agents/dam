@@ -1,5 +1,6 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  assistantIdeas,
   type DefaultKind,
   SessionMode,
   type SessionPair,
@@ -16,6 +17,7 @@ import {
   useState,
 } from "react";
 
+import { getBrand } from "@/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -56,10 +58,7 @@ import {
   AgentUnavailableOverlay,
   takesOverChat,
 } from "../../agents/components/agent-unavailable-overlay.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -79,13 +78,27 @@ import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import {
+  assistantAudienceKnown,
+  useAssistantState,
+} from "../../assistants/api/assistant-state.js";
+import {
+  AssistantGreeting,
+  TrySomethingNew,
+} from "../../assistants/components/assistant-greeting.js";
+import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
+import {
+  useAssistantChat,
+  useAssistantGreeting,
+} from "../../assistants/hooks/use-assistant-greeting.js";
+import { ideasNotStarted } from "../../assistants/lib/greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -176,7 +189,7 @@ import {
   classicPanel,
 } from "../lib/classic-chat-layout.js";
 import { composerBlock } from "../lib/composer-block.js";
-import { sharedCurveBender } from "../lib/curve-bender.js";
+import { curveBenderNotice, sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -346,6 +359,7 @@ export function ChatView() {
     choice,
     newSessionAgent,
     pair,
+    pairSettled,
     pairHarness,
     noProviders,
     noGrantedProvider,
@@ -361,6 +375,17 @@ export function ChatView() {
   const shared = sharedCurveBender(providers.owned);
   const routed =
     choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
+  /* UNIT_BOUNDARY_DESCRIPTION: the assistant record says which Agent is the assistant, and whether the account had an Agent of its own before the platform gave it one — so the notice keeps out of its chat and off an account onboarded with it, and waits for that record rather than guessing. */
+  const assistantRecord = useAssistantState();
+  const notice = curveBenderNotice({
+    sessionId,
+    shared,
+    pair,
+    pairSettled,
+    agentId: selectedAgent,
+    assistant: assistantRecord.data ?? null,
+    assistantKnown: assistantAudienceKnown(assistantRecord),
+  });
   const sendHarness =
     (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
   const sendCatalog = useHarnessCatalogModels(
@@ -399,6 +424,9 @@ export function ChatView() {
     });
   };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
+  const dialog = useStore((s) => s.dialog);
+  /* UNIT_BOUNDARY_DESCRIPTION: the prompt for a provider covers the chat, whether it opened by itself — the agent holds none — or the composer asked for it, and the unlock celebration waits behind it. */
+  const providerPromptOpen = providersModal ?? noProviders;
 
   const view = useStore((s) => s.view);
   const continuesInvocation = useStore((s) =>
@@ -419,6 +447,10 @@ export function ChatView() {
   const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
+  const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
+  /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
+  const assistantChat = useAssistantChat(selectedAgent);
+  const ideas = assistantIdeas(getBrand().name);
 
   const {
     messagesRef,
@@ -427,8 +459,8 @@ export function ChatView() {
     showJump,
     historyShown,
   } = useChatScroll({ messages, sessionId, loadingSession, loadOlderMessages });
-  const features = useFeatures().data;
-  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
+  const telemetryEnabled =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
   const delegationOwners = useDelegationOwners(messages);
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
@@ -669,8 +701,17 @@ export function ChatView() {
   );
 
   const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the CurveBender notice asks which provider to use, so the panel it opens lands on that row rather than on the harness. */
+  const [pairPickerFocus, setPairPickerFocus] = useState<"provider" | null>(
+    null,
+  );
+  const setPickerOpen = (open: boolean) => {
+    setPairPickerOpen(open);
+    if (!open) setPairPickerFocus(null);
+  };
   useEffect(() => {
-    if (sessionId) setPairPickerOpen(false);
+    if (!sessionId) return;
+    setPickerOpen(false);
   }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
@@ -828,18 +869,27 @@ export function ChatView() {
 
   const notices = (
     <>
-      {channelBlock !== null && agentDisplay?.state === "running" && (
-        <AgentReconnectingNotice
-          name={selectedAgentName ?? "the agent"}
-          state={channelBlock}
-          onRetry={loadingSession ? undefined : retryChannel}
-        />
-      )}
+      {channelBlock !== null &&
+        !sessionError &&
+        agentDisplay?.state === "running" && (
+          <AgentReconnectingNotice
+            name={selectedAgentName ?? "the agent"}
+            state={channelBlock}
+            onRetry={loadingSession ? undefined : retryChannel}
+          />
+        )}
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
     </>
   );
+
+  const emptyChat =
+    !loadingSession &&
+    !sessionError &&
+    conversationEmpty(messages, queuedPrompts) &&
+    continuesInvocation === undefined &&
+    copy === null;
 
   const conversation =
     sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
@@ -893,49 +943,57 @@ export function ChatView() {
                   }}
                 />
               )}
-              {!loadingSession &&
-                !sessionError &&
-                conversationEmpty(messages, queuedPrompts) &&
-                continuesInvocation === undefined &&
-                copy === null && (
-                  <div className="flex flex-1 flex-col items-center justify-center text-center">
-                    <h2 aria-label={selectedAgentName ?? undefined}>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                        className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {agentView && (
-                          <AgentAvatar
-                            name={agentView.name}
-                            avatar={agentView.avatar}
-                            size={96}
-                            mood={avatarMood(agentDisplay?.state, agentView)}
-                            className="transition-opacity group-hover:opacity-80"
-                          />
-                        )}
-                        <span className="mt-3 flex items-center gap-2">
-                          <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
-                            {selectedAgentName}
-                          </span>
+              {emptyChat && greeting.kind === "greeting" && selectedAgent && (
+                <AssistantGreeting
+                  greeting={greeting.copy}
+                  avatar={agentView?.avatar ?? null}
+                  agentId={selectedAgent}
+                  sessionId={sessionId}
+                  onConfigure={handleConfigureSandbox}
+                  onPicked={() => textareaRef.current?.focus()}
+                />
+              )}
+              {emptyChat && greeting.kind === "loading" && (
+                <div className="flex-1" />
+              )}
+              {emptyChat && greeting.kind === "none" && (
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <h2 aria-label={selectedAgentName ?? undefined}>
+                    <button
+                      type="button"
+                      onClick={handleConfigureSandbox}
+                      aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                      className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {agentView && (
+                        <AgentAvatar
+                          name={agentView.name}
+                          avatar={agentView.avatar}
+                          size={96}
+                          className="transition-opacity group-hover:opacity-80"
+                        />
+                      )}
+                      <span className="mt-3 flex items-center gap-2">
+                        <span className="text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                          {selectedAgentName}
                         </span>
-                      </button>
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {sessionsElsewhere
-                        ? "Send a message to begin or open a new session in:"
-                        : "Send a message to begin."}
-                    </p>
-                    {agentView && (
-                      <NewSessionOptions
-                        agent={agentView}
-                        onNewTerminal={handleNewTerminal}
-                      />
-                    )}
-                    {startNotice && <div className="mt-6">{startNotice}</div>}
-                  </div>
-                )}
+                      </span>
+                    </button>
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {sessionsElsewhere
+                      ? "Send a message to begin or open a new session in:"
+                      : "Send a message to begin."}
+                  </p>
+                  {agentView && (
+                    <NewSessionOptions
+                      agent={agentView}
+                      onNewTerminal={handleNewTerminal}
+                    />
+                  )}
+                  {startNotice && <div className="mt-6">{startNotice}</div>}
+                </div>
+              )}
               {copyInView && (
                 <ContinuedFromPrelude
                   copy={copy}
@@ -1116,13 +1174,40 @@ export function ChatView() {
         </div>
 
         <div className="pb-4">
+          {assistantChat && (
+            <AssistantUnlockCelebration
+              covered={providerPromptOpen || dialog !== null}
+            />
+          )}
           <OnboardingBar
             key={selectedAgent ?? "none"}
             agentId={selectedAgent}
           />
           <KitUpdateBar agentId={selectedAgent} />
           <HomeVolumeBar agentId={selectedAgent} />
-          <CurveBenderAlert visible={!!shared} onTry={curveBender.tryIt} />
+          <CurveBenderAlert
+            variant={notice}
+            onTry={curveBender.tryIt}
+            onPickProvider={() => {
+              setPairPickerFocus("provider");
+              setPairPickerOpen(true);
+            }}
+          />
+          {assistantChat &&
+            selectedAgent &&
+            !(emptyChat && greeting.kind !== "none") && (
+              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                <ChatColumn>
+                  <TrySomethingNew
+                    key={sessionId ?? "new"}
+                    ideas={ideasNotStarted(ideas, messages)}
+                    agentId={selectedAgent}
+                    sessionId={sessionId}
+                    onPicked={() => textareaRef.current?.focus()}
+                  />
+                </ChatColumn>
+              </div>
+            )}
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
@@ -1138,6 +1223,13 @@ export function ChatView() {
             }
             channelLive={channelLive}
             harness={sendHarness ?? null}
+            emptyPlaceholder={
+              loadingSession
+                ? "Loading the conversation — your message sends once it opens."
+                : greeting.kind === "greeting"
+                  ? greeting.copy.placeholder
+                  : null
+            }
             onBlockedClick={
               block?.kind === "connect"
                 ? () => setProvidersModal(true)
@@ -1157,7 +1249,8 @@ export function ChatView() {
                       defaultHarness={choice.defaultHarness}
                       routed={choice.routed}
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      initialFocus={pairPickerFocus ?? undefined}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   ) : (
@@ -1166,7 +1259,7 @@ export function ChatView() {
                       agentHarness={agentView?.harness}
                       pending
                       open={pairPickerOpen}
-                      onOpenChange={setPairPickerOpen}
+                      onOpenChange={setPickerOpen}
                       onConnectProviders={() => setProvidersModal(true)}
                     />
                   )}
@@ -1276,7 +1369,7 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
-      {(providersModal ?? noProviders) && (
+      {providerPromptOpen && (
         <ProviderSettingsModal
           agentId={newSessionAgent}
           onClose={() => setProvidersModal(false)}
@@ -1292,6 +1385,7 @@ export function ChatView() {
             display={agentDisplay}
             canOpenBrowser={canOpenBrowser}
             canShowChanges={changesAvailable}
+            canStartNewSession={sessionId !== null || messages.length > 0}
             browserOpen={browserToggle.pressed}
             changesOpen={changesToggle.pressed}
             onToggleBrowser={() => {
@@ -1308,7 +1402,7 @@ export function ChatView() {
                 void toggleChanges(selectedAgent);
               else revealDock();
             }}
-            onConfigure={handleConfigureSandbox}
+            onStartNewSession={() => handleNewSession()}
           />
         }
         status={
@@ -1336,7 +1430,6 @@ export function ChatView() {
         notices={notices}
         agentId={selectedAgent}
         agentName={selectedAgentName}
-        alwaysOn={agentView?.hibernationTimeoutMin === 0}
         processesEnabled={processesEnabled}
         onOpenFile={openFileHandler}
         panel={shownClassicPanel}
@@ -1424,12 +1517,22 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
+    body: "The agent didn't answer. It may still be starting — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",
     body: "The agent still has it, but it wouldn't load.",
   },
+};
+
+const RESUME_FAILURE_ACTION: Record<
+  SessionError["kind"],
+  "retry" | "delete" | null
+> = {
+  unavailable: null,
+  orphaned: "delete",
+  connection: "retry",
+  other: "retry",
 };
 
 function SessionErrorCard({
@@ -1442,6 +1545,7 @@ function SessionErrorCard({
   onDelete: () => void;
 }) {
   const { title, body } = RESUME_FAILURE_COPY[error.kind];
+  const action = RESUME_FAILURE_ACTION[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -1452,15 +1556,15 @@ function SessionErrorCard({
         </div>
       </div>
       {}
-      {(error.kind === "connection" || error.kind === "orphaned") && (
+      {action !== null && (
         <div className="flex items-center gap-2 flex-wrap">
-          {error.kind === "connection" ? (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={14} /> Retry
-            </Button>
-          ) : (
+          {action === "delete" ? (
             <Button variant="destructive" size="sm" onClick={onDelete}>
               <TrashCan size={12} /> Delete this session
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={14} /> Retry
             </Button>
           )}
         </div>

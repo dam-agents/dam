@@ -18,6 +18,7 @@ function setup(fail?: Error) {
   const calls: Parameters<TriggerSessionDriver["start"]>[0][] = [];
   const reports: EventReportInput[] = [];
   const driver: TriggerSessionDriver = {
+    cancel: async () => true,
     async start(opts) {
       calls.push(opts);
       if (fail) throw fail;

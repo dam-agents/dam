@@ -14,22 +14,8 @@ import { match } from "ts-pattern";
 import { cn } from "@/lib/utils";
 
 import { getUser } from "../../../../auth.js";
-import type { AgentView } from "../../../../types.js";
-import type { AgentDisplayState } from "../../utils/agent-resolver.js";
 
 export type AgentAvatarMood = AvatarMood | "disabled";
-
-export function avatarMood(
-  state: AgentDisplayState | undefined,
-  agent: Pick<AgentView, "stopRequested" | "disabled"> | null | undefined,
-): AgentAvatarMood {
-  if (agent?.disabled || state === "disabled") return "disabled";
-  return agent?.stopRequested ||
-    state === "hibernated" ||
-    state === "hibernating"
-    ? "asleep"
-    : "awake";
-}
 
 export function resolveCharacter(
   name: string,

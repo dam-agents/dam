@@ -1,8 +1,10 @@
+import { z } from "zod";
 import { boundedSet } from "../../../core/bounded-map.js";
 
 export interface KeycloakUserDirectory {
   resolveByEmail(email: string): Promise<string | null>;
   resolveBySub(sub: string): Promise<string | null>;
+  resolveVerifiedEmailBySub(sub: string): Promise<string | null>;
   resolveDisplayNameBySub(sub: string): Promise<string | null>;
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
   searchSubs(text: string, max: number): Promise<Set<string>>;
@@ -58,6 +60,16 @@ export function toDirectoryUser(record: KeycloakUserRecord): DirectoryUser {
     displayName: parts.length > 0 ? parts.join(" ") : null,
   };
 }
+
+/* UNIT_BOUNDARY_DESCRIPTION: the three facts a pairing needs from a Keycloak
+ * user record. Anything else the admin API sends is ignored; any of these
+ * missing or mistyped makes the record unknown, which the lookup treats as no
+ * mailbox at all. */
+const verifiedEmailRecordSchema = z.object({
+  enabled: z.boolean(),
+  emailVerified: z.boolean(),
+  email: z.string(),
+});
 
 const TOKEN_MARGIN_SECONDS = 30;
 const LOOKUP_TTL_MS = 60_000;
@@ -187,6 +199,36 @@ export function createKeycloakUserDirectory(
 
     async resolveBySub(sub) {
       return (await fetchUser(sub))?.email ?? null;
+    },
+
+    /* UNIT_BOUNDARY_DESCRIPTION: pairing a Slack account to an owner rests on
+     * this mailbox, so it answers only a mailbox Keycloak itself calls verified
+     * on a user it calls enabled, and nothing at all when it cannot tell — the
+     * cached DirectoryUser drops both flags, so this reads the record. A field
+     * that is missing or of another shape is unknown, never false. */
+    async resolveVerifiedEmailBySub(sub) {
+      try {
+        const res = await adminFetch(
+          `/users/${encodeURIComponent(sub)}`,
+          AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
+        );
+        if (!res.ok) return null;
+        const parsed = verifiedEmailRecordSchema.safeParse(await res.json());
+        if (!parsed.success) {
+          process.stderr.write(
+            `[keycloak-user-directory] verified email lookup ${sub} was not usable\n`,
+          );
+          return null;
+        }
+        const { enabled, emailVerified, email } = parsed.data;
+        if (enabled !== true || emailVerified !== true) return null;
+        return email.trim().length > 0 ? email : null;
+      } catch (err) {
+        process.stderr.write(
+          `[keycloak-user-directory] verified email lookup ${sub} errored: ${err}\n`,
+        );
+        return null;
+      }
     },
 
     async resolveDisplayNameBySub(sub) {

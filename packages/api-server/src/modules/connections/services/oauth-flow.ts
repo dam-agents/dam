@@ -7,7 +7,10 @@ import type {
 } from "api-server-api";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
-import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
+import {
+  isRetiredHost,
+  type ConnectionTemplateRegistry,
+} from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
 import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js";
 import { applyCallbackAlias } from "../domain/oauth-callback-url.js";
@@ -19,7 +22,10 @@ import type { SecretStore } from "../../secret-store/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
-import { oauthProviderFor } from "./oauth-token.js";
+import {
+  oauthProviderForSignIn,
+  resolveOAuthClientSecret,
+} from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
 import { rederiveGitHubChildren } from "./github-children.js";
 import { withoutParentScope } from "../domain/github-parent.js";
@@ -75,12 +81,18 @@ export function createOAuthFlowService(deps: {
             "This connection is renewed by the GitHub sign-in it was made from. Sign in again on the sign-in.",
         });
       }
-      const provider = await oauthProviderFor({
+      const template = deps.templates.get(conn.templateId);
+      if (template && isRetiredHost(template, conn.auth.host)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${conn.auth.host} is retired on this platform. Move this sign-in to another GitHub Enterprise host, then authorize it there.`,
+        });
+      }
+      const provider = await oauthProviderForSignIn({
         ...deps,
         conn,
         auth: conn.auth,
       });
-      const template = deps.templates.get(conn.templateId);
       const alias =
         template?.authKind === "oauth"
           ? template.localhostCallbackAlias
@@ -119,11 +131,15 @@ export function createOAuthFlowService(deps: {
         );
       }
 
-      const provider = await oauthProviderFor({
+      const clientSecret = await resolveOAuthClientSecret({
         ...deps,
         conn,
         auth: conn.auth,
       });
+      const provider = {
+        ...pending.provider,
+        ...(clientSecret ? { clientSecret } : {}),
+      };
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
       const isReauth =
@@ -194,6 +210,12 @@ export function createOAuthFlowService(deps: {
         const expiresAt = earliestExpiry(tokens.expiresAt, scoped?.expiresAt);
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(fresh.auth),
+          ...(pending.provider.resource
+            ? {
+                resource: pending.provider.resource,
+                requestedScopes: pending.provider.scopes ?? [],
+              }
+            : {}),
           connectedAt: Math.floor(Date.now() / 1000),
           scopes: tokens.scopes ?? pending.provider.scopes ?? fresh.auth.scopes,
           ...(expiresAt !== undefined ? { expiresAt } : {}),

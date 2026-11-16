@@ -1,6 +1,11 @@
 import type { SessionListQuery } from "agent-runtime-api";
 import { SESSION_CATEGORIES, type SessionCategory } from "api-server-api";
 
+export type SessionListNarrowing = Pick<
+  SessionListQuery,
+  "channelTypes" | "status"
+>;
+
 function inCanonicalOrder(
   categories: readonly SessionCategory[],
 ): SessionCategory[] {
@@ -12,8 +17,16 @@ export const acpSessionsKeys = {
   agent: (agentId: string | null) => [...acpSessionsKeys.all, agentId] as const,
   pages: (agentId: string | null) =>
     [...acpSessionsKeys.agent(agentId), "pages"] as const,
-  pagesOf: (agentId: string | null, categories: readonly SessionCategory[]) =>
-    [...acpSessionsKeys.pages(agentId), inCanonicalOrder(categories)] as const,
+  pagesOf: (
+    agentId: string | null,
+    categories: readonly SessionCategory[],
+    narrowing: SessionListNarrowing = {},
+  ) =>
+    [
+      ...acpSessionsKeys.pages(agentId),
+      inCanonicalOrder(categories),
+      ...(narrowing.channelTypes || narrowing.status ? [narrowing] : []),
+    ] as const,
   query: (agentId: string | null, query: SessionListQuery) =>
     [
       ...acpSessionsKeys.agent(agentId),

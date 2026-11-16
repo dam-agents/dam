@@ -11,15 +11,28 @@ describe("filterOfferedTemplates", () => {
   ];
 
   test("offers Slack alongside the other standard templates", () => {
-    expect(filterOfferedTemplates(templates, false).map((t) => t.id)).toEqual([
-      "github",
-      "slack",
-    ]);
+    expect(
+      filterOfferedTemplates(templates, false, false).map((t) => t.id),
+    ).toEqual(["github", "slack"]);
   });
 
   test("offers the whole catalog once advanced connections is on", () => {
-    expect(filterOfferedTemplates(templates, true).map((t) => t.id)).toEqual(
-      templates.map((t) => t.id),
-    );
+    expect(
+      filterOfferedTemplates(templates, true, false).map((t) => t.id),
+    ).toEqual(templates.map((t) => t.id));
+  });
+
+  // TEST_SCENARIO: the install's own Connection Template is on offer only while the person's flag says so — the advanced-connections switch never offers it, because its credential is the platform's and the person does not type one.
+  test("offers the install's own template only while its flag is on", () => {
+    const withDam = [...templates, { id: "dam" }];
+    expect(
+      filterOfferedTemplates(withDam, false, false).map((t) => t.id),
+    ).toEqual(["github", "slack"]);
+    expect(
+      filterOfferedTemplates(withDam, true, false).map((t) => t.id),
+    ).toEqual(templates.map((t) => t.id));
+    expect(
+      filterOfferedTemplates(withDam, false, true).map((t) => t.id),
+    ).toEqual(["github", "slack", "dam"]);
   });
 });

@@ -107,6 +107,7 @@ async function world(
     recordAgentVisit: async () => {},
     signIn: {
       redeemHandoff: async () => null,
+      completeSignIn: async () => null,
       session: async (id) => (id === "s1" ? session : null),
       signOut: async () => {},
     },

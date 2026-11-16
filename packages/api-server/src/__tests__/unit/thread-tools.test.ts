@@ -20,6 +20,7 @@ async function harness(over: Partial<ThreadToolPorts> = {}) {
   const server = new McpServer({ name: "test", version: "1.0.0" });
   registerThreadTools(server, {
     callerSessionId: async () => "s-web",
+    blocksOf: async () => ({}),
     startThread: async (channel, start) => {
       starts.push({ channel, start });
       return {
@@ -90,6 +91,51 @@ describe("start_thread", () => {
       replies: expect.stringContaining("end your turn"),
     });
     expect(h.audits).toEqual(["start:success"]);
+  });
+
+  it("opens the thread with the card the platform built", async () => {
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: "Regions" } },
+    ];
+    const card = { blocks, text: "Regions" };
+    const checkedFor: (Record<string, unknown>[] | undefined)[] = [];
+    const h = await harness({
+      blocksOf: async (sent) => {
+        checkedFor.push(sent);
+        return { card };
+      },
+    });
+
+    await h.call("start_thread", {
+      channel: "slack",
+      chatId: "C-OTHER",
+      text: "Which region?",
+      blocks,
+    });
+
+    expect(h.starts[0]?.start.card).toEqual(card);
+    expect(checkedFor).toEqual([blocks]);
+  });
+
+  // TEST_SCENARIO: blocks the platform refuses must not leave a thread behind with only half of what the agent meant to ask.
+  it("starts no thread when the blocks are refused", async () => {
+    const h = await harness({
+      blocksOf: async () => ({
+        error: 'The blocks were not sent: the blocks hold an "input" block.',
+      }),
+    });
+
+    const res = await h.call("start_thread", {
+      channel: "slack",
+      chatId: "C-OTHER",
+      text: "Which region?",
+      blocks: [{ type: "input" }],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('an "input" block');
+    expect(h.starts).toEqual([]);
+    expect(h.audits).toEqual(["start:failure"]);
   });
 
   // TEST_SCENARIO: a call the platform cannot tie to a Session owns nothing, and points at post instead.

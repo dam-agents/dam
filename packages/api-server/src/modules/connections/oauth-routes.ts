@@ -59,7 +59,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
     const respondSuccess = (connectionId: string) => {
       if (popup)
         return c.html(
-          renderPopupResult(targetOrigin, {
+          renderPopupResult(targetOrigin, deps.brandName, {
             oauth: "success",
             connection: connectionId,
           }),
@@ -73,7 +73,11 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
     const respondError = (message: string) => {
       if (popup)
         return c.html(
-          renderPopupResult(targetOrigin, { oauth: "error", message }),
+          renderPopupResult(targetOrigin, deps.brandName, {
+            oauth: "error",
+            message,
+            ...(peeked ? { connection: peeked.ctx.connectionId } : {}),
+          }),
         );
       const params = new URLSearchParams();
       params.set("oauth", "error");
@@ -115,7 +119,23 @@ interface PopupResult {
   message?: string;
 }
 
-function renderPopupResult(targetOrigin: string, result: PopupResult): string {
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderPopupResult(
+  targetOrigin: string,
+  brandName: string,
+  result: PopupResult,
+): string {
+  const notice =
+    result.oauth === "success"
+      ? `Signed in. ${brandName} is finishing the sign-in. You can close this window.`
+      : `The sign-in did not finish. You can close this window and try again in ${brandName}.`;
   const payload = JSON.stringify({
     source: "platform-oauth",
     ...result,
@@ -125,11 +145,17 @@ function renderPopupResult(targetOrigin: string, result: PopupResult): string {
 <html>
   <head><meta charset="utf-8" /><title>Authorizing…</title></head>
   <body style="font-family: system-ui, sans-serif; padding: 2rem; color: #444;">
-    <p>You can close this window.</p>
+    <p>${escapeHtml(notice)}</p>
     <script>
       (function () {
+        var result = ${payload};
         try {
-          if (window.opener) window.opener.postMessage(${payload}, ${origin});
+          if (window.opener) window.opener.postMessage(result, ${origin});
+        } catch (e) {}
+        try {
+          var channel = new BroadcastChannel("platform-oauth");
+          channel.postMessage(result);
+          channel.close();
         } catch (e) {}
         window.close();
       })();

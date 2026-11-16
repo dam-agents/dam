@@ -134,6 +134,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch
 	p.LuaDir = envoyBootstrapMount
 	p.RepairGeneration = generation
 	p.ArrivalEpoch = epoch
+	p.ExternalSourceOnly = true
 	return p
 }
 
@@ -145,7 +146,7 @@ func ownerAgentResources(p bootstrapParams) (listeners, clusters []any) {
 	clusters = []any{internalListenerCluster(p.named("tls_inspect_internal")), internalListenerCluster(p.named("harness_guard")), extAuthzCluster(p)}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA, p.APIServerHost, p.APIServerPort))
 		}
 	}
 	return listeners, append(clusters, agentKeyClusters(p)...)

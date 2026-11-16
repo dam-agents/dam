@@ -1,4 +1,4 @@
-import { Branch, Document, Globe, Tools } from "@carbon/icons-react";
+import { AddComment, Branch, Document, Globe } from "@carbon/icons-react";
 
 import { stateDotClass } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
@@ -15,9 +14,8 @@ import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar: the Agent's
  * state dot, its avatar and name, editable in place, the Shared badge of a
- * Shared Agent, and the buttons that toggle the browser and the changes beside
- * the conversation, open the sections on a phone, and open the Agent's
- * configuration.
+ * Shared Agent, and the buttons that start a new session, toggle the browser
+ * and the changes beside the conversation, and open the sections on a phone.
  */
 export function ClassicChatIdentity({
   agent,
@@ -26,11 +24,12 @@ export function ClassicChatIdentity({
   display,
   canOpenBrowser,
   canShowChanges,
+  canStartNewSession,
   browserOpen,
   changesOpen,
   onToggleBrowser,
   onToggleChanges,
-  onConfigure,
+  onStartNewSession,
 }: {
   agent: AgentView | null;
   agentId: string | null;
@@ -38,13 +37,15 @@ export function ClassicChatIdentity({
   display: AgentDisplay | null;
   canOpenBrowser: boolean;
   canShowChanges: boolean;
+  canStartNewSession: boolean;
   browserOpen: boolean;
   changesOpen: boolean;
   onToggleBrowser: () => void;
   onToggleChanges: () => void;
-  onConfigure: () => void;
+  onStartNewSession: () => void;
 }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const crowded = canOpenBrowser || canShowChanges;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <span
@@ -59,7 +60,6 @@ export function ClassicChatIdentity({
         <EditableAgentIdentity
           agent={agent}
           avatarSize={32}
-          mood={avatarMood(display?.state, agent)}
           nameClassName="text-sm font-bold text-foreground"
         />
       ) : (
@@ -71,6 +71,30 @@ export function ClassicChatIdentity({
         </span>
       )}
       <div className="ml-auto flex shrink-0">
+        {canStartNewSession && agentId && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="New chat"
+            tooltip="New chat"
+            onClick={onStartNewSession}
+            className={cn(
+              "mr-1",
+              crowded
+                ? "@max-[339px]:size-8 @max-[339px]:px-0"
+                : "@max-[269px]:size-8 @max-[269px]:px-0",
+            )}
+          >
+            <AddComment size={16} />
+            <span
+              className={
+                crowded ? "@max-[339px]:hidden" : "@max-[269px]:hidden"
+              }
+            >
+              New chat
+            </span>
+          </Button>
+        )}
         {canOpenBrowser && agentId && (
           <Button
             variant="ghost"
@@ -105,16 +129,6 @@ export function ClassicChatIdentity({
           onClick={() => setMobileScreen("files")}
         >
           <Document size={16} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Configure agent"
-          tooltip="Configure agent"
-          className="max-md:hidden"
-          onClick={onConfigure}
-        >
-          <Tools size={16} />
         </Button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner the owning agent's editors, its Agent Environment Members and an Environment's own Environment Members are admitted, by verified email, each list only adding people; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in on a page load, and a script's call gets a plain-text 401; an endpoint whose sibling lost its session signs the sibling in again on its next page load, once; the owner the owning agent's editors, its Agent Environment Members and an Environment's own Environment Members are admitted, by verified email, each list only adding people; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -15,6 +15,7 @@ import {
   requestAllowed,
   safeNext,
   siblingPreflight,
+  type EnvironmentSession,
 } from "../../modules/environments/domain/gate.js";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import { createEnvironmentGate } from "../../modules/environments/gate/environment-gate.js";
@@ -111,10 +112,13 @@ async function world(
   const agentVisits: [string, string][] = [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, faked: the ones still alive, by id.
   const shareSessions = new Set(["share-1"]);
+  const sessions = createMemoryTtlStore<EnvironmentSession>(3_600_000);
   const signIn = createEnvironmentSignIn({
     handoffs: createMemoryTtlStore(60_000),
-    sessions: createMemoryTtlStore(3_600_000),
+    sessions,
     chains: createMemoryTtlStore(300_000),
+    signedIn: createMemoryTtlStore(3_600_000),
+    completions: createMemoryTtlStore(300_000),
     share: {
       alive: async (id) => shareSessions.has(id),
       end: async (id) => void shareSessions.delete(id),
@@ -310,9 +314,12 @@ async function world(
     return session.cookies[0]!.split(";")[0]!;
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: a whole sign-in to an Environment with several endpoints, as one browser walks it: the first address, then every step of the chain until the browser lands back on the page it asked for. Each address keeps its own cookies, as a browser keeps them per host; returns the session cookie each address set, and every stop on the way.
-  async function signInAll(first: string, path = "/page?x=1") {
-    const jar = new Map<string, string[]>();
+  // UNIT_BOUNDARY_DESCRIPTION: a whole sign-in to an Environment with several endpoints, as one browser walks it: the first address, then every step of the chain until the browser lands back on the page it asked for. Each address keeps its own cookies, as a browser keeps them per host, in a jar the test may hand in; returns the session cookie each address set, and every stop on the way.
+  async function signInAll(
+    first: string,
+    path = "/page?x=1",
+    jar = new Map<string, string[]>(),
+  ) {
     const keep = (host: string, cookies: string[]) => {
       const held = jar.get(host) ?? [];
       for (const c of cookies) {
@@ -346,14 +353,24 @@ async function world(
     throw new Error("the sign-in never landed");
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: an address whose session is gone, both the store's entry and the browser's cookie, as when a step of the sign-in never landed or the session expired before its siblings'.
+  async function loseSession(jar: Map<string, string[]>, host: string) {
+    const held = jar.get(host) ?? [];
+    const session = held.find((c) => c.startsWith("platform-env="));
+    if (session) await sessions.delete(session.slice("platform-env=".length));
+    jar.delete(host);
+  }
+
   return {
     request,
     abortedUpload,
+    loseSession,
     frontDoor,
     signInTo,
     signInAll,
     shareLogins,
     shareSessions,
+    sessions,
     records,
     owners,
     seen,
@@ -872,6 +889,94 @@ describe("the Environment gate", () => {
     expect(call.headers["access-control-allow-credentials"]).toBe("true");
   });
 
+  // TEST_SCENARIO: the `app` endpoint holds its session but its sibling `keycloak` has none, as when the sibling's step of the sign-in never landed. The app's call to the sibling gets a plain-text 401 its script reads as "not signed in", never an HTML page it would parse as data, and a fetch that accepts HTML is not sent to sign in either. The next page load of `app` sends the browser through the sibling's sign-in and back to the page, after which the call reaches the app; it does so once, so the page loads after it go straight to the app.
+  it("signs a lost sibling endpoint in again on the next page load", async () => {
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "keycloak", port: 4445 },
+      ],
+    });
+    const app = `app-pr-1-abcdef.${DOMAIN}`;
+    const keycloak = `keycloak-pr-1-abcdef.${DOMAIN}`;
+    const signedIn = await w.signInAll("app-pr-1-abcdef");
+    await w.loseSession(signedIn.jar, keycloak);
+    const call = () =>
+      w.request(keycloak, "/realms/x/.well-known/openid-configuration", {
+        origin: `http://${app}`,
+        accept: "application/json, text/html",
+        "sec-fetch-mode": "cors",
+        cookie: (signedIn.jar.get(keycloak) ?? []).join("; "),
+      });
+
+    const refused = await call();
+    expect(refused.status).toBe(401);
+    expect(refused.location).toBeNull();
+    expect(refused.body).not.toContain("<");
+
+    const again = await w.signInAll("app-pr-1-abcdef", "/", signedIn.jar);
+    expect(again.stops.map((u) => new URL(u).host)).toContain(keycloak);
+    expect(again.url.href).toBe(`http://${app}/`);
+    expect(again.last.status).toBe(200);
+    expect((await call()).status).toBe(200);
+
+    const next = await w.request(app, "/", {
+      accept: "text/html",
+      cookie: signedIn.jar.get(app)!.join("; "),
+    });
+    expect(next.status).toBe(200);
+    expect(next.location).toBeNull();
+  });
+
+  // TEST_SCENARIO: a sign-in whose step on a sibling keeps failing never sends the browser round in a loop: the page load after a completion that did not land goes to the app. A script's call, a frame and the loading page's retry are never sent through the sign-in, and an Environment with one endpoint never is.
+  it("completes a sign-in once, and never for a frame or a script", async () => {
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "keycloak", port: 4445 },
+      ],
+    });
+    const app = `app-pr-1-abcdef.${DOMAIN}`;
+    const signedIn = await w.signInAll("app-pr-1-abcdef");
+    await w.loseSession(signedIn.jar, `keycloak-pr-1-abcdef.${DOMAIN}`);
+    const cookie = signedIn.jar.get(app)!.join("; ");
+    const load = (headers: Record<string, string>) =>
+      w.request(app, "/", { cookie, ...headers });
+
+    expect(
+      (await load({ "sec-fetch-mode": "cors", accept: "text/html" })).status,
+    ).toBe(200);
+    expect(
+      (
+        await load({
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-dest": "iframe",
+        })
+      ).status,
+    ).toBe(200);
+    const retry = await w.request(app, "/.platform/start?next=/a", {
+      cookie,
+      accept: "text/html",
+    });
+    expect(retry.location).toBe("/a");
+    const first = await load({ accept: "text/html" });
+    expect(first.status).toBe(302);
+    expect(new URL(first.location!).pathname).toBe("/.platform/signin");
+    expect((await load({ accept: "text/html" })).status).toBe(200);
+
+    const single = await world();
+    const only = await single.signInAll("app-pr-1-abcdef");
+    expect(only.last.status).toBe(200);
+    expect(
+      (
+        await single.request(app, "/", {
+          accept: "text/html",
+          cookie: only.jar.get(app)!.join("; "),
+        })
+      ).status,
+    ).toBe(200);
+  });
+
   // TEST_SCENARIO: an app that signs its users in itself gets their bearer tokens in Authorization, while a platform API key, a token the platform's identity provider issued and a token that names no issuer never reach it.
   it("passes the app's own Authorization and drops the platform's", async () => {
     const w = await world();
@@ -1114,6 +1219,8 @@ describe("a sign-in chain", () => {
       handoffs: createMemoryTtlStore(60_000),
       sessions: createMemoryTtlStore(3_600_000),
       chains: createMemoryTtlStore(300_000),
+      signedIn: createMemoryTtlStore(3_600_000),
+      completions: createMemoryTtlStore(300_000),
       share: { alive: async () => true, end: async () => {} },
       addressUrl: (a) => `http://${a}.${DOMAIN}`,
       now: () => Date.now(),

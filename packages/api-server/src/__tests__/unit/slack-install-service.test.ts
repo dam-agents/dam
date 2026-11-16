@@ -101,6 +101,7 @@ function installRow(teamId: string, secretPath: string): SlackInstall {
   return {
     teamId,
     teamName: null,
+    enterpriseId: null,
     secretPath,
     secretField: "botToken",
     installedBy: null,

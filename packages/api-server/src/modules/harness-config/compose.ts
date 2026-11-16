@@ -1,6 +1,7 @@
 import type { Subscription } from "rxjs";
 import type { Db, DbTx } from "db";
 import type { ProfileResolver } from "../profiles/index.js";
+import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import type { RunBoundary } from "./domain/run-boundary.js";
 import type {
   DefaultKind,
@@ -15,6 +16,8 @@ import {
 } from "./services/harness-config-service.js";
 import { NoDefaultModelError } from "./domain/no-default-model.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";
+import { createStartPairWriter } from "./infrastructure/start-pair-writer.js";
+import { createStartPair, type StartPair } from "./services/start-pair.js";
 import {
   createSessionChoicesValidator,
   type SessionChoicesValidator,
@@ -25,6 +28,8 @@ import { createScheduleModelForFire } from "./services/schedule-model.js";
 import { startConvertDefaultOnHelloSaga } from "./sagas/convert-default-on-hello.js";
 import { startPublishDefaultsOnHelloSaga } from "./sagas/publish-defaults-on-hello.js";
 import { createSessionDefaultsPublisher } from "./services/session-defaults-publisher.js";
+import { createSharedCurveBenderGrant } from "./services/shared-curvebender.js";
+import { startGrantSharedCurveBenderOnHelloSaga } from "./sagas/grant-shared-curvebender-on-hello.js";
 import {
   createDefaultConverter,
   type DefaultConverter,
@@ -148,6 +153,8 @@ export function composeFirePair(deps: {
     agentId: string,
   ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
   resolveProfile: ProfileResolver;
+  /* UNIT_BOUNDARY_DESCRIPTION: where the deployment offers its shared CurveBender, a run for an Agent holding no provider asks for that grant and reports itself as still setting up, so no run is refused for a model that is on its way. */
+  onNoProvider?: (agentId: string) => void;
 }): FirePair {
   const resolver = {
     ...deps,
@@ -222,6 +229,56 @@ export function composeDefaultConverter(deps: {
   return { converter, helloSaga };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the deployment's shared CurveBender reaches an
+ * Agent that says hello while nothing it holds serves its harness, and one
+ * that a run finds holding no provider at all, so neither ever stops for a
+ * model; the grant is composed here with the connections service's own call
+ * and the defaults republished from the chat default, so the runtime learns
+ * the provider like any other.
+ */
+export function composeSharedCurveBender(deps: {
+  db: Db;
+  enabled: boolean;
+  catalog: HarnessCatalog;
+  getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
+  ownerCatalog: (
+    agentId: string,
+  ) => Promise<Pick<OwnerModelCatalogView, "providers">>;
+  resolveProfile: ProfileResolver;
+  resolveProfileOn?: (executor: Db | DbTx) => ProfileResolver;
+  boundary: RunBoundary;
+  runtimeMutator: RuntimeMutator;
+  grant: (agentId: string) => Promise<boolean>;
+  log: (msg: string) => void;
+}): { grant: (agentId: string) => Promise<void>; helloSaga: Subscription } {
+  const pairRepo = createSessionPairRepo(
+    deps.db,
+    deps.resolveProfile,
+    deps.resolveProfileOn,
+  );
+  const publishDefaults = createSessionDefaultsPublisher({
+    db: deps.db,
+    pairRepo,
+    runtimeMutator: deps.runtimeMutator,
+    boundary: deps.boundary,
+  });
+  const grant = createSharedCurveBenderGrant({
+    enabled: deps.enabled,
+    catalog: deps.catalog,
+    getCapabilities: deps.getCapabilities,
+    specHarness: deps.specHarness,
+    ownerCatalog: deps.ownerCatalog,
+    grantedProviders: (agentId) => pairRepo.grantedProviders(agentId),
+    chatDefault: (agentId) => pairRepo.read(agentId, "chat"),
+    grant: deps.grant,
+    publishDefaults,
+    log: deps.log,
+  });
+  return { grant, helloSaga: startGrantSharedCurveBenderOnHelloSaga(grant) };
+}
+
 export function composeConvertingFirePair(
   converter: DefaultConverter,
   firePair: FirePair,
@@ -235,7 +292,7 @@ export function composeConvertingFirePair(
       return await firePair(agentId, kind, {});
     } catch (err) {
       if (err instanceof NoDefaultModelError && outcome === "waiting")
-        throw new NoDefaultModelError(undefined, { pending: true });
+        throw new NoDefaultModelError({ pending: true });
       throw err;
     }
   };
@@ -248,5 +305,22 @@ export function composeScheduleModelForFire(deps: {
   return createScheduleModelForFire({
     getCapabilities: deps.getCapabilities,
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets for its new
+ * Agent, checked against the owner's provider catalog and written to the
+ * Agent's row before its first hello.
+ */
+export function composeStartPair(deps: {
+  db: Db;
+  subPseudonymizer: SubPseudonymizer;
+  owner: string;
+  ownerCatalog: () => Promise<OwnerModelCatalogView>;
+}): StartPair {
+  return createStartPair({
+    ownerCatalog: deps.ownerCatalog,
+    write: createStartPairWriter(deps.db, deps.subPseudonymizer, deps.owner),
   });
 }

@@ -9,8 +9,9 @@ import type { DriverOps } from "../../apps/harness-api-server/driver-ops.js";
  * terminal, or at its deadline with what still runs; an id that is not the
  * caller's answers as unknown. The lease it holds on its ids is short and
  * renewed on every poll, so an id the call stops waiting on is pushed as a turn
- * soon after, and a call whose client aborted collects nothing, so the sweep
- * tells the agent instead of a closed transport.
+ * soon after. A call whose client aborted collects nothing, as its answer goes
+ * to a closed transport, and holds its ids for the minute the agent has to call
+ * again, so the result comes back as a tool result rather than a turn.
  */
 
 type Handler = (
@@ -18,10 +19,16 @@ type Handler = (
   extra: { signal: AbortSignal },
 ) => Promise<unknown>;
 
-function setup(views: Record<string, InvocationView | null>) {
+function setup(
+  views: Record<string, InvocationView | null>,
+  inTurn: string[] = [],
+) {
   const tools = new Map<string, Handler>();
   const server = {
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
+      tools.set(name, handler);
+    },
+    registerTool: (name: string, _config: unknown, handler: Handler) => {
       tools.set(name, handler);
     },
   } as unknown as McpServer;
@@ -31,7 +38,8 @@ function setup(views: Record<string, InvocationView | null>) {
   const ops = {
     get: async (id: string) => {
       reads++;
-      return views[id] ?? null;
+      const view = views[id];
+      return view ? { run: id, ...view } : null;
     },
   } as unknown as DriverOps;
   registerSubAgentTools(server, {
@@ -40,8 +48,9 @@ function setup(views: Record<string, InvocationView | null>) {
       markAwaited: async (_ids, until) => {
         leases.push(until);
       },
-      markCollected: async (ids) => {
+      collect: async (ids) => {
         collected.push(ids);
+        return { inTurn: ids.filter((id) => inTurn.includes(id)) };
       },
     },
     spawningSession: async () => null,
@@ -105,12 +114,27 @@ describe("await_subagents", () => {
     expect(s.collected).toEqual([[]]);
   });
 
-  it("collects nothing when the client aborted the call", async () => {
+  // TEST_SCENARIO: the bug of a cut call: the sweep delivered an outcome as a turn after the call that waited on it was cut, so the next wait must point to that turn instead of handing the result over a second time.
+  it("points to the turn for an outcome already delivered as one", async () => {
+    const s = setup(
+      {
+        "agent-a": { status: "done", result: 42 },
+        "agent-b": { status: "done", result: 7 },
+      },
+      ["agent-a"],
+    );
+    const summary = await s.wait(["agent-a", "agent-b"]);
+    expect(summary.deliveredAsTurn).toEqual(["agent-a"]);
+    expect(summary.done).toEqual([{ id: "agent-b", result: 7 }]);
+  });
+
+  it("collects nothing when the client aborted the call, and holds its ids for the agent to call again", async () => {
     const s = setup({ "agent-a": { status: "done", result: 7 } });
     const controller = new AbortController();
     controller.abort();
-    const summary = await s.wait(["agent-a"], controller.signal);
-    expect(summary.done).toEqual([{ id: "agent-a", result: 7 }]);
+    const before = Date.now();
+    await s.wait(["agent-a"], controller.signal);
     expect(s.collected).toEqual([]);
+    expect(s.leases.at(-1)!.getTime() - before).toBeGreaterThanOrEqual(60_000);
   });
 });

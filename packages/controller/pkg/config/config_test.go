@@ -97,6 +97,30 @@ func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	assert.Equal(t, "td.local/ns/agents/sa/inst-x", cfg.PrincipalFor("inst-x"))
 }
 
+// TEST_SCENARIO: an owner gateway's ingress policy admits the mesh's kubelet-probe source, so the controller defaults to the addresses istio-cni rewrites a host probe to, takes the ranges an install names instead, and refuses one that is not a range.
+func TestLoadFromEnv_HostProbeSNAT(t *testing.T) {
+	setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0"})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"169.254.7.127/32", "fd16:9254:7127:1337:ffff:ffff:ffff:ffff/128"}, cfg.IstioHostProbeSNAT)
+
+	setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0", "PLATFORM_ISTIO_HOST_PROBE_SNAT": `["169.254.1.1/32"]`})
+	cfg, err = LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"169.254.1.1/32"}, cfg.IstioHostProbeSNAT)
+
+	for raw, want := range map[string]string{
+		`["169.254.7.127"]`:         "is not a CIDR",
+		`["169.254.7.127/33"]`:      "is not a CIDR",
+		`[]`:                        "names no source",
+		`{"cidr": "169.254.7.127"}`: "invalid JSON",
+	} {
+		setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0", "PLATFORM_ISTIO_HOST_PROBE_SNAT": raw})
+		_, err = LoadFromEnv()
+		require.ErrorContains(t, err, want, raw)
+	}
+}
+
 func TestLoadFromEnv_MissingRequired(t *testing.T) {
 	setEnv(t, map[string]string{})
 	_, err := LoadFromEnv()
@@ -209,7 +233,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG",
 		"OTEL_RESOURCE_ATTRIBUTES", "OTEL_SERVICE_NAME",
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
-		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
+		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME", "PLATFORM_ISTIO_HOST_PROBE_SNAT",
 		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
 		"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS",
 		"PLATFORM_AGENT_STORE", "PLATFORM_AGENT_STORE_MARKER",

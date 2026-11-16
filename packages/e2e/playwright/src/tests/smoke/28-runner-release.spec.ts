@@ -366,9 +366,7 @@ test.beforeAll(async () => {
       { encoding: "utf8" },
     ),
   );
-  agentId = await createAgentOn(api, "e2e-runner-release", harnessName, {
-    neverIdle: true,
-  });
+  agentId = await createAgentOn(api, "e2e-runner-release", harnessName);
   await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });
   const pod = runnerPod(agentId);
   test.skip(pod === "", "the Mac's host runner runs outside the cluster");
@@ -417,7 +415,7 @@ test.afterAll(async () => {
       installMoved = false;
     }
   } finally {
-    keeping?.stop();
+    await keeping?.stop();
     if (agentId) await api.agents.delete.mutate({ id: agentId });
   }
 });

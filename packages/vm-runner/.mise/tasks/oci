@@ -85,8 +85,8 @@ for bin in platform-init platform-runc; do
 done
 
 case "$(uname -m)" in
-  x86_64) arch=x86_64 crane_sha=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0 ;;
-  aarch64) arch=arm64 crane_sha=898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110 ;;
+  x86_64) arch=x86_64 ;;
+  aarch64) arch=arm64 ;;
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-vm-runner"
@@ -138,7 +138,21 @@ lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; do
 # restart takes k3s down, and a stalled mirror or fetch hangs the e2e job until
 # its step times out, with nothing in the log.
 apt=(${sudo[@]+"${sudo[@]}"} env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l timeout 600 apt-get -o DPkg::Lock::Timeout=300)
-[ -z "$lk_missing" ] || { "${apt[@]}" update -qq && "${apt[@]}" install -y -qq $lk_missing; } </dev/null
+# GitHub's runners have gone hours resolving no Ubuntu mirror, their resolver
+# answering SERVFAIL while other names resolved, so on a runner GitHub hosts,
+# which no later job shares, a mirror it cannot resolve is pinned in
+# /etc/hosts at the address a public resolver gives. 8.8.8.8 was unreachable
+# from them then. apt-get update only warns about an index it could not fetch,
+# and install then retries every package until the timeout kills it without a
+# word, so an index that fails stops the build here, named.
+if [ -n "$lk_missing" ] && [ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && [ -f /etc/apt/apt-mirrors.txt ]; then
+  for h in $(sed -n 's|^[a-z]*://\([^/:]*\).*|\1|p' /etc/apt/apt-mirrors.txt); do
+    getent ahostsv4 "$h" >/dev/null && continue
+    ip="$(for s in 1.1.1.1 9.9.9.9; do dig +short +time=5 +tries=2 "@$s" "$h" A; done | grep -m1 -E '^[0-9.]+$' || true)"
+    [ -z "$ip" ] || echo "$ip $h" | ${sudo[@]+"${sudo[@]}"} tee -a /etc/hosts >/dev/null
+  done
+fi
+[ -z "$lk_missing" ] || { "${apt[@]}" update -qq --error-on=any && "${apt[@]}" install -y -qq $lk_missing; } </dev/null
 timeout 600 rustup target add "$(uname -m)-unknown-linux-musl" >/dev/null
 lk_commit="$(sed -n 's/^libkrun-commit=//p' smolvm.pin)"
 [ -n "$lk_commit" ] || { echo "smolvm.pin names no libkrun-commit" >&2; exit 1; }
@@ -237,17 +251,10 @@ zstd -q -19 --rm "$work/storage-template.btrfs" -o "$b/opt/smolvm/storage-templa
 # machines the smolvm CLI starts.
 install -m 755 "$target/$host/release/platform-init" "$b/opt/smolvm/agent-rootfs/sbin/platform-init"
 
-# smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
-# v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
-# from this one file. Upstream has not rebuilt it as of 1.32.1, so replace it here.
-# Drop this once a smolvm release ships a current crane.
-#
-# The same binary serves the runner: a machine may reach only its gateway, so the
-# guest cannot fetch its own image: the runner fetches it into its own cache, or
-# the image cache service into a node cache.
-crane_version=v0.22.1
-tar -xzf "$(fetch "https://github.com/google/go-containerregistry/releases/download/${crane_version}/go-containerregistry_Linux_${arch}.tar.gz" "$crane_sha")" \
-  -C "$b/opt/smolvm/agent-rootfs/usr/local/bin" --no-same-owner crane
+# The runner fetches a machine's image itself, with the crane smolvm's guest
+# rootfs ships: a machine may reach only its gateway, so the guest cannot fetch
+# its own image: the runner fetches it into its own cache, or the image cache
+# service into a node cache.
 install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bin/crane"
 
 # The release stager copies this tree, and prunes its old copies, as root with
@@ -264,13 +271,13 @@ find "$b" \( -type d -exec chmod u+rwx {} + \) -o \( -type f -exec chmod u+r {} 
 from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
 # smolvm release with platform-init as its init, the patched guest kernel and libkrun
-# and crane, and the base image's libc the runner links. All but the base and
-# crane are named in smolvm.pin, and their patches in smolvm.patch, libkrun.patch
+# and the crane it ships, and the base image's libc the runner links. All but the
+# base are named in smolvm.pin, and their patches in smolvm.patch, libkrun.patch
 # and libkrunfw.patch. A loader hands its machines only to a
 # release whose id matches. It hashes those inputs, not the built bytes: a
 # libkrun rebuilt from the same sources need not be byte-identical, and an id
 # that moved on every build would roll every pod.
-{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin smolvm.patch libkrun.patch libkrunfw.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+{ echo "$from"; cat smolvm.pin smolvm.patch libkrun.patch libkrunfw.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
 # What the release changes in what a machine booted, which a hand-off cannot
 # take in place: a release declaring another key than the pod's is refused, and
 # the pod rolls, which reboots its machines. Bumped by the change that needs the

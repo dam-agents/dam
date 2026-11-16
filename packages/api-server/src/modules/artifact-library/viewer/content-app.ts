@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { match } from "ts-pattern";
 
 import type { ArtifactKind } from "api-server-api";
+import { effectiveContentType } from "../domain/artifact-kind.js";
 import type { RenderTokenService } from "../services/render-token-service.js";
 import type {
   SharedResolution,
@@ -99,6 +100,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
         blob
           ? renderTextKindInner(kind, blob.content.toString("utf8"), {
               title: artifact.title,
+              icon: artifact.icon,
               fileName: artifact.fileName,
               ...(artifact.interactive
                 ? {
@@ -111,7 +113,11 @@ export function createContentApp(deps: ContentAppDeps): Hono {
           : downloadInner(),
       );
     }
-    if (artifact.contentType.startsWith("image/"))
+    if (
+      effectiveContentType(artifact.fileName, artifact.contentType).startsWith(
+        "image/",
+      )
+    )
       return c.html(renderImageInner(rawUrl, artifact.title));
     return c.html(downloadInner());
   });

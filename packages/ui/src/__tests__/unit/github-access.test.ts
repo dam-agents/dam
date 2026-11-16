@@ -124,15 +124,13 @@ describe("connection scope summary", () => {
 });
 
 describe("connection row detail", () => {
-  it("marks full access next to the account it acts as", () => {
+  // TEST_SCENARIO: the row's Full access badge already names the access, so the detail line says only what it reaches, not "Full access" a second time.
+  it("says what full access reaches without repeating the badge", () => {
     expect(
       connectionDetail(view({ accountLabel: "octocat", fullAccess: true })),
     ).toEqual({
       account: "Acts as octocat",
-      reach: {
-        text: "Full access — everything the app can reach on every account",
-        fullAccess: true,
-      },
+      reach: { text: "everything the app can reach on every account" },
     });
   });
 
@@ -155,7 +153,6 @@ describe("connection row detail", () => {
       account: "Acts as octocat",
       reach: {
         text: "acme · all repositories · 2 permissions",
-        fullAccess: false,
         title: "acme · all repositories · contents: read, issues: write",
       },
     });
@@ -171,7 +168,6 @@ describe("connection row detail", () => {
     ).toEqual({
       reach: {
         text: "acme · all repositories · all permissions",
-        fullAccess: false,
       },
     });
   });

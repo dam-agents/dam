@@ -3,10 +3,7 @@ import { SessionType } from "api-server-api";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
 import { sessionTitleLabel } from "../../sessions/lib/session-title.js";
@@ -83,7 +80,6 @@ export function SidebarActivityRow({
             name={agent.name}
             avatar={agent.avatar}
             size={14}
-            mood={avatarMood(agent.state, agent)}
             className="mr-0.5 shrink-0"
           />
           <span className="truncate">{agent.name}</span>

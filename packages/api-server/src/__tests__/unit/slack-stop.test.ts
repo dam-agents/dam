@@ -12,6 +12,7 @@ import {
 } from "../../events.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -85,6 +86,7 @@ function harness() {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -95,6 +97,7 @@ function harness() {
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

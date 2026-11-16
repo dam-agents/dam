@@ -18,7 +18,7 @@ import { topModelOf } from "../../modules/sessions/lib/top-model.js";
 
 const shared: ProviderConnectionRef = {
   id: "cb",
-  name: "CurveBender (shared)",
+  name: "CurveBender",
   type: "curve-bender",
   templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
 };
@@ -111,6 +111,30 @@ describe("the model a send picks", () => {
       provider: "oai",
       model: "openai/llama-9",
     });
+  });
+
+  // TEST_SCENARIO: the fallback never lands on an internal model: it takes the provider's next model, else the next provider's first.
+  it("falls back past an internal model", () => {
+    const nemotron = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
+    expect(
+      topModelOf(
+        catalog([
+          { connectionId: "cb", alias: "cb", models: [nemotron, "llama-9"] },
+        ]),
+        [shared],
+        "claude-code",
+      ),
+    ).toEqual({ provider: "cb", model: "cb/llama-9" });
+    expect(
+      topModelOf(
+        catalog([
+          { connectionId: "cb", alias: "cb", models: [nemotron] },
+          { connectionId: "oai", alias: "openai", models: ["llama-9"] },
+        ]),
+        [shared, openai],
+        "claude-code",
+      ),
+    ).toEqual({ provider: "oai", model: "openai/llama-9" });
   });
 
   // TEST_SCENARIO: a provider the agent does not hold is not a source, even when it lists the model the platform prefers.

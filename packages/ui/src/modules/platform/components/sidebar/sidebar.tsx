@@ -1,8 +1,6 @@
 import { Activity, Bot } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
-import { useIsWideDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -20,20 +18,8 @@ import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarNavItem } from "./sidebar-nav-item.js";
 
 export function Sidebar() {
-  const storedExpanded = useStore((s) => s.sidebarExpanded);
+  const expanded = useStore((s) => s.sidebarExpanded);
   const setExpanded = useStore((s) => s.setSidebarExpanded);
-  const sidePanelOpen = useStore(
-    (s) => s.sidePanelTab !== null && s.view !== "chat",
-  );
-  const wide = useIsWideDesktop();
-  const crowded = sidePanelOpen && !wide;
-  const [openedWhileCrowded, setOpenedWhileCrowded] = useState(false);
-  const [wasCrowded, setWasCrowded] = useState(crowded);
-  if (wasCrowded !== crowded) {
-    setWasCrowded(crowded);
-    setOpenedWhileCrowded(false);
-  }
-  const expanded = storedExpanded && (!crowded || openedWhileCrowded);
   const { home } = useSidebarDestinations();
   const { width, resizing, resize, endResize } = useSidebarWidth();
 
@@ -48,10 +34,7 @@ export function Sidebar() {
     >
       <SidebarHeader
         expanded={expanded}
-        onToggle={() => {
-          if (crowded) setOpenedWhileCrowded(!expanded);
-          setExpanded(!expanded);
-        }}
+        onToggle={() => setExpanded(!expanded)}
         onHome={home.navigate}
       />
       {expanded ? (

@@ -13,9 +13,14 @@ import {
   getLogger,
   type LogLevel,
 } from "../../core/logger.js";
+import {
+  parseInfraAgent,
+  type InfraAgent,
+} from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
-import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
+import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import {
   attachProviderToBareAgents,
   connectionGrantProvisioner,
@@ -32,6 +37,21 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
     },
   }) as T;
 }
+
+const dam: Connection = {
+  id: "conn-dam",
+  ownerId: "owner-1",
+  templateId: "dam",
+  name: "DAM",
+  inputs: {},
+  auth: {
+    kind: "header",
+    valueRef: { storeId: "test", path: "dam", field: "value" },
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+  },
+  contributions: [],
+};
 
 const provider: Connection = {
   id: "conn-provider",
@@ -65,8 +85,10 @@ function oauthAuth(
 function setup(
   rows: Connection[] = [provider],
   templates: Record<string, Partial<TemplateSpec>> = {},
+  opts: { damOffered?: boolean } = {},
 ) {
   const connections = createConnectionsService({
+    damConnectionOffered: async () => opts.damOffered ?? true,
     harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
@@ -76,7 +98,26 @@ function setup(
       listByOwner: async () => rows,
       listByOwnerOldestFirst: async () => rows,
     }),
-    templates: unused(),
+    templates: createConnectionTemplateRegistry(
+      buildCatalog(
+        {},
+        {
+          damBaseUrl: "http://dam-apiserver.default.svc.cluster.local:4000",
+          brandName: "Test",
+        },
+      ),
+    ),
+    damKey: {
+      mint: async () => ({ id: "key-1", plaintext: "pk_secret" }),
+      revoke: async () => {},
+      active: async (ids: readonly string[]) => new Set(ids),
+      ledger: {
+        queue: async () => {},
+        settle: async () => {},
+        pendingFor: async () => [],
+        forget: async () => {},
+      },
+    },
     secretStore: unused(),
     fanOut: unused(),
     oauthFlow: unused(),
@@ -91,12 +132,18 @@ function setup(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,
   });
+  // TEST_OVERVIEW: the store refuses a duplicate id and lists what it holds, so a retry resumes the Agent it already has under the same name rather than making a second one.
+  const persisted = new Map<string, InfraAgent>();
   const persist = vi.fn(
-    async (spec: Record<string, unknown>, owner: string, id: string) =>
-      parseInfraAgent({
+    async (spec: Record<string, unknown>, owner: string, id: string) => {
+      if (persisted.has(id)) throw new Error(`${id} already exists`);
+      const agent = parseInfraAgent({
         metadata: { name: id, labels: { "agent-platform.ai/owner": owner } },
         spec,
-      }),
+      });
+      persisted.set(id, agent);
+      return agent;
+    },
   );
   const writeRegistry = vi.fn(async () => {});
   const applyGrants = vi.fn(async () => {});
@@ -109,22 +156,41 @@ function setup(
     }> => ({ ids: [], source: "harness" }),
   );
   const bind = vi.fn(async (_agentId: string): Promise<string | null> => null);
-  const defaultProfile = vi.fn(
+  const newAgentDefault = vi.fn(
     async (): Promise<{
-      name: string;
+      name: string | null;
       model: string;
       harness: string;
       connectionId: string;
       bind: typeof bind;
     } | null> => null,
   );
+  const providerHarnesses = vi.fn(
+    async (ids: readonly string[]): Promise<Map<string, string[]>> =>
+      new Map(
+        ids.flatMap((id) => (id === dam.id ? [] : [[id, ["claude-code"]]])),
+      ),
+  );
+  const pick = vi.fn(
+    async (_harness: string, _connectionId: string): Promise<string | null> =>
+      null,
+  );
+  const check = vi.fn(
+    async (pair: {
+      harness: string;
+      model: string;
+      settings?: Record<string, string>;
+    }) => ({ ...pair, provider: "conn-checked" }),
+  );
+  const save = vi.fn(async (_agentId: string, _pair: unknown) => {});
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
     actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
-      list: async () => [],
+      list: async () => [...persisted.values()],
       create: persist,
+      get: async (id: string) => persisted.get(id) ?? null,
     }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
@@ -141,17 +207,15 @@ function setup(
     contributionsProgress: unused(),
     agentServiceStatus: unused(),
     grantProvisioner: {
-      async resolveSpecGrants(sel) {
-        if (sel.providerConnectionId)
-          await connections.validateProviderConnection(
-            sel.providerConnectionId,
-          );
-        return { grantedConnectionIds: sel.connectionIds };
-      },
+      resolveSpecGrants: connectionGrantProvisioner(connections, {
+        harnesses: [],
+      }).resolveSpecGrants,
       defaultProviders,
       applyAfterCreate: applyGrants,
+      providerHarnesses,
     },
-    defaultProfile,
+    newAgentDefault,
+    startPair: { pick, check, save },
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},
@@ -186,10 +250,14 @@ function setup(
     writeEnv,
     runtimeBump,
     defaultProviders,
-    defaultProfile,
+    newAgentDefault,
     bind,
     connections,
     agents,
+    providerHarnesses,
+    pick,
+    check,
+    save,
   };
 }
 
@@ -309,11 +377,11 @@ describe("the default profile a new agent starts on", () => {
    * and the agent's chat default is bound to it, so a default exists before
    * the first hello and the onboarding turn has a model to run on (#5578). */
   it("starts on the default profile, with its provider alone", async () => {
-    const { caller, defaultProfile, defaultProviders, bind, persist } = setup(
+    const { caller, newAgentDefault, defaultProviders, bind, persist } = setup(
       [provider],
       templates,
     );
-    defaultProfile.mockResolvedValue(onPi(bind));
+    newAgentDefault.mockResolvedValue(onPi(bind));
     defaultProviders.mockResolvedValue({
       ids: ["conn-first-in-order"],
       source: "harness",
@@ -329,15 +397,39 @@ describe("the default profile a new agent starts on", () => {
     });
   });
 
+  /** TEST_SCENARIO: An owner who chose no profile as their default for new
+   * agents starts a new agent on values (the base default or their own): its
+   * one provider and chat default come from them as from a profile, and the
+   * answer says the default chose it, with no profile name. */
+  it("starts on the base default and says so", async () => {
+    const { caller, newAgentDefault, defaultProviders, bind } = setup(
+      [provider],
+      templates,
+    );
+    newAgentDefault.mockResolvedValue({ ...onPi(bind), name: null });
+    defaultProviders.mockResolvedValue({
+      ids: ["conn-first-in-order"],
+      source: "harness",
+    });
+    const created = await caller.agents.create(byTemplate);
+    expect(created.grantedConnectionIds).toEqual(["conn-profile"]);
+    expect(bind).toHaveBeenCalledWith(created.id);
+    expect(created.defaultProvider).toEqual({
+      connectionId: "conn-profile",
+      source: "default",
+      profile: { name: null, model: "cb/some-model", harness: "pi" },
+    });
+  });
+
   /** TEST_SCENARIO: A create that names its harness keeps it; a default
    * profile on another harness leaves the provider order and the first-hello
    * conversion as before. */
   it("leaves an agent on another harness to the provider order", async () => {
-    const { caller, defaultProfile, defaultProviders, bind } = setup(
+    const { caller, newAgentDefault, defaultProviders, bind } = setup(
       [provider],
       templates,
     );
-    defaultProfile.mockResolvedValue(onPi(bind));
+    newAgentDefault.mockResolvedValue(onPi(bind));
     defaultProviders.mockResolvedValue({
       ids: ["conn-first-in-order"],
       source: "harness",
@@ -356,23 +448,196 @@ describe("the default profile a new agent starts on", () => {
   });
 
   /** TEST_SCENARIO: A create that names its provider chose it, so the answer
-   * carries no default provider to explain (#6142). */
-  it("says nothing of a default when the create names its provider", async () => {
-    const { caller, defaultProfile, bind } = setup([provider], templates);
-    defaultProfile.mockResolvedValue(onPi(bind));
+   * carries no default provider to explain (#6142), and the default for new
+   * agents, on another provider, neither boots the agent on its harness nor
+   * becomes its chat default; the agent starts on a harness the named
+   * provider runs, on that provider's model (#6527). */
+  it("starts on the named provider, not the default for new agents", async () => {
+    const { caller, newAgentDefault, bind, persist, pick, save } = setup(
+      [provider],
+      templates,
+    );
+    newAgentDefault.mockResolvedValue(onPi(bind));
+    pick.mockResolvedValue("anthropic/claude-opus-5-5");
     const created = await caller.agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
     });
     expect(created.grantedConnectionIds).toEqual([provider.id]);
     expect(created).not.toHaveProperty("defaultProvider");
+    expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "claude-code" });
+    expect(bind).not.toHaveBeenCalled();
+    expect(pick).toHaveBeenCalledWith("claude-code", provider.id);
+    expect(save).toHaveBeenCalledWith(created.id, {
+      harness: "claude-code",
+      provider: provider.id,
+      model: "anthropic/claude-opus-5-5",
+    });
+    expect(created.startsOn).toEqual({
+      harness: "claude-code",
+      model: "anthropic/claude-opus-5-5",
+      providers: [
+        {
+          connectionId: provider.id,
+          source: "named",
+          harnesses: ["claude-code"],
+        },
+      ],
+    });
+  });
+
+  /** TEST_SCENARIO: The default for new agents' harness is kept when the
+   * named provider runs it, so naming the default's own provider still starts
+   * on the default profile (#6527). */
+  it("starts on the default profile when the create names its provider", async () => {
+    const { caller, newAgentDefault, bind, persist, providerHarnesses, save } =
+      setup([provider], templates);
+    newAgentDefault.mockResolvedValue({
+      ...onPi(bind),
+      connectionId: provider.id,
+    });
+    providerHarnesses.mockResolvedValue(
+      new Map([[provider.id, ["claude-code", "pi"]]]),
+    );
+    const created = await caller.agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+    });
+    expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "pi" });
+    expect(bind).toHaveBeenCalledWith(created.id);
+    expect(save).not.toHaveBeenCalled();
+    expect(created.startsOn).toMatchObject({
+      harness: "pi",
+      model: "cb/some-model",
+    });
+  });
+
+  /** TEST_SCENARIO: A named provider that runs neither the default's harness
+   * nor the install's boots the agent on the first harness it runs. */
+  it("boots on the first harness the named provider runs", async () => {
+    const { caller, newAgentDefault, bind, persist, providerHarnesses } = setup(
+      [provider],
+      templates,
+    );
+    newAgentDefault.mockResolvedValue(onPi(bind));
+    providerHarnesses.mockResolvedValue(new Map([[provider.id, ["bob"]]]));
+    const created = await caller.agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+    });
+    expect(persist.mock.calls[0]![0]).toMatchObject({ harness: "bob" });
+    expect(created.startsOn?.harness).toBe("bob");
+  });
+
+  /** TEST_SCENARIO: A create that names its harness and model starts on
+   * them: the pair is checked against the Connections it grants before the
+   * agent is written, and saved as its chat default (#6527). */
+  it("saves the harness, model and settings the create names", async () => {
+    const { caller, persist, check, save, pick } = setup([provider], templates);
+    const created = await caller.agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+      harness: "claude-code",
+      model: "anthropic/claude-opus-5-5",
+      settings: { effort: "high" },
+    });
+    expect(pick).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledWith(
+      {
+        harness: "claude-code",
+        model: "anthropic/claude-opus-5-5",
+        settings: { effort: "high" },
+      },
+      [provider.id],
+    );
+    expect(save).toHaveBeenCalledWith(created.id, {
+      harness: "claude-code",
+      model: "anthropic/claude-opus-5-5",
+      settings: { effort: "high" },
+      provider: "conn-checked",
+    });
+    expect(persist).toHaveBeenCalledOnce();
+    expect(created.startsOn?.model).toBe("anthropic/claude-opus-5-5");
+  });
+
+  /** TEST_SCENARIO: A model the granted providers cannot run is refused
+   * before anything is written, so a failed create leaves nothing behind. */
+  it("refuses a model the check refuses before any writes", async () => {
+    const { caller, persist, applyGrants, check } = setup(
+      [provider],
+      templates,
+    );
+    check.mockRejectedValue(
+      Object.assign(new Error("the new agent holds no cb provider"), {
+        code: "BAD_REQUEST",
+      }),
+    );
+    await expect(
+      caller.agents.create({
+        ...byTemplate,
+        providerConnectionId: provider.id,
+        model: "cb/some-model",
+      }),
+    ).rejects.toThrow("holds no cb provider");
+    expect(persist).not.toHaveBeenCalled();
+    expect(applyGrants).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: Settings belong to a model, so settings with no model
+   * and none the named provider could offer are refused. */
+  it("refuses settings without a model", async () => {
+    const { caller, persist } = setup([provider], templates);
+    await expect(
+      caller.agents.create({
+        ...byTemplate,
+        providerConnectionId: provider.id,
+        settings: { effort: "high" },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: A model saved after the agent exists cannot fail the
+   * create; the first hello's conversion still gives it a default, and the
+   * answer says no model is set yet. */
+  it("answers no model when the save fails", async () => {
+    const { caller, save, pick } = setup([provider], templates);
+    pick.mockResolvedValue("anthropic/claude-opus-5-5");
+    save.mockRejectedValue(new Error("db down"));
+    const created = await caller.agents.create({
+      ...byTemplate,
+      providerConnectionId: provider.id,
+    });
+    expect(created.startsOn?.model).toBeNull();
+  });
+
+  /** TEST_SCENARIO: Without a named provider the answer still says what the
+   * agent starts on, with the default provider's reason beside it (#6527). */
+  it("answers what an agent with a default provider starts on", async () => {
+    const { caller, defaultProviders } = setup([provider], templates);
+    defaultProviders.mockResolvedValue({
+      ids: ["conn-first-in-order"],
+      source: "harness",
+    });
+    const created = await caller.agents.create(byTemplate);
+    expect(created.startsOn).toEqual({
+      harness: "claude-code",
+      model: null,
+      providers: [
+        {
+          connectionId: "conn-first-in-order",
+          source: "harness",
+          harnesses: ["claude-code"],
+        },
+      ],
+    });
   });
 
   /** TEST_SCENARIO: A kit that names the model its agent needs decides the
    * default, and an Environment never starts a session, so neither asks for
    * the default profile. */
   it("stays out of a kit that names the model and of an environment", async () => {
-    const { agents, defaultProfile } = setup([provider], templates);
+    const { agents, newAgentDefault } = setup([provider], templates);
     await agents.create({
       ...byTemplate,
       providerConnectionId: provider.id,
@@ -380,10 +645,11 @@ describe("the default profile a new agent starts on", () => {
     });
     await agents.create({
       ...byTemplate,
+      name: "test-agent-environment",
       providerConnectionId: provider.id,
       environmentOf: "agent-root",
     });
-    expect(defaultProfile).not.toHaveBeenCalled();
+    expect(newAgentDefault).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: A kit that lists its providers decides the agent's
@@ -391,7 +657,7 @@ describe("the default profile a new agent starts on", () => {
    * out, the provider order hears the kit's list, and the answer says the
    * kit's list chose, not the harness order (#6142). */
   it("leaves a kit that lists its providers to that list", async () => {
-    const { agents, defaultProfile, defaultProviders } = setup(
+    const { agents, newAgentDefault, defaultProviders } = setup(
       [provider],
       templates,
     );
@@ -400,7 +666,7 @@ describe("the default profile a new agent starts on", () => {
       ...byTemplate,
       starterKitProviders: ["ibm-litellm"],
     });
-    expect(defaultProfile).not.toHaveBeenCalled();
+    expect(newAgentDefault).not.toHaveBeenCalled();
     expect(defaultProviders).toHaveBeenCalledWith([], {
       harness: "claude-code",
       preferred: ["ibm-litellm"],
@@ -429,11 +695,11 @@ describe("the default profile a new agent starts on", () => {
       const level = getLogger().level as LogLevel;
       configureLogger({ level: "warn", write: (line) => lines.push(line) });
       try {
-        const { caller, defaultProfile, bind, persist } = setup(
+        const { caller, newAgentDefault, bind, persist } = setup(
           [provider],
           templates,
         );
-        defaultProfile.mockResolvedValue(onPi(bind));
+        newAgentDefault.mockResolvedValue(onPi(bind));
         bind.mockImplementationOnce(outcome);
         await expect(caller.agents.create(byTemplate)).resolves.toMatchObject({
           name: "test-agent",
@@ -442,7 +708,7 @@ describe("the default profile a new agent starts on", () => {
         expect(
           lines
             .map((line) => JSON.parse(line) as { reason?: string; msg: string })
-            .find((entry) => entry.msg.includes("default profile")),
+            .find((entry) => entry.msg.includes("default for new agents")),
         ).toMatchObject({ reason });
       } finally {
         configureLogger({ level });
@@ -735,5 +1001,74 @@ describe("attachProviderToBareAgents", () => {
     const other = { ...provider, id: "other", templateId: "openai" };
     expect(await attach([old, fresh], "fresh")).toEqual([]);
     expect(await attach([old, other], "other")).toEqual([]);
+  });
+});
+
+describe("the flag that offers the install's own connection", () => {
+  // TEST_SCENARIO: an Agent that already holds it spawns a child naming it while the owner's flag is off, so the child's create is refused before anything is written — no Agent, no registry Secret, no grant — as the person's own create would be.
+  it("refuses a spawn that names it while the flag is off", async () => {
+    const { caller, persist, writeRegistry } = setup(
+      [provider, dam],
+      {},
+      { damOffered: false },
+    );
+    await expect(
+      caller.agents.create({ ...input, connectionIds: [dam.id] }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(persist).not.toHaveBeenCalled();
+    expect(writeRegistry).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the platform's mark is not expressible over the API: `platformGrants` in a raw create payload is stripped by the schema, so the same request is still refused.
+  it("refuses a payload that claims the platform's mark", async () => {
+    const { caller, persist } = setup(
+      [provider, dam],
+      {},
+      { damOffered: false },
+    );
+    await expect(
+      caller.agents.create({
+        ...input,
+        connectionIds: [dam.id],
+        platformGrants: true,
+      } as never),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the same is true where a person can make the Connection themselves: `createDam` takes no input, so a payload naming the platform's path buys nothing and the create is refused while the flag is off.
+  it("refuses a createDam payload that names the platform's path", async () => {
+    const { caller } = setup([provider, dam], {}, { damOffered: false });
+    await expect(
+      caller.connections.createDam({ platform: true } as never),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // TEST_SCENARIO: with the flag on, the same create goes through and the Agent names the grant.
+  it("allows the same create while the flag is on", async () => {
+    const { caller } = setup([provider, dam], {}, { damOffered: true });
+    const result = await caller.agents.create({
+      ...input,
+      connectionIds: [dam.id],
+    });
+    expect(result.grantedConnectionIds).toEqual([dam.id, provider.id]);
+  });
+});
+
+describe("a create the platform resumes", () => {
+  // TEST_SCENARIO: an earlier attempt wrote the Agent and then failed on its bookkeeping, so the same id is asked for again: the store refuses the row, and the create finishes that Agent from there — the grants applied again, the instructions re-sent — instead of failing on the row it already has or making a second Agent.
+  it("finishes the Agent an earlier attempt left half-made", async () => {
+    const { agents, persist, applyGrants, runtimeBump } = setup();
+    const created = await agents.create({ ...input, id: "agent-resumed" });
+    expect(created.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    applyGrants.mockClear();
+    runtimeBump.mockClear();
+    const again = await agents.create({ ...input, id: "agent-resumed" });
+    expect(again.id).toBe("agent-resumed");
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(applyGrants).toHaveBeenCalledTimes(1);
+    expect(runtimeBump).toHaveBeenCalled();
   });
 });

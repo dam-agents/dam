@@ -11,16 +11,20 @@
   mesh control plane fails and keeps non-mesh traffic out.
 
   Shape:
-    - http (4000) from anywhere — UI, ingress controller, in-cluster.
-      Application-layer auth (Keycloak JWT) is the gate.
+    - http (4000) from anywhere — UI, ingress controller, in-cluster — and,
+      on the same port, from the agent namespace over HBONE, which the
+      ext-authz rule below already admits. An Agent's gateway ends the chain
+      of the Connection that drives this install here, and the API key that
+      chain injects is what authenticates it: a gateway whose Agents hold no
+      such Connection has no key to send. The bearer is the gate, and a few
+      routes carry none (see app.ts) — they serve no owner's data.
     - harness (4001) from the release namespace only — the waypoint Pod
       synthesised by Istio lives here. The cryptographic per-agent
       check is the per-agent AuthorizationPolicy on the harness path,
       not netpol.
     - ext-authz (4002) from the agent namespace only — per-agent
-      Services route from gateway pods here. The cryptographic per-
-      agent check is the per-agent AuthorizationPolicy on each
-      per-agent Service.
+      Services route from gateway pods here. Nothing checks which
+      agent a caller is: the gateway is trusted to name its own.
     - HBONE (15008) listed alongside each app port so the kernel-level
       netpol sees the right thing for ambient-routed traffic (Istio
       iptables redirect happens in NAT/MANGLE before FILTER).
@@ -61,8 +65,8 @@ spec:
           port: 15008  # HBONE — required for any mesh-to-mesh hop
 
     # ext-authz — only from the agent namespace (where gateway pods dial
-    # per-agent ext-authz Services). The per-agent AuthorizationPolicy
-    # ensures only the matching agent's SA can reach its own Service.
+    # per-agent ext-authz Services). The api-server trusts the agent the
+    # gateway names in the authority.
     - from:
         - namespaceSelector:
             matchLabels:

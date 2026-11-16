@@ -5,6 +5,9 @@ import {
   PROVIDERS,
   providerTypeForTemplateId,
   type BudgetsService,
+  type ChildConnections,
+  type ChildEgress,
+  type ChildEgressRule,
   type ConnectionsService,
   type HarnessCatalog,
   type InvocationView,
@@ -14,9 +17,13 @@ import {
   type spawnInvocationRequestSchema,
   type spawnScriptInvocationRequestSchema,
   type TemplatesService,
+  type EgressWaiting,
 } from "api-server-api";
 import {
   AttenuationError,
+  KeepError,
+  RunError,
+  OpenEgressConnectionsError,
   NoSpawnModelError,
   InvalidSchemaError,
   ModelNameError,
@@ -29,6 +36,7 @@ import {
   type InvocationsService,
   type ScriptOutputs,
   type SpawnInput,
+  type SpawnTarget,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { DEFAULT_TEMPLATE_ID } from "../../modules/templates/index.js";
@@ -44,7 +52,7 @@ export type ScriptSpawnRequest = z.infer<
 type SpawnTargetRequest = Omit<ScriptSpawnRequest, "script">;
 
 export type SpawnOutcome =
-  | { ok: true; id: string }
+  | { ok: true; id: string; egressWaiting: EgressWaiting[] }
   | {
       ok: false;
       kind: "invalid" | "forbidden" | "conflict" | "spend_limit_reached";
@@ -65,6 +73,21 @@ export interface DriverOpsDeps {
   budgetsFor: (owner: string) => BudgetsService;
   defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
   scriptOutputs: Pick<ScriptOutputs, "link" | "ack" | "preview">;
+  childEgress?: {
+    setOpenRules(
+      agentId: string,
+      decidedBy: string,
+      rules: readonly ChildEgressRule[],
+    ): Promise<{
+      waiting: { host: string; id: string }[];
+      blocked: { host: string }[];
+    }>;
+  };
+  childEgressWaiting?: (childId: string) => Promise<EgressWaiting[]>;
+  inheritanceOf?: (agentId: string) => Promise<{
+    parentAgentId: string;
+    egressFrom: "parent" | "open" | "scoped";
+  } | null>;
 }
 
 const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
@@ -135,22 +158,14 @@ function driverOps(
     return model ? { ...body.harnessConfig, model } : body.harnessConfig;
   };
 
-  const resolveSpawn = async (
-    body: SpawnTargetRequest,
-  ): Promise<
-    | Extract<SpawnOutcome, { ok: false }>
-    | {
-        ok: true;
-        target: SpawnInput["target"];
-        setup: SpawnInput["setup"];
-        connections: string[];
-        driverGrantIds: string[];
-        providers: ReturnType<typeof providersOf>;
-      }
+  // UNIT_BOUNDARY_DESCRIPTION: the template, image and providers a harness name runs on, for a spawn and for a later run in its sub-agent alike; a harness this install has no single template for is refused, naming the ones it has.
+  const targetFor = async (body: {
+    harness?: string;
+    image?: string;
+  }): Promise<
+    Extract<SpawnOutcome, { ok: false }> | { ok: true; target: SpawnTarget }
   > => {
-    const target: SpawnInput["target"] = body.image
-      ? { image: body.image }
-      : {};
+    const target: SpawnTarget = body.image ? { image: body.image } : {};
     const carried = body.harness
       ? deps.harnesses.harnesses.find((h) => h.name === body.harness)
       : undefined;
@@ -184,8 +199,36 @@ function driverOps(
       if (!body.image) target.templateId = template!.id;
       if (template!.spec.providers) target.runsOn = template!.spec.providers;
     }
+    return { ok: true, target };
+  };
 
-    const connections = body.connections ?? [];
+  const resolveSpawn = async (
+    body: SpawnTargetRequest,
+  ): Promise<
+    | Extract<SpawnOutcome, { ok: false }>
+    | {
+        ok: true;
+        target: SpawnInput["target"];
+        setup: SpawnInput["setup"];
+        connections: ChildConnections;
+        egress?: ChildEgress;
+        keep?: { keepForMs?: number; idleTimeoutMin?: number };
+        driverGrantIds: string[];
+        providers: ReturnType<typeof providersOf>;
+      }
+  > => {
+    if (body.idleTimeoutMin !== undefined && !body.keep)
+      return {
+        ok: false,
+        kind: "invalid",
+        message:
+          "idleTimeout goes with keep: a sub-agent that is not kept is removed after its result",
+      };
+    const resolved = await targetFor(body);
+    if (!resolved.ok) return resolved;
+    const { target } = resolved;
+
+    const connections = body.connections ?? "none";
     const [granted, owned] = await Promise.all([
       conns.getAgentConnections(driverId),
       conns.listConnections(),
@@ -204,6 +247,19 @@ function driverOps(
         skills: body.skills,
       },
       connections,
+      ...(body.egress ? { egress: body.egress } : {}),
+      ...(body.keep
+        ? {
+            keep: {
+              ...(body.keepForMs !== undefined && {
+                keepForMs: body.keepForMs,
+              }),
+              ...(body.idleTimeoutMin !== undefined && {
+                idleTimeoutMin: body.idleTimeoutMin,
+              }),
+            },
+          }
+        : {}),
       driverGrantIds,
       providers: providersOf(owned, grantSet),
     };
@@ -226,7 +282,9 @@ function driverOps(
     if (
       err instanceof InvalidSchemaError ||
       err instanceof ModelNameError ||
-      err instanceof ProviderMismatchError
+      err instanceof ProviderMismatchError ||
+      err instanceof OpenEgressConnectionsError ||
+      err instanceof KeepError
     ) {
       return { ok: false, kind: "invalid", message: err.message };
     }
@@ -254,7 +312,20 @@ function driverOps(
     throw err;
   };
 
+  const egressWaiting = async (childId: string): Promise<EgressWaiting[]> =>
+    (await deps.childEgressWaiting?.(childId)) ?? [];
+
+  const spawned = async (
+    id: string,
+  ): Promise<Extract<SpawnOutcome, { ok: true }>> => ({
+    ok: true,
+    id,
+    egressWaiting: await egressWaiting(id),
+  });
+
   return {
+    egressWaiting,
+
     async spawn(
       body: SpawnRequest,
       from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
@@ -263,7 +334,7 @@ function driverOps(
     ): Promise<SpawnOutcome> {
       const base = await resolveSpawn(body);
       if (!base.ok) return base;
-      const { target, setup, connections, driverGrantIds } = base;
+      const { target, setup, connections, egress, keep, driverGrantIds } = base;
       const { driverProviders, attachableProviders } = base.providers;
       const harnessConfig = await withDefaultModel(body, from.origin);
 
@@ -276,6 +347,8 @@ function driverOps(
           target,
           setup,
           connections,
+          ...(egress ? { egress } : {}),
+          ...(keep ? { keep: true, ...keep } : {}),
           prompt: body.prompt,
           schema: body.schema,
           ...(body.label !== undefined ? { label: body.label } : {}),
@@ -284,7 +357,7 @@ function driverOps(
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
       }
@@ -305,15 +378,159 @@ function driverOps(
           target: base.target,
           setup: base.setup,
           connections: base.connections,
+          ...(base.egress ? { egress: base.egress } : {}),
+          ...(base.keep ? { keep: true, ...base.keep } : {}),
           script: body.script,
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
           origin: from.origin,
           driverSessionId: from.driverSessionId ?? null,
         });
-        return { ok: true, id };
+        return spawned(id);
       } catch (err) {
         return refusalOf(err, from.origin);
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: a clean slate: the sub-agent boots with its setup and runs nothing until runSubagent starts a run in it.
+    async spawnIdle(
+      body: Omit<ScriptSpawnRequest, "script">,
+      from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
+        origin: "script",
+      },
+    ): Promise<SpawnOutcome> {
+      const base = await resolveSpawn(body);
+      if (!base.ok) return base;
+      try {
+        const { id } = await invocations.spawnIdle({
+          driverAgentId: driverId,
+          driverGrantIds: base.driverGrantIds,
+          driverProviders: base.providers.driverProviders,
+          target: base.target,
+          setup: base.setup,
+          connections: base.connections,
+          ...(base.egress ? { egress: base.egress } : {}),
+          ...(base.keep ? { keep: true, ...base.keep } : {}),
+          prompt: "",
+          schema: null,
+          ...(body.label !== undefined ? { label: body.label } : {}),
+          ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
+          origin: from.origin,
+          driverSessionId: from.driverSessionId ?? null,
+        });
+        return spawned(id);
+      } catch (err) {
+        return refusalOf(err, from.origin);
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: wakes a sleeping sub-agent of this driver's; a refusal says why.
+    async wakeSubagent(
+      id: string,
+    ): Promise<{ ok: true } | { ok: false; message: string }> {
+      try {
+        await invocations.wakeTarget(id, driverId);
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof RunError) return { ok: false, message: err.message };
+        throw err;
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: stops a sub-agent of this driver's and every sub-agent below it; a refusal says why, and one with nothing running says it was not stopped.
+    async stopSubagent(
+      id: string,
+      reason?: string,
+    ): Promise<
+      { ok: true; stopped: boolean } | { ok: false; message: string }
+    > {
+      try {
+        const { stopped } = await invocations.stopTarget(id, driverId, reason);
+        return { ok: true, stopped };
+      } catch (err) {
+        if (err instanceof RunError) return { ok: false, message: err.message };
+        throw err;
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: starts a run in an idle or kept sub-agent of this driver, refused for the same reasons a spawn is: a task runs on the model named, or this driver's default on the sub-agent's harness, and on a provider the sub-agent holds. Its result goes to the caller that started it.
+    async runSubagent(
+      id: string,
+      run:
+        | { prompt: string; schema: unknown; model?: string; session?: string }
+        | { script: string },
+      caller: {
+        ttlMs?: number;
+        origin: InvocationOrigin;
+        driverSessionId?: string | null;
+      } = { origin: "script" },
+    ): Promise<
+      | { ok: true; run: string; session: string | null }
+      | Extract<SpawnOutcome, { ok: false }>
+    > {
+      const from = {
+        ...(caller.ttlMs !== undefined ? { ttlMs: caller.ttlMs } : {}),
+        origin: caller.origin,
+        driverSessionId: caller.driverSessionId ?? null,
+      };
+      try {
+        if (!(await invocations.get(id, driverId)))
+          return {
+            ok: false,
+            kind: "conflict",
+            message: `${id} is not a sub-agent of yours`,
+          };
+        if ("script" in run) {
+          const started = await invocations.runSubagent(
+            id,
+            driverId,
+            run,
+            from,
+          );
+          return { ok: true, ...started };
+        }
+        const harness = (await deps.agents.get(id))?.spec.harness;
+        const model =
+          run.model ??
+          (harness ? await deps.defaultModel?.(driverId, harness) : null);
+        if (!model)
+          return {
+            ok: false,
+            kind: "invalid",
+            message:
+              "nothing names the run's model: pass a provider-qualified model, or set this agent's default model on the sub-agent's harness",
+          };
+        const resolved = await targetFor({ harness });
+        if (!resolved.ok) return resolved;
+        const [granted, owned] = await Promise.all([
+          conns.getAgentConnections(id),
+          conns.listConnections(),
+        ]);
+        const held = providersOf(
+          owned,
+          new Set(granted.connections.map((g) => g.connectionId)),
+        );
+        const started = await invocations.runSubagent(
+          id,
+          driverId,
+          {
+            prompt: run.prompt,
+            schema: run.schema,
+            harnessConfig: { model },
+            modelNamed: run.model !== undefined,
+            ...(run.session !== undefined && { session: run.session }),
+            target: resolved.target,
+            ...held,
+          },
+          from,
+        );
+        return { ok: true, ...started };
+      } catch (err) {
+        if (err instanceof RunError)
+          return { ok: false, kind: "conflict", message: err.message };
+        const refused = refusalOf(err, caller.origin);
+        if (!refused.ok) return refused;
+        throw err;
       }
     },
 
@@ -349,6 +566,63 @@ function driverOps(
         templates.find((t) => t.id === agent.templateId) ??
         templates.find((t) => t.spec.image === agent.spec.image);
       return template?.spec.harness ?? null;
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: moves a kept sub-agent's keep expiry, or the idle time after which it sleeps; a sub-agent that is not this driver's, or was not spawned with keep, is refused with the reason.
+    async extendKeep(
+      id: string,
+      change: { keepForMs?: number; idleTimeoutMin?: number },
+    ): Promise<
+      | { ok: true; keepUntil: string; idleTimeoutMin?: number }
+      | { ok: false; message: string }
+    > {
+      try {
+        const { keepUntil, idleTimeoutMin } = await invocations.extendKeep(
+          id,
+          driverId,
+          change,
+        );
+        return {
+          ok: true,
+          keepUntil: keepUntil.toISOString(),
+          ...(idleTimeoutMin !== undefined && { idleTimeoutMin }),
+        };
+      } catch (err) {
+        if (err instanceof KeepError)
+          return { ok: false, message: err.message };
+        throw err;
+      }
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: replaces the rules of a child whose egress is open, which only the agent that launched it may set; a child that follows its parent, or whose scoped rules only the user widens, is refused.
+    async setChildEgress(
+      childId: string,
+      rules: readonly ChildEgressRule[],
+    ): Promise<
+      | {
+          ok: true;
+          waiting: { host: string; id: string }[];
+          blocked: { host: string }[];
+        }
+      | { ok: false; message: string }
+    > {
+      const inherited = await deps.inheritanceOf?.(childId);
+      if (!inherited || inherited.parentAgentId !== driverId)
+        return { ok: false, message: `${childId} is not a child you launched` };
+      if (inherited.egressFrom !== "open")
+        return {
+          ok: false,
+          message:
+            inherited.egressFrom === "scoped"
+              ? `${childId} has scoped egress, which only the user widens`
+              : `${childId} follows your egress; launch it with egress "open" to set its own`,
+        };
+      const { waiting, blocked } = await deps.childEgress!.setOpenRules(
+        childId,
+        driverId,
+        rules,
+      );
+      return { ok: true, waiting, blocked };
     },
 
     async connections() {

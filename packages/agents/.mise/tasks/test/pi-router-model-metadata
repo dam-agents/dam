@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi on the Model Router takes each model's window, output limit, image input and thinking levels from the router's catalog"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", ".mise/tasks/test/pi-router-model-metadata", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
+const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-router-model-metadata-"));
+
+const GLM = "cb/rits/zai-org/glm-5-3";
+const MUSE = "cb/rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4";
+const NEMOTRON = "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
+const entry = (id, metadata) => ({
+  id, object: "model", owned_by: "cb", display_name: id.slice(3), description: "CurveBender",
+  metadata: { alias: "cb", upstreamId: id.slice(3), dialects: ["anthropic-messages", "openai-chat", "openai-responses"], reasoning: true, cacheControl: null, thinkingFormat: null, prices: null, ...metadata },
+});
+const catalog = [
+  entry(GLM, { contextWindow: 1048576, maxOutputTokens: 1048576, vision: false, thinkingLevelMap: { off: "none", xhigh: "xhigh", max: "max" } }),
+  entry(MUSE, { contextWindow: 1048576, maxOutputTokens: 1048576, vision: true, thinkingLevelMap: { off: null, minimal: "low", xhigh: "xhigh" } }),
+  entry(NEMOTRON, { contextWindow: 262144, maxOutputTokens: 32768, vision: null, thinkingLevelMap: null }),
+];
+const router = createServer((req, res) => {
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(req.url.endsWith("/v1/models") ? { data: catalog, has_more: false } : {}));
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const routerUrl = `http://127.0.0.1:${router.address().port}`;
+
+const shared = join(home, ".pi/agent");
+mkdirSync(shared, { recursive: true });
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
+writeFileSync(join(home, "pi-platform"), wrapper);
+
+// UNIT_BOUNDARY_DESCRIPTION: one Pi process on the router's env, started on a model, answering what it took of that model.
+async function modelAsPiSees(model) {
+  writeFileSync(join(shared, "settings.json"), JSON.stringify({ packages: [] }));
+  const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+    cwd: home,
+    env: { PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost", PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL: model },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let errors = "";
+  child.stderr.on("data", (d) => { errors += d; });
+  let output = "";
+  const answers = new Map();
+  const answered = (id) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${id} timed out: ${errors.slice(-800)}`)), 60_000);
+    answers.set(id, (message) => { clearTimeout(timer); resolve(message); });
+    child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`pi exited ${code}: ${errors.slice(-800)}`)); });
+  });
+  child.stdout.on("data", (data) => {
+    output += data;
+    const lines = output.split("\n");
+    output = lines.pop() ?? "";
+    for (const line of lines) {
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      if (message.type === "response") answers.get(message.id)?.(message);
+    }
+  });
+  const state = answered("state");
+  const levels = answered("levels");
+  child.stdin.write(`${JSON.stringify({ type: "get_state", id: "state" })}\n`);
+  child.stdin.write(`${JSON.stringify({ type: "get_available_thinking_levels", id: "levels" })}\n`);
+  try {
+    const [s, l] = await Promise.all([state, levels]);
+    assert.equal(s.success, true, JSON.stringify(s).slice(0, 500));
+    assert.equal(l.success, true, JSON.stringify(l).slice(0, 500));
+    const { id, input, contextWindow, maxTokens } = s.data.model;
+    return { id, input, contextWindow, maxTokens, levels: l.data.levels };
+  } finally {
+    if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  }
+}
+
+try {
+  // TEST_SCENARIO: GLM on CurveBender reads text only and offers off through max, with no xhigh gap, as the router's catalog says.
+  assert.deepEqual(await modelAsPiSees(GLM), {
+    id: GLM, input: ["text"], contextWindow: 1048576, maxTokens: 1048576,
+    levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  });
+
+  // TEST_SCENARIO: A level the catalog maps to null is not offered: Muse Spark has no off, and nothing above xhigh.
+  assert.deepEqual(await modelAsPiSees(MUSE), {
+    id: MUSE, input: ["text", "image"], contextWindow: 1048576, maxTokens: 1048576,
+    levels: ["minimal", "low", "medium", "high", "xhigh"],
+  });
+
+  // TEST_SCENARIO: A model the catalog has no levels for keeps Pi's own, off through high, and its unknown image support counts as images.
+  assert.deepEqual(await modelAsPiSees(NEMOTRON), {
+    id: NEMOTRON, input: ["text", "image"], contextWindow: 262144, maxTokens: 32768,
+    levels: ["off", "minimal", "low", "medium", "high"],
+  });
+  console.log("pi-router-model-metadata: Pi takes each routed model's window, output limit, images and thinking levels from the catalog");
+} finally {
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}

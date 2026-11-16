@@ -86,6 +86,11 @@ export const identityLinks = pgTable(
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
     teamId: text("team_id"),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the link was proven — `oauth` by a
+     * Keycloak sign-in, `email` by a pairing that only looked the person up in
+     * a trusted workspace. An email link inserts only and never moves a
+     * workspace; an OAuth sign-in promotes it. */
+    source: text("source").notNull().default("oauth"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -101,6 +106,12 @@ export const slackCredentialStateEnum = pgEnum("slack_credential_state", [
 export const slackInstalls = pgTable("slack_installs", {
   teamId: text("team_id").primaryKey(),
   teamName: text("team_name"),
+  /* UNIT_BOUNDARY_DESCRIPTION: the Slack organization the install handshake
+   * said the workspace belongs to, null for a standalone app, a workspace whose
+   * install predates this column, or the Helm token import. Anything that pairs
+   * a person to a workspace compares it, and an unknown one on either side
+   * refuses rather than guesses. */
+  enterpriseId: text("enterprise_id"),
   secretPath: text("secret_path").notNull(),
   secretField: text("secret_field").notNull(),
   installedBy: text("installed_by"),
@@ -114,6 +125,57 @@ export const slackInstalls = pgTable("slack_installs", {
     .defaultNow()
     .notNull(),
 });
+
+export const slackDmBridgeStateEnum = pgEnum("slack_dm_bridge_state", [
+  "active",
+  "revoking",
+  "revoked",
+]);
+
+/* UNIT_BOUNDARY_DESCRIPTION: what the DM Bridge did, so that undoing it never
+ * depends on live Slack lookups or on state another path may have deleted. The
+ * row names the exact destination it settled — agent, workspace, DM, person —
+ * and its state is what stops turns and delivery after a revoke, including a
+ * revoke that a failure left half done. */
+export const slackDmBridges = pgTable(
+  "slack_dm_bridges",
+  {
+    agentId: text("agent_id").notNull(),
+    teamId: text("team_id").notNull(),
+    dmChannelId: text("dm_channel_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    slackUserId: text("slack_user_id").notNull(),
+    state: slackDmBridgeStateEnum("state").notNull().default("active"),
+    /* UNIT_BOUNDARY_DESCRIPTION: every connect opens a new generation, so a
+     * revoke that started before it can tell it has been superseded and stop
+     * instead of deleting what the person reconnected. */
+    generation: integer("generation").notNull().default(1),
+    /* UNIT_BOUNDARY_DESCRIPTION: the greeting is claimed before it is sent and
+     * recorded when Slack took it, so a crash mid-post strands a claim that a
+     * later connect may take over once it goes stale, and a recorded post is
+     * never repeated. */
+    helloClaimedAt: timestamp("hello_claimed_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the claim's own identity. Recording or
+     * releasing the greeting applies only with the token this claim returned,
+     * so a slow or superseded sender cannot overwrite the bookkeeping of the
+     * attempt that replaced it. */
+    helloClaimToken: text("hello_claim_token"),
+    helloPostedAt: timestamp("hello_posted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.agentId, table.teamId, table.dmChannelId],
+    }),
+    index("slack_dm_bridges_owner_idx").on(table.ownerSub),
+    index("slack_dm_bridges_dm_idx").on(table.teamId, table.dmChannelId),
+  ],
+);
 
 export const slackIgnoredApps = pgTable(
   "slack_ignored_apps",
@@ -140,6 +202,20 @@ export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
       { at: string; thread: boolean; sender: "agent" | "app"; name: string }[]
     >()
     .notNull(),
+});
+
+/* UNIT_BOUNDARY_DESCRIPTION: what decides whether a person in Slack still gets
+ * the note that an untagged reply did not reach the Agent: when they first
+ * used the platform in Slack, when they last got the note, and when they
+ * stopped needing it. A person is keyed by the same keyed hash of their Slack
+ * user id that the activity log uses, so no raw Slack id is stored here. */
+export const slackUntaggedReplyNotes = pgTable("slack_untagged_reply_notes", {
+  actorHash: text("actor_hash").primaryKey(),
+  firstUsedAt: timestamp("first_used_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  lastNotedAt: timestamp("last_noted_at", { withTimezone: true }),
+  graduatedAt: timestamp("graduated_at", { withTimezone: true }),
 });
 
 /* UNIT_BOUNDARY_DESCRIPTION: a Slack thread an Agent's Session started with
@@ -451,9 +527,6 @@ export const profiles = pgTable(
     id: text("id").primaryKey(),
     owner: text("owner").notNull(),
     name: text("name").notNull(),
-    /* UNIT_BOUNDARY_DESCRIPTION: marks the one profile the platform seeds for
-     * an owner, which is never seeded again after a rename or a delete. */
-    seed: text("seed"),
     harness: text("harness").notNull(),
     providerTemplate: text("provider_template").notNull(),
     model: text("model").notNull(),
@@ -473,9 +546,6 @@ export const profiles = pgTable(
   },
   (table) => [
     uniqueIndex("profiles_owner_name_idx").on(table.owner, table.name),
-    uniqueIndex("profiles_owner_seed_idx")
-      .on(table.owner, table.seed)
-      .where(sql`${table.seed} is not null`),
     index("profiles_owner_idx").on(table.owner),
     check(
       "profiles_subagent_xor_template",
@@ -484,25 +554,26 @@ export const profiles = pgTable(
   ],
 );
 
-/* UNIT_BOUNDARY_DESCRIPTION: one row per owner, written the first time the
- * owner's profiles are listed. It is what keeps a renamed or deleted seeded
- * profile from being seeded again. */
-export const profileSeeds = pgTable("profile_seeds", {
-  owner: text("owner").primaryKey(),
-  seededAt: timestamp("seeded_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* UNIT_BOUNDARY_DESCRIPTION: each owner's one default for new agents; the
- * restrictive foreign key keeps that profile from being deleted while it is
- * the default. */
-export const profileDefaults = pgTable("profile_defaults", {
-  owner: text("owner").primaryKey(),
-  profileId: text("profile_id")
-    .notNull()
-    .references(() => profiles.id, { onDelete: "restrict" }),
-});
+/* UNIT_BOUNDARY_DESCRIPTION: the default for new agents an owner chose, a
+ * profile or values of their own, never both; a new agent's chat default is
+ * initialised from it. Deleting the profile removes the row, and new agents
+ * then start on the base default. */
+export const newAgentDefaults = pgTable(
+  "profile_defaults",
+  {
+    owner: text("owner").primaryKey(),
+    profileId: text("profile_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    sessionPair: jsonb("session_pair"),
+  },
+  (table) => [
+    check(
+      "profile_defaults_profile_xor_pair",
+      sql`(${table.profileId} is null) <> (${table.sessionPair} is null)`,
+    ),
+  ],
+);
 
 export const agents = pgTable(
   "agents",
@@ -523,6 +594,7 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     channelSessionPair: jsonb("channel_session_pair"),
     scheduledSessionPair: jsonb("scheduled_session_pair"),
+    toolApproval: text("tool_approval"),
     sessionProfile: text("session_profile").references(() => profiles.id, {
       onDelete: "restrict",
     }),
@@ -767,6 +839,15 @@ export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
     .notNull(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: the Agents whose owner lets the sub-agents and Environments they launch have network access of their own, wider than the Agent's: one row per Agent with the toggle on, none with it off. A child is bound by the row of the root Agent of its launch chain, never by one of its own. */
+export const agentChildEgressGrants = pgTable("agent_child_egress_grants", {
+  agentId: text("agent_id").primaryKey(),
+  grantedBy: text("granted_by").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentPublicProfiles = pgTable("agent_public_profiles", {
   agentId: text("agent_id").primaryKey(),
   name: text("name").notNull(),
@@ -847,6 +928,21 @@ export const connections = pgTable(
       sql`NOT (${table.isParent} AND ${table.parentId} IS NOT NULL)`,
     ),
   ],
+);
+
+/* UNIT_BOUNDARY_DESCRIPTION: what a child Agent (a sub-agent or an Environment) takes from the Agent that launched it, chosen once at launch: its connections (`parent`, the parent's grants mirrored live, revokes included; `subset`, the ones named, copied once; `none`) and its egress (`parent`, the root's rules, live). A child without a row is one launched before the choice existed, whose grants are its own. */
+export const agentInheritance = pgTable(
+  "agent_inheritance",
+  {
+    agentId: text("agent_id").primaryKey(),
+    parentAgentId: text("parent_agent_id").notNull(),
+    connectionsFrom: text("connections_from").notNull(),
+    egressFrom: text("egress_from").notNull().default("parent"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("agent_inheritance_parent_idx").on(table.parentAgentId)],
 );
 
 export const connectionGrants = pgTable(
@@ -1068,6 +1164,23 @@ export const apiKeys = pgTable(
   ],
 );
 
+/* UNIT_BOUNDARY_DESCRIPTION: a key the platform must revoke but could not — the directory was unreachable while its Connection was deleted, or while a failed create was being rolled back. The row outlives the request that gave up on it, so a sweep revokes the key later instead of leaving one live that nothing names. */
+export const apiKeyRevocations = pgTable(
+  "api_key_revocations",
+  {
+    keyId: text("key_id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    connectionId: text("connection_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("api_key_revocations_owner_idx").on(table.ownerSub),
+    index("api_key_revocations_connection_idx").on(table.connectionId),
+  ],
+);
+
 export const userFeatures = pgTable(
   "user_features",
   {
@@ -1112,6 +1225,29 @@ export const avatarUnlocks = pgTable(
       table.character,
     ),
   ],
+);
+
+export const dambledoreProvisioned = pgTable(
+  "dambledore_provisioned",
+  {
+    owner: text("owner").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    state: text("state").notNull().default("creating"),
+    legacy: boolean("legacy").notNull().default(false),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    resetAt: timestamp("reset_at", { withTimezone: true }),
+    firstResultKind: text("first_result_kind"),
+    firstResultRef: text("first_result_ref"),
+    firstResultAt: timestamp("first_result_at", { withTimezone: true }),
+    firstResultCompletedAt: timestamp("first_result_completed_at", {
+      withTimezone: true,
+    }),
+    onboardingEpoch: integer("onboarding_epoch").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("dambledore_provisioned_agent_idx").on(table.agentId)],
 );
 
 export const sidebarAgentOrder = pgTable(
@@ -1161,6 +1297,7 @@ export const libraryArtifacts = pgTable(
       onDelete: "set null",
     }),
     title: text("title").notNull(),
+    icon: text("icon"),
     slug: text("slug").notNull(),
     sourcePath: text("source_path"),
     kind: text("kind").notNull(),
@@ -1171,6 +1308,16 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a Session that a prompt from this interactive page opens runs on, in the two slots a channel binding keeps; all four null follows the agent's channel pair. */
+    promptProfileId: text("prompt_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    promptSessionPair: jsonb("prompt_session_pair"),
+    promptSubagentProfile: text("prompt_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
+    promptSubagentSettings: jsonb("prompt_subagent_settings"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1188,6 +1335,14 @@ export const libraryArtifacts = pgTable(
     index("library_artifacts_expires_idx")
       .on(table.expiresAt)
       .where(sql`${table.expiresAt} is not null`),
+    check(
+      "library_artifacts_prompt_pair_xor_profile",
+      sql`${table.promptProfileId} is null or ${table.promptSessionPair} is null`,
+    ),
+    check(
+      "library_artifacts_prompt_subagent_xor_profile",
+      sql`${table.promptSubagentProfile} is null or ${table.promptSubagentSettings} is null`,
+    ),
   ],
 );
 
@@ -1273,55 +1428,119 @@ export const invocations = pgTable(
     rootDriverId: text("root_driver_id").notNull(),
     owner: text("owner").notNull(),
     label: text("label"),
-    prompt: text("prompt").notNull().default(""),
     templateId: text("template_id"),
     image: text("image"),
     connections: jsonb("connections").$type<string[]>().notNull().default([]),
     ttlMs: integer("ttl_ms"),
-    resultSchema: jsonb("result_schema"),
-    result: jsonb("result"),
-    script: text("script"),
-    exitCode: integer("exit_code"),
-    output: jsonb("output"),
-    outputExpiresAt: timestamp("output_expires_at", { withTimezone: true }),
-    status: text("status").notNull().default("running"),
-    errorReason: text("error_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
     reapedAt: timestamp("reaped_at", { withTimezone: true }),
-    startedAt: timestamp("started_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: until when a clean slate spawned without keep waits for its first run before it is removed; for any other target, the deadline of its spawn's run. */
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: until when a kept target outlives its result, asleep with its disk; null for a target reaped after its result, as every target was before keep. Wall-clock, set at spawn and moved only by its driver. */
+    keepUntil: timestamp("keep_until", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: how the owner answered the network rules the driver set on this target that had to wait for them, one entry per answered rule. Kept on the target so its driver can read the answers with a result after a one-off target, and its requests with it, is removed; null when no rule waited. */
+    egressAnswers: jsonb("egress_answers").$type<
+      {
+        host: string;
+        port?: number;
+        method: string;
+        path: string;
+        verdict: "allow" | "deny";
+      }[]
+    >(),
     transcriptCaptured: boolean("transcript_captured").notNull().default(false),
     transcriptTruncated: boolean("transcript_truncated")
       .notNull()
       .default(false),
     harnessConfig: jsonb("harness_config"),
-    origin: text("origin").notNull().default("script"),
     driverSessionId: text("driver_session_id"),
-    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
-    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    wokeAt: timestamp("woke_at", { withTimezone: true }),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
-    index("invocations_undelivered_idx")
+    index("invocations_root_driver_idx").on(table.rootDriverId),
+    index("invocations_unreaped_idx")
+      .on(table.createdAt)
+      .where(sql`${table.reapedAt} IS NULL`),
+  ],
+);
+
+/* UNIT_BOUNDARY_DESCRIPTION: one run in a target: the spawn's task or script, or a later one its driver started in a kept or clean slate target, several of which may run at once. Its id is the id of the task event that carries it, which a start, a result or a script report must name to count; a run from before runs had their own rows has the target's id. */
+export const invocationRuns = pgTable(
+  "invocation_runs",
+  {
+    id: text("id").primaryKey(),
+    invocationId: text("invocation_id").notNull(),
+    prompt: text("prompt").notNull().default(""),
+    script: text("script"),
+    resultSchema: jsonb("result_schema"),
+    ttlMs: integer("ttl_ms"),
+    status: text("status").notNull().default("running"),
+    result: jsonb("result"),
+    errorReason: text("error_reason"),
+    exitCode: integer("exit_code"),
+    output: jsonb("output"),
+    outputExpiresAt: timestamp("output_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    origin: text("origin").notNull().default("script"),
+    driverSessionId: text("driver_session_id"),
+    /* UNIT_BOUNDARY_DESCRIPTION: the target's session the run's turn ran in, which a later run may continue: known at its start when it continues a session, else once the run reports or fails from it; null for a script, and for a run whose session never said. */
+    sessionId: text("session_id"),
+    /* UNIT_BOUNDARY_DESCRIPTION: a run of a kept target that ended while its turn or script may still run (stopped, timed out, failed to set up) until the target confirms it ended that work, or its machine stopped; set in the same write that fails the run, so no run continues its session in between. */
+    cancelPending: boolean("cancel_pending").notNull().default(false),
+    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
+    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the outcome went to its driver whole in a sub-agent-outcome turn, not as an await_subagents answer, so a later wait points to that turn instead of repeating the result; a turn that carried it trimmed leaves it false, so a wait still returns it in full. */
+    deliveredInTurn: boolean("delivered_in_turn").notNull().default(false),
+    wokeAt: timestamp("woke_at", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: what a run that ended by asking its owner asked: the question, the options it offers, the one it takes when nobody answers in time, and how much of its time limit was left, which the run that continues from the answer gets. Null for a run that asked nothing. */
+    question: jsonb("question").$type<{
+      text: string;
+      options: string[];
+      defaultOption: string;
+      remainingMs: number;
+    }>(),
+    answerBy: timestamp("answer_by", { withTimezone: true }),
+    /* UNIT_BOUNDARY_DESCRIPTION: the run that continues this one's work from the answer to its question, in the same session; a driver that waits on this run by its id reads that one. */
+    continuedBy: text("continued_by"),
+    /* UNIT_BOUNDARY_DESCRIPTION: the answer this run continues from, on the run an answer started: the question, what was answered, who answered (the owner, or nobody, so the default was taken) and the time the question had to be answered by. */
+    answer: jsonb("answer").$type<{
+      question: string;
+      text: string;
+      by: "owner" | "default";
+      at: string;
+      answerBy: string;
+    }>(),
+  },
+  (table) => [
+    index("invocation_runs_invocation_idx").on(
+      table.invocationId,
+      table.createdAt,
+    ),
+    index("invocation_runs_undelivered_idx")
       .on(table.completedAt)
       .where(
         sql`${table.origin} = 'tool' AND ${table.status} <> 'running' AND (${table.deliveredAt} IS NULL OR ${table.wokeAt} IS NULL)`,
       ),
-    index("invocations_root_driver_idx").on(table.rootDriverId),
-    index("invocations_unreaped_idx")
-      .on(table.completedAt)
-      .where(sql`${table.reapedAt} IS NULL`),
-    index("invocations_status_expiry_idx")
+    index("invocation_runs_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),
-    index("invocations_output_expiry_idx")
+    index("invocation_runs_output_expiry_idx")
       .on(table.outputExpiresAt)
       .where(sql`${table.outputExpiresAt} IS NOT NULL`),
+    index("invocation_runs_cancel_idx")
+      .on(table.invocationId)
+      .where(sql`${table.cancelPending}`),
+    index("invocation_runs_asking_idx")
+      .on(table.answerBy)
+      .where(sql`${table.status} = 'asking'`),
   ],
 );
 
@@ -1575,6 +1794,12 @@ export const spendCalls = pgTable(
     webSearches: integer("web_searches").notNull().default(0),
     durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     estimated: boolean("estimated").notNull().default(false),
+    priceSource: text("price_source").notNull().default(""),
+    priceModel: text("price_model").notNull().default(""),
+    estimateReasons: text("estimate_reasons")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
   },
   (table) => [
     primaryKey({
@@ -1591,6 +1816,9 @@ export const spendCalls = pgTable(
     index("spend_calls_unbooked_idx")
       .on(table.startedAt)
       .where(sql`${table.sessionId} = '' AND ${table.stampedSessionId} <> ''`),
+    index("spend_calls_awaiting_price_idx")
+      .on(table.priceSource, table.priceModel)
+      .where(sql`${table.priceSource} = 'awaiting'`),
   ],
 );
 
@@ -1599,6 +1827,37 @@ export const spendAgentNames = pgTable("spend_agent_names", {
   ownerSub: text("owner_sub").notNull(),
   name: text("name").notNull(),
   removedAt: timestamp("removed_at", { withTimezone: true }).notNull(),
+});
+
+export const providerModelPrices = pgTable(
+  "provider_model_prices",
+  {
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    row: jsonb("row").notNull(),
+    freeSearchQuota: boolean("free_search_quota").notNull().default(false),
+    incomplete: text("incomplete")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    runId: text("run_id").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "provider_model_prices_pk",
+      columns: [table.provider, table.model],
+    }),
+  ],
+);
+
+export const providerPriceReads = pgTable("provider_price_reads", {
+  connectionId: text("connection_id").primaryKey(),
+  provider: text("provider").notNull(),
+  lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+  lastRefusedAt: timestamp("last_refused_at", { withTimezone: true }),
+  lastStatus: integer("last_status"),
+  modelCount: integer("model_count").notNull().default(0),
 });
 
 export const spendMetering = pgTable(

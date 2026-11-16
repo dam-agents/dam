@@ -79,7 +79,6 @@ export function createArtifactApiWorld() {
   const rows: ArtifactRow[] = [];
   const agents = new Map<string, FakeAgent>();
   const prompts: DeliveredPrompt[] = [];
-  let featureOn = true;
   let promptOutcome: ViewerPromptOutcome = {
     ok: true,
     sessionId: "session-1",
@@ -144,6 +143,7 @@ export function createArtifactApiWorld() {
       agentId: options.by === undefined ? "agent-a" : options.by,
       folderId: null,
       sourcePath: null,
+      icon: null,
       title: "Dashboard",
       slug: `slug-${id}`,
       kind: options.kind ?? "html",
@@ -179,7 +179,6 @@ export function createArtifactApiWorld() {
       shareBaseUrl: "https://share.example.test",
       ensureReady: cluster.ensureReady,
       agentApi: cluster.agentApi,
-      featureOn: () => Promise.resolve(featureOn),
       prompts: {
         deliver: (input) => {
           prompts.push(input);
@@ -204,9 +203,14 @@ export function createArtifactApiWorld() {
     artifactId: string,
     text: string,
     caller: Caller = {},
+    conversation?: string,
   ): Promise<ArtifactSendPromptResult> {
     return library(caller).sendPrompt(
-      { artifactId, prompt: text },
+      {
+        artifactId,
+        prompt: text,
+        ...(conversation === undefined ? {} : { conversation }),
+      },
       { agentIds: caller.keyBoundTo ?? "*" },
     );
   }
@@ -217,9 +221,6 @@ export function createArtifactApiWorld() {
     call,
     prompt,
     prompts: () => [...prompts],
-    turnFeatureOff: () => {
-      featureOn = false;
-    },
     refusePromptsWith: (
       reason: Extract<ViewerPromptOutcome, { ok: false }>["reason"],
     ) => {
