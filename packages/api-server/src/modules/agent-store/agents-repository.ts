@@ -268,6 +268,8 @@ export function createControlAgentsRepository(
         text(patch.telemetryAttributionId) ?? null;
     if (patch.requireConnectionAddress !== undefined)
       values.requireConnectionAddress = patch.requireConnectionAddress === true;
+    if (patch.webSearchControl !== undefined)
+      values.webSearchControl = patch.webSearchControl === true;
     if (patch.nestedVirtualization !== undefined)
       values.nestedVirtualization = patch.nestedVirtualization === true;
     if (patch.storageSize !== undefined)

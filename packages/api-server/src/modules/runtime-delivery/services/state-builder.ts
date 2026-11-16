@@ -62,20 +62,28 @@ export function createStateBuilder(deps: {
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
   agentName: (agentId: string) => Promise<string | null>;
+  webSearchControl: (agentId: string) => Promise<boolean>;
   egressDenies: (agentId: string) => EgressDenies;
   /* UNIT_BOUNDARY_DESCRIPTION: the `dam` skill the api-server image carries, so the skill the DAM Connection writes is the one this install ships now rather than the one it was made with. */
   damSkill: readonly DamSkillFile[];
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [userEnv, granted, skills, agentName] = await Promise.all([
-        readUserEnvContributions(deps.db, agentId),
-        readGrantedContributions(deps.db, agentId, deps.damSkill),
-        readSkillRefContributions(deps.db, agentId, deps.egressDenies(agentId)),
-        deps.agentName(agentId),
-      ]);
+      const [userEnv, granted, skills, agentName, webSearchControl] =
+        await Promise.all([
+          readUserEnvContributions(deps.db, agentId),
+          readGrantedContributions(deps.db, agentId, deps.damSkill),
+          readSkillRefContributions(
+            deps.db,
+            agentId,
+            deps.egressDenies(agentId),
+          ),
+          deps.agentName(agentId),
+          deps.webSearchControl(agentId),
+        ]);
       const builtin = deps.builtin.for(agentId, {
         agentName,
+        webSearchControl,
         sharedKnowledgeBases: granted.templateIds.has(SHARED_KB_TEMPLATE_ID),
         harnesses: capabilities.harnesses ?? [],
       });

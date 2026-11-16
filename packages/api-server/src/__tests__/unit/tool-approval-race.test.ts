@@ -108,6 +108,7 @@ function setup() {
   const reports = createToolApprovalReports({ relay, ownerSub: "owner-1" });
   const service = createApprovalsService({
     repo,
+    webSearchRuleWriter: { write: async () => {} },
     egressRuleWriter: {
       insert: async (input) => ({
         kind: "inserted",

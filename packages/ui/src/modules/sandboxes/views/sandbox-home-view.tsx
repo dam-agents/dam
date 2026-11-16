@@ -28,6 +28,7 @@ import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { WebSearchControlCard } from "../../web-search/components/web-search-control-card.js";
 import {
   AgentDescriptionSection,
   AgentModelSettingsSection,
@@ -151,7 +152,10 @@ function AgentHome({ agent }: { agent: AgentView }) {
           ) : section === "providers" ? (
             <SandboxProvidersSection agentId={agent.id} header={header} />
           ) : section === "network" ? (
-            <AgentEgressEditor agentId={agent.id} header={header} />
+            <>
+              <AgentEgressEditor agentId={agent.id} header={header} />
+              <WebSearchControlCard agent={agent} />
+            </>
           ) : section === "environment" ? (
             <EnvTab agent={agent} header={header} />
           ) : section === "channels" ? (

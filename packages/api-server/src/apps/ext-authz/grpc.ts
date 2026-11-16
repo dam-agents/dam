@@ -3,6 +3,7 @@ import { match } from "ts-pattern";
 import type {
   ExtAuthzDecision,
   ExtAuthzGate,
+  ModelCallBody,
 } from "../../modules/approvals/compose.js";
 import {
   parseSpendMetadata,
@@ -22,6 +23,10 @@ import { createSpendRecordStreams } from "./spend-records.js";
 const GRPC_STATUS_OK = 0;
 const GRPC_STATUS_PERMISSION_DENIED = 7;
 
+// UNIT_BOUNDARY_DESCRIPTION: the largest Check the server takes: a gateway with web search control sends a model call's whole body, up to the Messages API's 32 MiB, and the request's attributes ride beside it.
+const MAX_CHECK_BYTES = 33 << 20;
+const PARTIAL_BODY_HEADER = "x-envoy-auth-partial-body";
+
 export interface ExtAuthzGrpcAppDeps {
   port: number;
   holdSeconds: number;
@@ -37,6 +42,7 @@ export async function startExtAuthzGrpcApp(
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
     "grpc.keepalive_permit_without_calls": 1,
+    "grpc.max_receive_message_length": MAX_CHECK_BYTES,
   });
 
   const expectedPrefix = `${deps.releaseName}-extauthz-`;
@@ -97,11 +103,11 @@ export async function startExtAuthzGrpcApp(
           return;
         }
 
-        const spend = parseSpendMetadata(
+        const meter =
           call.request.attributes?.metadataContext?.filterMetadata[
             SPEND_METADATA_NAMESPACE
-          ],
-        );
+          ];
+        const spend = parseSpendMetadata(meter);
         const decision = await deps.gate.gateRequest({
           agentId,
           host,
@@ -109,6 +115,10 @@ export async function startExtAuthzGrpcApp(
           tls,
           method,
           path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
+          modelCall: meter
+            ? { sessionId: spend?.sessionId ?? null }
+            : undefined,
+          body: httpReq ? modelCallBodyOf(httpReq) : undefined,
           spendCall: spend && {
             callId: spend.callId,
             payer: spend.payer,
@@ -182,6 +192,28 @@ function parseInstanceFromAuthority(
   if (!firstLabel.startsWith(expectedPrefix)) return null;
   const id = firstLabel.slice(expectedPrefix.length);
   return id || null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the body a Check carries, as the gateway sent it. Only a gateway that reads bodies fills it, and the agent can set any header but never the body field, so an empty body on a request whose length headers say it has one is a body the gateway did not read. A body shorter than its declared length, or one Envoy marks as partial, was read in part.
+export function modelCallBodyOf(httpReq: {
+  headers: Record<string, string>;
+  rawBody: Uint8Array;
+}): ModelCallBody {
+  const bytes = httpReq.rawBody;
+  const length = httpReq.headers["content-length"];
+  const chunked = httpReq.headers["transfer-encoding"] !== undefined;
+  if (bytes.length === 0)
+    return {
+      sent: false,
+      declared: chunked || (length !== undefined && Number(length) !== 0),
+    };
+  return {
+    sent: true,
+    partial:
+      httpReq.headers[PARTIAL_BODY_HEADER] === "true" ||
+      (length !== undefined && Number(length) !== bytes.length),
+    bytes,
+  };
 }
 
 function stripPort(host: string): string {

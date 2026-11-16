@@ -47,6 +47,15 @@ The build also bundles Claude Code's ACP adapter with its agent SDK, from the lo
 Loaded from the tools, the adapter is hundreds of ES modules, each a few reads, paid by each adapter start and by the session-history worker's import of it.
 The native CLI the adapter runs stays in the tools; the bundle cannot find it beside the SDK, so Claude Code's chat entry point names its path.
 
+### The platform's own source
+
+The default image also carries the platform's repository, as its own layer at `/usr/local/share/platform-source`, so the `platform-docs` skill answers a question about the platform from the docs and code of the release the agent runs, with no network ([assistant](assistant.md#questions-about-the-platform)).
+It is what git tracks under `docs/`, `helm/`, `skills/`, `packages/` and the top-level README and AGENTS.md, less tests, the e2e suite, migration snapshots, lockfiles, images and other binaries: about 30 MB on disk and 6 MB compressed.
+Its `user-docs/` holds the published user docs' Markdown and site config, from their own repository at the commit [`user-docs.pin`](../../packages/agents/base/user-docs.pin) names; the build checks the archive's digest against the pin and fails on a failed fetch or a wrong digest, as it does for a pinned tool.
+A `BUILD` file beside it names the commit the image was built from, the chart's version and the user docs' commit.
+The repository is public, so the layer holds nothing the source does not already publish; tracked files only, which keeps a local `.env` or an ignored values file out.
+The image's key covers its own sources, not the whole repository, so an image reused on a main push carries the tree of the commit it was built at, as `BUILD` says; a release rebuilds every image, so a release image carries its own.
+
 ## Building
 
 One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), builds any agent image as a tar in the agent's `dist/oci/`, named `platform-<agent>:latest`, or reuses it from the registry while its source is unchanged (the same source hash [`image:resolve`](../../.mise/tasks/image/resolve) keys CI on).

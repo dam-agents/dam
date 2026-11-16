@@ -18,6 +18,7 @@ const agent: AgentView = {
   starterKitOnboarded: null,
   image: "registry.example/agents/default:old",
   requireConnectionAddress: false,
+  webSearchControl: false,
   whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: ["provider"],

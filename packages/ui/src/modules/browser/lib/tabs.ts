@@ -1,6 +1,12 @@
 import type { BrowserSnapshot, TabState } from "agent-runtime-api";
 
-const BLANK_URLS = new Set(["", "about:blank", "chrome://newtab/"]);
+const BLANK_URLS = new Set([
+  "",
+  "about:blank",
+  "chrome://newtab/",
+  "chrome://new-tab-page/",
+  "chrome://new-tab-page-third-party/",
+]);
 
 export const READABLE_TAB_WIDTH = 176;
 export const SHRUNK_TAB_WIDTH = 64;

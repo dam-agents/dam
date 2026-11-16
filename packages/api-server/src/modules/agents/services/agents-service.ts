@@ -1548,6 +1548,13 @@ export function createAgentsService(deps: {
       if (input.linkFrom !== undefined) spec.linkFrom = input.linkFrom;
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
+      /* UNIT_BOUNDARY_DESCRIPTION: a child launched by an agent with web search control has its own gateway, so it carries the control too; without it, a sub-agent or an Environment would search where its launcher may not. */
+      const launcher = input.inheritance?.parentAgentId;
+      if (
+        launcher !== undefined &&
+        (await deps.repo.get(launcher))?.spec.webSearchControl === true
+      )
+        spec.webSearchControl = true;
 
       const providerConnectionId = input.providerConnectionId;
       /* UNIT_BOUNDARY_DESCRIPTION: a create that names its provider, or the model it starts on, chose for itself, so the default for new agents decides only where it names that same provider and the create names no model; a sub-agent's inherited provider is the platform's choice, not its caller's, and keeps the rule it had. */
@@ -1865,37 +1872,41 @@ export function createAgentsService(deps: {
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
       if (input.whisper !== undefined)
         patch.whispersOff = input.whisper ? null : true;
+      if (input.webSearchControl !== undefined)
+        patch.webSearchControl = input.webSearchControl || null;
       const infra =
         Object.keys(patch).length > 0
           ? await deps.repo.updateSpec(input.id, deps.owner, patch)
           : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
 
+      let runtimeStateChanged = input.webSearchControl !== undefined;
       let env = input.env;
       if (env !== undefined) {
         env = dropProtectedEnvs(env);
         if (input.name !== undefined)
           env = renamedTelemetryIdentity(env, input.name) ?? env;
         await deps.agentEnvRepo.replace(input.id, env);
-        await deps.runtimeMutator.bump(input.id, []);
-        await deps.runtimeMutator.enqueueAfterCommit(input.id);
+        runtimeStateChanged = true;
       } else if (input.name !== undefined) {
         const refreshed = renamedTelemetryIdentity(
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
         if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
-        if (refreshed || renamed) {
-          await deps.runtimeMutator.bump(input.id, []);
-          await deps.runtimeMutator.enqueueAfterCommit(input.id);
-        }
+        runtimeStateChanged ||= refreshed !== null || renamed;
+      }
+      if (runtimeStateChanged) {
+        await deps.runtimeMutator.bump(input.id, []);
+        await deps.runtimeMutator.enqueueAfterCommit(input.id);
       }
 
       if (
         input.env !== undefined ||
         input.secretRef !== undefined ||
         input.requireConnectionAddress !== undefined ||
-        input.whisper !== undefined
+        input.whisper !== undefined ||
+        input.webSearchControl !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1906,6 +1917,9 @@ export function createAgentsService(deps: {
           detail: {
             secretRefChanged: input.secretRef !== undefined,
             ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
+            ...(input.webSearchControl !== undefined
+              ? { webSearchControl: input.webSearchControl }
+              : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),

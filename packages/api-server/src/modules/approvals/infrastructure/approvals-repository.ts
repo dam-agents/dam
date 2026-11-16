@@ -59,6 +59,10 @@ export interface ApprovalsRepository {
     method: string;
     path: string;
   }): Promise<PendingApprovalRow | null>;
+  findActivePendingWebSearch(input: {
+    agentId: string;
+    key: string;
+  }): Promise<PendingApprovalRow | null>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -264,6 +268,23 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       `);
       const list = rows as unknown as RawPending[];
       return list.length ? toPendingRow(list[0]) : null;
+    },
+
+    async findActivePendingWebSearch({ agentId, key }) {
+      const rows = await db
+        .select()
+        .from(pendingApprovals)
+        .where(
+          and(
+            eq(pendingApprovals.agentId, agentId),
+            eq(pendingApprovals.status, "pending"),
+            eq(pendingApprovals.type, "web_search"),
+            sql`${pendingApprovals.payload}->>'key' = ${key}`,
+          ),
+        )
+        .orderBy(desc(pendingApprovals.createdAt))
+        .limit(1);
+      return rows.length ? toPendingRow(rows[0] as RawPending) : null;
     },
 
     async listPendingForOwner(ownerSub, opts) {
