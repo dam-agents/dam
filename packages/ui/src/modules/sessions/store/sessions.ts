@@ -29,6 +29,7 @@ import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
 import type { SkillCommand } from "../lib/skill-commands.js";
+import type { TerminalLaunch } from "../lib/terminal-launch.js";
 import {
   clearUndelivered,
   readUndelivered,
@@ -92,7 +93,7 @@ export interface SessionsSlice {
   rewriting: Rewriting | null;
   rewritePending: PendingRewrite | null;
   nextSessionPair: Record<string, SessionPair>;
-  nextTerminalPair: Record<string, SessionPair | null>;
+  nextTerminalLaunch: Record<string, TerminalLaunch | null>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -134,7 +135,10 @@ export interface SessionsSlice {
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   clearNextSessionPair: (agentId: string) => void;
-  setNextTerminalPair: (agentId: string, pair: SessionPair | null) => void;
+  setNextTerminalLaunch: (
+    agentId: string,
+    launch: TerminalLaunch | null,
+  ) => void;
   setSessionError: (e: SessionError | null) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
@@ -226,7 +230,7 @@ export const createSessionsSlice: StateCreator<
     rewriting: null,
     rewritePending: null,
     nextSessionPair: {},
-    nextTerminalPair: {},
+    nextTerminalLaunch: {},
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -318,9 +322,9 @@ export const createSessionsSlice: StateCreator<
           ),
         ),
       })),
-    setNextTerminalPair: (agentId, pair) =>
+    setNextTerminalLaunch: (agentId, launch) =>
       set((state) => ({
-        nextTerminalPair: { ...state.nextTerminalPair, [agentId]: pair },
+        nextTerminalLaunch: { ...state.nextTerminalLaunch, [agentId]: launch },
       })),
     addRunStart: (at) =>
       set((s) =>

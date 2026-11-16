@@ -20,6 +20,7 @@ const fake = vi.hoisted(() => ({
     | { kind: "none" }
     | { kind: "loading" }
     | { kind: "greeting"; copy: unknown },
+  assistantChat: false,
 }));
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -70,10 +71,6 @@ for (const [path, names] of [
     ["AgentInaccessibleOverlay"],
   ],
   ["../../modules/sessions/components/chat-message.js", ["ChatMessage"]],
-  [
-    "../../modules/sessions/components/new-session-launcher.js",
-    ["NewSessionOptions"],
-  ],
   ["../../modules/sessions/components/queued-prompts.js", ["QueuedPrompts"]],
   ["../../modules/sessions/components/quiet-turn-line.js", ["QuietTurnLine"]],
   [
@@ -163,8 +160,8 @@ for (const [path, names] of [
   ],
   ["../../modules/sessions/components/thread-divider.js", ["ThreadDivider"]],
   [
-    "../../modules/sessions/components/classic-chat-identity.js",
-    ["ClassicChatIdentity"],
+    "../../modules/agents/components/editable-agent-identity.js",
+    ["EditableAgentIdentity"],
   ],
 ] as const)
   components.set(path, [...names]);
@@ -179,8 +176,14 @@ for (const [path, names] of components) {
   mockModule(path, exports);
 }
 
+mockModule("../../modules/sessions/components/new-session-launcher.js", {
+  NewSessionOptions: () =>
+    createElement("div", { "data-testid": "new-session-launcher" }),
+});
+
 mockModule("../../modules/sessions/components/classic-chat-layout.js", {
   ClassicChatLayout: (props: {
+    identity: unknown;
     notices: unknown;
     status: unknown;
     children: unknown;
@@ -188,6 +191,7 @@ mockModule("../../modules/sessions/components/classic-chat-layout.js", {
     createElement(
       "div",
       {},
+      props.identity as never,
       props.status as never,
       props.notices as never,
       props.children as never,
@@ -370,7 +374,8 @@ mockModule("../../modules/sessions/api/background-work.js", {
 });
 mockModule("../../modules/assistants/hooks/use-assistant-greeting.js", {
   useAssistantGreeting: () => fake.greeting,
-  useAssistantChat: () => fake.greeting.kind === "greeting",
+  useAssistantChat: () =>
+    fake.assistantChat || fake.greeting.kind === "greeting",
 });
 mockModule("../../modules/features/api/queries.js", {
   useFeatures: () => ({ data: {} }),
@@ -517,6 +522,12 @@ const notice = (el: HTMLElement) =>
 const placeholder = (el: HTMLElement) =>
   el.querySelector("textarea")?.getAttribute("placeholder") ?? "";
 
+function newSessionButton(el: HTMLElement): HTMLButtonElement | undefined {
+  return [...el.querySelectorAll("button")].find(
+    (b) => b.getAttribute("aria-label") === "New session",
+  );
+}
+
 function button(el: HTMLElement, label: string): HTMLButtonElement {
   const found = [...el.querySelectorAll("button")].find(
     (b) => b.getAttribute("aria-label") === label,
@@ -533,6 +544,7 @@ afterEach(() => {
   fake.loadingSession = false;
   fake.connectionState = "reconnecting";
   fake.greeting = { kind: "none" };
+  fake.assistantChat = false;
   useStore.setState({ pendingPermissions: [], sessionError: null });
   vi.clearAllMocks();
 });
@@ -582,6 +594,36 @@ it("opens an unused assistant's chat on its greeting", () => {
   expect(placeholder(el)).toBe("Message Dammy");
 });
 
+// TEST_SCENARIO: the header offers New session only where pressing it would start one. A new, empty chat has it not, and neither has a follow-up draft, which is a new empty chat too and where a press would only focus the composer. A chat that holds a session or a message has it.
+it("shows New session only once the chat holds something", () => {
+  const el = openNewChat();
+  expect(newSessionButton(el)).toBeUndefined();
+
+  act(() =>
+    useStore.setState({
+      drafts: {
+        "a-1:~new": {
+          text: "",
+          attachments: [],
+          continuesInvocation: "inv-1",
+        },
+      },
+    }),
+  );
+  paint();
+  expect(newSessionButton(el)).toBeUndefined();
+
+  act(() =>
+    useStore.setState({
+      messages: [
+        { id: "m-1", role: "assistant", parts: [], streaming: false },
+      ] as never,
+    }),
+  );
+  paint();
+  expect(newSessionButton(el)).toBeDefined();
+});
+
 // TEST_SCENARIO: a click on one of its pills puts that idea's text in the composer of this chat — never the label the pill is headed with — and sends nothing, so no turn runs before the person acts.
 it("fills the composer from a greeting pill without sending", () => {
   fake.greeting = { kind: "greeting", copy: greetingCopy() };
@@ -595,6 +637,24 @@ it("fills the composer from a greeting pill without sending", () => {
     "Make my next PowerPoint deck the way I make them",
   );
   expect(fake.sendPrompt).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: an assistant whose first chat spent its greeting keeps its idea chips on a later new chat, under the cards for opening a new session elsewhere, and a pick fills the composer there too.
+it("offers the assistant's ideas on a later new chat", () => {
+  fake.assistantChat = true;
+  const el = openNewChat();
+  expect(
+    el.querySelector('[data-testid="new-session-launcher"]'),
+  ).not.toBeNull();
+  expect(el.textContent).toContain("Send a message to begin");
+  const task = [...el.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Make my next PowerPoint deck"),
+  );
+  expect(task).toBeDefined();
+  act(() => task!.click());
+  expect(useStore.getState().drafts["a-1:~new"]?.text).toBe(
+    "Make my next PowerPoint deck the way I make them",
+  );
 });
 
 // TEST_SCENARIO: while the greeting's own answers are still on their way the chat shows neither it nor the empty page, so neither flashes and is taken back a moment later.

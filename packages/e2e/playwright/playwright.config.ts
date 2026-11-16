@@ -198,8 +198,8 @@ const projects = [...suite, agentMachine, runnerRelease].filter(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the smoke suite's Playwright projects: which specs a run
  * takes, and in what order. E2E_SCOPE=pr narrows a pull request's run to the specs
- * that fail for real there, and the merge queue, the nightly run and a tag take every
- * one (docs/architecture/e2e.md). pr-scope.json lists the specs it defers, and
+ * that fail for real there, and a push to main, the nightly run and a dispatch take
+ * every one (docs/architecture/e2e.md). pr-scope.json lists the specs it defers, and
  * E2E_PR_SPECS names those a pull request's change still needs, from the paths that
  * file maps to each. No spec a PR run keeps reads state an excluded spec creates. Every
  * project starts after the auth project, the full/ tier's too: its first test needs the

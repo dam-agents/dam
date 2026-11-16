@@ -3,10 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as grpc from "@grpc/grpc-js";
 import { startExtAuthzGrpcApp } from "../../apps/ext-authz/grpc.js";
 import { rulePortCovers } from "../../modules/egress-rules/domain/port-match.js";
+import { BinaryWriter } from "@bufbuild/protobuf/wire";
 import {
   AuthorizationService,
   CheckRequest,
   type CheckResponse,
+  HttpRequest,
 } from "../../proto-gen/external_auth.gen.js";
 import type { DeepPartial } from "../../proto-gen/external_auth.gen.js";
 
@@ -25,6 +27,25 @@ describe("rulePortCovers", () => {
     expect(rulePortCovers(undefined, 8080, false)).toBe(false);
     expect(rulePortCovers(undefined, 80, true)).toBe(false);
     expect(rulePortCovers(undefined, 443, false)).toBe(false);
+  });
+});
+
+describe("ext-authz HttpRequest wire fields", () => {
+  // TEST_SCENARIO: Envoy's AttributeContext.HttpRequest carries the scheme as field 6 and the query as field 7, so a TLS-terminated request with a query reads as https, not as its query string, and a rule that names port 443 holds on an inspected host.
+  it("reads the scheme from Envoy's field 6, not the query in field 7", () => {
+    const envoyBytes = new BinaryWriter()
+      .uint32(42)
+      .string("api.x")
+      .uint32(50)
+      .string("https")
+      .uint32(58)
+      .string("page=2")
+      .finish();
+
+    expect(HttpRequest.decode(envoyBytes)).toMatchObject({
+      host: "api.x",
+      scheme: "https",
+    });
   });
 });
 

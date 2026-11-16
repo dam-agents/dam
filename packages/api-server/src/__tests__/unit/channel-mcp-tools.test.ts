@@ -24,6 +24,10 @@ import type {
   ThreadQuery,
   ThreadResult,
 } from "../../modules/channels/services/channel-manager.js";
+import {
+  checkChannelBlocks,
+  type ChannelBlock,
+} from "../../modules/channels/domain/channel-blocks.js";
 
 vi.mock("../../core/agent-service-client.js", () => ({
   agentServiceClient: () => ({
@@ -293,8 +297,8 @@ describe("edit_post MCP tool — an agent changes its own post (#6406)", () => {
     );
   });
 
-  // TEST_SCENARIO: a card that fails its check must leave the post as it was, so the edit never reaches the channel.
-  it("refuses a card that fails its check before anything changes", async () => {
+  // TEST_SCENARIO: blocks that fail the check must leave the post as it was, so the edit never reaches the channel.
+  it("refuses blocks that fail the check before anything changes", async () => {
     const { client, edits } = await mcpHarness();
 
     const result = await client.callTool({
@@ -304,7 +308,12 @@ describe("edit_post MCP tool — an agent changes its own post (#6406)", () => {
         chatId: "C-BOUND",
         ts: "1.1",
         text: "status",
-        card: { type: "NoSuchComponent", props: {} },
+        blocks: [
+          {
+            type: "actions",
+            elements: [{ type: "static_select", options: [] }],
+          },
+        ],
       },
     });
 
@@ -751,45 +760,34 @@ describe("fetch_message_attachment MCP tool", () => {
 });
 
 describe("outbound MCP tools — channel cards", () => {
-  const actions = (button: Record<string, unknown>) => ({
-    type: "Card",
-    props: { title: "Deploys" },
-    children: [{ type: "Actions", props: {}, children: [button] }],
-  });
+  const withButton = (button: Record<string, unknown>) => [
+    { type: "header", text: { type: "plain_text", text: "Deploys" } },
+    { type: "actions", elements: [button] },
+  ];
 
-  it("describes the card components on request, naming the tools that take a card", async () => {
+  /**
+   * TEST_SCENARIO: An Agent sends Slack Block Kit blocks as they are. The
+   * posting tools offer `blocks`, the old `card` argument is not in the tool
+   * list, and the catalog tool that described it is gone.
+   */
+  it("offers blocks on the posting tools, and no card", async () => {
     const { client } = await mcpHarness();
     const { tools } = await client.listTools();
-    const describeTool = tools.find(
-      (t) => t.name === "describe_card_components",
-    );
-    expect(describeTool?.description).toMatch(/reply, post and start_thread/);
-    for (const name of ["reply", "post"])
-      expect(
-        tools.find((t) => t.name === name)?.inputSchema.properties,
-      ).toHaveProperty("card");
-
-    const res = (await client.callTool({
-      name: "describe_card_components",
-      arguments: {},
-    })) as { content: { text: string }[] };
-    const described = JSON.parse(res.content[0]!.text) as {
-      components: { name: string }[];
-    };
-    const names = described.components.map((c) => c.name);
-    expect(names).toEqual(
-      expect.arrayContaining([
-        "Card",
-        "Fields",
-        "Table",
-        "Chart",
-        "LinkButton",
-      ]),
-    );
-    expect(names).not.toContain("Button");
+    for (const name of ["reply", "post", "edit_post"]) {
+      const properties = tools.find((t) => t.name === name)?.inputSchema
+        .properties;
+      expect(properties).toHaveProperty("blocks");
+      expect(properties).not.toHaveProperty("card");
+    }
+    expect(tools.map((t) => t.name)).not.toContain("describe_card_components");
   });
 
-  it("passes the card the platform built to the channel", async () => {
+  /**
+   * TEST_SCENARIO: The channel gets the blocks the Agent wrote, with the
+   * platform's id on the button in place of the Agent's, and the text form
+   * derived from them.
+   */
+  it("passes the checked blocks and their text form to the channel", async () => {
     const { client, posts } = await mcpHarness();
 
     await client.callTool({
@@ -797,37 +795,137 @@ describe("outbound MCP tools — channel cards", () => {
       arguments: {
         channel: "slack",
         text: "This week",
-        card: actions({
-          type: "LinkButton",
-          props: { label: "Open", url: "https://example.com" },
+        blocks: withButton({
+          type: "button",
+          text: { type: "plain_text", text: "Open" },
+          url: "https://example.com",
+          action_id: "command-menu:0",
+          value: "unbind reviewer",
         }),
       },
     });
 
-    expect(posts[0]?.options.card).toMatchObject({
-      card: { type: "card", title: "Deploys" },
-      text: expect.stringContaining("Deploys"),
+    expect(posts[0]?.options.card).toEqual({
+      blocks: [
+        { type: "header", text: { type: "plain_text", text: "Deploys" } },
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Open" },
+              url: "https://example.com",
+              action_id: expect.stringMatching(/^agent-link:.+:0$/),
+            },
+          ],
+        },
+      ],
+      text: "Deploys\n[Open](https://example.com)",
     });
   });
 
-  // TEST_SCENARIO: a refused card must not leave half an answer in the channel, and the agent must learn why.
-  it("refuses a card that fails its check and posts nothing", async () => {
+  // TEST_SCENARIO: refused blocks must not leave half an answer in the channel, and the agent must learn why.
+  it("refuses blocks that fail the check and posts nothing", async () => {
     const { client, replies } = await mcpHarness();
 
     const res = (await client.callTool({
       name: "reply",
       arguments: {
         text: "Approve?",
-        card: actions({
-          type: "Button",
-          props: { id: "approve", label: "Approve" },
-        }),
+        blocks: withButton({ type: "static_select", options: [] }),
       },
     })) as { content: { text: string }[]; isError?: boolean };
 
     expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain("describe_card_components");
+    expect(res.content[0]!.text).toContain('"static_select" element');
+    expect(res.content[0]!.text).toContain("describe_blocks");
     expect(replies).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A button with no url sends a choice back to the Agent. It
+   * reaches the channel with the Agent's value, which the click hands back,
+   * and with the platform's id, which names the Agent the click goes to.
+   */
+  it("passes a choice button to the channel under the platform's id", async () => {
+    const { client, replies } = await mcpHarness();
+
+    await client.callTool({
+      name: "reply",
+      arguments: {
+        text: "Approve?",
+        blocks: withButton({
+          type: "button",
+          text: { type: "plain_text", text: "Approve" },
+          action_id: "command-menu:0",
+          value: "approve",
+        }),
+      },
+    });
+
+    expect(replies[0]?.card?.blocks[1]).toEqual({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Approve" },
+          action_id: expect.stringMatching(/^agent-button:.+:0$/),
+          value: "approve",
+        },
+      ],
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Models do not know the blocks Slack added in 2026, so the
+   * rules and a reference come on request. The reference must list the layout
+   * and tile blocks, and an example the platform's own check would refuse
+   * must never be handed to an Agent.
+   */
+  it("describes the blocks on request, with examples that pass the check", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    expect(
+      tools.find((t) => t.name === "describe_blocks")?.description,
+    ).toMatch(/reply, post, start_thread and edit_post/);
+    expect(
+      tools.find((t) => t.name === "reply")?.inputSchema.properties,
+    ).toMatchObject({
+      blocks: { description: expect.stringContaining("describe_blocks") },
+    });
+
+    const res = (await client.callTool({
+      name: "describe_blocks",
+      arguments: {},
+    })) as { content: { text: string }[] };
+    const described = JSON.parse(res.content[0]!.text) as {
+      reference: { type: string; example?: ChannelBlock }[];
+      examples: { blocks: ChannelBlock[] }[];
+    };
+
+    expect(described.reference.map((entry) => entry.type)).toEqual(
+      expect.arrayContaining([
+        "layout",
+        "card",
+        "container",
+        "carousel",
+        "table",
+        "data_visualization",
+      ]),
+    );
+    const shown = [
+      ...described.examples.map((example) => example.blocks),
+      ...described.reference.flatMap((entry) =>
+        entry.example ? [[entry.example]] : [],
+      ),
+    ];
+    expect(shown.length).toBeGreaterThanOrEqual(2);
+    for (const blocks of shown)
+      expect(
+        checkChannelBlocks(blocks, {
+          agentId: "agent-1",
+        }),
+      ).toHaveProperty("blocks");
   });
 });
 
@@ -1002,25 +1100,18 @@ describe("outbound MCP tools — artifact links (#5965)", () => {
       arguments: {
         channel: ChannelType.Slack,
         text: "Draft",
-        card: {
-          type: "Card",
-          props: { title: "Draft" },
-          children: [
-            {
-              type: "Actions",
-              props: {},
-              children: [
-                {
-                  type: "LinkButton",
-                  props: {
-                    label: "Open",
-                    url: `platform://artifacts/${PRIVATE_ID}`,
-                  },
-                },
-              ],
-            },
-          ],
-        },
+        blocks: [
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: { type: "plain_text", text: "Open" },
+                url: `platform://artifacts/${PRIVATE_ID}`,
+              },
+            ],
+          },
+        ],
       },
     });
 

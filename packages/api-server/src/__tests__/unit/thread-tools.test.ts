@@ -20,7 +20,7 @@ async function harness(over: Partial<ThreadToolPorts> = {}) {
   const server = new McpServer({ name: "test", version: "1.0.0" });
   registerThreadTools(server, {
     callerSessionId: async () => "s-web",
-    cardOf: async () => ({}),
+    blocksOf: async () => ({}),
     startThread: async (channel, start) => {
       starts.push({ channel, start });
       return {
@@ -94,14 +94,14 @@ describe("start_thread", () => {
   });
 
   it("opens the thread with the card the platform built", async () => {
-    const card = {
-      card: { type: "card" as const, title: "Regions", children: [] },
-      text: "**Regions**",
-    };
-    const checkedFor: (Record<string, unknown> | undefined)[] = [];
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: "Regions" } },
+    ];
+    const card = { blocks, text: "Regions" };
+    const checkedFor: (Record<string, unknown>[] | undefined)[] = [];
     const h = await harness({
-      cardOf: async (tree) => {
-        checkedFor.push(tree);
+      blocksOf: async (sent) => {
+        checkedFor.push(sent);
         return { card };
       },
     });
@@ -110,18 +110,18 @@ describe("start_thread", () => {
       channel: "slack",
       chatId: "C-OTHER",
       text: "Which region?",
-      card: { type: "Card", props: { title: "Regions" } },
+      blocks,
     });
 
     expect(h.starts[0]?.start.card).toEqual(card);
-    expect(checkedFor).toEqual([{ type: "Card", props: { title: "Regions" } }]);
+    expect(checkedFor).toEqual([blocks]);
   });
 
-  // TEST_SCENARIO: a card the platform refuses must not leave a thread behind with only half of what the agent meant to ask.
-  it("starts no thread when the card is refused", async () => {
+  // TEST_SCENARIO: blocks the platform refuses must not leave a thread behind with only half of what the agent meant to ask.
+  it("starts no thread when the blocks are refused", async () => {
     const h = await harness({
-      cardOf: async () => ({
-        error: "The card was not sent: root must be a Card.",
+      blocksOf: async () => ({
+        error: 'The blocks were not sent: the blocks hold an "input" block.',
       }),
     });
 
@@ -129,11 +129,11 @@ describe("start_thread", () => {
       channel: "slack",
       chatId: "C-OTHER",
       text: "Which region?",
-      card: { type: "Text", props: { content: "x" } },
+      blocks: [{ type: "input" }],
     });
 
     expect(res.isError).toBe(true);
-    expect(res.text).toContain("root must be a Card");
+    expect(res.text).toContain('an "input" block');
     expect(h.starts).toEqual([]);
     expect(h.audits).toEqual(["start:failure"]);
   });

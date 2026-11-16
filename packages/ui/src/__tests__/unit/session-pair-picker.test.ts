@@ -618,7 +618,7 @@ describe("the new session panel", () => {
     const modelText = openMenu(node, "Model").textContent ?? "";
     expect(modelText).toContain("Claude");
     expect(modelText).toContain("GLM");
-    expect(modelText).toContain("Other");
+    expect(modelText).toContain("Kimi K2.5");
     expect(modelText.match(/Claude Opus 5\.5/g)).toHaveLength(1);
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
@@ -773,12 +773,12 @@ describe("the new session panel", () => {
     );
   });
 
-  /** TEST_SCENARIO: the Harness menu says what each harness is, so a person picking between six names has a sentence to go on (QA: "Harness" was the first field of every picker with no hint what any of the names means). */
-  it("describes each harness in the harness menu", () => {
+  /** TEST_SCENARIO: the Harness menu lists each harness by icon and name only; a second line of description under each name overlapped the next entry. */
+  it("names each harness in the harness menu without a description", () => {
     const node = mount(picker({ carried: [...carried, claudeCode] }));
-    expect(openMenu(node, "Harness").textContent).toContain(
-      "Anthropic's coding agent",
-    );
+    const menu = openMenu(node, "Harness").textContent;
+    expect(menu).toContain("Claude Code");
+    expect(menu).not.toContain("Anthropic's coding agent");
   });
 
   /** TEST_SCENARIO: the Harness dropdown carries each harness's icon on its option and on the selected value, and its accessible name stays "Harness". */
@@ -1049,6 +1049,73 @@ describe("the new session panel", () => {
         model: "ibm/aws/claude-opus-5-5",
       }),
     );
+  });
+
+  /** TEST_SCENARIO: a harness change keeps only the settings the new harness offers, effort carried by what it is: Claude Code High becomes Pi High and back, Pi's `mode` never lands in Claude Code's tool approval, and each step's pick shows the effort it sends. */
+  it("carries effort across a harness change in both directions", () => {
+    const both = [...carried, claudeCode];
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: { effort: "high" },
+    };
+    const node = mount(picker({ carried: both }));
+    pickMenu(node, "Harness", "Pi");
+    let sent = lastCall(state.chosenModel)[1] as SessionPair;
+    expect(sent).toMatchObject({ harness: "pi" });
+    expect(sent.settings).toEqual({ mode: "high" });
+
+    act(() => root!.unmount());
+    state.chosen = sent;
+    const onPi = mount(picker({ carried: both }));
+    expect(menuTrigger(onPi, "effort")).toBe("High");
+    pickMenu(onPi, "Harness", "Claude Code");
+    sent = lastCall(state.chosenModel)[1] as SessionPair;
+    expect(sent).toMatchObject({ harness: "claude-code" });
+    expect(sent.settings).toEqual({ effort: "high" });
+
+    act(() => root!.unmount());
+    state.chosen = sent;
+    const back = mount(picker({ carried: both }));
+    expect(menuTrigger(back, "effort")).toBe("High");
+  });
+
+  /** TEST_SCENARIO: a session already holding a key another harness left (`mode=high` on Claude Code) drops it on its next pick, any pick, instead of sending it again. */
+  it("drops another harness's key on the next pick", () => {
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: { mode: "high", effort: "high" },
+    };
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    pickEffort(node, "Low");
+    expect((lastCall(state.chosenModel)[1] as SessionPair).settings).toEqual({
+      effort: "low",
+    });
+  });
+
+  /** TEST_SCENARIO: a subagent pick drops another harness's key too (`mode=high` on Claude Code), keeping the settings the harness offers beside the subagent it writes. */
+  it("drops another harness's key on a subagent pick", () => {
+    state.chosen = {
+      harness: "claude-code",
+      provider: "ibm",
+      model: "ibm/aws/claude-opus-5-5",
+      settings: {
+        mode: "high",
+        effort: "high",
+        "platformSubagent.harness": "claude-code",
+        "platformSubagent.model": "ibm/aws/claude-opus-5-5",
+      },
+    };
+    const node = mount(picker({ carried: [...carried, claudeCode] }));
+    pickMenu(node, "Subagent model", "Claude Haiku 5.5");
+    expect((lastCall(state.chosenModel)[1] as SessionPair).settings).toEqual({
+      effort: "high",
+      "platformSubagent.harness": "claude-code",
+      "platformSubagent.model": "ibm/aws/claude-haiku-5-5",
+    });
   });
 
   /** TEST_SCENARIO: no provider at all warns in place of the panel, and an agent that has not reported its harnesses yet shows a loader. */
@@ -1376,7 +1443,7 @@ describe("a config page's picker", () => {
     );
     const card = node.querySelector('[data-testid="session-pair-row-picker"]');
     expect(card).not.toBeNull();
-    expect(card?.textContent).toContain("Claude Opus 5.5 · Low · IBM proxy");
+    expect(card?.textContent).toContain("Claude Opus 5.5 · IBM proxy");
     expect(card?.textContent).toContain("Pi");
     expect(menuTrigger(node, "model")).toBeDefined();
     expect(

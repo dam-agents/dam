@@ -75,7 +75,43 @@ export interface SlackMessageEditedEvent {
 
 export type SlackAck = (response?: { text: string }) => Promise<void>;
 
-export type SlackRespond = (text: string) => Promise<void>;
+export type SlackRespond = (
+  text: string,
+  blocks?: SlackBlock[],
+) => Promise<void>;
+
+export interface SlackClickedPost {
+  ts: string;
+  threadTs?: string;
+  clickedAt: string;
+  label: string;
+}
+
+export interface SlackMessageAction {
+  actionId: string;
+  value: string;
+  ephemeral: boolean;
+  userId: string;
+  channelId: string;
+  channelName?: string;
+  teamId: SlackWorkspace;
+  post?: SlackClickedPost;
+}
+
+export interface SlackMessageReplacement {
+  text: string;
+  blocks: SlackBlock[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Puts new content in place of the message a
+ * clicked button sits in, or removes that message when given null. It goes
+ * through the response URL Slack sends with the click, so it works on an
+ * ephemeral message, which no other call can change.
+ */
+export type SlackReplaceMessage = (
+  message: SlackMessageReplacement | null,
+) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
@@ -107,6 +143,10 @@ export interface SlackGatewayHandlers {
   onMessageEdited: (event: SlackMessageEditedEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+  onMessageAction: (
+    event: SlackMessageAction,
+    replace: SlackReplaceMessage,
+  ) => Promise<void>;
   onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
 }
 

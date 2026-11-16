@@ -2,7 +2,11 @@ import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
-import { buildChannelCard } from "../../modules/channels/infrastructure/channel-card.js";
+import {
+  channelBlocksText,
+  checkChannelBlocks,
+  type ChannelBlock,
+} from "../../modules/channels/domain/channel-blocks.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
@@ -297,7 +301,7 @@ describe("slack outbound — cross-workspace reach", () => {
   it("refuses an empty send — no DM gets opened as a side effect", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     expect(await h.post("", { conversationId: "UTEAMMATE" })).toEqual({
-      error: "nothing to send — pass text, a card or an attachment",
+      error: "nothing to send — pass text, blocks or an attachment",
     });
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
@@ -462,27 +466,40 @@ describe("slack outbound — cross-workspace reach", () => {
   });
 });
 
-function channelCard(tree: Record<string, unknown>) {
-  const built = buildChannelCard(tree);
-  if (!("card" in built)) throw new Error(built.issues.join("; "));
-  return built.card;
+function channelCard(blocks: ChannelBlock[]) {
+  const checked = checkChannelBlocks(blocks, {
+    agentId: "agent-1",
+  });
+  if (!("blocks" in checked)) throw new Error(checked.issues.join("; "));
+  return { blocks: checked.blocks, text: channelBlocksText(checked.blocks) };
 }
 
-const deploys = channelCard({
-  type: "Card",
-  props: { title: "Deploys" },
-  children: [
-    {
-      type: "Fields",
-      props: {},
-      children: [{ type: "Field", props: { label: "Status", value: "green" } }],
-    },
-    {
-      type: "Table",
-      props: { headers: ["Week", "Deploys"], rows: [["W44", 12]] },
-    },
-  ],
-});
+const deploys = channelCard([
+  {
+    type: "layout",
+    label: "Deploys",
+    rows: [
+      {
+        items: [
+          {
+            block: {
+              type: "card",
+              title: { type: "plain_text", text: "Status" },
+              body: { type: "mrkdwn", text: "green" },
+            },
+          },
+          {
+            block: {
+              type: "card",
+              title: { type: "plain_text", text: "Deploys" },
+              body: { type: "mrkdwn", text: "12" },
+            },
+          },
+        ],
+      },
+    ],
+  },
+]);
 
 describe("slack outbound — channel cards", () => {
   it("shows the text, then the card's blocks, then the footer, and notifies with both", async () => {
@@ -494,85 +511,74 @@ describe("slack outbound — channel cards", () => {
     });
 
     const sent = posts.mock.calls[0]![0];
-    const types = (sent.blocks ?? []).map((block) => block.type);
-    expect(sent.blocks?.[0]).toEqual({
-      type: "markdown",
-      text: signed("This week", "**"),
-    });
-    expect(types).toContain("data_table");
-    expect(types.at(-1)).toBe("context");
+    expect(sent.blocks).toEqual([
+      { type: "markdown", text: signed("This week", "**") },
+      ...deploys.blocks,
+      expect.objectContaining({ type: "context" }),
+    ]);
     expect(sent.text).toContain("This week");
     expect(sent.text).toContain("Status");
+    expect(sent.text).toContain("green");
   });
 
   /**
-   * TEST_SCENARIO: Slack refuses blocks it cannot show, such as a table part a
-   * workspace does not have or an image it cannot fetch. The answer must still
-   * arrive, so the card goes out once more as its text form.
+   * TEST_SCENARIO: Slack is the judge of the blocks an Agent wrote. When it
+   * refuses them, nothing posts and the Agent gets Slack's own wording, so it
+   * can fix the blocks. The message is not sent a second time as text.
    */
-  it("posts the card as text when Slack refuses its blocks", async () => {
+  it("returns Slack's wording when Slack refuses the blocks, and posts nothing", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    const post = h.gw.postMessage.bind(h.gw);
-    const sent: Parameters<typeof post>[0][] = [];
+    const sent: unknown[] = [];
     h.gw.postMessage = async (args) => {
       sent.push(args);
-      if (args.blocks?.some((block) => block.type === "data_table"))
-        throw Object.assign(new Error("invalid_blocks"), {
-          data: { error: "invalid_blocks" },
-        });
-      return post(args);
+      throw Object.assign(new Error("An API error occurred: invalid_blocks"), {
+        data: {
+          error: "invalid_blocks",
+          response_metadata: {
+            messages: [
+              "[ERROR] must provide a string [json-pointer:/blocks/1/label]",
+            ],
+          },
+        },
+      });
     };
 
-    expect(await h.post("This week", { card: deploys })).toMatchObject({
-      ok: true,
-    });
-
-    expect(sent).toHaveLength(2);
-    expect(sent[1]!.blocks).toEqual([
-      {
-        type: "markdown",
-        text: signed(`This week\n\n${deploys.text}`, "**"),
-      },
-      expect.objectContaining({ type: "context" }),
-    ]);
-  });
-
-  // TEST_SCENARIO: a card whose only text is blank renders no Slack block, and with no text of its own the post would show the Agent Footer alone.
-  it("refuses a post that would show nothing but its footer", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-    h.gw.setGrantedScopes(["chat:write", "chat:write.customize"]);
-    const blank = channelCard({
-      type: "Card",
-      props: {},
-      children: [{ type: "Text", props: { content: " " } }],
-    });
-
-    const result = await h.post("", { card: blank });
+    const result = await h.post("This week", { card: deploys });
 
     expect(result).toMatchObject({
-      error: expect.stringContaining("shows nothing"),
+      error: expect.stringContaining(
+        "Slack refused the blocks (invalid_blocks): [ERROR] must provide a string [json-pointer:/blocks/1/label]",
+      ),
+      refused: "invalid_blocks",
     });
+    expect(sent).toHaveLength(1);
     expect(h.messages()).toEqual([]);
   });
 
-  it("refuses a card too long for one Slack message before anything posts", async () => {
+  /**
+   * TEST_SCENARIO: Slack counts the blocks inside a container toward its
+   * limit of 50 per message. A container of 49 blocks, the text and the
+   * footer make 52, so the post is refused with that length before it is
+   * sent.
+   */
+  it("refuses blocks too many for one Slack message, nested ones counted", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    const long = channelCard({
-      type: "Card",
-      props: { title: "Every check" },
-      children: Array.from({ length: 50 }, (_, i) => ({
-        type: "Text",
-        props: { content: `Check ${i + 1} passed` },
-      })),
-    });
+    const long = channelCard([
+      {
+        type: "container",
+        title: { type: "plain_text", text: "Every check" },
+        child_blocks: Array.from({ length: 49 }, (_, i) => ({
+          type: "section",
+          text: { type: "mrkdwn", text: `Check ${i + 1} passed` },
+        })),
+      },
+    ]);
 
     const result = await h.post("Checks", { card: long });
 
-    const blocks = Number(
-      ("error" in result && result.error.match(/is (\d+) Slack blocks/)?.[1]) ||
-        0,
-    );
-    expect(blocks).toBeGreaterThanOrEqual(52);
+    expect(result).toMatchObject({
+      error: expect.stringContaining("is 52 Slack blocks long"),
+    });
     expect(h.messages()).toEqual([]);
   });
 });
@@ -925,22 +931,18 @@ describe("slack outbound — a private artifact's link", () => {
    */
   it("applies the rule to a card's links", async () => {
     const card = {
-      card: {
-        type: "card" as const,
-        title: "Draft",
-        children: [
-          {
-            type: "actions" as const,
-            children: [
-              {
-                type: "link-button" as const,
-                label: "Open",
-                url: `platform://artifacts/${PRIVATE}`,
-              },
-            ],
-          },
-        ],
-      },
+      blocks: [
+        {
+          type: "actions",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Open" },
+              url: `platform://artifacts/${PRIVATE}`,
+            },
+          ],
+        },
+      ],
       text: "Draft",
     };
     const channel = harness({
@@ -983,38 +985,6 @@ describe("slack outbound — a private artifact's link", () => {
         text: signed(`Draft: ${APP_URL}`),
       },
     ]);
-  });
-
-  /**
-   * TEST_SCENARIO: A card is checked against its limits once more after its
-   * links are rewritten, because a rewritten link can be longer than the one
-   * the agent wrote: a title that fitted before can overflow Slack's, and a
-   * card Slack would cut is refused instead, with nothing posted.
-   */
-  it("refuses a card its rewritten links push past the card limits", async () => {
-    const id = PRIVATE;
-    const link = `platform://artifacts/${id}`;
-    const title = `${"x".repeat(145 - link.length)}${link}`;
-    const card = {
-      card: {
-        type: "card" as const,
-        title,
-        children: [{ type: "text" as const, content: "Draft" }],
-      },
-      text: "Draft",
-    };
-    expect(title).toHaveLength(145);
-
-    const h = harness({
-      boundChannelId: OWNER_DM,
-      channels: [],
-      artifacts,
-      linkArtifacts: artifactLinks(artifacts, "https://dam.example.com"),
-    });
-    expect(await h.post("Draft", { card })).toMatchObject({
-      error: expect.stringContaining("the card title holds"),
-    });
-    expect(h.messages()).toEqual([]);
   });
 
   /**

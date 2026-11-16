@@ -76,7 +76,9 @@ describe("artifact MCP tools — sharing with named people (#6284)", () => {
     const tool = tools.find((t) => t.name === "set_artifact_sharing");
     expect(tool?.description).toContain("private (only the user");
     expect(tool?.description).toContain("restricted (only the user and");
-    expect(tool?.description).toContain("public (anyone with the link)");
+    expect(tool?.description).toContain(
+      "public (anyone with the link, with no sign-in)",
+    );
     expect(tool?.description).toContain(
       "Change sharing only when the user asks",
     );

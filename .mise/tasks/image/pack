@@ -61,7 +61,7 @@ try:
         if not (base / "index.json").is_file():
             tmp = Path(f"{base}.{os.getpid()}")
             # A registry can cut a layer download short ("error writing layer:
-            # unexpected EOF" from registry.access.redhat.com on a merge group), so
+            # unexpected EOF" from registry.access.redhat.com in CI), so
             # a failed pull is retried, each time into an empty layout, as in
             # image:pull.
             for attempt in range(1, 4):
