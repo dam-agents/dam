@@ -1,6 +1,6 @@
 # GitHub Connections
 
-Last verified: 2026-11-10
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -48,7 +48,8 @@ A sign-in's Connection injects a scoped token GitHub derives from the user token
 A scope GitHub refuses parks that one Connection as expired without costing the sign-in or its siblings anything, and never falls back to a wider token.
 A narrowed token still never does more than the user could.
 An installation's Connection mints its own installation token with the installation's key, and the refresh loop renews it like any minted token; a new key is given to the installation only, proven the same way, and every Connection made from it mints again with it.
-A sign-in lists where its app is installed — each organization or user account, whether the install covers all its repositories, and whether it is suspended — read with its own user token when its row is shown and again when the user comes back to the page, never stored on the Connection, so an install made on GitHub shows up without changing it, and a sign-in whose app is installed nowhere says so.
+When the refresh loop finds that GitHub refuses the installation's key, it marks the installation expired as well, so the installation asks for a new key and the Connections made from it read paused until it gets one; a key replaced while that mint was out is never marked, and a refused scope or a removed installation fails only the one Connection.
+A sign-in lists where its app is installed — each organization or user account, whether the install covers all its repositories, and whether it is suspended — read with its own user token when its card is shown and again when the user comes back to the page, never stored on the Connection, so an install made on GitHub shows up without changing it, and a sign-in whose app is installed nowhere says so.
 Re-authentication and credential rotation act on the parent; removing the parent removes every Connection made from it and delivers to every Agent that held one.
 Connections that predate the split each became a parent plus one Connection that kept its identity, name, grants and Secret, which it now shares with the parent; one never narrowed says full access rather than being narrowed silently, so no Agent lost access.
 
@@ -71,7 +72,7 @@ A token or an app installation lists the offered hosts when there are two or mor
 With the feature off, one host keeps the single-host form, where that host and its app are presets.
 The install can also retire a host its users have moved away from.
 No new Connection is made on a retired host, by sign-in, token or installation, and an existing one stays, reads disconnected with the retired host named, and cannot be authorized there.
-A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host; the move is written before the authorization, so a user who stops there re-authenticates from the row.
+A GitHub Enterprise sign-in moves to another offered host: the sign-in and every Connection made from it are rewritten to inject on the new host only, keep their names, grants and scopes, drop the tokens of the old host, since a token is never assumed valid on another host, and read expired until the user authorizes the sign-in on the new host; the move is written before the authorization, so a user who stops there signs in again from the sign-in's card.
 The sign-in then uses the app the install registered on the new host, even where it had a user's own app before.
 A narrowed Connection keeps a scope that names an account of the old host, which GitHub refuses on the new one, so after the authorization it reads expired until its scope is picked again; a full-access one works at once.
 Tokens and installations do not move: they are made again on the new host.

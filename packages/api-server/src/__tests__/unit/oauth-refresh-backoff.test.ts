@@ -154,6 +154,11 @@ function makeLoop(opts?: {
     }
   };
 
+  const postgresJsWriteResult = (hit: readonly { id: string }[]) =>
+    Object.assign(Promise.resolve([]), {
+      returning: async () => hit.map(({ id }) => ({ id })),
+    });
+
   const db = {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
       fn({ execute: async () => [] }),
@@ -172,7 +177,7 @@ function makeLoop(opts?: {
         where: () => {
           const kind = fragmentPath(patch.auth);
           if (kind === "marker" && opts?.markerWriteMatches === false) {
-            return Promise.resolve({ rowCount: 0 });
+            return postgresJsWriteResult([]);
           }
           for (const r of rows) {
             r.auth = applyAuthWrite(r.auth as MarkableAuth, patch.auth);
@@ -180,7 +185,7 @@ function makeLoop(opts?: {
           if (kind !== "backoff") {
             written.push((rows[0]?.auth ?? patch.auth) as ConnectionAuthConfig);
           }
-          return Promise.resolve({ rowCount: rows.length });
+          return postgresJsWriteResult(rows);
         },
       }),
     }),
