@@ -327,6 +327,35 @@ describe("a broken GitHub card", RENDER_TIMEOUT, () => {
     expect(byTestId(`catalog-fix-${SIGN_IN.id}`)!.textContent).toBe("Sign in");
   });
 
+  // TEST_SCENARIO: a broken sign-in with no connection cannot make one until it is fixed, so its grey row does not tell the user to make one.
+  it("does not ask for a connection from a broken empty sign-in", () => {
+    render([{ ...SIGN_IN, status: "expired" as const }]);
+
+    expect(byTestId(`connection-parent-empty-${SIGN_IN.id}`)!.textContent).toBe(
+      "No agent can use this sign-in yet.",
+    );
+  });
+
+  // TEST_SCENARIO: a credential that is still active but failed its last check says Check failed, on the card's header and on a connection's row.
+  it("says Check failed on a header and on a row", () => {
+    const failed = { status: "failed" as const, at: "2026-01-01T00:00:00Z" };
+    render([
+      { ...SIGN_IN, check: failed },
+      { ...NARROW, check: failed },
+    ]);
+
+    expect(
+      byTestId(`connection-parent-${SIGN_IN.id}`)!
+        .querySelector("header")!
+        .querySelector(
+          `[data-testid="catalog-connection-check-${SIGN_IN.id}"]`,
+        )!.textContent,
+    ).toBe("Check failed");
+    expect(byTestId(`catalog-connection-check-${NARROW.id}`)!.textContent).toBe(
+      "Check failed",
+    );
+  });
+
   // TEST_SCENARIO: GitHub refused one connection while its sign-in still works: the row says Expired and that GitHub refused it, and its fix is Choose access again, which opens the access dialog.
   it("offers Choose access again on a refused connection", () => {
     let chosen = 0;

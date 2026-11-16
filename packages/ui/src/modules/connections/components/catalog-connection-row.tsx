@@ -76,11 +76,8 @@ export function CatalogConnectionRow({
   const paused = inCard?.paused;
   const refused =
     inCard !== undefined && !paused && connection.status === "expired";
-  const subtitle =
-    label &&
-    [label.subtitle, paused ?? (refused ? REFUSED_ACCESS : undefined)]
-      .filter(Boolean)
-      .join(" · ");
+  const note = paused ?? (refused ? REFUSED_ACCESS : undefined);
+  const subtitle = [label?.subtitle, note].filter(Boolean).join(" · ");
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
@@ -143,7 +140,7 @@ export function CatalogConnectionRow({
             />
           )}
         </div>
-        {subtitle ? (
+        {label ? (
           <p
             className="mt-0.5 break-words text-xs text-muted-foreground"
             title={subtitle}
@@ -152,7 +149,17 @@ export function CatalogConnectionRow({
             {subtitle}
           </p>
         ) : (
-          <ConnectionRowDetail connection={connection} />
+          <>
+            <ConnectionRowDetail connection={connection} />
+            {note && (
+              <p
+                className="mt-0.5 break-words text-xs text-muted-foreground"
+                data-testid={`catalog-connection-note-${connection.id}`}
+              >
+                {note}
+              </p>
+            )}
+          </>
         )}
         {!paused && <RetiredHostNote connection={connection} />}
       </div>
@@ -210,13 +217,31 @@ function CardStatusMarks({
   return (
     <>
       <FullAccessMark connection={connection} tone="warning" />
-      {!paused && connection.status === "expired" && (
+      {!paused && connection.status !== "active" && (
         <WarningMark
-          label={STATUS_PRESENTATION.expired.label}
-          testId={`catalog-connection-expired-${connection.id}`}
+          label={STATUS_PRESENTATION[connection.status].label}
+          testId={`catalog-connection-${connection.status}-${connection.id}`}
         />
       )}
+      {!paused && <CheckFailedMark connection={connection} />}
     </>
+  );
+}
+
+export function CheckFailedMark({
+  connection,
+}: {
+  connection: ConnectionView;
+}) {
+  if (connection.status !== "active" || connection.check?.status !== "failed")
+    return null;
+  return (
+    <span title={connection.check.reason} className="inline-flex shrink-0">
+      <WarningMark
+        label="Check failed"
+        testId={`catalog-connection-check-${connection.id}`}
+      />
+    </span>
   );
 }
 

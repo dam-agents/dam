@@ -9,7 +9,11 @@ import {
   parentRepair,
   signInAppLabel,
 } from "../lib/github-card.js";
-import { CatalogConnectionRow, WarningMark } from "./catalog-connection-row.js";
+import {
+  CatalogConnectionRow,
+  CheckFailedMark,
+  WarningMark,
+} from "./catalog-connection-row.js";
 import { type ConnectionRowControls, usedByOf } from "./connection-row.js";
 import { ConnectionRowMenu } from "./connection-row-actions.js";
 import { GithubAppInstallations } from "./github-app-installations.js";
@@ -74,6 +78,7 @@ export function ParentConnectionBlock({
                   testId={`connection-parent-status-${parent.id}`}
                 />
               )}
+              <CheckFailedMark connection={parent} />
             </div>
             <div
               className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
@@ -144,13 +149,19 @@ export function ParentConnectionBlock({
           ))}
         </div>
       ) : (
-        <NoChildrenRow parent={parent} />
+        <NoChildrenRow parent={parent} broken={repair !== null} />
       )}
     </div>
   );
 }
 
-function NoChildrenRow({ parent }: { parent: ConnectionView }) {
+function NoChildrenRow({
+  parent,
+  broken,
+}: {
+  parent: ConnectionView;
+  broken: boolean;
+}) {
   const noun =
     githubCredentialKind(parent) === "sign-in" ? "sign-in" : "installation";
   return (
@@ -160,8 +171,8 @@ function NoChildrenRow({ parent }: { parent: ConnectionView }) {
     >
       <Information size={12} aria-hidden className="mt-0.5 shrink-0" />
       <span>
-        No agent can use this {noun} yet. Make a connection from it and choose
-        what it reaches.
+        No agent can use this {noun} yet.
+        {!broken && " Make a connection from it and choose what it reaches."}
       </span>
     </p>
   );
