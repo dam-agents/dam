@@ -108,6 +108,7 @@ export {
   createModelDiscovery,
   forHarness,
   harnessCatalogOf,
+  internalModel,
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
