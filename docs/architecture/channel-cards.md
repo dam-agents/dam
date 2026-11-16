@@ -48,6 +48,7 @@ A **choice button** sends a choice back: a click on it reaches the agent.
   The turn names the button, the value the agent set on it, and the post; who clicked is the turn's sender.
 - **It goes where a message in that thread goes.** A click on a post inside a turn's thread reaches that thread's session; a click on the opening post of an owned thread reaches the Session that owns it ([slack-threads](slack-threads.md)); a click on a plain post, which is one-way, opens a fresh session with the thread's history ([threading model](channel-turns.md#threading-model)).
   So an agent that wants the answer in the session that asked uses `start_thread`, as for a typed answer.
+  A click belongs to the Agent whose post it is on: inside a thread another Agent's Session owns, it goes to the Agent that made the post and not to the thread's owner.
 - **Anyone who sees the post may click.** A click resolves no more identity than a message does; the agent decides whose click counts.
 - **The Agent comes from the button, not from the post.** The platform's identifier on a choice button names the Agent, and the platform writes a different one on a link button.
   So a click is delivered only for a choice button of an Agent's own post, and never on the strength of what a post's content says.
@@ -55,6 +56,8 @@ A **choice button** sends a choice back: a click on it reaches the agent.
 - **A post takes one answer.** Once a click is handed to the Agent, the platform removes the post's choice buttons, keeps its link buttons, and adds a line that names who chose what, above the Agent Footer.
   Everyone in the conversation then sees the answer, and a later click cannot wake the Agent again.
   A click on a post that holds no choice button any more is not passed on, and the person is told the post was already answered; two clicks that race are settled the same way, the first one wins.
+  The post is the record of an answer, so a click on a post Slack does not hand back is not passed on either, and the person is asked to click again.
+  When Slack refuses the change to the post, the worker remembers the answer for a while, so the post still takes one.
   The post changes when the click is handed over, not when the turn ends: a turn that then cannot start, such as one for an Agent at its spend limit, leaves the post answered, and the person gets that gate's own notice.
   An agent that wants several answers asks each person, posts again, or puts new buttons on the post with an edit.
 - **Where a click cannot reach.** A click on a post in a conversation the Agent is no longer connected to starts no turn, and the person who clicked is told privately.

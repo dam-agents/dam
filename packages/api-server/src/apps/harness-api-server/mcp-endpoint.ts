@@ -366,7 +366,7 @@ export function createMcpSession(
   const blocksOf = async (
     blocks: Record<string, unknown>[] | undefined,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
-    if (!blocks) return {};
+    if (!blocks || blocks.length === 0) return {};
     const checked = checkChannelBlocks(blocks, {
       agentId,
     });

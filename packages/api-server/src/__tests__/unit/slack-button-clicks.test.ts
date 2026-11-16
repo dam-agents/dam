@@ -58,6 +58,8 @@ const FOOTER = agentContextBlock({
   label: "Sent by Asker",
 });
 
+const QUESTION = { type: "markdown", text: "Deploy 2.4?" };
+
 configureLogger({ level: "error", write: () => {} });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -77,6 +79,12 @@ function harness() {
   const gw = createFakeSlackGateway();
   gw.setChannels([{ id: HOME, name: "home", botIsMember: true }]);
   gw.setThreadedHistory([]);
+  gw.setMessage(HOME, {
+    ts: POST_TS,
+    text: "Deploy 2.4?\n\nApprove / Reject",
+    user: "U-BOT",
+    blocks: [QUESTION, CHOICES, FOOTER],
+  });
   const prompts: Prompt[] = [];
   const created: AcpSessionInfo[] = [];
 
@@ -239,13 +247,6 @@ describe("a click on a choice button of an agent's post", () => {
   it("shows the choice on the post and takes no second answer", async () => {
     const h = harness();
     await h.worker.start(ASKER);
-    const question = { type: "markdown", text: "Deploy 2.4?" };
-    h.gw.setMessage(HOME, {
-      ts: POST_TS,
-      text: "Deploy 2.4?\n\nApprove / Reject",
-      user: "U-BOT",
-      blocks: [question, CHOICES, FOOTER],
-    });
 
     await h.click();
 
@@ -255,7 +256,7 @@ describe("a click on a choice button of an agent's post", () => {
       ts: POST_TS,
       text: "Deploy 2.4?\n\nApprove / Reject\n<@U-PERSON> chose: Approve",
       blocks: [
-        question,
+        QUESTION,
         { type: "actions", elements: [CHOICES.elements[2]] },
         {
           type: "context",
@@ -274,6 +275,26 @@ describe("a click on a choice button of an agent's post", () => {
     expect(h.gw.readOutbound().at(-1)).toMatchObject({
       channel: HOME,
       text: expect.stringContaining("already answered"),
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: The post itself is the record of an answer, so a click on
+   * a post Slack does not hand back cannot be judged. It is not passed on,
+   * or a post could take any number of answers; the person is asked to click
+   * again.
+   */
+  it("passes nothing on when the post cannot be read", async () => {
+    const h = harness();
+    await h.worker.start(ASKER);
+
+    await h.click({ postTs: "1700000999.000000" });
+
+    for (let i = 0; i < 20; i++) await tick();
+    expect(h.prompts).toEqual([]);
+    expect(h.gw.readOutbound().at(-1)).toMatchObject({
+      channel: HOME,
+      text: expect.stringContaining("Couldn't read this post"),
     });
   });
 

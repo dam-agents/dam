@@ -1,3 +1,5 @@
+import { match } from "ts-pattern";
+
 export type ChannelBlock = { type: string } & Record<string, unknown>;
 
 export interface ChannelLinkButton {
@@ -67,7 +69,9 @@ const UNREAD_KEYS = new Set([
   "accessibility_label",
 ]);
 
-const MRKDWN_LINK = /<((?:https?|mailto):[^>|\s]+)\|([^>]+)>/g;
+const SLACK_LINK = /<([a-z][a-z0-9+.-]*:[^>|\s]+)\|([^>]+)>/gi;
+
+const CARD_CONTENT = new Set(["hero_image", "title", "body", "actions"]);
 
 type Json = Record<string, unknown>;
 
@@ -216,7 +220,7 @@ function chartLines(block: Json): string[] {
 
 function buttonText(node: Json): string {
   const label = textOf(node.text);
-  return isLinkButton(node) ? `[${label}](${String(node.url)})` : label;
+  return isLinkButton(node) ? `<${String(node.url)}|${label}>` : label;
 }
 
 function listLines(items: readonly unknown[]): string[] {
@@ -264,9 +268,19 @@ function lines(node: unknown): string[] {
   }
 }
 
-export function channelBlocksText(blocks: readonly ChannelBlock[]): string {
+export function channelBlocksText(
+  blocks: readonly ChannelBlock[],
+  links: "markdown" | "slack" = "markdown",
+): string {
+  const shown = match(links)
+    .with(
+      "markdown",
+      () => (line: string) => line.replace(SLACK_LINK, "[$2]($1)"),
+    )
+    .with("slack", () => (line: string) => line)
+    .exhaustive();
   return lines(blocks)
-    .map((line) => line.replace(MRKDWN_LINK, "[$2]($1)").trim())
+    .map((line) => shown(line).trim())
     .filter(Boolean)
     .join("\n");
 }
@@ -311,7 +325,7 @@ function withoutChoiceButtons(node: unknown): unknown {
   if (Array.isArray(node))
     return node.map(withoutChoiceButtons).filter((item) => item !== REMOVED);
   if (!isRecord(node)) return node;
-  if (isChoiceButton(node)) return REMOVED;
+  if (isButton(node) && !isLinkButton(node)) return REMOVED;
   const kept: [string, unknown][] = [];
   for (const [key, value] of Object.entries(node)) {
     const next = withoutChoiceButtons(value);
@@ -327,7 +341,11 @@ function withoutChoiceButtons(node: unknown): unknown {
     if (emptied && EMPTIED_REMOVES_OWNER.has(key)) return REMOVED;
     if (!emptied) kept.push([key, next]);
   }
-  return Object.fromEntries(kept);
+  const lostItsActions =
+    node.type === "card" &&
+    "actions" in node &&
+    !kept.some(([key]) => CARD_CONTENT.has(key));
+  return lostItsActions ? REMOVED : Object.fromEntries(kept);
 }
 
 export function withChoiceMade(

@@ -322,6 +322,42 @@ describe("channelBlocksText", () => {
   });
 
   /**
+   * TEST_SCENARIO: Slack reads the `text` of a message as its own markup, in
+   * which a link is `<url|label>`. The text form for that field keeps the
+   * links as Slack writes them, so a notification shows a link and not
+   * Markdown source, and the history reader can match the text against the
+   * blocks.
+   */
+  it("keeps links in Slack's form when asked", () => {
+    expect(
+      channelBlocksText(
+        [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "See <https://example.com/b|build 7>",
+            },
+          },
+          {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                text: { type: "plain_text", text: "Open the PR" },
+                url: "https://example.com/pr/1",
+              },
+            ],
+          },
+        ],
+        "slack",
+      ),
+    ).toBe(
+      "See <https://example.com/b|build 7>\n<https://example.com/pr/1|Open the PR>",
+    );
+  });
+
+  /**
    * TEST_SCENARIO: A block type the platform does not know still gives its
    * text objects to the text form, so nothing an Agent posted is lost from
    * the history.

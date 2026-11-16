@@ -199,6 +199,7 @@ import { slackBlocksRefusal } from "./slack-refused-blocks.js";
 import {
   agentButtonAgent,
   channelBlockChoiceButtons,
+  channelBlocksText,
   countChannelBlocks,
   withChoiceMade,
   type ChannelBlock,
@@ -1433,6 +1434,8 @@ const CONVERSATION_LABEL_TTL_MS = 5 * 60_000;
 const PENDING_POST_DELETE_TTL_MS = 15 * 60_000;
 
 const SLACK_MAX_BLOCKS = 50;
+
+const ANSWERED_POST_TTL_MS = 60 * 60_000;
 
 const FILE_SHARE_TS_ATTEMPTS = 10;
 
@@ -2967,11 +2970,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     footer: AgentFooter,
     sign: (text: string, bold: "*" | "**") => string,
   ): AgentPost {
-    const withCard = [text, card?.text ?? ""]
-      .filter((part) => part.trim())
-      .join("\n\n");
+    const beside = (cardText: string) =>
+      [text, cardText].filter((part) => part.trim()).join("\n\n");
+    const withCard = beside(card?.text ?? "");
     return {
-      text: sign(withCard, "*"),
+      text: sign(
+        beside(card ? channelBlocksText(card.blocks, "slack") : ""),
+        "*",
+      ),
       cardBlocks: card?.blocks,
       blocks: renderAssistantBlocks(footer, sign(text, "**"), card?.blocks),
       replyText: withCard,
@@ -3198,7 +3204,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const staged = await stageFile(gw, target.teamId, attachment);
     if ("error" in staged)
       return { uploadError: staged.error, ...(await posted([])) };
-    const message = await posted([staged.reserved.fileId]);
+    const message = await posted([staged.reserved.fileId]).catch(
+      async (err: unknown) => {
+        await staged.bytesSent;
+        await dropFiles(gw, target.teamId, [staged.reserved.fileId]);
+        throw err;
+      },
+    );
     const bytesError = await staged.bytesSent;
     if (bytesError !== null) return { uploadError: bytesError, ...message };
     try {
@@ -5257,9 +5269,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
    * is handed to the Agent, the post loses its choice buttons and names who
    * chose what, and a click on a post that holds no choice button any more
    * is not passed on. Two people can click before the post changes, so a
-   * post being answered is also held in process until its update is done.
+   * post being answered is also held in process until its update is done,
+   * and for a while longer when the update fails, so it still takes one
+   * answer.
    */
-  const answeringPosts = new Set<string>();
+  const answeredPosts = createTtlMap<string, true>({
+    ttlMs: ANSWERED_POST_TTL_MS,
+  });
 
   async function handleAgentButtonClick(
     event: SlackMessageAction,
@@ -5269,16 +5285,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!post || !gateway) return;
     const gw = gateway;
     const key = messageKey(event.channelId, post.ts);
-    const alreadyAnswered = () =>
+    const tell = (text: string) =>
       gw.postEphemeral({
         channel: event.channelId,
         user: event.userId,
         teamId: event.teamId,
         ...(post.threadTs ? { threadTs: post.threadTs } : {}),
-        text: "This was already answered, so your click was not passed on.",
+        text,
       });
-    if (answeringPosts.has(key)) return alreadyAnswered();
-    answeringPosts.add(key);
+    const alreadyAnswered = () =>
+      tell("This was already answered, so your click was not passed on.");
+    if (answeredPosts.get(key)) return alreadyAnswered();
+    answeredPosts.set(key, true);
     let delivered = false;
     try {
       const current = await gw
@@ -5288,24 +5306,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(post.threadTs ? { threadTs: post.threadTs } : {}),
           teamId: event.teamId,
         })
-        .catch(() => null);
-      const blocks = (current?.blocks ?? []) as ChannelBlock[];
-      if (current && channelBlockChoiceButtons(blocks).length === 0)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            { channelId: event.channelId, error: formatError(err) },
+            "slack.button_click.post_unread",
+          );
+          return null;
+        });
+      if (!current)
+        return await tell(
+          "Couldn't read this post from Slack, so your click was not passed on. Click again in a moment.",
+        );
+      const blocks = (current.blocks ?? []) as ChannelBlock[];
+      if (channelBlockChoiceButtons(blocks).length === 0)
         return await alreadyAnswered();
       const showChoice = async () => {
-        if (!current) return;
-        const choice = `<@${event.userId}> chose: ${post.label}`;
+        const choice = `<@${event.userId}> chose: ${escapeMrkdwn(post.label)}`;
+        const answered = withChoiceMade(blocks, choice);
         await gw.updateMessage({
           channel: event.channelId,
           ts: post.ts,
           teamId: event.teamId,
           text: [current.text ?? "", choice].filter(Boolean).join("\n"),
-          blocks: withChoiceMade(blocks, choice),
+          blocks:
+            countChannelBlocks(answered) > SLACK_MAX_BLOCKS
+              ? answered.filter((block) => block !== answered.at(-2))
+              : answered,
           metadata: agentPostMetadata(
             filesPostedApart(current),
             madeByAgent(current),
           ),
         });
+        answeredPosts.delete(key);
       };
       const value = event.value ? ` Its value is "${event.value}".` : "";
       await handleInbound(
@@ -5315,7 +5347,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           channel: event.channelId,
           ts: post.clickedAt,
           threadTs: post.threadTs ?? post.ts,
-          text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message.`,
+          text: `[button click] The button "${post.label}" on your post (ts ${post.ts}) was clicked.${value} This is a click, not a typed message, so it has no message of its own: to react, name your post's ts.`,
           teamId: event.teamId,
         },
         {
@@ -5323,21 +5355,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           click: {
             instanceName,
             onDelivered: () => {
+              if (delivered) return;
               delivered = true;
-              void showChoice()
-                .catch((err: unknown) =>
-                  getLogger().warn(
-                    { channelId: event.channelId, error: formatError(err) },
-                    "slack.button_click.update_failed",
-                  ),
-                )
-                .finally(() => answeringPosts.delete(key));
+              void showChoice().catch((err: unknown) =>
+                getLogger().warn(
+                  { channelId: event.channelId, error: formatError(err) },
+                  "slack.button_click.update_failed",
+                ),
+              );
             },
           },
         },
       );
     } finally {
-      if (!delivered) answeringPosts.delete(key);
+      if (!delivered) answeredPosts.delete(key);
     }
   }
 
@@ -7050,7 +7081,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   type OwnedRouting =
-    { owner: null } | { owner: string; dropped: boolean; rateChecked: boolean };
+    | { owner: null }
+    | {
+        owner: string;
+        dropped: boolean;
+        rateChecked: boolean;
+        queued?: boolean;
+      };
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: keep only the owned messages whose own
@@ -7090,6 +7127,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function routeOwnedThreadMessage(
     event: SlackMentionEvent,
     reroute: () => Promise<void>,
+    clickedAgent?: string,
   ): Promise<OwnedRouting> {
     if (!event.threadTs || !gateway) return { owner: null };
     let owned: SlackOwnedThread | null;
@@ -7103,6 +7141,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return { owner: null };
     }
     if (!owned) return { owner: null };
+    if (clickedAgent !== undefined && owned.agentId !== clickedAgent)
+      return { owner: null };
     const connected = await channelRegistry
       .resolveSlackChannelsByInstance(owned.agentId)
       .catch(() => []);
@@ -7174,7 +7214,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       teamId: owned.teamId,
       reroute,
     });
-    return { owner: agentId, dropped: false, rateChecked: true };
+    return { owner: agentId, dropped: false, rateChecked: true, queued: true };
   }
 
   async function tipSlashCommand(event: SlackMentionEvent, user: string) {
@@ -7348,8 +7388,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     const owned = rerouted
       ? { owner: null }
-      : await routeOwnedThreadMessage(event, () =>
-          handleInbound(signedEvent, opts, true),
+      : await routeOwnedThreadMessage(
+          event,
+          () => handleInbound(signedEvent, opts, true),
+          opts.click?.instanceName,
         );
     if (owned.owner !== null && owned.dropped) return;
     if (await isIgnoredApp(sender, event.channel)) return;
@@ -7397,7 +7439,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       owned.owner !== null &&
       (!routed?.target || routed.target.instanceName === owned.owner)
     ) {
-      opts.click?.onDelivered?.();
+      if (owned.queued) opts.click?.onDelivered?.();
       return;
     }
     if (!routed && opts.click) {
