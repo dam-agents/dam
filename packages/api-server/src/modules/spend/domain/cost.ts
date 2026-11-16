@@ -1,5 +1,11 @@
 import { match } from "ts-pattern";
-import type { CallPrice, PriceRow, TierPrices, TokenPrices } from "./prices.js";
+import type {
+  CallPrice,
+  PriceRow,
+  PriceStep,
+  TierPrices,
+  TokenPrices,
+} from "./prices.js";
 import { promptTokens, type NormalizedUsage } from "./usage.js";
 
 const MILLION = 1_000_000n;
@@ -67,9 +73,9 @@ function rowCostMicros(row: PriceRow, usage: NormalizedUsage): number {
     BigInt(usage.uncachedInputTokens) * BigInt(rates.input) +
     BigInt(usage.outputTokens) * BigInt(rates.output) +
     BigInt(usage.cacheReadTokens) * BigInt(rates.cacheRead) +
-    BigInt(usage.cacheWrite5mTokens) * BigInt(rates.cacheWrite5m) +
-    BigInt(usage.cacheWrite1hTokens + usage.cacheWriteUnsplitTokens) *
-      BigInt(rates.cacheWrite1h);
+    BigInt(usage.cacheWrite5mTokens + usage.cacheWriteUnsplitTokens) *
+      BigInt(rates.cacheWrite5m) +
+    BigInt(usage.cacheWrite1hTokens) * BigInt(rates.cacheWrite1h);
   const factor =
     scaledFactor(speedFactor(row, usage.speed)) *
     scaledFactor(geoFactor(row, usage.inferenceGeo));
@@ -89,12 +95,16 @@ interface ResolvedRates {
 
 function resolveRates(row: PriceRow, usage: NormalizedUsage): ResolvedRates {
   const tier = tierPrices(row, usage.serviceTier);
-  const above =
-    row.threshold !== undefined &&
-    promptTokens(usage) > row.threshold.promptTokens;
+  const prompt = promptTokens(usage);
+  const passed = [...(row.thresholds ?? []), ...(tier?.thresholds ?? [])]
+    .map((step) => step.promptTokens)
+    .filter((tokens) => prompt > tokens);
+  const highestFirst = [...new Set(passed)].sort((a, b) => b - a);
   const layers: readonly (TokenPrices | undefined)[] = [
-    above ? tier?.aboveThreshold : undefined,
-    above ? row.threshold?.prices : undefined,
+    ...highestFirst.flatMap((tokens) => [
+      stepPrices(tier?.thresholds, tokens),
+      stepPrices(row.thresholds, tokens),
+    ]),
     tier?.prices,
     row.prices,
   ];
@@ -109,6 +119,13 @@ function resolveRates(row: PriceRow, usage: NormalizedUsage): ResolvedRates {
     cacheWrite5m,
     cacheWrite1h: pick("cacheWrite1h") ?? cacheWrite5m,
   };
+}
+
+function stepPrices(
+  steps: readonly PriceStep[] | undefined,
+  promptTokens: number,
+): TokenPrices | undefined {
+  return steps?.find((step) => step.promptTokens === promptTokens)?.prices;
 }
 
 function tierPrices(

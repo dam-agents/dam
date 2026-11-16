@@ -1,3 +1,4 @@
+import type { Meter } from "@opentelemetry/api";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { Subscription } from "rxjs";
@@ -12,6 +13,7 @@ import {
   type OperatorPriceInput,
 } from "./infrastructure/operator-prices.js";
 import { createLastKnownNames } from "./infrastructure/last-known-names.js";
+import { createOtelPriceMetrics } from "./infrastructure/price-metrics.js";
 import { createSpendLedger } from "./infrastructure/spend-ledger.js";
 import { createSpendLimits } from "./infrastructure/spend-limits.js";
 import { createSpendCeilingStore } from "./infrastructure/spend-ceilings.js";
@@ -83,6 +85,7 @@ export interface SpendSystem {
 export function composeSpendSystem(deps: {
   db: Db;
   redis: Redis;
+  meter: Meter;
   priceOverrides: readonly OperatorPriceInput[];
   owners: AgentOwners;
   payers: AgentPayers;
@@ -122,6 +125,7 @@ export function composeSpendSystem(deps: {
     counters,
     owners: deps.owners,
     sessions: deps.sessions,
+    metrics: createOtelPriceMetrics(deps.meter),
   });
   return {
     ingest,

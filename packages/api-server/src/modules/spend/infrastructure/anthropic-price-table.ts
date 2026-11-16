@@ -3,6 +3,7 @@ import type {
   BaseTokenPrices,
   PricedModel,
   PriceRow,
+  PriceStep,
   ServiceTierName,
   TierPrices,
   TokenPrices,
@@ -24,6 +25,8 @@ type LiteLlmRow = z.infer<typeof liteLlmRowSchema>;
 const PICO_PER_DOLLAR = 1e12;
 const MICROS_PER_DOLLAR = 1e6;
 const TIERS: readonly ServiceTierName[] = ["flex", "priority"];
+const STEP_KEY =
+  /^(?:input_cost_per_token|output_cost_per_token|cache_read_input_token_cost|cache_creation_input_token_cost)_above_(\d+)(k?)_tokens/;
 
 export function loadAnthropicPriceTable(): PricedModel[] {
   const { models } = tableSchema.parse(table);
@@ -50,22 +53,33 @@ function priceRowFromLiteLlm(model: string, row: LiteLlmRow): PriceRow {
       cacheWrite1h: price(`cache_creation_input_token_cost_above_1hr${suffix}`),
     });
 
-  const thresholdKey = Object.keys(row)
-    .map((field) => field.match(/^input_cost_per_token_above_(\d+)(k?)_tokens/))
-    .find((m) => m !== null);
-  const above = thresholdKey
-    ? `_above_${thresholdKey[1]}${thresholdKey[2]}_tokens`
-    : null;
+  const stepNames = new Set(
+    Object.keys(row).flatMap((field) => {
+      const step = STEP_KEY.exec(field);
+      return step ? [`${step[1]}${step[2]}`] : [];
+    }),
+  );
+  const steps = (suffix: (above: string) => string): PriceStep[] =>
+    [...stepNames]
+      .map((name) => ({
+        promptTokens:
+          Number(name.replace("k", "")) * (name.endsWith("k") ? 1000 : 1),
+        prices: prices(suffix(`_above_${name}_tokens`)),
+      }))
+      .filter((step) => !isEmpty(step.prices))
+      .sort((a, b) => a.promptTokens - b.promptTokens);
 
   const tiers: Partial<Record<ServiceTierName, TierPrices>> = {};
   for (const tier of TIERS) {
     const tierPrices = prices(`_${tier}`);
-    const tierAbove = above ? prices(`${above}_${tier}`) : {};
-    if (isEmpty(tierPrices) && isEmpty(tierAbove)) continue;
-    tiers[tier] = isEmpty(tierAbove)
-      ? { prices: tierPrices }
-      : { prices: tierPrices, aboveThreshold: tierAbove };
+    const tierSteps = steps((above) => `${above}_${tier}`);
+    if (isEmpty(tierPrices) && tierSteps.length === 0) continue;
+    tiers[tier] =
+      tierSteps.length === 0
+        ? { prices: tierPrices }
+        : { prices: tierPrices, thresholds: tierSteps };
   }
+  const rowSteps = steps((above) => above);
 
   const webSearch = row.web_search_cost_per_query;
   const factors = row.price_factors;
@@ -74,15 +88,7 @@ function priceRowFromLiteLlm(model: string, row: LiteLlmRow): PriceRow {
     ...(typeof webSearch === "number"
       ? { webSearchMicros: Math.round(webSearch * MICROS_PER_DOLLAR) }
       : {}),
-    ...(thresholdKey && above
-      ? {
-          threshold: {
-            promptTokens:
-              Number(thresholdKey[1]) * (thresholdKey[2] === "k" ? 1000 : 1),
-            prices: prices(above),
-          },
-        }
-      : {}),
+    ...(rowSteps.length > 0 ? { thresholds: rowSteps } : {}),
     ...(isEmpty(tiers) ? {} : { tiers }),
     ...(typeof factors === "object" ? { factors } : {}),
   };

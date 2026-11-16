@@ -15,18 +15,20 @@ export type BaseTokenPrices = TokenPrices & {
 
 export type ServiceTierName = "flex" | "priority";
 
+export interface PriceStep {
+  readonly promptTokens: number;
+  readonly prices: TokenPrices;
+}
+
 export interface TierPrices {
   readonly prices: TokenPrices;
-  readonly aboveThreshold?: TokenPrices;
+  readonly thresholds?: readonly PriceStep[];
 }
 
 export interface PriceRow {
   readonly prices: BaseTokenPrices;
   readonly webSearchMicros?: number;
-  readonly threshold?: {
-    readonly promptTokens: number;
-    readonly prices: TokenPrices;
-  };
+  readonly thresholds?: readonly PriceStep[];
   readonly tiers?: Readonly<Partial<Record<ServiceTierName, TierPrices>>>;
   readonly factors?: Readonly<Record<string, number>>;
 }

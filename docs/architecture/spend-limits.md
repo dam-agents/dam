@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-11-14
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -96,17 +96,21 @@ OpenAI and Bedrock have no public prices in DAM yet: without an operator price, 
 
 **How a cost is computed.** The rules follow LiteLLM's own cost rules, so DAM's cost equals LiteLLM's for the same counts.
 A price sets input, output, cache reads, five-minute and one-hour cache writes, and web searches.
-Above a prompt-size threshold, which counts cached tokens too, all token prices change.
-When a reply names the flex or priority tier, that tier's prices apply.
-A missing cache price falls back to the input price, never to nothing, and a cache write without its five-minute and one-hour split counts at the one-hour price.
+A price can change at several prompt sizes, and a prompt size counts cached tokens too.
+Each kind of token takes its price from the highest prompt size that the prompt passes and that sets a price for it, else from the base price.
+When a reply names the flex or priority tier, that tier's prices apply, and at each prompt size the tier's price comes before the plain price.
+A missing cache price falls back to the input price, never to nothing.
+A cache write without its five-minute and one-hour split counts at the five-minute price, as in LiteLLM, and the call row shows it as a five-minute write.
 On the Anthropic API, fast mode and US-only inference multiply the token prices by the factors of the model's price.
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
-DAM compares its cost with the proxy's own cost of a call and logs a large difference, which shows an operator price that is wrong or old.
+DAM compares its cost with the proxy's own cost on every completed dollar call whose reply carries that cost, cache reads and writes included, except a response-cache replay.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
 When these headers give no cost, as on a chat stream, the proxy's cost is the cost in the reply's usage.
-Only a completed dollar call with no cache read and no cache write is compared, because the proxy's figure leaves out cached tokens.
+A difference above 5% writes a `spend.proxy_cost_mismatch` log line, which shows a price or a cost rule that is wrong or old.
+Two counters, `platform.spend.proxy_cost.compared` and `platform.spend.proxy_cost.differs`, count the compared calls and the differences in ClickHouse.
+They carry only the provider and the model, which is the reply's model group when the reply names one, so they name no user, agent or Connection.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
 The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.

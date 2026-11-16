@@ -1766,6 +1766,7 @@ export async function bootstrap() {
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
+    meter: metrics.getMeter("platform-apiserver"),
     priceOverrides: config.spendPriceOverrides,
     owners: {
       ownerOf: async (agentId) =>

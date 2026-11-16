@@ -24,6 +24,7 @@ import type { PriceBook } from "../domain/prices.js";
 import { payingProvider, unitOf } from "../domain/units.js";
 import type { CallMeta, CallStates } from "../infrastructure/call-states.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
+import type { PriceMetrics } from "../infrastructure/price-metrics.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 
 export interface AgentOwners {
@@ -86,6 +87,7 @@ export function createSpendIngest(deps: {
   counters: DayCounters;
   owners: AgentOwners;
   sessions: SessionOwnership;
+  metrics: PriceMetrics;
 }): SpendIngest {
   const log = () => getLogger();
 
@@ -422,32 +424,37 @@ export function createSpendIngest(deps: {
           "spend.call_recorded",
         );
 
-      const uncached =
-        amounts.cacheReadTokens +
-          amounts.cacheWrite5mTokens +
-          amounts.cacheWrite1hTokens ===
-        0;
       const difference =
-        record.final && measure.unit === "usd" && uncached
+        record.final && measure.unit === "usd" && !record.replay
           ? proxyCostDifference(amounts.costMicros, record.proxyCost)
           : null;
-      if (difference !== null && difference > PROXY_COST_TOLERANCE) {
-        log().warn(
-          {
-            provider: measure.provider,
-            model: measure.model,
-            costMicros: amounts.costMicros,
-            proxyCost: record.proxyCost.cost,
-            proxyCostOriginal: record.proxyCost.original,
-            proxyCostDiscount: record.proxyCost.discount,
-            proxyCostMargin: record.proxyCost.margin,
-            proxyCostBody: record.proxyCost.body,
-            uncachedInputTokens: amounts.uncachedInputTokens,
-            outputTokens: amounts.outputTokens,
-          },
-          "spend.proxy_cost_mismatch",
-        );
-      }
+      if (difference === null) return;
+      const labels = {
+        provider: measure.provider,
+        model: record.modelGroup ?? measure.model,
+      };
+      deps.metrics.proxyCostCompared(labels);
+      if (difference <= PROXY_COST_TOLERANCE) return;
+      deps.metrics.proxyCostDiffers(labels);
+      log().warn(
+        {
+          provider: measure.provider,
+          model: measure.model,
+          modelGroup: record.modelGroup,
+          costMicros: amounts.costMicros,
+          proxyCost: record.proxyCost.cost,
+          proxyCostOriginal: record.proxyCost.original,
+          proxyCostDiscount: record.proxyCost.discount,
+          proxyCostMargin: record.proxyCost.margin,
+          proxyCostBody: record.proxyCost.body,
+          uncachedInputTokens: amounts.uncachedInputTokens,
+          outputTokens: amounts.outputTokens,
+          cacheReadTokens: amounts.cacheReadTokens,
+          cacheWrite5mTokens: amounts.cacheWrite5mTokens,
+          cacheWrite1hTokens: amounts.cacheWrite1hTokens,
+        },
+        "spend.proxy_cost_mismatch",
+      );
     },
 
     async settleUnrecordedCalls() {

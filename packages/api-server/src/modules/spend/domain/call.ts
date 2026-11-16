@@ -152,9 +152,9 @@ function callAmounts(
     uncachedInputTokens: usage.uncachedInputTokens,
     outputTokens: usage.outputTokens,
     cacheReadTokens: usage.cacheReadTokens,
-    cacheWrite5mTokens: usage.cacheWrite5mTokens,
-    cacheWrite1hTokens:
-      usage.cacheWrite1hTokens + usage.cacheWriteUnsplitTokens,
+    cacheWrite5mTokens:
+      usage.cacheWrite5mTokens + usage.cacheWriteUnsplitTokens,
+    cacheWrite1hTokens: usage.cacheWrite1hTokens,
     webSearches: usage.webSearches,
     calls: 1,
     estimatedCalls: estimated ? 1 : 0,
