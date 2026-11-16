@@ -790,7 +790,9 @@ function narrowBedrockModels(
   const wanted = new Set((profiles ?? []).map((id) => id.toLowerCase()));
   if (keep) wanted.add(keep.toLowerCase());
   const endpoint = bedrockEndpoint();
-  const pick = <M extends { id: string; baseUrl: string }>(all: M[]): M[] =>
+  const pick = <M extends { id: string; baseUrl: string }>(
+    all: readonly M[],
+  ): M[] =>
     all
       .filter((m) => !profiles || wanted.has(m.id.toLowerCase()))
       .map((m) => (endpoint ? { ...m, baseUrl: endpoint } : m));
