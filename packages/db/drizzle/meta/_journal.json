@@ -1086,6 +1086,20 @@
       "when": 1794831892596,
       "tag": "0154_spend_calls_price_source",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794840726423,
+      "tag": "0155_artifact_icon",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1794848360952,
+      "tag": "0156_web_search_control",
+      "breakpoints": true
     }
   ]
 }

@@ -325,6 +325,7 @@ async function deliver(
   const sent: string[] = [];
   const service = createApprovalsService({
     repo: repoFor(wholeRow(options, verdict)),
+    webSearchRuleWriter: { write: async () => {} },
     egressRuleWriter: {
       insert: async (input) => ({
         kind: "inserted",

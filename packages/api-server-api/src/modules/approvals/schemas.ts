@@ -8,6 +8,7 @@ export const approvalTypeSchema = z.enum([
   "acp_native",
   "spend_limit",
   "egress_proposal",
+  "web_search",
 ]);
 
 export const approvalListOptionsSchema = z.object({

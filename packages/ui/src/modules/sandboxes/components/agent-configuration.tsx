@@ -21,6 +21,7 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { WebSearchControlCard } from "../../web-search/components/web-search-control-card.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 import {
   AgentDescriptionSection,
@@ -189,7 +190,10 @@ function SectionBody({
       />
     ))
     .with("network", () => (
-      <AgentEgressEditor agentId={agent.id} header={header} />
+      <>
+        <AgentEgressEditor agentId={agent.id} header={header} />
+        <WebSearchControlCard agent={agent} />
+      </>
     ))
     .with("browser", () => (
       <SandboxBrowserSection agentId={agent.id} header={header} />

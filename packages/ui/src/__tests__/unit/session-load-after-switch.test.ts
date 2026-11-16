@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The chat shows a session as loading only while the session it opened is the one shown. A user who switches to a session and clicks New session before it loaded gets the new-session page at once, and the load that ends after the click, failed or answered, never leaves the spinner behind.
+// TEST_OVERVIEW: The chat shows a session as loading only while the session it opened is the one shown. A user who switches to a session and clicks New session before it loaded gets the new-session page at once, and the load that ends after the click, failed or answered, never leaves the spinner behind. A new or loading chat also clears the previous session's displayed prompt queue.
+import type { QueuedPrompt } from "api-server-api";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,11 +22,11 @@ const h = vi.hoisted(() => {
     sessionId: null as string | null,
     sessionMode: null,
     messages: [] as Message[],
-    queuedPrompts: [] as unknown[],
+    queuedPrompts: [] as QueuedPrompt[],
     setSessionId: (id: string | null) => (state.sessionId = id),
     setMessages: (m: Message[]) => (state.messages = m),
     setBusy: () => {},
-    setQueuedPrompts: () => {},
+    setQueuedPrompts: (items: QueuedPrompt[]) => (state.queuedPrompts = items),
     setRewriting: () => {},
     setHarnessForks: () => {},
     setSessionSteering: () => {},
@@ -118,6 +119,7 @@ beforeEach(() => {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   h.state.sessionId = null;
   h.state.messages = [];
+  h.state.queuedPrompts = [];
   h.loads.clear();
   root = createRoot(document.createElement("div"));
   render();
@@ -125,7 +127,37 @@ beforeEach(() => {
 
 afterEach(() => act(() => root.unmount()));
 
-describe("the loading state after a switch between sessions", () => {
+describe("session state after a switch between chats", () => {
+  // TEST_SCENARIO: a queued message belongs to the old chat. New session and switching to another chat clear its displayed queue and busy state without touching the accepted server-side work.
+  it.each(["new", "other"])(
+    "clears the old queue when opening a %s chat",
+    async (target) => {
+      h.state.sessionId = "s1";
+      h.state.messages = loaded;
+      h.state.queuedPrompts = [
+        {
+          promptId: "queued-old",
+          queuedAt: "2026-11-06T12:00:00.000Z",
+          editable: true,
+          blocks: [{ type: "text", text: "old queued message" }],
+        },
+      ];
+      render();
+      expect(chat.busy).toBe(true);
+      act(() => {
+        if (target === "new") chat.resetSession();
+        else void chat.resumeSession("s2");
+      });
+      render();
+      expect(h.state.messages).toEqual([]);
+      expect(h.state.queuedPrompts).toEqual([]);
+      expect(chat.busy).toBe(false);
+      if (target === "other") {
+        h.loads.get("s2")!.resolve(loaded);
+        await settle();
+      }
+    },
+  );
   // TEST_SCENARIO: the user switches to a session and clicks New session while it still loads. The new-session page shows at once, and the load, which fails when its connection is closed, does not bring the spinner back.
   it("ends when New session is clicked while the session loads", async () => {
     let resumed!: Promise<void>;

@@ -516,11 +516,19 @@ export {
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
+  ARTIFACT_ICON_MAX_LENGTH,
+  ARTIFACT_ICON_RULE,
+  artifactIconDataUrl,
+  artifactIconSvg,
+  isArtifactIcon,
+} from "./modules/artifact-library/icon.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
+  artifactIconSchema,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,
@@ -937,6 +945,7 @@ export type {
   ApprovalPayload,
   SpendLimitPayload,
   EgressProposalPayload,
+  WebSearchPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -999,6 +1008,18 @@ export {
   gatewayRestartImpact,
   promotedHosts,
 } from "./modules/egress-rules/promotion.js";
+export type {
+  WebSearchRuleView,
+  WebSearchService,
+  WebSearchStateView,
+  WebSearchVerdict,
+} from "./modules/web-search/types.js";
+export { webSearchVerdictSchema } from "./modules/web-search/schemas.js";
+export {
+  WEB_SEARCH_FOLLOW_UP_QUERIES,
+  WEB_SEARCH_HARNESSES_COVERED,
+  WEB_SEARCH_HARNESSES_NOT_COVERED,
+} from "./modules/web-search/copy.js";
 
 export {
   platformTurnEndedParamsSchema,

@@ -102,3 +102,21 @@ export function ArtifactInteractiveBadge() {
     </Tooltip>
   );
 }
+
+export function ArtifactIcon({
+  icon,
+  className,
+}: {
+  icon: string | null;
+  className?: string;
+}) {
+  if (!icon) return null;
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-block shrink-0 text-sm leading-none", className)}
+    >
+      {icon}
+    </span>
+  );
+}

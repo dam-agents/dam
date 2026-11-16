@@ -170,6 +170,7 @@ export interface AgentView {
   env?: EnvVar[];
   requireConnectionAddress: boolean;
   whisper: boolean;
+  webSearchControl: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

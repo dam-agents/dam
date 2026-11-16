@@ -18,6 +18,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   starterKitOnboarded: null,
   image: "x:latest",
   requireConnectionAddress: false,
+  webSearchControl: false,
   whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],

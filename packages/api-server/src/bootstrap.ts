@@ -392,6 +392,11 @@ import {
   markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
+  createWebSearchCleanupHook,
+  createWebSearchGatePorts,
+  listWebSearchRuleAgentIds,
+} from "./modules/web-search/compose.js";
+import {
   composeConnectionsAtBoot,
   composeAgentSecretRequests,
   composeConnectionsForOwner,
@@ -1019,6 +1024,9 @@ export async function bootstrap() {
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
   const resolveAgentName = async (agentId: string) =>
     (await agentsRepo.getLive(agentId, undefined))?.name ?? null;
+  const resolveWebSearchControl = async (agentId: string) =>
+    (await agentsRepo.getLive(agentId, undefined))?.spec.webSearchControl ===
+    true;
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
@@ -1036,6 +1044,7 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
+    resolveWebSearchControl,
     resolveEvent: async (agentId, event) => {
       const paired = await resolveInitializationPair(agentId, event);
       const released = paired && (await holdForEgress(agentId, paired));
@@ -2291,6 +2300,19 @@ export async function bootstrap() {
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
+    webSearch: {
+      ...createWebSearchGatePorts(
+        db,
+        async (agentId) =>
+          (await agentsRepo.get(agentId))?.spec.webSearchControl === true,
+      ),
+      sessions: {
+        isScheduled: async (agentId, sessionId) =>
+          (await sessionDirectory.categorize([agentId], [sessionId])).get(
+            sessionId,
+          ) === "scheduled",
+      },
+    },
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -2471,6 +2493,11 @@ export async function bootstrap() {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
       cleanup: createEgressRulesCleanupHook(db),
+    },
+    {
+      name: "web-search-rules",
+      listAgentIds: () => listWebSearchRuleAgentIds(db),
+      cleanup: createWebSearchCleanupHook(db),
     },
     {
       name: "pending-approvals",

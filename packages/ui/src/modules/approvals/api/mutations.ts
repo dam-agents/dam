@@ -7,6 +7,9 @@ import { approvalsKeys } from "./queries.js";
 // UNIT_BOUNDARY_DESCRIPTION: a verdict can write a network rule, and approving a rule for all of an agent's sub-agents and Environments also turns on that agent's switch for their network access, so the agent's rules and that switch are read again too, not left at their cached value.
 const AFTER_VERDICT = [approvalsKeys.all, egressRulesKeys.all];
 
+// UNIT_BOUNDARY_DESCRIPTION: an always or never answer to a held web search writes the agent's web search rule, so the rule shown in its network settings is read again too.
+const AFTER_PERMANENT_VERDICT = [...AFTER_VERDICT, trpc.webSearch.pathKey()];
+
 export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
@@ -21,7 +24,7 @@ export function useApprovePermanent() {
   return useMutation({
     ...trpc.approvals.approvePermanent.mutationOptions(),
     meta: {
-      invalidates: AFTER_VERDICT,
+      invalidates: AFTER_PERMANENT_VERDICT,
       errorToast: "Couldn't approve permanently",
     },
   });
@@ -51,7 +54,7 @@ export function useDenyForever() {
   return useMutation({
     ...trpc.approvals.denyForever.mutationOptions(),
     meta: {
-      invalidates: AFTER_VERDICT,
+      invalidates: AFTER_PERMANENT_VERDICT,
       errorToast: "Couldn't deny",
     },
   });

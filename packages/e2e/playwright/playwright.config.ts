@@ -38,7 +38,7 @@ function workersFromEnv(): number {
 
 type NamedProject = Project & { name: string };
 
-const suite: NamedProject[] = [
+const smoke: NamedProject[] = [
   {
     name: "auth",
     testMatch: /01-.*\.spec\.ts$/,
@@ -96,6 +96,10 @@ const suite: NamedProject[] = [
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
+];
+
+const suite: NamedProject[] = [
+  ...smoke,
   ...(full
     ? [
         {
@@ -140,7 +144,16 @@ const suite: NamedProject[] = [
           dependencies: ["auth"],
           use: { ...devices["Desktop Chrome"] },
         },
-      ]
+      ].map((project, index, fullProjects) => ({
+        ...project,
+        dependencies: [
+          ...(project.dependencies ?? []),
+          ...(index === 0
+            ? smoke.map(({ name }) => name)
+            : [fullProjects[index - 1]!.name]),
+        ],
+        workers: 1,
+      }))
     : []),
 ];
 

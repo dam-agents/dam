@@ -21,6 +21,7 @@ const owned = (id: string, name: string, over: Partial<AgentView> = {}) =>
     state: "running",
     overBudget: false,
     requireConnectionAddress: true,
+    webSearchControl: false,
     access: { role: "owner", editors: [], permissions: [...AGENT_PERMISSIONS] },
     ...over,
   }) as unknown as AgentView;

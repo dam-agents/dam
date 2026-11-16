@@ -227,9 +227,16 @@ jobs:
           set -euo pipefail
 
           # --no-deps: the scan reads the sources, not the pnpm workspace.
+          # The CLI prints its errors (a refused login exits 2) to stdout, so a
+          # failure shows the captured output instead of dropping it.
+          rc=0
           results=$(mise x --no-deps http:mend -- mend dep --dir . \
             --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
-            --update --format json --non-interactive)
+            --update --format json --non-interactive) || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Mend CLI exited $rc, so this is not a scan result: $(printf '%s' "$results" | sed 's/\x1b\[[0-9;]*m//g' | tr '\n' ' ')"
+            exit "$rc"
+          fi
 
           out=$(echo "$results" | jq '
             [.. | objects | select(.vulnerabilities) |

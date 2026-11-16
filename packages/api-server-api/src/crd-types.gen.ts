@@ -226,6 +226,14 @@ export interface AgentSpecCR {
    */
   telemetryAttributionId?: string;
   /**
+   * WebSearchControl makes the agent's gateway read the whole body of every
+   * request on a model-provider chain and send it to the ext_authz check, so
+   * a Messages API request that declares a native web search tool is held
+   * for the owner's approval. A body larger than the gateway reads is
+   * refused rather than passed. Off, the gateway reads no body.
+   */
+  webSearchControl?: boolean;
+  /**
    * WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
    */
   whispersOff?: boolean;
