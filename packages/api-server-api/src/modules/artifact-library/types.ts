@@ -114,6 +114,8 @@ export interface ArtifactSharingInput {
   visibility?: ArtifactVisibility;
   expiresInHours?: number | null;
   viewers?: string[];
+  addViewers?: string[];
+  removeViewers?: string[];
 }
 
 export interface FolderUpdateInput {
