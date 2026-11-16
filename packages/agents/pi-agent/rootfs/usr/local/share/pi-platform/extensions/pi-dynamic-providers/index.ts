@@ -99,6 +99,7 @@ type RouterModel = {
     vision?: boolean | null;
     cacheControl?: string | null;
     thinkingFormat?: string | null;
+    thinkingLevelMap?: Record<string, string | null> | null;
   };
 };
 
@@ -420,6 +421,9 @@ function routerModelConfig(model: RouterModel): ProviderModelConfig {
         ? (["text"] as const)
         : (["text", "image"] as const),
     reasoning: meta.reasoning ?? RESPONSES_FAMILY.test(upstreamId),
+    ...(meta.thinkingLevelMap
+      ? { thinkingLevelMap: meta.thinkingLevelMap }
+      : {}),
     contextWindow,
     maxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -790,7 +794,9 @@ function narrowBedrockModels(
   const wanted = new Set((profiles ?? []).map((id) => id.toLowerCase()));
   if (keep) wanted.add(keep.toLowerCase());
   const endpoint = bedrockEndpoint();
-  const pick = <M extends { id: string; baseUrl: string }>(all: M[]): M[] =>
+  const pick = <M extends { id: string; baseUrl: string }>(
+    all: readonly M[],
+  ): M[] =>
     all
       .filter((m) => !profiles || wanted.has(m.id.toLowerCase()))
       .map((m) => (endpoint ? { ...m, baseUrl: endpoint } : m));

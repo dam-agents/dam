@@ -56,6 +56,7 @@ export function openAiModelList(
           vision: e.metadata.vision,
           cacheControl: e.metadata.cacheControl,
           thinkingFormat: e.metadata.thinkingFormat,
+          thinkingLevelMap: e.metadata.thinkingLevelMap ?? null,
         },
       };
     }),
