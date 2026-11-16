@@ -1,5 +1,7 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
+import type { ConnectionHolders } from "../hooks/use-connection-holders.js";
+
 import type {
   RowGrantControls,
   RowMaintenanceActions,
@@ -16,6 +18,14 @@ export interface ConnectionRowControls {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  holders?: ConnectionHolders | null;
+}
+
+export function usedByOf(
+  holders: ConnectionHolders | null | undefined,
+  connectionId: string,
+): readonly string[] | undefined {
+  return holders ? (holders.get(connectionId) ?? []) : undefined;
 }
 
 export function ConnectionRow({
@@ -27,6 +37,7 @@ export function ConnectionRow({
   onDelete,
   deletingId = null,
   maintenance,
+  holders,
 }: ConnectionRowControls & { connection: ConnectionView }) {
   return (
     <ConnectionRowCard
@@ -38,6 +49,7 @@ export function ConnectionRow({
       onDelete={onDelete && (() => onDelete(connection.id, connection.name))}
       deleting={deletingId === connection.id}
       maintenance={maintenance?.(connection)}
+      usedBy={usedByOf(holders, connection.id)}
     />
   );
 }

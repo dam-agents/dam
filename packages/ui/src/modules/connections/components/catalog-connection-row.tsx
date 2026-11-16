@@ -1,8 +1,11 @@
-import { TrashCan } from "@carbon/icons-react";
+import { TrashCan, WarningAlt } from "@carbon/icons-react";
 import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+import { childCardLabel, REFUSED_ACCESS } from "../lib/github-card.js";
 
 import { ConnectionIcon } from "./connection-icon.js";
 import {
@@ -10,8 +13,8 @@ import {
   ConnectionRowMenu,
 } from "./connection-row-actions.js";
 import { ConnectionRowDetail } from "./connection-row-detail.js";
+import { ConnectionUsedBy } from "./connection-used-by.js";
 import { FullAccessMark } from "./full-access-mark.js";
-import { GithubAppInstallations } from "./github-app-installations.js";
 import { RetiredHostNote } from "./retired-host-note.js";
 
 export interface RowGrantControls {
@@ -39,9 +42,15 @@ const STATUS_PRESENTATION: Record<
   disconnected: { label: "Disconnected", variant: "muted" },
 };
 
+export interface CardRowState {
+  paused?: string;
+}
+
 interface Props {
   connection: ConnectionView;
   tag: string;
+  inCard?: CardRowState;
+  usedBy?: readonly string[];
   iconSlug?: string;
   grant?: RowGrantControls;
   onManage?: () => void;
@@ -49,12 +58,13 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
-  onNewChild?: () => void;
 }
 
 export function CatalogConnectionRow({
   connection,
   tag,
+  inCard,
+  usedBy,
   iconSlug,
   grant,
   onManage,
@@ -62,12 +72,24 @@ export function CatalogConnectionRow({
   deleting = false,
   maintenance,
   onRemove,
-  onNewChild,
 }: Props) {
+  const label = childCardLabel(connection);
+  const paused = inCard?.paused;
+  const refused =
+    inCard !== undefined && !paused && connection.status === "expired";
+  const subtitle =
+    label &&
+    [label.subtitle, paused ?? (refused ? REFUSED_ACCESS : undefined)]
+      .filter(Boolean)
+      .join(" · ");
   return (
     <div
       data-testid={`catalog-connection-${connection.id}`}
-      className="@container flex items-start gap-2 px-4 py-2.5"
+      data-paused={paused ? "true" : undefined}
+      className={cn(
+        "@container flex items-start gap-2 px-4 py-2.5",
+        inCard && "pl-14",
+      )}
     >
       {iconSlug && (
         <ConnectionIcon
@@ -81,12 +103,16 @@ export function CatalogConnectionRow({
         <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
           <div className="flex min-h-8 min-w-0 flex-[1_1_180px] flex-wrap content-center items-center gap-x-2 gap-y-1">
             <span
-              className="min-w-0 max-w-full truncate text-md font-medium text-foreground"
-              title={connection.name}
+              className={cn(
+                "min-w-0 max-w-full truncate text-md font-medium",
+                paused ? "text-muted-foreground" : "text-foreground",
+              )}
+              title={label?.title ?? connection.name}
+              data-testid={`catalog-connection-title-${connection.id}`}
             >
-              {connection.name}
+              {label?.title ?? connection.name}
             </span>
-            {tag && (
+            {tag && !label && (
               <Badge
                 variant="muted"
                 className="min-w-0 max-w-full font-normal"
@@ -95,18 +121,41 @@ export function CatalogConnectionRow({
                 <span className="truncate">{tag}</span>
               </Badge>
             )}
-            <StatusBadges connection={connection} />
+            {inCard ? (
+              <CardStatusMarks connection={connection} paused={!!paused} />
+            ) : (
+              <StatusBadges connection={connection} />
+            )}
           </div>
-          <ConnectionRowActions
-            connection={connection}
-            grant={grant}
-            maintenance={maintenance}
-            onNewChild={onNewChild}
-          />
+          {!paused && (
+            <ConnectionRowActions
+              connection={connection}
+              grant={grant}
+              maintenance={maintenance}
+              chooseAccessAgain={refused}
+              usedBy={
+                usedBy && (
+                  <ConnectionUsedBy
+                    connectionId={connection.id}
+                    agents={usedBy}
+                  />
+                )
+              }
+            />
+          )}
         </div>
-        <ConnectionRowDetail connection={connection} />
-        <RetiredHostNote connection={connection} />
-        <GithubAppInstallations connection={connection} />
+        {subtitle ? (
+          <p
+            className="mt-0.5 break-words text-xs text-muted-foreground"
+            title={subtitle}
+            data-testid={`catalog-connection-account-${connection.id}`}
+          >
+            {subtitle}
+          </p>
+        ) : (
+          <ConnectionRowDetail connection={connection} />
+        )}
+        {!paused && <RetiredHostNote connection={connection} />}
       </div>
       <div className="flex h-8 shrink-0 items-center gap-1">
         <ConnectionRowMenu
@@ -131,6 +180,44 @@ export function CatalogConnectionRow({
         )}
       </div>
     </div>
+  );
+}
+
+export function WarningMark({
+  label,
+  testId,
+}: {
+  label: string;
+  testId?: string;
+}) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-danger"
+      data-testid={testId}
+    >
+      <WarningAlt size={12} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+function CardStatusMarks({
+  connection,
+  paused,
+}: {
+  connection: ConnectionView;
+  paused: boolean;
+}) {
+  return (
+    <>
+      <FullAccessMark connection={connection} tone="warning" />
+      {!paused && connection.status === "expired" && (
+        <WarningMark
+          label={STATUS_PRESENTATION.expired.label}
+          testId={`catalog-connection-expired-${connection.id}`}
+        />
+      )}
+    </>
   );
 }
 

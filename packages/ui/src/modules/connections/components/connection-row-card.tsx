@@ -16,7 +16,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
-  onNewChild?: () => void;
+  usedBy?: readonly string[];
   bare?: boolean;
 }
 
@@ -29,7 +29,7 @@ export function ConnectionRowCard({
   deleting,
   maintenance,
   onRemove,
-  onNewChild,
+  usedBy,
   bare = false,
 }: Props) {
   return (
@@ -44,7 +44,7 @@ export function ConnectionRowCard({
         deleting={deleting}
         maintenance={maintenance}
         onRemove={onRemove}
-        onNewChild={onNewChild}
+        usedBy={usedBy}
       />
     </div>
   );
