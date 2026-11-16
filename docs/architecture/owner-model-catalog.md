@@ -14,7 +14,7 @@ A provider Connection's env pins are plain URLs in its Contributions, and its cr
 The api-server already calls provider endpoints with that credential for the key check and the balance lookup; credential injection through the egress gateway is only how a sandbox's traffic gets the key.
 The catalog uses the same listing specs, discovery parser and metadata layers as the [per-agent model catalog](harness-config.md#the-model-catalog), and sends each credential the way its provider expects, Bob's `Apikey` scheme included.
 The IBM LiteLLM and CurveBender proxies are listed from LiteLLM's model info (`/v1/model/info`), which gives each model's context window, reasoning and vision, so a model newer than the vendored price table still runs with its real limits.
-A key that the proxy refuses on model info is listed from `/v1/models`, with the table's metadata; the CurveBender deployment always lists that way, because its shared key reaches only an exact list of paths.
+When model info fails, by a refusal, a timeout or an empty list, the proxy is listed from `/v1/models`, with the table's metadata; the CurveBender deployment always lists that way, because its shared key reaches only an exact list of paths.
 Harness fit comes from the shipped harness catalog, and a model known to hold under 32k is left out of the harnesses it would otherwise fit.
 A Bedrock Connection lists Claude Code's native tier names, and, for Pi, the inference profiles of the Connection's region, read from the Connection's control-plane URL with its key.
 A model is named the plain `<alias>/<id>` a session stores; the runtime renders a harness's own spelling when it starts.

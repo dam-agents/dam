@@ -353,9 +353,11 @@ export function createModelDiscovery(deps: {
         via,
         credentials,
       );
-      if (!("refused" in outcome)) return outcome;
-      httpStatus = outcome.refused;
+      if ("refused" in outcome) httpStatus = outcome.refused;
+      else if (outcome.status === "observed") return outcome;
     }
-    return { status: "unavailable", httpStatus };
+    return httpStatus === undefined
+      ? { status: "unavailable" }
+      : { status: "unavailable", httpStatus };
   };
 }

@@ -68,8 +68,9 @@ const LITELLM_MODEL_INFO_SPEC = {
  * UNIT_BOUNDARY_DESCRIPTION: how the catalog lists a provider's models from
  * its Connection's env layer. The LiteLLM proxies and Bob's gateway are read
  * through LiteLLM's model info, which gives each model's context window,
- * reasoning and vision, with the plain model list as the fallback for a key
- * that is refused. The CurveBender deployment keeps the model list: its shared
+ * reasoning and vision, with the plain model list as the fallback when model
+ * info is refused, times out or lists nothing; the plain list is much smaller
+ * and faster. The CurveBender deployment keeps the model list: its shared
  * key reaches only an exact list of paths, so its model info would show every
  * agent the deployment's details behind one identity. The catalog shows the
  * platform's self-hosted vLLM at no cost; the spend meter prices its calls
