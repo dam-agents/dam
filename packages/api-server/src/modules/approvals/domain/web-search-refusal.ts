@@ -10,30 +10,28 @@ export interface WebSearchRefusal {
 const MESSAGE_ID = "msg_platform_web_search_refused";
 const TOOL_USE_ID = "srvtoolu_platform_web_search_refused";
 
-// UNIT_BOUNDARY_DESCRIPTION: why a web search was refused, in the words the agent reads in the failed search's text and its owner reads in the log. `denied` is the owner's answer to this one search, `rule` the agent's remembered web search rule, `unattended` a scheduled or channel run nobody can answer from, `expired` a hold nobody answered in time, and `child` a sub-agent whose own network allows only what is listed for it.
+// UNIT_BOUNDARY_DESCRIPTION: why a web search was refused, in the words the agent reads in the failed search's text and its owner reads in the log. `denied` is the owner's answer to this one search, and its text says that search is not turned off, so the agent does not tell its owner to turn it on, `rule` the agent's remembered web search rule, `unattended` a scheduled or channel run nobody can answer from, `expired` a hold nobody answered in time, and `child` a sub-agent whose own network allows only what is listed for it.
 export type WebSearchRefusalReason =
   "denied" | "rule" | "unattended" | "expired" | "child";
 
-const SETTINGS_HINT =
-  "The agent's owner can change this under Web search in the agent's Network settings.";
+const STILL_ON =
+  "Web search is not turned off for this agent: a later search is asked about again.";
 
 export function webSearchRefusalText(reason: WebSearchRefusalReason): string {
   const lead =
     "The web search was refused by the platform's egress gateway, not by the search provider.";
   const why = {
-    denied: "The agent's owner denied this search.",
-    rule: "The agent's web search rule denies every search.",
+    denied: `The agent's owner denied this one search. ${STILL_ON}`,
+    rule: "The agent's web search rule denies every search. The agent's owner can change this under Web search in the agent's Network settings.",
     unattended:
       "Web search needs the owner's approval, and nobody can give one in a scheduled or channel run. To let this agent search in such runs, the owner chooses Always allow under Web search in the agent's Network settings.",
-    expired: "Nobody answered the approval for this search in time.",
+    expired: `Nobody answered the approval for this search in time. ${STILL_ON}`,
     child:
-      "This sub-agent's network allows only what is listed for it, and web search is not.",
+      "This sub-agent's network allows only what is listed for it, and web search is not. The agent's owner can change this under Web search in the agent's Network settings.",
   }[reason];
   const next =
     "Find the information another way, for example by fetching a page you know.";
-  return reason === "unattended"
-    ? `${lead} ${why} ${next}`
-    : `${lead} ${why} ${next} ${SETTINGS_HINT}`;
+  return `${lead} ${why} ${next}`;
 }
 
 function messageBody(model: string, query: string | null, text: string) {

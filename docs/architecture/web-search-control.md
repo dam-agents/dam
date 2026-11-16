@@ -73,7 +73,8 @@ The IBM LiteLLM proxy lets the model search again with queries it writes after r
 
 ## The refusal
 
-A refused search is answered as a successful Messages reply whose search failed as unavailable, streamed when the call streams, with a text that says the platform refused it, why, and how the owner changes it.
+A refused search is answered as a successful Messages reply whose search failed as unavailable, streamed when the call streams, with a text that says the platform refused it and why.
+A refusal by the rule says where the owner changes the rule; a refusal of one search, denied or unanswered, says that web search is not turned off, so the agent does not tell its owner to turn it on.
 The agent reads a failed search and keeps working; a refused model call would end its session.
 Claude Code then falls back to fetching pages, which run from the machine under the agent's egress rules.
 An endpoint that creates no message, such as a batch, gets a plain 403 instead.

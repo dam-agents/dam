@@ -202,7 +202,7 @@ describe("web search control at the gate", () => {
 
     const decision = await inflight;
     expect(decision).toMatchObject({ verdict: "refuse", basis: "web-search" });
-    expect(refusedText(decision)).toContain("owner denied this search");
+    expect(refusedText(decision)).toContain("owner denied this one search");
   });
 
   // TEST_SCENARIO: a search nobody answers in time is refused when its hold expires, as a failed search.

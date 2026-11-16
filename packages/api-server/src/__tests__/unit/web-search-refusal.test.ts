@@ -1,7 +1,10 @@
 // TEST_OVERVIEW: the answer to a refused web search. On the Messages endpoint it is a successful reply whose search failed as unavailable, in the shape the call asked for, so the agent reads a failed search and carries on with another tool; anywhere else it is a plain refusal by the gateway. Both carry the platform's refusal header and say why, and how the owner changes it.
 import { describe, expect, it } from "vitest";
 import { PLATFORM_REFUSAL_HEADER } from "api-server-api";
-import { refusedWebSearch } from "../../modules/approvals/domain/web-search-refusal.js";
+import {
+  refusedWebSearch,
+  webSearchRefusalText,
+} from "../../modules/approvals/domain/web-search-refusal.js";
 
 function events(
   body: string,
@@ -56,7 +59,7 @@ describe("a refused web search", () => {
       error_code: "unavailable",
     });
     expect(message.content[2]!.text).toContain("egress gateway");
-    expect(message.content[2]!.text).toContain("Network settings");
+    expect(message.content[2]!.text).toContain("not turned off");
   });
 
   // TEST_SCENARIO: a streaming call gets the same message as the Messages API streams one, each block opened and closed and the stream ended, so a streaming client reads it as it reads a real reply.
@@ -99,5 +102,19 @@ describe("a refused web search", () => {
     });
     expect(refusal.status).toBe(403);
     expect(refusal.body).toContain("egress gateway");
+  });
+
+  // TEST_SCENARIO: an owner who denies one search, or does not answer one in time, has not turned web search off. The text says so and names no setting, because an agent that read the settings hint told its owner to turn web search on. Only a refusal by the rule, or by a sub-agent's network, points to the Network settings.
+  it("says search is still on after one refused search", () => {
+    for (const reason of ["denied", "expired"] as const) {
+      const text = webSearchRefusalText(reason);
+      expect(text).toContain("not turned off");
+      expect(text).not.toContain("Network settings");
+    }
+    for (const reason of ["rule", "child", "unattended"] as const) {
+      const text = webSearchRefusalText(reason);
+      expect(text).toContain("Network settings");
+      expect(text).not.toContain("not turned off");
+    }
   });
 });
