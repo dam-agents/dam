@@ -1807,10 +1807,10 @@ export async function bootstrap() {
     pricedConnections: createPricedConnections({ db, secretStore }),
   });
   await periodicJobs.register("spend-provider-prices", 60 * 60_000, () =>
-    spend.prices.readAll("ibm-litellm"),
+    spend.readAllPrices(),
   );
-  void spend.prices
-    .readAllIfEmpty("ibm-litellm")
+  void spend
+    .readPricesIfEmpty()
     .catch((err: unknown) =>
       getLogger().error(
         { reason: formatError(err) },

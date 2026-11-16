@@ -23,15 +23,30 @@ import type {
 import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
 import {
+  UNKNOWN_MODEL,
   utcDay,
   type CallAmounts,
   type CallWindow,
   type DayCounter,
   type SpendRow,
 } from "../domain/ledger.js";
+import {
+  REPRICED_SOURCE,
+  type CallReprice,
+  type RepriceCandidate,
+  type RepriceKind,
+} from "../domain/reprice.js";
 import type { AgentLedgerRow } from "../domain/agent-spend.js";
 import type { SessionLedgerRow } from "../domain/sessions.js";
 import type { SettledCall, TurnWindowRow } from "../domain/turns.js";
+
+export interface RepricedCall {
+  readonly callId: string;
+  readonly row: SpendRow;
+  readonly costMicros: number;
+  readonly costDelta: number;
+  readonly estimated: boolean;
+}
 
 export interface SpendLedger {
   add(row: SpendRow, delta: CallAmounts, callCostMicros: number): Promise<void>;
@@ -105,6 +120,14 @@ export interface SpendLedger {
     since: Date;
   }): Promise<string[]>;
   meteringStart(): Promise<Date>;
+  repriceCandidates(query: {
+    provider: string;
+    kind: RepriceKind;
+    since: Date;
+    after: { callingAgentId: string; callId: string } | null;
+    limit: number;
+  }): Promise<RepriceCandidate[]>;
+  reprice(changes: readonly CallReprice[]): Promise<RepricedCall[]>;
 }
 
 type Counted =
@@ -868,6 +891,197 @@ export function createSpendLedger(db: Db): SpendLedger {
             AND calling_agent_id = ${callingAgentId}
             AND calls = 0 AND refused_calls = 0`);
         return moved.map((row) => row.call_id);
+      });
+    },
+
+    async repriceCandidates({ provider, kind, since, after, limit }) {
+      const rows = await db.execute<{
+        calling_agent_id: string;
+        call_id: string;
+        model: string;
+        price_model: string;
+        estimated: boolean;
+        estimate_reasons: string[];
+        uncached_input_tokens: string;
+        output_tokens: string;
+        cache_read_tokens: string;
+        cache_write_5m_tokens: string;
+        cache_write_1h_tokens: string;
+        web_searches: number;
+      }>(sql`
+        SELECT calling_agent_id, call_id, model, price_model, estimated,
+          estimate_reasons, uncached_input_tokens, output_tokens,
+          cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
+          web_searches
+        FROM ${spendCalls}
+        WHERE provider_template = ${provider}
+          AND price_source = ${REPRICED_SOURCE[kind]}
+          AND started_at >= ${since.toISOString()}::timestamptz
+          ${
+            kind === "backfill"
+              ? sql`AND estimated AND model <> ${UNKNOWN_MODEL}
+                AND uncached_input_tokens + output_tokens + cache_read_tokens
+                  + cache_write_5m_tokens + cache_write_1h_tokens > 0`
+              : sql``
+          }
+          ${
+            after
+              ? sql`AND (calling_agent_id, call_id) > (${after.callingAgentId}, ${after.callId})`
+              : sql``
+          }
+        ORDER BY calling_agent_id, call_id
+        LIMIT ${limit}`);
+      return rows.map((r) => ({
+        callingAgentId: r.calling_agent_id,
+        callId: r.call_id,
+        provider,
+        model: r.model,
+        priceModel: r.price_model,
+        estimated: r.estimated,
+        estimateReasons: r.estimate_reasons,
+        uncachedInputTokens: Number(r.uncached_input_tokens),
+        outputTokens: Number(r.output_tokens),
+        cacheReadTokens: Number(r.cache_read_tokens),
+        cacheWrite5mTokens: Number(r.cache_write_5m_tokens),
+        cacheWrite1hTokens: Number(r.cache_write_1h_tokens),
+        webSearches: r.web_searches,
+      }));
+    },
+
+    async reprice(changes) {
+      if (changes.length === 0) return [];
+      return db.transaction(async (tx) => {
+        const input = sql.join(
+          changes.map(
+            (c) =>
+              sql`(${c.callingAgentId}::text, ${c.callId}::text, ${c.expectedSource}::text, ${c.costMicros}::bigint, ${c.priceSource}::text, ${c.priceModel}::text, ${c.estimated}::boolean, ${c.estimateReasons.join(",")}::text)`,
+          ),
+          sql`, `,
+        );
+        const changed = await tx.execute<{
+          call_id: string;
+          calling_agent_id: string;
+          day: string;
+          payer_agent_id: string;
+          owner_sub: string;
+          connection_id: string;
+          model: string;
+          session_id: string;
+          provider_template: string;
+          unit: string;
+          cost_micros: string;
+          cost_delta: string;
+          estimated: boolean;
+          estimated_delta: number;
+        }>(sql`
+          WITH input(calling_agent_id, call_id, expected, cost, src, pmodel, est, reasons) AS (
+            VALUES ${input}
+          ),
+          locked AS (
+            SELECT s.calling_agent_id, s.call_id, s.cost_micros AS old_cost,
+              s.estimated AS old_est
+            FROM ${spendCalls} s
+            JOIN input i
+              ON s.calling_agent_id = i.calling_agent_id AND s.call_id = i.call_id
+            WHERE s.price_source = i.expected
+            FOR UPDATE OF s
+          )
+          UPDATE ${spendCalls} c SET
+            cost_micros = i.cost,
+            price_source = i.src,
+            price_model = i.pmodel,
+            estimated = i.est,
+            estimate_reasons = CASE WHEN i.reasons = '' THEN '{}'::text[]
+              ELSE string_to_array(i.reasons, ',') END
+          FROM input i
+          JOIN locked l
+            ON l.calling_agent_id = i.calling_agent_id AND l.call_id = i.call_id
+          WHERE c.calling_agent_id = i.calling_agent_id AND c.call_id = i.call_id
+          RETURNING c.call_id, c.calling_agent_id,
+            to_char((c.started_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
+            c.payer_agent_id, c.owner_sub, c.connection_id, c.model, c.session_id,
+            c.provider_template, c.unit, c.cost_micros::text AS cost_micros,
+            (c.cost_micros - l.old_cost)::text AS cost_delta, c.estimated,
+            (c.estimated::int - l.old_est::int) AS estimated_delta`);
+        const repriced = changed.map((r) => ({
+          callId: r.call_id,
+          row: {
+            day: r.day,
+            payer: r.payer_agent_id,
+            ownerSub: r.owner_sub,
+            connectionId: r.connection_id,
+            model: r.model,
+            sessionId: r.session_id,
+            callingAgentId: r.calling_agent_id,
+            provider: r.provider_template,
+            unit: r.unit as SpendUnit,
+          },
+          costMicros: Number(r.cost_micros),
+          costDelta: Number(r.cost_delta),
+          estimated: r.estimated,
+          estimatedDelta: r.estimated_delta,
+        }));
+        const groups = new Map<
+          string,
+          { row: SpendRow; costDelta: number; estimatedDelta: number }
+        >();
+        for (const call of repriced) {
+          const key = JSON.stringify([
+            call.row.day,
+            call.row.payer,
+            call.row.connectionId,
+            call.row.model,
+            call.row.sessionId,
+            call.row.callingAgentId,
+          ]);
+          const group = groups.get(key) ?? {
+            row: call.row,
+            costDelta: 0,
+            estimatedDelta: 0,
+          };
+          group.costDelta += call.costDelta;
+          group.estimatedDelta += call.estimatedDelta;
+          groups.set(key, group);
+        }
+        if (groups.size > 0) {
+          const deltas = sql.join(
+            [...groups.values()].map(
+              ({ row, costDelta, estimatedDelta }) =>
+                sql`(${row.day}::date, ${row.payer}::text, ${row.connectionId}::text, ${row.model}::text, ${row.sessionId}::text, ${row.callingAgentId}::text, ${costDelta}::bigint, ${estimatedDelta}::int)`,
+            ),
+            sql`, `,
+          );
+          await tx.execute(sql`
+            UPDATE ${spendDaily} d SET
+              cost_micros = d.cost_micros + v.cost_delta,
+              estimated_calls = d.estimated_calls + v.estimated_delta,
+              max_call_cost_micros = coalesce((
+                SELECT max(s.cost_micros) FROM ${spendCalls} s
+                WHERE s.calling_agent_id = d.calling_agent_id
+                  AND s.session_id = d.session_id
+                  AND s.payer_agent_id = d.payer_agent_id
+                  AND s.connection_id = d.connection_id
+                  AND s.model = d.model
+                  AND s.started_at >= (d.day::timestamp AT TIME ZONE 'UTC')
+                  AND s.started_at < ((d.day + 1)::timestamp AT TIME ZONE 'UTC')
+              ), 0),
+              updated_at = now()
+            FROM (VALUES ${deltas}) AS v(day, payer_agent_id, connection_id,
+              model, session_id, calling_agent_id, cost_delta, estimated_delta)
+            WHERE d.day = v.day
+              AND d.payer_agent_id = v.payer_agent_id
+              AND d.connection_id = v.connection_id
+              AND d.model = v.model
+              AND d.session_id = v.session_id
+              AND d.calling_agent_id = v.calling_agent_id`);
+        }
+        return repriced.map((call) => ({
+          callId: call.callId,
+          row: call.row,
+          costMicros: call.costMicros,
+          costDelta: call.costDelta,
+          estimated: call.estimated,
+        }));
       });
     },
 

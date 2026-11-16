@@ -81,7 +81,8 @@ const ANTHROPIC_TABLE_PROVIDERS: ReadonlySet<string> = new Set([
   "anthropic-oauth",
 ]);
 
-const LISTED_PROVIDERS: ReadonlySet<string> = new Set(["ibm-litellm"]);
+export const LISTED_PROVIDERS: readonly string[] = ["ibm-litellm"];
+const LISTED: ReadonlySet<string> = new Set(LISTED_PROVIDERS);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the price of one call, first match wins. A
@@ -95,7 +96,7 @@ const LISTED_PROVIDERS: ReadonlySet<string> = new Set(["ibm-litellm"]);
  * Other providers keep an estimate from their model family.
  */
 export function lookupPrice(book: PriceBook, query: PriceQuery): CallPrice {
-  if (LISTED_PROVIDERS.has(query.provider)) return listedPrice(book, query);
+  if (LISTED.has(query.provider)) return listedPrice(book, query);
   const names = [query.pathModel, query.replyModel].filter(
     (name): name is string => !!name,
   );

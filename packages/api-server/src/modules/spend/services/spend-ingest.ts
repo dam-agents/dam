@@ -9,7 +9,6 @@ import {
 import { proxyCostDifference } from "../domain/cost.js";
 import {
   amountsDelta,
-  dayCountersOf,
   daysBefore,
   isZero,
   mapAmounts,
@@ -25,6 +24,7 @@ import { payingProvider, unitOf } from "../domain/units.js";
 import type { CallMeta, CallStates } from "../infrastructure/call-states.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
 import type { PriceMetrics } from "../infrastructure/price-metrics.js";
+import { createCountDay } from "./count-day.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 
 export interface AgentOwners {
@@ -99,23 +99,7 @@ export function createSpendIngest(deps: {
 }): SpendIngest {
   const log = () => getLogger();
 
-  const countDay = async (row: SpendRow, deltaMicros: number) => {
-    for (const counter of dayCountersOf(row)) {
-      try {
-        if (await deps.counters.addIfPresent(counter, deltaMicros)) continue;
-        await deps.counters.setIfMissing(
-          counter,
-          await deps.ledger.total(counter),
-        );
-      } catch (err) {
-        log().warn(
-          { counter, reason: formatError(err) },
-          "spend.counter_write_failed",
-        );
-        await deps.counters.drop(counter).catch(() => {});
-      }
-    }
-  };
+  const countDay = createCountDay(deps);
 
   const putCall = (
     callId: string,
@@ -411,14 +395,14 @@ export function createSpendIngest(deps: {
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
       const awaiting = measure.priceSource === "awaiting";
-      if (awaiting && record.connectionId)
-        deps.prices.requestRead(record.connectionId);
       const settled = await settle(record.callId, row, amounts, record.final, {
         ...record,
         priceSource: measure.priceSource,
         priceModel: measure.priceModel,
         estimateReasons: measure.estimateReasons,
       });
+      if (awaiting && record.final && record.connectionId)
+        deps.prices.requestRead(record.connectionId);
       if (settled && awaiting) {
         deps.metrics.awaitingPrice({
           provider: measure.provider,

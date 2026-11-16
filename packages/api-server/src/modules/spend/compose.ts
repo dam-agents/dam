@@ -5,7 +5,7 @@ import { exhaustMap, timer, type Subscription } from "rxjs";
 import { CALL_ROWS_RETENTION_DAYS, type SpendService } from "api-server-api";
 import { formatError } from "../../core/format-error.js";
 import { getLogger } from "../../core/logger.js";
-import type { PriceBook } from "./domain/prices.js";
+import { LISTED_PROVIDERS, type PriceBook } from "./domain/prices.js";
 import { loadAnthropicPriceTable } from "./infrastructure/anthropic-price-table.js";
 import { createRedisCallStates } from "./infrastructure/call-states.js";
 import { createRedisDayCounters } from "./infrastructure/day-counters.js";
@@ -22,6 +22,8 @@ import {
 import { createProviderPriceStore } from "./infrastructure/provider-prices.js";
 import { createLivePriceBook } from "./infrastructure/price-book.js";
 import { startReadPricesOnConnectionSaga } from "./sagas/read-prices-on-connection.js";
+import { createCountDay } from "./services/count-day.js";
+import { createRepricer } from "./services/reprice.js";
 import {
   createPriceReader,
   type PriceReader,
@@ -69,7 +71,6 @@ import {
   type SpendCeilingsForOperator,
 } from "./services/spend-ceilings-admin.js";
 
-const LISTED_PROVIDERS = ["ibm-litellm"] as const;
 const PRICE_BOOK_RELOAD_MS = 60_000;
 
 function fixedPrices(
@@ -84,6 +85,8 @@ function fixedPrices(
 export interface SpendSystem {
   ingest: SpendIngest;
   prices: PriceReader;
+  readAllPrices(): Promise<void>;
+  readPricesIfEmpty(): Promise<void>;
   readPricesSaga: Subscription;
   priceBookReload: Subscription;
   openCalls(agentId: string): Promise<number>;
@@ -146,13 +149,26 @@ export function composeSpendSystem(deps: {
     store: priceStore,
     providers: LISTED_PROVIDERS,
   });
+  const repricer = createRepricer({
+    ledger,
+    calls,
+    countDay: createCountDay({ counters, ledger }),
+    priceBook: () => priceBook.current(),
+    metrics,
+  });
   const prices = createPriceReader({
     connections: deps.pricedConnections,
     fetch: createModelInfoPriceFetch(),
     store: priceStore,
     operatorPrices: fixed.operatorPrices,
     metrics,
-    onWritten: () => priceBook.reload(),
+    onWritten: async ({ full }) => {
+      await priceBook.reload();
+      for (const provider of LISTED_PROVIDERS) {
+        await repricer.repriceAwaiting(provider);
+        if (full) await repricer.backfill(provider);
+      }
+    },
   });
   const ingest = createSpendIngest({
     priceBook: () => priceBook.current(),
@@ -167,6 +183,13 @@ export function composeSpendSystem(deps: {
   return {
     ingest,
     prices,
+    async readAllPrices() {
+      for (const provider of LISTED_PROVIDERS) await prices.readAll(provider);
+    },
+    async readPricesIfEmpty() {
+      for (const provider of LISTED_PROVIDERS)
+        await prices.readAllIfEmpty(provider);
+    },
     readPricesSaga: startReadPricesOnConnectionSaga({
       reader: prices,
       hasPriceListing,

@@ -16,6 +16,10 @@ export interface PriceMetrics {
   }): void;
   operatorPriceDiffers(labels: PricedModelLabels): void;
   awaitingPrice(labels: PricedModelLabels): void;
+  repriced(
+    labels: { readonly provider: string; readonly kind: string },
+    calls: number,
+  ): void;
 }
 
 export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
@@ -42,6 +46,10 @@ export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
     description:
       "Calls that no price source could price, counted at no cost until their price arrives",
   });
+  const repriced = meter.createCounter("platform.spend.repriced", {
+    description:
+      "Call rows priced again once their model's price arrived, by kind",
+  });
   const modelAttributes = ({ provider, model }: PricedModelLabels) => ({
     provider,
     model,
@@ -53,5 +61,7 @@ export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
     operatorPriceDiffers: (labels) =>
       operatorDiffers.add(1, modelAttributes(labels)),
     awaitingPrice: (labels) => awaiting.add(1, modelAttributes(labels)),
+    repriced: ({ provider, kind }, calls) =>
+      repriced.add(calls, { provider, kind }),
   };
 }

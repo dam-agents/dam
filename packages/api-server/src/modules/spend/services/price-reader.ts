@@ -64,20 +64,20 @@ export function createPriceReader(deps: {
   store: ProviderPriceStore;
   operatorPrices: readonly PricedModel[];
   metrics: PriceMetrics;
-  onWritten?: () => Promise<void>;
+  onWritten?: (write: { readonly full: boolean }) => Promise<void>;
   now?: () => Date;
 }): PriceReader {
   const log = () => getLogger();
   const now = deps.now ?? (() => new Date());
   const requestedAt = new Map<string, number>();
   const requested = new Set<string>();
-  const written = async () => {
+  const written = async (write: { readonly full: boolean }) => {
     await deps
-      .onWritten?.()
+      .onWritten?.(write)
       .catch((err: unknown) =>
         log().warn(
           { reason: formatError(err) },
-          "spend.price_book_not_reloaded",
+          "spend.after_price_write_failed",
         ),
       );
   };
@@ -204,7 +204,8 @@ export function createPriceReader(deps: {
     }
     const prices = [...merged.values()];
     await deps.store.put(provider, prices, run);
-    await written();
+    if (prices.length === 0) return;
+    await written({ full: true });
     logKept(
       provider,
       prices,
@@ -221,7 +222,7 @@ export function createPriceReader(deps: {
     const added = new Set(
       await deps.store.addMissing(connection.provider, read.prices, newRun()),
     );
-    if (added.size > 0) await written();
+    if (read.prices.length > 0) await written({ full: false });
     logKept(
       connection.provider,
       read.prices.filter((p) => added.has(p.model)),

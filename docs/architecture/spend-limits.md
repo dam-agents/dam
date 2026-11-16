@@ -117,6 +117,15 @@ On the Anthropic API, fast mode and US-only inference multiply the token prices 
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
+Two kinds of IBM LiteLLM call are priced again from their stored token counts, at the standard tier, because a call row keeps no tier:
+
+- **A call that waited for its price** is priced again as soon as a read brings a price for its model.
+  It stays an estimate only when another reason remains, such as a cut stream.
+- **An estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has token counts and names a model with a price.
+  It stays marked as an estimate, because its row does not say why it was estimated.
+
+A call that had a real price never changes.
+Each re-priced batch writes one `spend.repriced` log line with the number of calls, the total difference and its kind, and the counter `platform.spend.repriced` counts the calls by provider and kind.
 DAM compares its cost with the proxy's own cost on every completed dollar call whose reply carries that cost, cache reads and writes included, except a response-cache replay.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
 When these headers give no cost, as on a chat stream, the proxy's cost is the cost in the reply's usage.
@@ -208,6 +217,10 @@ A missing counter, for example after a Redis restart, is rebuilt from the rollup
 The api-server keeps the amounts it last applied for each call and adds only the difference, in one atomic step, so two replicas never count the same part twice and a call counts once.
 A periodic record that arrives after the final one changes nothing.
 
+**Re-pricing.** A re-priced call moves its call row and its rollup row by the same difference, in one transaction, and the rollup row's most expensive call is computed again from its call rows.
+Today's day counters then move by that difference too, and the call's kept state in Redis takes the new cost, so a late record of the same call adds nothing twice.
+A call row changes only while its price source is still the one that was read, so two replicas never re-price one call twice.
+
 **Open calls per agent.** Redis also keeps, per calling agent, the calls still in flight and when a record of each was last heard, so the [Invocation reaper](invocations.md#outcomes) can wait until a reported sub-agent's model calls have ended.
 
 ## Estimates
@@ -228,7 +241,7 @@ It counts high, except for an IBM LiteLLM call that waits for its price:
 - **An IBM LiteLLM call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
   It writes one `spend.call_awaiting_price` log line with the call, the Connection and the model, and the counter `platform.spend.awaiting_price` counts it by provider and model.
   The api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
-  Until the price arrives, a spend limit does not see the call.
+  Until the price arrives, a spend limit does not see the call; when it arrives, DAM prices the call again ([When a cost is fixed](#prices)).
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
 Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
