@@ -5,6 +5,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
 import { childCardLabel, REFUSED_ACCESS } from "../lib/github-card.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import {
@@ -49,7 +50,7 @@ interface Props {
   connection: ConnectionView;
   tag: string;
   inCard?: CardRowState;
-  usedBy?: readonly string[];
+  usedBy?: readonly ConnectionHolder[];
   iconSlug?: string;
   grant?: RowGrantControls;
   onManage?: () => void;

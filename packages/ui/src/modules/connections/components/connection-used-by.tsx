@@ -4,6 +4,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a connection's row says on the Connections
  * page, where there is no agent to add it to: how many agents use it, with
@@ -14,7 +16,7 @@ export function ConnectionUsedBy({
   agents,
 }: {
   connectionId: string;
-  agents: readonly string[];
+  agents: readonly ConnectionHolder[];
 }) {
   const testId = `connection-used-by-${connectionId}`;
   if (agents.length === 0)
@@ -42,8 +44,8 @@ export function ConnectionUsedBy({
           className="flex flex-col gap-1 text-sm text-foreground"
           data-testid={`${testId}-names`}
         >
-          {agents.map((name) => (
-            <li key={name} className="truncate" title={name}>
+          {agents.map(({ id, name }) => (
+            <li key={id} className="truncate" title={name}>
               {name}
             </li>
           ))}

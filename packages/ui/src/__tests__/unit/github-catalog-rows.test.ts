@@ -9,6 +9,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ConnectionHolder } from "../../modules/connections/hooks/use-connection-holders.js";
+
 const fake = vi.hoisted(() => ({
   installations: {
     isPending: false,
@@ -146,7 +148,7 @@ function render(
     onNewChild = () => {},
   }: {
     maintenance?: (connection: ConnectionView) => Maintenance;
-    holders?: Map<string, string[]>;
+    holders?: Map<string, ConnectionHolder[]>;
     onNewChild?: (parent: ConnectionView) => void;
   } = {},
 ) {
@@ -264,7 +266,15 @@ describe("a GitHub sign-in's card", RENDER_TIMEOUT, () => {
   // TEST_SCENARIO: on the Connections page there is no agent to add to; a row says how many agents use it, with their names on a click, or that none does.
   it("says who uses a connection on the Connections page", () => {
     render([SIGN_IN, NARROW, CHILD], {
-      holders: new Map([[NARROW.id, ["coder", "reviewer"]]]),
+      holders: new Map([
+        [
+          NARROW.id,
+          [
+            { id: "agent-1", name: "coder" },
+            { id: "agent-2", name: "reviewer" },
+          ],
+        ],
+      ]),
     });
 
     expect(byTestId(`catalog-add-${NARROW.id}`)).toBeNull();
@@ -280,6 +290,29 @@ describe("a GitHub sign-in's card", RENDER_TIMEOUT, () => {
     expect(
       byTestId(`connection-used-by-${NARROW.id}-names`, document)!.textContent,
     ).toBe("coderreviewer");
+  });
+
+  // TEST_SCENARIO: an own agent and a shared agent can carry the same name; the list of names shows each agent once, keyed by its id, so React sees no duplicate key.
+  it("lists two agents of the same name as two agents", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    render([SIGN_IN, NARROW], {
+      holders: new Map([
+        [
+          NARROW.id,
+          [
+            { id: "agent-1", name: "coder" },
+            { id: "agent-2", name: "coder" },
+          ],
+        ],
+      ]),
+    });
+
+    act(() => byTestId(`connection-used-by-${NARROW.id}`)!.click());
+
+    const names = byTestId(`connection-used-by-${NARROW.id}-names`, document)!;
+    expect(names.querySelectorAll("li")).toHaveLength(2);
+    expect(errors.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+    errors.mockRestore();
   });
 });
 

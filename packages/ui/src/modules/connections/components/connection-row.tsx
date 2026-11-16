@@ -1,6 +1,9 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import type { ConnectionHolders } from "../hooks/use-connection-holders.js";
+import type {
+  ConnectionHolder,
+  ConnectionHolders,
+} from "../hooks/use-connection-holders.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
@@ -23,7 +26,7 @@ export interface ConnectionRowControls {
 export function usedByOf(
   holders: ConnectionHolders | null | undefined,
   connectionId: string,
-): readonly string[] | undefined {
+): readonly ConnectionHolder[] | undefined {
   return holders ? (holders.get(connectionId) ?? []) : undefined;
 }
 

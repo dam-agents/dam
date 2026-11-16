@@ -1,5 +1,6 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
+import type { ConnectionHolder } from "../hooks/use-connection-holders.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
 import type {
   RowGrantControls,
@@ -16,7 +17,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
-  usedBy?: readonly string[];
+  usedBy?: readonly ConnectionHolder[];
   bare?: boolean;
 }
 

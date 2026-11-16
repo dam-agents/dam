@@ -5,10 +5,18 @@ import { useCallback, useMemo } from "react";
 import { trpc } from "../../../trpc.js";
 import { useAgents } from "../../agents/api/queries.js";
 
-export type ConnectionHolders = ReadonlyMap<string, readonly string[]>;
+export interface ConnectionHolder {
+  id: string;
+  name: string;
+}
+
+export type ConnectionHolders = ReadonlyMap<
+  string,
+  readonly ConnectionHolder[]
+>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Which agents hold each connection, by name, for
+ * UNIT_BOUNDARY_DESCRIPTION: Which agents hold each connection, by id and name, for
  * the Connections page, where a row says who uses it. It counts the viewer's
  * own agents and the agents shared with the viewer, since the viewer can add a
  * connection to both. It reads every agent's grants and is null until all of
@@ -20,12 +28,12 @@ export function useConnectionHolders(): ConnectionHolders | null {
   const combine = useCallback(
     (grants: { data?: AgentConnections; isSuccess: boolean }[]) => {
       if (!agents || !grants.every((grant) => grant.isSuccess)) return null;
-      const holders = new Map<string, string[]>();
+      const holders = new Map<string, ConnectionHolder[]>();
       agents.forEach((agent, i) => {
         for (const { connectionId } of grants[i]?.data?.connections ?? []) {
           holders.set(connectionId, [
             ...(holders.get(connectionId) ?? []),
-            agent.name,
+            { id: agent.id, name: agent.name },
           ]);
         }
       });
