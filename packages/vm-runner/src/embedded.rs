@@ -326,6 +326,10 @@ impl Runtime for Smolvm {
             if added == 0 {
                 return Ok(());
             }
+            anyhow::ensure!(
+                geometry.driver,
+                "the guest's virtio-mem driver did not take the RAM area, so no RAM added to it can reach the guest"
+            );
             if added > geometry.mapped {
                 let reply =
                     control_socket_cmd(&socket, &format!("PROTOTYPE_GROW_MEMORY {}", added >> 20))?;
@@ -461,7 +465,7 @@ impl Runtime for Smolvm {
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.
 const RAM_PLUG_WAIT: Duration = Duration::from_secs(30);
 
-// UNIT_BOUNDARY_DESCRIPTION: the VMM's virtio-mem area as its control socket reports it, in bytes but for the boot RAM: where the area starts in guest memory, how much of it the VMM has mapped, how much the guest has plugged, and how much it may ever hold.
+// UNIT_BOUNDARY_DESCRIPTION: the VMM's virtio-mem area as its control socket reports it, in bytes but for the boot RAM: where the area starts in guest memory, how much of it the VMM has mapped, how much the guest has plugged, how much it may ever hold, and whether the guest's virtio-mem driver took the device. A driver that never took it, as when its probe failed, plugs nothing the VMM adds.
 #[derive(Debug, PartialEq, Eq)]
 struct RamGeometry {
     boot_mib: u32,
@@ -469,11 +473,12 @@ struct RamGeometry {
     mapped: u64,
     plugged: u64,
     capacity: u64,
+    driver: bool,
 }
 
 fn ram_geometry(reply: &str) -> anyhow::Result<RamGeometry> {
     let words: Vec<&str> = reply.split_whitespace().collect();
-    let ["OK", "boot_mib", boot, "base", base, "mapped", mapped, "plugged", plugged, "capacity", capacity] =
+    let ["OK", "boot_mib", boot, "base", base, "mapped", mapped, "plugged", plugged, "capacity", capacity, "driver", driver] =
         words.as_slice()
     else {
         anyhow::bail!("the VMM reported no RAM area it can grow: {}", reply.trim());
@@ -485,6 +490,11 @@ fn ram_geometry(reply: &str) -> anyhow::Result<RamGeometry> {
         mapped: bytes(mapped)?,
         plugged: bytes(plugged)?,
         capacity: bytes(capacity)?,
+        driver: match *driver {
+            "1" => true,
+            "0" => false,
+            other => anyhow::bail!("the VMM reported a driver state of {other}"),
+        },
     })
 }
 
@@ -573,6 +583,7 @@ fn embedded_spec(
             target: PathBuf::from(SHARE_PATH),
             read_only: true,
             staged: false,
+            recorded_ownership: false,
         }],
         ports: vec![PortMapping::new(machine.host_port, GUEST_AGENT_PORT)],
         resources,
@@ -2192,7 +2203,7 @@ mod tests {
     #[test]
     fn a_grow_asks_for_whole_units_within_the_area() {
         let geometry = ram_geometry(
-            "OK boot_mib 2048 base 4294967296 mapped 0 plugged 0 capacity 68719476736\n",
+            "OK boot_mib 2048 base 4294967296 mapped 0 plugged 0 capacity 68719476736 driver 1\n",
         )
         .unwrap();
         assert_eq!(
@@ -2203,6 +2214,7 @@ mod tests {
                 mapped: 0,
                 plugged: 0,
                 capacity: 64 << 30,
+                driver: true,
             }
         );
         assert_eq!(ram_to_add(&geometry, 12032), 9984 << 20);
@@ -2210,6 +2222,11 @@ mod tests {
         assert_eq!(ram_to_add(&geometry, 2048 + 200), 128 << 20);
         assert_eq!(ram_to_add(&geometry, 1024), 0);
         assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
+        assert!(!ram_geometry("OK boot_mib 2048 base 4294967296 mapped 0 plugged 0 capacity 68719476736 driver 0\n").unwrap().driver);
+        assert!(ram_geometry(
+            "OK boot_mib 2048 base 4294967296 mapped 0 plugged 0 capacity 68719476736\n"
+        )
+        .is_err());
         assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
     }
 

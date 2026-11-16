@@ -11,6 +11,7 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { internalModel } from "api-server-api";
 import type {
   CatalogEntry,
   CatalogProvider,
@@ -259,7 +260,8 @@ describe("Bob's security check", () => {
   /** TEST_SCENARIO: With CurveBender alone the name is listed nowhere, so the
    * check runs on its Nemotron, the model the platform already prefers for a
    * classifier there, and the request reaches it as Bob sent it — the
-   * structured-output format included — so the check can answer. */
+   * structured-output format included — so the check can answer. That
+   * Nemotron is internal, offered to no picker, and the check still runs on it. */
   it("stands in CurveBender's Nemotron where none lists it", async () => {
     seen.length = 0;
     const router = await routerFor(["cb"]);
@@ -267,6 +269,7 @@ describe("Bob's security check", () => {
     expect(r.status).toBe(200);
     expect(seen[0]!.path).toBe("/cb/v1/chat/completions");
     expect(seen[0]!.body.model).toBe(CB_NEMOTRON);
+    expect(internalModel(CB_NEMOTRON)).toBe(true);
     expect(seen[0]!.body.response_format).toEqual(
       STRUCTURED_CHECK.response_format,
     );

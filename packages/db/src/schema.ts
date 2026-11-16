@@ -1811,6 +1811,12 @@ export const spendCalls = pgTable(
     webSearches: integer("web_searches").notNull().default(0),
     durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     estimated: boolean("estimated").notNull().default(false),
+    priceSource: text("price_source").notNull().default(""),
+    priceModel: text("price_model").notNull().default(""),
+    estimateReasons: text("estimate_reasons")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
   },
   (table) => [
     primaryKey({
@@ -1827,6 +1833,9 @@ export const spendCalls = pgTable(
     index("spend_calls_unbooked_idx")
       .on(table.startedAt)
       .where(sql`${table.sessionId} = '' AND ${table.stampedSessionId} <> ''`),
+    index("spend_calls_awaiting_price_idx")
+      .on(table.priceSource, table.priceModel)
+      .where(sql`${table.priceSource} = 'awaiting'`),
   ],
 );
 
@@ -1835,6 +1844,37 @@ export const spendAgentNames = pgTable("spend_agent_names", {
   ownerSub: text("owner_sub").notNull(),
   name: text("name").notNull(),
   removedAt: timestamp("removed_at", { withTimezone: true }).notNull(),
+});
+
+export const providerModelPrices = pgTable(
+  "provider_model_prices",
+  {
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    row: jsonb("row").notNull(),
+    freeSearchQuota: boolean("free_search_quota").notNull().default(false),
+    incomplete: text("incomplete")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    runId: text("run_id").notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "provider_model_prices_pk",
+      columns: [table.provider, table.model],
+    }),
+  ],
+);
+
+export const providerPriceReads = pgTable("provider_price_reads", {
+  connectionId: text("connection_id").primaryKey(),
+  provider: text("provider").notNull(),
+  lastOkAt: timestamp("last_ok_at", { withTimezone: true }),
+  lastRefusedAt: timestamp("last_refused_at", { withTimezone: true }),
+  lastStatus: integer("last_status"),
+  modelCount: integer("model_count").notNull().default(0),
 });
 
 export const spendMetering = pgTable(

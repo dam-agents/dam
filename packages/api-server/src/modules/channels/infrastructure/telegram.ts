@@ -36,11 +36,16 @@ import {
   type LinkOutboundArtifacts,
 } from "./outbound-artifact-links.js";
 import type {
+  ChannelCard,
   ChannelWorker,
   ChannelSendResult,
   PostEdit,
   PostMessageOptions,
 } from "../services/worker-contract.js";
+import {
+  channelBlockLinkButtons,
+  type ChannelLinkButton,
+} from "../domain/channel-blocks.js";
 import {
   AcpSessionLoadError,
   pairFields,
@@ -255,10 +260,28 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
   }
 }
 
+function telegramCardText(
+  text: string,
+  card: ChannelCard,
+): { markdown: string; buttons: ChannelLinkButton[] } {
+  const buttons = channelBlockLinkButtons(card.blocks);
+  const shownAsButtons = new Set(
+    buttons.map((button) => `[${button.label}](${button.url})`),
+  );
+  const cardText = card.text
+    .split("\n")
+    .filter((line) => !shownAsButtons.has(line))
+    .join("\n");
+  return {
+    markdown: [text, cardText].filter((part) => part.trim()).join("\n\n"),
+    buttons,
+  };
+}
+
 export function telegramPayload(
   text: string,
   options?: Pick<PostMessageOptions, "attachment" | "card">,
-): string | PostableCard | { markdown: string; files: FileUpload[] } {
+): string | PostableCard | { markdown: string; files?: FileUpload[] } {
   const { attachment, card } = options ?? {};
   const files: FileUpload[] | undefined = attachment
     ? [
@@ -270,35 +293,15 @@ export function telegramPayload(
       ]
     : undefined;
   if (card) {
-    const { title, subtitle, ...rest } = card.card;
+    const { markdown, buttons } = telegramCardText(text, card);
+    if (buttons.length === 0) return { markdown, ...(files ? { files } : {}) };
     return {
-      card: text.trim()
-        ? {
-            ...rest,
-            children: [
-              { type: "text" as const, content: text },
-              ...(title
-                ? [
-                    {
-                      type: "text" as const,
-                      content: title,
-                      style: "bold" as const,
-                    },
-                  ]
-                : []),
-              ...(subtitle
-                ? [
-                    {
-                      type: "text" as const,
-                      content: subtitle,
-                      style: "muted" as const,
-                    },
-                  ]
-                : []),
-              ...card.card.children,
-            ],
-          }
-        : card.card,
+      card: Card({
+        children: [
+          ...(markdown.trim() ? [CardText(markdown)] : []),
+          Actions(buttons.map((button) => LinkButton(button))),
+        ],
+      }),
       ...(files ? { files } : {}),
     };
   }
@@ -322,12 +325,12 @@ export function telegramCardTooLong(
   const { attachment, card } = options ?? {};
   if (!card) return null;
   const limit = attachment ? TELEGRAM_CAPTION_CHARS : TELEGRAM_MESSAGE_CHARS;
-  const message = [text, card.text].filter((part) => part.trim()).join("\n\n");
+  const message = telegramCardText(text, card).markdown;
   const length =
     message.length + (message.match(MARKDOWN_V2_ESCAPED)?.length ?? 0);
   return length > limit
     ? {
-        error: `With its card the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the card or the text, or send them as two messages.`,
+        error: `With the text of its blocks the message is ${length} characters long, and Telegram takes at most ${limit}${attachment ? " beside a file" : ""}. Shorten the blocks or the text, or send them as two messages.`,
       }
     : null;
 }

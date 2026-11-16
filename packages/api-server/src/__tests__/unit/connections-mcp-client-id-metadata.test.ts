@@ -392,6 +392,72 @@ describe("custom MCP OAuth client", () => {
     expect(provider.resource).toBe(MCP_URL);
   });
 
+  // TEST_SCENARIO: a catalog template that fixes its MCP server address (Figma) stores no URL input on the connection; sign-in rediscovers from the template's address and still refuses a changed authorization server.
+  it.each(["current", "changed-server"])(
+    "signs in to a fixed-address MCP template with %s metadata",
+    async (state) => {
+      mcpServer({ cimd: true, scopes: ["mcp:read"] });
+      const template = mcpOAuthTemplate();
+      if (template.authKind !== "oauth")
+        throw new Error("expected OAuth template");
+      const fixed = { ...template, id: "fixed-mcp", mcpUrl: MCP_URL };
+      const built = await buildConnection(
+        fixed,
+        { templateId: fixed.id, authKind: "oauth", name: "fixed" },
+        mintRef,
+        CALLBACK,
+        "Test",
+      );
+      const conn: Connection = {
+        id: "conn-fixed",
+        ownerId: "owner",
+        templateId: fixed.id,
+        name: "fixed",
+        inputs: {},
+        auth: connectionAuthConfigSchema.parse(built.auth),
+        contributions: built.contributions,
+      };
+      if (state === "changed-server")
+        vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+          String(input) === `${AS}/.well-known/oauth-authorization-server`
+            ? Response.json({
+                authorization_endpoint: `${AS}/authorize`,
+                token_endpoint: `${AS}/different-token`,
+              })
+            : String(input).includes("oauth-protected-resource")
+              ? Response.json({
+                  resource: MCP_URL,
+                  authorization_servers: [AS],
+                  scopes_supported: ["mcp:read"],
+                })
+              : new Response("unavailable", { status: 503 }),
+        );
+      const flow = createOAuthFlowService({
+        engine: createOAuthEngine({
+          pendingStore: createMemoryTtlStore(600_000),
+        }),
+        ownerId: "owner",
+        callbackUrl: CALLBACK,
+        templates: createConnectionTemplateRegistry([fixed]),
+        secretStore: unused(),
+        repo: unused<ConnectionsRepository>({ get: async () => conn }),
+        connectionLock: keyedMutex(),
+        githubAppEngine: unused(),
+        runtimeMutator: unused(),
+      });
+      if (state === "changed-server") {
+        await expect(flow.startOAuth(conn.id)).rejects.toThrow(
+          /authorization server changed/,
+        );
+        return;
+      }
+      const started = new URL((await flow.startOAuth(conn.id)).authUrl);
+      expect(started.origin + started.pathname).toBe(`${AS}/authorize`);
+      expect(started.searchParams.get("scope")).toBe("mcp:read");
+      expect(started.searchParams.get("resource")).toBe(MCP_URL);
+    },
+  );
+
   // TEST_SCENARIO: a resource server accepts only tokens issued for its own identifier. That identifier must survive stored auth parsing and appear on authorization, code exchange and refresh requests.
   it("binds the MCP connection's entire OAuth flow to its resource", async () => {
     mcpServer({ cimd: true });

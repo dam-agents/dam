@@ -1,6 +1,6 @@
 # Connection presets
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 What each shipped Connection Template gives an Agent: the template's shape, the hosts it reaches, the credential the gateway injects and the Contributions a grant materializes.
 The model they all share — a template, a grant, and which rail each Contribution kind takes — is on [connections](connections.md).
@@ -117,7 +117,7 @@ Bob is the case that needs more than a base URL.
 It prefixes every gateway call with its own service path, and that prefix is not configurable, so the Connection also declares the prefix rewrite the gateway applies; the auth scheme needs no such treatment, because the gateway overwrites the credential header outright.
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
 Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since only the Bob Shell Connection's own settings reach one.
-The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
+The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through LiteLLM's model info, or through the OpenAI model list when the key is refused it, and a session picks one per turn.
 The [owner model catalog](owner-model-catalog.md) lists the same models without an agent, reading the stored key in the api-server itself.
 Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
@@ -134,8 +134,12 @@ Where the deployment offers CurveBender, Settings / Providers lists the own-key 
 Work runs on DeepSeek V4.1 Flash, which the Connection's work slots pin; Claude Code's non-reasoning permission classifier is the router's call, from the session provider's preferred classifier ([harness configuration](harness-config.md#the-model-router)), since a routed provider's env never reaches the harness beyond what its manifest claims.
 The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to the catalog, which Claude Code's per-model map and Pi read: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
 A smaller number compacts well below the real ceiling, and a larger one makes it compact too late and the endpoint refuses the call.
-Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
-Pi applies these hints to every listed model.
+The catalog describes CurveBender's own models ahead of that constant, with the values of a Pi tuned against them by hand: GLM 5.3, DeepSeek V4.1 Flash and Muse Spark take 1,048,576 tokens, Granite 5.0 524,288 and Nemotron 3 Ultra 262,144.
+DeepSeek and Muse Spark take images, GLM and Granite text only.
+Input and output share the window, so a model's output limit is its window, and Pi trims it by its prompt.
+Each of those four models also names the reasoning effort each of Pi's thinking levels sends and the levels it lacks: GLM and DeepSeek reach `max`, Muse Spark and Granite have no `off`.
+The effort is OpenAI-style, as the endpoint ignores the switch GLM's own vendor API uses.
+Pi also needs the reasoning capability, which the Connection declares for every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
 
 ## Deployment preset: CurveBender

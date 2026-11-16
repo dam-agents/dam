@@ -1,6 +1,5 @@
 import type { StateCreator } from "zustand";
 
-import { WIDE_DESKTOP_QUERY } from "../../../hooks/use-is-desktop.js";
 import {
   readPersistedFlag,
   writePersistedFlag,
@@ -40,16 +39,8 @@ export interface SidebarSlice {
   setMobileNavOpen: (open: boolean) => void;
 }
 
-function wideScreen(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(WIDE_DESKTOP_QUERY).matches
-  );
-}
-
 function readStoredSidebarExpanded(): boolean {
-  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, wideScreen());
+  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, true);
 }
 
 function readStoredSessionFilter(): ActivityFilters {

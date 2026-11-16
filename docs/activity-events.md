@@ -34,6 +34,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ScheduleFired` | `schedule_fire` | schedules |
 | `ConnectionCreated` | `connection_added` | connections |
 | `ConnectionRemoved` | `connection_removed` | connections |
+| `ConnectionCredentialChanged` | _elsewhere_ | connections |
 | `FilesImported` | `files_imported` | agent-proxies/import-proxy, files |
 | `ContributionApplyFailed` | `contribution_apply_failed` | runtime-delivery |
 | `ContributionRecovered` | `contribution_recovered` | runtime-delivery |

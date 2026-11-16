@@ -79,6 +79,8 @@ export {
   spendLimits,
   spendLimitExtensions,
   spendCeilings,
+  providerModelPrices,
+  providerPriceReads,
 } from "./schema.js";
 export {
   control,

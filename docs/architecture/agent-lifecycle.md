@@ -77,7 +77,9 @@ A plain create names neither a harness nor a provider, since each session picks 
 A create that grants a provider it was not named answers which one and what chose it — the default, a starter kit's or Template's providers list, or the harness's provider order — and the CLI prints it; one that grants none, or an Environment, answers nothing.
 One, not every fitting one, so the [default](harness-config.md#session-settings) sits on that provider: the owner's [default for new agents](profiles.md#the-default-for-new-agents), saved at create, else the one its runtime saves at its first `hello`, the model its image presets, and no call goes to a provider the owner never chose for this agent; picking a profile that runs on another provider grants that provider on its Providers section.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
-A create that names a provider gets that one alone.
+A create that names a provider gets that one alone, and starts on what that provider runs: a default Template create that names no harness boots on the harness of the owner's default for new agents when the provider runs it, else the install's default harness when it runs that, else the first harness the provider runs; the default for new agents becomes its chat default only when it names that same provider, and otherwise its chat default is saved at create as the provider's preferred model for the harness, once the provider has listed its models.
+A create may also name the harness, the model (`<provider>/<model id>`) and the per-session settings its chat default starts on; the pair is checked before anything is written, against the Connections the create grants and what they list for that harness, and saved before the first `hello`, so the shared CurveBender a `hello` grants an agent with nothing to run on is not granted beside it.
+A Template create answers what its agent starts on — the harness, the chat default's model (none while the first start picks it), and each provider granted with what chose it and the harnesses it runs — and the CLI warns when no provider the caller named runs that harness.
 A create from a [starter kit](starter-kits.md) that lists its providers gets one of them first, when the caller holds one, and the harness's order otherwise.
 Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
 A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
@@ -97,7 +99,7 @@ It never enters the agent, and a bad one surfaces as a pull failure rather than 
 See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
 Every harness ships in one image; a workload's image adds its own files ([agent-images](agent-images.md)).
-The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume).
+The platform contract is two fixed-path executables: a chat entrypoint (spawned as the ACP subprocess for chat-mode sessions) and a terminal entrypoint (spawned attached to a PTY for terminal-mode sessions, told which session to resume; a shell session runs the agent user's login shell instead).
 agent-runtime otherwise treats the harness as opaque.
 It also reserves the loopback **Artifact API Port** for the Agent's own [Artifact API](artifact-library.md#interactive-pages): the platform never starts anything there, and a server left running on it does not keep the Agent awake.
 The machine's disk is made with the machine, at its owner's pool size, so no first start waits on storage ([vm storage](vm-storage.md#the-disk)).

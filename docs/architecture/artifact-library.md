@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-11-10
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -159,7 +159,11 @@ A sharing change — visibility, retention date, and the viewer allowlist — is
 User-generated content is never served from the app origin.
 Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint and the front door of [Environments](environments.md#addresses) (`/e/<address>`) — never an app route.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint, the front door of [Environments](environments.md#addresses) (`/e/<address>`) and the brand icon the share pages show in the browser tab (`/brand/`) — never an app route.
+  The icon is the operator's SVG, so it is served sandboxed: it cannot run script as the share origin.
+  An artifact cannot set the tab icon itself, because the browser takes it only from the top-level share page, never from the frame.
+  A share page of an artifact an Agent published shows that Agent's [avatar](agent-avatars.md) in the tab instead, inlined in the page so it reaches only viewers the page lets in; an uploaded artifact, an artifact whose Agent is gone and a folder page keep the brand icon.
+  A public link therefore shows its Agent's avatar, never its name.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
   The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.

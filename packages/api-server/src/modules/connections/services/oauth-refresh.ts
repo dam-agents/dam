@@ -1,5 +1,9 @@
 import { and, eq, sql, type Db, connections as connectionsTable } from "db";
-import type { Connection, ConnectionAuthConfig } from "api-server-api";
+import type {
+  Connection,
+  ConnectionAuthConfig,
+  SecretRef,
+} from "api-server-api";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
@@ -205,8 +209,9 @@ async function markRefreshFailure(
           sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${auth.expiresAt === undefined ? null : String(auth.expiresAt)}`,
           sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
         ),
-      );
-    markedRows = (result as unknown as { rowCount?: number }).rowCount ?? 0;
+      )
+      .returning({ id: connectionsTable.id });
+    markedRows = result.length;
   } catch (writeErr) {
     log(
       `connection ${conn.id} refresh-failure marker write failed: ` +
@@ -320,28 +325,95 @@ export async function remintGitHubAppOne(
     connectionLock?: XactLock;
   },
 ): Promise<void> {
-  await mintUnderLock(
-    conn,
-    auth,
-    writerDeps(deps, gitHubAppMintLockKey(conn.id)),
-    async (fresh, freshAuth) => {
-      const privateKeyPem = await deps.secretStore.getField(
-        freshAuth.privateKeyRef,
-      );
-      if (!privateKeyPem) {
-        throw new Error(
-          `private key missing at ${freshAuth.privateKeyRef.path}`,
+  let refusedKey: { ref: SecretRef; pem: string } | undefined;
+  try {
+    await mintUnderLock(
+      conn,
+      auth,
+      writerDeps(deps, gitHubAppMintLockKey(conn.id)),
+      async (fresh, freshAuth) => {
+        const privateKeyPem = await deps.secretStore.getField(
+          freshAuth.privateKeyRef,
         );
-      }
-      const next = await mintGitHubAppToken(deps.githubAppEngine, {
-        connectionRef: `connection:${conn.id}:${conn.templateId}`,
-        auth: freshAuth,
-        privateKeyPem,
-      });
-      await writeToken(deps.secretStore, fresh, freshAuth, next.accessToken);
-      return renewedAuth(freshAuth, next.expiresAt);
-    },
-  );
+        if (!privateKeyPem) {
+          throw new Error(
+            `private key missing at ${freshAuth.privateKeyRef.path}`,
+          );
+        }
+        const next = await mintGitHubAppToken(deps.githubAppEngine, {
+          connectionRef: `connection:${conn.id}:${conn.templateId}`,
+          auth: freshAuth,
+          privateKeyPem,
+        }).catch((err: unknown) => {
+          if (tokenRejectionOf(err)?.status === 401)
+            refusedKey = { ref: freshAuth.privateKeyRef, pem: privateKeyPem };
+          throw err;
+        });
+        await writeToken(deps.secretStore, fresh, freshAuth, next.accessToken);
+        return renewedAuth(freshAuth, next.expiresAt);
+      },
+    );
+  } catch (err) {
+    if (conn.parentId && refusedKey)
+      await markInstallationKeyRefused(conn, conn.parentId, refusedKey, deps);
+    throw err;
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a connection made from a GitHub App installation
+ * mints with the installation's key, and the installation itself mints nothing
+ * in the refresh loop. So when GitHub answers 401 to that key, the
+ * installation is marked expired here: it then says its key needs replacing,
+ * and adding a new key clears the mark and mints every connection made from
+ * it again. A 404 (the installation is gone) or a refused scope marks only the
+ * connection. Under the installation's mint lock, the mark is written only
+ * while the stored key is still the one GitHub refused, so a key replaced in
+ * the meantime is never marked. A failed write is logged and never hides the
+ * mint's own error.
+ */
+async function markInstallationKeyRefused(
+  child: Connection,
+  parentId: string,
+  refused: { ref: SecretRef; pem: string },
+  deps: { db: Db; secretStore: SecretStore; connectionLock?: XactLock },
+): Promise<void> {
+  const lock = deps.connectionLock ?? createXactLock(deps.db);
+  try {
+    const marked = await lock(gitHubAppMintLockKey(parentId), async () => {
+      const current = await deps.secretStore.getField(refused.ref);
+      if (current !== refused.pem) return false;
+      const result = await deps.db
+        .update(connectionsTable)
+        .set({
+          auth: sql`jsonb_set(${connectionsTable.auth}, '{refreshFailedAt}', to_jsonb(${Math.floor(Date.now() / 1000)}::bigint))`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(connectionsTable.id, parentId),
+            sql`${connectionsTable.auth} ->> 'kind' = 'github-app'`,
+            sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
+          ),
+        )
+        .returning({ id: connectionsTable.id });
+      return result.length > 0;
+    });
+    if (!marked) return;
+    securityLog("warn", "connection.installation_key_refused", {
+      category: "credential",
+      actor: "system:oauth-refresh",
+      actorKind: "system",
+      target: parentId,
+      result: "failure",
+      decision: "expired",
+      detail: { childId: child.id, templateId: child.templateId, status: 401 },
+    });
+  } catch (writeErr) {
+    process.stderr.write(
+      `[oauth-refresh] installation ${parentId} key-refused marker write failed: ${(writeErr as Error).message}\n`,
+    );
+  }
 }
 
 function writerDeps(

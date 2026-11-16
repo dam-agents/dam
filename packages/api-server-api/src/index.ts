@@ -25,8 +25,6 @@ export type {
   Resources,
 } from "./modules/templates/types.js";
 
-export { repoSchema } from "./modules/repos/schemas.js";
-export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
@@ -108,9 +106,11 @@ export {
   createModelDiscovery,
   forHarness,
   harnessCatalogOf,
+  internalModel,
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  priceListingForTemplate,
   nativePinOf,
   withNativePin,
   lookupPrice,
@@ -192,6 +192,7 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentDefaultProvider,
+  AgentStart,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,

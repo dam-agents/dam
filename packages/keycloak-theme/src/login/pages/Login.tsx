@@ -8,6 +8,7 @@ import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
 import { HeroBgShapes } from "../components/hero-bg-shapes.js";
 import { MessageAlert } from "../components/message-alert.js";
+import { NameMeaningHeading } from "../components/name-meaning-heading.js";
 import { ScaledStage } from "../components/scaled-stage.js";
 import { AccessSection } from "../components/sections/access.js";
 import { CapabilitiesSection } from "../components/sections/capabilities.js";
@@ -26,7 +27,6 @@ import {
 } from "../hooks/use-login-page-setup.js";
 import type { I18n } from "../i18n.js";
 import type { KcContext } from "../KcContext.js";
-import { splitMeaningLines } from "../lib/name-meanings.js";
 
 type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
 
@@ -283,7 +283,7 @@ function ScrollPage({
             <ScaledStage width={820} height={520}>
               <HeroBgShapes />
               <div className="relative h-full">
-                <SlackDmIllustration brand={brand} />
+                <SlackDmIllustration brand={brand} still />
               </div>
             </ScaledStage>
           </div>
@@ -292,16 +292,16 @@ function ScrollPage({
         <div className="relative z-10 flex min-h-dvh items-center py-24">
           <div className="flex w-full justify-center px-6 md:w-1/2">
             <div className="w-full max-w-[var(--width-login-col)] space-y-6">
-              <h1
-                key={nameMeaning}
-                className="text-foreground text-5xl leading-[0.95] font-light -tracking-[0.04em] motion-safe:animate-fade-in md:text-7xl"
-              >
-                {splitMeaningLines(nameMeaning ?? brand).map((line) => (
-                  <span key={line} className="block whitespace-nowrap">
-                    {line}{" "}
-                  </span>
-                ))}
-              </h1>
+              {nameMeaning ? (
+                <NameMeaningHeading
+                  meaning={nameMeaning}
+                  className="text-foreground relative z-20 text-5xl leading-[1.2] font-light -tracking-[0.04em] md:text-7xl"
+                />
+              ) : (
+                <h1 className="text-foreground text-5xl leading-[0.95] font-light -tracking-[0.04em] md:text-7xl">
+                  {brand}
+                </h1>
+              )}
               <p className="text-muted-foreground text-lg">
                 Work better with AI agent teammates.
               </p>
