@@ -24,6 +24,10 @@ import type {
   ThreadQuery,
   ThreadResult,
 } from "../../modules/channels/services/channel-manager.js";
+import {
+  checkChannelBlocks,
+  type ChannelBlock,
+} from "../../modules/channels/domain/channel-blocks.js";
 
 vi.mock("../../core/agent-service-client.js", () => ({
   agentServiceClient: () => ({
@@ -839,6 +843,59 @@ describe("outbound MCP tools — channel cards", () => {
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toContain('the button "Approve"');
     expect(replies).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Models do not know the blocks Slack added in 2026, so the
+   * rules and a reference come on request. The reference must list the layout
+   * and tile blocks, and an example the platform's own check would refuse
+   * must never be handed to an Agent.
+   */
+  it("describes the blocks on request, with examples that pass the check", async () => {
+    const { client } = await mcpHarness();
+    const { tools } = await client.listTools();
+    expect(
+      tools.find((t) => t.name === "describe_blocks")?.description,
+    ).toMatch(/reply, post, start_thread and edit_post/);
+    expect(
+      tools.find((t) => t.name === "reply")?.inputSchema.properties,
+    ).toMatchObject({
+      blocks: { description: expect.stringContaining("describe_blocks") },
+    });
+
+    const res = (await client.callTool({
+      name: "describe_blocks",
+      arguments: {},
+    })) as { content: { text: string }[] };
+    const described = JSON.parse(res.content[0]!.text) as {
+      reference: { type: string; example?: ChannelBlock }[];
+      examples: { blocks: ChannelBlock[] }[];
+    };
+
+    expect(described.reference.map((entry) => entry.type)).toEqual(
+      expect.arrayContaining([
+        "layout",
+        "card",
+        "container",
+        "carousel",
+        "table",
+        "data_visualization",
+      ]),
+    );
+    const shown = [
+      ...described.examples.map((example) => example.blocks),
+      ...described.reference.flatMap((entry) =>
+        entry.example ? [[entry.example]] : [],
+      ),
+    ];
+    expect(shown.length).toBeGreaterThanOrEqual(2);
+    for (const blocks of shown)
+      expect(
+        checkChannelBlocks(blocks, {
+          agentId: "agent-1",
+          choiceButtons: "refuse",
+        }),
+      ).toHaveProperty("blocks");
   });
 });
 

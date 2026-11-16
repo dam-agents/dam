@@ -75,7 +75,12 @@ import {
   channelBlocksText,
   checkChannelBlocks,
 } from "../../modules/channels/domain/channel-blocks.js";
+import {
+  TELEGRAM_CAPTION_CHARS,
+  TELEGRAM_MESSAGE_CHARS,
+} from "../../modules/channels/infrastructure/telegram.js";
 import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
+import { BLOCK_EXAMPLES, BLOCK_REFERENCE } from "./block-reference.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -184,7 +189,7 @@ function renderChecklist(steps: OnboardingStep[]): string {
 }
 
 const CARD_REMOVED =
-  "Nothing was sent: the card argument is gone. Send Slack Block Kit blocks in the blocks argument instead.";
+  "Nothing was sent: the card argument is gone. Send Slack Block Kit blocks in the blocks argument instead; describe_blocks lists the rules.";
 
 const REMOVED_ARGUMENTS: RemovedArguments = {
   reply: { card: CARD_REMOVED },
@@ -355,7 +360,7 @@ export function createMcpSession(
   const blocksInput = blocksSchema
     .optional()
     .describe(
-      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button needs a url.",
+      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button needs a url. Call describe_blocks for the rules and the newer blocks.",
     );
 
   const blocksOf = async (
@@ -368,7 +373,7 @@ export function createMcpSession(
     });
     if ("issues" in checked)
       return {
-        error: `The blocks were not sent: ${checked.issues.join("; ")}. Fix the blocks, or send the message as text.`,
+        error: `The blocks were not sent: ${checked.issues.join("; ")}. Fix the blocks — describe_blocks lists the rules and the newer blocks — or send the message as text.`,
       };
     return {
       card: {
@@ -436,6 +441,34 @@ export function createMcpSession(
       );
       return textResult(JSON.stringify({ chats }));
     },
+  );
+
+  server.tool(
+    "describe_blocks",
+    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, link buttons. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
+    {},
+    async () =>
+      textResult(
+        JSON.stringify({
+          format:
+            "blocks is a list of Slack Block Kit blocks, written exactly as Slack defines them. The message text stays above the blocks, and reply and post may send blocks alone. Use blocks when structure helps the reader, such as numbers in tiles, a table or a chart; a conversational answer reads better as plain text.",
+          rules: [
+            "Any Block Kit block is allowed, also one this reference does not list.",
+            "A button needs a url: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
+            "Selects, inputs, checkboxes, radio buttons, date and time pickers, overflow menus and workflow buttons are refused, because their answer cannot reach you.",
+            "The platform writes its own action_id on every button and drops a link button's value.",
+            "A message holds at most 50 blocks: its text, your blocks with the blocks nested in them, and the footer.",
+            "Slack checks the blocks. When it refuses them, nothing is sent and you get Slack's own error: fix the blocks, or send the message as text.",
+          ],
+          channels: {
+            slack:
+              "The blocks as you wrote them. Notifications and the history agents read show their text.",
+            telegram: `The text of the blocks, with each link button as a Telegram button. Telegram has no tiles, tables or charts. The message text and the blocks' text together hold at most ${TELEGRAM_MESSAGE_CHARS} characters, or ${TELEGRAM_CAPTION_CHARS} beside a file.`,
+          },
+          reference: BLOCK_REFERENCE,
+          examples: BLOCK_EXAMPLES,
+        }),
+      ),
   );
 
   const POST_ANSWERS: Record<ChannelType, string> = {
