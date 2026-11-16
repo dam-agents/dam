@@ -1,6 +1,6 @@
-import type { CardElement } from "chat";
 import { z } from "zod";
 import { ChannelType } from "api-server-api";
+import type { ChannelBlock } from "../domain/channel-blocks.js";
 
 export interface ChannelAttachment {
   filename: string;
@@ -10,7 +10,7 @@ export interface ChannelAttachment {
 }
 
 export interface ChannelCard {
-  card: CardElement;
+  blocks: ChannelBlock[];
   text: string;
 }
 

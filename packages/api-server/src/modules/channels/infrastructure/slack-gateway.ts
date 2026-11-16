@@ -80,6 +80,24 @@ export type SlackRespond = (
   blocks?: SlackBlock[],
 ) => Promise<void>;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What an interaction with an element of a post
+ * carries beyond the element's identifier: the post and its thread, the
+ * moment of the interaction, and what the person did. A button gives its
+ * label. Any other element gives its own state, as Slack sends it. `fields`
+ * is the state of every stateful element of the post at that moment, which
+ * is how the values of a form reach the app when its button is clicked.
+ */
+export interface SlackClickedPost {
+  ts: string;
+  threadTs?: string;
+  clickedAt: string;
+  elementType: string;
+  label?: string;
+  changed?: Record<string, unknown>;
+  fields?: Record<string, unknown>;
+}
+
 export interface SlackMessageAction {
   actionId: string;
   value: string;
@@ -88,6 +106,7 @@ export interface SlackMessageAction {
   channelId: string;
   channelName?: string;
   teamId: SlackWorkspace;
+  post?: SlackClickedPost;
 }
 
 export interface SlackMessageReplacement {

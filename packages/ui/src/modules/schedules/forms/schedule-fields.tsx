@@ -1,4 +1,5 @@
 import { Add, ChevronDown, Information } from "@carbon/icons-react";
+import { internalModel } from "api-server-api";
 import { useId, useState } from "react";
 import { flushSync } from "react-dom";
 import type {
@@ -468,7 +469,9 @@ export function ScheduleModelField({
   value: string;
   onChange: (model: string) => void;
 }) {
-  const choices = useSessionModelChoices(agentId || null);
+  const choices = useSessionModelChoices(agentId || null).filter(
+    (c) => c.value === value || !internalModel(c.value),
+  );
   const hasDefault = useHasHarnessDefault(agentId || null);
   const supported = choices.length > 0;
   if (!supported && !value) return null;

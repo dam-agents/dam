@@ -85,20 +85,21 @@ import {
 } from "../../assistants/api/assistant-state.js";
 import {
   AssistantGreeting,
-  AssistantIdeas,
+  TrySomethingNew,
 } from "../../assistants/components/assistant-greeting.js";
 import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
 import {
   useAssistantChat,
   useAssistantGreeting,
 } from "../../assistants/hooks/use-assistant-greeting.js";
+import { ideasNotStarted } from "../../assistants/lib/greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -473,8 +474,8 @@ export function ChatView() {
     showJump,
     historyShown,
   } = useChatScroll({ messages, sessionId, loadingSession, loadOlderMessages });
-  const features = useFeatures().data;
-  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
+  const telemetryEnabled =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
   const delegationOwners = useDelegationOwners(messages);
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
@@ -1035,16 +1036,6 @@ export function ChatView() {
                       onNewTerminal={handleNewTerminal}
                     />
                   )}
-                  {assistantChat && selectedAgent && (
-                    <div className="mt-5">
-                      <AssistantIdeas
-                        ideas={ideas}
-                        agentId={selectedAgent}
-                        sessionId={sessionId}
-                        onPicked={() => textareaRef.current?.focus()}
-                      />
-                    </div>
-                  )}
                   {startNotice && <div className="mt-6">{startNotice}</div>}
                 </div>
               )}
@@ -1247,6 +1238,21 @@ export function ChatView() {
               setPairPickerOpen(true);
             }}
           />
+          {assistantChat &&
+            selectedAgent &&
+            !(emptyChat && greeting.kind !== "none") && (
+              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                <ChatColumn>
+                  <TrySomethingNew
+                    key={sessionId ?? "new"}
+                    ideas={ideasNotStarted(ideas, messages)}
+                    agentId={selectedAgent}
+                    sessionId={sessionId}
+                    onPicked={() => textareaRef.current?.focus()}
+                  />
+                </ChatColumn>
+              </div>
+            )}
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}

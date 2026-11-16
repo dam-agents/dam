@@ -56,10 +56,14 @@ Then the message box holds *I have a question about DAM:*, ready for the owner t
 Given that greeting, with its text in the message box
 When the owner sends it and the assistant replies
 Then the conversation is listed in the sidebar
+And above the message box a collapsed *Try something new* row is shown; opened, it offers every idea but the one whose text the sent message started with
 When they open a new chat on Dammy
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
 And the empty message box shows example prompts one after another, each with a *Tab* hint, in place of a first task
-And no greeting is shown, and the five idea pills are, under the cards for opening a new session elsewhere
+And no greeting is shown, and no idea pills are under the cards for opening a new session elsewhere
+And above the message box a collapsed *Try something new* row is shown
+When they open it
+Then it shows three idea pills and *Show all 5*, and a pill fills the message box without sending
 
 ## AC-5 — the assistant is an ordinary agent
 

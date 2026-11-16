@@ -1,6 +1,7 @@
 import { App, LogLevel, SocketModeReceiver } from "@slack/bolt";
 import { z } from "zod";
 import { formatError } from "../../../core/format-error.js";
+import { agentActionOf } from "../domain/channel-blocks.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
 import { renderSlackPostText } from "./slack-post-text.js";
@@ -525,13 +526,23 @@ export function createBoltSlackGateway(
         await ack();
         if (body.type !== "block_actions" || !body.channel) return;
         const channel = body.channel;
+        if (!("action_id" in action)) return;
+        if (
+          action.type !== "button" &&
+          action.type !== "overflow" &&
+          agentActionOf(action.action_id) === null
+        )
+          return;
         const value =
           action.type === "button"
             ? (action.value ?? "")
             : action.type === "overflow"
               ? action.selected_option.value
-              : null;
-        if (value === null || !("action_id" in action)) return;
+              : "";
+        const postTs = body.message?.ts ?? body.container?.["message_ts"];
+        const threadTs =
+          body.message?.["thread_ts"] ?? body.container?.["thread_ts"];
+        const fields = body.state?.values;
         await handlers.onMessageAction(
           {
             actionId: action.action_id,
@@ -541,6 +552,20 @@ export function createBoltSlackGateway(
             channelId: channel.id,
             ...(channel.name ? { channelName: channel.name } : {}),
             teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
+            ...(typeof postTs === "string"
+              ? {
+                  post: {
+                    ts: postTs,
+                    ...(typeof threadTs === "string" ? { threadTs } : {}),
+                    clickedAt: action.action_ts,
+                    elementType: action.type,
+                    ...(action.type === "button"
+                      ? { label: action.text.text }
+                      : { changed: { ...action } }),
+                    ...(fields ? { fields: { ...fields } } : {}),
+                  },
+                }
+              : {}),
           },
           async (message) => {
             await respond(

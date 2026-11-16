@@ -196,11 +196,11 @@ describe("agentsInstallSettings — what every agents module is built with", () 
 
   // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
   it("reads every feature the chart does not name as the default mode", () => {
-    expect(loadConfig().featureModes["agent-telemetry"]).toBe("experimental");
+    expect(loadConfig().featureModes["chat-forms"]).toBe("experimental");
     process.env.FEATURE_DEFAULT_MODE = "off";
-    process.env.FEATURE_MODES = JSON.stringify({ "agent-telemetry": "on" });
+    process.env.FEATURE_MODES = JSON.stringify({ "chat-forms": "on" });
     expect(loadConfig().featureModes).toMatchObject({
-      "agent-telemetry": "on",
+      "chat-forms": "on",
       "custom-avatars": "off",
     });
   });

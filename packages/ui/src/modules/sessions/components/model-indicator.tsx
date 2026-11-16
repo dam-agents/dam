@@ -5,6 +5,7 @@ import {
 } from "agent-runtime-api";
 import {
   aliasForProviderType,
+  internalModel,
   parseQualifiedModel,
   type ProviderPresetType,
   type SessionPair,
@@ -215,14 +216,16 @@ export function ModelIndicator({
     );
   };
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
-  const models = removed
-    ? []
-    : data?.availableModels === null
-      ? (carried
-          .find((h) => h.name === harness)
-          ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
-          ?.choices ?? [])
-      : (data?.availableModels ?? []);
+  const models = (
+    removed
+      ? []
+      : data?.availableModels === null
+        ? (carried
+            .find((h) => h.name === harness)
+            ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
+            ?.choices ?? [])
+        : (data?.availableModels ?? [])
+  ).filter((c) => c.value === model || !internalModel(c.value));
   const modelName = routed
     ? pairSummary(model, {
         settings,
@@ -360,10 +363,12 @@ export function ModelIndicator({
                 settings={settings}
                 defaults={defaults}
                 modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                  g.models.map((m) => ({
-                    value: m.name,
-                    name: `${m.upstreamId} · ${g.displayName}`,
-                  })),
+                  g.models
+                    .filter((m) => !internalModel(m.upstreamId))
+                    .map((m) => ({
+                      value: m.name,
+                      name: `${m.upstreamId} · ${g.displayName}`,
+                    })),
                 )}
                 onChange={onConfigure}
               />

@@ -53,9 +53,13 @@ import {
   SessionSettingsUnreadableError,
 } from "./sub-agent-tools.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
+import {
+  refuseRemovedArguments,
+  type RemovedArguments,
+} from "../../core/mcp-removed-arguments.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { registerSessionMessageTools } from "./session-message-tools.js";
-import { cardTreeSchema, registerThreadTools } from "./thread-tools.js";
+import { blocksSchema, registerThreadTools } from "./thread-tools.js";
 import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
@@ -68,19 +72,15 @@ import {
   type ToolContent,
 } from "../../core/mcp-tool-result.js";
 import {
-  buildChannelCard,
-  CARD_LIMITS,
-  cardComponents,
-  FIELD_CHARS,
-  LINK_BUTTONS_PER_ROW,
-  TABLE_CHARS,
-  TITLE_CHARS,
-} from "../../modules/channels/infrastructure/channel-card.js";
+  channelBlocksText,
+  checkChannelBlocks,
+} from "../../modules/channels/domain/channel-blocks.js";
 import {
   TELEGRAM_CAPTION_CHARS,
   TELEGRAM_MESSAGE_CHARS,
 } from "../../modules/channels/infrastructure/telegram.js";
 import type { ChannelCard } from "../../modules/channels/services/worker-contract.js";
+import { BLOCK_EXAMPLES, BLOCK_REFERENCE } from "./block-reference.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
@@ -187,6 +187,17 @@ function renderChecklist(steps: OnboardingStep[]): string {
     ...steps.map((s) => `${s.done ? "[x]" : "[ ]"} ${s.id}: ${s.label}`),
   ].join("\n");
 }
+
+const CARD_REMOVED =
+  "Nothing was sent: the card argument is gone. Send Slack Block Kit blocks in the blocks argument instead; describe_blocks lists the rules.";
+
+const REMOVED_ARGUMENTS: RemovedArguments = {
+  reply: { card: CARD_REMOVED },
+  post: { card: CARD_REMOVED },
+  send_channel_message: { card: CARD_REMOVED },
+  start_thread: { card: CARD_REMOVED },
+  edit_post: { card: CARD_REMOVED },
+};
 
 const SESSION_LOOKUP_TIMEOUT_MS = 2_000;
 
@@ -346,22 +357,29 @@ export function createMcpSession(
     })
     .optional();
 
-  const cardInput = cardTreeSchema
+  const blocksInput = blocksSchema
     .optional()
     .describe(
-      'Optional card shown under the text: key facts, a table, a chart, an image or link buttons. A tree whose root is { "type": "Card", "props": { … }, "children": [ … ] }. Call describe_card_components for the components, their props and the limits.',
+      "Optional Slack Block Kit blocks shown under the text, written as Slack defines them: tiles and columns, a table, a chart, an image, link buttons. Slack shows them as they are; Telegram shows their text. A button with a url opens a page; any other button or field sends the answer back to you. Call describe_blocks for the rules and the newer blocks.",
     );
 
-  const cardOf = async (
-    tree: Record<string, unknown> | undefined,
+  const blocksOf = async (
+    blocks: Record<string, unknown>[] | undefined,
   ): Promise<{ card?: ChannelCard } | { error: string }> => {
-    if (!tree) return {};
-    const built = buildChannelCard(tree);
-    if ("issues" in built)
+    if (!blocks || blocks.length === 0) return {};
+    const checked = checkChannelBlocks(blocks, {
+      agentId,
+    });
+    if ("issues" in checked)
       return {
-        error: `The card was not sent: ${built.issues.join("; ")}. Fix the card — describe_card_components lists the components, their props and the limits — or send the message as text.`,
+        error: `The blocks were not sent: ${checked.issues.join("; ")}. Fix the blocks — describe_blocks lists the rules and the newer blocks — or send the message as text.`,
       };
-    return { card: built.card };
+    return {
+      card: {
+        blocks: checked.blocks,
+        text: channelBlocksText(checked.blocks),
+      },
+    };
   };
 
   async function loadAttachment(
@@ -425,29 +443,37 @@ export function createMcpSession(
   );
 
   server.tool(
-    "describe_card_components",
-    "Describe what a card can hold. reply, post and start_thread take an optional card that shows key facts, a table, a chart, an image or link buttons under the message text: in Slack as native Slack blocks, in Telegram as text with its link buttons as Telegram buttons. Returns the card's format, its limits, and every component with its description, where it goes, whether it takes children, its props as JSON Schema and an example. Call it before your first card; a plain-text message needs none of it.",
+    "describe_blocks",
+    "Describe the blocks a post can carry. reply, post, start_thread and edit_post take optional Slack Block Kit blocks that show under the message text: tiles side by side, columns, a table, a chart, an image, buttons, a form. Returns the rules the platform applies, what each messenger shows, and a reference of the newer blocks with examples. Call it before your first blocks; a plain-text message needs none of it.",
     {},
     async () =>
       textResult(
         JSON.stringify({
           format:
-            'A card is a tree. The root is { "type": "Card", "props": { … }, "children": [ … ] }, and every child is { "type": <component>, "props": { … }, "children": [ … ] }, with children only on a component that takes them. A component that names "inside" goes only in that component. A Text\'s content and a Field\'s value are standard Markdown. The message text stays above the card, and reply and post may send a card alone. Use a card when structure helps the reader, such as a status with its key facts or numbers in a table or chart; a conversational answer reads better as plain text.',
+            "blocks is a list of Slack Block Kit blocks, written exactly as Slack defines them. The message text stays above the blocks, and reply and post may send blocks alone. Use blocks when structure helps the reader, such as numbers in tiles, a table or a chart; a conversational answer reads better as plain text.",
+          rules: [
+            "Any Block Kit block and element is allowed, also one this reference does not list: buttons, select menus, checkboxes, radio buttons, date and time pickers, and input blocks with text, number, email and URL fields.",
+            "A button with a url opens a page. Every other interaction reaches you as a message in the post's thread: it names who acted, and what they did.",
+            "A click on a button without a url names the button's label and the value you set on it, and carries the values of every field of the post, under the action_id you gave each field. So a form is input blocks and one button: the values arrive with the click.",
+            "An element outside an input block, such as a select beside a section, sends each change at once, as a message of its own. Put a field in an input block when you want its value only with the form's button.",
+            "Slack does not check a form in a message: a click arrives also when a field is empty, and an empty field comes as null. Check the values yourself, and ask again by editing the post.",
+            "A field that sends each change is passed on once it has been quiet for a moment, with its last value. A file a person adds in a form does not reach you, only its name: ask for the file in the thread.",
+            "The platform never changes your post. After an answer, change it yourself with edit_post, passing the post's ts from the message: show the result, remove or replace the buttons, mark a field that needs a fix. Until you do, the buttons stay live.",
+            "The person who clicks a button gets a private note that the click was passed to you. The same click by the same person with the same field values is not passed on again for a minute, or until you edit the post.",
+            "An interaction goes where a message in that thread goes. To get it in this session, ask with start_thread; an interaction with a plain post opens a new session, as a tagged reply under it does.",
+            "Anyone who sees the post may act on it. You decide whose answer counts.",
+            "Buttons without a url and fields work in Slack only. In Telegram they show in the text, and the person answers by typing. A private answer to a whisper takes link buttons only.",
+            "The platform writes its own action_id on every button and field, drops the value of a button with a url, and gives each field's value back under the action_id you wrote. Give each field of a post its own action_id: a repeated one gets a number added, and a field with none is named by its type and position.",
+            "A message holds at most 50 blocks: its text, your blocks with the blocks nested in them, and the footer.",
+            "Slack checks the blocks. When it refuses them, nothing is sent and you get Slack's own error: fix the blocks, or send the message as text.",
+          ],
           channels: {
             slack:
-              "Native Slack blocks. Notifications and the history agents read show the card as text.",
-            telegram: `Text, with each LinkButton as a Telegram button. Telegram has no tables or charts, so they arrive as text. The text and the card together hold at most ${TELEGRAM_MESSAGE_CHARS} characters, or ${TELEGRAM_CAPTION_CHARS} beside a file.`,
+              "The blocks as you wrote them. Notifications and the history agents read show their text.",
+            telegram: `The text of the blocks, with each link button as a Telegram button. Telegram has no tiles, tables or charts. The message text and the blocks' text together hold at most ${TELEGRAM_MESSAGE_CHARS} characters, or ${TELEGRAM_CAPTION_CHARS} beside a file.`,
           },
-          limits: {
-            ...CARD_LIMITS,
-            linkButtonsPerRow: LINK_BUTTONS_PER_ROW,
-            titleChars: TITLE_CHARS,
-            fieldChars: FIELD_CHARS,
-            tableCellChars: TABLE_CHARS,
-          },
-          buttons:
-            "Only LinkButton: a button that sends a choice back to you cannot be shown yet, so ask for a choice in the text.",
-          components: cardComponents(),
+          reference: BLOCK_REFERENCE,
+          examples: BLOCK_EXAMPLES,
         }),
       ),
   );
@@ -473,7 +499,7 @@ export function createMcpSession(
         "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
       ),
     attachment: attachmentInput,
-    card: cardInput,
+    blocks: blocksInput,
     unfurlLinks: z
       .boolean()
       .optional()
@@ -493,11 +519,11 @@ export function createMcpSession(
     text,
     chatId,
     attachment,
-    card: tree,
+    blocks,
     unfurlLinks,
     unfurlMedia,
   }: z.infer<z.ZodObject<typeof postInput>>) => {
-    const built = await cardOf(tree);
+    const built = await blocksOf(blocks);
     if ("error" in built) return errorResult(built.error);
     const { card } = built;
     const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -895,7 +921,7 @@ export function createMcpSession(
           "Use standard Markdown, not Slack mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
         ),
       attachment: attachmentInput,
-      card: cardInput,
+      blocks: blocksInput,
       threadTs: z
         .string()
         .optional()
@@ -930,14 +956,14 @@ export function createMcpSession(
     async ({
       text,
       attachment,
-      card: tree,
+      blocks,
       threadTs,
       chatId,
       alsoSendToChannel,
       unfurlLinks,
       unfurlMedia,
     }) => {
-      const built = await cardOf(tree);
+      const built = await blocksOf(blocks);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : undefined;
@@ -1043,7 +1069,7 @@ export function createMcpSession(
 
   server.tool(
     "edit_post",
-    "Change a post you made earlier, in place: keep one post up to date while a long task runs, or fix a mistake in a post you already sent, instead of posting again. Pass the chatId and ts that reply, post or start_thread returned for the post (for a thread you started, its threadTs is the ts), and the whole new text and card: the post then shows exactly what you pass, so repeat what should stay. A post that carries a file keeps it unless you pass attachment: on Slack that file then replaces the post's file, for example an updated chart in place of the old one. You can change only your own posts, never another agent's or a person's, and not a private answer to a whisper. An edit notifies no one, so when people must see the final state, also reply. Edits are limited to a few a minute; one refused for coming too fast says how long to wait.",
+    "Change a post you made earlier, in place: keep one post up to date while a long task runs, or fix a mistake in a post you already sent, instead of posting again. Pass the chatId and ts that reply, post or start_thread returned for the post (for a thread you started, its threadTs is the ts), and the whole new text and blocks: the post then shows exactly what you pass, so repeat what should stay. A post that carries a file keeps it unless you pass attachment: on Slack that file then replaces the post's file, for example an updated chart in place of the old one. You can change only your own posts, never another agent's or a person's, and not a private answer to a whisper. An edit notifies no one, so when people must see the final state, also reply. Edits are limited to a few a minute; one refused for coming too fast says how long to wait.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       chatId: z
@@ -1053,15 +1079,15 @@ export function createMcpSession(
       text: z
         .string()
         .describe(
-          "The whole new text of the post. On Slack, use standard Markdown, not mrkdwn. Leave it empty to show a card alone, or the file alone.",
+          "The whole new text of the post. On Slack, use standard Markdown, not mrkdwn. Leave it empty to show the blocks alone, or the file alone.",
         ),
-      card: cardInput,
+      blocks: blocksInput,
       attachment: attachmentInput.describe(
         "Slack only: a file that replaces the file the post carries, or adds one to a post without a file. Same shape as in post. Omit it to keep the post's file.",
       ),
     },
-    async ({ channel, chatId, ts, text, card: tree, attachment }) => {
-      const built = await cardOf(tree);
+    async ({ channel, chatId, ts, text, blocks, attachment }) => {
+      const built = await blocksOf(blocks);
       if ("error" in built) return errorResult(built.error);
       const { card } = built;
       const loaded = attachment ? await loadAttachment(attachment) : null;
@@ -1704,7 +1730,7 @@ export function createMcpSession(
 
   registerThreadTools(server, {
     callerSessionId,
-    cardOf,
+    blocksOf,
     startThread: (channel, start) =>
       deps.channelManager.startThread(agentId, channel, start),
     listThreads: (channel, sessionId) =>
@@ -2109,6 +2135,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     });
     await session.server.connect(session.transport);
     rejectOversizedArrays(session.transport);
+    refuseRemovedArguments(session.transport, REMOVED_ARGUMENTS);
 
     return session.transport.handleRequest(c.req.raw);
   });

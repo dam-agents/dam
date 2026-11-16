@@ -618,7 +618,7 @@ describe("the new session panel", () => {
     const modelText = openMenu(node, "Model").textContent ?? "";
     expect(modelText).toContain("Claude");
     expect(modelText).toContain("GLM");
-    expect(modelText).toContain("Other");
+    expect(modelText).toContain("Kimi K2.5");
     expect(modelText.match(/Claude Opus 5\.5/g)).toHaveLength(1);
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");
@@ -773,12 +773,12 @@ describe("the new session panel", () => {
     );
   });
 
-  /** TEST_SCENARIO: the Harness menu says what each harness is, so a person picking between six names has a sentence to go on (QA: "Harness" was the first field of every picker with no hint what any of the names means). */
-  it("describes each harness in the harness menu", () => {
+  /** TEST_SCENARIO: the Harness menu lists each harness by icon and name only; a second line of description under each name overlapped the next entry. */
+  it("names each harness in the harness menu without a description", () => {
     const node = mount(picker({ carried: [...carried, claudeCode] }));
-    expect(openMenu(node, "Harness").textContent).toContain(
-      "Anthropic's coding agent",
-    );
+    const menu = openMenu(node, "Harness").textContent;
+    expect(menu).toContain("Claude Code");
+    expect(menu).not.toContain("Anthropic's coding agent");
   });
 
   /** TEST_SCENARIO: the Harness dropdown carries each harness's icon on its option and on the selected value, and its accessible name stays "Harness". */

@@ -115,7 +115,7 @@ HELM_VALUES="${usage_helm_values:-}"
 eval "sets=(${usage_set:-})"
 HELM_EXTRA_ARGS=()
 for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
-# Inside one of the platform's own vm agents, every upstream this cluster
+# Inside one of the platform's own agents, every upstream this cluster
 # reaches leaves through that agent's gateway, which intercepts TLS with its
 # own CA. The agent's guest holds that CA at the guest contract's caFile path;
 # the cluster's gateways must trust it too or every injected connection fails
@@ -381,7 +381,7 @@ elif [ -n "${IS_SANDBOX:-}" ]; then
     fi
     # One process's out-of-memory kill must not take its container with it: on
     # cgroup v2 the kubelet groups a container's kills unless its configuration
-    # sets singleProcessOOMKill, so one VM agent's overrun would end its runner
+    # sets singleProcessOOMKill, so one agent's overrun would end its runner
     # and every machine of that owner (issue #5614). No kubelet command-line flag
     # carries the setting, so it is a kubelet configuration file, which k3s copies
     # into the kubelet's own drop-in dir wherever kubelet-arg names it — already
@@ -1244,7 +1244,7 @@ fi
 # images outgrow. The MongoDB agent stays on the 108 line, which still runs the
 # MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
 # dropped 5.0. Move it with that MongoDB version.
-# The 1.14.0 chart runs its own 1.14.0 operator image, so the dated
+# The 1.15.0 chart runs its own 1.15.0 operator image, so the dated
 # operator.version override this install carried while the chart lagged is gone.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
@@ -1262,7 +1262,7 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.14.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.15.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
     --set community.agent.version=108.0.27.9091-1 \

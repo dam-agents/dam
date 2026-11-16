@@ -51,7 +51,7 @@ export function usePaletteActions({
   const setChecklistExpanded = useStore((s) => s.setChecklistExpanded);
   const openChecklist = useOpenChecklist();
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const setNextTerminalPair = useStore((s) => s.setNextTerminalPair);
+  const setNextTerminalLaunch = useStore((s) => s.setNextTerminalLaunch);
   const setOpenBrowser = useStore((s) => s.setOpenBrowser);
   const deleteSession = useStore((s) => s.deleteSession);
   const openSidePanel = useOpenSidePanel();
@@ -92,7 +92,7 @@ export function usePaletteActions({
       open ? openChecklist() : setChecklistExpanded(false),
     newSession: startSession,
     newTerminal: (agentId) => {
-      setNextTerminalPair(agentId, null);
+      setNextTerminalLaunch(agentId, null);
       openAgentSession(
         agentId,
         crypto.randomUUID(),

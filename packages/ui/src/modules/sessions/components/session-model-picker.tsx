@@ -86,12 +86,7 @@ const CONTROL =
 
 interface MenuSection {
   title: string;
-  entries: {
-    key: string;
-    label: string;
-    harness?: string;
-    description?: string;
-  }[];
+  entries: { key: string; label: string; harness?: string }[];
 }
 
 interface Entry extends MenuEntry {
@@ -735,8 +730,6 @@ export function SessionModelPicker({
                           key: name,
                           label: harnessDisplayName(name, views) ?? name,
                           harness: name,
-                          description: views.find((view) => view.name === name)
-                            ?.description,
                         })),
                       },
                     ]}
@@ -1156,14 +1149,7 @@ export function ValueMenu({
                         <HarnessIcons harnesses={[entry.harness]} size="xs" />
                       </span>
                     )}
-                    <span className="min-w-0">
-                      <span className="block truncate">{entry.label}</span>
-                      {entry.description && (
-                        <span className="block whitespace-normal text-[12px] leading-snug text-muted-foreground">
-                          {entry.description}
-                        </span>
-                      )}
-                    </span>
+                    <span className="truncate">{entry.label}</span>
                   </span>
                 </DropdownMenuRadioItem>
               ))}

@@ -113,6 +113,30 @@ describe("the model a send picks", () => {
     });
   });
 
+  // TEST_SCENARIO: the fallback never lands on an internal model: it takes the provider's next model, else the next provider's first.
+  it("falls back past an internal model", () => {
+    const nemotron = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
+    expect(
+      topModelOf(
+        catalog([
+          { connectionId: "cb", alias: "cb", models: [nemotron, "llama-9"] },
+        ]),
+        [shared],
+        "claude-code",
+      ),
+    ).toEqual({ provider: "cb", model: "cb/llama-9" });
+    expect(
+      topModelOf(
+        catalog([
+          { connectionId: "cb", alias: "cb", models: [nemotron] },
+          { connectionId: "oai", alias: "openai", models: ["llama-9"] },
+        ]),
+        [shared, openai],
+        "claude-code",
+      ),
+    ).toEqual({ provider: "oai", model: "openai/llama-9" });
+  });
+
   // TEST_SCENARIO: a provider the agent does not hold is not a source, even when it lists the model the platform prefers.
   it("reads only the providers the agent holds", () => {
     const listed = catalog([

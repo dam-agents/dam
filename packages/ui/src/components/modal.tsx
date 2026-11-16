@@ -15,11 +15,11 @@ const MODAL_SIZE = {
   sm: "w-[480px]",
   md: "w-[560px]",
   lg: "w-[860px]",
-  xl: "w-[980px]",
 } as const;
 
 interface ModalProps {
   size?: keyof typeof MODAL_SIZE;
+  widthClass?: string;
   heightClass?: string;
 
   onClose?: () => void;
@@ -28,6 +28,7 @@ interface ModalProps {
 
 export function Modal({
   size = "md",
+  widthClass,
   heightClass,
   onClose,
   children,
@@ -56,7 +57,7 @@ export function Modal({
           aria-modal="true"
           aria-labelledby={labelId}
           className={cn(
-            MODAL_SIZE[size],
+            widthClass ?? MODAL_SIZE[size],
             "max-w-full",
             heightClass,
             MODAL_PANEL,
