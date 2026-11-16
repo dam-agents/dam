@@ -1,8 +1,8 @@
 diff --git i/Cargo.toml w/Cargo.toml
-index 7687bcc..3c23bc6 100644
+index c3e1831..ce4ec11 100644
 --- i/Cargo.toml
 +++ w/Cargo.toml
-@@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
+@@ -98,7 +98,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
  # mTLS for the fleet serve API (control↔node). axum-server's rustls acceptor
  # does the TLS handshake + client-cert verification; rustls-pemfile parses the
  # CA/cert/key PEMs handed to us at enrollment.
@@ -10,78 +10,12 @@ index 7687bcc..3c23bc6 100644
 +axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
  # Wraps a response body so serve counts a request until it has been sent.
  http-body = "1"
- rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
-diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
-index ef218c6..0e91d82 100644
---- i/crates/smolvm-network/src/stack.rs
-+++ w/crates/smolvm-network/src/stack.rs
-@@ -864,7 +864,7 @@ fn relay_accepted_tcp_connection(
-                 Ok(connection) => {
-                     let guest_destination =
-                         SocketAddr::new(std::net::IpAddr::V4(guest_ipv4), connection.guest_port);
--                    virtio_net_log!(
-+                    tracing::debug!(
-                         "virtio-net: accepted published TCP connection peer={} host_port={} guest_destination={}",
-                         connection.peer_addr,
-                         connection.host_port,
-diff --git i/crates/smolvm-network/src/tcp_relay.rs w/crates/smolvm-network/src/tcp_relay.rs
-index 7837343..549da5d 100644
---- i/crates/smolvm-network/src/tcp_relay.rs
-+++ w/crates/smolvm-network/src/tcp_relay.rs
-@@ -944,7 +944,7 @@ fn first_refusal_of_guest_port(reported: &mut HashSet<u16>, guest_port: u16) ->
- pub fn spawn_tcp_relay(connection: NewTcpConnection, relay_wake: Arc<WakePipe>) -> io::Result<()> {
-     let destination = connection.destination;
-     let thread_name = format!("smolvm-tcp-{}", destination.port());
--    virtio_net_log!(
-+    tracing::debug!(
-         "virtio-net: host TCP relay thread spawn attempt destination={} thread={}",
-         destination,
-         thread_name
-@@ -992,13 +992,13 @@ fn run_tcp_relay(connection: NewTcpConnection, relay_wake: Arc<WakePipe>) {
-     let exit_state = connection.exit_state.clone();
-     // The relay thread is intentionally isolated from smoltcp internals. Its
-     // contract is just channels in, channels out, and an exit code back.
--    virtio_net_log!(
-+    tracing::debug!(
-         "virtio-net: host TCP relay thread started destination={}",
-         destination
-     );
-     match tcp_relay_loop(connection, relay_wake, &exit_state) {
-         Ok(mode) => {
--            virtio_net_log!(
-+            tracing::debug!(
-                 "virtio-net: host TCP relay thread exited destination={} mode={:?}",
-                 destination,
-                 mode
-@@ -1044,12 +1044,12 @@ fn tcp_relay_loop(
-     let mut pending_guest_data: Option<(Vec<u8>, usize)> = None;
-     let stream = match relay_target {
-         RelayTarget::Connect(destination) => {
--            virtio_net_log!(
-+            tracing::debug!(
-                 "virtio-net: connecting host TCP relay socket destination={}",
-                 destination
-             );
-             let stream = TcpStream::connect(destination)?;
--            virtio_net_log!(
-+            tracing::debug!(
-                 "virtio-net: host TCP relay socket connected destination={}",
-                 destination
-             );
-@@ -1059,7 +1059,7 @@ fn tcp_relay_loop(
-             TcpStream::connect_timeout(&destination, INTERCEPT_VERDICT_TIMEOUT)?
-         }
-         RelayTarget::Attached(stream) => {
--            virtio_net_log!(
-+            tracing::debug!(
-                 "virtio-net: using accepted host TCP socket for published port guest_destination={} peer_addr={:?} local_addr={:?}",
-                 destination,
-                 stream.peer_addr().ok(),
+ # Hijacked connections (attach, exec) of the Docker Engine API.
 diff --git i/src/agent/launcher.rs w/src/agent/launcher.rs
-index 11814df..0d879f9 100644
+index 8013336..7b59ec1 100644
 --- i/src/agent/launcher.rs
 +++ w/src/agent/launcher.rs
-@@ -37,6 +37,11 @@ use std::path::{Path, PathBuf};
+@@ -35,6 +35,11 @@ use std::path::{Path, PathBuf};
  
  use super::{KrunFunctions, PortMapping, VmResources};
  
@@ -93,7 +27,7 @@ index 11814df..0d879f9 100644
  /// Maximum number of CIDR entries held in the live egress allow-list.
  /// Protects the muxer's per-packet O(n) scan from unbounded growth when
  /// a host resolves to many IPs across many refresh cycles.
-@@ -2511,13 +2516,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
+@@ -2661,13 +2666,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
          if packed_layers_dir.is_some_and(|d| d.exists()) {
              env_strings.push(cstr("SMOLVM_PACKED_LAYERS=smolvm_layers:/packed_layers"));
          }
@@ -120,10 +54,10 @@ index 11814df..0d879f9 100644
          argv.push(std::ptr::null());
  
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
-index b3d1976..eb06b65 100644
+index 25d4e08..363d7ae 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
-@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
+@@ -177,6 +177,9 @@ fn open_overlay_disk_for_manager(
      format: DiskFormat,
      access: DiskAccess,
  ) -> Result<OverlayDisk> {
@@ -133,7 +67,7 @@ index b3d1976..eb06b65 100644
      match (format, access) {
          (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
          (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
-@@ -1302,6 +1305,17 @@ fn console_tail(console: &str, max: usize) -> String {
+@@ -1775,6 +1778,17 @@ fn console_tail(console: &str, max: usize) -> String {
          .to_string()
  }
  
@@ -151,7 +85,7 @@ index b3d1976..eb06b65 100644
  impl AgentManager {
      /// Create a new agent manager with explicit paths (low-level).
      ///
-@@ -2487,7 +2501,9 @@ impl AgentManager {
+@@ -2966,7 +2980,9 @@ impl AgentManager {
          // A manager opened to observe a never-started machine has no disks to
          // boot from; creating them here would be creating them at a guessed
          // size. Launches go through a manager opened with the machine's sizes.
@@ -162,7 +96,7 @@ index b3d1976..eb06b65 100644
              let mut inner = self.inner.lock();
              inner.state = AgentState::Stopped;
              return Err(Error::agent(
-@@ -2515,7 +2531,11 @@ impl AgentManager {
+@@ -2994,7 +3010,11 @@ impl AgentManager {
              let overlay_disk = &self.overlay_disk;
              std::thread::scope(|s| {
                  let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
@@ -175,7 +109,7 @@ index b3d1976..eb06b65 100644
                  if let Err(e) = storage_handle.join().unwrap_or_else(|_| {
                      Err(crate::Error::storage("format storage", "thread panicked"))
                  }) {
-@@ -2581,6 +2601,14 @@ impl AgentManager {
+@@ -3060,6 +3080,14 @@ impl AgentManager {
          if let Err(error) = std::fs::write(&self.pid_file, identity) {
              tracing::warn!(pid, %error, "could not persist failed launch identity; retaining child handle");
          }
@@ -190,7 +124,7 @@ index b3d1976..eb06b65 100644
          process::stop_vm_process(pid, Duration::ZERO, process::VM_SIGKILL_TIMEOUT)?;
          if process::is_alive(pid) {
              return Err(Error::agent("abort launch", "VMM is still alive"));
-@@ -3408,6 +3436,9 @@ impl AgentManager {
+@@ -3890,6 +3918,9 @@ impl AgentManager {
              .map_err(|e| Error::agent("spawn boot subprocess", e.to_string()))?;
  
          let child_pid = child.id() as i32;
@@ -200,10 +134,10 @@ index b3d1976..eb06b65 100644
          // Register the detached VM PID for the serve supervisor's selective
          // reaper. The boot subprocess owns its process group and is never
          // `wait()`ed, so it would zombie on exit; the supervisor tick reaps it.
-@@ -4473,6 +4504,18 @@ pub(crate) fn vm_boot_executable() -> std::io::Result<PathBuf> {
+@@ -5017,6 +5048,18 @@ mod tests {
+         assert!(!super::branchable_from(&record, None));
+     }
  
- #[cfg(test)]
- mod tests {
 +    #[test]
 +    fn a_failed_launch_record_names_the_pid_and_the_signal() {
 +        let temp = tempfile::tempdir().unwrap();
@@ -220,21 +154,21 @@ index b3d1976..eb06b65 100644
      fn egress_flow_summary_round_trips_through_its_file_and_goes_stale() {
          use super::*;
 diff --git i/src/embedded/handle.rs w/src/embedded/handle.rs
-index fe6c2c1..02c600a 100644
+index 69c3bec..6685af6 100644
 --- i/src/embedded/handle.rs
 +++ w/src/embedded/handle.rs
-@@ -78,6 +78,9 @@ impl VmHandle {
+@@ -85,6 +85,9 @@ impl VmHandle {
          let Some(image) = record.image.as_deref() else {
              return Ok(());
          };
 +        if !crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
 +            return Ok(());
 +        }
+         self.pull_image(image, record.image_platform())?;
          let client = self.client_mut()?;
-         client.pull_with_registry_config(image)?;
          let mut env = record.env.clone();
 diff --git i/src/internal_boot.rs w/src/internal_boot.rs
-index dde77fa..7def090 100644
+index 7827431..bc634c7 100644
 --- i/src/internal_boot.rs
 +++ w/src/internal_boot.rs
 @@ -71,6 +71,14 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
@@ -295,10 +229,10 @@ index dde77fa..7def090 100644
  
      // CUDA-over-vsock opt-in, resolved once here at the boot-config boundary so
 diff --git i/src/process.rs w/src/process.rs
-index d0a12cf..dfac902 100644
+index 786fb0f..8a29e1b 100644
 --- i/src/process.rs
 +++ w/src/process.rs
-@@ -2411,6 +2411,7 @@ fn reap_vm_child(child: &VmChild, block: bool) -> Reap {
+@@ -2484,6 +2484,7 @@ fn reap_vm_child(child: &VmChild, block: bool) -> Reap {
          let mut status: libc::c_int = 0;
          let ret = unsafe { libc::waitpid(child.pid, &mut status, nohang) };
          if ret > 0 {
@@ -306,7 +240,7 @@ index d0a12cf..dfac902 100644
              if let Some(dir) = &child.machine_dir {
                  crate::vm_exit::record(
                      dir,
-@@ -2433,6 +2434,86 @@ fn reap_vm_child(child: &VmChild, block: bool) -> Reap {
+@@ -2506,6 +2507,86 @@ fn reap_vm_child(child: &VmChild, block: bool) -> Reap {
      }
  }
  
@@ -393,7 +327,7 @@ index d0a12cf..dfac902 100644
  /// The status of `pid` if it is a registered VM child: one the sweep already
  /// collected, or one reaped (and recorded) now. `None` means `pid` is not a
  /// VM child, or it is still running when `block` is false.
-@@ -2612,6 +2693,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
+@@ -2685,6 +2766,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
          let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
  
          if result == pid {
@@ -401,7 +335,7 @@ index d0a12cf..dfac902 100644
              // Process exited
              let exit_code = if libc::WIFEXITED(status) {
                  libc::WEXITSTATUS(status)
-@@ -2664,6 +2746,7 @@ pub fn wait(pid: Pid) -> i32 {
+@@ -2737,6 +2819,7 @@ pub fn wait(pid: Pid) -> i32 {
              return -1;
          }
  
@@ -409,7 +343,7 @@ index d0a12cf..dfac902 100644
          return if libc::WIFEXITED(status) {
              libc::WEXITSTATUS(status)
          } else if libc::WIFSIGNALED(status) {
-@@ -6031,6 +6114,95 @@ mod tests {
+@@ -6262,6 +6345,95 @@ mod tests {
          let _ = child.wait();
          assert!(!cmdline_contains(pid, &token), "a dead PID must not match");
      }
