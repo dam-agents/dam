@@ -24,6 +24,7 @@ import {
   type ShareSession,
 } from "../../modules/artifact-library/domain/share-session.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import type { AgentFavicon } from "../../modules/artifact-library/infrastructure/agent-favicon.js";
 
 function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
   return {
@@ -107,6 +108,7 @@ const unusedBridge: ShareBridgeService = {
 function appWith(
   viewer: ShareViewerService,
   tokens: Pick<RenderTokenService, "mint"> = renderTokens,
+  agentFavicon: AgentFavicon = () => Promise.resolve(null),
 ) {
   return createShareViewerApp({
     viewer,
@@ -121,6 +123,7 @@ function appWith(
     contentBaseUrl: "https://content.example.com",
     shareBaseUrl: "https://share.example.com",
     bridge: unusedBridge,
+    agentFavicon,
   });
 }
 
@@ -183,6 +186,35 @@ describe("share viewer app", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
+  });
+
+  // TEST_SCENARIO: The tab shows the avatar of the Agent that published the artifact; an uploaded artifact has no Agent and keeps the brand icon.
+  it("shows the publishing Agent's avatar as the tab icon", async () => {
+    const asked: string[] = [];
+    const favicon: AgentFavicon = (agentId, owner) => {
+      asked.push(`${owner}/${agentId}`);
+      return Promise.resolve("data:image/svg+xml,%3Csvg%2F%3E");
+    };
+    const published = await (
+      await appWith(publicViewer(), renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(published).toContain(
+      '<link rel="icon" href="data:image/svg+xml,%3Csvg%2F%3E"/>',
+    );
+    expect(published).not.toContain("/brand/icon.svg");
+
+    const uploaded = publicViewer({
+      resolveArtifact: () =>
+        Promise.resolve({
+          state: "ok",
+          artifact: artifactRow({ agentId: null }),
+        } satisfies SharedResolution),
+    });
+    const html = await (
+      await appWith(uploaded, renderTokens, favicon).request("/a/slug-a")
+    ).text();
+    expect(html).toContain("/brand/icon.svg");
+    expect(asked).toEqual(["o1/agent-1"]);
   });
 
   /**
