@@ -140,12 +140,13 @@ It answers from the `platform-docs` skill, which every agent image ships in its 
 It is an image built-in, not a [platform skill](skills.md#platform-skill): no feature owns it.
 The onboarding rules send the assistant to the skill for such a question, rather than leaving the choice to the skill's description alone.
 
-The skill holds no copy of the docs: it says where they are and the agent reads them at the moment it answers, so an answer follows the docs as they change, without a new image.
-The sources are public GitHub files that the default network rules admit: the user docs (the `dam-agents/docs` site's source, indexed by its `mkdocs.yml`), the release notes (the `dam-agents/dam` releases feed), and these architecture pages at the tag of the release the person's install runs.
-The agent learns that release from the [CLI](cli.md) it has over the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), and checks a feature against the architecture pages at that tag, so a feature the release does not have is described as not there yet.
-An Agent without that Connection reads the latest published release instead, and says it could not see the person's version.
-The answer is plain language with the pages it used as links.
-The documentation requests do not carry the question, and the agent posts it nowhere; it still reaches the Agent's model provider, as every message does.
+The skill answers from the platform's own repository, which the default image carries at the commit it was built from ([agent-images](agent-images.md#the-platforms-own-source)): these architecture pages, the glossary, the chart's values, the `dam` skill and the code.
+So an answer describes the release the agent runs and needs no network, and the skill cites each file by its GitHub link at that commit.
+The image also carries the user docs as they were when it was built; they have no releases of their own, so where they and the platform's own docs or code disagree, the platform's own win.
+A user docs page is cited by its page on the published site, which shows the latest user docs, and the answer says so.
+Only release notes live outside both, on the platform's GitHub releases, which the agent reads when asked what changed.
+The answer is plain language with the files it used as links.
+The agent posts the question nowhere; it still reaches the Agent's model provider, as every message does.
 
 ## Boundaries
 

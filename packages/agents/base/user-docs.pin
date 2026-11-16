@@ -1,0 +1,7 @@
+# The commit of dam-agents/docs, the published user docs' source, that the
+# default image bakes beside the platform's own source for the platform-docs
+# skill. The oci task fetches its GitHub archive and refuses one whose digest
+# is not sha256=. That repository has one branch and no releases: move this to
+# its newest main commit with the archive's digest.
+commit=74ac22f55d0eb4e0d0625beee3450d3d25d170f1
+sha256=d9c714f30799a7ea4a2dcabf9b6a8a294be7c08d6262c0f021c779bde3814c8f
