@@ -41,7 +41,7 @@ export function ConfigureAgentModal({ agent, initialSection, onClose }: Props) {
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   return (
-    <Modal size="xl" heightClass="h-[85vh]" onClose={onClose}>
+    <Modal widthClass="w-[960px]" heightClass="h-[85vh]" onClose={onClose}>
       <SettingsBanner agent={agent} onClose={onClose} />
       <div
         className="flex min-h-0 flex-1 flex-col"
