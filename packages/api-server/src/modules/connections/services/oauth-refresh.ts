@@ -209,8 +209,9 @@ async function markRefreshFailure(
           sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${auth.expiresAt === undefined ? null : String(auth.expiresAt)}`,
           sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
         ),
-      );
-    markedRows = (result as unknown as { rowCount?: number }).rowCount ?? 0;
+      )
+      .returning({ id: connectionsTable.id });
+    markedRows = result.length;
   } catch (writeErr) {
     log(
       `connection ${conn.id} refresh-failure marker write failed: ` +
@@ -394,8 +395,9 @@ async function markInstallationKeyRefused(
             sql`${connectionsTable.auth} ->> 'kind' = 'github-app'`,
             sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
           ),
-        );
-      return ((result as unknown as { rowCount?: number }).rowCount ?? 0) > 0;
+        )
+        .returning({ id: connectionsTable.id });
+      return result.length > 0;
     });
     if (!marked) return;
     securityLog("warn", "connection.installation_key_refused", {
