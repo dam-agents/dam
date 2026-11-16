@@ -19,7 +19,7 @@
     "@codemirror/view": "^6.43.15",
     "@git-diff-view/file": "0.1.8",
     "@git-diff-view/react": "0.1.8",
-    "@hookform/resolvers": "^6.0.0",
+    "@hookform/resolvers": "^7.0.5",
     "@radix-ui/react-alert-dialog": "^1.2.1",
     "@radix-ui/react-checkbox": "^1.4.1",
     "@radix-ui/react-context-menu": "^2.4.1",
