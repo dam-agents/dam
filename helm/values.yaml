@@ -249,7 +249,7 @@ istio:
 # the install against the cluster at startup and every few minutes — a node
 # advertising `runner.devices`, the runner ServiceAccount, the image budget, the
 # memory limit against `reserveMiB`, egress that reaches the cluster's own
-# ranges — logs what it finds, and names any problem on a vm agent whose
+# ranges — logs what it finds, and names any problem on an agent whose
 # runner is not ready.
 # -- Environments: sandboxes an agent creates for others to open, one per pull
 # request for example.
@@ -336,7 +336,7 @@ virtualization:
     # owner unmapped, so a 0660 root:kvm device does not open (systemd's own
     # default is 0666; Debian and Ubuntu lower it). E.g. squat's generic-device-plugin, as
     # `squat.ai/kvm`, which local dev applies from helm/extra/kvm-device-plugin.yaml;
-    # a cluster with none cannot host vm agents, and the controller says so at
+    # a cluster with none cannot host agents, and the controller says so at
     # startup when no schedulable node matching `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
@@ -351,18 +351,18 @@ virtualization:
     # rendered.
     scc: ""
     # One claim, two directories with two lifetimes: `disks/` holds the
-    # machine disks — every vm agent's storage — and `machines/` the
+    # machine disks — every agent's storage — and `machines/` the
     # per-machine bookkeeping a restarted runner rebuilds. The unpacked agent
     # images are on the node, in `imageCache` below. The claim outlives a pod
     # restart and a chart upgrade, but not its owner: the sweep removes a
-    # runner once that owner has no vm agents left, and takes the claim with
+    # runner once that owner has no agents left, and takes the claim with
     # it.
     # `storage` is each owner's storage pool, and the size of their claim; an
     # owner's UserBudget `storage` replaces it for that owner. Every machine
     # disk is sparse and may grow to the whole pool, so what counts is what
     # the owner's agents write: the runner asks its guests to shed
     # scratch at 75% and refuses new disks, starts and growth at 90%, and the
-    # api-server refuses a new vm agent there. The claim also holds the
+    # api-server refuses a new agent there. The claim also holds the
     # bookkeeping.
     # Raising the pool grows existing claims in place, which needs a class
     # that allows volume expansion; a refused resize costs a warning in the
@@ -403,7 +403,7 @@ virtualization:
     # for the resize below to be applied. It is the owner's whole memory pool,
     # unless their UserBudget sets `memory` (and `cpu`, which caps the CPU
     # limit below); the controller then resizes that owner's pod in place:
-    # vm agents have no size of their own and do not count toward the user's
+    # agents have no size of their own and do not count toward the user's
     # budget; every machine may grow to half of the limit less `reserveMiB`,
     # so one agent can use most of the pool while a runaway guest hits its
     # own OOM killer, which takes that machine and not the runner.
@@ -457,7 +457,7 @@ virtualization:
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.harnessTemplateDefaults.nestedVirtualization for all),
-    # so that guest can run KVM itself — e.g. a vm agent that hosts its own
+    # so that guest can run KVM itself — e.g. an agent that hosts its own
     # install, or an Environment that runs one. Every other machine boots
     # without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
@@ -586,9 +586,9 @@ virtualization:
     # pool cannot be read. It is the install's figure, not the Agent's: no agent
     # has a size of its own, and a runner pod's machines are half the pool.
     machineMemoryMiB: 2048
-  # One gateway pod per owner serves every vm Agent of that owner, each on
+  # One gateway pod per owner serves every Agent of that owner, each on
   # ports of its own behind the agent's own gateway Service, so a wake starts
-  # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
+  # no gateway pod. Off: each Agent keeps a gateway pod of its own, which
   # hibernation scales to zero.
   gateway:
     perOwner: false
@@ -939,7 +939,7 @@ seaweedfs:
 # PrometheusRule render when the cluster serves monitoring.coreos.com/v1
 # (prometheus-operator, OpenShift user-workload monitoring); without that API
 # nothing renders. No series names a user; the alerts point at the Warning
-# Events on the user's vm Agents for that.
+# Events on the user's Agents for that.
 monitoring:
   enabled: false
   # Extra labels on the ServiceMonitor and PrometheusRule, for a Prometheus
@@ -1830,7 +1830,7 @@ apiServer:
     # CA certificate (PEM) used to verify the external DB's TLS certificate.
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
-  # -- Runtime-state delivery to agent pods.
+  # -- Runtime-state delivery to agents.
   runtimeDelivery:
     # -- Concurrent deliveries per replica. A job parked on a slow agent holds
     # a worker slot and nothing else, so this is sized to exceed the agents
@@ -1841,7 +1841,7 @@ apiServer:
   # -- Object-store connection (empty endpoint = use shared local seaweedfs)
   objectStorage:
     endpoint: ""
-    # -- Endpoint as agent pods dial it (upload links are signed against it;
+    # -- Endpoint as agents dial it (upload links are signed against it;
     # plain-HTTP values need an explicit port). Empty derives it: the shared
     # store's cluster-DNS FQDN, or `endpoint`. Only for unusual topologies.
     agentEndpoint: ""
@@ -2032,12 +2032,12 @@ controller:
       # The ceiling is the machine's own memory, which the runner grants from
       # its owner's pool. Set `MEM_REAPER=off` to disable.
       env: []
-      # true = every vm agent asks for nested virtualization, as if its Agent
+      # true = every agent asks for nested virtualization, as if its Agent
       # set spec.backend.vm.nestedVirtualization, Environments included. It is
       # only an ask: a machine
       # nests only when `virtualization.runner.nestedVirtualization` lets the
       # runners nest and the node's KVM allows it. Applied at reconcile, so
-      # turning it on or off also changes existing vm agents and restarts
+      # turning it on or off also changes existing agents and restarts
       # their machines. While it is on, an Agent cannot opt out; false leaves
       # nesting to the Agents that ask for it themselves.
       nestedVirtualization: true
@@ -2101,12 +2101,12 @@ controller:
     # also opens HBONE (15008); over it ztunnel carries any inner port, so
     # `ports` binds only a peer outside the mesh.
     peers: []
-  # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
+  # -- Image for an Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
   # Envoy.
   machineDNSImage: mirror.gcr.io/coredns/coredns:1.15.0
-  # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
+  # -- Port Envoy listens on in the gateway pod.
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
   # provisions a self-signed CA via cert-manager and a CA ClusterIssuer

@@ -122,7 +122,7 @@ Every one of those is idempotent on a warm cluster, and none is safe on a fresh 
 
 ## In an Environment
 
-An agent on the vm backend installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
+An agent installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
 
 1. **Create the Environment** with the `create_environment` tool (a shell cannot), with four endpoints on one port that is not 4444, which the install's own ingress uses: `app`, `keycloak`, `share` and `content`, each → `4400`.
    The install stops and names what is missing when they are not there.
