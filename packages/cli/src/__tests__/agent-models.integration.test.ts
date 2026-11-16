@@ -61,6 +61,11 @@ const CATALOG: OwnerModelCatalogView = {
       models: [
         model("ibm/aws/claude-opus-4-8", 1000000, ["claude-code"]),
         model("ibm/gpt-5.5", 400000, ["claude-code", "codex"]),
+        model(
+          "ibm/rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
+          262144,
+          ["claude-code", "codex"],
+        ),
       ],
     },
     {
@@ -722,7 +727,8 @@ describe("dam agent get / update / models (integration)", () => {
    * TEST_SCENARIO: the model names to pass to --model come from the agent's
    * granted providers in the api-server's catalog, for its default harness
    * unless --harness names another, and a provider that has not listed yet is
-   * named, not silently missing.
+   * named, not silently missing. An internal model, which only the platform's
+   * own calls use, is not listed.
    */
   it("agent models lists the catalog's models as --model takes them", async () => {
     const r = await dam("agent", "models", AGENT_ID);
@@ -738,6 +744,7 @@ describe("dam agent get / update / models (integration)", () => {
     expect(r.stdout).toContain(
       "note: OpenAI has not listed its models yet; try again in a minute",
     );
+    expect(r.stdout).not.toContain("Nemotron");
 
     const json = await dam(
       "agent",

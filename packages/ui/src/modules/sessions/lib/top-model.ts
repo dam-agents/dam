@@ -1,5 +1,5 @@
 import type { HarnessCatalogView } from "agent-runtime-api";
-import { preferredModelOf } from "api-server-api";
+import { internalModel, preferredModelOf } from "api-server-api";
 
 import type { ProviderConnectionRef } from "./session-pair-options.js";
 
@@ -38,7 +38,7 @@ export function topModelOf(
       return { provider: provider.connectionId, model: model.name };
   }
   const first = providers[0];
-  const model = first?.models[0];
+  const model = first?.models.find((m) => !internalModel(m.upstreamId));
   return first && model
     ? { provider: first.connectionId, model: model.name }
     : null;

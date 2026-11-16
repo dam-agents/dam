@@ -35,7 +35,9 @@ const REASONING_FAMILY =
  * of Pi's thinking levels sends, null for a level the deployment lacks; such
  * a deployment takes OpenAI-style effort, as CurveBender ignores the switch
  * GLM's own vendor API uses. These are the values a Pi tuned by hand against
- * CurveBender runs with.
+ * CurveBender runs with. An `internal` deployment serves the platform's own
+ * calls and is never offered for a pick: CurveBender's Nemotron does not
+ * think, and runs the safety classifier and Bob's `security` check.
  */
 const KNOWN_DEPLOYMENTS: readonly {
   match: RegExp;
@@ -43,8 +45,9 @@ const KNOWN_DEPLOYMENTS: readonly {
   maxOutputTokens?: number;
   vision?: boolean;
   thinkingLevelMap?: ThinkingLevelMap;
+  internal?: true;
 }[] = [
-  { match: /nvidia-nemotron-3-ultra/i, window: 262144 },
+  { match: /nvidia-nemotron-3-ultra/i, window: 262144, internal: true },
   {
     match: /^rits\/zai-org\/glm-5-3$/i,
     window: 1048576,
@@ -74,6 +77,15 @@ const KNOWN_DEPLOYMENTS: readonly {
     thinkingLevelMap: { off: null, minimal: "low" },
   },
 ];
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a model is left out of every list a
+ * person picks from. It stays in the catalog, so the platform's own calls
+ * resolve it, and a pick saved before it was hidden keeps running and keeps
+ * its name.
+ */
+export const internalModel = (upstreamId: string): boolean =>
+  KNOWN_DEPLOYMENTS.some((d) => d.internal && d.match.test(upstreamId));
 
 function presetNumber(
   env: Record<string, string>,

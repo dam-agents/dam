@@ -1,4 +1,5 @@
 import type { CatalogModelView } from "agent-runtime-api";
+import { internalModel } from "api-server-api";
 
 import type { ModelGroup } from "./catalog-groups.js";
 
@@ -9,6 +10,7 @@ export interface ModelFamily {
   names?: readonly string[];
   variantSuffix?: boolean;
   versionless?: boolean;
+  versionMark?: string;
 }
 
 /**
@@ -20,7 +22,8 @@ export interface ModelFamily {
  * carry a variant tail after the size or version (Nemotron, Granite) says
  * so, and one whose ids carry no version at all (Muse Spark) says that. The
  * tail's parameter count (`230B`) is part of the name, so two sizes of one
- * version stay apart.
+ * version stay apart. A family whose vendor writes a letter onto the version
+ * (Kimi's `K2.5`) names that letter, and the name keeps it.
  */
 export const MODEL_FAMILIES: readonly ModelFamily[] = [
   {
@@ -42,6 +45,17 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = [
     name: "DeepSeek",
     token: "deepseek",
     sizes: ["flash"],
+  },
+  {
+    name: "Gemini",
+    token: "gemini",
+    sizes: ["flash", "pro", "argon"],
+  },
+  {
+    name: "Kimi",
+    token: "kimi",
+    sizes: [],
+    versionMark: "k",
   },
   {
     name: "Nemotron",
@@ -68,12 +82,15 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = [
     sizes: [],
     names: [
       "background",
+      "dev-sec-ops-premium",
+      "dev-sec-ops-premium-west",
       "explorer",
       "fast",
       "premium",
       "premium-ide",
       "premium-shell",
       "security",
+      "ultra",
       "wxO-model",
     ],
   },
@@ -118,7 +135,9 @@ const namedFamilyOf = (name: string): ModelFamily | null =>
  * stays a distinct model instead of merging with the model it resembles.
  * The stamp, a snapshot date or a build number, stays apart from the
  * version, so a stamped snapshot is the same model. A variant tail after the
- * size of a family that declares one is not read at all.
+ * size of a family that declares one is not read at all. A trailing
+ * `preview` marks a pre-release of the model the rest names, so it is that
+ * model's `preview` variant (`gemini-3.1-pro-preview`).
  */
 export function parseModelFamily(name: string): ParsedModel | null {
   const named = namedFamilyOf(name);
@@ -128,10 +147,27 @@ export function parseModelFamily(name: string): ParsedModel | null {
     )!;
     return { family: named, size, version: [] };
   }
+  const preview = /[^a-z0-9]preview$/i.exec(name);
+  if (preview !== null) {
+    const parsed = parseModelFamily(name.slice(0, preview.index));
+    return (
+      parsed && {
+        ...parsed,
+        variant: [parsed.variant, "preview"].filter(Boolean).join(" "),
+      }
+    );
+  }
   const tokens = tokensOf(name);
   const family = familyOf(tokens);
   if (family === null) return null;
-  const after = tokens.slice(tokens.indexOf(family.token) + 1);
+  const unmarked = tokens.slice(tokens.indexOf(family.token) + 1);
+  const marked = unmarked[0]?.slice(family.versionMark?.length);
+  const after =
+    family.versionMark !== undefined &&
+    unmarked[0]?.startsWith(family.versionMark) &&
+    VERSION_PART.test(marked!)
+      ? [marked!, ...unmarked.slice(1)]
+      : unmarked;
   const last = after[after.length - 1];
   const buildStamp =
     after.length > 1 && last !== undefined && BUILD_STAMP.test(last)
@@ -230,7 +266,10 @@ export function parseModelFamily(name: string): ParsedModel | null {
 }
 
 const entryLabel = (parsed: ParsedModel) => {
-  const version = [parsed.version.join("."), parsed.variant]
+  const version = [
+    `${parsed.family.versionMark?.toUpperCase() ?? ""}${parsed.version.join(".")}`,
+    parsed.variant,
+  ]
     .filter(Boolean)
     .join(" ");
   return parsed.family.names
@@ -295,7 +334,8 @@ export interface OtherSection {
  * behind that family's More; a model of no known family is one entry under
  * Other. A name another name of the same provider already represents stays
  * an entry of its own there, so no selectable name is lost. A provider that
- * listed nothing is kept for its listing state.
+ * listed nothing is kept for its listing state. An internal model is never
+ * an entry, so it is offered nowhere.
  */
 export function familyModelGroups(groups: readonly ModelGroup[]): {
   families: FamilySection[];
@@ -334,6 +374,7 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
       continue;
     }
     for (const model of group.models) {
+      if (internalModel(model.upstreamId)) continue;
       const parsed = parseModelFamily(model.name);
       const family = parsed?.family ?? familyOf(tokensOf(model.name));
       if (parsed === null) {

@@ -618,7 +618,7 @@ describe("the new session panel", () => {
     const modelText = openMenu(node, "Model").textContent ?? "";
     expect(modelText).toContain("Claude");
     expect(modelText).toContain("GLM");
-    expect(modelText).toContain("Other");
+    expect(modelText).toContain("Kimi K2.5");
     expect(modelText.match(/Claude Opus 5\.5/g)).toHaveLength(1);
     expect(menuItem(node, "IBM").getAttribute("aria-disabled")).toBeNull();
     const curve = menuItem(node, "Curve");

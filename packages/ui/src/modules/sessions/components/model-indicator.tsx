@@ -5,6 +5,7 @@ import {
 } from "agent-runtime-api";
 import {
   aliasForProviderType,
+  internalModel,
   parseQualifiedModel,
   type ProviderPresetType,
   type SessionPair,
@@ -360,10 +361,12 @@ export function ModelIndicator({
                 settings={settings}
                 defaults={defaults}
                 modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                  g.models.map((m) => ({
-                    value: m.name,
-                    name: `${m.upstreamId} · ${g.displayName}`,
-                  })),
+                  g.models
+                    .filter((m) => !internalModel(m.upstreamId))
+                    .map((m) => ({
+                      value: m.name,
+                      name: `${m.upstreamId} · ${g.displayName}`,
+                    })),
                 )}
                 onChange={onConfigure}
               />
