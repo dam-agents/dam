@@ -67,7 +67,10 @@ import {
 } from "../lib/session-pair-options.js";
 import {
   applySettingChanges,
+  effortOption,
+  harnessChangeSettings,
   isModelOption,
+  offeredSettings,
   sessionSettingOptions,
   settingDefaults,
   settingsForModel,
@@ -203,7 +206,11 @@ export function SessionModelPicker({
   const harness = pair?.harness ?? defaultHarness;
   const capability = carried.find((h) => h.name === harness);
   const model = pair?.harness === harness ? (pair.model ?? null) : null;
-  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
+  /* UNIT_BOUNDARY_DESCRIPTION: what the picker shows and every pick sends are the settings the harness offers, so a key another harness left behind (Pi's `mode=high` on Claude Code) is dropped on the next pick instead of being sent again. */
+  const settings = offeredSettings(
+    capability,
+    pair?.harness === harness ? (pair.settings ?? {}) : {},
+  );
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
@@ -322,9 +329,7 @@ export function SessionModelPicker({
   const staleListings = groups.filter(
     (g) => g.models.length > 0 && g.status === "unavailable",
   );
-  const effort = sessionSettingOptions(capability).find(
-    (o) => o.category === "thought_level" && !o.subagents,
-  );
+  const effort = effortOption(capability);
   const allowed = effort
     ? modelConstraintsFor(capability?.harnessConfigCatalog, model)?.[effort.id]
     : undefined;
@@ -444,7 +449,7 @@ export function SessionModelPicker({
       return choose({ harness, provider: providerId, model: null });
     pickOption(first.options.find((o) => o.group.connectionId === providerId)!);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. */
+  /* UNIT_BOUNDARY_DESCRIPTION: a harness change keeps the model the new harness offers, the same model on another provider counting, else the model the default it follows names, else the chosen provider's first model, else the first model the harness lists; a model only waits when the harness lists none. It keeps only the settings the new harness offers, effort carried by what it is rather than its key (harnessChangeSettings). */
   const changeHarness = (name: string) => {
     const fit = providerOptions(name, views, granted, owned);
     const nextProvider =
@@ -481,14 +486,19 @@ export function SessionModelPicker({
       firstOfProvider?.options[0] ?? firstOfHarness?.options[0] ?? null;
     const nextModel = keptOption ?? fallback;
     const nextCapability = carried.find((h) => h.name === name);
+    const carriedSettings = harnessChangeSettings(
+      capability,
+      nextCapability,
+      settings,
+    );
     const keptSettings = nextModel
       ? settingsForModel(
           nextCapability,
           nextGroups,
           nextModel.model.name,
-          settings,
+          carriedSettings,
         )
-      : settings;
+      : carriedSettings;
     choose({
       harness: name,
       provider: nextModel?.group.connectionId ?? nextProvider?.id ?? null,
@@ -496,9 +506,11 @@ export function SessionModelPicker({
       ...keepSettings(keptSettings),
     });
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: a sub-agent pick writes into the pair as the picker shows it, its settings the ones the harness offers, so it drops a key another harness left as every other pick does. */
+  const held = pair && { ...pair, settings };
   const changeSubagentModel = (key: string) => {
-    if (!pair) return;
-    if (key === "") return choose(withSubagent(pair, null), "subagent-clear");
+    if (!held) return;
+    if (key === "") return choose(withSubagent(held, null), "subagent-clear");
     const entry = allEntries.find((e) => e.key === key);
     if (!entry) return;
     const option =
@@ -507,15 +519,15 @@ export function SessionModelPicker({
       ) ?? entry.options[0]!;
     connectOnPick(option.group, option.model.name, () =>
       choose(
-        withSubagent(pair, { harness, model: option.model.name }),
+        withSubagent(held, { harness, model: option.model.name }),
         "subagent",
       ),
     );
   };
   const changeSubagentProvider = (providerId: string) => {
-    if (!pair) return;
+    if (!held) return;
     if (providerId === "")
-      return choose(withSubagent(pair, null), "subagent-clear");
+      return choose(withSubagent(held, null), "subagent-clear");
     if (subEntry) {
       const option = subEntry.options.find(
         (o) => o.group.connectionId === providerId,
@@ -523,7 +535,7 @@ export function SessionModelPicker({
       if (!option) return;
       return connectOnPick(option.group, option.model.name, () =>
         choose(
-          withSubagent(pair, { harness, model: option.model.name }),
+          withSubagent(held, { harness, model: option.model.name }),
           "subagent",
         ),
       );
@@ -535,7 +547,7 @@ export function SessionModelPicker({
     )!;
     connectOnPick(option.group, option.model.name, () =>
       choose(
-        withSubagent(pair, { harness, model: option.model.name }),
+        withSubagent(held, { harness, model: option.model.name }),
         "subagent",
       ),
     );
@@ -574,9 +586,7 @@ export function SessionModelPicker({
   const followingCapability = carried.find(
     (h) => h.name === followingPair?.harness,
   );
-  const followingEffort = sessionSettingOptions(followingCapability).find(
-    (o) => o.category === "thought_level" && !o.subagents,
-  );
+  const followingEffort = effortOption(followingCapability);
   const followingEffortValue = followingEffort
     ? (followingPair?.settings?.[followingEffort.id] ?? followingEffort.default)
     : undefined;

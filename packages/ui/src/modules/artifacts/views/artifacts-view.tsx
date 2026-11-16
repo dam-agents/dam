@@ -13,8 +13,11 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useStore } from "../../../store.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useListedEnvironments } from "../../environments/api/queries.js";
+import { useOpenAgentChat } from "../../getting-started/hooks/use-open-agent-chat.js";
+import { ARTIFACT_PREFILL } from "../../getting-started/lib/tasks.js";
 import { SidePanelCloseScope } from "../../sessions/components/side-panel-close-button.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ChatArtifactsPanel } from "../components/chat-artifacts-panel.js";
@@ -61,6 +64,8 @@ export function ArtifactsView() {
 
 function ArtifactsEmpty() {
   const defaultAgent = useCreateDefaultAgent();
+  const hasAgent = useAgentsList().length > 0;
+  const openChat = useOpenAgentChat();
   const [uploading, setUploading] = useState(false);
   const bars = [30, 55, 45, 80, 60, 90, 70];
   return (
@@ -69,13 +74,19 @@ function ArtifactsEmpty() {
         title="Artifacts"
         actions={
           <>
-            <Button
-              size="lg"
-              onClick={() => void defaultAgent.create()}
-              disabled={!defaultAgent.ready}
-            >
-              Create agent
-            </Button>
+            {hasAgent ? (
+              <Button size="lg" onClick={() => void openChat(ARTIFACT_PREFILL)}>
+                Ask an agent for one
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                onClick={() => void defaultAgent.create()}
+                disabled={!defaultAgent.ready}
+              >
+                Create agent
+              </Button>
+            )}
             <Button
               size="lg"
               variant="outline"

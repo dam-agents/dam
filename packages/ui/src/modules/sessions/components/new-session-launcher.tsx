@@ -1,14 +1,16 @@
-import { Code, Terminal } from "@carbon/icons-react";
+import { Code, Launch, Terminal } from "@carbon/icons-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { getBrand } from "@/brand";
 import { SlackColorIcon, TelegramColorIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { externalLinkProps } from "@/lib/external-link";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { holds } from "../../agents/lib/agent-permissions.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
@@ -109,7 +111,9 @@ function LocalCommandDialog({
   agentRef: string;
   onClose: () => void;
 }) {
-  const cli = getBrand().short;
+  const brand = getBrand();
+  const cli = brand.short;
+  const cliReferenceUrl = useDocsUrl("cliReference");
   return (
     <Modal size="sm" onClose={onClose}>
       <DialogHeader
@@ -138,6 +142,23 @@ function LocalCommandDialog({
         }
       />
       <DialogBody className="flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          {cliReferenceUrl ? (
+            <>
+              Follow the{" "}
+              <a
+                href={cliReferenceUrl}
+                {...externalLinkProps}
+                className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
+              >
+                CLI quickstart <Launch size={13} />
+              </a>{" "}
+              to install the {brand.name} CLI and log in.
+            </>
+          ) : (
+            <>Install the {brand.name} CLI and log in.</>
+          )}
+        </p>
         {target === "terminal" ? (
           <>
             <span className="text-sm font-medium text-foreground">
