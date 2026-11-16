@@ -370,20 +370,30 @@ export function createArtifactLibraryService(
       .with("share-dialog", () => {})
       .with("named-viewers", () => {
         if (
-          visibility === "public" &&
-          before.visibility !== "public" &&
-          (before.visibility === "restricted" || existing.length > 0)
+          before.visibility === "restricted" &&
+          visibility !== undefined &&
+          visibility !== "restricted"
         )
           throw new TRPCError({
             code: "FORBIDDEN",
             message:
-              "This artifact is restricted to named viewers, or keeps their list while private. Only the owner opens it to anyone with the link, in the app's Share dialog. Adding or removing viewers or making it private works here.",
+              "This artifact is restricted to named viewers. Only the owner makes it private or opens it to anyone with the link, in the app's Share dialog. Adding or removing viewers works here.",
+          });
+        if (
+          before.visibility === "private" &&
+          existing.length > 0 &&
+          (visibility === "public" || next?.length === 0)
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This artifact keeps its list of named viewers while private. Only the owner clears that list or opens it to anyone with the link, in the app's Share dialog. Sharing it with named viewers again works here.",
           });
         if (widensInteractiveAudience(before, visibility, existing, next))
           throw new TRPCError({
             code: "FORBIDDEN",
             message:
-              "This page can talk to your agent: its viewers can send the agent prompts and change its data. Only the owner shares it with named people, in the app's Share dialog. Removing viewers or making it private works here.",
+              "This page can talk to your agent: its viewers can send the agent prompts and change its data. Only the owner shares it with named people, in the app's Share dialog. Removing viewers works here.",
           });
       })
       .with("public-or-private", () => {
@@ -398,6 +408,12 @@ export function createArtifactLibraryService(
             code: "FORBIDDEN",
             message:
               "Restricted sharing is set by the owner in the app, or with `dam artifact share` after `dam login`; an API key cannot set it.",
+          });
+        if (visibility === "public" && existing.length > 0)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This artifact keeps its list of named viewers while private. Only the owner opens it to anyone with the link, in the app's Share dialog.",
           });
       })
       .exhaustive();

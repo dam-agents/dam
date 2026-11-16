@@ -96,7 +96,7 @@ Historical versions cannot send prompts or requests.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog.
 The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent, and that the Agent sees their email.
-The agent tools and the CLI never widen that audience: they refuse to make the page restricted or to add a viewer to it, and only narrow it, by removing viewers or making it private.
+The agent tools and the CLI never widen that audience: they refuse to make the page restricted or to add a viewer to it, and only narrow it, by removing viewers.
 
 ### A page's model
 
@@ -153,8 +153,11 @@ Out of scope: limits per viewer on what the Agent may do.
   The Share dialog, the agent tools and the CLI all set it through the same sharing write, with the same normalisation and cap.
   A change either replaces the whole list or adds and removes single emails and keeps the rest, resolved against the locked row, so an agent or the CLI can change one viewer without knowing the others.
   An agent sees the list on every artifact its tools hand back, so it can say who has access.
-  Only the owner, in the Share dialog, makes public a restricted artifact, or a private one that keeps its viewer list, and widens the audience of an [interactive page](#interactive-pages).
-  A caller that is not the app, an agent or the CLI keeps to private and public and cannot change a restricted artifact.
+  A restricted artifact stays restricted off the Share dialog: an agent or the CLI adds and removes its viewers, and only the owner, in the Share dialog, makes it private or public.
+  A private artifact that keeps its viewer list is the owner's restriction too: an agent or the CLI can restrict it again but cannot clear the list or make it public.
+  No sequence of calls from those surfaces therefore turns an owner's restriction into a public link.
+  Only the owner widens the audience of an [interactive page](#interactive-pages).
+  A caller that is not the app, an agent or the CLI keeps to private and public, cannot change a restricted artifact, and cannot make public one that keeps its viewer list.
   That includes a Platform API key, so `dam artifact share` changes viewers only with a `dam login` sign-in or a CLI-issued token in `DAM_TOKEN`.
   An artifact an agent creates is private unless the agent passes public.
   The agent tools tell it to change sharing only when the user asks — a public link when the user asks for one, viewers only for the people the user names — and to recommend the narrowest level that fits.

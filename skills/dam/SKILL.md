@@ -374,9 +374,12 @@ dam artifact share <artifact-id> --private
 
 Without flags, `dam artifact share` only shows who can open the artifact: its level, its link and its viewers.
 `--add` gives people access by email and makes the artifact restricted, so only the user and its viewers can open the link once they sign in with that address.
-`--remove` takes people off the list and keeps the level, and `--private` closes the link.
+`--remove` takes people off the list and keeps the level, and `--private` closes the link of a public artifact.
+A restricted artifact stays restricted: only the user makes it private or public, in the web app's Share dialog.
 Sharing sends the user's work to new people, so add only the people the user names, and say who you added.
-An interactive page's viewers can send its agent prompts, so the user adds them in the web app's Share dialog; the command can only remove them or make the page private.
+An interactive page's viewers can send its agent prompts, so the user adds them in the web app's Share dialog; the command can only remove them.
+Inside a DAM agent, `DAM_TOKEN` reaches the server as an API key, so there this command cannot add or remove viewers.
+Use the `set_artifact_sharing` tool instead, which changes viewers under the same rules.
 
 ### Lifecycle
 

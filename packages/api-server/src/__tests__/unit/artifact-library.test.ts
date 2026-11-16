@@ -995,24 +995,63 @@ describe("restricted sharing permissions", () => {
     },
   );
 
-  // TEST_SCENARIO: an artifact restricted to named viewers opens to anyone with the link only from the owner's Share dialog; an agent or the CLI is refused and the artifact stays restricted, and making it private still works but keeps the list, so a second step to public is refused too.
+  // TEST_SCENARIO: a restricted artifact stays restricted off the owner's Share dialog: an agent or the CLI changes its viewers, but is refused making it public, making it private, or making it private while dropping every viewer, so no two-step sequence reaches a public link.
   it.each(["mcp", "cli"] as const)(
-    "keeps %s from making a restricted artifact public",
+    "keeps %s from moving a restricted artifact off restricted",
     async (surface) => {
       const row = artifactRow({ visibility: "restricted" });
-      const service = await serviceFor(surface, fakeRepo([row]));
+      const repo = fakeRepo([row]);
+      const service = await serviceFor(surface, repo);
       await service.setSharing(row.id, { addViewers: ["ada@example.com"] });
+      for (const change of [
+        { visibility: "public" as const },
+        { visibility: "private" as const },
+        { visibility: "private" as const, viewers: [] },
+        { visibility: "private" as const, removeViewers: ["ada@example.com"] },
+      ]) {
+        await expect(service.setSharing(row.id, change)).rejects.toThrow(
+          /Only the owner makes it private or opens it to anyone with the link/,
+        );
+        expect(row.visibility).toBe("restricted");
+      }
+      await expect(
+        service.setSharing(row.id, { removeViewers: ["ada@example.com"] }),
+      ).resolves.toMatchObject({ visibility: "restricted", viewers: [] });
       await expect(
         service.setSharing(row.id, { visibility: "public" }),
-      ).rejects.toThrow(/Only the owner opens it to anyone with the link/);
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
       expect(row.visibility).toBe("restricted");
-      await expect(
-        service.setSharing(row.id, { visibility: "private" }),
-      ).resolves.toMatchObject({ visibility: "private" });
+    },
+  );
+
+  // TEST_SCENARIO: a private artifact the owner left with its viewer list keeps that restriction: an agent or the CLI can restrict it again but cannot clear the list and then make it public, and an API key cannot make it public either.
+  it.each(["mcp", "cli", "other", "system"] as const)(
+    "keeps %s from making public a private artifact that keeps its viewers",
+    async (surface) => {
+      const row = artifactRow({ visibility: "restricted" });
+      const repo = fakeRepo([row]);
+      const owner = await serviceFor("ui", repo);
+      await owner.setSharing(row.id, { viewers: ["ada@example.com"] });
+      await owner.setSharing(row.id, { visibility: "private" });
+      const service = await serviceFor(surface, repo);
       await expect(
         service.setSharing(row.id, { visibility: "public" }),
-      ).rejects.toThrow(/Only the owner opens it to anyone with the link/);
+      ).rejects.toThrow(/keeps its list of named viewers while private/);
       expect(row.visibility).toBe("private");
+      if (surface === "mcp" || surface === "cli") {
+        await expect(
+          service.setSharing(row.id, { viewers: [] }),
+        ).rejects.toThrow(/Only the owner clears that list/);
+        await expect(
+          service.setSharing(row.id, { removeViewers: ["ada@example.com"] }),
+        ).rejects.toThrow(/Only the owner clears that list/);
+        await expect(service.get(row.id)).resolves.toMatchObject({
+          viewers: ["ada@example.com"],
+        });
+        await expect(
+          service.setSharing(row.id, { visibility: "restricted" }),
+        ).resolves.toMatchObject({ visibility: "restricted" });
+      }
     },
   );
 
@@ -1255,7 +1294,8 @@ describe("library service — an interactive artifact is never public", () => {
       });
       await expect(
         service.setSharing("a1", { visibility: "private" }),
-      ).resolves.toMatchObject({ visibility: "private" });
+      ).rejects.toThrow(/Only the owner makes it private or opens it/);
+      expect(rows[0]!.visibility).toBe("restricted");
     },
   );
 

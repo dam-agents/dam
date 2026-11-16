@@ -88,7 +88,10 @@ export function buildShareCommand(deps: {
       (v: string, acc: string[]) => [...acc, v],
       [] as string[],
     )
-    .option("--private", "make the artifact private: only you, in the app")
+    .option(
+      "--private",
+      "make a public artifact private: only you, in the app; a restricted one stays restricted until you change it in the web app's Share dialog",
+    )
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -96,7 +99,7 @@ export function buildShareCommand(deps: {
     .option("--json", "emit the artifact's sharing as JSON")
     .addHelpText(
       "after",
-      "\nAn interactive page's viewers can send its agent prompts, so you add them in the web app's Share dialog; here you can only remove them or make the page private.\n" +
+      "\nA restricted artifact stays restricted here: only the web app's Share dialog makes it private or public.\nAn interactive page's viewers can send its agent prompts, so you add them in the web app's Share dialog; here you can only remove them.\n" +
         "\nExamples:\n" +
         "  dam artifact share 3f2a9c --add ada@example.com --add bob@example.com\n" +
         "  dam artifact share 3f2a9c --remove bob@example.com\n" +
