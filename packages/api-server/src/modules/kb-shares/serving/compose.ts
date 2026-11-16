@@ -51,12 +51,19 @@ export function createShareHostApp(deps: {
   viewer: { fetch: (req: Request) => Response | Promise<Response> };
   kbMcp: Hono;
   auth: Hono;
+  brandIcon: Hono;
   // UNIT_BOUNDARY_DESCRIPTION: the Environments' front door, mounted at `/e`, or null when the install serves no Environments.
   environments: Hono | null;
 }): { fetch: (req: Request) => Response | Promise<Response> } {
   const app = new Hono();
   app.route("/", deps.kbMcp);
   app.route("/auth", deps.auth);
+  app.use("/brand/*", async (c, next) => {
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("Content-Security-Policy", "sandbox; default-src 'none'");
+  });
+  app.route("/brand", deps.brandIcon);
   if (deps.environments) app.route("/e", deps.environments);
   app.all("*", (c) => deps.viewer.fetch(c.req.raw));
   return app;
