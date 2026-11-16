@@ -214,14 +214,16 @@ export function ModelIndicator({
     );
   };
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
-  const models = removed
-    ? []
-    : data?.availableModels === null
-      ? (carried
-          .find((h) => h.name === harness)
-          ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
-          ?.choices ?? [])
-      : (data?.availableModels ?? []);
+  const models = (
+    removed
+      ? []
+      : data?.availableModels === null
+        ? (carried
+            .find((h) => h.name === harness)
+            ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
+            ?.choices ?? [])
+        : (data?.availableModels ?? [])
+  ).filter((c) => c.value === model || !internalModel(c.value));
   const modelName = routed
     ? pairSummary(model, {
         settings,

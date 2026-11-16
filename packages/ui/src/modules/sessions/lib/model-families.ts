@@ -150,12 +150,12 @@ export function parseModelFamily(name: string): ParsedModel | null {
   const preview = /[^a-z0-9]preview$/i.exec(name);
   if (preview !== null) {
     const parsed = parseModelFamily(name.slice(0, preview.index));
-    return (
-      parsed && {
-        ...parsed,
-        variant: [parsed.variant, "preview"].filter(Boolean).join(" "),
-      }
-    );
+    return parsed === null || parsed.family.names
+      ? null
+      : {
+          ...parsed,
+          variant: [parsed.variant, "preview"].filter(Boolean).join(" "),
+        };
   }
   const tokens = tokensOf(name);
   const family = familyOf(tokens);
@@ -334,8 +334,9 @@ export interface OtherSection {
  * behind that family's More; a model of no known family is one entry under
  * Other. A name another name of the same provider already represents stays
  * an entry of its own there, so no selectable name is lost. A provider that
- * listed nothing is kept for its listing state. An internal model is never
- * an entry, so it is offered nowhere.
+ * listed nothing is kept for its listing state. A released model leads its
+ * variants of the same version and size, a preview among them. An internal
+ * model is never an entry, so no menu offers it.
  */
 export function familyModelGroups(groups: readonly ModelGroup[]): {
   families: FamilySection[];
@@ -406,7 +407,8 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
       .sort(
         (a, b) =>
           compareVersions(b.version, a.version) ||
-          family.sizes.indexOf(b.size) - family.sizes.indexOf(a.size),
+          family.sizes.indexOf(b.size) - family.sizes.indexOf(a.size) ||
+          Number(a.variant !== undefined) - Number(b.variant !== undefined),
       );
     const newest: FamilyModel[] = [];
     if (family.names) {

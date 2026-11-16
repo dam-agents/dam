@@ -416,6 +416,7 @@ describe("the menu's family groups", () => {
     ]);
     expect(claude.more.map((e) => e.label)).toEqual(["Opus 4.8"]);
   });
+
   // TEST_SCENARIO: The models QA found under Other as raw ids get family names: Gemini by size then version, a preview as its variant, Kimi with the K its vendor writes on the version; the next model of each vendor parses the same way.
   it("names Gemini and Kimi models", () => {
     expect([
@@ -433,6 +434,19 @@ describe("the menu's family groups", () => {
       "Gemini Flash 5",
       "Kimi K3",
     ]);
+  });
+
+  // TEST_SCENARIO: A preview and the released model of the same version are two entries, and the released one is the newest in either listing order; a fixed Bob name with a preview tail is no Bob tier.
+  it("puts a released model ahead of its preview", () => {
+    for (const ids of [
+      ["ibm/gemini-3.1-pro-preview", "ibm/gemini-3.1-pro"],
+      ["ibm/gemini-3.1-pro", "ibm/gemini-3.1-pro-preview"],
+    ]) {
+      const gemini = familyModelGroups([group("ibm", ...ids)]).families[0]!;
+      expect(gemini.newest.map((e) => e.label)).toEqual(["Pro 3.1"]);
+      expect(gemini.more.map((e) => e.label)).toEqual(["Pro 3.1 preview"]);
+    }
+    expect(parseModelFamily("bob/premium-preview")).toBeNull();
   });
 
   // TEST_SCENARIO: IBM ETE lists Gemini 4 Argon twice, as gcp/gemini-4-argon and gemini-4-argon; the menu shows it once, and nothing of that listing stays under Other.

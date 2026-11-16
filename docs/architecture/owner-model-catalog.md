@@ -16,8 +16,8 @@ The catalog uses the same listing specs, discovery parser and metadata layers as
 Harness fit comes from the shipped harness catalog, and a model known to hold under 32k is left out of the harnesses it would otherwise fit.
 A Bedrock Connection lists Claude Code's native tier names, and, for Pi, the inference profiles of the Connection's region, read from the Connection's control-plane URL with its key.
 A model is named the plain `<alias>/<id>` a session stores; the runtime renders a harness's own spelling when it starts.
-No picker, and no `dam agent models` listing, offers an **internal** model, one the catalog keeps only for the platform's own calls: CurveBender's Nemotron, which runs the auto-mode classifier and Bob's `security` check.
-A session, profile or schedule that already names one keeps running on it and shows its name.
+No model menu of the web UI, and no `dam agent models` listing, offers an **internal** model, one the catalog keeps for the platform's own calls: CurveBender's Nemotron, which runs the auto-mode classifier and Bob's `security` check.
+The agent's catalog and each harness's own model list keep it, so a session, profile or schedule that already names one keeps running on it and shows its name.
 
 ## Shipped harness capabilities
 

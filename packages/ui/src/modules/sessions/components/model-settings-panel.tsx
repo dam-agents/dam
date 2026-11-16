@@ -1,5 +1,6 @@
 import { ChevronDown } from "@carbon/icons-react";
 import { modelConstraintsFor } from "agent-runtime-api";
+import { internalModel } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -78,6 +79,11 @@ export function ModelSettingsPanel({
     const allowed = group.id === "model" ? undefined : constraints?.[group.id];
     const choices: Choice[] = source
       .filter((c) => !allowed || allowed.includes(c.value))
+      .filter(
+        (c) =>
+          c.value === (valueOf(group.id) ?? group.default) ||
+          !internalModel(c.value),
+      )
       .map((c) => ({
         id: c.value,
         name: c.name,

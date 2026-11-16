@@ -36,8 +36,8 @@ const REASONING_FAMILY =
  * a deployment takes OpenAI-style effort, as CurveBender ignores the switch
  * GLM's own vendor API uses. These are the values a Pi tuned by hand against
  * CurveBender runs with. An `internal` deployment serves the platform's own
- * calls and is never offered for a pick: CurveBender's Nemotron does not
- * think, and runs the safety classifier and Bob's `security` check.
+ * calls and is never offered for a pick: CurveBender's Nemotron runs the
+ * auto-mode classifier and Bob's `security` check.
  */
 const KNOWN_DEPLOYMENTS: readonly {
   match: RegExp;

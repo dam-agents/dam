@@ -37,9 +37,9 @@ export function topModelOf(
     if (provider && model)
       return { provider: provider.connectionId, model: model.name };
   }
-  const first = providers[0];
-  const model = first?.models.find((m) => !internalModel(m.upstreamId));
-  return first && model
-    ? { provider: first.connectionId, model: model.name }
-    : null;
+  for (const provider of providers) {
+    const model = provider.models.find((m) => !internalModel(m.upstreamId));
+    if (model) return { provider: provider.connectionId, model: model.name };
+  }
+  return null;
 }
