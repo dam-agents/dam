@@ -133,6 +133,21 @@ What it restores is the first open: the record says the assistant has never been
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
 The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
 
+## Questions about the platform
+
+A person asks the assistant about the platform itself privately, in their own chat, rather than in a public channel: what it is, what a feature does, how to set something up, what changed in a release.
+It answers from the `platform-docs` skill, which every agent image ships in its workspace seed ([agent-skills](agent-skills.md#image-skill-lifecycle)), so any Agent can answer the same way and the assistant has nothing of its own to keep current.
+It is an image built-in, not a [platform skill](skills.md#platform-skill): no feature owns it.
+The onboarding rules send the assistant to the skill for such a question, rather than leaving the choice to the skill's description alone.
+
+The skill answers from the platform's own repository, which the default image carries at the commit it was built from ([agent-images](agent-images.md#the-platforms-own-source)): these architecture pages, the glossary, the chart's values, the `dam` skill and the code.
+So an answer describes the release the agent runs and needs no network, and the skill cites each file by its GitHub link at that commit.
+The image also carries the user docs as they were when it was built; they have no releases of their own, so where they and the platform's own docs or code disagree, the platform's own win.
+A user docs page is cited by its page on the published site, which shows the latest user docs, and the answer says so.
+Only release notes live outside both, on the platform's GitHub releases, which the agent reads when asked what changed.
+The answer is plain language with the files it used as links.
+The agent posts the question nowhere; it still reaches the Agent's model provider, as every message does.
+
 ## Boundaries
 
 It holds no special standing: it knows what any Agent knows, with the access any Agent has.
