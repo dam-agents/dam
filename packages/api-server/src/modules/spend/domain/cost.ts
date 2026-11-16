@@ -20,6 +20,8 @@ export function callCostMicros(
     .with({ kind: "row" }, ({ row }) => rowCostMicros(row, usage))
     .with({ kind: "zero" }, () => 0)
     .with({ kind: "credits" }, () => creditsMicros(usage.bobCredits))
+    .with({ kind: "reply" }, ({ micros }) => micros)
+    .with({ kind: "awaiting" }, () => 0)
     .with({ kind: "unpriced" }, () => 0)
     .exhaustive();
 }
@@ -55,6 +57,13 @@ export function proxyCostDollars(costs: ProxyCostHeaders): number | null {
   if (adjusted !== null && adjusted > 0) return adjusted;
   const body = dollars(costs.body);
   return body !== null && body > 0 ? body : null;
+}
+
+export function proxyCostMicros(costs: ProxyCostHeaders): number | null {
+  const proxy = proxyCostDollars(costs);
+  return proxy === null
+    ? null
+    : Math.ceil(Number((proxy * 1_000_000).toPrecision(12)));
 }
 
 export function proxyCostDifference(

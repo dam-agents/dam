@@ -78,20 +78,32 @@ The gateway's telemetry logs leave periodic records out, so they show one entry 
 Only Bob's replies carry their own price, in Bobcoins.
 The other providers send tokens only, and IBM LiteLLM sends its own cost only on replies that are not streamed and on chat streams that report their usage.
 A reply that LiteLLM served from its response cache costs nothing and is not estimated, because LiteLLM does not bill it.
-The api-server looks up a price by the call's provider and model, and the first match wins:
+
+An IBM LiteLLM call is priced in this order, and the first match wins:
+
+- **An operator price** from the chart, which an operator sets only to correct a price.
+  The chart ships no IBM prices.
+- **The RITS rule:** RITS models cost nothing.
+- **The IBM list:** IBM's own prices, read from LiteLLM's model info ([Reading prices](#prices)).
+  The lookup names the reply's model group first, because a reply can drop the provider prefix from its model, for example `gpt-5.5` for `azure/gpt-5.5`.
+- **LiteLLM's cost in the reply**, when the list has no price for the model.
+  A listed model with a free search quota also takes the reply's cost on a call with web searches, because only LiteLLM knows how much of the quota is left.
+- **Awaiting price:** a call that none of these prices costs nothing and is marked estimated until its price arrives ([Estimates](#estimates)).
+
+No IBM call takes an estimate from a similar model, so no IBM call counts many times its price, and no IBM call costs nothing because a free model has a similar name.
+
+Any other provider's call is priced in this order, and the first match wins:
 
 - **An operator price** from the chart.
-  The chart ships IBM LiteLLM's own prices, which differ from every public price list and differ per model and per kind of token.
-  An operator reads them from IBM's price list with a temporary management key and revokes the key afterwards; an agent never gets such a key, because the gateway adds a Connection's key to every call to its host.
 - **A provider rule.**
-  RITS models and Curve Bender cost nothing.
+  Curve Bender costs nothing.
   Bob uses the Bobcoins in each reply.
   The Claude subscription is valued at Anthropic's list prices, as a value and not a bill.
 - **The Anthropic table:** Anthropic's list prices, copied from a pinned version of LiteLLM's public price list.
   It prices own Anthropic keys and the subscription value.
-- **An estimate** for a model with no price: the highest price of its model family among the provider's prices, else the provider's highest price, marked "estimated", so DAM never counts low.
+- **An estimate** for a model with no price: the highest price of its model family among the provider's prices, else the provider's highest price, marked "estimated".
 
-A reply can name its model differently from the request, for example without a routing prefix or with a release date, so the lookup also matches on the model's own name.
+A reply can name its model differently from the request, for example without a routing prefix or with a release date, so each lookup also matches on the model's own name.
 OpenAI and Bedrock have no public prices in DAM yet: without an operator price, their calls keep their tokens and cost nothing, so a spend limit does not stop them.
 
 **How a cost is computed.** The rules follow LiteLLM's own cost rules, so DAM's cost equals LiteLLM's for the same counts.
@@ -108,6 +120,7 @@ Costs are whole micro-units of the Connection's unit, rounded up.
 DAM compares its cost with the proxy's own cost on every completed dollar call whose reply carries that cost, cache reads and writes included, except a response-cache replay.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
 When these headers give no cost, as on a chat stream, the proxy's cost is the cost in the reply's usage.
+A call that DAM priced with LiteLLM's own cost is not compared.
 A difference above 5% writes a `spend.proxy_cost_mismatch` log line, which shows a price or a cost rule that is wrong or old.
 Two counters, `platform.spend.proxy_cost.compared` and `platform.spend.proxy_cost.differs`, count the compared calls and the differences in ClickHouse.
 They carry only the provider and the model, which is the reply's model group when the reply names one, so they name no user, agent or Connection.
@@ -132,7 +145,7 @@ Each model also records whether its price has a free search quota, and which pri
 Each read logs such fields as `spend.price_incomplete`.
 After each hourly read, an operator price that differs from the list logs `spend.operator_price_differs`.
 The counters `platform.spend.price_reads`, by provider and outcome, and `platform.spend.operator_price_differs`, by provider and model, count the reads and the differences.
-The list does not price calls yet.
+Each replica keeps a copy of the list in memory and reloads it from Postgres every 60 seconds and right after its own reads write to it, so the meter prices each record from memory.
 
 ## Ledger
 
@@ -161,6 +174,7 @@ A new Session's first prompt waits for that report, at most two seconds ([metric
 A call that still counted as no Session keeps its stamp, and a job every five minutes moves such calls of the last two days to their Session once the directory knows it.
 
 **Call rows.** Postgres also keeps one row per call: the calling agent, the Session, its stamp when it counted as no Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
+It also keeps where the price came from (an operator price, the IBM list, the Anthropic table, a provider rule, LiteLLM's cost in the reply, a replay, awaiting price or an estimate), the model name that the lookup used, and the reasons for an estimate.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
 It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
@@ -198,7 +212,8 @@ A periodic record that arrives after the final one changes nothing.
 
 ## Estimates
 
-DAM counts high and marks a call estimated when its usage is missing or unsure:
+DAM marks a call estimated when its usage or its price is missing or unsure.
+It counts high, except for an IBM LiteLLM call that waits for its price:
 
 - **A stream that stopped early** keeps the counts read so far, and its output is estimated from the reply size when that gives more.
 - **A successful reply without usage** counts as the payer's most expensive call on that Connection that day, else in the last seven days, because the reply does not show its input.
@@ -210,6 +225,10 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   The gate notes each metered call when it starts.
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
   A real record that arrives later corrects the estimate.
+- **An IBM LiteLLM call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
+  It writes one `spend.call_awaiting_price` log line with the call, the Connection and the model, and the counter `platform.spend.awaiting_price` counts it by provider and model.
+  The api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
+  Until the price arrives, a spend limit does not see the call.
 
 An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
 Each estimate writes one `spend.call_estimated` log line with its reasons, whether the payer's most expensive call priced it, the calling agent and whether it is a sub-agent, the Connection, the model, the cost, the reply size and the duration, so the share of spend that estimates add can be measured.
@@ -377,7 +396,7 @@ The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
-  The card also gives today's spend in the other units and how many calls are high estimates.
+  The card also gives today's spend in the other units and how many calls are estimates.
   Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.

@@ -41,6 +41,13 @@ interface SettledAt {
   readonly startedAt: Date;
   readonly routerCallId?: string | null;
   readonly sessionId?: string | null;
+  readonly priceSource: string;
+  readonly priceModel: string;
+  readonly estimateReasons: readonly string[];
+}
+
+export interface PriceRequests {
+  requestRead(connectionId: string): void;
 }
 
 export interface SpendIngest {
@@ -81,13 +88,14 @@ export async function checkedSession(
 }
 
 export function createSpendIngest(deps: {
-  priceBook: PriceBook;
+  priceBook: () => PriceBook;
   calls: CallStates;
   ledger: SpendLedger;
   counters: DayCounters;
   owners: AgentOwners;
   sessions: SessionOwnership;
   metrics: PriceMetrics;
+  prices: PriceRequests;
 }): SpendIngest {
   const log = () => getLogger();
 
@@ -139,6 +147,9 @@ export function createSpendIngest(deps: {
         webSearches: amounts.webSearches,
         durationMs: amounts.durationMs,
         estimated: amounts.estimatedCalls > 0,
+        priceSource: call.priceSource,
+        priceModel: call.priceModel,
+        estimateReasons: call.estimateReasons,
       })
       .catch((err: unknown) =>
         log().warn(
@@ -249,6 +260,9 @@ export function createSpendIngest(deps: {
           state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
         routerCallId: state.meta?.routerCallId ?? null,
         sessionId: state.meta?.sessionId ?? null,
+        priceSource: "estimate",
+        priceModel: state.row.model,
+        estimateReasons: ["record-missing"],
       });
       if (settled)
         logEstimate(callId, state.row, amounts, {
@@ -286,6 +300,9 @@ export function createSpendIngest(deps: {
       startedAt: state.meta.startedAt,
       routerCallId: state.meta.routerCallId ?? null,
       sessionId: state.meta.sessionId ?? null,
+      priceSource: "estimate",
+      priceModel: "",
+      estimateReasons: ["record-missing", "usage-missing"],
     });
     if (settled)
       logEstimate(callId, row, estimate, {
@@ -351,7 +368,7 @@ export function createSpendIngest(deps: {
           callingAgentId: record.agentId,
           sessionId: record.sessionId,
         });
-      const measure = measureCall(record, deps.priceBook);
+      const measure = measureCall(record, deps.priceBook());
       if (measure.kind === "skip") {
         await deps.calls
           .heard(record.callId)
@@ -393,13 +410,30 @@ export function createSpendIngest(deps: {
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      const settled = await settle(
-        record.callId,
-        row,
-        amounts,
-        record.final,
-        record,
-      );
+      const awaiting = measure.priceSource === "awaiting";
+      if (awaiting && record.connectionId)
+        deps.prices.requestRead(record.connectionId);
+      const settled = await settle(record.callId, row, amounts, record.final, {
+        ...record,
+        priceSource: measure.priceSource,
+        priceModel: measure.priceModel,
+        estimateReasons: measure.estimateReasons,
+      });
+      if (settled && awaiting) {
+        deps.metrics.awaitingPrice({
+          provider: measure.provider,
+          model: measure.priceModel,
+        });
+        log().info(
+          {
+            callId: record.callId,
+            connectionId: row.connectionId,
+            provider: measure.provider,
+            model: measure.priceModel,
+          },
+          "spend.call_awaiting_price",
+        );
+      }
       if (settled && measure.estimateReasons.length > 0)
         logEstimate(record.callId, row, amounts, {
           reasons: measure.estimateReasons,
@@ -425,7 +459,10 @@ export function createSpendIngest(deps: {
         );
 
       const difference =
-        record.final && measure.unit === "usd" && !record.replay
+        record.final &&
+        measure.unit === "usd" &&
+        !record.replay &&
+        measure.priceSource !== "reply"
           ? proxyCostDifference(amounts.costMicros, record.proxyCost)
           : null;
       if (difference === null) return;

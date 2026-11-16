@@ -1793,6 +1793,12 @@ export const spendCalls = pgTable(
     webSearches: integer("web_searches").notNull().default(0),
     durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     estimated: boolean("estimated").notNull().default(false),
+    priceSource: text("price_source").notNull().default(""),
+    priceModel: text("price_model").notNull().default(""),
+    estimateReasons: text("estimate_reasons")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
   },
   (table) => [
     primaryKey({
@@ -1809,6 +1815,9 @@ export const spendCalls = pgTable(
     index("spend_calls_unbooked_idx")
       .on(table.startedAt)
       .where(sql`${table.sessionId} = '' AND ${table.stampedSessionId} <> ''`),
+    index("spend_calls_awaiting_price_idx")
+      .on(table.priceSource, table.priceModel)
+      .where(sql`${table.priceSource} = 'awaiting'`),
   ],
 );
 

@@ -3115,6 +3115,7 @@ export async function bootstrap() {
     spend.lastKnownNameSaga.unsubscribe();
     spend.connectionLimitsSaga.unsubscribe();
     spend.readPricesSaga.unsubscribe();
+    spend.priceBookReload.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
     spendAlertsSaga.unsubscribe();

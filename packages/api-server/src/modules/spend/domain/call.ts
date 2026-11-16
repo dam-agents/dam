@@ -1,4 +1,8 @@
-import { callCostMicros, type ProxyCostHeaders } from "./cost.js";
+import {
+  callCostMicros,
+  proxyCostMicros,
+  type ProxyCostHeaders,
+} from "./cost.js";
 import { lookupPrice, type PriceBook, type PriceSource } from "./prices.js";
 import { payingProvider, unitOf, type SpendUnit } from "./units.js";
 import type { NormalizedUsage } from "./usage.js";
@@ -60,7 +64,8 @@ export type EstimateReason =
   | "model-unpriced"
   | "usage-missing"
   | "cost-unknown"
-  | "record-missing";
+  | "record-missing"
+  | "awaiting-price";
 
 export type CallMeasure =
   | { readonly kind: "forget" }
@@ -71,6 +76,7 @@ export type CallMeasure =
       readonly unit: SpendUnit;
       readonly model: string;
       readonly priceSource: PriceSource;
+      readonly priceModel: string;
       readonly needsReferenceCost: boolean;
       readonly estimateReasons: readonly EstimateReason[];
       readonly amounts: CallAmounts;
@@ -87,6 +93,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
 
   const { provider, ambiguous } = payingProvider(record.providers);
   const usage = normalizeUsage(record.dialect, record.usage);
+  const priceModel = record.modelGroup ?? record.model ?? "";
   if (record.replay)
     return {
       kind: "measured",
@@ -94,6 +101,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
       unit: unitOf(provider),
       model: record.model ?? UNKNOWN_MODEL,
       priceSource: "replay",
+      priceModel,
       needsReferenceCost: false,
       estimateReasons: [],
       amounts: callAmounts(usage, 0, false, record.durationMs),
@@ -115,15 +123,21 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     provider,
     replyModel: record.model,
     pathModel: bedrockPathModel(record.path),
+    modelGroup: record.modelGroup,
+    replyCostMicros: proxyCostMicros(record.proxyCost),
+    webSearches: metered.webSearches,
   });
+  const awaiting = price.source === "awaiting";
   const cost = callCostMicros(price, metered);
-  const needsReferenceCost = record.final && (cost === null || !reported);
+  const needsReferenceCost =
+    record.final && !awaiting && (cost === null || !reported);
   const estimateReasons = (
     [
       [outputShort && !record.complete, "stream-cut"],
       [outputShort && record.complete, "output-uncounted"],
       [ambiguous, "providers-ambiguous"],
       [price.source === "estimate", "model-unpriced"],
+      [awaiting, "awaiting-price"],
       [record.final && !reported, "usage-missing"],
       [record.final && reported && cost === null, "cost-unknown"],
     ] as const
@@ -135,6 +149,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     unit: unitOf(provider),
     model: record.model ?? UNKNOWN_MODEL,
     priceSource: price.source,
+    priceModel,
     needsReferenceCost,
     estimateReasons,
     amounts: callAmounts(metered, cost ?? 0, estimated, record.durationMs),

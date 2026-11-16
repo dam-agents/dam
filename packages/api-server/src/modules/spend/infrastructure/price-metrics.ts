@@ -15,6 +15,7 @@ export interface PriceMetrics {
     readonly outcome: PriceReadOutcome;
   }): void;
   operatorPriceDiffers(labels: PricedModelLabels): void;
+  awaitingPrice(labels: PricedModelLabels): void;
 }
 
 export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
@@ -37,6 +38,10 @@ export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
         "Operator prices from the chart that differ from the provider's own price list",
     },
   );
+  const awaiting = meter.createCounter("platform.spend.awaiting_price", {
+    description:
+      "Calls that no price source could price, counted at no cost until their price arrives",
+  });
   const modelAttributes = ({ provider, model }: PricedModelLabels) => ({
     provider,
     model,
@@ -47,5 +52,6 @@ export function createOtelPriceMetrics(meter: Meter): PriceMetrics {
     priceRead: ({ provider, outcome }) => reads.add(1, { provider, outcome }),
     operatorPriceDiffers: (labels) =>
       operatorDiffers.add(1, modelAttributes(labels)),
+    awaitingPrice: (labels) => awaiting.add(1, modelAttributes(labels)),
   };
 }

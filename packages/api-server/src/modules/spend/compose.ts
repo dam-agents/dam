@@ -1,8 +1,9 @@
 import type { Meter } from "@opentelemetry/api";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
-import type { Subscription } from "rxjs";
+import { exhaustMap, timer, type Subscription } from "rxjs";
 import { CALL_ROWS_RETENTION_DAYS, type SpendService } from "api-server-api";
+import { formatError } from "../../core/format-error.js";
 import { getLogger } from "../../core/logger.js";
 import type { PriceBook } from "./domain/prices.js";
 import { loadAnthropicPriceTable } from "./infrastructure/anthropic-price-table.js";
@@ -19,6 +20,7 @@ import {
   hasPriceListing,
 } from "./infrastructure/model-info-prices.js";
 import { createProviderPriceStore } from "./infrastructure/provider-prices.js";
+import { createLivePriceBook } from "./infrastructure/price-book.js";
 import { startReadPricesOnConnectionSaga } from "./sagas/read-prices-on-connection.js";
 import {
   createPriceReader,
@@ -67,9 +69,12 @@ import {
   type SpendCeilingsForOperator,
 } from "./services/spend-ceilings-admin.js";
 
-function composePriceBook(
+const LISTED_PROVIDERS = ["ibm-litellm"] as const;
+const PRICE_BOOK_RELOAD_MS = 60_000;
+
+function fixedPrices(
   priceOverrides: readonly OperatorPriceInput[],
-): PriceBook {
+): Omit<PriceBook, "lists"> {
   return {
     operatorPrices: operatorPrices(priceOverrides),
     anthropicTable: loadAnthropicPriceTable(),
@@ -80,6 +85,7 @@ export interface SpendSystem {
   ingest: SpendIngest;
   prices: PriceReader;
   readPricesSaga: Subscription;
+  priceBookReload: Subscription;
   openCalls(agentId: string): Promise<number>;
   check: SpendCheck;
   extendSaga: Subscription;
@@ -132,23 +138,31 @@ export function composeSpendSystem(deps: {
       throw error;
     }));
   const calls = createRedisCallStates(deps.redis);
-  const priceBook = composePriceBook(deps.priceOverrides);
+  const fixed = fixedPrices(deps.priceOverrides);
   const metrics = createOtelPriceMetrics(deps.meter);
+  const priceStore = createProviderPriceStore(deps.db);
+  const priceBook = createLivePriceBook({
+    fixed,
+    store: priceStore,
+    providers: LISTED_PROVIDERS,
+  });
+  const prices = createPriceReader({
+    connections: deps.pricedConnections,
+    fetch: createModelInfoPriceFetch(),
+    store: priceStore,
+    operatorPrices: fixed.operatorPrices,
+    metrics,
+    onWritten: () => priceBook.reload(),
+  });
   const ingest = createSpendIngest({
-    priceBook,
+    priceBook: () => priceBook.current(),
     calls,
     ledger,
     counters,
     owners: deps.owners,
     sessions: deps.sessions,
     metrics,
-  });
-  const prices = createPriceReader({
-    connections: deps.pricedConnections,
-    fetch: createModelInfoPriceFetch(),
-    store: createProviderPriceStore(deps.db),
-    operatorPrices: priceBook.operatorPrices,
-    metrics,
+    prices,
   });
   return {
     ingest,
@@ -157,6 +171,20 @@ export function composeSpendSystem(deps: {
       reader: prices,
       hasPriceListing,
     }),
+    priceBookReload: timer(0, PRICE_BOOK_RELOAD_MS)
+      .pipe(
+        exhaustMap(() =>
+          priceBook
+            .reload()
+            .catch((err: unknown) =>
+              getLogger().warn(
+                { reason: formatError(err) },
+                "spend.price_book_not_reloaded",
+              ),
+            ),
+        ),
+      )
+      .subscribe(),
     openCalls: (agentId) => calls.openCount(agentId),
     agentSpend: createAgentSpend({
       ledger,

@@ -31,6 +31,7 @@ export interface PriceReader {
   readAll(provider: string): Promise<void>;
   readAllIfEmpty(provider: string): Promise<void>;
   readOne(connectionId: string): Promise<void>;
+  requestRead(connectionId: string): void;
 }
 
 interface ConnectionPrices {
@@ -39,6 +40,7 @@ interface ConnectionPrices {
 }
 
 const READS_AT_ONCE = 4;
+const REQUESTED_READ_EVERY_MS = 5 * 60_000;
 const RATE_KINDS = [
   "input",
   "output",
@@ -62,10 +64,23 @@ export function createPriceReader(deps: {
   store: ProviderPriceStore;
   operatorPrices: readonly PricedModel[];
   metrics: PriceMetrics;
+  onWritten?: () => Promise<void>;
   now?: () => Date;
 }): PriceReader {
   const log = () => getLogger();
   const now = deps.now ?? (() => new Date());
+  const requestedAt = new Map<string, number>();
+  const requested = new Set<string>();
+  const written = async () => {
+    await deps
+      .onWritten?.()
+      .catch((err: unknown) =>
+        log().warn(
+          { reason: formatError(err) },
+          "spend.price_book_not_reloaded",
+        ),
+      );
+  };
   const newRun = (): PriceRun => ({ runId: randomUUID(), readAt: now() });
 
   const fetchSafely = (connection: PricedConnection): Promise<FetchedPrices> =>
@@ -189,6 +204,7 @@ export function createPriceReader(deps: {
     }
     const prices = [...merged.values()];
     await deps.store.put(provider, prices, run);
+    await written();
     logKept(
       provider,
       prices,
@@ -197,27 +213,46 @@ export function createPriceReader(deps: {
     await checkOperatorPrices(provider);
   };
 
+  const readOne = async (connectionId: string) => {
+    const connection = await deps.connections.one(connectionId);
+    if (!connection) return;
+    const read = await readConnection(connection);
+    if (!read) return;
+    const added = new Set(
+      await deps.store.addMissing(connection.provider, read.prices, newRun()),
+    );
+    if (added.size > 0) await written();
+    logKept(
+      connection.provider,
+      read.prices.filter((p) => added.has(p.model)),
+      read.unpriced,
+    );
+  };
+
   return {
     readAll,
+    readOne,
+
+    requestRead(connectionId) {
+      const at = now().getTime();
+      const last = requestedAt.get(connectionId);
+      if (requested.has(connectionId)) return;
+      if (last !== undefined && at - last < REQUESTED_READ_EVERY_MS) return;
+      requestedAt.set(connectionId, at);
+      requested.add(connectionId);
+      void readOne(connectionId)
+        .catch((err: unknown) =>
+          log().error(
+            { connectionId, reason: formatError(err) },
+            "spend.requested_price_read_failed",
+          ),
+        )
+        .finally(() => requested.delete(connectionId));
+    },
 
     async readAllIfEmpty(provider) {
       if (await deps.store.hasAny(provider)) return;
       await readAll(provider);
-    },
-
-    async readOne(connectionId) {
-      const connection = await deps.connections.one(connectionId);
-      if (!connection) return;
-      const read = await readConnection(connection);
-      if (!read) return;
-      const added = new Set(
-        await deps.store.addMissing(connection.provider, read.prices, newRun()),
-      );
-      logKept(
-        connection.provider,
-        read.prices.filter((p) => added.has(p.model)),
-        read.unpriced,
-      );
     },
   };
 }

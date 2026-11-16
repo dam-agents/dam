@@ -64,7 +64,7 @@ flowchart LR
 | 01  | ✅ [The meter reads LiteLLM's reply facts](01-meter-reply-facts.md)                    | Lua meter and record parser: `usage.cost`, Chat Completions cache writes, model group, replay; a replay costs $0                        | —          |
 | 02  | ✅ [DAM's cost rules match LiteLLM's](02-cost-rules-match-litellm.md)                  | Unsplit writes at the five-minute price, several prompt-size steps, the comparison on every reply, comparison counters                  | 01         |
 | 03  | ✅ [DAM reads and keeps the IBM price list](03-read-and-keep-ibm-prices.md)            | Tables, reader job, Connections port, conversion, drift and incomplete-price logs, read counters                                        | 02         |
-| 04  | [DAM prices IBM calls from the list](04-price-ibm-calls-from-the-list.md)              | Price book copy per replica, lookup order, awaiting price, read on a missing model, price source column, chart rows removed, Usage copy | 01, 03     |
+| 04  | ✅ [DAM prices IBM calls from the list](04-price-ibm-calls-from-the-list.md)           | Price book copy per replica, lookup order, awaiting price, read on a missing model, price source column, chart rows removed, Usage copy | 01, 03     |
 | 05  | [DAM corrects spend that waited for a price](05-correct-awaiting-spend.md)             | Re-price awaiting calls after a read, one-time 30-day back-fill                                                                         | 04         |
 | 06  | [The catalogs read model details from model info](06-model-details-from-model-info.md) | IBM LiteLLM and CurveBender listings through `/v1/model/info` in the owner catalog and the Model Router (#6488)                         | 03         |
 

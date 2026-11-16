@@ -658,6 +658,9 @@ export function createSpendLedger(db: Db): SpendLedger {
         webSearches: call.webSearches,
         durationMs: call.durationMs,
         estimated: call.estimated,
+        priceSource: call.priceSource,
+        priceModel: call.priceModel,
+        estimateReasons: [...call.estimateReasons],
       };
       await db
         .insert(spendCalls)

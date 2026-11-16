@@ -226,11 +226,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       values.apiServer.spend.priceOverrides,
     );
     try {
-      expect(loadConfig().spendPriceOverrides).toContainEqual(
-        expect.objectContaining({
-          provider: "ibm-litellm",
-          model: "aws/claude-opus-5-5",
-        }),
+      expect(loadConfig().spendPriceOverrides).toEqual(
+        values.apiServer.spend.priceOverrides,
       );
     } finally {
       delete process.env.SPEND_PRICE_OVERRIDES;
