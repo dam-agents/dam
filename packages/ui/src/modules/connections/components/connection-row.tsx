@@ -1,7 +1,6 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import type { ConnectionHolders } from "../hooks/use-connection-holders.js";
-
 import type {
   RowGrantControls,
   RowMaintenanceActions,

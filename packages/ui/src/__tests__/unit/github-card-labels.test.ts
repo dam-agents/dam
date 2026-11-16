@@ -75,7 +75,9 @@ describe("a connection made from a sign-in or installation", () => {
       }),
     );
 
-    expect(label?.title).toBe("dam-agents / link-guardian, dam, skills and 2 more");
+    expect(label?.title).toBe(
+      "dam-agents / link-guardian, dam, skills and 2 more",
+    );
     expect(label?.subtitle).toBe("1 permission · named github-dam");
   });
 
@@ -91,17 +93,20 @@ describe("a connection made from a sign-in or installation", () => {
       "Everything the app can reach, on every account",
       "All accounts · named github-app-installation",
     ],
-  ] as const)("says what full access reaches (%s)", (authKind, title, subtitle) => {
-    expect(
-      childCardLabel(
-        connection("github-app-installation", {
-          parentId: "p",
-          authKind,
-          fullAccess: true,
-        }),
-      ),
-    ).toEqual({ title, subtitle });
-  });
+  ] as const)(
+    "says what full access reaches (%s)",
+    (authKind, title, subtitle) => {
+      expect(
+        childCardLabel(
+          connection("github-app-installation", {
+            parentId: "p",
+            authKind,
+            fullAccess: true,
+          }),
+        ),
+      ).toEqual({ title, subtitle });
+    },
+  );
 
   // TEST_SCENARIO: a connection made from an installation names the account it is installed on, when the check read it.
   it("names the installation's account", () => {
@@ -122,7 +127,9 @@ describe("a connection made from a sign-in or installation", () => {
 
   // TEST_SCENARIO: a token, or any connection not made from a sign-in or installation, keeps the row it had.
   it("leaves every other connection as it was", () => {
-    expect(childCardLabel(connection("pat", { authKind: "header" }))).toBeNull();
+    expect(
+      childCardLabel(connection("pat", { authKind: "header" })),
+    ).toBeNull();
   });
 });
 
@@ -177,17 +184,16 @@ describe("a sign-in's or installation's card", () => {
       check: { status: "passed", account: "my-bot-app[bot]", at: "" },
     });
 
-    expect(parentCardTitles([installation], templates).get(installation.id)).toBe(
-      "my-bot-app",
-    );
+    expect(
+      parentCardTitles([installation], templates).get(installation.id),
+    ).toBe("my-bot-app");
     expect(parentCardLead(installation)).toBe(
       "Your own app · named github-app-installation",
     );
     expect(
-      parentCardTitles(
-        [{ ...installation, check: undefined }],
-        templates,
-      ).get(installation.id),
+      parentCardTitles([{ ...installation, check: undefined }], templates).get(
+        installation.id,
+      ),
     ).toBe("Your GitHub App");
   });
 
@@ -249,13 +255,16 @@ describe("a broken card", () => {
       "Move to another host",
       "Paused until you move it to another host",
     ],
-  ] as const)("names %s and its fix", (_, parent, actions, badge, fix, paused) => {
-    expect(parentRepair(parent, actions)).toEqual({
-      badge,
-      fix: { label: fix, run },
-      paused,
-    });
-  });
+  ] as const)(
+    "names %s and its fix",
+    (_, parent, actions, badge, fix, paused) => {
+      expect(parentRepair(parent, actions)).toEqual({
+        badge,
+        fix: { label: fix, run },
+        paused,
+      });
+    },
+  );
 
   it("is no repair while active", () => {
     expect(parentRepair(connection("s"), { onReauthenticate: run })).toBeNull();

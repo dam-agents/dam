@@ -39,8 +39,7 @@ export function ParentConnectionBlock({
   onNewChild,
   ...controls
 }: Props) {
-  const { templateById, onDelete, deletingId, maintenance, holders } =
-    controls;
+  const { templateById, onDelete, deletingId, maintenance, holders } = controls;
   const parentMaintenance = maintenance?.(parent);
   const repair = parentRepair(parent, parentMaintenance);
   const signIn = githubCredentialKind(parent) === "sign-in";
@@ -121,10 +120,7 @@ export function ParentConnectionBlock({
         </div>
       </header>
       {childConnections.length > 0 ? (
-        <div
-          className="py-1"
-          data-testid={`connection-children-${parent.id}`}
-        >
+        <div className="py-1" data-testid={`connection-children-${parent.id}`}>
           {childConnections.map((child) => (
             <CatalogConnectionRow
               key={child.id}

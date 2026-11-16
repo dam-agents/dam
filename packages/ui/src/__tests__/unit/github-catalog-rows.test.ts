@@ -189,7 +189,9 @@ describe("a GitHub sign-in's card", RENDER_TIMEOUT, () => {
 
     expect(header!.textContent).toBe("GitHubNew");
     expect(header!.contains(byTestId("catalog-new-github"))).toBe(true);
-    expect([...cards!.children].map((c) => c.getAttribute("data-testid"))).toEqual([
+    expect(
+      [...cards!.children].map((c) => c.getAttribute("data-testid")),
+    ).toEqual([
       `connection-parent-${SIGN_IN.id}`,
       `connection-card-${TOKEN.id}`,
     ]);
@@ -207,7 +209,9 @@ describe("a GitHub sign-in's card", RENDER_TIMEOUT, () => {
       byTestId(`connection-parent-lead-${SIGN_IN.id}`)!.firstElementChild!
         .textContent,
     ).toBe("Signed in with GitHub");
-    const header = byTestId(`connection-parent-${SIGN_IN.id}`)!.firstElementChild!;
+    const header = byTestId(
+      `connection-parent-${SIGN_IN.id}`,
+    )!.firstElementChild!;
     expect(header.textContent).not.toContain("agent ");
     expect(header.contains(byTestId(`catalog-menu-${SIGN_IN.id}`))).toBe(true);
 
@@ -224,11 +228,13 @@ describe("a GitHub sign-in's card", RENDER_TIMEOUT, () => {
     expect(byTestId(`catalog-connection-title-${NARROW.id}`)!.textContent).toBe(
       "octocat / hello",
     );
-    expect(byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent).toBe(
-      "2 permissions · named github-hello",
-    );
+    expect(
+      byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent,
+    ).toBe("2 permissions · named github-hello");
     expect(row.textContent).not.toContain("GitHub OAuth");
-    expect(byTestId(`catalog-add-${NARROW.id}`)!.textContent).toBe("Add to agent");
+    expect(byTestId(`catalog-add-${NARROW.id}`)!.textContent).toBe(
+      "Add to agent",
+    );
   });
 
   // TEST_SCENARIO: a sign-in with no connection yet says in one grey row what to do; New connection on the header is the one button, so the row has none.
@@ -288,13 +294,15 @@ describe("a broken GitHub card", RENDER_TIMEOUT, () => {
     });
     const row = byTestId(`catalog-connection-${NARROW.id}`)!;
 
-    expect(byTestId(`connection-parent-status-${SIGN_IN.id}`)!.textContent).toBe(
-      "Expired",
-    );
+    expect(
+      byTestId(`connection-parent-status-${SIGN_IN.id}`)!.textContent,
+    ).toBe("Expired");
     expect(byTestId(`connection-new-child-${SIGN_IN.id}`)).toBeNull();
     expect(row.getAttribute("data-paused")).toBe("true");
     expect(row.querySelectorAll("button")).toHaveLength(1);
-    expect(byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent).toBe(
+    expect(
+      byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent,
+    ).toBe(
       "2 permissions · named github-hello · Paused until you sign in again",
     );
 
@@ -332,9 +340,9 @@ describe("a broken GitHub card", RENDER_TIMEOUT, () => {
     expect(
       byTestId(`catalog-connection-expired-${NARROW.id}`)!.textContent,
     ).toBe("Expired");
-    expect(byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent).toBe(
-      "2 permissions · named github-hello · GitHub refused this access",
-    );
+    expect(
+      byTestId(`catalog-connection-account-${NARROW.id}`)!.textContent,
+    ).toBe("2 permissions · named github-hello · GitHub refused this access");
 
     act(() => byTestId(`catalog-fix-${NARROW.id}`)!.click());
 
@@ -372,9 +380,9 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
       }),
     });
 
-    expect(byTestId(`catalog-narrow-${CHILD.id}`)!.className.split(" ")).toContain(
-      "@max-md:hidden",
-    );
+    expect(
+      byTestId(`catalog-narrow-${CHILD.id}`)!.className.split(" "),
+    ).toContain("@max-md:hidden");
 
     openMenu(CHILD.id);
     act(() => byTestId(`catalog-edit-scope-${CHILD.id}`, document)!.click());
@@ -397,7 +405,9 @@ describe("a GitHub connection row", RENDER_TIMEOUT, () => {
   it("puts the menu at the top right of every row and of the header", () => {
     render([SIGN_IN, CHILD]);
     const row = byTestId(`catalog-connection-${CHILD.id}`)!;
-    const header = byTestId(`connection-parent-${SIGN_IN.id}`)!.firstElementChild!;
+    const header = byTestId(
+      `connection-parent-${SIGN_IN.id}`,
+    )!.firstElementChild!;
 
     expect(row.className).toContain("items-start");
     expect(row.lastElementChild!.firstElementChild).toBe(
@@ -519,9 +529,9 @@ describe("where a sign-in's app is installed", RENDER_TIMEOUT, () => {
     expect(byTestId(install)).toBeNull();
 
     act(() => byTestId(`github-installations-${SIGN_IN.id}-toggle`)!.click());
-    const list = byTestId(`connection-parent-lead-${SIGN_IN.id}`)!.querySelector(
-      "ul",
-    )!;
+    const list = byTestId(
+      `connection-parent-lead-${SIGN_IN.id}`,
+    )!.querySelector("ul")!;
 
     expect(list.lastElementChild!.contains(byTestId(install))).toBe(true);
     expect(byTestId(install)!.textContent).toBe("Install on another account");

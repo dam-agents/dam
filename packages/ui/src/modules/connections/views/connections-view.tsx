@@ -11,9 +11,9 @@ import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
 import { useAppConnections } from "../api/queries.js";
+import { CatalogProviderCard } from "../components/catalog-provider-card.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
 import { ConnectionCreateChildDialog } from "../components/connection-create-child-dialog.js";
-import { CatalogProviderCard } from "../components/catalog-provider-card.js";
 import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionHolders } from "../hooks/use-connection-holders.js";
@@ -26,9 +26,7 @@ export function ConnectionsView() {
   const { confirmAndRemove, removingName } = useRemoveSatelliteWithConfirm();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
-  const [catalog, setCatalog] = useState<{ providerId?: string } | null>(
-    null,
-  );
+  const [catalog, setCatalog] = useState<{ providerId?: string } | null>(null);
   const holders = useConnectionHolders();
   const [childOf, setChildOf] = useState<ConnectionView | null>(null);
 

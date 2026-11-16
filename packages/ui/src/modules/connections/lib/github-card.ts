@@ -118,7 +118,10 @@ function installationAppName(parent: ParentFields): string | undefined {
 
 function plainTitle(parent: ParentFields): string {
   return match(githubCredentialKind(parent))
-    .with("installation", () => installationAppName(parent) ?? "Your GitHub App")
+    .with(
+      "installation",
+      () => installationAppName(parent) ?? "Your GitHub App",
+    )
     .with("sign-in", () =>
       parent.accountLabel
         ? parent.accountLabel

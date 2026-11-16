@@ -49,7 +49,9 @@ export function ConnectionRowActions({
   usedBy?: ReactNode;
 }) {
   const narrow = connection.fullAccess ? maintenance?.onEditScope : undefined;
-  const repair = chooseAccessAgain ? childRepair(connection, maintenance) : null;
+  const repair = chooseAccessAgain
+    ? childRepair(connection, maintenance)
+    : null;
   const inlineFix = repair
     ? repair
     : connection.status === "disconnected" && maintenance?.onMoveHost

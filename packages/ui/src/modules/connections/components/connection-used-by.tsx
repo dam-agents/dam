@@ -1,4 +1,8 @@
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a connection's row says on the Connections

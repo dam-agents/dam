@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { childCardLabel, REFUSED_ACCESS } from "../lib/github-card.js";
-
 import { ConnectionIcon } from "./connection-icon.js";
 import {
   ConnectionRowActions,
