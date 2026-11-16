@@ -345,7 +345,8 @@ bake_source() {
     git ls-files -z --cached --others --exclude-standard -- "${paths[@]}"
   else
     find "${paths[@]}" \( -name node_modules -o -name dist -o -name target \) -prune -o \( -type f -o -type l \) -print0
-  fi | grep -zvE "$skip" | tar --null -T - -cf - | tar -C "$1" -xf -
+  fi | while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done |
+    grep -zvE "$skip" | tar --null -T - -cf - | tar -C "$1" -xf -
   curl -fsSL --retry 3 -o "$work/user-docs.tgz" "https://codeload.github.com/dam-agents/docs/tar.gz/$docs_commit"
   echo "$docs_sum  $work/user-docs.tgz" | sha256sum -c --quiet - ||
     { echo "user docs $docs_commit: digest is not $docs_sum" >&2; return 1; }

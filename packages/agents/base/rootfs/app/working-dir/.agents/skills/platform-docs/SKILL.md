@@ -19,8 +19,9 @@ Never put the user's question in a URL, an issue or a message: they asked you be
 ## The tree
 
 `/usr/local/share/platform-source` holds the platform's repository at the commit your image was built from.
-Its `BUILD` file names that `commit` and the release `version`.
-The install you run on is normally that release; when you have the `dam` CLI and `dam version --json` gives another `serverVersion`, say that your image and the install differ.
+Its `BUILD` file names that `commit` and the chart's `version`, which is a release only when the image was built from a release tag: between releases it names the next one, not yet released.
+When you have the `dam` CLI, compare the `serverVersion` of `dam version --json` with `BUILD`: a release, such as `0.2.28` or `0.2.28-rc.1`, matches `version`, and a `X.Y.Z-dev-<sha>` build from `main` matches when `commit` starts with `<sha>`; say that such a build is unreleased.
+When they do not match, say that your image and the install differ.
 When the folder is missing, your image predates it: say that you cannot look the answer up.
 
 `user-docs/` beside it holds the published user docs' source, at the `user-docs-commit` in `BUILD`.
@@ -44,6 +45,7 @@ Search with `rg`, such as `rg -n -i 'schedule' /usr/local/share/platform-source/
 
 Release notes are not in the tree: they are on GitHub, at `https://github.com/dam-agents/dam/releases.atom`, one entry per tag with the notes in `<content>`.
 Read them with `curl -fsSL --max-time 20` only when asked what changed in a release; a tag whose `<content>` is only a commit line has no published notes yet, so say so and never present that line as a changelog.
+The feed holds only the newest tags: for an older release, or when the feed cannot be read, answer from the tree instead and say that you did not read its release notes.
 
 ## Answer
 
