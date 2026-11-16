@@ -92,7 +92,7 @@ export async function oauthProviderForSignIn(opts: {
   const template = opts.templates.get(opts.conn.templateId);
   if (template?.authKind !== "oauth" || !template.dynamicRegistration)
     return provider;
-  const url = opts.conn.inputs.url;
+  const url = template.mcpUrl ?? opts.conn.inputs.url;
   if (typeof url !== "string")
     throw new TRPCError({
       code: "BAD_REQUEST",
