@@ -129,6 +129,7 @@ Both ride a sender-minted prompt id as platform metadata, stripped before the ag
 Both are **sender-only and ephemeral**; a Session's reset is ephemeral too, sent to every viewer engaged when it happened; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
 A prompt's echo enters the log only when it starts.
 The queue marks a prompt that waits only for its session — nothing running ahead, the harness still loading the session after a wake, a restart or a rewind — as **starting**, and the chat shows it as sent rather than queued.
+A person's Stop takes the prompts still waiting in the queue back before it cancels the turn, so none of them starts as the next one: their text goes into the composer after anything typed there, an image among them goes back as an attachment, a file it carried is named as not restored since its upload is gone, and a prompt the runtime starts in the meantime counts as delivered and is left alone.
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
@@ -261,6 +262,10 @@ Claude Code can lose its idle report, so a busy session that stays silent for te
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
 A session on a removed provider or an unknown harness closes with the reason.
+A **shell** terminal session runs the agent user's login shell in the PTY instead of the terminal entrypoint, in the same work directory and with the env a terminal on the agent's default harness with no model gets, so a harness or script started from it reaches the Model Router and the credential gateway as from that terminal.
+It asks for no harness, provider or model, so neither can refuse it, and the web terminal's menu offers it on every agent, even while the harnesses load or when no provider fits one.
+The runtime marks the session as a shell and titles it Shell, since no harness lists it to name it; a shell session whose PTY is gone starts a shell again, and a harness session never becomes one.
+It rides the same terminal socket, so it takes the terminal's admission — the owner only, as for SSH ([agent-editors](agent-editors.md#sessions)) — and its reconnect, scrollback and reap below.
 A terminal sitting at the harness's prompt sends nothing, so the api-server's relay pings its viewer every 30 seconds, as it pings SSH and browser viewers: the traffic keeps networks that close quiet connections (mobile carriers, proxies) from cutting it, and a viewer that leaves a ping unanswered is cut, which detaches the PTY as a closed tab does.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.

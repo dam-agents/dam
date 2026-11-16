@@ -23,6 +23,7 @@ const artifact: LibraryArtifact = {
   folderId: null,
   agentId: "agent",
   sourcePath: null,
+  icon: null,
   visibility: "private",
   interactive: true,
   expiresAt: null,

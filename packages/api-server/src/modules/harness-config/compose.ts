@@ -1,6 +1,7 @@
 import type { Subscription } from "rxjs";
 import type { Db, DbTx } from "db";
 import type { ProfileResolver } from "../profiles/index.js";
+import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import type { RunBoundary } from "./domain/run-boundary.js";
 import type {
   DefaultKind,
@@ -15,6 +16,8 @@ import {
 } from "./services/harness-config-service.js";
 import { NoDefaultModelError } from "./domain/no-default-model.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";
+import { createStartPairWriter } from "./infrastructure/start-pair-writer.js";
+import { createStartPair, type StartPair } from "./services/start-pair.js";
 import {
   createSessionChoicesValidator,
   type SessionChoicesValidator,
@@ -268,6 +271,7 @@ export function composeSharedCurveBender(deps: {
     specHarness: deps.specHarness,
     ownerCatalog: deps.ownerCatalog,
     grantedProviders: (agentId) => pairRepo.grantedProviders(agentId),
+    chatDefault: (agentId) => pairRepo.read(agentId, "chat"),
     grant: deps.grant,
     publishDefaults,
     log: deps.log,
@@ -301,5 +305,22 @@ export function composeScheduleModelForFire(deps: {
   return createScheduleModelForFire({
     getCapabilities: deps.getCapabilities,
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the chat default a create sets for its new
+ * Agent, checked against the owner's provider catalog and written to the
+ * Agent's row before its first hello.
+ */
+export function composeStartPair(deps: {
+  db: Db;
+  subPseudonymizer: SubPseudonymizer;
+  owner: string;
+  ownerCatalog: () => Promise<OwnerModelCatalogView>;
+}): StartPair {
+  return createStartPair({
+    ownerCatalog: deps.ownerCatalog,
+    write: createStartPairWriter(deps.db, deps.subPseudonymizer, deps.owner),
   });
 }

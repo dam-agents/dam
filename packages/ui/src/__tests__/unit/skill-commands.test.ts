@@ -85,6 +85,26 @@ describe("filtering the list", () => {
     ]);
   });
 
+  // TEST_SCENARIO: Pi reports its own commands and the agent's skills in one list, skills first. At the same rank a skill sorts after the command a person runs, since the agent loads a skill by itself; typing the skill's name still brings it up first.
+  it("puts the harness's own commands before the skills", () => {
+    const pi = [
+      { name: "skill:platform-schedules", description: "REQUIRED scheduler" },
+      { name: "compact", description: "Compact the conversation" },
+      { name: "skill:platform-s3", description: "Use before a bucket" },
+      { name: "name", description: "Name the session" },
+    ];
+    expect(filterCommands(pi, "").map((c) => c.name)).toEqual([
+      "compact",
+      "name",
+      "skill:platform-schedules",
+      "skill:platform-s3",
+    ]);
+    expect(filterCommands(pi, "sk").map((c) => c.name)).toEqual([
+      "skill:platform-schedules",
+      "skill:platform-s3",
+    ]);
+  });
+
   // TEST_SCENARIO: case does not matter, and an empty query lists everything in order.
   it("ignores case and lists all for an empty query", () => {
     expect(filterCommands(commands, "GRI").map((c) => c.name)).toEqual([

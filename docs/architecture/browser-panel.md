@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-11-12
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -39,6 +39,7 @@ A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/pla
 It also blocks the spell-check dictionary languages, so the browser neither loads nor downloads a dictionary from `redirector.gvt1.com`; turning spell-check off outright would still fetch one.
 The list holds English, because an image that sets no locale gets that dictionary; a derived image with another locale adds its language too.
 `platform-browser` carries `--disable-background-networking` and `--disable-component-update` into every launch, so the launcher does not rely on agent-browser's own defaults for them.
+agent-browser's own check for a newer browser, which asks `chromereleases.googleblog.com` once per daemon, is off (`AGENT_BROWSER_NO_VERSION_CHECK`).
 `AGENT_BROWSER_ARGS` points the account check, the push-messaging check-in and the component updater at a closed loopback port, and turns off autofill's queries to Google's form-prediction server.
 The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
 Safe Browsing stays on, but with background networking off it never updates its lists, so its protection ages; Chrome for Testing does no real-time Safe Browsing lookups, which need a Google-branded build.

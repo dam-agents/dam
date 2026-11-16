@@ -120,6 +120,17 @@ function connectionsOf(rows: readonly ConnectionRow[]): Connection[] {
   });
 }
 
+export async function listConnectionsByTemplate(
+  db: Db,
+  templateId: string,
+): Promise<Connection[]> {
+  const rows = (await db
+    .select()
+    .from(connectionsTable)
+    .where(eq(connectionsTable.templateId, templateId))) as ConnectionRow[];
+  return connectionsOf(rows);
+}
+
 export function createConnectionsRepository(db: Db): ConnectionsRepository {
   return {
     async insert(input): Promise<void> {

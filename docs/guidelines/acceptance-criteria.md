@@ -9,25 +9,15 @@ A criterion the tester cannot check from the outside gives no verdict.
 
 ## Which issues need them
 
-| Type          | Acceptance criteria                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| Feature       | Always.                                                                                             |
-| Bug           | Always: the expected behavior once the bug is fixed, starting from the reproduction steps.          |
-| Task          | Only when a user can see the change. A refactor, a chore or an upgrade keeps a plain **Done when**. |
-| Epic          | No. Its features carry them.                                                                        |
-| Research Task | No. Its **Done when** names the answer and where it lands.                                          |
-
-## When
-
-After the grilling, not when the issue is filed: the criteria come out of the agreed design, and a criterion guessed from a one-line problem statement tends to encode a solution.
-Until then **Done when** reads `TBD (after grilling)` and the issue carries the `needs-ac` label, which keeps it out of In Progress and away from the QA agent.
-The grilling writes the criteria and removes the label ([work-process.md](work-process.md)).
-Criteria that already exist at filing — the requester supplied them, or a grilling before filing wrote them — are reformatted to the format below, and need no label.
+None: acceptance criteria are optional, and no issue waits for them.
+An author who has them adds them to a feature, a bug, or a task that changes what a user sees.
+An epic and a research task never carry them.
+A task and a research task keep a plain **Done when** that names the end state.
 
 ## Where
 
 In the issue's `## Done when` section, one `### AC-<k> — <name>` block per criterion, numbered from 1.
-Nothing else goes in that section, except `TBD (after grilling)` until the criteria are written.
+Nothing else goes in that section.
 The QA agent reads only this section when the issue has one, and the whole body when it does not.
 When the issue text changes, the QA agent tests it again from the new text.
 
@@ -85,7 +75,7 @@ The second criterion starts from the first one's outcome, so the tester runs the
 ## Done when
 
 - Slack requests work properly and are faster than before.
-- The channel worker writes the request to the session table and the GitHub token never reaches the agent pod.
+- The channel worker writes the request to the session table and the GitHub token never reaches the agent's machine.
 - The agent files the issue and answers in Slack and the chat is updated.
 ```
 

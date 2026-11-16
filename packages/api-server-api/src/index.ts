@@ -25,8 +25,6 @@ export type {
   Resources,
 } from "./modules/templates/types.js";
 
-export { repoSchema } from "./modules/repos/schemas.js";
-export type { Repo, ReposService } from "./modules/repos/types.js";
 export type {
   SlackChannelChoiceView,
   SlackChannelChoicesView,
@@ -108,9 +106,11 @@ export {
   createModelDiscovery,
   forHarness,
   harnessCatalogOf,
+  internalModel,
   layerMetadata,
   listingForTemplate,
   nativeListingForTemplate,
+  priceListingForTemplate,
   nativePinOf,
   withNativePin,
   lookupPrice,
@@ -192,6 +192,7 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentDefaultProvider,
+  AgentStart,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,
@@ -518,11 +519,19 @@ export {
   type ArtifactWhoamiResponseMessage,
 } from "./modules/artifact-library/prompt.js";
 export {
+  ARTIFACT_ICON_MAX_LENGTH,
+  ARTIFACT_ICON_RULE,
+  artifactIconDataUrl,
+  artifactIconSvg,
+  isArtifactIcon,
+} from "./modules/artifact-library/icon.js";
+export {
   artifactKindSchema,
   artifactVisibilitySchema,
   artifactSharingInputSchema,
   viewerEmailSchema,
   ARTIFACT_TITLE_MAX_LENGTH,
+  artifactIconSchema,
   INLINE_CONTENT_MAX_BYTES,
   ARTIFACT_TOUCH_MARKER_VERSION,
   artifactTouchPayloadSchema,

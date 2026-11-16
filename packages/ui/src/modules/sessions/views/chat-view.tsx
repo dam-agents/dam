@@ -1,5 +1,6 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
+  assistantIdeas,
   type DefaultKind,
   SessionMode,
   type SessionPair,
@@ -16,6 +17,7 @@ import {
   useState,
 } from "react";
 
+import { getBrand } from "@/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -80,19 +82,23 @@ import {
   assistantAudienceKnown,
   useAssistantState,
 } from "../../assistants/api/assistant-state.js";
-import { AssistantGreeting } from "../../assistants/components/assistant-greeting.js";
+import {
+  AssistantGreeting,
+  TrySomethingNew,
+} from "../../assistants/components/assistant-greeting.js";
 import { AssistantUnlockCelebration } from "../../assistants/components/assistant-unlock-celebration.js";
 import {
   useAssistantChat,
   useAssistantGreeting,
 } from "../../assistants/hooks/use-assistant-greeting.js";
+import { ideasNotStarted } from "../../assistants/lib/greeting.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
@@ -444,6 +450,7 @@ export function ChatView() {
   const greeting = useAssistantGreeting(chatIdle ? selectedAgent : null);
   /* UNIT_BOUNDARY_DESCRIPTION: the celebration is mounted from the chat being the assistant's, not from the greeting: a sent message ends the greeting, and the unlock the platform made still plays here for the seconds it takes. */
   const assistantChat = useAssistantChat(selectedAgent);
+  const ideas = assistantIdeas(getBrand().name);
 
   const {
     messagesRef,
@@ -452,8 +459,8 @@ export function ChatView() {
     showJump,
     historyShown,
   } = useChatScroll({ messages, sessionId, loadingSession, loadOlderMessages });
-  const features = useFeatures().data;
-  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
+  const telemetryEnabled =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
   const delegationOwners = useDelegationOwners(messages);
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
@@ -1186,6 +1193,21 @@ export function ChatView() {
               setPairPickerOpen(true);
             }}
           />
+          {assistantChat &&
+            selectedAgent &&
+            !(emptyChat && greeting.kind !== "none") && (
+              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                <ChatColumn>
+                  <TrySomethingNew
+                    key={sessionId ?? "new"}
+                    ideas={ideasNotStarted(ideas, messages)}
+                    agentId={selectedAgent}
+                    sessionId={sessionId}
+                    onPicked={() => textareaRef.current?.focus()}
+                  />
+                </ChatColumn>
+              </div>
+            )}
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
@@ -1363,6 +1385,7 @@ export function ChatView() {
             display={agentDisplay}
             canOpenBrowser={canOpenBrowser}
             canShowChanges={changesAvailable}
+            canStartNewSession={sessionId !== null || messages.length > 0}
             browserOpen={browserToggle.pressed}
             changesOpen={changesToggle.pressed}
             onToggleBrowser={() => {
@@ -1379,7 +1402,7 @@ export function ChatView() {
                 void toggleChanges(selectedAgent);
               else revealDock();
             }}
-            onConfigure={handleConfigureSandbox}
+            onStartNewSession={() => handleNewSession()}
           />
         }
         status={

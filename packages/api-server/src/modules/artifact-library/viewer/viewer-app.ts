@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { match } from "ts-pattern";
 
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
-import type { ArtifactKind } from "api-server-api";
+import { artifactIconDataUrl, type ArtifactKind } from "api-server-api";
 import type {
   ShareSession,
   ShareSessionCookie,
@@ -47,6 +47,7 @@ import {
   readShareSignIn,
   type ShareSignIn,
 } from "./share-auth-routes.js";
+import type { AgentFavicon } from "../infrastructure/agent-favicon.js";
 
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
@@ -59,6 +60,7 @@ export interface ShareViewerAppDeps {
   contentBaseUrl: string;
   shareBaseUrl: string;
   bridge: ShareBridgeService;
+  agentFavicon: AgentFavicon;
 }
 
 type Surface = "page" | "raw";
@@ -254,10 +256,17 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
           }
         : undefined;
 
+    const iconHref =
+      (artifact.icon ? artifactIconDataUrl(artifact.icon) : null) ??
+      (artifact.agentId
+        ? await deps.agentFavicon(artifact.agentId, artifact.owner)
+        : null);
+
     viewer.recordView(artifact);
     return c.html(
       renderWrapper({
         title: artifact.title,
+        iconHref,
         brandName: deps.brandName,
         contentUrl: contentUrl.href,
         slug,
