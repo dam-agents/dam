@@ -45,6 +45,7 @@ export function ClassicChatIdentity({
   onStartNewSession: () => void;
 }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const crowded = canOpenBrowser || canShowChanges;
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <span
@@ -72,13 +73,20 @@ export function ClassicChatIdentity({
       <div className="ml-auto flex shrink-0">
         {canStartNewSession && agentId && (
           <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="New session"
-            tooltip="New session"
+            variant="outline"
+            size="sm"
+            aria-label="New chat"
+            tooltip="New chat"
             onClick={onStartNewSession}
+            className={cn(
+              "mr-1",
+              crowded && "@max-[299px]:size-8 @max-[299px]:px-0",
+            )}
           >
             <AddComment size={16} />
+            <span className={cn(crowded && "@max-[299px]:hidden")}>
+              New chat
+            </span>
           </Button>
         )}
         {canOpenBrowser && agentId && (

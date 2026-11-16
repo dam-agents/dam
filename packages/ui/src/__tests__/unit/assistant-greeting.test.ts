@@ -16,6 +16,7 @@ import { AssistantGreeting } from "../../modules/assistants/components/assistant
 import {
   greetingCopy,
   greetingShown,
+  ideasNotStarted,
   isAssistantChat,
   preferredProviderTemplate,
   providerLineFor,
@@ -289,5 +290,32 @@ describe("the greeting in the chat", () => {
     }
     expect(useStore.getState().messages).toEqual([]);
     expect(picked).toHaveBeenCalledTimes(ideas.length);
+  });
+});
+
+describe("which ideas Try something new offers", () => {
+  const ideas = assistantIdeas("DAM");
+  const said = (text: string) =>
+    [
+      {
+        id: "m",
+        role: "user",
+        parts: [{ kind: "text", text }],
+        streaming: false,
+      },
+    ] as never;
+
+  // TEST_SCENARIO: a chat that started from a chip, even one the person finished typing after, leaves that idea out; a chat they started in their own words, and one with nothing said yet, keeps all five.
+  it("leaves out only the idea the chat started from", () => {
+    expect(
+      ideasNotStarted(
+        ideas,
+        said("I have a question about DAM: what is a kit?"),
+      ).map((idea) => idea.label),
+    ).toEqual(["Artifact", "Schedule", "Knowledge base", "Skill"]);
+    expect(ideasNotStarted(ideas, said("Draft my weekly update"))).toEqual(
+      ideas,
+    );
+    expect(ideasNotStarted(ideas, [])).toEqual(ideas);
   });
 });

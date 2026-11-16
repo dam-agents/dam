@@ -1,6 +1,9 @@
+import { ChevronDown } from "@carbon/icons-react";
 import type { AssistantIdea } from "api-server-api";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import {
@@ -10,12 +13,43 @@ import {
 import { draftKey } from "../../sessions/lib/draft-key.js";
 import type { GreetingCopy } from "../lib/greeting.js";
 
+function IdeaChip({
+  idea,
+  agentId,
+  sessionId,
+  onPicked,
+}: {
+  idea: AssistantIdea;
+  agentId: string;
+  sessionId: string | null;
+  onPicked: () => void;
+}) {
+  const setDraft = useStore((s) => s.setDraft);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        const key = draftKey(agentId, sessionId);
+        const typed = useStore.getState().drafts[key]?.text ?? "";
+        setDraft(key, {
+          text: typed.length > 0 ? `${typed}\n\n${idea.text}` : idea.text,
+        });
+        onPicked();
+      }}
+      className="h-auto min-h-10 max-w-full gap-1 rounded-full px-5 py-2 whitespace-normal text-left"
+    >
+      <span className="shrink-0 font-semibold">{idea.label}:</span>
+      <span>{idea.text}</span>
+    </Button>
+  );
+}
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the ideas the assistant offers, one chip each. An
+ * UNIT_BOUNDARY_DESCRIPTION: the ideas the greeting offers, one chip each. An
  * idea's text — never its label, which is the kind of work, not a message — goes
  * into the composer for the owner to send or edit, so nothing runs before they
- * act; the chips are not the greeting, which is said once, and they stay on
- * every new chat of the assistant's own.
+ * act.
  */
 export function AssistantIdeas({
   ideas,
@@ -28,28 +62,81 @@ export function AssistantIdeas({
   sessionId: string | null;
   onPicked: () => void;
 }) {
-  const setDraft = useStore((s) => s.setDraft);
   return (
     <div className="flex flex-col items-start gap-2">
       {ideas.map((idea) => (
-        <Button
+        <IdeaChip
           key={idea.label}
+          idea={idea}
+          agentId={agentId}
+          sessionId={sessionId}
+          onPicked={onPicked}
+        />
+      ))}
+    </div>
+  );
+}
+
+const FIRST_IDEAS = 3;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: "Try something new", the row above the composer in
+ * every chat of the assistant once the greeting is gone. It starts collapsed so
+ * it never crowds the conversation; opened, it shows the first three ideas and
+ * "Show all" for the rest. The caller leaves out the idea the chat started from.
+ */
+export function TrySomethingNew({
+  ideas,
+  agentId,
+  sessionId,
+  onPicked,
+}: {
+  ideas: readonly AssistantIdea[];
+  agentId: string;
+  sessionId: string | null;
+  onPicked: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const shown = all ? ideas : ideas.slice(0, FIRST_IDEAS);
+  return (
+    <div
+      data-testid="try-something-new"
+      className="flex flex-wrap items-center gap-2 pb-3"
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-foreground outline-none hover:text-foreground/80 focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Try something new
+        <ChevronDown
+          size={16}
+          aria-hidden
+          className={cn("transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open &&
+        shown.map((idea) => (
+          <IdeaChip
+            key={idea.label}
+            idea={idea}
+            agentId={agentId}
+            sessionId={sessionId}
+            onPicked={onPicked}
+          />
+        ))}
+      {open && !all && ideas.length > FIRST_IDEAS && (
+        <Button
           variant="outline"
           size="sm"
-          onClick={() => {
-            const key = draftKey(agentId, sessionId);
-            const typed = useStore.getState().drafts[key]?.text ?? "";
-            setDraft(key, {
-              text: typed.length > 0 ? `${typed}\n\n${idea.text}` : idea.text,
-            });
-            onPicked();
-          }}
-          className="h-10 max-w-full rounded-full px-5 whitespace-normal text-left"
+          onClick={() => setAll(true)}
+          className="h-10 rounded-full border-dashed px-4"
         >
-          <span className="shrink-0 font-semibold">{idea.label}:</span>{" "}
-          {idea.text}
+          Show all {ideas.length}
         </Button>
-      ))}
+      )}
     </div>
   );
 }
@@ -79,7 +166,7 @@ export function AssistantGreeting({
       <SpeakerRow agentName={greeting.assistantName} onAgentClick={onConfigure}>
         <AgentSpeaker agent={{ name: greeting.assistantName, avatar }} />
       </SpeakerRow>
-      <div className="flex flex-col gap-4 text-sm text-foreground">
+      <div className="flex flex-col gap-4 text-[15px] leading-[1.72] text-foreground">
         <p>
           {greeting.opening}
           {greeting.provider ? ` ${greeting.provider}` : ""}{" "}
