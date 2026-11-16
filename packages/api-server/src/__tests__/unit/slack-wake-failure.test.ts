@@ -9,6 +9,7 @@ import type { AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { EventType } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
+import { noArtifacts } from "../helpers/artifact-links.js";
 
 const OWNER = "kc|owner-1";
 
@@ -61,6 +62,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelHistory: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
@@ -71,6 +73,7 @@ function harness(
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
+    linkArtifacts: noArtifacts,
     attendance: stubTurnAttendance(),
     workspaceFiles: stubWorkspaceFiles(),
     listWorkspaces: async () => [],

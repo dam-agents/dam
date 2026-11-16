@@ -1,3 +1,4 @@
+import { wildcardHostReach } from "../egress-rules/types.js";
 import { formatSpendAmount } from "../spend/format.js";
 import type {
   AcpPermissionOption,
@@ -14,12 +15,21 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
       title: `${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
       subtitle: payload.viaEnvironment
         ? `${payload.path} · from Environment ${payload.viaEnvironment}`
-        : payload.viaAgentId
-          ? `${payload.path} · via ${payload.viaAgentId}`
-          : payload.path,
+        : payload.forAgentId
+          ? `${payload.path} · from a sub-agent of ${payload.forAgentId}`
+          : payload.viaAgentId
+            ? `${payload.path} · via ${payload.viaAgentId}`
+            : payload.path,
     };
   }
   if (payload.kind === "egress_proposal") {
+    if (payload.forAgentId)
+      return {
+        title: payload.widerThanDriver
+          ? `Access to ${payload.host}${payload.port ? `:${payload.port}` : ""}`
+          : `Access to ${wildcardHostReach(payload.host)}`,
+        subtitle: payload.reason,
+      };
     return {
       title: `Proposed rule: ${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
       subtitle: `${payload.path} · ${payload.reason}`,

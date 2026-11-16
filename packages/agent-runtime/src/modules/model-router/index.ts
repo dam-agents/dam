@@ -38,6 +38,7 @@ export {
   routerEnvFor,
   servedModels,
 } from "./domain/harness-env.js";
+export { homeConnectionEnv } from "./domain/connection-env.js";
 export {
   classifierModelOnSessionProvider,
   tierModelOnSessionProvider,

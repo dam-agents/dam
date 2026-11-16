@@ -2,13 +2,19 @@
  * TEST_OVERVIEW: classifySlackSender decides who wrote an inbound Slack post,
  * or that the post must never start a turn. A person has a user id and no bot
  * id. This app's own posts are an Agent only when they carry an Agent Footer.
- * Any other bot or webhook is an app. Edits, joins and other subtypes are
- * dropped, and so is every bot post while this app's own ids are unknown.
+ * A post with an Agent Footer from a listed companion app is a companion: an
+ * Agent of another install. Any other bot or webhook is an app. Edits, joins
+ * and other subtypes are dropped, and so is every bot post while this app's
+ * own ids are unknown.
  */
 import { describe, expect, it } from "vitest";
 import { classifySlackSender } from "../../modules/channels/infrastructure/slack-sender.js";
 
-const self = { userId: "UBOT", botId: "BSELF" };
+const self = {
+  userId: "UBOT",
+  botId: "BSELF",
+  companionAppIds: new Set(["A-STAGING"]),
+};
 
 const footer = [
   {
@@ -102,7 +108,8 @@ describe("classifySlackSender", () => {
   });
 
   /** TEST_SCENARIO: Another app may copy an Agent Footer into its post. It is
-   *  still an app, because only this app's own posts are read for a footer. */
+   *  still an app, because a footer is read only on this app's own posts and
+   *  on a listed companion app's. */
   it("does not let another app pass as an agent", () => {
     expect(
       classifySlackSender(
@@ -112,10 +119,98 @@ describe("classifySlackSender", () => {
     ).toEqual({ kind: "app", botId: "B-CI", name: "" });
   });
 
+  /** TEST_SCENARIO: A second install of the platform posts through its own
+   *  Slack app, which an operator listed as a companion. Its Agent's post is
+   *  named as Slack shows it. The Agent id in its footer belongs to the other
+   *  install, so it is not carried. */
+  it("reads a footed post from a companion app as a companion", () => {
+    expect(
+      classifySlackSender(
+        {
+          subtype: "bot_message",
+          bot_id: "B-STAGING",
+          app_id: "A-STAGING",
+          username: "Rex",
+          blocks: footer,
+        },
+        self,
+      ),
+    ).toEqual({ kind: "companion", botId: "B-STAGING", name: "Rex" });
+  });
+
+  it("finds a companion app by the app id in its bot profile", () => {
+    expect(
+      classifySlackSender(
+        {
+          user: "U-STAGING",
+          bot_id: "B-STAGING",
+          bot_profile: { name: "Staging", app_id: "A-STAGING" },
+          blocks: footer,
+        },
+        self,
+      ),
+    ).toEqual({ kind: "companion", botId: "B-STAGING", name: "Staging" });
+  });
+
+  /** TEST_SCENARIO: The other install marks a reply made in one of its ambient
+   *  rounds. The readers here were not in that round, so the mark is not read
+   *  and the post reaches them like any companion post. */
+  it("does not read a companion's ambient round mark", () => {
+    expect(
+      classifySlackSender(
+        {
+          bot_id: "B-STAGING",
+          app_id: "A-STAGING",
+          username: "Rex",
+          blocks: [
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "<http://staging/a/agent-abc123?s=sess-1&via=ambient|Rex>",
+                },
+              ],
+            },
+          ],
+        },
+        self,
+      ),
+    ).toEqual({ kind: "companion", botId: "B-STAGING", name: "Rex" });
+  });
+
+  /** TEST_SCENARIO: A companion app also posts notices that no Agent wrote.
+   *  Without an Agent Footer the post is an app's, as it was before the app
+   *  was listed. */
+  it("reads a companion app's post without a footer as an app", () => {
+    expect(
+      classifySlackSender(
+        { bot_id: "B-STAGING", app_id: "A-STAGING", username: "Staging" },
+        self,
+      ),
+    ).toEqual({ kind: "app", botId: "B-STAGING", name: "Staging" });
+  });
+
+  /** TEST_SCENARIO: An operator lists this install's own app as a companion by
+   *  mistake. Its posts stay this install's own, so an Agent's post still
+   *  carries its Agent id. */
+  it("keeps this app's own post an agent's when its app id is listed", () => {
+    expect(
+      classifySlackSender(
+        { bot_id: "BSELF", app_id: "A-STAGING", blocks: footer },
+        self,
+      ),
+    ).toEqual({ kind: "agent", agentId: "agent-abc123", ambientRound: false });
+  });
+
   /** TEST_SCENARIO: Until auth.test has named this app's bot, an Agent's reply
    *  cannot be told from an app's post, so every bot post is dropped. */
   it("drops every bot post while this app's ids are unknown", () => {
-    const unknown = { userId: null, botId: null };
+    const unknown = {
+      userId: null,
+      botId: null,
+      companionAppIds: new Set(["A-STAGING"]),
+    };
     expect(
       classifySlackSender({ subtype: "bot_message", bot_id: "B1" }, unknown),
     ).toBeNull();

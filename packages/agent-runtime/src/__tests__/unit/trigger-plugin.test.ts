@@ -19,6 +19,7 @@ const ctx: EventContext = {
 function fakeDriver() {
   const calls: Parameters<TriggerSessionDriver["start"]>[0][] = [];
   const driver: TriggerSessionDriver = {
+    cancel: async () => true,
     async start(opts) {
       calls.push(opts);
       return { sessionId: "new-session", openedOn: null };
@@ -49,7 +50,6 @@ const handlerFor = (
     runPrecheck: allows,
     log: () => {},
     reporter: { report: async () => {} },
-    invocationWatch: { watch: () => {} },
     ...deps,
   }).bindEvent!(kind, { impl: "trigger" });
 
@@ -89,7 +89,6 @@ describe("trigger plugin", () => {
       runPrecheck: allows,
       log: () => {},
       reporter: { report: async () => {} },
-      invocationWatch: { watch: () => {} },
       driver,
       stateStore,
       catalogListed,
@@ -329,7 +328,6 @@ describe("trigger plugin one-time tasks", () => {
         runPrecheck: allows,
         log: () => {},
         reporter: { report: async () => {} },
-        invocationWatch: { watch: () => {} },
         findSessionByRef: () => found,
       }).bindEvent!("trigger", { impl: "trigger" });
     const payload = {
@@ -366,7 +364,6 @@ describe("trigger plugin one-time tasks", () => {
         runPrecheck: allows,
         log: () => {},
         reporter: { report: async () => {} },
-        invocationWatch: { watch: () => {} },
         findSessionByRef: () => found,
         recordContinuation,
       }).bindEvent!("trigger", { impl: "trigger" });

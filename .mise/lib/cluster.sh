@@ -201,10 +201,20 @@ traefik_values_port() {
     yq -r '.ports[env(ENTRY)].exposedPort // .ports[env(LEGACY)].exposedPort // ""' <<<"$1" 2>/dev/null
 }
 
+# traefik_values_timeout <values> <install name>: the readTimeout that install's
+# entrypoint records, under either name, or empty when it records none.
+traefik_values_timeout() {
+  ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" \
+    yq -r '.ports[env(ENTRY)].transport.respondingTimeouts.readTimeout // .ports[env(LEGACY)].transport.respondingTimeouts.readTimeout // ""' <<<"$1" 2>/dev/null
+}
+
 # traefik_values_set <values> <install name> <port> [insecure]: those values with
 # that install's entrypoint on that port, and no entry left under the name it had
 # before, so an install made under the old scheme is rewritten rather than listed
 # twice — twice would claim two ports and make two Service ports of one name.
+# The entrypoint also turns off Traefik's readTimeout, which defaults to 60 s for
+# a whole request including its body: a 5 GiB transfer, and `dam import` through
+# the same entrypoint, would otherwise be cut off mid-body.
 traefik_values_set() {
   local out
   out="$(ENTRY="$(traefik_entrypoint_name "$2")" LEGACY="platform${2:+-$2}" PORT="$3" yq -r '
@@ -212,7 +222,8 @@ traefik_values_set() {
       "port": (env(PORT) | tonumber),
       "expose": {"default": true},
       "exposedPort": (env(PORT) | tonumber),
-      "protocol": "TCP"
+      "protocol": "TCP",
+      "transport": {"respondingTimeouts": {"readTimeout": "0s"}}
     })' <<<"$1")" || return 1
   [ "${4:-}" = insecure ] || { printf '%s' "$out"; return 0; }
   ENTRY="$(traefik_entrypoint_name "$2")" \
@@ -246,7 +257,9 @@ install_url() {
 # Environment's); a named install takes the first port of the range no entrypoint
 # names yet, and keeps it on the next run. An install whose port is recorded
 # under the name its entrypoint had before the 15-character limit is migrated:
-# the write drops that entry, so the config never holds both.
+# the write drops that entry, so the config never holds both. An install recorded
+# before its entrypoint turned Traefik's readTimeout off is rewritten once, so a
+# cluster made earlier gets the timeout without being torn down.
 traefik_entrypoint_port() {
   local fixed="${1:-}" insecure="${2:-}" values json port used p i
   for i in $(seq 1 20); do
@@ -257,8 +270,12 @@ traefik_entrypoint_port() {
     if [ -n "$port" ]; then
       # This install's already. A fixed port that agrees with the record needs no
       # write; one that differs is the caller moving the install (a changed
-      # `port` value, an Environment's backchannel port) and wins, below.
-      if [ -z "$fixed" ] || [ "$fixed" = "$port" ]; then printf '%s' "$port"; return 0; fi
+      # `port` value, an Environment's backchannel port) and wins, below. A record
+      # made before the entrypoint carried its timeout is written again, once.
+      if { [ -z "$fixed" ] || [ "$fixed" = "$port" ]; } &&
+        [ "$(traefik_values_timeout "$values" "$CLUSTER_INSTALL")" = "0s" ]; then
+        printf '%s' "$port"; return 0
+      fi
     fi
     if [ -n "$fixed" ]; then
       port="$fixed"
@@ -511,8 +528,8 @@ node_host_dirs_at_boot() {
 }
 
 # NODE_IMAGE_GC_DROPIN: no image garbage collection and no disk eviction in an
-# Environment's k3s. The outer guard's grant counts as used there, so the
-# kubelet reads the disk as nearly full whatever the files take: past 85% its
+# Environment's k3s. The outer guest's disk is held to its grant, so while the
+# owner's storage is short the kubelet reads the disk as nearly full: past 85% its
 # image collection deleted the agent image a minute after the install
 # imported it (#6128), and under 5% free, k3s's hard eviction thresholds,
 # its eviction manager deletes every image no container runs and evicts pods,
@@ -534,6 +551,42 @@ node_image_gc_off() {
   [ "$(node_sh cat "$NODE_IMAGE_GC_DROPIN" 2>/dev/null)" != "$want" ] || return 1
   node_sh mkdir -p "$(dirname "$NODE_IMAGE_GC_DROPIN")"
   printf '%s\n' "$want" | node_sh tee "$NODE_IMAGE_GC_DROPIN" >/dev/null
+}
+
+# NODE_THP_SERVICE: transparent huge pages on, at every boot of an
+# Environment. Its kernel defaults to `madvise`, and the runner maps guest
+# RAM without advising it, so under `madvise` a nested guest's RAM is mapped
+# 4 KiB at a time: a VM start took 11 to 28 s there, and 3.5 to 6.3 s with
+# `always`, in turns on one quiet Environment (#6199). Each start past the
+# VMM's 30 s of no progress fails. The lima VMs pin `always` for the same
+# reason (etc/lima/k3s.yaml). An Environment's sysfs write is lost when it
+# sleeps, so an openrc service makes it again before k3s starts.
+NODE_THP_SERVICE=/etc/init.d/platform-thp
+NODE_THP_ENABLED=/sys/kernel/mm/transparent_hugepage/enabled
+
+# node_thp_always: turns huge pages on now, writes NODE_THP_SERVICE and puts
+# it in the default runlevel, beside k3s, and checks that the kernel took it.
+# A node with no OpenRC keeps the setting until it restarts, and a new install
+# makes it again.
+node_thp_always() {
+  local name
+  name="$(basename "$NODE_THP_SERVICE")"
+  if node_sh test -x /sbin/openrc-run; then
+    printf '%s\n' '#!/sbin/openrc-run' \
+      "# Transparent huge pages on for the nested VM runners (cluster:install, #6199)." \
+      'description="Transparent huge pages always"' \
+      'depend() { before k3s; }' \
+      "start() { echo always > $NODE_THP_ENABLED; }" |
+      node_sh tee "$NODE_THP_SERVICE" >/dev/null
+    node_sh chmod 755 "$NODE_THP_SERVICE"
+    node_sh rc-update add "$name" default >/dev/null 2>&1 ||
+      echo "WARNING: $name is not in the default runlevel, so a restart turns huge pages back to madvise" >&2
+  else
+    echo "WARNING: no OpenRC on the node, so nothing turns huge pages on again after a restart; run cluster:install again then" >&2
+  fi
+  node_sh sh -c 'echo always > "$1"' _ "$NODE_THP_ENABLED" 2>/dev/null || true
+  node_sh grep -q '\[always\]' "$NODE_THP_ENABLED" ||
+    { echo "FATAL: transparent huge pages did not turn on, so nested VMs boot past their 30 s window" >&2; return 1; }
 }
 
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS

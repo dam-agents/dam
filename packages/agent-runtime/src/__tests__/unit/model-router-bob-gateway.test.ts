@@ -10,7 +10,10 @@
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { EnvLayer } from "../../modules/runtime-channel/infrastructure/env-state-store.js";
+import {
+  leaseEnvOf,
+  type EnvLayer,
+} from "../../modules/runtime-channel/infrastructure/env-state-store.js";
 import type { ModelRouterBinding } from "../../modules/runtime-channel/manifest.js";
 import {
   composeModelRouter,
@@ -116,6 +119,11 @@ beforeAll(async () => {
   router = composeModelRouter({
     catalog: { providers: () => [], forHarness: () => [] },
     envState: () => ({ env: agentEnv, harnesses: [], providers: layers }),
+    leaseEnv: (harness) =>
+      leaseEnvOf(
+        { env: agentEnv, harnesses: [], providers: layers },
+        { harness, provider: null },
+      ),
     harnesses: HARNESSES,
     defaultHarness: "bob",
     onCall: (record) => recorded.push(record),

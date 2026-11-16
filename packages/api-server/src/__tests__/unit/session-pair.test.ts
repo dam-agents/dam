@@ -805,7 +805,7 @@ describe("the platform sub-agent a slot runs", () => {
     });
   });
 
-  /** TEST_SCENARIO: a sub-agent the profile lends and the agent cannot run refuses the run with its reason, rather than dropping a choice the owner made; a subagent profile lends only its primary model, so a nested sub-agent is never checked. */
+  /** TEST_SCENARIO: a sub-agent the profile lends and the agent cannot run refuses the run with its reason, rather than dropping a choice the owner made, and still answers the pair it names, which a run falls back on; a subagent profile lends only its primary model, so a nested sub-agent is never checked. */
   it("refuses a lent sub-agent it cannot run", async () => {
     const profiles = resolver({
       p1: { subagent: LENT, subagentUnavailable: UNAVAILABLE },
@@ -824,6 +824,7 @@ describe("the platform sub-agent a slot runs", () => {
       ),
     ).resolves.toEqual({
       refused: { profile: "p1", detail: UNAVAILABLE },
+      pair: PAIR,
     });
     await expect(
       composedSubagent(

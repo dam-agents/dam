@@ -12,6 +12,7 @@ export {
   ANTHROPIC_OAUTH_TEMPLATE,
   listingForTemplate,
   nativeListingForTemplate,
+  priceListingForTemplate,
   nativePinOf,
   withNativePin,
   PROVIDER_DIALECTS,
@@ -25,7 +26,11 @@ export {
   type HarnessBinding,
   type HarnessOffer,
 } from "./render.js";
-export { layerMetadata, type ProviderModelInfo } from "./metadata.js";
+export {
+  internalModel,
+  layerMetadata,
+  type ProviderModelInfo,
+} from "./metadata.js";
 export {
   lookupPrice,
   normalizeModelKey,

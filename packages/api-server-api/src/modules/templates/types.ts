@@ -48,7 +48,6 @@ export interface TemplateSpec {
   resources?: Resources;
   imagePullPolicy?: string;
   imagePullSecretRef?: string;
-  hibernationTimeout?: string;
   storageSize?: string;
   storageClass?: string;
   skillSources?: SkillSourceSeed[];

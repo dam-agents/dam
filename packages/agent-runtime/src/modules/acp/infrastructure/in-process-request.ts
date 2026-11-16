@@ -24,9 +24,28 @@ function describeError(
     : message;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a request the runtime answered with an error. It
+ * keeps the error's `code` and `data`, which a caller acts on: a harness's
+ * resource-not-found code, and the `platform.unstored` the runtime puts on a
+ * failed load of a Session it flagged unstored.
+ */
+export class InProcessRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+    readonly data: unknown,
+  ) {
+    super(message);
+    this.name = "InProcessRequestError";
+  }
+}
+
 export interface InProcessCaller {
   request<T>(method: string, params: unknown): Promise<T>;
   notify(method: string, params: unknown): void;
+  // UNIT_BOUNDARY_DESCRIPTION: a JSON-RPC notification, with no id, for a method the protocol defines as one (session/cancel); notify carries an id, which the runtime schedules as a request.
+  signal(method: string, params: unknown): void;
   close(): void;
 }
 
@@ -81,7 +100,11 @@ export function createInProcessCaller(
         pending.set(id, (frame) => {
           if (frame.error) {
             reject(
-              new Error(`${method} failed: ${describeError(frame.error)}`),
+              new InProcessRequestError(
+                `${method} failed: ${describeError(frame.error)}`,
+                frame.error.code,
+                frame.error.data,
+              ),
             );
             return;
           }
@@ -97,6 +120,9 @@ export function createInProcessCaller(
       channel.sendToServer(
         JSON.stringify({ jsonrpc: "2.0", id, method, params }),
       );
+    },
+    signal(method: string, params: unknown) {
+      channel.sendToServer(JSON.stringify({ jsonrpc: "2.0", method, params }));
     },
     close() {
       channel.close();

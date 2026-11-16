@@ -52,7 +52,7 @@ const FORMS: [string, (variant: "wizard" | "edit") => ReactElement, string][] =
           variant,
           onSave,
         }),
-      "https://pages.github.ibm.com/dam-agents/docs/reference/litellm-key/",
+      "https://dam-agents.github.io/docs/reference/litellm-key/",
     ],
     [
       "CurveBender (own key)",

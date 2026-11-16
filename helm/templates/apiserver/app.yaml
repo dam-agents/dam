@@ -102,7 +102,6 @@ spec:
       {{- $checksums := dict
             "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
             "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
-            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum)
             "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum)
             "checksum/extra-cas" (include (print $.Template.BasePath "/apiserver/extra-cas.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
@@ -237,6 +236,11 @@ spec:
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL
               value: {{ include "platform.apiserver.harnessUrl" . | quote }}
+            # The api-server's own public Service, as a gateway pod reaches it.
+            # The Connection that lets an Agent drive this install names that
+            # address over HTTPS, and its gateway chain takes the request there.
+            - name: PLATFORM_APISERVER_URL
+              value: {{ include "platform.apiserver.serviceUrl" . | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -280,6 +284,14 @@ spec:
             - name: SLACK_ENTERPRISE_ID
               value: {{ .Values.apiServer.slackEnterpriseId | quote }}
             {{- end }}
+            {{- with .Values.apiServer.slackEmailPairingWorkspaces }}
+            - name: SLACK_EMAIL_PAIRING_WORKSPACES
+              value: {{ toJson . | quote }}
+            {{- end }}
+            {{- with .Values.apiServer.slackCompanionAppIds }}
+            - name: SLACK_COMPANION_APP_IDS
+              value: {{ toJson . | quote }}
+            {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
@@ -319,12 +331,6 @@ spec:
                   key: CURVE_BENDER_DEPLOYMENT_API_KEY
                   {{- end }}
             {{- end }}
-            {{- end }}
-            {{- with dig "defaultProfile" dict .Values.apiServer }}
-            - name: DEFAULT_PROFILE_HARNESS
-              value: {{ .harness | default "" | quote }}
-            - name: DEFAULT_PROFILE_MODEL
-              value: {{ .model | default "" | quote }}
             {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
@@ -514,6 +520,17 @@ spec:
             - name: PLATFORM_DEFAULT_GHE_APP_SLUG
               value: {{ .appSlug | quote }}
             {{- end }}
+            {{- if include "platform.apiserver.gheHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_HOSTS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GHE_HOSTS
+            {{- end }}
+            {{- with include "platform.apiserver.gheRetiredHosts" $ }}
+            - name: PLATFORM_DEFAULT_GHE_RETIRED_HOSTS
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.slack }}
             {{- if .clientId }}
@@ -615,10 +632,6 @@ spec:
             # once at boot — not read dynamically via the K8s API.
             - name: AGENT_TEMPLATES_PATH
               value: /etc/platform/harness-templates
-            # Curated public-repo catalog (gitRepos), mounted from a ConfigMap
-            # and loaded once at boot (same pattern as agent templates).
-            - name: GIT_REPOS_PATH
-              value: /etc/platform/git-repos
             # Brand — drives UI title/theme, OAuth client_name, Slack
             # slash command, skill-publish git author + branch prefix.
             - name: BRAND_NAME
@@ -629,6 +642,8 @@ spec:
               value: {{ .Values.brand.title | quote }}
             - name: BRAND_VENDOR
               value: {{ .Values.brand.vendor | quote }}
+            - name: BRAND_ASSISTANT_NAME
+              value: {{ .Values.brand.assistantName | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
@@ -659,10 +674,6 @@ spec:
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
             {{- end }}
-            {{- if .Values.links.curveBenderCommunity }}
-            - name: LINKS_CURVE_BENDER_COMMUNITY
-              value: {{ .Values.links.curveBenderCommunity | quote }}
-            {{- end }}
             {{- if .Values.links.slackInstallRequest }}
             - name: LINKS_SLACK_INSTALL_REQUEST
               value: {{ .Values.links.slackInstallRequest | quote }}
@@ -688,9 +699,6 @@ spec:
               readOnly: true
             # Whole-ConfigMap mount (no subPath): each `<id>.yaml` data key
             # surfaces as a file the api-server loads at boot.
-            - name: git-repos
-              mountPath: /etc/platform/git-repos
-              readOnly: true
             - name: harness-templates
               mountPath: /etc/platform/harness-templates
               readOnly: true
@@ -780,9 +788,6 @@ spec:
               {{- end }}
               {{- end }}
         {{- end }}
-        - name: git-repos
-          configMap:
-            name: {{ include "platform.fullname" . }}-git-repos
         {{- if .Values.apiServer.db.caCert }}
         - name: pg-ca
           configMap:

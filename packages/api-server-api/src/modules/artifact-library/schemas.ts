@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { artifactApiRequestInputSchema } from "agent-runtime-api";
 
+import { ARTIFACT_ICON_RULE, isArtifactIcon } from "./icon.js";
+
 import {
   sessionChoiceReferencesSchema,
   sessionPairSchema,
 } from "../harness-config/schemas.js";
-import { ARTIFACT_PROMPT_MAX_LENGTH } from "./prompt.js";
+import {
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptConversationSchema,
+} from "./prompt.js";
 
 export const artifactKindSchema = z.enum([
   "html",
@@ -68,9 +73,15 @@ const contentOrUploadRef = {
 
 const sourcePathSchema = z.string().trim().min(1).max(1024);
 
+export const artifactIconSchema = z
+  .string()
+  .trim()
+  .refine(isArtifactIcon, ARTIFACT_ICON_RULE);
+
 export const artifactCreateInputSchema = z
   .object({
     title: titleSchema,
+    icon: artifactIconSchema.optional(),
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
     kind: artifactKindSchema.optional(),
@@ -91,6 +102,7 @@ export const artifactUpdateInputSchema = z
   .object({
     id: z.string().min(1),
     title: titleSchema.optional(),
+    icon: artifactIconSchema.nullish(),
     folderId: z.string().min(1).nullish(),
     ...contentOrUploadRef,
     fileName: fileNameSchema.optional(),
@@ -175,6 +187,7 @@ export const artifactCallAgentApiInputSchema =
 export const artifactSendPromptInputSchema = z.object({
   artifactId: z.string().min(1),
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export const artifactAgentInputSchema = z.object({

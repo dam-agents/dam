@@ -1,14 +1,17 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. An Agent's configuration page has an Artifacts button that opens that Agent's artifacts; Home and the other pages leave Artifacts to the Artifacts page, and the Getting started artifact task opens that page.
+// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. An Agent's configuration page has an Artifacts button that opens that Agent's artifacts; Home and the other pages leave Artifacts to the Artifacts page, and the Getting started artifact task hands the newest Agent a starting line in its chat.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   view: "home",
+  agents: [] as { id: string; createdAt: string }[],
   openSidePanel: vi.fn(),
   setView: vi.fn(),
   setSidePanelTab: vi.fn(),
+  appendNewSessionDraft: vi.fn(),
+  selectAgent: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -19,6 +22,9 @@ vi.mock("../../store.js", () => ({
       setSidePanelTab: fake.setSidePanelTab,
       setArtifactsSectionOpen: () => {},
       setMobileScreen: () => {},
+      appendNewSessionDraft: fake.appendNewSessionDraft,
+      selectAgent: fake.selectAgent,
+      leaveChatContext: (run: () => void) => run(),
     }),
 }));
 vi.mock("@/hooks/use-is-desktop", () => ({ useIsDesktop: () => false }));
@@ -29,7 +35,7 @@ vi.mock("../../modules/sessions/hooks/use-open-side-panel.js", () => ({
   useOpenSidePanel: () => fake.openSidePanel,
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
-  useAgentsList: () => [],
+  useAgentsList: () => fake.agents,
 }));
 vi.mock("../../modules/agents/hooks/use-create-default-agent.js", () => ({
   useCreateDefaultAgent: () => ({}),
@@ -58,6 +64,7 @@ function buttons(view: string, withArtifacts: boolean): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fake.agents = [];
 });
 
 it("TEST_SCENARIO: an Agent's configuration page on a phone has an Artifacts button, and Home does not", () => {
@@ -69,8 +76,9 @@ it("TEST_SCENARIO: the chat's top bar keeps its own Artifacts button, so the sha
   expect(buttons("sandbox-home", false)).toEqual(["approvals"]);
 });
 
-it("TEST_SCENARIO: the Getting started artifact task on Home opens the Artifacts page, not the side panel", async () => {
+it("TEST_SCENARIO: the Getting started artifact task on Home hands the newest Agent a starting line, and does not open the Artifacts page", async () => {
   fake.view = "home";
+  fake.agents = [{ id: "a1", createdAt: "2026-11-01T00:00:00.000Z" }];
   const { useStartTask } =
     await import("../../modules/getting-started/hooks/use-start-task.js");
   let start: ((task: "create-artifact") => Promise<void>) | undefined;
@@ -81,6 +89,10 @@ it("TEST_SCENARIO: the Getting started artifact task on Home opens the Artifacts
     }),
   );
   await start!("create-artifact");
-  expect(fake.setView).toHaveBeenCalledWith("artifacts");
+  expect(fake.appendNewSessionDraft).toHaveBeenCalledWith(
+    "a1",
+    expect.stringContaining("Make me a one-page artifact about"),
+  );
+  expect(fake.setView).not.toHaveBeenCalled();
   expect(fake.setSidePanelTab).not.toHaveBeenCalled();
 });

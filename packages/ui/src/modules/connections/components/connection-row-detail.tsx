@@ -3,21 +3,21 @@ import type { ConnectionView } from "api-server-api";
 import { cn } from "@/lib/utils";
 
 import { connectionDetail } from "../lib/connection-detail.js";
+import { isDamConnection } from "../lib/dam-connection.js";
 
 export function ConnectionRowDetail({
   connection,
-  indented,
 }: {
   connection: ConnectionView;
-  indented: boolean;
 }) {
   const { account, reach } = connectionDetail(connection);
   if (!account && !reach) return null;
+  const dam = isDamConnection(connection);
   return (
     <p
       className={cn(
-        "mt-0.5 truncate text-xs text-muted-foreground",
-        indented && "pl-6",
+        "mt-0.5 break-words text-xs",
+        dam ? "font-medium text-warning-fg" : "text-muted-foreground",
       )}
       title={[account, reach?.title ?? reach?.text].filter(Boolean).join(" · ")}
       data-testid={`catalog-connection-account-${connection.id}`}
@@ -25,10 +25,7 @@ export function ConnectionRowDetail({
       {account}
       {account && reach && " · "}
       {reach && (
-        <span
-          className={cn(reach.fullAccess && "font-medium text-danger")}
-          data-testid={`connection-scope-${connection.id}`}
-        >
+        <span data-testid={`connection-scope-${connection.id}`}>
           {reach.text}
         </span>
       )}

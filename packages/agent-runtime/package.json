@@ -7,10 +7,10 @@
     "@lydell/node-pty": "1.1.0"
   },
   "devDependencies": {
-    "@trpc/client": "^11.19.0",
-    "@trpc/server": "^11.19.0",
+    "@trpc/client": "^11.25.2",
+    "@trpc/server": "^11.25.2",
     "@types/busboy": "^1.5.5",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "6.0.0",
@@ -18,7 +18,7 @@
     "api-server-api": "workspace:*",
     "busboy": "^1.6.0",
     "dev-config": "workspace:*",
-    "file-type": "^22.2.0",
+    "file-type": "^22.3.0",
     "js-yaml": "^5.5.0",
     "smol-toml": "^1.9.1",
     "tar": "^7.5.22",
@@ -26,8 +26,8 @@
     "tsup": "^9.0.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.5",
-    "ws": "^8.22.0",
+    "vitest": "^5.1.0",
+    "ws": "^8.22.2",
     "zod": "^4.6.7"
   }
 }

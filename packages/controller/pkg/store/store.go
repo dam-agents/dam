@@ -157,7 +157,7 @@ type loadedAgent struct {
 }
 
 const definitionQuery = `
-SELECT a.id, a.incarnation::text, a.owner_sub, a.template_id, a.environment_of, a.name,
+SELECT a.id, a.incarnation::text, a.owner_sub, a.template_id, a.environment_of, a.link_from, a.name,
        a.image, a.harness, a.image_pull_secret_ref, a.secret_ref, a.hibernation_timeout_ns,
        a.nested_virtualization, a.require_connection_address, a.telemetry_attribution_id,
        a.cpu_limit, a.memory_limit, a.disk_size, a.memory_fallback_bytes, a.disk_floor_bytes,
@@ -197,7 +197,7 @@ func (s *Store) read(ctx context.Context, name string) ([]loadedAgent, error) {
 	for rows.Next() {
 		var row agentRow
 		if err := rows.Scan(
-			&row.ID, &row.Incarnation, &row.OwnerSub, &row.TemplateID, &row.EnvironmentOf, &row.Name,
+			&row.ID, &row.Incarnation, &row.OwnerSub, &row.TemplateID, &row.EnvironmentOf, &row.LinkFrom, &row.Name,
 			&row.Image, &row.Harness, &row.ImagePullSecretRef, &row.SecretRef, &row.HibernationTimeoutNs,
 			&row.NestedVirtualization, &row.RequireConnectionAddr, &row.TelemetryAttribution,
 			&row.CPULimit, &row.MemoryLimit, &row.DiskSize, &row.MemoryFallbackBytes, &row.DiskFloorBytes,

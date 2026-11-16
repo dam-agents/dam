@@ -17,7 +17,10 @@ export interface AgentTransfer {
     body: Readable;
     path: string;
     declaredBytes: number | undefined;
-  }): Promise<{ ok: true; id: string } | { ok: false; reason: "aborted" }>;
+  }): Promise<
+    | { ok: true; id: string }
+    | { ok: false; reason: "aborted" | "no-space" | "too-large" }
+  >;
   publish(input: {
     id: string;
     path: string;
@@ -32,7 +35,19 @@ export interface AgentTransfer {
   >;
 }
 
-const TRANSFER_TIMEOUT_MS = 60_000;
+export const TRANSFER_TIMEOUT_MS = 60_000;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How long a stage request may sit silent on the
+ * wire. The workspace answers only after it has re-read the whole staged file
+ * to compare its hash, and that read-back sends nothing: a 5 GiB file needs a
+ * workspace disk faster than about 20 MB/s to answer inside this. It stays under
+ * the CLI's own ceiling — the native fetch it sends with gives up after 5 minutes
+ * of silence waiting for headers — so the api-server's refusal is the one the
+ * agent reads. The upgrade path is a CLI dispatcher with a longer headers
+ * timeout, which is what would let this wait cover a slower disk.
+ */
+export const STAGE_IDLE_TIMEOUT_MS = 270_000;
 
 async function body(res: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -56,12 +71,17 @@ async function body(res: IncomingMessage): Promise<Record<string, unknown>> {
 export function createAgentTransfer(
   agentId: string,
   namespace: string,
+  timeouts: { transferMs?: number; stageMs?: number } = {},
 ): AgentTransfer {
+  const transferMs = timeouts.transferMs ?? TRANSFER_TIMEOUT_MS;
+  const stageMs = timeouts.stageMs ?? STAGE_IDLE_TIMEOUT_MS;
+
   const send = (
     path: string,
     method: "GET" | "POST",
     payload: Readable | string | undefined,
     headers: Record<string, string>,
+    idleTimeoutMs: number,
   ): Promise<IncomingMessage> =>
     new Promise((settle, fail) => {
       const url = new URL(`http://${agentServiceAddress(agentId, namespace)}`);
@@ -73,7 +93,7 @@ export function createAgentTransfer(
           path,
           method,
           headers,
-          timeout: TRANSFER_TIMEOUT_MS,
+          timeout: idleTimeoutMs,
         },
         settle,
       );
@@ -97,14 +117,24 @@ export function createAgentTransfer(
   return {
     async stage({ body: stream, path, declaredBytes }) {
       try {
-        const res = await send("/api/transfer/stage", "POST", stream, {
-          "content-type": "application/octet-stream",
-          "x-dam-path": path,
-          ...(declaredBytes === undefined
-            ? {}
-            : { "content-length": String(declaredBytes) }),
-        });
+        const res = await send(
+          "/api/transfer/stage",
+          "POST",
+          stream,
+          {
+            "content-type": "application/octet-stream",
+            "x-dam-path": path,
+            ...(declaredBytes === undefined
+              ? {}
+              : { "content-length": String(declaredBytes) }),
+          },
+          stageMs,
+        );
         const parsed = await body(res);
+        if (res.statusCode === 507 && parsed.error === "no_space")
+          return { ok: false as const, reason: "no-space" as const };
+        if (res.statusCode === 413 && parsed.error === "transfer_too_large")
+          return { ok: false as const, reason: "too-large" as const };
         return res.statusCode === 200 && typeof parsed.id === "string"
           ? { ok: true as const, id: parsed.id }
           : { ok: false as const, reason: "aborted" as const };
@@ -116,10 +146,16 @@ export function createAgentTransfer(
     async publish({ id, path }) {
       try {
         const payload = JSON.stringify({ id, path });
-        const res = await send("/api/transfer/publish", "POST", payload, {
-          "content-type": "application/json",
-          "content-length": String(Buffer.byteLength(payload)),
-        });
+        const res = await send(
+          "/api/transfer/publish",
+          "POST",
+          payload,
+          {
+            "content-type": "application/json",
+            "content-length": String(Buffer.byteLength(payload)),
+          },
+          transferMs,
+        );
         const parsed = await body(res);
         if (res.statusCode === 200 && typeof parsed.path === "string")
           return { ok: true, path: parsed.path };
@@ -139,6 +175,7 @@ export function createAgentTransfer(
           "GET",
           undefined,
           {},
+          transferMs,
         );
         if (res.statusCode !== 200) {
           const parsed = await body(res);

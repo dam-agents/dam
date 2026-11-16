@@ -145,7 +145,12 @@ export const modelRouterBinding = z.object({
   sessionFromRunningTurn: z.boolean().optional(),
   unmarkedOpeningCall: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
+  connectionEnv: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .nonempty()
+    .optional(),
   classifierModelEnv: z.string().min(1).optional(),
+  preferredModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
     .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
     .optional(),
@@ -258,6 +263,10 @@ const BUILTIN_DRIVERS: Record<
   },
   "invocation-script": {
     binding: { impl: "invocation-script" },
+    defaultOn: true,
+  },
+  "invocation-cancel": {
+    binding: { impl: "invocation-cancel" },
     defaultOn: true,
   },
   "session-message": {

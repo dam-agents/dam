@@ -43,6 +43,7 @@ type agentRow struct {
 	OwnerSub              string
 	TemplateID            *string
 	EnvironmentOf         *string
+	LinkFrom              *string
 	Name                  string
 	Image                 string
 	Harness               *string
@@ -136,6 +137,7 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 	putSpec(spec, "secretRef", row.SecretRef)
 	putSpec(spec, "telemetryAttributionId", row.TelemetryAttribution)
 	putSpec(spec, "environmentOf", row.EnvironmentOf)
+	putSpec(spec, "linkFrom", row.LinkFrom)
 	if row.HibernationTimeoutNs != nil {
 		spec["hibernationTimeout"] = time.Duration(*row.HibernationTimeoutNs).String()
 	}

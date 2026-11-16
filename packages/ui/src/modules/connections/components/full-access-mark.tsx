@@ -7,19 +7,24 @@ import { FULL_ACCESS_LABEL, fullAccessLine } from "../lib/github-access.js";
 
 export function FullAccessMark({
   connection,
+  status,
+  tone = "danger",
 }: {
   connection: Pick<ConnectionView, "id" | "authKind" | "fullAccess">;
+  status?: string;
+  tone?: "danger" | "warning";
 }) {
   if (!connection.fullAccess) return null;
   return (
     <Badge
-      variant="danger"
+      variant={tone}
       className="shrink-0 gap-1"
       title={fullAccessLine(connection)}
       data-testid={`connection-full-access-${connection.id}`}
     >
       <WarningAlt size={12} aria-hidden />
       {FULL_ACCESS_LABEL}
+      {status && ` · ${status}`}
     </Badge>
   );
 }

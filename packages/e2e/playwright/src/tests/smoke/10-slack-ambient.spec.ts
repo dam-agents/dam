@@ -90,6 +90,7 @@ test("without ambient, an unmentioned message stays unanswered", async () => {
     await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: ambientChannelId,
+      ambient: false,
     });
   });
 

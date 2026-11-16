@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-11-04
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -98,7 +98,7 @@ flowchart LR
   The list is a preference, never a filter: any provider the kit's harness runs on can create the kit's Agent.
   The requirement list is for the connections the *job* needs; the apply form keeps a provider that a kit from an external catalog still declares under `accepts` out of the Connections section.
   The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, one of the kit's `providers` when the user holds one, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
-- **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
+- **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed, and the kit modal names the harness the kit starts the Agent on.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
 - **Kit Default Model** — optional `defaultModel`: the model the kit's job needs the Agent itself to run on, named the way the model is known whatever provider serves it (`claude-opus-5` for IBM's `aws/claude-opus-5`).
@@ -202,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 1. Resolve the kit at the catalog's pin.
    Use the kit's own image when it brings one, otherwise the Template the caller names, else the plain create's default Template.
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
-3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
+3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env and egress preset, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
    The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below, and a kit with Startup Items queues them as a `startup-items` event behind it.
 4. Create the declared schedules, toggling suggested ones off; bind each Slack channel given, under the person's own [membership check](channels.md).
@@ -214,7 +214,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
-A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
+A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings — including the harness, or the model, the kit pins — and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
 Every kit shows at one size.
 The CLI reaches the same kits through the same procedures ([CLI](cli.md#command-surface)): it lists the catalog, shows a kit's setup and what it needs, and applies it with the connections the modal would preselect — for each required need, the one connection the user owns that it accepts — then names each step left, since it has no modal to walk the user through them.
 Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into.
@@ -233,7 +233,7 @@ With the owner's [chat forms](chat-forms.md) on, it also announces that the chat
 ## Linked Kit
 
 A **Linked Kit** is one kit read straight from a link to its repository, the way a teammate shares a kit nobody added to a catalog.
-Under the catalog, the Starter kits page and the Browse Kits modal take a pasted link to a public GitHub repository, and open the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
+"Import from link", beside the catalog search on the Starter kits page and in the Browse Kits modal, takes a pasted link to a public GitHub repository in a small dialog, and opens the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
 No admin is involved and no catalog changes.
 
 - **Read like a catalog entry, never stored.** The kit is resolved by the same reader the refresh uses, as the only entry of a catalog named `link` that exists for that one read: the default branch's head is resolved to a commit, `kit.yaml` at the repository's root is validated there, its seed pinned and its bundled skills scanned.
@@ -269,7 +269,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
 The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
-An agent whose saved default has no model starts it on the automatic model; one whose default names a model no provider it holds serves, or that has no model provider to run on, cannot start an update, and the request is refused with that reason.
+An agent whose saved default has no model, or names one no provider it holds serves, starts it on the automatic model; only an agent with no model provider to run on cannot start an update, and the request is refused with that reason.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

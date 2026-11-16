@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-11-09
+Last verified: 2026-11-16
 
 ## Overview
 
@@ -39,6 +39,7 @@ A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/pla
 It also blocks the spell-check dictionary languages, so the browser neither loads nor downloads a dictionary from `redirector.gvt1.com`; turning spell-check off outright would still fetch one.
 The list holds English, because an image that sets no locale gets that dictionary; a derived image with another locale adds its language too.
 `platform-browser` carries `--disable-background-networking` and `--disable-component-update` into every launch, so the launcher does not rely on agent-browser's own defaults for them.
+agent-browser's own check for a newer browser, which asks `chromereleases.googleblog.com` once per daemon, is off (`AGENT_BROWSER_NO_VERSION_CHECK`).
 `AGENT_BROWSER_ARGS` points the account check, the push-messaging check-in and the component updater at a closed loopback port, and turns off autofill's queries to Google's form-prediction server.
 The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
 Safe Browsing stays on, but with background networking off it never updates its lists, so its protection ages; Chrome for Testing does no real-time Safe Browsing lookups, which need a Google-branded build.
@@ -155,7 +156,7 @@ Launches, failures and restarts go to a log file in the agent's home, so a misbe
 
 The browser keeps running when the last panel closes, since the agent may be using it; agent-browser never idle-closes a headed browser.
 An open panel keeps the agent awake the way an open chat does: it counts towards the agent's open connections, not towards runtime work.
-The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the agent falls asleep or is disabled: the stream socket only waits out a wake something deliberate asked for, such as the chat, and counts as an open connection only once the agent's end is open.
+The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the agent falls asleep: the stream socket only waits out a wake something deliberate asked for, such as the chat, and counts as an open connection only once the agent's end is open.
 The control rides the UI's tRPC connection to the agent, which stamps last activity while it is open, as for any open view of the agent; nothing on the stream socket does — the stream client acknowledges frames many times a second.
 A hidden tab stops its stream until it is shown again.
 A running Chromium never keeps the agent awake on its own.

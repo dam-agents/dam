@@ -24,24 +24,27 @@ export interface OutcomeTurnDeps {
  * descriptions under a character budget. A turn over the budget is trimmed, and
  * the note says where the rest can be read; a turn over the per-turn count stops
  * there, and the caller releases the rest for the next turn. `told` is how many
- * of the descriptions the turn carries.
+ * of the descriptions the turn carries, and `trimmed` the indexes of those it
+ * carries cut short.
  */
 export function composeOutcomeTurn(opts: {
   descriptions: readonly string[];
   subject: (count: number) => string;
   trimHint: string;
   maxPerTurn: number;
-}): { told: number; task: string } {
+}): { told: number; task: string; trimmed: number[] } {
   const parts: string[] = [];
+  const trimmed: number[] = [];
   let budget = MAX_TURN_CHARS;
   for (const part of opts.descriptions.slice(0, opts.maxPerTurn)) {
     if (parts.length > 0 && part.length + 1 > budget) break;
-    const trimmed =
-      part.length + 1 > budget
-        ? `${part.slice(0, Math.max(budget - 1, 0))}\n(trimmed to fit this turn; ${opts.trimHint})`
-        : part;
-    parts.push(trimmed);
-    budget -= trimmed.length + 1;
+    const fits = part.length + 1 <= budget;
+    if (!fits) trimmed.push(parts.length);
+    const told = fits
+      ? part
+      : `${part.slice(0, Math.max(budget - 1, 0))}\n(trimmed to fit this turn; ${opts.trimHint})`;
+    parts.push(told);
+    budget -= told.length + 1;
   }
   const task = [
     opts.subject(parts.length),
@@ -50,7 +53,7 @@ export function composeOutcomeTurn(opts: {
     "",
     "Carry on with whatever you were asked to do with this result. If nothing was asked, summarize it briefly.",
   ].join("\n");
-  return { told: parts.length, task };
+  return { told: parts.length, task, trimmed };
 }
 
 /**

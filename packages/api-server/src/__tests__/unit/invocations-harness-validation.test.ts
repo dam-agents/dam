@@ -16,6 +16,7 @@ function makeApp(
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
+    spawningSession: async () => null,
     readAgent: async (id: string) =>
       id === "driver-1"
         ? {

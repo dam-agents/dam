@@ -5,8 +5,14 @@ import { SlackAccountExplainer } from "@/components/channel-connection-explainer
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
 
+import { useFeatures } from "../../features/api/queries.js";
+import type { ConnectionHolders } from "../hooks/use-connection-holders.js";
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { isGrantable } from "../lib/connection-hierarchy.js";
+import {
+  canGrantConnection,
+  damConnectionOffered,
+} from "../lib/dam-connection.js";
 import type { RowMaintenanceActions } from "./catalog-connection-row.js";
 import { ConnectionIcon } from "./connection-icon.js";
 import { ConnectionRows } from "./connection-rows.js";
@@ -30,8 +36,10 @@ interface Props {
   ) => RowMaintenanceActions | undefined;
   onGoToChannels?: () => void;
   onNewChild?: (parent: ConnectionView) => void;
+  holders?: ConnectionHolders | null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: one provider in the connection catalog and on the Connections page: its name and New on one line, and below it a card for each GitHub sign-in or App installation and for each connection an agent holds directly. In an agent's catalog a connection's row offers to add it to the agent; on the Connections page, where there is no agent, it says which agents use it.
 export function CatalogProviderCard({
   group,
   templateById,
@@ -43,8 +51,10 @@ export function CatalogProviderCard({
   maintenance,
   onGoToChannels,
   onNewChild,
+  holders,
 }: Props) {
   const { provider, templates, connections } = group;
+  const damOffered = damConnectionOffered(useFeatures().data);
 
   const newButton = templates.length > 0 && (
     <Button
@@ -53,17 +63,14 @@ export function CatalogProviderCard({
       onClick={onNew}
       data-testid={`catalog-new-${provider.id}`}
     >
-      <Add size={16} />
       New
+      <Add size={16} />
     </Button>
   );
 
   return (
-    <section
-      data-testid={`catalog-provider-${provider.id}`}
-      className={CARD_SURFACE}
-    >
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
+    <section data-testid={`catalog-provider-${provider.id}`}>
+      <header className="mb-2 flex min-h-8 items-center gap-2.5">
         <ConnectionIcon
           iconSlug={provider.iconSlug}
           alt=""
@@ -86,14 +93,15 @@ export function CatalogProviderCard({
         )}
       </header>
       {connections.length > 0 ? (
-        <div className="flex flex-col gap-3 p-4">
+        <div className="flex flex-col gap-3">
           <ConnectionRows
+            cards
             connections={connections}
             templateById={templateById}
             grant={
               sandbox &&
               ((c) =>
-                isGrantable(c)
+                isGrantable(c) && canGrantConnection(damOffered, c)
                   ? {
                       granted: sandbox.grantedIds.has(c.id),
                       onToggle: (on) => sandbox.onToggleGrant(c.id, on),
@@ -105,13 +113,13 @@ export function CatalogProviderCard({
             deletingId={deletingId}
             maintenance={maintenance}
             onNewChild={onNewChild}
+            holders={holders}
           />
         </div>
       ) : (
-        <div className="flex flex-col items-start gap-3 px-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            No connections set up yet.
-          </p>
+        <div
+          className={`${CARD_SURFACE} flex flex-col items-start gap-3 px-4 py-4`}
+        >
           {newButton}
         </div>
       )}

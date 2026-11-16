@@ -50,6 +50,9 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		if err != nil {
 			return nil, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
+		if r.specFromCustomResources() && !peer.Spec.IsVM() {
+			continue
+		}
 		idleTimeout := effectiveIdleTimeout(peer.Spec.HibernationTimeout, r.config.AgentBase)
 		idleSince, ok := reclaimEligible(peer, idleTimeout, now, r.reclaimFloor(peer, now, forRefusedStart))
 		if !ok {

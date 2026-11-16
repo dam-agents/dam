@@ -371,9 +371,8 @@ export function sharedDocumentBackend(): DocumentStoreBackend {
 
 export function createSessionMetadata(): SessionMetadata {
   let tick = 0;
-  const store = createSessionMetadataStore(
-    memoryDocumentBackend(),
-    () => `t${String(++tick).padStart(6, "0")}`,
+  const store = createSessionMetadataStore(memoryDocumentBackend(), () =>
+    new Date(Date.UTC(2026, 0, 1) + ++tick * 1000).toISOString(),
   );
   return {
     store,

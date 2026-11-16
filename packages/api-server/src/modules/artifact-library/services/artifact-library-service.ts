@@ -1,6 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
-import { artifactSharingInputSchema } from "api-server-api";
+import {
+  artifactSharingInputSchema,
+  ARTIFACT_ICON_RULE,
+  isArtifactIcon,
+} from "api-server-api";
 import { artifactApiCallerEmail } from "agent-runtime-api";
 import { TRPCError } from "@trpc/server";
 import type {
@@ -36,6 +40,7 @@ import {
   defaultFileName,
   detectKind,
   downloadFileName,
+  effectiveContentType,
   isTextKind,
 } from "../domain/artifact-kind.js";
 import { generateSlug } from "../domain/share-crypto.js";
@@ -64,6 +69,13 @@ import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+function storedIcon(raw: string): string {
+  const icon = raw.trim();
+  if (!isArtifactIcon(icon))
+    throw new TRPCError({ code: "BAD_REQUEST", message: ARTIFACT_ICON_RULE });
+  return icon;
+}
+
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
 
 export interface ArtifactAgentDownloadTicket {
@@ -117,7 +129,6 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiClient;
-  featureOn: () => Promise<boolean>;
   prompts: ViewerPromptDelivery;
   promptChoices?: ArtifactPromptChoices;
   validateChoice?: (
@@ -181,9 +192,10 @@ export function toLibraryArtifact(
   return {
     id: row.id,
     title: row.title,
+    icon: row.icon,
     slug: row.slug,
     kind: row.kind as ArtifactKind,
-    contentType: row.contentType,
+    contentType: effectiveContentType(row.fileName, row.contentType),
     fileName: row.fileName,
     sizeBytes: row.sizeBytes,
     version: row.version,
@@ -350,7 +362,7 @@ export function createArtifactLibraryService(
       return {
         storageRef: row.storageRef,
         fileName: row.fileName,
-        contentType: row.contentType,
+        contentType: effectiveContentType(row.fileName, row.contentType),
         sizeBytes: row.sizeBytes,
         version: row.version,
       };
@@ -360,7 +372,7 @@ export function createArtifactLibraryService(
     return {
       storageRef: past.storageRef,
       fileName: row.fileName,
-      contentType: past.contentType,
+      contentType: effectiveContentType(row.fileName, past.contentType),
       sizeBytes: past.sizeBytes,
       version: past.version,
     };
@@ -468,6 +480,7 @@ export function createArtifactLibraryService(
         blob.content.toString("utf8"),
         {
           title: row.title,
+          icon: row.icon,
           fileName: ref.fileName,
           ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
@@ -489,6 +502,7 @@ export function createArtifactLibraryService(
     async create(input, attribution) {
       if (input.folderId) await requireOwnedFolder(input.folderId);
       if (attribution?.agentId) await ensureAgent(attribution.agentId);
+      const icon = input.icon === undefined ? null : storedIcon(input.icon);
 
       const contentBuffer =
         input.content != null ? Buffer.from(input.content, "utf8") : undefined;
@@ -531,6 +545,7 @@ export function createArtifactLibraryService(
           agentId,
           folderId: input.folderId ?? null,
           title: input.title,
+          icon,
           slug: generateSlug(),
           kind,
           contentType: stored.contentType,
@@ -590,6 +605,8 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
+      if (input.icon !== undefined)
+        patch.icon = input.icon === null ? null : storedIcon(input.icon);
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
@@ -859,16 +876,12 @@ export function createArtifactLibraryService(
     },
 
     async sendPrompt(
-      { artifactId, prompt },
+      { artifactId, prompt, conversation },
       { agentIds },
     ): Promise<ArtifactSendPromptResult> {
       const row = await findArtifact(artifactId);
       const access = agentApiAccess(row, agentIds);
-      const denial = !access.allowed
-        ? access.denial
-        : (await deps.featureOn())
-          ? null
-          : "feature-off";
+      const denial = access.allowed ? null : access.denial;
       securityLog(denial === null ? "info" : "warn", "artifact.owner_prompt", {
         category: "authz",
         actor: owner,
@@ -878,14 +891,14 @@ export function createArtifactLibraryService(
         target: artifactId,
         ...(row?.agentId ? { agentId: row.agentId } : {}),
         ...(denial === null ? {} : { reason: denial }),
+        ...(conversation === undefined ? {} : { detail: { conversation } }),
       });
-      if (!row || !access.allowed || denial !== null)
-        return { ok: false, reason: "not-allowed" };
+      if (!row || !access.allowed) return { ok: false, reason: "not-allowed" };
       const outcome = await deps.prompts.deliver({
         agentId: access.agentId,
         artifactId: row.id,
-        sessionKey: viewerSessionKey(row.id, owner),
-        sessionTitle: ownerSessionTitle(row.title),
+        sessionKey: viewerSessionKey(row.id, owner, conversation),
+        sessionTitle: ownerSessionTitle(row.title, conversation),
         prompt: ownerPromptText({
           artifactId: row.id,
           artifactTitle: row.title,

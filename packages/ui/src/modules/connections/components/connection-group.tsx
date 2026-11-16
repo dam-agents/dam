@@ -22,7 +22,6 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
-  onNewChild?: (parent: ConnectionView) => void;
 }
 
 export function ConnectionGroup({
@@ -35,7 +34,6 @@ export function ConnectionGroup({
   deletingId = null,
   flat = false,
   maintenance,
-  onNewChild,
 }: Props) {
   const { provider, connections } = group;
   const rows = (
@@ -48,7 +46,6 @@ export function ConnectionGroup({
       onDelete={onDelete}
       deletingId={deletingId}
       maintenance={maintenance}
-      onNewChild={onNewChild}
     />
   );
   // UNIT_BOUNDARY_DESCRIPTION: the Services panel lists every connection in one run, so a group draws no header there and its rows join the others under the one card.

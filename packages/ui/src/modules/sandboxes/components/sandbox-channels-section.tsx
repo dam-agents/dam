@@ -3,6 +3,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import { useTelegramChats } from "../../telegram/api/queries.js";
+import { findSlackChannels } from "../lib/slack-channels.js";
 import { AgentModelPicker } from "./agent-model-picker.js";
 import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
@@ -19,13 +21,18 @@ export function SandboxChannelsSection({
   const agent = findAgent(data, agentId) ?? undefined;
   const available = data?.availableChannels ?? {};
   const readOnly = agent ? !holds(agent.access, "channels") : false;
+  const telegramChats = useTelegramChats(
+    available.telegram ? agentId : undefined,
+  ).data?.chats.length;
+  const slackChannels = findSlackChannels(agent);
+  const hasChannel = slackChannels.length > 0 || (telegramChats ?? 0) > 0;
 
   const missing = [
     ...(available.slack ? [] : ["Slack"]),
     ...(available.telegram ? [] : ["Telegram"]),
   ];
-  /* UNIT_BOUNDARY_DESCRIPTION: what channel turns run on is the agent's, whatever messengers this install offers, so the page picks it below an install with none. */
-  const modelPicker = !compact && (
+  /* UNIT_BOUNDARY_DESCRIPTION: what channel turns run on is the agent's; before the first channel there is nothing to pick for, and runs follow the agent's own model. */
+  const modelPicker = !compact && hasChannel && (
     <div className="mt-6">
       <AgentModelPicker agentId={agentId} kind="channel" />
     </div>
@@ -44,7 +51,6 @@ export function SandboxChannelsSection({
           There is nothing to connect yet. Ask your administrator to configure
           Slack or Telegram.
         </EmptyState>
-        {modelPicker}
       </>
     );
   }
@@ -61,17 +67,18 @@ export function SandboxChannelsSection({
           disconnect one.
         </OwnerOnlyNotice>
       )}
-      {available.slack && !compact && agent && (
-        <div className="mb-6">
-          <WhisperCard agent={agent} />
-        </div>
-      )}
       {available.slack && (
         <SlackChannelCard
           agent={agent}
-          withWhisper={compact}
+          withWhisper={compact && slackChannels.length > 0}
           readOnly={readOnly}
         />
+      )}
+      {/* UNIT_BOUNDARY_DESCRIPTION: whispers are a way into a Slack conversation, so the switch comes after the channels it applies to and only once there is one. */}
+      {available.slack && !compact && agent && slackChannels.length > 0 && (
+        <div className="mb-8">
+          <WhisperCard agent={agent} />
+        </div>
       )}
       {available.telegram && (
         <TelegramChannelCard

@@ -1,16 +1,17 @@
 #!/usr/bin/python3
 """usage: platform-env list            the Environments this agent owns
        platform-env wake <name>     wake a sleeping Environment
-       platform-env proxy <host>    SSH ProxyCommand for env-<name> (ssh calls it)
+       platform-env proxy <host>    SSH ProxyCommand for env-<name> and sub-<id> (ssh calls it)
        platform-env key             this agent's link key, made on first use
 
-`ssh env-<name>` reaches an Environment you own, with nothing to set up:
+`ssh env-<name>` reaches an Environment you own, and `ssh sub-<id>` a sub-agent
+you spawned, with nothing to set up:
 /etc/ssh/ssh_config.d/platform-env.conf points every env-* host here. scp,
 ssh -L and streaming an image in work as with any host:
   docker save IMAGE | ssh env-<name> k3s ctr images import -
 
 The Environment Link is one-way: your VM runner joins your machine to the
-Environment's sshd, only from you to an Environment you own, and nothing in
+Environment's SSH server, only from you to an Environment you own, and nothing in
 an Environment can open a connection back. A sleeping Environment is woken
 first. While a link is open neither machine hibernates.
 """
@@ -21,6 +22,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 LINK_PORT = 6100
@@ -76,6 +79,37 @@ def mcp(tool, arguments):
     if result.get("isError"):
         fail(content[0].get("text", "the platform refused"))
     return json.loads(content[0].get("text", "null"))
+
+
+def explain_sub(sub, why):
+    """Why the runner refused a sub-agent's link, in the platform's words: one
+    that is not the agent's, or was removed after its result or at the end of
+    its keep, has no machine to open; anything else keeps the runner's reason."""
+    try:
+        with open(MCP_ENTRY) as f:
+            base = json.load(f)["url"].removesuffix("/mcp")
+    except (OSError, ValueError, KeyError, TypeError):
+        return why
+    request = urllib.request.Request(
+        f"{base}/invocations/{urllib.parse.quote(sub, safe='')}"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            view = json.loads(response.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return f"sub-{sub} is not a sub-agent of yours"
+        return why
+    except (OSError, ValueError):
+        return why
+    if view.get("removed") and view.get("keepUntil"):
+        return f"sub-{sub} was removed when its keep ended ({view['keepUntil']})"
+    if view.get("removed"):
+        return (
+            f"sub-{sub} was removed after its result; only a sub-agent spawned"
+            " with keep stays to be entered"
+        )
+    return why
 
 
 def own_environments():
@@ -140,17 +174,22 @@ def answer(env_id):
 
 def proxy(host):
     key = ensure_key()
-    env = find(host)
-    # The runner answers ok only when the Environment's sshd socket answers;
+    if host.startswith("sub-"):
+        sub = host[4:]
+        env = {"id": sub, "name": sub, "wake": ("wake_subagent", {"id": sub})}
+    else:
+        env = find(host)
+        env["wake"] = ("wake_environment", {"name": env["name"]})
+    # The runner answers ok only when the Environment's link socket answers;
     # wake a sleeping one and wait for that before the real connection.
     deadline = time.monotonic() + WAKE_TIMEOUT_S
     woken = False
     while (why := answer(env["id"])) is not None:
         if not why.endswith("is not running"):
-            fail(why)
+            fail(explain_sub(env["id"], why) if host.startswith("sub-") else why)
         if not woken:
             sys.stderr.write(f"platform-env: waking {host}...\n")
-            mcp("wake_environment", {"name": env["name"]})
+            mcp(*env["wake"])
             woken = True
         if time.monotonic() > deadline:
             fail(f"{host} did not come up within {WAKE_TIMEOUT_S}s: {why}")

@@ -15,6 +15,7 @@ import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
+import type { AgentGrant } from "../domain/default-account.js";
 
 type ConnResult<T> = Result<T, TransportError | AuthRequiredError>;
 
@@ -40,6 +41,8 @@ export interface ConnectionService {
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
   checkCredential(id: string): Promise<ConnResult<CredentialCheck | null>>;
   agentConnectionIds(agentId: string): Promise<ConnResult<readonly string[]>>;
+  agentGrants(agentId: string): Promise<ConnResult<readonly AgentGrant[]>>;
+  setDefault(agentId: string, connectionId: string): Promise<ConnResult<void>>;
   grant(
     agentId: string,
     add: readonly string[],
@@ -132,6 +135,25 @@ export function createConnectionService(deps: {
     },
     async agentConnectionIds(agentId) {
       return trpcCall(() => readIds(agentId));
+    },
+    async agentGrants(agentId) {
+      return trpcCall(async () =>
+        (
+          await deps.trpc.connections.getAgentConnections.query({ agentId })
+        ).connections.map(({ connectionId, grantedAt, preferred }) => ({
+          connectionId,
+          grantedAt,
+          preferred,
+        })),
+      );
+    },
+    async setDefault(agentId, connectionId) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.setPreferredConnection.mutate({
+          agentId,
+          connectionId,
+        });
+      });
     },
     async grant(agentId, add) {
       return trpcCall(async () => {

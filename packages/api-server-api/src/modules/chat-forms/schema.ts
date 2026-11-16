@@ -2,7 +2,15 @@ import { z } from "zod";
 
 import { ICON_NAMES } from "./icon-names.js";
 
-export const A2UI_VERSION = "v1.0";
+export const A2UI_VERSION = "1.0";
+export const LEGACY_A2UI_VERSION = "v1.0";
+
+export const ENVELOPE_KEYS = [
+  "catalogId",
+  "accessibility",
+  "metadata",
+  "checks",
+] as const;
 
 const RESERVED_KEY = /^@([^@]|$)/;
 
@@ -21,22 +29,50 @@ const PlainObject = z
     {
       message: "Keys starting with a single @ are reserved for @path and @call",
     },
+  )
+  .refine(
+    (value) => {
+      const keys = Object.keys(value);
+      return !(
+        keys.length === 1 &&
+        keys[0] === "path" &&
+        typeof value.path === "string"
+      );
+    },
+    {
+      message:
+        'An object with only a "path" key is not a data binding; write {"@path": "/x"}',
+    },
   );
 
+const bindingShapes = (literal: string) =>
+  `Expected ${literal}, a data binding {"@path": "/x"} or a function call {"@call": "name"}; a binding is written "@path", not "path"`;
+
 const Dynamic = z.union([DataBinding, FunctionCall]);
-const DynamicString = z.union([z.string(), Dynamic]);
-const DynamicNumber = z.union([z.number(), Dynamic]);
-const DynamicBoolean = z.union([z.boolean(), Dynamic]);
-const DynamicStringList = z.union([z.array(z.string()), Dynamic]);
-const DynamicValue = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-  z.array(z.unknown()),
-  Dynamic,
-  PlainObject,
-]);
+const DynamicString = z.union([z.string(), Dynamic], {
+  error: bindingShapes("a string"),
+});
+const DynamicNumber = z.union([z.number(), Dynamic], {
+  error: bindingShapes("a number"),
+});
+const DynamicBoolean = z.union([z.boolean(), Dynamic], {
+  error: bindingShapes("a boolean"),
+});
+const DynamicStringList = z.union([z.array(z.string()), Dynamic], {
+  error: bindingShapes("a list of strings"),
+});
+const DynamicValue = z.union(
+  [
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(z.unknown()),
+    Dynamic,
+    PlainObject,
+  ],
+  { error: bindingShapes("a literal value") },
+);
 
 const ComponentId = z.string().min(1);
 const ChildList = z.union([
@@ -318,7 +354,10 @@ export const A2uiComponent = z.discriminatedUnion("component", [
   Switch,
 ]);
 
-const Version = z.literal(A2UI_VERSION);
+const Version = z.union([
+  z.literal(A2UI_VERSION),
+  z.literal(LEGACY_A2UI_VERSION),
+]);
 const SurfaceId = z.string().min(1);
 
 const CreateSurfaceMessage = z.strictObject({
@@ -360,6 +399,7 @@ const DeleteSurfaceMessage = z.strictObject({
 const CallRendererFunctionMessage = z.strictObject({
   version: Version,
   callRendererFunction: z.strictObject({
+    surfaceId: SurfaceId.optional(),
     functionCallId: z.string().min(1),
     callFunction: FunctionCall,
   }),

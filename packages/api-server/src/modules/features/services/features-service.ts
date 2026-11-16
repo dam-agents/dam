@@ -1,4 +1,5 @@
 import {
+  FEATURES_ON_BY_DEFAULT,
   featureIdSchema,
   type FeatureFlags,
   type FeatureId,
@@ -22,7 +23,9 @@ export function createFeaturesService(deps: {
         const mode = deps.modes[id];
         return [
           id,
-          mode === "experimental" ? (stored[id] ?? false) : mode === "on",
+          mode === "experimental"
+            ? (stored[id] ?? FEATURES_ON_BY_DEFAULT.has(id))
+            : mode === "on",
         ];
       }),
     ) as FeatureFlags;

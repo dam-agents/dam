@@ -154,7 +154,7 @@ A Slack channel binds to at most one instance globally; the binding routes every
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
 
-6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient] [--history]`).
    The platform connects an agent only to a channel you and the bot are both in; `/dam bind` in the channel itself works without linking first.
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.
@@ -197,6 +197,10 @@ A consent redirect the platform did not invite is refused — including the "Sha
 On Enterprise Grid, set `apiServer.slackEnterpriseId` to the organization id — a workspace outside it is then refused at the moment its credential would be accepted.
 Leave it empty on a standalone app, which is the only option there: Slack reports no organization for one.
 Connecting workspaces from two organizations at once is not supported either way — a Slack conversation id and a Slack user id each identify one thing only inside one organization.
+
+Where another install of the platform shares a workspace with this one, list that install's Slack app id (Basic Information → App ID) in `apiServer.slackCompanionAppIds`.
+Its agents' posts are then read as agents' posts and not as an integration's ([slack-companion-apps](architecture/slack-companion-apps.md)).
+Each install lists the other for both to read each other's agents, and an unlisted app's post is never read as an agent's.
 
 Connecting a channel does not change: you still paste a conversation id.
 One thing does become stricter once a second workspace is connected: the conversation has to be one a connected workspace can actually see, because that is how its workspace is worked out.
@@ -272,7 +276,7 @@ Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `
 Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.harnessTemplateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
-Both values are on by default, so every vm agent and every Environment opens `/dev/kvm` wherever the node's KVM allows nesting: an agent can run a platform install of its own, in its sandbox or in an Environment.
+Both values are on by default, so every agent and every Environment opens `/dev/kvm` wherever the node's KVM allows nesting: an agent can run a platform install of its own, in its sandbox or in an Environment.
 A nesting guest reaches the host kernel's nested-virtualization code, which has had guest-to-host escapes: an install that does not accept that sets `virtualization.runner.nestedVirtualization=false`, which no Agent can override, or `controller.agent.harnessTemplateDefaults.nestedVirtualization=false` to leave nesting to the Agents that ask for it.
 The api-server offers no way to ask, so with the template default off only someone who can edit Agent resources can turn it on for one agent.
 
@@ -283,8 +287,18 @@ In the cluster, each runs inside a **VM runner** — a pod per owner that holds 
 A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
 An agent persists its home on its machine's disk, and the rest of the machine as a root overlay kept across stops while the image's root generation stays the same ([vm storage](architecture/vm-storage.md)).
 The install requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, `virtualization.runner.releaseHostPath`, and `virtualization.imageCache.hostPath` unless the Mac host runner is in use, or it refuses to render.
-An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration`, `controller.requestsFromLimits` or a pod field under `controller.agent.base`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
-The three JSON blocks the controller decodes are the exception — a key left in `AGENT_BASE`, `AGENT_HARNESS_TEMPLATE_DEFAULTS` or `AGENT_VM` stops its startup, because it refuses a field its config no longer has.
+An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration` or `controller.requestsFromLimits`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
+The blocks the controller decodes as JSON are the exception: it refuses a field its structs do not declare, so the chart refuses to render a key under `controller.agent.base`, `controller.agent.harnessTemplateDefaults` or `controller.gatewayEgress`, or anywhere in the `AGENT_VM` it assembles out of `imagePullSecrets`, `virtualization.runner` and `virtualization.gateway` — naming the key, and naming the container backend for a pod field such as `controller.agent.base.runtimeClassName`.
+It checks the `AGENT_VM` dict itself rather than a list of the values meant to reach it, so a runner field the chart starts copying is checked the day it moves.
+That reaches into the Kubernetes types those blocks hold, so `resources.claims` and `affinity.nodeAffinity` are checked field by field as well, and a free-form map the decoder takes as it comes — `limits`, `podLabels`, `nodeSelector`, `devices` — is checked for the kind of its values rather than their keys.
+Every value is held to the kind its field declares, so `mounts` given as a map, `vmIdleTimeout` as a list, a fraction or a number wider than the field's own int, or an `env` value written unquoted and read as a number fails the render, which names the kind, or the width, the field wants.
+The keys and the kinds are chart data ([`helm/controller-config-keys.json`](../helm/controller-config-keys.json)), generated from those structs by a test in `packages/controller/pkg/config` that fails when the two disagree.
+An install upgrades only after every Agent has left the container backend, which this release no longer has and cannot move: the chart reads the install's Agents from the cluster during the render and refuses while one names a backend other than `vm`, printing up to ten of them.
+That read runs under every `agentStore.authority` but `contract`, whose custom resources are frozen copies nothing boots; it is one `list` in the agent namespace, so an upgrade through Helm fails closed unless the identity running it may read Agents there — the HelmRelease's service account, not the application controller's.
+An install applied without Helm (`helm template | kubectl apply`) bypasses that read: its api-server migrates, and the controller then refuses each such Agent in its own reconcile, publishing a not-ready condition that names the backend and what to do, and making no machine, gateway or storage for it while every other Agent keeps running.
+`helm template` and a GitOps controller's plan render offline, where Helm's `lookup` finds nothing, so they pass and the refusal lands on the upgrade itself.
+An Agent that names no backend counts as one of them, since that is how a release before this one wrote a container Agent; the runtime migration that moves one, home included, exists only there.
+`kubectl get agents -n <agent namespace> -o custom-columns=NAME:.metadata.name,BACKEND:.spec.backend.type` lists what is left, and an operator moves each one on the release installed there by annotating it `agent-platform.ai/runtime-migration=requested`.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, so an install with no node a plugin exposes `/dev/kvm` on cannot run agents, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.

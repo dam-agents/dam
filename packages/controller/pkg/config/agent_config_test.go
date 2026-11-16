@@ -2,10 +2,18 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestAgentBase_JSONRoundTrip(t *testing.T) {
@@ -44,4 +52,107 @@ func TestHarnessTemplateDefaults_JSONRoundTrip(t *testing.T) {
 	assert.True(t, out.Mounts[0].Persist)
 	require.Len(t, out.Env, 1)
 	assert.Equal(t, "PORT", out.Env[0].Name)
+}
+
+// TEST_SCENARIO: the chart refuses a key this package's strict decoder would refuse at startup, and it refuses it from a key list of its own. A struct field added or removed — here or in a Kubernetes type the config embeds, such as `resources`, `tolerations` or `affinity` — without that list would let such a key render again and crash-loop the controller, and so would a value of the wrong kind, which the decoder refuses too. The two are held equal, nesting included: a struct is an `object` of its fields, a list an `array` of items, a map a `map` of free-form keys, a scalar its own kind, and a type that reads its own JSON the kind that decoder takes — `jsonKindOfTypes` where that is narrower than any value, `any` otherwise.
+func TestChartControllerConfigKeys(t *testing.T) {
+	chartJSON, err := os.ReadFile("../../../../helm/controller-config-keys.json")
+	require.NoError(t, err)
+	var chart map[string]any
+	require.NoError(t, json.Unmarshal(chartJSON, &chart))
+
+	structs := map[string]any{
+		"AGENT_BASE":                      configKeys(reflect.TypeOf(AgentBase{})),
+		"AGENT_HARNESS_TEMPLATE_DEFAULTS": configKeys(reflect.TypeOf(HarnessTemplateDefaults{})),
+		"AGENT_VM":                        configKeys(reflect.TypeOf(VMConfig{})),
+		"GATEWAY_EGRESS":                  configKeys(reflect.TypeOf(GatewayEgress{})),
+	}
+	if !reflect.DeepEqual(structs, chart) {
+		want, err := json.MarshalIndent(structs, "", "  ")
+		require.NoError(t, err)
+		t.Fatalf("helm/controller-config-keys.json no longer mirrors these structs; it should read:\n%s", want)
+	}
+}
+
+var jsonKindOfTypes = map[reflect.Type]string{
+	reflect.TypeOf(Duration(0)):          "string",
+	reflect.TypeOf(resource.Quantity{}):  "string|number",
+	reflect.TypeOf(metav1.Duration{}):    "string",
+	reflect.TypeOf(metav1.Time{}):        "string",
+	reflect.TypeOf(intstr.IntOrString{}): "string|int32",
+}
+
+// TEST_SCENARIO: the width of an int decides what the decoder takes, since it refuses a value its field cannot hold, and it is read from the Go kind rather than assumed: plain `int` and `uint` are 64-bit on this platform, a `[]int32` is not, and a type that reads its own JSON says its own width — `intstr`'s unquoted half is an int32.
+func TestChartControllerConfigKeyIntegerWidths(t *testing.T) {
+	type widths struct {
+		I8  int8    `json:"i8"`
+		I16 int16   `json:"i16"`
+		I32 int32   `json:"i32"`
+		I64 int64   `json:"i64"`
+		I   int     `json:"i"`
+		U8  uint8   `json:"u8"`
+		U16 uint16  `json:"u16"`
+		U32 uint32  `json:"u32"`
+		U64 uint64  `json:"u64"`
+		U   uint    `json:"u"`
+		F   float64 `json:"f"`
+	}
+	assert.Equal(t, map[string]any{
+		"kind": "object",
+		"fields": map[string]any{
+			"i8": "int8", "i16": "int16", "i32": "int32", "i64": "int64",
+			"i": "int64", "u8": "uint8", "u16": "uint16", "u32": "uint32",
+			"u64": "uint64", "u": "uint64", "f": "number",
+		},
+	}, configKeys(reflect.TypeOf(widths{})))
+}
+
+func configKeys(t reflect.Type) any {
+	if t.Kind() == reflect.Pointer {
+		return configKeys(t.Elem())
+	}
+	if reflect.PointerTo(t).Implements(reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()) {
+		if kind, ok := jsonKindOfTypes[t]; ok {
+			return kind
+		}
+		return "any"
+	}
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array:
+		return map[string]any{"kind": "array", "items": configKeys(t.Elem())}
+	case reflect.Map:
+		return map[string]any{"kind": "map", "values": configKeys(t.Elem())}
+	case reflect.Struct:
+		fields := map[string]any{}
+		for i := range t.NumField() {
+			field := t.Field(i)
+			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			if name == "-" || !field.IsExported() {
+				continue
+			}
+			if name == "" && field.Anonymous {
+				if inner, ok := configKeys(field.Type).(map[string]any); ok {
+					maps.Copy(fields, inner["fields"].(map[string]any))
+				}
+				continue
+			}
+			if name == "" {
+				name = field.Name
+			}
+			fields[name] = configKeys(field.Type)
+		}
+		return map[string]any{"kind": "object", "fields": fields}
+	case reflect.String:
+		return "string"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("int%d", t.Bits())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("uint%d", t.Bits())
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	default:
+		return "any"
+	}
 }

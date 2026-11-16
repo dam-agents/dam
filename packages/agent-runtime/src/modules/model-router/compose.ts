@@ -33,6 +33,7 @@ import {
 export interface ComposeModelRouterOpts {
   catalog: Pick<ModelCatalog, "providers" | "forHarness">;
   envState: () => RuntimeEnvState;
+  leaseEnv: (harness: string) => Record<string, string>;
   harnesses: Readonly<Record<string, ModelRouterBinding | undefined>>;
   defaultHarness: string;
   sessionModelOf?: (sessionId: string) => SessionModelChoice | null;
@@ -196,6 +197,7 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
         : []),
       createBobGatewayPassthrough({
         envState: opts.envState,
+        leaseEnv: opts.leaseEnv,
         harnesses: opts.harnesses,
         ...(opts.fetchImpl && { fetchImpl: opts.fetchImpl }),
         log: opts.log,

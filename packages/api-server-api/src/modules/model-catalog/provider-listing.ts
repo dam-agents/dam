@@ -53,16 +53,31 @@ const openAiChatModel = (id: string): boolean =>
  */
 export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
 
+const LITELLM_PROXY_SPEC = {
+  urlEnv: ["OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],
+  tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+} as const satisfies ModelDiscoverySpec;
+
+const LITELLM_MODEL_INFO_SPEC = {
+  ...LITELLM_PROXY_SPEC,
+  path: "/v1/model/info",
+  shape: "litellm-model-info",
+} as const satisfies ModelDiscoverySpec;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how the catalog lists a provider's models from
- * its Connection's env layer. IBM's virtual keys get 403 on every model-info
- * route, so the LiteLLM proxies are read through `/v1/models` and take their
- * metadata from the price table; Bob's gateway is the one provider-sourced
- * listing. The catalog shows the platform's self-hosted vLLM at no cost; the
- * spend meter prices its calls with the operator's price instead. Null for
- * a template the router does not serve (Bedrock). A listing may name the only
- * harnesses it serves: Bob's gateway serves the Bob harness alone, as a
- * subscription token serves Claude Code alone.
+ * its Connection's env layer. The LiteLLM proxies and Bob's gateway are read
+ * through LiteLLM's model info, which gives each model's context window,
+ * reasoning and vision, with the plain model list as the fallback when model
+ * info is refused, times out or lists nothing; the plain list is much smaller
+ * and faster. The CurveBender deployment keeps the model list: its shared
+ * key reaches only an exact list of paths, so its model info would show every
+ * agent the deployment's details behind one identity. The catalog shows the
+ * platform's self-hosted vLLM at no cost; the spend meter prices its calls
+ * with the operator's price instead. Null for a template the router does not
+ * serve (Bedrock). A listing may name the only harnesses it serves: Bob's
+ * gateway serves the Bob harness alone, as a subscription token serves Claude
+ * Code alone.
  */
 export function listingForTemplate(
   templateId: string,
@@ -70,14 +85,11 @@ export function listingForTemplate(
   switch (templateId) {
     case "ibm-litellm":
     case "curve-bender":
-    case "curve-bender-deployment":
       return {
-        spec: {
-          urlEnv: ["OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],
-          tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
-          shape: "openai-models",
-        },
+        spec: { ...LITELLM_MODEL_INFO_SPEC, fallback: { path: "/v1/models" } },
       };
+    case "curve-bender-deployment":
+      return { spec: { ...LITELLM_PROXY_SPEC, shape: "openai-models" } };
     case "anthropic":
       return {
         spec: {
@@ -131,6 +143,20 @@ export function listingForTemplate(
     default:
       return null;
   }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: where the spend meter reads a provider's own
+ * prices: IBM LiteLLM's `/v1/model/info`, which an ordinary key reads, lists
+ * every model the key may use with IBM's price of each kind of token. Every
+ * mode is read, embeddings included, because the meter bills them too. Null
+ * for a provider with no price route.
+ */
+export function priceListingForTemplate(
+  templateId: string,
+): ProviderListingSpec | null {
+  if (templateId !== "ibm-litellm") return null;
+  return { spec: { ...LITELLM_MODEL_INFO_SPEC, allModes: true } };
 }
 
 const BEDROCK_NON_CHAT = /(^|\.)(stability|twelvelabs)\./i;

@@ -1,3 +1,4 @@
+import { sessionSettingsSchema } from "agent-runtime-api";
 import { harnessFamilySchema } from "../templates/schemas.js";
 import { z } from "zod";
 import {
@@ -48,9 +49,6 @@ export const agentRetryWorkspaceInputSchema = z.object({
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
 export const agentSleepInputSchema = idSchema;
-export const agentSetDisabledInputSchema = idSchema.extend({
-  disabled: z.boolean(),
-});
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
@@ -81,6 +79,9 @@ export const agentCreateInputSchema = z.object({
   templateId: z.string().optional(),
   image: z.string().optional(),
   harness: harnessFamilySchema.optional(),
+  // UNIT_BOUNDARY_DESCRIPTION: the chat default the new Agent starts on, as `<provider>/<model id>` and the per-session settings that default keeps, checked against the providers it is granted rather than against a runtime that has not said hello yet.
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
   description: z.string().optional(),
   avatar: avatarSchema.optional(),
   env: z.array(envVarSchema).max(64).optional(),
@@ -93,7 +94,6 @@ export const agentCreateInputSchema = z.object({
     })
     .optional(),
   egressPreset: egressPresetSchema.optional(),
-  hibernationTimeoutMin: z.number().int().min(0).optional(),
   requireConnectionAddress: z.boolean().optional(),
   gitRepo: z
     .object({
@@ -129,7 +129,6 @@ export const agentUpdateInputSchema = agentPatchSchema.pick({
   name: true,
   description: true,
   avatar: true,
-  hibernationTimeoutMin: true,
 });
 
 export const agentSetEnvInputSchema = z.object({
@@ -156,6 +155,7 @@ export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
   ambient: z.boolean().optional(),
+  history: z.boolean().optional(),
   customEmoji: z
     .array(
       z

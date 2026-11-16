@@ -374,9 +374,6 @@ export function createStarterKitsService(
           : {}),
         ...(kit.providers ? { starterKitProviders: kit.providers } : {}),
         connectionIds: input.connectionIds,
-        ...(kit.hibernationTimeoutMin !== undefined
-          ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
-          : {}),
         ...(kit.requireConnectionAddress !== undefined
           ? { requireConnectionAddress: kit.requireConnectionAddress }
           : {}),
@@ -420,7 +417,7 @@ export function createStarterKitsService(
           const connected = await deps.agents.connectSlack(
             agent.id,
             slackChannelId,
-            false,
+            {},
             undefined,
             { quiet: true },
           );

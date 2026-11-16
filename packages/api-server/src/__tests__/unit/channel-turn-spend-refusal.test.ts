@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: a Slack or Telegram turn that a spend limit or the ceiling stops partway is classed as a spend stop, not a generic relay failure, so the thread gets the notice a held turn gets.
 import { describe, expect, it } from "vitest";
 
+import { AcpModelCallFailedError } from "../../core/acp-client.js";
 import { classifyTurnFailure } from "../../modules/channels/infrastructure/turn-failure-copy.js";
 import {
   CEILING_TEXT,
@@ -15,6 +16,20 @@ describe("channel turn stopped by spend", () => {
         new Error(
           `The harness refused the session's model: API error: 429 ${softLimitText("DAM")} · model not changed`,
         ),
+      ),
+    ).toEqual({ kind: "spend", reason: "spend-limit", block: "limit" });
+  });
+
+  // TEST_SCENARIO: the harness reports the gate's refusal as a failed model call; it is still a spend stop, not a failed call the owner must look into.
+  it("names a spend limit reported as a failed model call", () => {
+    expect(
+      classifyTurnFailure(
+        new AcpModelCallFailedError("s-1", "failed", null, {
+          cause: {
+            message: `Internal error: API Error: 429 ${softLimitText("DAM")}`,
+            data: { errorKind: "rate_limit" },
+          },
+        }),
       ),
     ).toEqual({ kind: "spend", reason: "spend-limit", block: "limit" });
   });

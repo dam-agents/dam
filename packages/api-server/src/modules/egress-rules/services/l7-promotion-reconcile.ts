@@ -52,7 +52,7 @@ export async function reconcileL7Promotions(deps: {
 
   let drifted = 0;
   let failed = 0;
-  // UNIT_BOUNDARY_DESCRIPTION: an Environment's egress follows its Owning Agent's rules, so its gateway inspects the hosts the Owning Agent's path-scoped rules promote; it has no rules of its own.
+  // UNIT_BOUNDARY_DESCRIPTION: an Environment's egress follows its Owning Agent's rules, so its gateway inspects the hosts the Owning Agent's path-scoped rules promote; it has no rules of its own, unless its egress is its own, in which case the source names no environmentOf and its own rules promote.
   for (const { agentId, current, environmentOf } of agents) {
     const desired = promotedHosts(
       desiredByAgent.get(environmentOf ?? agentId) ?? [],

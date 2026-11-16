@@ -16,6 +16,8 @@ const (
 	proxyCostOriginalHeader  = "x-litellm-response-cost-original"
 	proxyCostDiscountHeader  = "x-litellm-response-cost-discount-amount"
 	proxyCostMarginHeader    = "x-litellm-response-cost-margin-amount"
+	proxyModelGroupHeader    = "x-litellm-model-group"
+	proxyCacheKeyHeader      = "x-litellm-cache-key"
 	sessionStampHeader       = "x-platform-session"
 	harnessStampHeader       = "x-platform-harness"
 	callStampHeader          = "x-platform-call"
@@ -51,6 +53,7 @@ func spendRecordAccessLog(p bootstrapParams) ev {
 			},
 			"additional_response_headers_to_log": []any{
 				proxyCostHeader, proxyCostOriginalHeader, proxyCostDiscountHeader, proxyCostMarginHeader,
+				proxyModelGroupHeader, proxyCacheKeyHeader,
 			},
 		},
 		"filter": ev{
@@ -134,11 +137,14 @@ local FIELDS = {
   cache_creation_input_tokens = "cache_write_tokens",
   cacheWriteInputTokens = "cache_write_tokens",
   cacheWriteInputTokenCount = "cache_write_tokens",
+  cache_write_tokens = "cache_write_tokens",
+  cache_creation_tokens = "cache_write_tokens",
   ephemeral_5m_input_tokens = "cache_write_5m_tokens",
   ephemeral_1h_input_tokens = "cache_write_1h_tokens",
   cached_tokens = "cached_tokens",
   web_search_requests = "web_search_requests",
   credits = "credits",
+  cost = "proxy_cost",
 }
 local TEXT_FIELDS = {speed = true, inference_geo = true}
 local USAGE_OBJECTS = {'"usage"%s*:%s*{', '"amazon%-bedrock%-invocationMetrics"%s*:%s*{'}

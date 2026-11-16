@@ -5,6 +5,7 @@ const FALLBACK: Brand = {
   short: "platform",
   title: "",
   vendor: "",
+  assistantName: "Assistant",
   theme: {
     light: {
       accent: "#0F62FE",

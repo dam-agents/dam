@@ -14,7 +14,3 @@ function useMediaQuery(query: string): boolean {
 export function useIsDesktop(): boolean {
   return useMediaQuery("(min-width: 48rem)");
 }
-
-export function useIsWideDesktop(): boolean {
-  return useMediaQuery("(min-width: 64rem)");
-}

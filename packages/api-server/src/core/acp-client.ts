@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { match } from "ts-pattern";
 import {
+  AUTH_ERROR_HINT,
   platformRunResultResponseSchema,
   servesSteeringSupported,
   STEER_METHOD,
@@ -62,6 +63,124 @@ export class AcpModelRefusedError extends Error {
     super(`the model refused the prompt in session ${sessionId}`);
     this.name = "AcpModelRefusedError";
   }
+}
+
+const MODEL_ERROR_TEXT_CAP = 300;
+
+const AUTH_REQUIRED_CODE = -32000;
+
+const AUTH_REQUIRED_MESSAGE = "Authentication required";
+
+const INTERNAL_ERROR_PREFIX = /^Internal error:\s*/;
+
+const MODEL_REQUEST_FAILED = "Model request failed:";
+
+const CLAUDE_API_ERROR_TEXT = /^(?:Failed to authenticate\. )?API Error\b/;
+
+const PROVIDER_ERROR_KINDS: ReadonlyMap<string, ModelCallFailureKind> = new Map(
+  [
+    ["authentication_failed", "rejected"],
+    ["oauth_org_not_allowed", "rejected"],
+    ["verification_required", "rejected"],
+    ["cloud_credential_error", "rejected"],
+    ["billing_error", "rejected"],
+    ["account_on_hold", "rejected"],
+    ["model_not_found", "rejected"],
+    ["invalid_request", "failed"],
+    ["rate_limit", "failed"],
+    ["overloaded", "failed"],
+    ["max_output_tokens", "failed"],
+    ["server_error", "failed"],
+    ["unknown", "failed"],
+  ],
+);
+
+export type ModelCallFailureKind = "rejected" | "failed";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a turn that ended because the harness's model
+ * call failed, with the provider's own words where the harness gave them.
+ * `rejected` is the provider refusing the key or the access to the model,
+ * which a retry does not change; `failed` is any other error from the call.
+ */
+export class AcpModelCallFailedError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly failure: ModelCallFailureKind,
+    readonly providerText: string | null,
+    opts?: { cause?: unknown },
+  ) {
+    super(
+      `the model call failed in session ${sessionId}${providerText ? `: ${providerText}` : ""}`,
+      opts,
+    );
+    this.name = "AcpModelCallFailedError";
+  }
+}
+
+const RUNTIME_AUTH_HINT = `${AUTH_ERROR_HINT}\n\nError: `;
+
+function oneLine(text: string): string | null {
+  const line = text.replace(/\s+/g, " ").trim();
+  if (line === "") return null;
+  return line.length > MODEL_ERROR_TEXT_CAP
+    ? `${line.slice(0, MODEL_ERROR_TEXT_CAP)}…`
+    : line;
+}
+
+function claudeApiErrorText(lastMessage: string): string | null {
+  const text = (
+    lastMessage.startsWith(RUNTIME_AUTH_HINT)
+      ? lastMessage.slice(RUNTIME_AUTH_HINT.length)
+      : lastMessage
+  ).trim();
+  return CLAUDE_API_ERROR_TEXT.test(text) ? oneLine(text) : null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: reads a failed `session/prompt` as a failed
+ * model call, or as no such thing. Claude Code answers a key or access the
+ * provider rejected with ACP's bare `Authentication required`, and its only
+ * copy of the provider's words is the turn's last message, so they are read
+ * from there when that message reads as an API error, and never otherwise:
+ * the agent's own prose is not the provider's. Any other failed call it names
+ * after the internal error's prefix, tagged with the provider's `errorKind`.
+ * Pi and Codex name it in `data.details`, after `Model request failed:`. The
+ * platform's own refusals and a harness's internal failures carry none of
+ * these marks and stay what they were.
+ */
+export function modelCallFailure(
+  err: unknown,
+  lastMessage: string,
+): { failure: ModelCallFailureKind; providerText: string | null } | null {
+  if (err === null || typeof err !== "object") return null;
+  const { code, message, data } = err as {
+    code?: unknown;
+    message?: unknown;
+    data?: { errorKind?: unknown; details?: unknown } | null;
+  };
+  if (typeof message !== "string") return null;
+  if (code === AUTH_REQUIRED_CODE && message === AUTH_REQUIRED_MESSAGE)
+    return {
+      failure: "rejected",
+      providerText: claudeApiErrorText(lastMessage),
+    };
+  const details = typeof data?.details === "string" ? data.details : "";
+  if (details.startsWith(MODEL_REQUEST_FAILED))
+    return {
+      failure: "failed",
+      providerText: oneLine(details.slice(MODEL_REQUEST_FAILED.length)),
+    };
+  const kind =
+    typeof data?.errorKind === "string"
+      ? PROVIDER_ERROR_KINDS.get(data.errorKind)
+      : undefined;
+  if (kind !== undefined)
+    return {
+      failure: kind,
+      providerText: oneLine(message.replace(INTERNAL_ERROR_PREFIX, "")),
+    };
+  return null;
 }
 
 type ConnectionWatch =
@@ -519,7 +638,7 @@ async function resolvePair(
   return (await runBoundary.pair(agentId, pair)) ?? undefined;
 }
 
-const refusedForNoModel = (err: unknown): boolean =>
+export const refusedForNoModel = (err: unknown): boolean =>
   (err as { data?: { platform?: { reason?: unknown } } } | null)?.data?.platform
     ?.reason === NO_MODEL_REASON;
 
@@ -604,6 +723,7 @@ export function createAcpClient(opts: {
       sendOpts: SendPromptOpts,
     ): Promise<string> {
       const responseChunks: string[] = [];
+      let lastMessage = { id: undefined as unknown, text: "" };
       let live = false;
       let watchSessionId: string | null = null;
 
@@ -618,6 +738,11 @@ export function createAcpClient(opts: {
               params.update.content?.type === "text"
             ) {
               responseChunks.push(params.update.content.text);
+              const id = params.update.messageId;
+              lastMessage =
+                id !== undefined && id === lastMessage.id
+                  ? { id, text: lastMessage.text + params.update.content.text }
+                  : { id, text: params.update.content.text };
             }
             if (live && sendOpts.onUpdate) {
               const update = toPromptUpdate(params.update);
@@ -705,6 +830,7 @@ export function createAcpClient(opts: {
           const { signal } = sendOpts;
           signal?.throwIfAborted();
           live = true;
+          lastMessage = { id: undefined, text: "" };
           const send = () =>
             connection.agent.request("session/prompt", {
               sessionId,
@@ -733,6 +859,15 @@ export function createAcpClient(opts: {
                   resolvePair(opts.firePair, opts.runBoundary, agentId),
                 )
               : send());
+          } catch (err) {
+            const failed = modelCallFailure(err, lastMessage.text);
+            if (failed === null) throw err;
+            throw new AcpModelCallFailedError(
+              sessionId,
+              failed.failure,
+              failed.providerText,
+              { cause: err },
+            );
           } finally {
             signal?.removeEventListener("abort", cancel);
           }

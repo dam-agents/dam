@@ -1,3 +1,4 @@
+import { ruleSpeaksFor } from "../../modules/egress-rules/domain/rule-speaks-for.js";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-gate.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
@@ -89,6 +90,9 @@ function makeFakeRepo(): FakeRepo {
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
     listDistinctAgentIds: async () => [],
+    listPendingChildEgressRequests: async () => [],
+    listPendingWiderChildEgressRequests: async () => [],
+    listAgentsWithPendingChildEgressRequests: async () => [],
   };
   return {
     repo,
@@ -178,6 +182,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -204,12 +209,187 @@ describe("ext-authz gate", () => {
     expect(bus.publishes).toHaveLength(0);
   });
 
+  // TEST_SCENARIO: a child launched with open egress is decided by its own rules alone: a host they allow passes, and a host they do not list is denied with no prompt, since the user chose not to see that child's traffic.
+  it("denies an open child's unlisted host without holding", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver: {
+        resolve: async () => ({
+          ownerSub: "user-1",
+          agentId: "agent-child",
+          own: { mode: "open" as const, parentAgentId: "agent-driver" },
+        }),
+      },
+      ruleMatcher: {
+        match: async (_agentId: string, host: string) =>
+          host === "allowed.example.com"
+            ? {
+                verdict: "allow" as const,
+                rule: { host, method: "*", pathPattern: "*" },
+              }
+            : null,
+      },
+      providerScopes: noProviderScopes,
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+    const request = (host: string) =>
+      gate.gateRequest({
+        agentId: "agent-child",
+        host,
+        port: 443,
+        tls: true,
+        method: "GET",
+        path: "/",
+      });
+    expect(await request("allowed.example.com")).toBe("allow");
+    expect(await request("other.example.com")).toBe("deny");
+    expect(repo.rows).toHaveLength(0);
+    expect(bus.publishes).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: an open child's driver asked for a rule that waits for the owner. A request that rule would allow is held on that request, not refused: it passes when the owner allows the rule, and is refused with the reason in the answer when the owner declines it. The gate files no request of its own, and a host the driver never asked for is still denied at once.
+  it("holds an open child's request that a waiting rule would allow", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const waiting = (id: string, host: string) =>
+      repo.setInitial({
+        id,
+        type: "egress_proposal",
+        agentId: "agent-child",
+        ownerSub: "user-1",
+        sessionId: null,
+        payload: {
+          kind: "egress_proposal",
+          host,
+          method: "GET",
+          path: "/api/*",
+          reason: "",
+          forAgentId: "agent-driver",
+          widerThanDriver: true,
+        },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 1_800_000),
+        resolvedAt: null,
+        verdict: null,
+        decidedBy: null,
+        status: "pending",
+        deliveredAt: null,
+      });
+    waiting("ask-1", "allowed-later.example.com");
+    waiting("ask-2", "declined-later.example.com");
+    repo.repo.listPendingChildEgressRequests = async (childId) =>
+      repo.rows.filter((r) => r.agentId === childId && r.status === "pending");
+    const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver: {
+        resolve: async () => ({
+          ownerSub: "user-1",
+          agentId: "agent-child",
+          own: { mode: "open" as const, parentAgentId: "agent-driver" },
+        }),
+      },
+      ruleMatcher: { match: async () => null },
+      providerScopes: noProviderScopes,
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+    const request = (host: string, path: string) =>
+      gate.gateRequest({
+        agentId: "agent-child",
+        host,
+        port: 443,
+        tls: true,
+        method: "GET",
+        path,
+      });
+
+    expect(await request("allowed-later.example.com", "/other")).toBe("deny");
+    expect(await request("never-asked.example.com", "/api/x")).toBe("deny");
+
+    const allowed = request("allowed-later.example.com", "/api/x");
+    const declined = request("declined-later.example.com", "/api/x");
+    await flushMicrotasks();
+    repo.resolve("ask-1", "allow");
+    bus.fire("approval:ask-1", "");
+    repo.resolve("ask-2", "deny");
+    bus.fire("approval:ask-2", "");
+
+    expect(await allowed).toBe("allow");
+    expect(await declined).toMatchObject({
+      verdict: "refuse",
+      response: { status: 403, body: expect.stringContaining("declined") },
+    });
+    expect(repo.inserts).toBe(0);
+    expect(repo.expirePendingCalls).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a child launched with scoped egress holds a host its copied rules do not list as its own approval, so approving widens the child's rules alone, and the approval names the parent whose page shows it; whether anyone attends is the parent's, since the child has no session.
+  it("holds a scoped child's unlisted host as its own, shown on the parent", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const attendanceAsked: string[] = [];
+    const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: {
+        hasOpenChannelTurn: async (agentId: string) => {
+          attendanceAsked.push(agentId);
+          return false;
+        },
+        hasInteractiveSession: async () => false,
+      },
+      identityResolver: {
+        resolve: async () => ({
+          ownerSub: "user-1",
+          agentId: "agent-child",
+          own: { mode: "scoped" as const, parentAgentId: "agent-driver" },
+        }),
+      },
+      ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+    void gate.gateRequest({
+      agentId: "agent-child",
+      host: "new.example.com",
+      port: 443,
+      tls: true,
+      method: "GET",
+      path: "/",
+    });
+    await flushMicrotasks();
+    expect(repo.rows).toHaveLength(1);
+    expect(repo.rows[0]).toMatchObject({
+      agentId: "agent-child",
+      payload: { host: "new.example.com", forAgentId: "agent-driver" },
+    });
+    expect(attendanceAsked).toEqual(["agent-driver"]);
+  });
+
   // TEST_SCENARIO: an Environment's request falls under its Owning Agent: the Owning Agent's rule decides it, and a host with no rule files one approval as the Owning Agent's, naming the Environment it came from, so the verdict becomes the Owning Agent's rule.
   it("decides an Environment's request by its Owning Agent's rules and files its approval as theirs", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const asked: string[] = [];
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -270,6 +450,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -299,6 +480,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -336,6 +518,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -374,6 +557,7 @@ describe("ext-authz gate", () => {
       const repo = makeFakeRepo();
       if (decidedMeanwhile) repo.repo.expirePending = async () => false;
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
         attendance: attended,
@@ -406,6 +590,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -470,6 +655,7 @@ describe("ext-authz gate", () => {
       deliveredAt: null,
     });
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -511,6 +697,7 @@ describe("ext-authz gate", () => {
     const bus = makeFakeBus();
     const ruleMatch = vi.fn(async () => null);
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -544,6 +731,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -577,6 +765,7 @@ describe("ext-authz gate", () => {
       rule: anyRule,
     }));
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -628,6 +817,7 @@ describe("ext-authz gate", () => {
       rule: anyRule,
     }));
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: makeFakeBus().bus,
       attendance: attended,
@@ -669,6 +859,7 @@ describe("ext-authz gate", () => {
       rule: anyRule,
     }));
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -706,6 +897,7 @@ describe("ext-authz gate", () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
     const gate = createExtAuthzGate({
+      waitingRuleSpeaksFor: ruleSpeaksFor,
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
@@ -761,6 +953,7 @@ describe("ext-authz gate", () => {
       repo = makeFakeRepo(),
     ) =>
       createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: makeFakeBus().bus,
         attendance: attended,
@@ -860,6 +1053,7 @@ describe("ext-authz gate", () => {
       const repo = makeFakeRepo();
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
         attendance: unattended,
@@ -891,6 +1085,7 @@ describe("ext-authz gate", () => {
       const repo = makeFakeRepo();
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
         attendance: unattended,
@@ -919,6 +1114,7 @@ describe("ext-authz gate", () => {
       const repo = makeFakeRepo();
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
         attendance: unattended,
@@ -950,6 +1146,7 @@ describe("ext-authz gate", () => {
       const repo = makeFakeRepo();
       const bus = makeFakeBus();
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
         attendance: {
@@ -989,6 +1186,7 @@ describe("ext-authz gate", () => {
       const bus = makeFakeBus();
       const hasOpenChannelTurn = vi.fn(async () => true);
       const gate = createExtAuthzGate({
+        waitingRuleSpeaksFor: ruleSpeaksFor,
         repo: repo.repo,
         bus: bus.bus,
         attendance: {

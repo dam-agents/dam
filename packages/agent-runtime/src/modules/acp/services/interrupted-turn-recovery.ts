@@ -1,6 +1,8 @@
 import { SessionType, type PlatformUndeliveredPrompt } from "api-server-api";
 import type { ActiveTurnStore } from "../infrastructure/active-turn-store.js";
+import { InProcessRequestError } from "../infrastructure/in-process-request.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
+import type { UndeliveredPromptStore } from "../infrastructure/undelivered-prompt-store.js";
 import type { TriggerSessionDriver } from "./trigger-session-driver.js";
 
 const DISOWNED_REJECTION =
@@ -76,7 +78,7 @@ export function turnContinuedNotice(cut: {
 export const STOPPED_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the platform stopped the sandbox " +
-    "mid-task — the agent was put to sleep, restarted or moved — and it has " +
+    "mid-task — the agent was stopped, restarted or moved — and it has " +
     "started again. Some effects of your last actions may be partial — a " +
     "file half-written, a command that never finished.",
   DISOWNED_REJECTION,
@@ -90,6 +92,22 @@ const SCHEDULED_SESSION_TYPES: readonly string[] = [
   SessionType.ScheduleCron,
   SessionType.ScheduleOnce,
 ];
+
+const RESOURCE_NOT_FOUND = -32002;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the runtime stamps `platform.unstored` on every
+ * failed load of a Session it flagged unstored, whatever failed, so only the
+ * harness's own answer, ACP's resourceNotFound code, proves it never stored
+ * the Session; an expired credential or a crashed harness says nothing about
+ * it.
+ */
+function neverStored(err: unknown): boolean {
+  if (!(err instanceof InProcessRequestError)) return false;
+  if (err.code !== RESOURCE_NOT_FOUND) return false;
+  const data = err.data as { platform?: { unstored?: unknown } } | null;
+  return data?.platform?.unstored === true;
+}
 
 function promptText(prompt: PlatformUndeliveredPrompt): string {
   return prompt.blocks
@@ -109,8 +127,9 @@ function promptText(prompt: PlatformUndeliveredPrompt): string {
  * restart cut off — written as a user's rejection that says to stop and wait —
  * so the agent carries on instead of waiting for a person who never acted.
  * A turn the platform stopped, as by a Sleep, gets a notice that says so
- * rather than blaming its memory. Nobody reads the resumed turn live, so its
- * prompt waits for the harness alone, never for a viewer to engage.
+ * rather than blaming its memory. The resume carries no unattended flag, so a
+ * chat Session starts no run of its own for it and the chat draws no run
+ * divider, while a Session a schedule owns keeps the run that fire began.
  * A continuation that dies again is resumed again, up to
  * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
  * the resume is tried, so a continuation that keeps running out of memory
@@ -122,15 +141,20 @@ function promptText(prompt: PlatformUndeliveredPrompt): string {
  * Each marker is looked up again just before its own resume, because resuming
  * the ones before it takes time, and a Session a person starts using in that
  * window belongs to their turn, not to recovery.
- * A scheduled Session the harness never stored cannot be resumed at all — the
- * harness has no such conversation — so the task its marker kept runs again in
- * a fresh unattended Session of the same schedule instead. That is how a fire
- * whose machine went down on its first turn still does its work, where the
- * person who would otherwise retry it never exists.
+ * A Session cut on its first turn is still flagged unstored, however long
+ * that turn ran, yet a harness stores a Session early in its first turn, so it
+ * is resumed like any other. Only when the harness answers the load that it
+ * holds no such Session does a scheduled Session's task, kept in its marker, run
+ * again in a fresh unattended Session of the same schedule instead. That is
+ * how a fire whose machine went down at the very start of its first turn
+ * still does its work, where the person who would otherwise retry it never
+ * exists. A resume of an unstored Session that fails for another reason keeps
+ * its marker's prompt as undelivered, since the marker was its only copy.
  */
 export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
   sessionMetadata: SessionMetadataStore;
+  undeliveredPrompts: UndeliveredPromptStore;
   triggerDriver: TriggerSessionDriver;
   bindScheduleSession?: (scheduleId: string, sessionId: string) => void;
   log: (msg: string) => void;
@@ -155,45 +179,50 @@ export async function recoverInterruptedTurns(deps: {
     }
     const entry = deps.sessionMetadata.get(marker.sessionId);
     const task = marker.prompt ? promptText(marker.prompt) : "";
-    if (
+    const rerunnable =
       entry?.unstored === true &&
       task !== "" &&
-      SCHEDULED_SESSION_TYPES.includes(entry.meta.type ?? "")
-    ) {
-      deps.store.bumpAttempts(marker.sessionId);
-      try {
-        const { sessionId: rerun } = await deps.triggerDriver.start({
-          task,
-          platformMeta: entry.meta,
-          unattended: true,
-        });
-        deps.store.carryAttempts(rerun, marker.attempts + 1);
-        deps.sessionMetadata.tombstone(marker.sessionId);
-        deps.store.remove(marker.sessionId);
-        if (entry.meta.scheduleId)
-          deps.bindScheduleSession?.(entry.meta.scheduleId, rerun);
-        deps.log(
-          `ran the cut first turn of ${marker.sessionId} again in ${rerun}`,
-        );
-      } catch (err) {
-        deps.log(
-          `failed to re-run the cut first turn of ${marker.sessionId}: ${(err as Error).message}`,
-        );
-      }
-      continue;
-    }
+      SCHEDULED_SESSION_TYPES.includes(entry.meta.type ?? "");
     deps.store.bumpAttempts(marker.sessionId);
     try {
       await deps.triggerDriver.start({
         task: marker.stopped ? STOPPED_NOTICE : INTERRUPTION_NOTICE,
         resumeSessionId: marker.sessionId,
-        unattended: true,
       });
       deps.log(`resumed interrupted session ${marker.sessionId}`);
+      continue;
     } catch (err) {
-      deps.store.remove(marker.sessionId);
+      if (!rerunnable || !neverStored(err)) {
+        if (entry?.unstored === true && marker.prompt)
+          deps.undeliveredPrompts.remember(marker.sessionId, [marker.prompt]);
+        deps.store.remove(marker.sessionId);
+        deps.log(
+          `failed to resume ${marker.sessionId}, gave up: ${(err as Error).message}`,
+        );
+        continue;
+      }
       deps.log(
-        `failed to resume ${marker.sessionId}, gave up: ${(err as Error).message}`,
+        `the harness never stored ${marker.sessionId}: ${(err as Error).message}`,
+      );
+    }
+    try {
+      const { sessionId: rerun } = await deps.triggerDriver.start({
+        task,
+        platformMeta: entry.meta,
+        unattended: true,
+      });
+      deps.store.carryAttempts(rerun, marker.attempts + 1);
+      deps.sessionMetadata.tombstone(marker.sessionId);
+      deps.undeliveredPrompts.forgetSession(marker.sessionId);
+      deps.store.remove(marker.sessionId);
+      if (entry.meta.scheduleId)
+        deps.bindScheduleSession?.(entry.meta.scheduleId, rerun);
+      deps.log(
+        `ran the cut first turn of ${marker.sessionId} again in ${rerun}`,
+      );
+    } catch (err) {
+      deps.log(
+        `failed to re-run the cut first turn of ${marker.sessionId}: ${(err as Error).message}`,
       );
     }
   }

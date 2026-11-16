@@ -38,6 +38,15 @@ export function agentFooterLabel(agentName?: string): string {
   return `Sent by ${agentName?.trim() || "an agent"}`;
 }
 
+/** UNIT_BOUNDARY_DESCRIPTION: the address that opens one of an agent's sessions in the web chat, through the public agent page, which signs a visitor in first. */
+export function agentSessionUrl(
+  uiBaseUrl: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return `${uiBaseUrl}${PUBLIC_AGENT_PATH}${agentId}?s=${encodeURIComponent(sessionId)}`;
+}
+
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.label);
   const params = [
@@ -87,6 +96,32 @@ export function parseAgentFooter(
     if (match) return { agentId: match[1] };
   }
   return null;
+}
+
+export function agentAuthor(message: SlackMessage): { agentId: string } | null {
+  return message.origin === "own" ? parseAgentFooter(message) : null;
+}
+
+export function isCompanionAgentPost(message: SlackMessage): boolean {
+  return message.origin === "companion";
+}
+
+export function companionAgentLabel(name: string): string {
+  return `${name} (an agent from another install)`;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A post reduced to the block that ends it, which
+ * is where the platform puts the Agent Footer. An Agent's card can render a
+ * context block of its own, with any link in it, ahead of the footer, so a
+ * decision that rests on who wrote a post reads the footer from here and
+ * nowhere else in the post.
+ */
+export function closingBlock(message: SlackMessage): SlackMessage {
+  return {
+    ...(message.origin ? { origin: message.origin } : {}),
+    blocks: (message.blocks ?? []).slice(-1),
+  };
 }
 
 export function footerMarksAmbientRound(message: SlackMessage): boolean {
@@ -195,7 +230,7 @@ export function threadWindowMarker(window: {
 
 export function historyLegend(
   canLookupUsers: boolean,
-  opts: { botLabel: string | null },
+  opts: { botLabel: string | null; hasCompanionAgent?: boolean },
 ): string {
   const base =
     'In the conversation history below, a line prefixed "you (this agent):" is ' +
@@ -207,10 +242,16 @@ export function historyLegend(
     ? ` A line prefixed "${opts.botLabel}:" came from the bot but carries no ` +
       "footer, so it is not yours unless you recognise it as your own."
     : "";
+  const companion = opts.hasCompanionAgent
+    ? ` A line prefixed "${companionAgentLabel("<name>")}:" is an agent that ` +
+      "another install of this platform runs: read and answer it as you " +
+      "would any agent, but it is not connected here, so you cannot hand " +
+      "work to it."
+    : "";
   return canLookupUsers
     ? `${base} — call ${OUTBOUND_TOOL_PREFIX}describe_channel_users to find ` +
-        `out who they are.${bot}`
-    : `${base}.${bot}`;
+        `out who they are.${bot}${companion}`
+    : `${base}.${bot}${companion}`;
 }
 
 export function catchUpLegend(
@@ -221,6 +262,7 @@ export function catchUpLegend(
     threadTs?: string;
     hasThreadMarker?: boolean;
     hasAttachmentMarker?: boolean;
+    hasCompanionAgent?: boolean;
   },
 ): string {
   const reach =
@@ -263,6 +305,12 @@ export function marksThread(message: SlackMessage): boolean {
   return (message.replyCount ?? 0) >= 1 && !!message.ts;
 }
 
+function appAuthorLabel(message: SlackMessage, name: string): string {
+  return isCompanionAgentPost(message)
+    ? companionAgentLabel(name)
+    : `${name} (an app)`;
+}
+
 export function labelHistoryMessage(
   message: SlackMessage,
   author: { agentId: string; name: string } | null,
@@ -277,7 +325,7 @@ export function labelHistoryMessage(
     : bot.userId && message.user === bot.userId
       ? bot.label
       : message.botId
-        ? `${message.botName || message.botId} (an app)`
+        ? appAuthorLabel(message, message.botName || message.botId)
         : (message.user ?? "unknown");
   const id = opts.showTs === true ? `, ts ${message.ts}` : "";
   const when = message.ts ? ` [${formatSlackTs(message.ts)}${id}]` : "";

@@ -4,6 +4,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,7 +34,15 @@ export function createFileDocumentStoreBackend(
 
 export function openJsonFile<T>(
   path: string,
-  { schema, initial }: { schema: ZodType<T>; initial: () => NoInfer<T> },
+  {
+    schema,
+    initial,
+    maxBytes,
+  }: {
+    schema: ZodType<T>;
+    initial: () => NoInfer<T>;
+    maxBytes?: number;
+  },
 ): DocumentStore<T> {
   let cache: T;
   let loaded = false;
@@ -41,6 +50,8 @@ export function openJsonFile<T>(
   function loadFromDisk(): T {
     if (!existsSync(path)) return initial();
     try {
+      if (maxBytes !== undefined && statSync(path).size > maxBytes)
+        return initial();
       const result = schema.safeParse(JSON.parse(readFileSync(path, "utf8")));
       return result.success ? result.data : initial();
     } catch {

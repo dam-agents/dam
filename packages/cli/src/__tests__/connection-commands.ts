@@ -3,6 +3,7 @@ import type { ConnectionView, GitHubUserTokenProbe } from "api-server-api";
 import type { AgentService } from "../modules/agent/index.js";
 import type { ConnectionService } from "../modules/connection/services/connection-service.js";
 import { EXIT_SUCCESS } from "../modules/shared/exit-codes.js";
+import { NO_GRANTS, type SharingService } from "../modules/sharing/index.js";
 
 export const view = (over: Partial<ConnectionView>): ConnectionView => ({
   id: "conn-x",
@@ -136,6 +137,10 @@ export const deps = (
     return agents as AgentService;
   },
   createConnectionService: () => svc as ConnectionService,
+  createSharingService: (): SharingService => ({
+    telegramChats: async () => ({ ok: true as const, value: [] }),
+    heldGrants: async () => ({ ok: true as const, value: NO_GRANTS }),
+  }),
   browserOpener: {
     open: async () => ({ ok: true as const, value: undefined }),
   },

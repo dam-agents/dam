@@ -64,7 +64,6 @@ export function ClassicChatLayout({
   notices,
   agentId,
   agentName,
-  alwaysOn,
   processesEnabled,
   onOpenFile,
   panel,
@@ -79,7 +78,6 @@ export function ClassicChatLayout({
   notices: ReactNode;
   agentId: string | null;
   agentName: string | null;
-  alwaysOn: boolean;
   processesEnabled: boolean;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
   panel: "dock" | null;
@@ -202,7 +200,6 @@ export function ClassicChatLayout({
                 <PanelDivider stack={panelStack} below="processes" />
                 <ProcessesPanel
                   agentId={agentId}
-                  alwaysOn={alwaysOn}
                   open={processesSectionOpen}
                   onToggle={() =>
                     setProcessesSectionOpen(!processesSectionOpen)
@@ -266,7 +263,7 @@ export function ClassicChatLayout({
                 : undefined
             }
             className={cn(
-              "flex flex-col bg-background relative z-content has-[[data-full-page]]:z-overlay max-md:fixed max-md:inset-0 max-md:z-overlay",
+              "flex flex-col bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
               panel === null && "hidden",
               panel === "dock" && dockHiddenOnPhone && "max-md:hidden",
               panelFills

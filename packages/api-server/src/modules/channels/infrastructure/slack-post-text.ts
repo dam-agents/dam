@@ -1,3 +1,4 @@
+import { channelBlocksText, richTextOf } from "../domain/channel-blocks.js";
 import { parseAgentFooter } from "./agent-footer.js";
 import type { SlackBlock } from "./slack-gateway.js";
 
@@ -29,41 +30,6 @@ function textOf(value: unknown): string {
     : "";
 }
 
-function richTextOf(element: unknown): string {
-  const e = element as Record<string, unknown> | null;
-  if (!e || typeof e !== "object") return "";
-  const nested = (): string =>
-    Array.isArray(e.elements) ? e.elements.map(richTextOf).join("") : "";
-  switch (e.type) {
-    case "text":
-      return typeof e.text === "string" ? e.text : "";
-    case "link":
-      return typeof e.text === "string" && e.text
-        ? `<${String(e.url)}|${e.text}>`
-        : String(e.url ?? "");
-    case "user":
-      return `<@${String(e.user_id)}>`;
-    case "channel":
-      return `<#${String(e.channel_id)}>`;
-    case "usergroup":
-      return `<!subteam^${String(e.usergroup_id)}>`;
-    case "broadcast":
-      return `<!${String(e.range)}>`;
-    case "emoji":
-      return `:${String(e.name)}:`;
-    case "rich_text_section":
-    case "rich_text_preformatted":
-    case "rich_text_quote":
-      return nested();
-    case "rich_text_list":
-      return Array.isArray(e.elements)
-        ? e.elements.map((item) => `• ${richTextOf(item)}`).join("\n")
-        : "";
-    default:
-      return nested();
-  }
-}
-
 function blockText(block: SlackBlock, textIsEmpty: boolean): string {
   switch (block.type) {
     case "header":
@@ -86,8 +52,17 @@ function blockText(block: SlackBlock, textIsEmpty: boolean): string {
       return textIsEmpty && Array.isArray(block.elements)
         ? block.elements.map(richTextOf).join("\n")
         : "";
-    default:
+    case "divider":
+    case "image":
+    case "actions":
+    case "file":
+    case "video":
+    case "input":
       return "";
+    default:
+      return typeof block.type === "string"
+        ? channelBlocksText([{ ...block, type: block.type }])
+        : "";
   }
 }
 
@@ -121,8 +96,11 @@ function comparable(text: string): string {
  * only when `text` is empty, because a person's post carries a `rich_text`
  * copy of its `text` and an Agent's post a `markdown` copy. A link preview
  * Slack unfurled into `attachments` repeats a link already in the post, and
- * an Agent Footer is not content, so neither is read. Only the flattened part
- * is capped; `text` is never shortened.
+ * an Agent Footer is not content, so neither is read. An Agent's post that
+ * holds a `markdown` block carries all of its content in `text`, a Channel
+ * Card's text form included, so its blocks are not read either; an Agent's
+ * file share has no `markdown` block and is read like any other post. Only
+ * the flattened part is capped; `text` is never shortened.
  */
 export function renderSlackPostText(post: SlackPostContent): string {
   const text = post.text?.trim() ?? "";
@@ -132,6 +110,12 @@ export function renderSlackPostText(post: SlackPostContent): string {
   const blocks = Array.isArray(post.blocks)
     ? (post.blocks as SlackBlock[])
     : [];
+  if (
+    text &&
+    blocks.some((block) => block.type === "markdown") &&
+    parseAgentFooter({ blocks })
+  )
+    return post.text ?? "";
   const candidates = [
     ...blocks.map((b) => blockText(b, text === "").trim()),
     ...attachments.flatMap(attachmentText),

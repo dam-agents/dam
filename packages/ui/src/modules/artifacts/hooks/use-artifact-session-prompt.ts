@@ -6,6 +6,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { cachedAgent } from "../../agents/api/queries.js";
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useSendArtifactPrompt } from "../api/mutations.js";
+import type { ArtifactSessionPrompt } from "./use-artifact-prompt.js";
 
 const SENT_TTL_MS = 10_000;
 
@@ -38,19 +39,24 @@ export function sentNotice(agentName: string | null): string {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: sends a prompt from an artifact opened outside a
- * chat to the owner's own Session for that page on its publishing Agent. The
+ * chat, or one that names a conversation, to the owner's own Session for that
+ * page and conversation on its publishing Agent. The
  * turn runs without a chat to watch it, so the toast names the agent, says
  * that nobody answers its permission prompts, and opens the Session.
  */
 export function useArtifactSessionPrompt(
   artifactId: string | undefined,
-): ((prompt: string) => Promise<void>) | undefined {
+): ArtifactSessionPrompt | undefined {
   const { mutateAsync } = useSendArtifactPrompt();
   const openSession = useOpenSession();
   const send = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, conversation?: string) => {
       if (artifactId === undefined) return;
-      const result = await mutateAsync({ artifactId, prompt });
+      const result = await mutateAsync({
+        artifactId,
+        prompt,
+        ...(conversation !== undefined && { conversation }),
+      });
       if (!result.ok) throw new Error(refusal(result.reason));
       const { agentId, sessionId } = result;
       emitToast({

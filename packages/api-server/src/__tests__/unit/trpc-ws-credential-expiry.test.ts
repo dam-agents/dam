@@ -27,7 +27,7 @@ async function admit(expiresInMs: number) {
       },
     }),
     surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
-    composeApiContext: () => ({}) as ApiContext,
+    composeApiContext: async () => ({}) as ApiContext,
   });
   const server = createServer();
   servers.push(server);

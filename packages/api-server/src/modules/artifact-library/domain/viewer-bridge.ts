@@ -1,4 +1,7 @@
-import { ARTIFACT_PROMPT_MAX_LENGTH } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_MAX_LENGTH,
+  artifactPromptConversationSchema,
+} from "api-server-api";
 import {
   artifactApiCallerEmail,
   SESSION_TITLE_MAX_LENGTH,
@@ -14,8 +17,7 @@ export type ViewerBridgeDenial =
   | "not-html"
   | "not-interactive"
   | "not-restricted"
-  | "not-agent-published"
-  | "feature-off";
+  | "not-agent-published";
 
 export type ViewerBridgeAccess =
   | { allowed: true; agentId: string }
@@ -23,6 +25,7 @@ export type ViewerBridgeAccess =
 
 export const viewerPromptInputSchema = z.object({
   prompt: z.string().trim().min(1).max(ARTIFACT_PROMPT_MAX_LENGTH),
+  conversation: artifactPromptConversationSchema.optional(),
 });
 
 export type ViewerPromptResult =
@@ -40,26 +43,21 @@ export type ViewerPromptResult =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: decides whether a viewer of a shared copy may
  * reach the artifact's Agent at all. Only a restricted, interactive HTML page
- * that an Agent published qualifies, and only while its owner keeps the
- * interactive-artifacts feature on. It is asked again on every call, so a
+ * that an Agent published qualifies. It is asked again on every call, so a
  * page the owner makes private or plain stops reaching the Agent at once.
  */
-export function viewerBridgeAccess(
-  row: {
-    kind: string;
-    interactive: boolean;
-    visibility: string;
-    agentId: string | null;
-  },
-  featureOn: boolean,
-): ViewerBridgeAccess {
+export function viewerBridgeAccess(row: {
+  kind: string;
+  interactive: boolean;
+  visibility: string;
+  agentId: string | null;
+}): ViewerBridgeAccess {
   if (row.kind !== "html") return { allowed: false, denial: "not-html" };
   if (!row.interactive) return { allowed: false, denial: "not-interactive" };
   if (row.visibility !== "restricted")
     return { allowed: false, denial: "not-restricted" };
   if (row.agentId === null)
     return { allowed: false, denial: "not-agent-published" };
-  if (!featureOn) return { allowed: false, denial: "feature-off" };
   return { allowed: true, agentId: row.agentId };
 }
 
@@ -78,26 +76,47 @@ export function shareCaller(
   };
 }
 
-export function viewerSessionKey(artifactId: string, viewerSub: string) {
-  return `artifact:${artifactId}:${viewerSub}`;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a caller's Sessions for one page are keyed by
+ * the page and the caller, so artifact code never picks a Session outside
+ * them. A page's conversation only splits that caller's own Sessions: its key
+ * has its own prefix and holds no colon, and the sub comes last, so no key
+ * a page chooses can spell another caller's Session (a sub may hold colons).
+ */
+export function viewerSessionKey(
+  artifactId: string,
+  viewerSub: string,
+  conversation?: string,
+) {
+  return conversation === undefined
+    ? `artifact:${artifactId}:${viewerSub}`
+    : `artifact-conversation:${artifactId}:${conversation}:${viewerSub}`;
 }
 
-function sessionTitle(full: string): string {
-  return full.length <= SESSION_TITLE_MAX_LENGTH
-    ? full
-    : `${full.slice(0, SESSION_TITLE_MAX_LENGTH - 1)}…`;
+function sessionTitle(base: string, conversation?: string): string {
+  const suffix = conversation === undefined ? "" : ` · ${conversation}`;
+  const room = SESSION_TITLE_MAX_LENGTH - suffix.length;
+  const head = base.length <= room ? base : `${base.slice(0, room - 1)}…`;
+  return `${head}${suffix}`;
 }
 
-export function viewerSessionTitle(viewer: string, title: string): string {
-  return sessionTitle(`${viewer} · ${title}`);
+export function viewerSessionTitle(
+  viewer: string,
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(`${viewer} · ${title}`, conversation);
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the owner's Session for a page is theirs alone,
  * so the page's title names it; a viewer's also names the viewer.
  */
-export function ownerSessionTitle(title: string): string {
-  return sessionTitle(title);
+export function ownerSessionTitle(
+  title: string,
+  conversation?: string,
+): string {
+  return sessionTitle(title, conversation);
 }
 
 export function viewerPromptText(input: {

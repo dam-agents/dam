@@ -52,6 +52,14 @@ export function createBrandRoutes(brand: Brand) {
     );
   });
 
+  routes.route("/", createBrandIconRoutes());
+
+  return routes;
+}
+
+export function createBrandIconRoutes() {
+  const routes = new Hono();
+
   const resolveSvg = (
     fallback: string = DEFAULT_BRAND_ICON_SVG,
   ): { svg: string; hash: string } => {

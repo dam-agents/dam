@@ -24,15 +24,20 @@ const ROUTER_PLACEHOLDER = "platform:conn:router";
  * `servedModels`). A credential variable the manifest names gets the router's
  * placeholder because the client will not start without one, and a model
  * variable it names gets the default provider's first model for the same
- * reason. Provider env
- * never reaches a harness process, so PLATFORM_MODEL_ROUTER_SERVES is what
- * an image script keys on to point its harness at the router. A harness whose
- * manifest names a classifier variable gets the platform's preferred
+ * reason. Provider env reaches a harness process only through the names its
+ * manifest declares (`homeConnectionEnv`), so PLATFORM_MODEL_ROUTER_SERVES is
+ * what an image script keys on to point its harness at the router. A harness
+ * whose manifest names a classifier variable gets the platform's preferred
  * classifier on the default provider, by its qualified name so the router
  * resolves it without guessing among providers; that is Claude Code's
  * auto-mode permission check, whose own Sonnet slot stays the person's, and a
  * provider that lists no classifier model gets no variable and keeps the
- * harness default.
+ * harness default. A harness whose manifest names a preferred-model variable
+ * gets the platform's preferred work model for that harness across the
+ * providers that serve it, the model a run with no saved default takes, for a
+ * process that starts with no model of its own (Pi's web terminal),
+ * so it never falls back to whichever model the catalog lists first; no
+ * listed preferred model sets no variable.
  */
 export function routerEnvFor(input: {
   harness: string;
@@ -84,6 +89,11 @@ export function routerEnvFor(input: {
     if (binding.classifierModelEnv && classifier)
       env[binding.classifierModelEnv] = classifier;
   }
+  const preferred = binding.preferredModelEnv
+    ? preferredWorkName(input.harness, serving, binding)
+    : null;
+  if (binding.preferredModelEnv && preferred)
+    env[binding.preferredModelEnv] = preferred;
   if (!binding.claudeTiers) return env;
   const windows = servedModels({
     harness: input.harness,
@@ -123,6 +133,25 @@ export function processClassifierName(input: {
   const entry = defaultProvider.entries.find(
     (e) => e.upstreamId === classifier?.upstreamId,
   );
+  return entry ? renderName(entry, binding) : null;
+}
+
+function preferredWorkName(
+  harness: string,
+  serving: readonly CatalogProvider[],
+  binding: ModelRouterBinding,
+): string | null {
+  const preferred = preferredModelOf(
+    "work",
+    serving.map((p) => ({
+      alias: p.alias,
+      listed: p.entries.map((e) => e.upstreamId),
+    })),
+    harness,
+  );
+  const entry = serving
+    .find((p) => p.alias === preferred?.alias)
+    ?.entries.find((e) => e.upstreamId === preferred?.upstreamId);
   return entry ? renderName(entry, binding) : null;
 }
 

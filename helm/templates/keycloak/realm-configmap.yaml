@@ -87,7 +87,13 @@ data:
           "standardFlowEnabled": false,
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": true,
-          "protocol": "openid-connect"
+          "protocol": "openid-connect",
+          {{- /* The api-server's user directory calls the Admin REST API
+                 with this client's service account, and since Keycloak
+                 26.8.2 that API takes only tokens carrying the kc-admin-api
+                 scope's audience. Keycloak adds the scope to its own admin
+                 clients alone; the others listed are its defaults. */}}
+          "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "basic", "email", "kc-admin-api"]
         },
         {
           "clientId": {{ .Values.keycloak.cliClientId | quote }},

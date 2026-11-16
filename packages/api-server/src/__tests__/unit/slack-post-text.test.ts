@@ -169,6 +169,55 @@ describe("renderSlackPostText", () => {
   });
 
   /**
+   * TEST_SCENARIO: An Agent's post with a Channel Card carries the card's text
+   * form in its text, and the card's blocks show the same facts in another
+   * layout. Reading both would repeat every fact on the history line.
+   */
+  it("reads an Agent's card post from its text alone", () => {
+    expect(
+      renderSlackPostText({
+        text: "Deploys\n\n*Status:* green",
+        blocks: [
+          { type: "markdown", text: "Deploys" },
+          { type: "header", text: { type: "plain_text", text: "Deploys" } },
+          {
+            type: "section",
+            fields: [{ type: "mrkdwn", text: "*Status*\ngreen" }],
+          },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: "<http://ui/a/agent-abc123|Alpha>" },
+            ],
+          },
+        ],
+      }),
+    ).toBe("Deploys\n\n*Status:* green");
+  });
+
+  /**
+   * TEST_SCENARIO: An Agent's file share carries its content in mrkdwn
+   * sections, because Slack refuses a `markdown` block there, and its `text`
+   * may not hold that content. Its sections are still read.
+   */
+  it("reads an Agent's file share from its sections", () => {
+    expect(
+      renderSlackPostText({
+        text: "report.md",
+        blocks: [
+          { type: "section", text: { type: "mrkdwn", text: "Weekly totals" } },
+          {
+            type: "context",
+            elements: [
+              { type: "mrkdwn", text: "<http://ui/a/agent-abc123|Alpha>" },
+            ],
+          },
+        ],
+      }),
+    ).toBe("report.md\nWeekly totals");
+  });
+
+  /**
    * TEST_SCENARIO: Slack unfurls a link in a person's post into an
    * attachment. The preview repeats a link that is already in the text.
    */

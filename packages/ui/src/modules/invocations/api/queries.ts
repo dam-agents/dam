@@ -10,6 +10,7 @@ import { trpc } from "../../../trpc.js";
 import { continuedFromOf } from "../lib/continued-from.js";
 import {
   awaitsCapture,
+  hasAsking,
   hasJustEnded,
   hasRunning,
 } from "../lib/delegation-state.js";
@@ -17,6 +18,16 @@ import {
 const LIVE_POLL_MS = 5_000;
 const IDLE_POLL_MS = 15_000;
 const MISSING_ID_POLLS = 6;
+
+export function useKeptSubAgents(driverAgentId: string | null) {
+  return useQuery({
+    ...trpc.invocations.kept.queryOptions(
+      driverAgentId ? { driverAgentId } : skipToken,
+    ),
+    staleTime: IDLE_POLL_MS,
+    refetchInterval: IDLE_POLL_MS,
+  });
+}
 
 export function useDelegationTree(
   driverAgentId: string | null,
@@ -31,7 +42,12 @@ export function useDelegationTree(
     staleTime: 2_000,
     refetchInterval: (query) => {
       const nodes = query.state.data?.nodes;
-      if (nodes && (hasRunning(nodes) || awaitsCapture(nodes, Date.now())))
+      if (
+        nodes &&
+        (hasRunning(nodes) ||
+          hasAsking(nodes) ||
+          awaitsCapture(nodes, Date.now()))
+      )
         return LIVE_POLL_MS;
       const unresolved = !nodes || nodes.length < ids.length;
       const polls = query.state.dataUpdateCount + query.state.errorUpdateCount;
@@ -95,6 +111,21 @@ export function useRunningDelegations(
       opts.busy || hasRunning(query.state.data?.nodes ?? [])
         ? LIVE_POLL_MS
         : IDLE_POLL_MS,
+    retry: false,
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the questions sub-agents under a driver wait on, as one of its chats puts them to the owner; read often, so a question shows soon after it is asked and one answered elsewhere clears.
+export function useOwnerQuestions(
+  driverAgentId: string | null,
+  sessionId: string | null,
+) {
+  return useQuery({
+    ...trpc.invocations.questions.queryOptions(
+      driverAgentId ? { driverAgentId, sessionId } : skipToken,
+    ),
+    staleTime: 1_000,
+    refetchInterval: LIVE_POLL_MS,
     retry: false,
   });
 }

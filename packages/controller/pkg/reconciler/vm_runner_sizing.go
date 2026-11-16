@@ -312,6 +312,16 @@ func (r *AgentReconciler) reclaimWaitsForTheReducedAsk(owner string) bool {
 	return !ok || time.Since(since.(steppedAskTimestamp).at) < steppedGrantGrace
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether this start has waited for the node for a whole grace, counted from the first pass that found it waiting. The grace of a stepped ask belongs to one ask, so it begins again each time the ask changes, and a start whose demand moves during its wake can outlive every grace without one of them running out; this clock belongs to the start instead, so a waiting start gets room within one grace however often its ask changes. A pass that finds the start no longer waiting ends the clock, so the next start of the same agent begins its own.
+func (r *AgentReconciler) allocationWaitSpent(name string, waiting bool) bool {
+	if !waiting {
+		r.allocationWaits.Delete(name)
+		return false
+	}
+	since, _ := r.allocationWaits.LoadOrStore(name, time.Now())
+	return time.Since(since.(time.Time)) >= steppedGrantGrace
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the grace a stepped ask was first seen under.
 type steppedAskTimestamp struct {
 	ask steppedAsk

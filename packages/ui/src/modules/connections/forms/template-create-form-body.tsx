@@ -1,7 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,15 @@ import { templateSubmitLabel } from "../lib/catalog-providers.js";
 import { newParentNameRule } from "../lib/connection-hierarchy.js";
 import { appScopeFieldsChosen } from "../lib/github-app-scope-fields.js";
 import {
+  ANOTHER_HOST,
+  hostChoicesOf,
+  hostnameOf,
+  offeredHostsOf,
+  picksGitHubEnterpriseHost,
+  withHostListed,
+  withHostPicked,
+} from "../lib/github-enterprise-hosts.js";
+import {
   buildTemplateFormSchema,
   templateFormDefaults,
   type TemplateFormValues,
@@ -22,6 +31,7 @@ import {
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { GithubAppSetupHint } from "./github-app-setup-hint.js";
+import { GitHubEnterpriseHostPicker } from "./github-enterprise-host-picker.js";
 import { GithubStepsCallout } from "./github-steps-callout.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
@@ -41,10 +51,11 @@ interface TemplateCreateFormProps {
   initialName?: string;
   onNameChange?: (name: string) => void;
   autoFocusName?: boolean;
+  pickHost?: boolean;
 }
 
 export function TemplateCreateFormBody({
-  template,
+  template: baseTemplate,
   onCreated,
   onAddedAlone,
   onSignedIn,
@@ -54,6 +65,7 @@ export function TemplateCreateFormBody({
   initialName,
   onNameChange,
   autoFocusName = true,
+  pickHost = false,
   layout = (fields, footer) => (
     <>
       {fields}
@@ -63,6 +75,18 @@ export function TemplateCreateFormBody({
 }: TemplateCreateFormProps & {
   layout?: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }) {
+  const picksHost = picksGitHubEnterpriseHost(baseTemplate, pickHost);
+  const offeredHosts = picksHost ? offeredHostsOf(baseTemplate) : [];
+  const [anotherHost, setAnotherHost] = useState(false);
+  const template = useMemo(
+    () =>
+      picksHost
+        ? withHostPicked(baseTemplate, anotherHost)
+        : pickHost
+          ? withHostListed(baseTemplate)
+          : baseTemplate,
+    [baseTemplate, pickHost, picksHost, anotherHost],
+  );
   const connections = useAppConnections().data ?? NO_CONNECTIONS;
   const nameRule = useMemo(
     () => newParentNameRule(template, connections),
@@ -72,14 +96,15 @@ export function TemplateCreateFormBody({
     () => buildTemplateFormSchema(template, nameRule),
     [template, nameRule],
   );
-  const { control, handleSubmit, setValue } = useForm<TemplateFormValues>({
-    resolver: zodResolver(schema),
-    mode: "onChange",
-    defaultValues: {
-      ...templateFormDefaults(template, nameRule),
-      ...(initialName !== undefined ? { name: initialName } : {}),
-    },
-  });
+  const { control, handleSubmit, setValue, clearErrors } =
+    useForm<TemplateFormValues>({
+      resolver: zodResolver(schema),
+      mode: "onChange",
+      defaultValues: {
+        ...templateFormDefaults(template, nameRule),
+        ...(initialName !== undefined ? { name: initialName } : {}),
+      },
+    });
   const isGithubApp = template.authKind === "github-app";
   const [access, fields] = useWatch({ control, name: ["access", "fields"] });
   const alone = isGithubApp && access === "later";
@@ -113,14 +138,24 @@ export function TemplateCreateFormBody({
 
   const credentialsFromFamily = template.extras?.credentialsFromFamily === true;
 
-  const onSubmit = handleSubmit((values) => {
-    const payload = buildCreatePayload(template, values);
-    if ("error" in payload) {
-      emitToast({ kind: "error", message: payload.error });
-      return;
-    }
-    void submit(payload);
-  });
+  const fieldsRef = useRef<HTMLDivElement>(null);
+  const onSubmit = handleSubmit(
+    (values) => {
+      const host = values.fields.host;
+      const payload = buildCreatePayload(
+        template,
+        picksHost && anotherHost && host
+          ? { ...values, fields: { ...values.fields, host: hostnameOf(host) } }
+          : values,
+      );
+      if ("error" in payload) {
+        emitToast({ kind: "error", message: payload.error });
+        return;
+      }
+      void submit(payload);
+    },
+    () => requestAnimationFrame(() => revealFirstError(fieldsRef.current)),
+  );
 
   const submitCopy = templateSubmitLabel(template.id);
   const reachUnchosen =
@@ -129,7 +164,20 @@ export function TemplateCreateFormBody({
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
   );
 
-  const required = template.inputs.filter((i) => i.state === "required");
+  const required = template.inputs.filter(
+    (i) => i.state === "required" && !(picksHost && i.name === "host"),
+  );
+  const presetOf = (name: string): string =>
+    baseTemplate.inputs.find((i) => i.name === name)?.presetValue ?? "";
+  const pickHostChoice = (choice: string) => {
+    const other = choice === ANOTHER_HOST;
+    setAnotherHost(other);
+    setValue("fields.host", other ? "" : choice, { shouldDirty: true });
+    setValue("fields.clientId", other ? "" : presetOf("clientId"));
+    setValue("fields.clientSecret", "");
+    if (!other) setValue("fields.appSlug", presetOf("appSlug"));
+    clearErrors("fields");
+  };
   const optional = template.inputs.filter(
     (i) => i.state === "optional" && !scopeInputNames.has(i.name),
   );
@@ -141,8 +189,12 @@ export function TemplateCreateFormBody({
   const optionalCollapsed = template.category === "mcp";
 
   const fieldsRegion = (
-    <div className="flex flex-col gap-4">
-      <GithubStepsCallout templateId={template.id} />
+    <div ref={fieldsRef} className="flex flex-col gap-4">
+      <GithubStepsCallout
+        templateId={template.id}
+        host={picksHost && !anotherHost ? fields?.host : undefined}
+        ownApp={picksHost && anotherHost}
+      />
 
       <Controller
         control={control}
@@ -164,7 +216,7 @@ export function TemplateCreateFormBody({
         )}
       />
 
-      {bringYourOwnApp && (
+      {bringYourOwnApp && !picksHost && (
         <OAuthAppHint
           callbackUrl={extraStr("callbackUrl")}
           setupUrl={extraStr("setupUrl")}
@@ -173,12 +225,34 @@ export function TemplateCreateFormBody({
 
       {isGithubApp && <GithubAppSetupHint templateId={template.id} />}
 
+      {picksHost && (
+        <GitHubEnterpriseHostPicker
+          control={control}
+          hosts={offeredHosts}
+          anotherHost={anotherHost}
+          onPick={pickHostChoice}
+        />
+      )}
+
+      {bringYourOwnApp && picksHost && (
+        <OAuthAppHint
+          callbackUrl={extraStr("callbackUrl")}
+          setupUrl={extraStr("setupUrl")}
+          where="on your GitHub Enterprise host"
+        />
+      )}
+
       {required.map((input) => (
         <TemplateFieldInput
           key={input.name}
           control={control}
           templateId={template.id}
           input={input}
+          choices={
+            pickHost && input.name === "host"
+              ? hostChoicesOf(template)
+              : undefined
+          }
         />
       ))}
 
@@ -287,4 +361,14 @@ export function TemplateCreateFormBody({
   );
 
   return <>{layout(fieldsRegion, footerRegion)}</>;
+}
+
+function revealFirstError(fields: HTMLElement | null): void {
+  const alert = fields?.querySelector<HTMLElement>('[role="alert"]');
+  const field = alert?.parentElement;
+  if (!alert || !field) return;
+  field.scrollIntoView({ block: "center", behavior: "smooth" });
+  field.querySelector<HTMLElement>("input, select, textarea")?.focus({
+    preventScroll: true,
+  });
 }

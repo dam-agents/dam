@@ -62,6 +62,8 @@ type bootstrapParams struct {
 	RepairGeneration       int
 	// UNIT_BOUNDARY_DESCRIPTION: the epoch this agent's credential key set last changed at. It is folded into the health revision, which is what makes a repair's receipt belong to the arrival it repairs: a rendering can return to a content hash it had before, but not to an epoch it has left.
 	ArrivalEpoch int
+	// UNIT_BOUNDARY_DESCRIPTION: whether the outer listener admits only connections from outside the pod. Every agent of an owner shares the pod's loopback and its own address, so a connection from either is a sibling re-entering through the forward proxy, never a machine.
+	ExternalSourceOnly bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's own directory, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
@@ -239,6 +241,17 @@ func buildOuterListener(p bootstrapParams) ev {
 	}
 	if p.Transparent {
 		acceptTransparentTLS(listener, p)
+	}
+	if p.ExternalSourceOnly {
+		for _, c := range listener["filter_chains"].([]any) {
+			chain := c.(ev)
+			match, ok := chain["filter_chain_match"].(ev)
+			if !ok {
+				match = ev{}
+				chain["filter_chain_match"] = match
+			}
+			match["source_type"] = "EXTERNAL"
+		}
 	}
 	return listener
 }
@@ -425,7 +438,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": chainHeadersToRemove(p),
+					"request_headers_to_remove": chainHeadersToRemoveFor(p, c),
 				},
 			},
 		},
@@ -491,6 +504,15 @@ func chainHeadersToRemove(p bootstrapParams) []any {
 	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader, callStampHeader}
 	if p.HarnessGuardAgent != "" {
 		headers = append(headers, harnessGuardHeader)
+	}
+	return headers
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a chain whose upstream is the api-server itself also drops the client address headers, which no upstream of an agent's choosing is told and which the api-server would otherwise believe: its audit log reads the first X-Forwarded-For as the caller's address, so a holder of this Connection could write an address of their choosing into it. The Agent Key chain drops them for the same reason, as the ingress does. */
+func chainHeadersToRemoveFor(p bootstrapParams, c envoyHostChain) []any {
+	headers := chainHeadersToRemove(p)
+	if c.InCluster {
+		headers = append(headers, "x-forwarded-for", "x-real-ip")
 	}
 	return headers
 }
@@ -1050,7 +1072,7 @@ func buildClusters(p bootstrapParams) []any {
 	}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA, p.APIServerHost, p.APIServerPort))
 		}
 	}
 	if p.Telemetry {
@@ -1134,7 +1156,11 @@ func pinnedTCPCluster(name, host string, port int) ev {
 	}
 }
 
-func buildUpstreamCluster(c envoyHostChain, trustedCA string) ev {
+/* UNIT_BOUNDARY_DESCRIPTION: a chain marked in-cluster dials the api-server's public Service by name and port, plain TCP — the ambient mesh carries it, as it carries the Agent Key chain — instead of the host the Agent named, so no Host, SNI or DNS answer can send the install's key anywhere else. */
+func buildUpstreamCluster(c envoyHostChain, trustedCA string, apiserverHost string, apiserverPort int) ev {
+	if c.InCluster {
+		return pinnedTCPCluster(c.UpstreamCluster, apiserverHost, apiserverPort)
+	}
 	if c.UpstreamCAFile != "" {
 		trustedCA = c.UpstreamCAFile
 	}

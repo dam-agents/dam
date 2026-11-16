@@ -5,7 +5,10 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  invocationAnswerInputSchema,
+  invocationsQuestionsInputSchema,
   invocationStopInputSchema,
+  invocationsKeptInputSchema,
   invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
   invocationsTreeInputSchema,
@@ -18,6 +21,12 @@ export const invocationsRouter = t.router({
       checkAgentBinding(ctx, input.driverAgentId);
       return ctx.invocationsQuery.tree(input);
     }),
+  kept: readAgentProcedure
+    .input(invocationsKeptInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsQuery.kept(input);
+    }),
   running: readAgentProcedure
     .input(invocationsRunningInputSchema)
     .query(({ ctx, input }) => {
@@ -29,6 +38,18 @@ export const invocationsRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.driverAgentId);
       return ctx.invocationsQuery.transcript(input);
+    }),
+  questions: readAgentProcedure
+    .input(invocationsQuestionsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsQuery.questions(input);
+    }),
+  answer: operateAgentsProcedure
+    .input(invocationAnswerInputSchema)
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.driverAgentId);
+      return ctx.invocationsControl.answer(input);
     }),
   stop: operateAgentsProcedure
     .input(invocationStopInputSchema)

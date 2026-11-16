@@ -40,7 +40,7 @@ export interface SidebarSlice {
 }
 
 function readStoredSidebarExpanded(): boolean {
-  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, false);
+  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, true);
 }
 
 function readStoredSessionFilter(): ActivityFilters {

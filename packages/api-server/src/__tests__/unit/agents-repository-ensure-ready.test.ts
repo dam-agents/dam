@@ -249,6 +249,46 @@ describe("ensureReady", () => {
     });
   }
 
+  // TEST_SCENARIO: an agent the owner gateway serves keeps the GatewayPodReady=Hibernated its sleep left: a parked start writes only Ready and AgentPodReady, and its own gateway is never scaled up. A timeout that logs that reason sends the reader to a gateway that is not part of the wait, so the log leaves it out and names the machine's reason, which is the wait.
+  it("timeout: a start waiting for the node does not log the gateway's reason from its sleep", async () => {
+    const { repo, lines } = harness([
+      agentObj("a1", [
+        ...AWAITING_ALLOCATION,
+        { type: "GatewayPodReady", status: "False", reason: "Hibernated" },
+      ]),
+    ]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    await expect(p).rejects.toSatisfy(isAgentWakeTimeoutError);
+    const warn = lines.find((l) => l.msg === "agent.wake.timeout");
+    expect(warn?.cause).toBe("wake-timeout:agent-pod-not-ready");
+    expect(warn?.machineNotReadyReason).toBe("AwaitingAllocation");
+    expect(warn).not.toHaveProperty("gatewayPodNotReadyReason");
+    expect(warn).not.toHaveProperty("gatewayPodReady");
+  });
+
+  // TEST_SCENARIO: a gateway that is really not ready keeps its reason in the timeout log, since that is the wait the reader has to look at.
+  it("timeout: a gateway that is not ready keeps its reason in the log", async () => {
+    const { repo, lines } = harness([
+      agentObj("a1", [
+        { type: "Ready", status: "False", reason: "PodsNotReady" },
+        { type: "AgentPodReady", status: "True", reason: "PodReady" },
+        {
+          type: "GatewayPodReady",
+          status: "False",
+          reason: "OwnerGatewayListenerStale",
+        },
+      ]),
+    ]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const warn = lines.find((l) => l.msg === "agent.wake.timeout");
+    expect(warn?.gatewayPodReady).toBe(false);
+    expect(warn?.gatewayPodNotReadyReason).toBe("OwnerGatewayListenerStale");
+  });
+
   it("timeout with the CR deleted mid-wake → not-found", async () => {
     const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
