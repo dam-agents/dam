@@ -22,6 +22,7 @@ The gateway refuses a longer body with a 413 instead of sending part of it: a ch
 Other chains read no body.
 The gate reads every request such a chain sends, also one whose path the spend meter does not count, since the meter's mark of the chain, not of the path, says it is a model call.
 
+The gateway and the approval check both read the setting from the Agent's spec, so they agree in every agent store.
 The setting is part of the gateway's revision, so turning it on or off restarts that agent's gateway, a few seconds without egress, and the UI warns first, as it does for a rule that changes what the gateway inspects.
 On an owner gateway, only that agent's listener changes.
 A model call that has a body but reaches the gate without it comes from a gateway still restarting onto the setting, and is refused with a retryable answer rather than passed.

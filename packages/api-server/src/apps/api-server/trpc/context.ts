@@ -214,6 +214,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   const slackDmBridges = createSlackDmBridgesRepository(db);
 
   const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  const webSearchControlOf = async (agentId: string) =>
+    (await agentsRepo.get(agentId))?.spec.webSearchControl === true;
   const agentOfTarget = createAgentTargetResolver({
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
@@ -602,7 +604,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
       egressRuleWriter,
-      webSearchRuleWriter: createWebSearchGatePorts(db).ruleWriter,
+      webSearchRuleWriter: createWebSearchGatePorts(db, webSearchControlOf)
+        .ruleWriter,
       wrapperFrameSender,
       childEgressAnswered: recordEgressAnswerAdapter(db),
       childEgressSwitch: {
@@ -614,6 +617,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const webSearch = composeWebSearchForOwner({
       db,
+      controlOf: webSearchControlOf,
       ownerSub: user.sub,
       actor: user.actingEditor ?? user.sub,
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),

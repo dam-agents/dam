@@ -10,6 +10,8 @@ import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateWebSearchServiceDeps {
   repo: WebSearchRepository;
+  /* UNIT_BOUNDARY_DESCRIPTION: whether the Agent's own spec has web search control on. The spec is what the controller renders the gateway from, in every agent store, so it is the one place the switch is read. */
+  controlOf(agentId: string): Promise<boolean>;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   actor: string;
@@ -46,7 +48,7 @@ export function createWebSearchService(
 
   async function stateOf(agentId: string): Promise<WebSearchStateView> {
     const [control, rule] = await Promise.all([
-      deps.repo.controlOf(agentId),
+      deps.controlOf(agentId),
       deps.repo.ruleOf(agentId),
     ]);
     return { control, rule: rule ? await viewOf(rule) : null };

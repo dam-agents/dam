@@ -2280,7 +2280,11 @@ export async function bootstrap() {
     attendance: turnAttendance,
     spend: spend.check,
     webSearch: {
-      ...createWebSearchGatePorts(db),
+      ...createWebSearchGatePorts(
+        db,
+        async (agentId) =>
+          (await agentsRepo.get(agentId))?.spec.webSearchControl === true,
+      ),
       sessions: {
         isScheduled: async (agentId, sessionId) =>
           (await sessionDirectory.categorize([agentId], [sessionId])).get(

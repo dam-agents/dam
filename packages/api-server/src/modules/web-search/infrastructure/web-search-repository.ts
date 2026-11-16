@@ -1,9 +1,8 @@
-import { controlAgents, eq, sql, webSearchRules, type Db } from "db";
+import { eq, sql, webSearchRules, type Db } from "db";
 import type { WebSearchVerdict } from "api-server-api";
 import type { WebSearchRuleRow } from "../domain/types.js";
 
 export interface WebSearchRepository {
-  controlOf(agentId: string): Promise<boolean>;
   ruleOf(agentId: string): Promise<WebSearchRuleRow | null>;
   writeRule(input: {
     agentId: string;
@@ -20,15 +19,6 @@ function verdictOf(value: string): WebSearchVerdict {
 
 export function createWebSearchRepository(db: Db): WebSearchRepository {
   return {
-    async controlOf(agentId) {
-      const rows = await db
-        .select({ control: controlAgents.webSearchControl })
-        .from(controlAgents)
-        .where(eq(controlAgents.id, agentId))
-        .limit(1);
-      return rows[0]?.control === true;
-    },
-
     async ruleOf(agentId) {
       const rows = await db
         .select()

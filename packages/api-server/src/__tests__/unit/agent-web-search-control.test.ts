@@ -4,6 +4,7 @@ import {
   createBuiltinContributions,
   WEB_SEARCH_CONTROL_ENV,
 } from "../../modules/runtime-delivery/services/builtin-contributions.js";
+import { createWebSearchGatePorts } from "../../modules/web-search/compose.js";
 import { stubAgentsService } from "../helpers/agents-service-stub.js";
 
 const create = { name: "test-agent", image: "example.com/agent:latest" };
@@ -81,6 +82,23 @@ describe("an agent's web search control", () => {
       const { agents, pushRuntimeState } = stubAgentsService();
       await agents.update({ id: "agent-1", webSearchControl: value });
       expect(pushRuntimeState).toHaveBeenCalledWith("agent-1");
+    },
+  );
+
+  // TEST_SCENARIO: an install that keeps its Agents as Kubernetes resources has no agent rows in the database. The gate reads the switch from the Agent's spec, the same spec the gateway is rendered from, so it holds a search there too and never touches the database for it.
+  it.each([true, false])(
+    "the gate reads control %s from the Agent's spec",
+    async (control) => {
+      const noDatabase = new Proxy(
+        {},
+        {
+          get() {
+            throw new Error("the switch is not read from the database");
+          },
+        },
+      ) as Parameters<typeof createWebSearchGatePorts>[0];
+      const ports = createWebSearchGatePorts(noDatabase, async () => control);
+      expect(await ports.control.isOn("agent-1")).toBe(control);
     },
   );
 

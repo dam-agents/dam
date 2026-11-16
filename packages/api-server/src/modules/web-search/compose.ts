@@ -17,10 +17,13 @@ export function composeWebSearchForOwner(
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the ext_authz gate reads for web search: an agent's switch and its rule, and how a permanent verdict on a held search writes that rule.
-export function createWebSearchGatePorts(db: Db) {
+export function createWebSearchGatePorts(
+  db: Db,
+  controlOf: (agentId: string) => Promise<boolean>,
+) {
   const repo = createWebSearchRepository(db);
   return {
-    control: { isOn: (agentId: string) => repo.controlOf(agentId) },
+    control: { isOn: controlOf },
     rules: {
       verdictOf: async (agentId: string) =>
         (await repo.ruleOf(agentId))?.verdict ?? null,

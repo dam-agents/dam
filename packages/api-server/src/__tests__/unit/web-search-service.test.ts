@@ -7,7 +7,6 @@ import type { WebSearchRuleRow } from "../../modules/web-search/domain/types.js"
 function makeService(owned = true) {
   const rules = new Map<string, WebSearchRuleRow>();
   const repo: WebSearchRepository = {
-    controlOf: async (agentId) => agentId === "agent-1",
     ruleOf: async (agentId) => rules.get(agentId) ?? null,
     writeRule: async ({ agentId, verdict, decidedBy }) => {
       const row = { agentId, verdict, decidedBy, decidedAt: new Date(0) };
@@ -19,6 +18,7 @@ function makeService(owned = true) {
   };
   return createWebSearchService({
     repo,
+    controlOf: async (agentId) => agentId === "agent-1",
     isAgentOwnedBy: async () => owned,
     ownerSub: "owner-1",
     actor: "editor-1",
