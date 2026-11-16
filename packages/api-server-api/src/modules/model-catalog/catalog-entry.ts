@@ -10,6 +10,11 @@ export interface ModelPrices {
   cacheWritePerToken: number | null;
 }
 
+export type ThinkingLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
+
 export type MetadataSource = "provider" | "table" | "known" | "preset" | "none";
 
 export interface ModelMetadata {
@@ -19,6 +24,7 @@ export interface ModelMetadata {
   vision: boolean | null;
   cacheControl: "anthropic" | null;
   thinkingFormat: "zai" | null;
+  thinkingLevelMap?: ThinkingLevelMap | null;
   prices: ModelPrices | null;
   source: { limits: MetadataSource; prices: MetadataSource };
 }

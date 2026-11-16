@@ -6,6 +6,21 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
+  # The pi-agent image pins @earendil-works/pi-coding-agent 1.5.1 (2026-11-09
+  # 23:45 UTC), the first release that keeps a margin for the input estimate
+  # when it asks for the rest of a model's window as output, which the
+  # CurveBender models' output limits rely on; the extensions type-check and
+  # the Pi tests run against the same version, and the fork publishes all its
+  # packages in lockstep. Drop these once the release ages past the floor
+  # (2026-11-16 23:45 UTC).
+  - "@earendil-works/pi-agent-core@1.5.1"
+  - "@earendil-works/pi-ai@1.5.1"
+  - "@earendil-works/pi-codemode@1.5.1"
+  - "@earendil-works/pi-coding-agent@1.5.1"
+  - "@earendil-works/pi-mcp@1.5.1"
+  - "@earendil-works/pi-schema@1.5.1"
+  - "@earendil-works/pi-telemetry@1.5.1"
+  - "@earendil-works/pi-tui@1.5.1"
   # qs 6.16.2 (2026-10-27) fixes CVE-2026-110910, reached through express under
   # @slack/bolt. Drop this once it ages past the floor (2026-11-03).
   - "qs@6.16.2"
