@@ -358,8 +358,41 @@ describe("the DAM connection template", () => {
       "Ask at most three questions before the result, and only what this task needs.",
       "Until the first result, never ask them to connect anything",
       "The three are counted across every turn of the task",
+      "Saved to memory: how you make decks. Want to make a deck now? Tell me what it's about and who it's for, or upload an outline.",
+      "Ask me anything about it.",
+      "Want me to file it in GitHub for you? Connect GitHub and I'll open it in your repo.",
+      "I haven't learned that information yet. Would you like to create a knowledge base so I can answer questions like this in the future?",
     ])
       expect(skill).toContain(words(line));
+  });
+
+  // TEST_SCENARIO: the design asks after a schedule whether to send its results to the DMs instead, and after an artifact whether to draft the next one on a schedule and send it there, so each offer stays under its own kind of result; after a ticket only the GitHub offer is made.
+  it("pairs each Bridge offer with the result the design gives it", () => {
+    const skill = words(assistantGuide());
+    expect(skill).toContain(
+      "After a ticket, the GitHub offer replaces this one.",
+    );
+    expect(skill).toContain(
+      words('- A schedule: "Want them sent to your Slack DMs instead?'),
+    );
+    expect(skill).toContain(
+      words(
+        '- An artifact: "Want me to draft your leadership update every Friday and send it to your Slack DMs?',
+      ),
+    );
+  });
+
+  // TEST_SCENARIO: a knowledge base in onboarding is the assistant's notes about the person's project in its own memory, never a Knowledge Base Agent, and saving how they work is no result of its own; the one-off rule names the single thing it adds when nothing it knows or looks up answers, once per topic, so the two rules no longer contradict.
+  it("saves a knowledge base to memory and offers one only when it can't answer", () => {
+    expect(ASSISTANT_ONBOARDING_RULES).toContain(
+      "These notes about their project, in your memory file, are the result; never create a new Agent for them.",
+    );
+    expect(ASSISTANT_ONBOARDING_RULES).toContain(
+      "Saving how they work is not a result.",
+    );
+    expect(ASSISTANT_ONBOARDING_RULES).toMatch(
+      /A one-off question gets its answer and nothing more[^\n]*When neither what you know nor what you can look up answers it, say only:[^\n]*Make that offer once per topic/,
+    );
   });
 });
 
