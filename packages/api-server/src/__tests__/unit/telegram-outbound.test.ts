@@ -12,11 +12,17 @@ import {
  * TEST_OVERVIEW: What an Agent post sends to Telegram through the Chat SDK
  * adapter. Plain text goes as it is, and a file goes with its text as
  * Markdown. Telegram has no Block Kit, so a Channel Card goes as its text
- * form under the Agent's text.
+ * form under the Agent's text, and each of its link buttons as a Telegram
+ * button.
  */
 
+const header: ChannelBlock = {
+  type: "header",
+  text: { type: "plain_text", text: "Deploys" },
+};
+
 const blocks: ChannelBlock[] = [
-  { type: "header", text: { type: "plain_text", text: "Deploys" } },
+  header,
   {
     type: "actions",
     elements: [
@@ -38,23 +44,46 @@ describe("telegramPayload", () => {
 
   /**
    * TEST_SCENARIO: The answer must not depend on where the person asked. In
-   * Telegram the card's content arrives as Markdown text under the Agent's
-   * text, in the same order as in Slack.
+   * Telegram the card's content arrives as text under the Agent's text, and
+   * its link button as a Telegram button, so the link is not also a line of
+   * the text.
    */
-  it("puts the agent's text first, then the card's text form", () => {
-    expect(telegramPayload("This week", { card })).toEqual({
-      markdown: "This week\n\nDeploys\n[Open](https://example.com)",
-    });
+  it("puts the agent's text first, then the card's text, and keeps its link buttons", () => {
+    const payload = telegramPayload("This week", { card });
+    if (typeof payload === "string" || !("card" in payload))
+      throw new Error("expected a card");
+    expect(payload.card.children).toMatchObject([
+      { type: "text", content: "This week\n\nDeploys" },
+      {
+        type: "actions",
+        children: [
+          { type: "link-button", label: "Open", url: "https://example.com" },
+        ],
+      },
+    ]);
   });
 
-  it("sends a card without text as its text form, with its file", () => {
+  it("sends a card without text as its text and buttons, with its file", () => {
     const payload = telegramPayload("", {
       card,
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    if (typeof payload === "string") throw new Error("expected Markdown");
-    expect(payload.markdown).toBe("Deploys\n[Open](https://example.com)");
+    if (typeof payload === "string" || !("card" in payload))
+      throw new Error("expected a card");
+    expect(payload.card.children.map((child) => child.type)).toEqual([
+      "text",
+      "actions",
+    ]);
     expect(payload.files?.[0]?.filename).toBe("report.md");
+  });
+
+  // TEST_SCENARIO: blocks with no link button need no Telegram card, so the message goes as Markdown text.
+  it("sends blocks without a link button as Markdown text", () => {
+    expect(
+      telegramPayload("This week", {
+        card: { blocks: [header], text: channelBlocksText([header]) },
+      }),
+    ).toEqual({ markdown: "This week\n\nDeploys" });
   });
 });
 
