@@ -1,7 +1,7 @@
 # The k-search config environment, packed onto the default image.
 
-# K-Search runs from its source tree, with KernelBench's copied in; oci_link
-# is where the image task links a tool's install.
+# K-Search runs from its source tree, with KernelBench's copied in; _.oci_links
+# names where the image task links a tool's install.
 [tools."http:kernelbench"]
 version = "423217d9fda91e0c2d67e4a43bf62f96f6d104f1"
 url = "https://github.com/ScalingIntelligence/KernelBench/archive/{{ version }}.tar.gz"
@@ -15,7 +15,6 @@ checksum = "sha256:dd6c4283828aab225901a5ede98c05695df924160484fed74b0d4594c86ef
 strip_components = 1
 depends = ["http:kernelbench"]
 postinstall = "{{config_root}}/k-search/patch-tasks.sh"
-oci_link = "/opt/k-search"
 
 # KernelBench ships no executable, so modal, which it needs, carries the venv.
 # The api-proxy-support extra lets modal's own transports honor HTTPS_PROXY.
@@ -34,7 +33,11 @@ uvx_args = "--with openai==2.54.0 --with kernelbench[gpu]@https://github.com/Sca
 [tools."npm:@agentclientprotocol/sdk"]
 version = "2.4.0"
 postinstall = 'cp {{config_root}}/k-search/ksearch-acp-shim.mjs "$MISE_TOOL_INSTALL_PATH/"'
-oci_link = "/opt/ksearch-acp"
+
+# mise rejects an option its backend does not use, and never reads `_`.
+[_.oci_links]
+"http:k-search" = "/opt/k-search"
+"npm:@agentclientprotocol/sdk" = "/opt/ksearch-acp"
 
 [oci.env]
 # Its root generation segment, after the default image's key (oci's build_thin).
