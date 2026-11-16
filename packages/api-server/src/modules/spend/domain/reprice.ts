@@ -46,13 +46,21 @@ const AWAITING_REASON = "awaiting-price";
  * price for its model, at the standard tier, because a row keeps no tier. A
  * waiting call stops being an estimate unless another reason remains, such as
  * a cut stream; an old estimate stays marked, because its row does not say
- * why it was estimated. Null while the book still has no price for it.
+ * why it was estimated. Null while the book still has no price for it, and
+ * for a row without input tokens: such a call had no usage, so its cost came
+ * from the payer's most expensive call or from nothing, never from a price.
  */
 export function repriceCall(
   candidate: RepriceCandidate,
   kind: RepriceKind,
   book: PriceBook,
 ): CallReprice | null {
+  const inputTokens =
+    candidate.uncachedInputTokens +
+    candidate.cacheReadTokens +
+    candidate.cacheWrite5mTokens +
+    candidate.cacheWrite1hTokens;
+  if (inputTokens === 0) return null;
   const usage: NormalizedUsage = {
     uncachedInputTokens: candidate.uncachedInputTokens,
     outputTokens: candidate.outputTokens,

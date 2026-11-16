@@ -127,10 +127,12 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     replyCostMicros: proxyCostMicros(record.proxyCost),
     webSearches: metered.webSearches,
   });
-  const awaiting = price.source === "awaiting";
-  const cost = callCostMicros(price, metered);
+  const awaiting = reported && price.source === "awaiting";
+  const unanswered =
+    record.final && !reported && record.status === null && !record.replyBytes;
+  const cost = unanswered ? 0 : callCostMicros(price, metered);
   const needsReferenceCost =
-    record.final && !awaiting && (cost === null || !reported);
+    record.final && !unanswered && (cost === null || !reported);
   const estimateReasons = (
     [
       [outputShort && !record.complete, "stream-cut"],
@@ -148,7 +150,8 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
     provider,
     unit: unitOf(provider),
     model: record.model ?? UNKNOWN_MODEL,
-    priceSource: price.source,
+    priceSource:
+      price.source === "awaiting" && !awaiting ? "estimate" : price.source,
     priceModel,
     needsReferenceCost,
     estimateReasons,

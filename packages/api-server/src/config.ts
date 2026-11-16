@@ -169,7 +169,7 @@ const dollarTierPricesSchema = z.strictObject({
   thresholds: z.array(dollarPriceStepSchema).optional(),
 });
 
-// UNIT_BOUNDARY_DESCRIPTION: the chart's operator prices for model calls, in dollars per million tokens and per web search. They win over every other price, and the chart ships IBM LiteLLM's own prices, which no public price list has.
+// UNIT_BOUNDARY_DESCRIPTION: the chart's operator prices for model calls, in dollars per million tokens and per web search. They win over every other price, so they correct a price; the chart ships none, because DAM reads IBM LiteLLM's prices from its model info.
 const spendPriceOverridesSchema = z
   .string()
   .default("[]")

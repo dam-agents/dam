@@ -920,7 +920,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           ${
             kind === "backfill"
               ? sql`AND estimated AND model <> ${UNKNOWN_MODEL}
-                AND uncached_input_tokens + output_tokens + cache_read_tokens
+                AND uncached_input_tokens + cache_read_tokens
                   + cache_write_5m_tokens + cache_write_1h_tokens > 0`
               : sql``
           }

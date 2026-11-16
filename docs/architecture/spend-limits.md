@@ -121,10 +121,11 @@ Two kinds of IBM LiteLLM call are priced again from their stored token counts, a
 
 - **A call that waited for its price** is priced again as soon as a read brings a price for its model.
   It stays an estimate only when another reason remains, such as a cut stream.
-- **An estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has token counts and names a model with a price.
+- **An estimate written before calls recorded where their price came from** is priced again after each full read, while it is inside the 30 days of call rows, has input tokens and names a model with a price.
   It stays marked as an estimate, because its row does not say why it was estimated.
 
 A call that had a real price never changes.
+A call without input tokens never changes either, because its cost came from the payer's most expensive call or from nothing, not from a price.
 Each re-priced batch writes one `spend.repriced` log line with the number of calls, the total difference and its kind, and the counter `platform.spend.repriced` counts the calls by provider and kind.
 DAM compares its cost with the proxy's own cost on every completed dollar call whose reply carries that cost, cache reads and writes included, except a response-cache replay.
 The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
@@ -226,12 +227,14 @@ A call row changes only while its price source is still the one that was read, s
 ## Estimates
 
 DAM marks a call estimated when its usage or its price is missing or unsure.
-It counts high, except for an IBM LiteLLM call that waits for its price:
+It counts high, except for a call that got no answer and an IBM LiteLLM call that waits for its price:
 
 - **A stream that stopped early** keeps the counts read so far, and its output is estimated from the reply size when that gives more.
 - **A successful reply without usage** counts as the payer's most expensive call on that Connection that day, else in the last seven days, because the reply does not show its input.
   A failed reply without usage counts nothing, because the provider does not bill it.
-- **A call cut before any reply arrived**, by a timeout, an interrupt or a gateway restart, counts the same way as a successful reply without usage, because the provider may still bill it.
+- **A call that got no answer**, with no HTTP status and no reply byte, counts nothing and is marked estimated.
+  The client closed it before the provider answered, by an interrupt, a timeout or a gateway restart, and LiteLLM bills nothing for a stream cut before its first chunk.
+  A call that is not streamed can still be billed for its prompt, and DAM does not see that cost.
 - **A Bob reply without Bobcoins** counts as the payer's most expensive call on that Connection that day, else in the last seven days.
   Bob Shell cancels one call in each prompt before Bob sends its Bobcoins, so Bob totals run higher than Bob's own figure.
 - **A call whose record never arrived.**
@@ -239,6 +242,7 @@ It counts high, except for an IBM LiteLLM call that waits for its price:
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
   A real record that arrives later corrects the estimate.
 - **An IBM LiteLLM call that waits for its price** counts nothing and is marked estimated with the reason `awaiting-price`.
+  Only a call with usage waits; a call without usage follows the rules above, whatever its model.
   It writes one `spend.call_awaiting_price` log line with the call, the Connection and the model, and the counter `platform.spend.awaiting_price` counts it by provider and model.
   The api-server reads the call's Connection at once, without making the call wait, one read at a time and at most once in five minutes per Connection, so the price normally arrives within seconds.
   Until the price arrives, a spend limit does not see the call; when it arrives, DAM prices the call again ([When a cost is fixed](#prices)).
