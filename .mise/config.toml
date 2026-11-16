@@ -31,12 +31,12 @@ repo_root = "{{config_root}}"
 # 2026-10-29, nginx 2026-10-27), so those pins wait for the next run.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4163796d8b7f28021178093d31cb97c05336fd3f3a4d7006603a7fef29e997e7"
-# The 26.8.1 tag was rebuilt on 2026-10-31T10:43Z with a current base OS: it
-# clears the OpenJDK, ca-certificates and pcre2 findings of the 2026-10-13
-# build this pin held, so it carries a dated exception that ends
-# 2026-11-07T10:43Z. Keycloak's own libraries (mariadb-java-client,
+# Keycloak 26.8.2 (released 2026-11-05) fixes some thirty Keycloak CVEs and
+# the glibc and libgcc findings of the 26.8.1 build. Its image was rebuilt on
+# 2026-11-12T13:31Z, so this pin carries a dated exception to the 7-day floor
+# that ends 2026-11-19T13:31Z. Keycloak's own libraries (mariadb-java-client,
 # opentelemetry-api, guava) still wait on a newer upstream release.
-base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0"
 # nginx 1.30.6's floor exception is spent: this build was pushed
 # 2026-10-15T06:51:53Z, so it has been eligible since 2026-10-22T06:51:53Z. It
 # fixes CVE-2026-15176, CVE-2026-93479, CVE-2026-95101, CVE-2026-97629 and
