@@ -1,7 +1,11 @@
 // TEST_OVERVIEW: A run always has a model, so an Agent that says hello while nothing it holds serves its harness is granted the deployment's shared CurveBender, once, and only then, and the defaults that follow are published through the transaction that read them.
 import { describe, expect, it, vi } from "vitest";
 import type { Db, DbTx } from "db";
-import type { HarnessCatalog, ProviderCatalogView } from "api-server-api";
+import type {
+  HarnessCatalog,
+  ProviderCatalogView,
+  SessionPair,
+} from "api-server-api";
 import { composeSharedCurveBender } from "../../modules/harness-config/compose.js";
 import { createSharedCurveBenderGrant } from "../../modules/harness-config/services/shared-curvebender.js";
 import type { GrantedProvider } from "../../modules/harness-config/domain/session-pair.js";
@@ -60,6 +64,7 @@ function hello(opts?: {
   capabilities?: unknown;
   granted?: GrantedProvider[];
   providers?: ProviderCatalogView[];
+  chatDefault?: SessionPair;
 }) {
   const granted = vi.fn(async () => true);
   const publishDefaults = vi.fn(async () => {});
@@ -73,6 +78,7 @@ function hello(opts?: {
       providers: opts?.providers ?? [],
     }),
     grantedProviders: async () => opts?.granted ?? [IBM],
+    chatDefault: async () => opts?.chatDefault ?? null,
     grant: granted,
     publishDefaults,
     log: (msg) => messages.push(msg),
@@ -96,6 +102,32 @@ describe("the shared CurveBender an Agent gets at hello", () => {
     await h.onHello("agent-1");
     expect(h.granted).not.toHaveBeenCalled();
     expect(h.publishDefaults).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: a create that named its provider and model saved that default before the provider listed anything, so a hello before the listing leaves the agent on the provider it was given rather than granting it a second one (#6527). */
+  it("grants nothing when the chat default names a granted provider that runs its harness", async () => {
+    const h = hello({
+      chatDefault: {
+        harness: "claude-code",
+        provider: IBM.id,
+        model: "ibm/aws/opus",
+      },
+    });
+    await h.onHello("agent-1");
+    expect(h.granted).not.toHaveBeenCalled();
+  });
+
+  /** TEST_SCENARIO: a saved default whose provider the agent no longer holds is no reason to wait, so the agent still gets the shared one. */
+  it("grants it when the chat default names a provider the agent does not hold", async () => {
+    const h = hello({
+      chatDefault: {
+        harness: "claude-code",
+        provider: "gone",
+        model: "ibm/aws/opus",
+      },
+    });
+    await h.onHello("agent-1");
+    expect(h.granted).toHaveBeenCalledTimes(1);
   });
 
   /** TEST_SCENARIO: an Agent holding an own-key CurveBender occupies the one `cb` alias, so the shared one is never granted beside it. */
@@ -138,6 +170,7 @@ describe("the shared CurveBender an Agent gets at hello", () => {
       specHarness: async () => undefined,
       ownerCatalog: async () => ({ providers: [] }),
       grantedProviders: async () => [IBM],
+      chatDefault: async () => null,
       grant: async () => {
         throw new Error("db down");
       },

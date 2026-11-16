@@ -191,6 +191,7 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentDefaultProvider,
+  AgentStart,
   AgentUpdateInput,
   AgentBackgroundWork,
   BackgroundWorkItemView,

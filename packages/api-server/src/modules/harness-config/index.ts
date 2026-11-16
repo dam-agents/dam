@@ -7,6 +7,7 @@ export {
   composeHarnessConfigReset,
   composeSessionChoicesValidator,
   composeSharedCurveBender,
+  composeStartPair,
   type FirePair,
 } from "./compose.js";
 export { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
