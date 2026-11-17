@@ -171,7 +171,7 @@ Both answers are recorded in the activity log.
 
 The bell tells the owner what their assistant's [security check](assistant.md#the-security-check) found, as one card: a short title for each problem, and when the check ran.
 The card is the last report the assistant made, and only while that report names a problem: a report with none takes the card away.
-It is read from the owner's one record, so a sleeping Agent is never woken for it, and it is computed only for a person the feature is on for.
+It is read from the owner's one record, so a sleeping Agent is never woken for it, and it is shown only to a person the feature is on for.
 The card counts in the panel's badge like an approval.
 
 It opens the Session of the check's latest run, where the assistant already described each problem and offers to fix it, so nothing runs again and no finding is copied into a new chat.

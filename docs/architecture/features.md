@@ -46,8 +46,7 @@ It controls where a feature *appears*:
 - **A rollup inside a shared read** — where a feature adds one section to a response every caller already receives, the flag decides whether that section is computed.
   The gate is a cost decision, not an access one: the section rides in a procedure nobody can opt out of, so leaving it ungated would charge every user its backing queries to render nothing.
   Off, the field comes back empty; the procedure itself stays open.
-  The security check gates one: its alert in the attention list ([home-feed](home-feed.md#security-check-alert)) is read only for a person the flag is on for.
-  The spend-by-session-kind rollup in [metrics](metrics.md) was another before it graduated.
+  No current feature gates a rollup (the spend-by-session-kind rollup in [metrics](metrics.md) did before it graduated).
 
 What none of these do is **gate an endpoint**: the feature's tRPC procedures remain callable by the authenticated owner regardless of the flag, and a flagged-off client that calls one gets a valid, owner-scoped answer rather than a refusal.
 Every endpoint is owner-scoped and safe on its own terms — a flag decides what is shown and what is computed, it is not a security boundary.
