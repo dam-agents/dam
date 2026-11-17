@@ -67,7 +67,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security check* and says each check spends the model budget.
   Switching it on adds an ordinary schedule named *Security check* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
   When a check found something, the approvals bell shows one card under the assistant's name, headed *Your setup has N security problem(s)*, with one line per problem and a *Review in chat* button that opens the session of that check.
-  *Dismiss* hides that card until the next check reports; nothing in the setup changes until the person agrees in that chat.
+  *Dismiss* hides that card until the next check reports; nothing in the setup changes until the person agrees in that chat, and deleting the schedule takes the card away.
 
 ## What the nested install cannot do
 

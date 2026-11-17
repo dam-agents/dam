@@ -1,9 +1,12 @@
 import type {
+  FeatureMode,
   SchedulesService,
   SecurityCheckReport,
   SecurityChecksService,
 } from "api-server-api";
 import type { Db } from "db";
+
+import { createXactLock } from "../../core/xact-lock.js";
 
 import { securityCheckSchedule } from "./domain/security-check.js";
 import { createAssistantSchedulesRepository } from "./infrastructure/assistant-schedules-repository.js";
@@ -38,6 +41,7 @@ export function composeSecurityChecksForOwner(deps: {
   db: Db;
   owner: string;
   assistantName: string;
+  mode: FeatureMode;
   enabled: () => Promise<boolean>;
   assistantAgentId: () => Promise<string | null>;
   ownsAgent: (agentId: string) => Promise<boolean>;
@@ -48,16 +52,19 @@ export function composeSecurityChecksForOwner(deps: {
     owner: deps.owner,
     repo: createAssistantSchedulesRepository(deps.db),
     assistantName: deps.assistantName,
+    mode: deps.mode,
     enabled: deps.enabled,
     assistantAgentId: deps.assistantAgentId,
     ownsAgent: deps.ownsAgent,
     schedules: deps.schedules,
+    lock: createXactLock(deps.db),
   });
   return {
     enable: () => schedule.enable(),
     ensure: () => schedule.ensure(),
     disable: () => schedule.disable(),
-    report: async (input) => toReport(await schedule.report(input.problems)),
+    report: async (input) =>
+      toReport(await schedule.report(input.problems, { update: input.update })),
     current: async () => toReport(await schedule.current()),
   };
 }

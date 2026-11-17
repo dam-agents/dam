@@ -1,4 +1,4 @@
-import { and, assistantSchedules, eq, type Db } from "db";
+import { and, assistantSchedules, eq, sql, type Db } from "db";
 
 export interface AssistantScheduleRow {
   agentId: string;
@@ -18,7 +18,7 @@ export interface AssistantSchedulesRepository {
     owner: string,
     kind: string,
     items: readonly string[],
-    at: Date,
+    when: { at: Date; keepTime: boolean },
   ): Promise<AssistantScheduleRow | null>;
   delete(owner: string, kind: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -38,7 +38,8 @@ const toRow = (row: AssistantScheduleRow): AssistantScheduleRow => ({
  * last alert a run of it raised. Saving a Schedule starts its row over, so an
  * alert about an earlier Schedule or Agent never shows beside a new one. An
  * alert only lands on a row that exists, which is what keeps a person the
- * platform gave no such Schedule from getting one.
+ * platform gave no such Schedule from getting one. An alert that updates
+ * the one before it keeps that one's time, which is what names it.
  */
 export function createAssistantSchedulesRepository(
   db: Db,
@@ -65,10 +66,15 @@ export function createAssistantSchedulesRepository(
         });
     },
 
-    async report(owner, kind, items, at) {
+    async report(owner, kind, items, when) {
       const [row] = await db
         .update(assistantSchedules)
-        .set({ items: [...items], reportedAt: at })
+        .set({
+          items: [...items],
+          reportedAt: when.keepTime
+            ? sql`coalesce(${assistantSchedules.reportedAt}, ${when.at})`
+            : when.at,
+        })
         .where(rowOf(owner, kind))
         .returning();
       return row ? toRow(row) : null;

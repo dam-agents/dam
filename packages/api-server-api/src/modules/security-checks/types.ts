@@ -48,7 +48,9 @@ export interface SecurityChecksService {
   disable(): Promise<void>;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: records what a check found, replacing the
-   * report before it. Null when the caller has no check to report on.
+   * report before it. An update says what is left of the same check after a
+   * fix, so it keeps that report's time and with it the owner's dismissal.
+   * Null when the caller has no check to report on.
    */
   report(input: SecurityCheckReportInput): Promise<SecurityCheckReport | null>;
 }

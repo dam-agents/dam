@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import type { SchedulesService } from "api-server-api";
+import type { FeatureMode, SchedulesService } from "api-server-api";
 
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
@@ -14,10 +14,12 @@ export interface AssistantScheduleDeps {
   owner: string;
   repo: AssistantSchedulesRepository;
   assistantName: string;
+  mode: FeatureMode;
   enabled: () => Promise<boolean>;
   assistantAgentId: () => Promise<string | null>;
   ownsAgent: (agentId: string) => Promise<boolean>;
   schedules: Pick<SchedulesService, "get" | "createRRule" | "delete">;
+  lock: <T>(key: string, work: () => Promise<T>) => Promise<T>;
   now?: () => Date;
 }
 
@@ -32,7 +34,10 @@ export interface AssistantSchedule {
   enable(): Promise<void>;
   ensure(): Promise<void>;
   disable(): Promise<void>;
-  report(items: readonly string[]): Promise<AssistantScheduleAlert | null>;
+  report(
+    items: readonly string[],
+    opts?: { update?: boolean },
+  ): Promise<AssistantScheduleAlert | null>;
   current(): Promise<AssistantScheduleAlert | null>;
 }
 
@@ -51,15 +56,19 @@ const toAlert = (
  * owner's assistant, and the alert its runs raise. The platform only makes an
  * ordinary Schedule and keeps the last alert; the assistant does the work and
  * says what it found. A run spends the owner's model budget, so nothing is
- * made before the feature is on for them, and the alert of a person it is off
- * for is not kept or shown. The Schedule is the owner's from then on: they
- * change its time or delete it, and only `enable` makes one again.
+ * made where the install turned the feature off, and the alert of a person it
+ * is off for is not kept or shown. The Schedule is the owner's from then on:
+ * they change its time or delete it, and only `enable` makes one again. Giving
+ * and taking away run one at a time per owner, so two requests never make two
+ * Schedules.
  */
 export function createAssistantSchedule(
   deps: AssistantScheduleDeps,
 ): AssistantSchedule {
   const { definition, owner } = deps;
   const now = deps.now ?? (() => new Date());
+  const serialized = <T>(work: () => Promise<T>): Promise<T> =>
+    deps.lock(`assistant-schedule:${definition.kind}:${owner}`, work);
 
   async function scheduleStands(row: AssistantScheduleRow): Promise<boolean> {
     if (row.scheduleId === null) return false;
@@ -77,10 +86,15 @@ export function createAssistantSchedule(
       sessionMode: "fresh",
       sessionTitle: definition.sessionTitle,
     });
-    await deps.repo.save(owner, definition.kind, {
-      agentId,
-      scheduleId: schedule.id,
-    });
+    try {
+      await deps.repo.save(owner, definition.kind, {
+        agentId,
+        scheduleId: schedule.id,
+      });
+    } catch (err) {
+      await deps.schedules.delete(schedule.id).catch(() => undefined);
+      throw err;
+    }
     securityLog("info", "assistant_schedule.enabled", {
       category: "resource",
       actor: owner,
@@ -96,48 +110,65 @@ export function createAssistantSchedule(
 
   return {
     async enable() {
-      const agentId = await deps.assistantAgentId();
-      if (agentId === null)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `The ${definition.subject} runs on ${deps.assistantName}, and you have none. Turn ${deps.assistantName} on first.`,
-        });
-      const row = await deps.repo.find(owner, definition.kind);
-      if (row?.agentId === agentId && (await scheduleStands(row))) return;
-      if (row?.scheduleId) await deps.schedules.delete(row.scheduleId);
-      await give(agentId);
+      if (deps.mode === "off") return;
+      await serialized(async () => {
+        const agentId = await deps.assistantAgentId();
+        if (agentId === null)
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `The ${definition.subject} runs on ${deps.assistantName}, and you have none. Turn ${deps.assistantName} on first.`,
+          });
+        const row = await deps.repo.find(owner, definition.kind);
+        if (row?.agentId === agentId && (await scheduleStands(row))) return;
+        if (row?.scheduleId) await deps.schedules.delete(row.scheduleId);
+        await give(agentId);
+      });
     },
 
     async ensure() {
-      if ((await deps.repo.find(owner, definition.kind)) !== null) return;
-      const agentId = await deps.assistantAgentId();
-      if (agentId !== null) await give(agentId);
+      await serialized(async () => {
+        const [row, agentId] = await Promise.all([
+          deps.repo.find(owner, definition.kind),
+          deps.assistantAgentId(),
+        ]);
+        if (agentId === null || row?.agentId === agentId) return;
+        if (row?.scheduleId) await deps.schedules.delete(row.scheduleId);
+        await give(agentId);
+      });
     },
 
     async disable() {
-      const row = await deps.repo.find(owner, definition.kind);
-      if (row === null) return;
-      if (row.scheduleId) await deps.schedules.delete(row.scheduleId);
-      await deps.repo.delete(owner, definition.kind);
-      changed(row.agentId);
+      if (deps.mode === "on") return;
+      await serialized(async () => {
+        const row = await deps.repo.find(owner, definition.kind);
+        if (row === null) return;
+        if (row.scheduleId) await deps.schedules.delete(row.scheduleId);
+        await deps.repo.delete(owner, definition.kind);
+        changed(row.agentId);
+      });
     },
 
-    async report(items) {
+    async report(items, opts) {
       if (!(await deps.enabled())) return null;
-      const at = now();
-      const row = await deps.repo.report(owner, definition.kind, items, at);
-      if (row === null) return null;
+      const row = await deps.repo.report(owner, definition.kind, items, {
+        at: now(),
+        keepTime: opts?.update === true,
+      });
+      if (row === null || row.reportedAt === null) return null;
       changed(row.agentId);
-      return toAlert(row, at);
+      return toAlert(row, row.reportedAt);
     },
 
     async current() {
-      if (!(await deps.enabled())) return null;
       const row = await deps.repo.find(owner, definition.kind);
       if (row === null || row.reportedAt === null || row.items.length === 0)
         return null;
-      if (!(await deps.ownsAgent(row.agentId))) return null;
-      return toAlert(row, row.reportedAt);
+      const [enabled, owned, stands] = await Promise.all([
+        deps.enabled(),
+        deps.ownsAgent(row.agentId),
+        scheduleStands(row),
+      ]);
+      return enabled && owned && stands ? toAlert(row, row.reportedAt) : null;
     },
   };
 }

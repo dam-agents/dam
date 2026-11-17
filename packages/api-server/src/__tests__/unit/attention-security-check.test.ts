@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Home lists the security check's alert beside the attention record. The alert opens the newest Session the check's Schedule opened, or no Session when the list holds none. A dismissal names one report: it is accepted only for the report that stands, and it is dropped once that report is gone, so the next report is told again. A failing read leaves the feed and the dismissals as they were.
+// TEST_OVERVIEW: Home lists the security check's alert beside the attention record. The alert opens the newest Session the check's Schedule opened before the report, or no Session when the list holds none. A dismissal names one report: it is accepted only for the report that stands, and it is dropped once that report is gone, so the next report is told again. A failing read leaves the feed and the dismissals as they were.
 import type { SecurityCheckReport } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
@@ -76,12 +76,13 @@ function service(opts: {
 }
 
 describe("attention.listForOwner with a security check alert", () => {
-  // TEST_SCENARIO: the check's Schedule opened two Sessions and another Schedule and another Agent have their own; the alert opens the newest Session of the check's Schedule on its Agent.
-  it("opens the newest session the check's schedule opened", async () => {
+  // TEST_SCENARIO: the check's Schedule opened two Sessions before the report and a third after it, which has not reported; another Schedule and another Agent have their own. The alert opens the newest Session of the check's Schedule on its Agent from before the report.
+  it("opens the newest session the check's schedule opened before the report", async () => {
     const { attention } = service({
       records: [
         session("s-old", "schedule-1", "2026-11-10T09:00:00Z"),
         session("s-new", "schedule-1", "2026-11-17T08:55:00Z"),
+        session("s-next-run", "schedule-1", "2026-11-24T08:55:00Z"),
         session("s-other", "schedule-2", "2026-11-17T08:59:00Z"),
         session("s-chat", null, "2026-11-17T08:59:30Z"),
         session("s-foreign", "schedule-1", "2026-11-17T08:59:45Z", "agent-b"),

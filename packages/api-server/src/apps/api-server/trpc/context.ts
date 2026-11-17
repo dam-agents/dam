@@ -3,6 +3,7 @@ import {
   ChannelType,
   editorEmailOf,
   featureOnForUser,
+  type FeatureId,
   hiddenHarnessesFor,
 } from "api-server-api";
 import {
@@ -478,13 +479,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
     });
     const provisioning = assistantProvisioningGuard();
-    /* UNIT_BOUNDARY_DESCRIPTION: whether the assistant is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
-    const assistantOn = async (): Promise<boolean> => {
-      const mode = config.featureModes.dambledore;
+    /* UNIT_BOUNDARY_DESCRIPTION: whether a feature is on for this person — the install's mode, and in `experimental` their own switch — asked so that a mode set to `on` or `off` costs no read at all. */
+    const featureOn = (feature: FeatureId) => async (): Promise<boolean> => {
+      const mode = config.featureModes[feature];
       if (mode === "on") return true;
       if (mode !== "experimental") return false;
-      return featureOnForUser(mode, (await features.flags()).dambledore);
+      return featureOnForUser(mode, (await features.flags())[feature]);
     };
+    const assistantOn = featureOn("dambledore");
     const {
       assistants,
       ensure: ensureAssistant,
@@ -502,17 +504,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       firstResultLock: assistantFirstResultLock,
       damConnection: () => connections.ensureDamConnection({ platform: true }),
     });
-    /* UNIT_BOUNDARY_DESCRIPTION: whether the security check is on for this person, asked so that a mode set to `on` or `off` costs no read at all. */
-    const securityCheckOn = async (): Promise<boolean> => {
-      const mode = config.featureModes["security-check"];
-      if (mode === "on") return true;
-      if (mode !== "experimental") return false;
-      return featureOnForUser(mode, (await features.flags())["security-check"]);
-    };
+    const securityCheckOn = featureOn("security-check");
+    /* UNIT_BOUNDARY_DESCRIPTION: whether a person is asking for themselves. Only then does a switch give or take away a Schedule: an API key, a key bound to some agents and an editor acting on an owner's Agent may write the flag, and nothing follows from it. */
+    const personRequest =
+      user.keyId === undefined &&
+      user.agentIds === "*" &&
+      user.actingEditor === undefined;
     const securityChecks = composeSecurityChecksForOwner({
       db,
       owner: user.sub,
       assistantName: config.brand.assistantName,
+      mode: config.featureModes["security-check"],
       enabled: securityCheckOn,
       assistantAgentId: async () => {
         const state = await assistants.state();
@@ -788,6 +790,17 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       });
     };
 
+    /* UNIT_BOUNDARY_DESCRIPTION: the security check follows the assistant. When the platform makes a person's assistant again, by the switch or by the onboarding reset, the check they have on moves to the new Agent, since its Schedule went with the old one. A failure is logged, not raised: the assistant itself was made. */
+    const securityCheckFollowsAssistant = async (): Promise<void> => {
+      try {
+        if (await securityCheckOn()) await securityChecks.ensure();
+      } catch (err) {
+        process.stderr.write(
+          `[security-check] ${user.sub}: could not follow the assistant: ${(err as Error).message}\n`,
+        );
+      }
+    };
+
     /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes the assistant whenever the person has none under that name. */
     const optInToAssistant = async () => {
       if (
@@ -797,6 +810,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       )
         return;
       await assistantOptIn();
+      await securityCheckFollowsAssistant();
     };
 
     const ctx: ApiContext = {
@@ -868,7 +882,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       approvals,
       attention,
       costReviews,
-      securityChecks,
+      securityChecks: {
+        ...securityChecks,
+        enable: async () => {
+          if (personRequest) await securityChecks.enable();
+        },
+        disable: async () => {
+          if (personRequest) await securityChecks.disable();
+        },
+      },
       egressRules,
       webSearch,
       invocationsQuery,
@@ -907,7 +929,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       loginTestimonials: loginTestimonials.forOperator(user.sub),
       providerStatus,
       user,
-      assistants,
+      assistants: {
+        ...assistants,
+        resetOnboarding: async () => {
+          const result = await assistants.resetOnboarding();
+          await securityCheckFollowsAssistant();
+          return result;
+        },
+      },
       provisionAssistant,
       optInAssistant: optInToAssistant,
       e2eEnabled: config.e2eEnabled,

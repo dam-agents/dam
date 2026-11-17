@@ -7,4 +7,5 @@ export const securityCheckReportInputSchema = z.object({
   problems: z
     .array(z.string().trim().min(1).max(SECURITY_CHECK_PROBLEM_MAX_LENGTH))
     .max(SECURITY_CHECK_MAX_PROBLEMS),
+  update: z.boolean().optional(),
 });

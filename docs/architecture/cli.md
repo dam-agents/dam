@@ -153,7 +153,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 - **`onboarding`** — the person's onboarding state, which the assistant itself reports: `first-result <schedule|artifact|knowledgeBase> --ref <what it is>` records the first result once, owned by [assistant.md](assistant.md#the-first-result).
-- **`security-check`** — what the assistant's check of the person's setup found, which the assistant itself reports: `report --problem <title>`, repeated per problem, replaces the last report, and with no problem it clears the alert; owned by [assistant.md](assistant.md#the-security-check).
+- **`security-check`** — what the assistant's check of the person's setup found, which the assistant itself reports: `report --problem <title>`, repeated per problem, replaces the last report, with no problem it clears the alert, and `--update` marks what is left of the same check after a fix; owned by [assistant.md](assistant.md#the-security-check).
 
 ## Shared conventions
 

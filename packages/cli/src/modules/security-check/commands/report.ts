@@ -29,14 +29,24 @@ export function buildReportCommand(deps: {
       [],
     )
     .option(
+      "--update",
+      "say what is left of the same check after a fix, so an alert the person dismissed stays dismissed",
+    )
+    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
     .option("--json", "emit the recorded report as JSON")
     .action(
-      async (opts: { problem: string[]; server?: string; json?: boolean }) => {
+      async (opts: {
+        problem: string[];
+        update?: boolean;
+        server?: string;
+        json?: boolean;
+      }) => {
         const parsed = securityCheckReportInputSchema.safeParse({
           problems: opts.problem,
+          ...(opts.update === true ? { update: true } : {}),
         });
         if (!parsed.success) {
           process.stderr.write(

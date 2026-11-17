@@ -146,7 +146,10 @@ A person with no assistant gets nothing, and the switch says so and stays off.
 The Schedule is the owner's from then on: they change its time or its task, pause it, or delete it, with the controls every Schedule has.
 Turning the switch on again makes a Schedule only when the one the record names is gone.
 Turning it off deletes that Schedule and the record, and the alert goes with them.
-An install that pins the feature on has no switch, so it gives each person the Schedule once, after their assistant exists; one they delete stays deleted.
+An install that pins the feature on has no switch, so it gives each person the Schedule once, after their assistant exists; one they delete stays deleted, and a flag written off takes nothing away.
+An install that turns the feature off gives nobody one, whatever flag is written.
+The check follows the assistant: when the platform makes a person's assistant again, by its switch or by the onboarding reset, a check they have on is given to the new Agent.
+Giving and taking away run one at a time per person, so two requests never make two Schedules.
 
 **The platform checks nothing itself.**
 The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, and change nothing.
@@ -158,7 +161,8 @@ The record keeps only the last report, and a report with no problem clears it.
 A report from a person the feature is off for, or who has no record, is answered with nothing recorded.
 
 The report is what the bell shows as the [security check alert](home-feed.md#security-check-alert), which opens that Session.
-There the assistant fixes only what the owner agrees to, and reports again with what is left.
+There the assistant fixes only what the owner agrees to, and reports what is left with `--update`, which keeps the report's time, so an alert the owner dismissed stays dismissed while a new check is told again.
+The report is shown only while its Schedule stands: once the owner deletes the Schedule no run can clear it, so the alert goes with it.
 A problem the owner calls fine goes into the assistant's memory file, and later checks leave it out until that setup changes; the platform keeps no list of accepted problems.
 
 The check sees what the CLI lists.

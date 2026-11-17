@@ -175,10 +175,11 @@ It is read from the owner's one record, so a sleeping Agent is never woken for i
 The card counts in the panel's badge like an approval.
 
 It opens the Session of the check's latest run, where the assistant already described each problem and offers to fix it, so nothing runs again and no finding is copied into a new chat.
-That Session is the newest one the check's Schedule opened; when the session list no longer holds one, the card opens the assistant's chat instead.
+That Session is the newest one the check's Schedule opened before the report, so a later run that has not reported yet is not taken for it; when the session list no longer holds one, the card opens the assistant's chat instead.
 Nothing is fixed from the card.
 
-A dismissal names one report, per owner and on the server, so it hides that card on every device and the next report is told again.
+A dismissal names one report by its time, per owner and on the server, so it hides that card on every device and the next check's report is told again.
+An update of the same report after a fix keeps that time, so it stays dismissed.
 A dismissal is dropped once its report is gone.
 A new report reaches open tabs through the attention hint.
 

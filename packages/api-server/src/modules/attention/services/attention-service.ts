@@ -53,20 +53,23 @@ const agentOfDefaultModelNoticeId = (id: string): string =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the alert for a security check's report. Its
- * Session is the newest one the check's Schedule opened, which is where the
- * assistant described the problems, so the alert opens that chat and nothing
- * runs again. Null when the session list no longer holds one.
+ * Session is the newest one the check's Schedule opened before the report,
+ * which is where the assistant described the problems, so the alert opens
+ * that chat and nothing runs again. A later run that has not reported yet
+ * is not it. Null when the session list no longer holds one.
  */
 function securityCheckNotice(
   report: SecurityCheckReport,
   records: readonly AttentionRecordRow[],
 ): SecurityCheckNotice {
+  const reportedAt = new Date(report.reportedAt).getTime();
   const [latest] = records
     .filter(
       (row) =>
         row.agentId === report.agentId &&
         row.scheduleId !== null &&
-        row.scheduleId === report.scheduleId,
+        row.scheduleId === report.scheduleId &&
+        row.createdAt.getTime() <= reportedAt,
     )
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   return {

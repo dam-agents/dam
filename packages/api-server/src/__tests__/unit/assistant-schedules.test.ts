@@ -1,5 +1,5 @@
-// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem on an Agent the owner still has.
-import type { Schedule, SchedulesService } from "api-server-api";
+// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
+import type { FeatureMode, Schedule, SchedulesService } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
 import { securityCheckSchedule } from "../../modules/assistant-schedules/domain/security-check.js";
@@ -12,21 +12,35 @@ import { createAssistantSchedule } from "../../modules/assistant-schedules/servi
 const OWNER = "owner-1";
 const KIND = securityCheckSchedule.kind;
 const NOW = new Date("2026-11-17T09:00:00.000Z");
+const LATER = new Date("2026-11-17T09:30:00.000Z");
 
 function memoryRepo(): AssistantSchedulesRepository & {
   row: (kind?: string) => AssistantScheduleRow | null;
+  failNextSave: () => void;
 } {
   const stored = new Map<string, AssistantScheduleRow>();
+  let saveFails = false;
   return {
     row: (kind = KIND) => stored.get(kind) ?? null,
+    failNextSave: () => {
+      saveFails = true;
+    },
     find: async (_owner, kind) => stored.get(kind) ?? null,
     save: async (_owner, kind, schedule) => {
+      if (saveFails) {
+        saveFails = false;
+        throw new Error("database unavailable");
+      }
       stored.set(kind, { ...schedule, items: [], reportedAt: null });
     },
-    report: async (_owner, kind, items, at) => {
+    report: async (_owner, kind, items, when) => {
       const row = stored.get(kind);
       if (row === undefined) return null;
-      const next = { ...row, items: [...items], reportedAt: at };
+      const next = {
+        ...row,
+        items: [...items],
+        reportedAt: when.keepTime ? (row.reportedAt ?? when.at) : when.at,
+      };
       stored.set(kind, next);
       return next;
     },
@@ -45,9 +59,11 @@ function world(
     assistant?: string | null;
     enabled?: boolean;
     owned?: boolean;
+    mode?: FeatureMode;
   } = {},
 ) {
   const schedules = new Map<string, Schedule>();
+  const state = { assistant: opts.assistant, now: NOW };
   let made = 0;
   const createRRule = vi.fn(
     async (input: Parameters<SchedulesService["createRRule"]>[0]) => {
@@ -65,23 +81,36 @@ function world(
     schedules.delete(id);
   });
   const repo = memoryRepo();
-  const checks = createAssistantSchedule({
-    definition: securityCheckSchedule,
-    owner: OWNER,
+  const scheduleFor = (
+    definition = securityCheckSchedule,
+  ): ReturnType<typeof createAssistantSchedule> =>
+    createAssistantSchedule({
+      definition,
+      owner: OWNER,
+      repo,
+      assistantName: "Ada",
+      mode: opts.mode ?? "experimental",
+      enabled: async () => opts.enabled ?? true,
+      assistantAgentId: async () =>
+        state.assistant === undefined ? "agent-ada" : state.assistant,
+      ownsAgent: async () => opts.owned ?? true,
+      schedules: {
+        get: async (id) => schedules.get(id) ?? null,
+        createRRule,
+        delete: deleteSchedule,
+      },
+      lock: (_key, work) => work(),
+      now: () => state.now,
+    });
+  return {
+    checks: scheduleFor(),
+    scheduleFor,
+    state,
     repo,
-    assistantName: "Ada",
-    enabled: async () => opts.enabled ?? true,
-    assistantAgentId: async () =>
-      opts.assistant === undefined ? "agent-ada" : opts.assistant,
-    ownsAgent: async () => opts.owned ?? true,
-    schedules: {
-      get: async (id) => schedules.get(id) ?? null,
-      createRRule,
-      delete: deleteSchedule,
-    },
-    now: () => NOW,
-  });
-  return { checks, repo, schedules, createRRule, deleteSchedule };
+    schedules,
+    createRRule,
+    deleteSchedule,
+  };
 }
 
 describe("turning the security check on", () => {
@@ -147,13 +176,20 @@ describe("turning the security check on", () => {
     });
   });
 
-  // TEST_SCENARIO: an install that pins the feature on gives each person the Schedule once; one they deleted stays deleted, since no switch asked for it again.
-  it("gives the schedule once where there is no switch", async () => {
+  // TEST_SCENARIO: the Schedule was made but its record could not be written, so the Schedule is deleted again: none is left to run with nothing naming it.
+  it("leaves no schedule behind when the record cannot be written", async () => {
     const w = world();
-    await w.checks.ensure();
-    w.schedules.clear();
-    await w.checks.ensure();
-    expect(w.createRRule).toHaveBeenCalledTimes(1);
+    w.repo.failNextSave();
+    await expect(w.checks.enable()).rejects.toThrow("database unavailable");
+    expect(w.schedules.size).toBe(0);
+    expect(w.repo.row()).toBeNull();
+  });
+
+  // TEST_SCENARIO: the install turned the feature off, so a flag written anyway gives no Schedule that would spend the owner's budget unseen.
+  it("gives nothing where the install turned the feature off", async () => {
+    const w = world({ mode: "off" });
+    await w.checks.enable();
+    expect(w.createRRule).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: the minute of the week comes from the owner, so one person's check keeps its time and the rule is a weekly one the Schedule accepts.
@@ -174,28 +210,47 @@ describe("turning the security check on", () => {
   });
 });
 
+describe("the check where nobody flipped a switch", () => {
+  // TEST_SCENARIO: an install that pins the feature on gives each person the Schedule once; one they deleted stays deleted, since no switch asked for it again.
+  it("gives the schedule once", async () => {
+    const w = world();
+    await w.checks.ensure();
+    w.schedules.clear();
+    await w.checks.ensure();
+    expect(w.createRRule).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: the platform made the person's assistant again, so the Schedule went with the old Agent; the check follows to the new one and starts without the old report.
+  it("follows the assistant when it is made again", async () => {
+    const w = world();
+    await w.checks.ensure();
+    await w.checks.report(["bot: shared sign-in"]);
+    w.schedules.clear();
+    w.state.assistant = "agent-ada-2";
+    await w.checks.ensure();
+    expect(w.repo.row()).toMatchObject({
+      agentId: "agent-ada-2",
+      scheduleId: "schedule-2",
+      items: [],
+    });
+  });
+
+  // TEST_SCENARIO: the person has no assistant now, so nothing is made and the record is left for the cleanup of the Agent it names.
+  it("makes nothing while there is no assistant", async () => {
+    const w = world({ assistant: null });
+    await w.checks.ensure();
+    expect(w.createRRule).not.toHaveBeenCalled();
+  });
+});
+
 describe("another kind of assistant schedule", () => {
   // TEST_SCENARIO: a second default Schedule shares the store with the security check; each kind keeps its own Schedule and its own alert, so turning one off leaves the other as it was.
   it("keeps its own schedule and alert beside the security check", async () => {
     const w = world();
-    const digest = createAssistantSchedule({
-      definition: {
-        ...securityCheckSchedule,
-        kind: "digest",
-        name: "Weekly digest",
-      },
-      owner: OWNER,
-      repo: w.repo,
-      assistantName: "Ada",
-      enabled: async () => true,
-      assistantAgentId: async () => "agent-ada",
-      ownsAgent: async () => true,
-      schedules: {
-        get: async (id) => w.schedules.get(id) ?? null,
-        createRRule: w.createRRule,
-        delete: w.deleteSchedule,
-      },
-      now: () => NOW,
+    const digest = w.scheduleFor({
+      ...securityCheckSchedule,
+      kind: "digest",
+      name: "Weekly digest",
     });
     await w.checks.enable();
     await digest.enable();
@@ -220,6 +275,15 @@ describe("turning the security check off", () => {
     expect(w.repo.row()).toBeNull();
     expect(await w.checks.current()).toBeNull();
   });
+
+  // TEST_SCENARIO: the install pins the feature on, so a flag written off takes nothing away: the owner's Schedule and its edits stay.
+  it("takes nothing away where the install pins the feature on", async () => {
+    const w = world({ mode: "on" });
+    await w.checks.ensure();
+    await w.checks.disable();
+    expect(w.deleteSchedule).not.toHaveBeenCalled();
+    expect(w.repo.row()?.scheduleId).toBe("schedule-1");
+  });
 });
 
 describe("the assistant's report", () => {
@@ -242,6 +306,24 @@ describe("the assistant's report", () => {
     expect(await w.checks.current()).toEqual(expected);
   });
 
+  // TEST_SCENARIO: after a fix the assistant says what is left of the same check. The report keeps its time, which names the alert, so an alert the owner dismissed stays dismissed; a new check gets a new time and is told again.
+  it("keeps the report's time on an update, and moves it on a new check", async () => {
+    const w = world();
+    await w.checks.enable();
+    await w.checks.report(["bot: shared sign-in", "ci: full access"]);
+    w.state.now = LATER;
+    const updated = await w.checks.report(["ci: full access"], {
+      update: true,
+    });
+    expect(updated).toMatchObject({
+      items: ["ci: full access"],
+      reportedAt: NOW.toISOString(),
+    });
+    expect(await w.checks.report(["ci: full access"])).toMatchObject({
+      reportedAt: LATER.toISOString(),
+    });
+  });
+
   // TEST_SCENARIO: a report with no problem says the setup is fine, so it is recorded and the earlier alert goes.
   it("clears the alert when a check finds nothing", async () => {
     const w = world();
@@ -260,11 +342,19 @@ describe("the assistant's report", () => {
 
   // TEST_SCENARIO: the feature is off for this person, so a report is not kept and an earlier one is not shown.
   it("keeps and shows nothing while the feature is off", async () => {
-    const on = world();
-    await on.checks.enable();
     const off = world({ enabled: false });
+    await off.checks.enable();
     expect(await off.checks.report(["x"])).toBeNull();
     expect(await off.checks.current()).toBeNull();
+  });
+
+  // TEST_SCENARIO: the owner deleted the check's Schedule, so no run will ever clear the last report; the alert goes with the Schedule.
+  it("shows nothing once the owner deleted the schedule", async () => {
+    const w = world();
+    await w.checks.enable();
+    await w.checks.report(["bot: shared sign-in"]);
+    w.schedules.clear();
+    expect(await w.checks.current()).toBeNull();
   });
 
   // TEST_SCENARIO: the owner no longer has the Agent the report is about, so there is no chat to open and the alert is not shown.

@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: `dam security-check report` sends what the assistant's check
 // TEST_OVERVIEW: of the person's setup found: one title per `--problem`, or none
-// TEST_OVERVIEW: when the setup is fine, which clears the alert. A report the
+// TEST_OVERVIEW: when the setup is fine, which clears the alert; `--update`
+// TEST_OVERVIEW: marks what is left of the same check after a fix. A report the
 // TEST_OVERVIEW: contract refuses is stopped before the server is called, and a
 // TEST_OVERVIEW: person with no check to report on is answered rather than failed.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -104,6 +105,18 @@ describe("dam security-check report", () => {
     const { stdout } = await run({ report }, []);
     expect(report).toHaveBeenCalledWith({ problems: [] });
     expect(stdout).toContain("The alert is cleared");
+  });
+
+  // TEST_SCENARIO: after a fix the assistant reports what is left of the same check, and the command says so to the server; without the flag it sends none.
+  it("marks an update of the same check", async () => {
+    const report = vi.fn(async (input: { problems: string[] }) =>
+      ok(reported(input.problems)),
+    );
+    await run({ report }, ["--problem", "ci: full access", "--update"]);
+    expect(report).toHaveBeenCalledWith({
+      problems: ["ci: full access"],
+      update: true,
+    });
   });
 
   // TEST_SCENARIO: a title longer than the alert can show is refused before anything is sent, so the person never gets a cut-off alert.
