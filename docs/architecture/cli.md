@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-11-12
+Last verified: 2026-11-17
 
 ## Overview
 
@@ -131,6 +131,9 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
+- **`artifact`** — see who can open an artifact, and share it with named people or change who is on its list, through the same sharing write as the Share dialog, owned by [artifact-library.md](artifact-library.md#sharing-model).
+  It narrows an interactive page's audience but never widens it.
+  It changes viewers only for a `dam login` sign-in or a CLI-issued token in `DAM_TOKEN`; a Platform API key, as an Agent's own CLI holds, keeps to private and public, so an Agent shares with named people through its tool instead.
 - **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear.
   Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
@@ -150,6 +153,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`login-testimonials`** — for a platform operator, listing the testimonials the login page shows, exporting them to a JSON file with their photos beside it, and replacing them from such a file, owned by [security-and-credentials.md](security-and-credentials.md#identity).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 - **`onboarding`** — the person's onboarding state, which the assistant itself reports: `first-result <schedule|artifact|knowledgeBase> --ref <what it is>` records the first result once, owned by [assistant.md](assistant.md#the-first-result).
+- **`security-check`** — what the assistant's check of the person's setup found, which the assistant itself reports: `report --problem <title>`, repeated per problem, replaces the last report, with no problem it clears the alert, and `--update` marks what is left of the same check after a fix; owned by [assistant.md](assistant.md#the-security-check).
 
 ## Shared conventions
 

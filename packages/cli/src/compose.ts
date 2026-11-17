@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { composeAgentModule } from "./modules/agent/compose.js";
 import { composeApprovalModule } from "./modules/approval/compose.js";
+import { composeArtifactModule } from "./modules/artifact/compose.js";
 import { composeAuthModule } from "./modules/auth/compose.js";
 import { createBrowserOpener } from "./modules/auth/index.js";
 import { composeChannelModule } from "./modules/channel/compose.js";
@@ -21,6 +22,7 @@ import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
 import { composeOnboardingModule } from "./modules/onboarding/compose.js";
+import { composeSecurityCheckModule } from "./modules/security-check/compose.js";
 import { composeTelemetryModule } from "./modules/telemetry/compose.js";
 import { composeTemplateModule } from "./modules/template/compose.js";
 import { composeTermsModule } from "./modules/terms/compose.js";
@@ -85,6 +87,7 @@ export function compose(): Command {
     agent,
     composeImportModule(base),
     composeFileModule(base),
+    composeArtifactModule(base),
     egress,
     composeApprovalModule(base),
     connection,
@@ -105,6 +108,7 @@ export function compose(): Command {
       createSpendService: spend.exports.createService,
     }),
     composeOnboardingModule(base),
+    composeSecurityCheckModule(base),
     composeTermsModule(base),
   ]) {
     for (const command of module.commands) program.addCommand(command);

@@ -26,6 +26,7 @@ export const attentionDismissInputSchema = z.object({
           "default-model",
           "outage-alert",
           "owner-question",
+          "security-check",
         ]),
         id: z.string().trim().min(1).max(512),
       }),

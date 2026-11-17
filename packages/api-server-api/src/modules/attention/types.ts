@@ -1,5 +1,6 @@
 import type { Sender } from "agent-runtime-api";
 import type { CostReviewOffer } from "../cost-reviews/types.js";
+import type { SecurityCheckNotice } from "../security-checks/types.js";
 import type { DefaultKind } from "../harness-config/types.js";
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
@@ -9,7 +10,12 @@ export const ATTENTION_FEED_LIMIT = 200;
 export const ATTENTION_PAGE_LIMIT = 20;
 
 export type AttentionItemKind =
-  "session" | "approval" | "default-model" | "outage-alert" | "owner-question";
+  | "session"
+  | "approval"
+  | "default-model"
+  | "outage-alert"
+  | "owner-question"
+  | "security-check";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: why an Agent's saved default needs its owner:
@@ -104,6 +110,7 @@ export interface AttentionList {
   outageAlerts: OutageAlertNotice[];
   costReviews: CostReviewOffer[];
   ownerQuestions: OwnerQuestionNotice[];
+  securityChecks: SecurityCheckNotice[];
 }
 
 export interface AttentionListCursor {

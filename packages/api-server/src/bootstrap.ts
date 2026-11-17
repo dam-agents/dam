@@ -370,6 +370,7 @@ import {
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
 import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
 import { createCostReviewsCleanup } from "./modules/cost-reviews/index.js";
+import { createAssistantSchedulesCleanup } from "./modules/assistant-schedules/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -805,6 +806,7 @@ export async function bootstrap() {
       return [
         {
           name: c.name,
+          builtin: c.kind === "path",
           ...located,
           entryHosts: catalogEntryHosts(kitGitHosts, located.gitUrl),
         },
@@ -2544,6 +2546,10 @@ export async function bootstrap() {
     {
       name: "cost-reviews",
       ...createCostReviewsCleanup(db),
+    },
+    {
+      name: "assistant-schedules",
+      ...createAssistantSchedulesCleanup(db),
     },
     {
       name: "sidebar-order",

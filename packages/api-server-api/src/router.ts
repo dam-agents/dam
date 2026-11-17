@@ -7,6 +7,7 @@ import { budgetsRouter } from "./modules/budgets/router.js";
 import { loginTestimonialsRouter } from "./modules/login-testimonials/router.js";
 import { attentionRouter } from "./modules/attention/router.js";
 import { costReviewsRouter } from "./modules/cost-reviews/router.js";
+import { securityChecksRouter } from "./modules/security-checks/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
@@ -50,6 +51,7 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   attention: attentionRouter,
   costReviews: costReviewsRouter,
+  securityChecks: securityChecksRouter,
   egressRules: egressRulesRouter,
   webSearch: webSearchRouter,
   invocations: invocationsRouter,

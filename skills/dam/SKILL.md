@@ -1,7 +1,7 @@
 ---
 name: dam
 description: >
-  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
+  Drive the user's DAM deployment from this machine with the `dam` CLI: their agents (create, run, restart, delete), prompts and answers, files, artifact sharing, starter kits, schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions `dam`.
   Covers installing the CLI, signing in, and that you never see a secret: the user types every credential on a DAM page or into a command you hand them.
   Its security advisory says how to set agents up so credentials stay out of reach and the user knows who acts as them.
@@ -362,6 +362,24 @@ dam import my-agent ./project --yes
 
 Paths are relative to the agent's workspace.
 `dam import` merges local files and folders into the agent's `work/` folder.
+
+### Artifacts
+
+```sh
+dam artifact share <artifact-id>
+dam artifact share <artifact-id> --add ada@example.com --add bob@example.com
+dam artifact share <artifact-id> --remove bob@example.com
+dam artifact share <artifact-id> --private
+```
+
+Without flags, `dam artifact share` only shows who can open the artifact: its level, its link and its viewers.
+`--add` gives people access by email and makes the artifact restricted, so only the user and its viewers can open the link once they sign in with that address.
+`--remove` takes people off the list and keeps the level, and `--private` closes the link of a public artifact.
+A restricted artifact stays restricted: only the user makes it private or public, in the web app's Share dialog.
+Sharing sends the user's work to new people, so add only the people the user names, and say who you added.
+An interactive page's viewers can send its agent prompts, so the user adds them in the web app's Share dialog; the command can only remove them.
+Inside a DAM agent, `DAM_TOKEN` reaches the server as an API key, so there this command cannot add or remove viewers.
+Use the `set_artifact_sharing` tool instead, which changes viewers under the same rules.
 
 ### Lifecycle
 

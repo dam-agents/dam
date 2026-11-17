@@ -427,6 +427,8 @@ export type {
   StarterKitCatalogEntry,
   StarterKitConnectionRequirement,
   StarterKitEgressRule,
+  StarterKitEntryPublisher,
+  StarterKitPublisher,
   OnboardingStep,
   StarterKitSchedule,
   StarterKitScheduleOverride,
@@ -443,6 +445,7 @@ export {
   LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
+  starterKitCatalogEntrySchema,
   starterKitCatalogSchema,
   starterKitScheduleOverrideSchema,
   starterKitSchema,
@@ -863,6 +866,17 @@ export type {
   CostReviewsService,
 } from "./modules/cost-reviews/types.js";
 export { COST_REVIEW_LATER_DAYS } from "./modules/cost-reviews/types.js";
+export type {
+  SecurityCheckNotice,
+  SecurityCheckReport,
+  SecurityCheckReportInput,
+  SecurityChecksService,
+} from "./modules/security-checks/types.js";
+export {
+  SECURITY_CHECK_MAX_PROBLEMS,
+  SECURITY_CHECK_PROBLEM_MAX_LENGTH,
+  securityCheckReportInputSchema,
+} from "./modules/security-checks/schemas.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

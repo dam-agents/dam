@@ -31,6 +31,7 @@ describe("feature modes", () => {
         dambledore: "experimental",
         "chat-network-approvals": "experimental",
         "one-time-tasks": "experimental",
+        "security-check": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
@@ -62,6 +63,7 @@ describe("feature modes", () => {
           damConnection: "experimental",
           "chat-network-approvals": "experimental",
           "one-time-tasks": "experimental",
+          "security-check": "experimental",
         },
       }).flags();
     expect(await flags({})).toMatchObject({

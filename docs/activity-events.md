@@ -53,7 +53,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ScheduleDeleted` | _elsewhere_ | schedules |
 | `SchedulePrecheckReported` | _elsewhere_ | schedules |
 | `HarnessConfigChanged` | `harness_config_changed` | harness-config |
-| `AttentionChanged` | _elsewhere_ | attention, cost-reviews, harness-config, invocations, outage-alerts |
+| `AttentionChanged` | _elsewhere_ | assistant-schedules, attention, cost-reviews, harness-config, invocations, outage-alerts |
 | `ArtifactCreated` | _elsewhere_ | artifact-library |
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |

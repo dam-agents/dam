@@ -8,6 +8,7 @@ import type {
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
+import { kitPublisher } from "../domain/kit-publisher.js";
 import { type CatalogSource, relPathEscapes } from "./catalog-source.js";
 import type { GitHosts } from "./git-hosts.js";
 import type { RefResolver } from "./git-ref-resolver.js";
@@ -21,6 +22,7 @@ const KIT_FILE = "kit.yaml";
 
 export interface NamedCatalog {
   name: string;
+  builtin: boolean;
   source: CatalogSource;
   gitUrl?: string;
   ref?: string;
@@ -61,11 +63,13 @@ export type KitResolverDeps = Pick<
   "refs" | "appVersion" | "scanSkills" | "sourceForEntry"
 > & { avatar?: CatalogRefreshDeps["avatar"] };
 
+export type KitResolution = Omit<ResolvedKitRow, "publisher">;
+
 export interface KitResolver {
   resolve(
     named: NamedCatalog,
     entry: StarterKitCatalogEntry,
-  ): Promise<ResolvedKitRow | KitFailure>;
+  ): Promise<KitResolution | KitFailure>;
 }
 
 function rejected(reason: string): KitFailure {
@@ -127,7 +131,7 @@ export function createKitResolver(deps: KitResolverDeps): KitResolver {
   async function resolveEntry(
     named: NamedCatalog,
     entry: StarterKitCatalogEntry,
-  ): Promise<ResolvedKitRow | KitFailure> {
+  ): Promise<KitResolution | KitFailure> {
     if (relPathEscapes(entry.path)) {
       getLogger().warn(
         { catalog: named.name, path: entry.path },
@@ -309,6 +313,19 @@ export function createKitResolver(deps: KitResolverDeps): KitResolver {
   return { resolve: resolveEntry };
 }
 
+function entryPublisher(
+  named: NamedCatalog,
+  entry: StarterKitCatalogEntry,
+  row: KitResolution,
+): ResolvedKitRow["publisher"] {
+  if (named.builtin && entry.publisher)
+    getLogger().warn(
+      { catalog: named.name, id: row.kitId, publisher: entry.publisher.name },
+      "starter kits: the built-in catalog's kits are the platform team's; the entry's publisher is ignored",
+    );
+  return kitPublisher(named, entry.publisher);
+}
+
 export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
   const kits = createKitResolver(deps);
 
@@ -332,13 +349,20 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
 
     const resolved = await Promise.all(
       parsed.data.kits.map((entry) =>
-        kits.resolve(named, entry).catch((err: unknown) => {
-          getLogger().warn(
-            { catalog: named.name, path: entry.path, err },
-            "starter kits: entry failed to resolve",
-          );
-          return unreadable(err instanceof Error ? err.message : String(err));
-        }),
+        kits
+          .resolve(named, entry)
+          .then((row): ResolvedKitRow | KitFailure =>
+            "kind" in row
+              ? row
+              : { ...row, publisher: entryPublisher(named, entry, row) },
+          )
+          .catch((err: unknown) => {
+            getLogger().warn(
+              { catalog: named.name, path: entry.path, err },
+              "starter kits: entry failed to resolve",
+            );
+            return unreadable(err instanceof Error ? err.message : String(err));
+          }),
       ),
     );
 

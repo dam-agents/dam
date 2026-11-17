@@ -45,6 +45,7 @@ Builds published before these accounts were added have only `qa-owner`; there an
   A schedule's ⋮ menu offers *Run now*, *Edit schedule* and *Delete schedule*, as on the Schedules section.
   *Add source*, *Create schedule* and *Add connection* open the usual dialogs; *Or, describe to create* (skills and schedules) leaves *Create a skill that...* or *Every morning at 9am...* in the box in place of any draft, and sends nothing.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
+  Its tile and its modal say who publishes it: "By" the brand, with a check mark, for the platform team's kits, or "By" a named user, linked from the modal.
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
 - **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and starts an agent that stopped while idle.
 - **Idle** — what the owner's list of agents says of an agent with nothing to do, whether it still runs or has stopped after the install's idle timeout (5 minutes by default; the UI has no setting for it).
@@ -77,6 +78,10 @@ Builds published before these accounts were added have only `qa-owner`; there an
   Nothing in your account is deleted.* — and one button, the only onboarding reset there is: it asks first, locks every avatar again and starts the Get started checklist over, the assistant's own create task counting as done once its celebration has been dismissed — wait for it and click *Nice* before asserting the checklist, since until then the task is unlocked but unseen.
   For an account the assistant is on for it also gives them a first open in it: the greeting comes back, a Dammy the platform made is reused with its use forgotten, one that is gone is made again when the name is free, and the account is taken to the entry route.
   For an account it is off for the card does the checklist alone and leaves the account where it is.
+  The assistant can also run a weekly **security check** of the account's whole setup: the experimental feature `security-check`, off by default, whose row under Settings → Experimental features is labelled *Security check* and says each check spends the model budget.
+  Switching it on adds an ordinary schedule named *Security check* to the assistant's schedules, and switching it off removes that schedule; an account with no assistant gets an error and the switch stays off.
+  When a check found something, the approvals bell shows one card under the assistant's name, headed *Your setup has N security problem(s)*, with one line per problem and a *Review in chat* button that opens the session of that check.
+  *Dismiss* hides that card until the next check reports; nothing in the setup changes until the person agrees in that chat, and deleting the schedule takes the card away.
 
 ## What the nested install cannot do
 

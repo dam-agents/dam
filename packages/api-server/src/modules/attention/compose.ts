@@ -4,6 +4,7 @@ import type {
   DefaultModelNotice,
   OutageAlertNotice,
   OwnerQuestionNotice,
+  SecurityCheckReport,
 } from "api-server-api";
 import type { RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
@@ -28,6 +29,7 @@ export function composeAttentionService(deps: {
   outageAlerts: () => Promise<OutageAlertNotice[]>;
   costReviews: () => Promise<CostReviewOffer[]>;
   ownerQuestions: () => Promise<OwnerQuestionNotice[]>;
+  securityCheck: () => Promise<SecurityCheckReport | null>;
 }): AttentionService {
   return createAttentionService({
     repo: createAttentionRepository(deps.db),
@@ -38,6 +40,7 @@ export function composeAttentionService(deps: {
     outageAlerts: deps.outageAlerts,
     costReviews: deps.costReviews,
     ownerQuestions: deps.ownerQuestions,
+    securityCheck: deps.securityCheck,
     log: (message) => process.stderr.write(`${message}\n`),
   });
 }

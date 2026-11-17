@@ -455,6 +455,7 @@ export const starterKitCatalogEntries = pgTable(
     source: text("source").notNull(),
     kit: jsonb("kit").notNull(),
     bundledSkills: jsonb("bundled_skills"),
+    publisher: jsonb("publisher"),
     refreshedAt: timestamp("refreshed_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -683,6 +684,33 @@ export const agentCostReviews = pgTable("agent_cost_reviews", {
     .defaultNow()
     .notNull(),
 });
+
+/* UNIT_BOUNDARY_DESCRIPTION: the Schedules the platform gave a person's
+ * assistant, one row per person and kind: the Agent, the Schedule, and the
+ * last alert a run of it raised. A new kind of default Schedule adds rows
+ * here, not a table. A row with no `reported_at` has not reported yet, and
+ * empty `items` say the last run found nothing to tell. */
+export const assistantSchedules = pgTable(
+  "assistant_schedules",
+  {
+    owner: text("owner").notNull(),
+    kind: text("kind").notNull(),
+    agentId: text("agent_id").notNull(),
+    scheduleId: text("schedule_id"),
+    items: jsonb("items")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.kind] }),
+    index("assistant_schedules_agent_idx").on(table.agentId),
+  ],
+);
 
 export const agentEnv = pgTable(
   "agent_env",
