@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The Agent's processes docked beside the conversation: the panel closes with the side panel's own close button, which a phone leaves to its Back bar, and a process's output returns to the docked processes on a desktop, while a phone, which keeps them in its sections screen, closes the dock to show them again.
+// TEST_OVERVIEW: The Agent's processes docked beside the conversation: the panel closes with the side panel's own close button, which a phone leaves to its Back bar, and a process's output returns to the docked processes on a desktop, while a phone, which keeps them in its sections screen, closes the dock to show them again — unless the output was opened from the docked processes, which Back then returns to.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +24,8 @@ const { DockedProcessesPanel } =
   await import("../../modules/processes/components/docked-processes-panel.js");
 const { DockedProcessOutputPanel } =
   await import("../../modules/processes/components/docked-process-output-panel.js");
+const { useToggleProcessOutput } =
+  await import("../../modules/processes/hooks/use-toggle-process-output.js");
 const { useStore } = await import("../../store.js");
 
 let host: HTMLDivElement;
@@ -88,5 +90,50 @@ describe("a process's output", () => {
     );
     act(() => button("Back to processes")!.click());
     expect(useStore.getState().dock).toBeNull();
+  });
+
+  // TEST_SCENARIO: on a phone, an output opened from the docked processes (the agent menu's Processes) goes back to them rather than to the chat.
+  it("goes back to the docked processes on a phone when opened from them", () => {
+    viewport.desktop = false;
+    useStore.setState({
+      dock: { kind: "process-output", key: "p1", fromDockedList: true },
+    });
+    render(
+      createElement(DockedProcessOutputPanel, {
+        agentId: "agent-a",
+        outputKey: "p1",
+      }),
+    );
+    act(() => button("Back to processes")!.click());
+    expect(useStore.getState().dock).toEqual({
+      kind: "processes",
+      agentId: "agent-a",
+    });
+  });
+
+  // TEST_SCENARIO: opening an output from the docked processes marks it so, and opening one elsewhere does not.
+  it("remembers whether it was opened from the docked processes", async () => {
+    let toggle: ((key: string | null) => Promise<void>) | undefined;
+    function Probe() {
+      toggle = useToggleProcessOutput();
+      return null;
+    }
+    useStore.setState({ confirmDockDiscard: async () => true } as never);
+    render(createElement(Probe));
+    await act(() => toggle!("p1"));
+    expect(useStore.getState().dock).toEqual({
+      kind: "process-output",
+      key: "p1",
+      fromDockedList: true,
+    });
+
+    useStore.setState({ dock: null });
+    render(createElement(Probe));
+    await act(() => toggle!("p2"));
+    expect(useStore.getState().dock).toEqual({
+      kind: "process-output",
+      key: "p2",
+      fromDockedList: false,
+    });
   });
 });

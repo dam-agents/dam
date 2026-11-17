@@ -6,7 +6,8 @@ export type Dock =
   | { kind: "browser"; agentId: string }
   | { kind: "changes"; agentId: string }
   | { kind: "processes"; agentId: string }
-  | { kind: "process-output"; key: string }
+  /** UNIT_BOUNDARY_DESCRIPTION: `fromDockedList` marks an output opened from the docked Processes list, which its Back returns to on a phone as well. */
+  | { kind: "process-output"; key: string; fromDockedList?: boolean }
   | { kind: "delegation"; driverAgentId: string; id: string };
 
 /** UNIT_BOUNDARY_DESCRIPTION: the item a dock holds, one string per item, so two docks of the same thing compare equal. */

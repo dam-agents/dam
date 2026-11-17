@@ -119,6 +119,7 @@ export function ComposerPlusMenu({
                         agentId={agentId}
                         onBack={back}
                         onManage={manage("skills")}
+                        onManageConnections={manage("connections")}
                         onAddSource={openDialog({ kind: "add-skill-source" })}
                         onDescribe={describe(DESCRIBE_PROMPTS.skills)}
                         onOpenModal={(modal) =>

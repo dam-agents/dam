@@ -51,7 +51,7 @@ The UI asks the Agent for that list once the Agent shows as starting, not first 
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
 The sidebar's Agents section lists the Sessions of an Agent only while the user has it open, and the Agent whose chat is shown is open.
-A click on a closed Agent opens its list and its new-session page, with its Files and Artifacts sections as the account last left them (closed at first); a click on an open Agent only closes its list and leaves the page where it is.
+A click on a closed Agent opens its list and its new-session page, with its Files and Artifacts sections as this browser last left them (closed at first); a click on an open Agent only closes its list and leaves the page where it is.
 An open Agent lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
 When the new rows come later, from the Agent's own list after its last known Sessions or from a Retry of a failed page, focus moves once they show.
 An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.

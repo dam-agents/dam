@@ -1,5 +1,7 @@
 import { match } from "ts-pattern";
 
+import { useAgent } from "../../../agents/api/queries.js";
+import { holds } from "../../../agents/lib/agent-permissions.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { routeToPath } from "../../../platform/lib/routes.js";
 import { AddSkillSourceModal } from "../../../sandboxes/components/skills/add-skill-source-modal.js";
@@ -77,7 +79,7 @@ function AddSkillSourceDialog({
   );
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: a dialog the compact Skills list asked for — a skill's preview, or the upload a dropped file starts — drawn with the Agent's own skills state, as the Skills section draws it. */
+/* UNIT_BOUNDARY_DESCRIPTION: a dialog the compact Skills list asked for — a skill's preview, or the upload a dropped file starts — drawn with the Agent's own skills state, as the Skills section draws it; read-only, with no Delete, for a viewer who may not change the Agent's skills. */
 function SkillsModalDialog({
   agentId,
   modal,
@@ -87,11 +89,10 @@ function SkillsModalDialog({
   modal: SkillsModal;
   onClose: () => void;
 }) {
-  const surface = useSkillsSurface(agentId, {
-    readOnly: false,
-    isError: false,
-  });
-  const derived = useSkillsDerivations(surface, { readOnly: false, query: "" });
+  const agent = useAgent(agentId);
+  const readOnly = !agent || !holds(agent.access, "skills");
+  const surface = useSkillsSurface(agentId, { readOnly, isError: false });
+  const derived = useSkillsDerivations(surface, { readOnly, query: "" });
   const { deleteStandaloneWithConfirm } = useSkillsConfirms(surface, derived);
   return (
     <SkillsModals
@@ -99,8 +100,10 @@ function SkillsModalDialog({
       agentId={agentId}
       surface={surface}
       derived={derived}
-      onDeleteLocal={(skill, pub) =>
-        void deleteStandaloneWithConfirm(skill, pub)
+      onDeleteLocal={
+        readOnly
+          ? undefined
+          : (skill, pub) => void deleteStandaloneWithConfirm(skill, pub)
       }
       onClose={onClose}
     />

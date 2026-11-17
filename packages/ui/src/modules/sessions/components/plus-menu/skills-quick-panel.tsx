@@ -26,6 +26,7 @@ export function SkillsQuickPanel({
   onAddSource,
   onDescribe,
   onOpenModal,
+  onManageConnections,
 }: {
   agentId: string;
   onBack: () => void;
@@ -33,6 +34,7 @@ export function SkillsQuickPanel({
   onAddSource: () => void;
   onDescribe: () => void;
   onOpenModal: (modal: SkillsModal) => void;
+  onManageConnections?: () => void;
 }) {
   const agent = useAgent(agentId);
   const { operable, comingUp } = useOperableState(agentId);
@@ -69,6 +71,7 @@ export function SkillsQuickPanel({
         compact
         hideSwitches={!!agent && !changes}
         onOpenModal={onOpenModal}
+        onManageConnections={onManageConnections}
       />
     </PlusMenuPanelFrame>
   );

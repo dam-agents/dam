@@ -7,6 +7,7 @@ export function useToggleProcessOutput() {
   const openKey = useStore((s) =>
     s.dock?.kind === "process-output" ? s.dock.key : null,
   );
+  const fromDockedList = useStore((s) => s.dock?.kind === "processes");
   const setDock = useStore((s) => s.setDock);
   const confirmDiscard = useDockDraftGuard();
 
@@ -16,9 +17,9 @@ export function useToggleProcessOutput() {
       setDock(
         key === null || key === openKey
           ? null
-          : { kind: "process-output", key },
+          : { kind: "process-output", key, fromDockedList },
       );
     },
-    [openKey, confirmDiscard, setDock],
+    [openKey, fromDockedList, confirmDiscard, setDock],
   );
 }

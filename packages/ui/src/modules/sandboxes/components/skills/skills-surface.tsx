@@ -33,6 +33,7 @@ export function SkillsSurface({
   compact = false,
   hideSwitches = false,
   onOpenModal,
+  onManageConnections,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
@@ -46,6 +47,8 @@ export function SkillsSurface({
   hideSwitches?: boolean;
   /** UNIT_BOUNDARY_DESCRIPTION: where the compact surface's dialogs open: the + menu draws them after it closes, so none is drawn under the menu or closed with it. */
   onOpenModal?: (modal: SkillsModal) => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: the compact surface's way to the Agent's Connections: the + menu closes first, so the settings never open under it. */
+  onManageConnections?: () => void;
 }) {
   const isError = agentState === "error";
   const openAgentSettings = useStore((s) => s.openAgentSettings);
@@ -82,9 +85,11 @@ export function SkillsSurface({
 
   const openAddSource = () =>
     showModal({ kind: "add-source", mode: "github", files: [] });
-  const manageConnections = agentId
-    ? () => openAgentSettings(agentId, "connections")
-    : undefined;
+  const manageConnections = compact
+    ? onManageConnections
+    : agentId
+      ? () => openAgentSettings(agentId, "connections")
+      : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
   const dropEnabled = !readOnly && !hideSwitches && !!agentId;
@@ -147,7 +152,7 @@ export function SkillsSurface({
               totals={totals}
               matchCount={matchCount}
               notice={
-                drifted.length > 0 ? (
+                drifted.length > 0 && !hideSwitches ? (
                   <SkillDriftBanner
                     drifted={drifted}
                     busy={updatingAll}

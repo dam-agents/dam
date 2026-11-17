@@ -72,9 +72,11 @@ vi.mock("../../modules/sandboxes/components/skills/skills-surface.js", () => ({
     compact?: boolean;
     managesLibrary: boolean;
     hideSwitches?: boolean;
+    onManageConnections?: () => void;
   }) =>
     createElement("div", {
       "data-testid": "skills-surface",
+      onClick: props.onManageConnections,
       "data-hide-switches": String(!!props.hideSwitches),
       "data-agent": props.agentId,
       "data-read-only": String(props.readOnly),
@@ -488,6 +490,15 @@ describe("the Skills panel", () => {
     expect(surface.dataset.compact).toBe("true");
     expect(surface.dataset.readOnly).toBe("false");
     expect(surface.dataset.manages).toBe("true");
+  });
+
+  // TEST_SCENARIO: a source's Manage connections, in the panel, closes the menu before it opens the Agent's Connections, so the settings never open under the menu.
+  it("closes the menu before Manage connections", () => {
+    renderMenu();
+    openPanel("Skills");
+    click(byTestId("skills-surface")!);
+    expect(onManage).toHaveBeenCalledWith("connections");
+    expect(panel()).toBeNull();
   });
 
   // TEST_SCENARIO: an Agent that is not running cannot take a skill change, so the surface is read-only.
