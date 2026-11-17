@@ -83,7 +83,7 @@ export function ClassicChatLayout({
 }: {
   identity: ReactNode;
   status: ReactNode;
-  /** UNIT_BOUNDARY_DESCRIPTION: the header's New chat button, at its end, as the design draws it; absent while there is nothing to start afresh from. */
+  /** UNIT_BOUNDARY_DESCRIPTION: the header's New chat button, at its end, as the design draws it; always there for an Agent, so the header keeps its balance, and on a chat not started yet it only puts the cursor in the composer. */
   newChat?: ReactNode;
   activity: ReactNode;
   notices: ReactNode;

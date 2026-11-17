@@ -1497,7 +1497,7 @@ export function ChatView() {
           </>
         }
         newChat={
-          selectedAgent && (sessionId !== null || messages.length > 0) ? (
+          selectedAgent ? (
             <Button
               variant="outline"
               size="sm"

@@ -600,24 +600,17 @@ it("opens an unused assistant's chat on its greeting", () => {
   expect(placeholder(el)).toBe("Message Dammy");
 });
 
-// TEST_SCENARIO: the header offers the outlined "New chat" button, labelled as the design draws it, only where pressing it would start one. A new, empty chat has it not, and neither has a follow-up draft, which is a new empty chat too and where a press would only focus the composer. A chat that holds a session or a message has it.
-it("shows New chat only once the chat holds something", () => {
+// TEST_SCENARIO: the header always offers the outlined "New chat" button, labelled as the design draws it, so the header keeps its balance; on a new, empty chat a press starts nothing and puts the cursor in the composer, as the design's New chat flow does.
+it("always shows New chat, which focuses the composer of an empty chat", async () => {
   const el = openNewChat();
-  expect(newSessionButton(el)).toBeUndefined();
+  const button = newSessionButton(el);
+  expect(button?.textContent).toBe("New chat");
 
-  act(() =>
-    useStore.setState({
-      drafts: {
-        "a-1:~new": {
-          text: "",
-          attachments: [],
-          continuesInvocation: "inv-1",
-        },
-      },
-    }),
+  act(() => button!.click());
+  await vi.waitFor(() =>
+    expect(document.activeElement).toBe(el.querySelector("textarea")),
   );
-  paint();
-  expect(newSessionButton(el)).toBeUndefined();
+  expect(useStore.getState().messages).toHaveLength(0);
 
   act(() =>
     useStore.setState({
@@ -627,7 +620,6 @@ it("shows New chat only once the chat holds something", () => {
     }),
   );
   paint();
-  expect(newSessionButton(el)).toBeDefined();
   expect(newSessionButton(el)?.textContent).toBe("New chat");
 });
 
