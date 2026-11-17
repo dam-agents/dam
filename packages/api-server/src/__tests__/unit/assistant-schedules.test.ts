@@ -63,7 +63,17 @@ function world(
   } = {},
 ) {
   const schedules = new Map<string, Schedule>();
-  const state = { assistant: opts.assistant, now: NOW };
+  const state: {
+    assistant: string | null | undefined;
+    now: Date;
+    beforeLockedWork?: () => Promise<void>;
+  } = { assistant: opts.assistant, now: NOW };
+  const lockCalls = { count: 0 };
+  const lock = async <T>(_key: string, work: () => Promise<T>): Promise<T> => {
+    lockCalls.count += 1;
+    await state.beforeLockedWork?.();
+    return work();
+  };
   let made = 0;
   const createRRule = vi.fn(
     async (input: Parameters<SchedulesService["createRRule"]>[0]) => {
@@ -99,13 +109,14 @@ function world(
         createRRule,
         delete: deleteSchedule,
       },
-      lock: (_key, work) => work(),
+      lock,
       now: () => state.now,
     });
   return {
     checks: scheduleFor(),
     scheduleFor,
     state,
+    lockCalls,
     repo,
     schedules,
     createRRule,
@@ -218,6 +229,27 @@ describe("the check where nobody flipped a switch", () => {
     w.schedules.clear();
     await w.checks.ensure();
     expect(w.createRRule).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: this runs on each request of a person, and nearly always there is nothing to make: the record and the assistant agree, so it takes no lock.
+  it("takes no lock when nothing is owed", async () => {
+    const w = world();
+    await w.checks.ensure();
+    w.lockCalls.count = 0;
+    await w.checks.ensure();
+    expect(w.lockCalls.count).toBe(0);
+  });
+
+  // TEST_SCENARIO: two requests both see that a Schedule is owed; the one that waited for the lock reads again inside it, finds the other's Schedule, and makes no second one.
+  it("makes no second schedule when another request made it first", async () => {
+    const w = world();
+    w.state.beforeLockedWork = async () => {
+      w.state.beforeLockedWork = undefined;
+      await w.checks.ensure();
+    };
+    await w.checks.ensure();
+    expect(w.createRRule).toHaveBeenCalledTimes(1);
+    expect(w.schedules.size).toBe(1);
   });
 
   // TEST_SCENARIO: the platform made the person's assistant again, so the Schedule went with the old Agent; the check follows to the new one and starts without the old report.

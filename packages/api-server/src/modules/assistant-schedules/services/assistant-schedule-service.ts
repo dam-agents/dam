@@ -105,6 +105,20 @@ export function createAssistantSchedule(
     });
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: the Schedule `ensure` still owes this person: their assistant has none on record, or the record names another Agent. Null is the common answer, and it is read without the lock, since `ensure` runs on a request path; the lock is taken only to make a Schedule, and this is read again inside it. */
+  async function owed(): Promise<{
+    row: AssistantScheduleRow | null;
+    agentId: string;
+  } | null> {
+    const [row, agentId] = await Promise.all([
+      deps.repo.find(owner, definition.kind),
+      deps.assistantAgentId(),
+    ]);
+    return agentId === null || row?.agentId === agentId
+      ? null
+      : { row, agentId };
+  }
+
   const changed = (agentId: string): void =>
     emit({ type: EventType.AttentionChanged, agentId, ownerSub: owner });
 
@@ -126,14 +140,13 @@ export function createAssistantSchedule(
     },
 
     async ensure() {
+      if ((await owed()) === null) return;
       await serialized(async () => {
-        const [row, agentId] = await Promise.all([
-          deps.repo.find(owner, definition.kind),
-          deps.assistantAgentId(),
-        ]);
-        if (agentId === null || row?.agentId === agentId) return;
-        if (row?.scheduleId) await deps.schedules.delete(row.scheduleId);
-        await give(agentId);
+        const due = await owed();
+        if (due === null) return;
+        if (due.row?.scheduleId)
+          await deps.schedules.delete(due.row.scheduleId);
+        await give(due.agentId);
       });
     },
 
