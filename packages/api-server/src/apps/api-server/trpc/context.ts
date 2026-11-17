@@ -91,6 +91,7 @@ import {
 } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { composeCostReviewsForOwner } from "../../../modules/cost-reviews/index.js";
+import { composeSecurityChecksForOwner } from "../../../modules/assistant-schedules/index.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
@@ -501,6 +502,27 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       firstResultLock: assistantFirstResultLock,
       damConnection: () => connections.ensureDamConnection({ platform: true }),
     });
+    /* UNIT_BOUNDARY_DESCRIPTION: whether the security check is on for this person, asked so that a mode set to `on` or `off` costs no read at all. */
+    const securityCheckOn = async (): Promise<boolean> => {
+      const mode = config.featureModes["security-check"];
+      if (mode === "on") return true;
+      if (mode !== "experimental") return false;
+      return featureOnForUser(mode, (await features.flags())["security-check"]);
+    };
+    const securityChecks = composeSecurityChecksForOwner({
+      db,
+      owner: user.sub,
+      assistantName: config.brand.assistantName,
+      enabled: securityCheckOn,
+      assistantAgentId: async () => {
+        const state = await assistants.state();
+        if (state === null || !state.ready) return null;
+        const agent = await agentsRepo.getLive(state.agentId, user.sub);
+        return agent === null ? null : state.agentId;
+      },
+      ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      schedules,
+    });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
       agentStore: { authority: config.agentStore },
@@ -660,6 +682,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
       costReviews: () => costReviews.offers(),
       ownerQuestions: () => invocationsQuery.waitingForOwner(),
+      securityCheck: () => securityChecks.current(),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -758,7 +781,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         user.actingEditor !== undefined
       )
         return;
-      provisioning.start(user.sub, () => ensureAssistant());
+      provisioning.start(user.sub, async () => {
+        await ensureAssistant();
+        if (config.featureModes["security-check"] === "on")
+          await securityChecks.ensure();
+      });
     };
 
     /* UNIT_BOUNDARY_DESCRIPTION: the switch itself is the ask, so this makes the assistant whenever the person has none under that name. */
@@ -841,6 +868,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       approvals,
       attention,
       costReviews,
+      securityChecks,
       egressRules,
       webSearch,
       invocationsQuery,

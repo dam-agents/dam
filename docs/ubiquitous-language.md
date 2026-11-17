@@ -398,6 +398,7 @@ See [`docs/architecture/provider-status.md`](architecture/provider-status.md).
 | Provider Status | The platform's view of whether a model provider answers, per Connection template: healthy, degraded, or a fault on the platform's side. Computed from the model calls that the agents' gateways see; every user reads the same status |
 | Outage          | One degraded period of one Connection template, named by its template and its start time                                                                                                                                              |
 | Outage Alert    | The message that tells an owner that an Outage failed their unattended work, and the message when it ends                                                                                                                             |
+| Security Check  | The weekly scheduled run in which a person's assistant compares their whole setup with the security advisory and reports what goes against it; the report shows as an alert in the approvals bell                                     |
 
 ## Agent Telemetry (bounded context)
 

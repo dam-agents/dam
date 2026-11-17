@@ -31,6 +31,7 @@ export {
   agentChildEgressGrants,
   agentSessions,
   agentCostReviews,
+  assistantSchedules,
   agentPublicProfiles,
   egressRules,
   webSearchRules,

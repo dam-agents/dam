@@ -15,6 +15,8 @@ import {
 } from "../../approvals/lib/group-approvals.js";
 import { FeedCostReviewCard } from "../../cost-reviews/components/feed-cost-review-card.js";
 import { useCostReviewOffers } from "../../cost-reviews/hooks/use-cost-review-offers.js";
+import { FeedSecurityCheckCard } from "../../security-checks/components/feed-security-check-card.js";
+import { useSecurityCheckNotices } from "../../security-checks/hooks/use-security-check-notices.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useFeed } from "../api/queries.js";
@@ -46,6 +48,7 @@ function useApprovals() {
   const outageAlerts = useOutageAlerts();
   const costReviews = useCostReviewOffers();
   const ownerQuestions = useOwnerQuestionNotices();
+  const securityChecks = useSecurityCheckNotices();
   const now = useNow(MINUTE_MS);
 
   const approvals = sticky
@@ -75,6 +78,7 @@ function useApprovals() {
     outageAlerts,
     costReviews,
     ownerQuestions,
+    securityChecks,
     loadingFeed,
     now,
   };
@@ -135,6 +139,30 @@ function ApprovalsList({
           })}
         </div>
       )}
+      {view.securityChecks.waiting.length > 0 && (
+        <div className="mb-1 flex flex-col gap-1">
+          {view.securityChecks.waiting.map((notice) => {
+            const agent = agentOf(notice.agentId);
+            return (
+              <FeedSecurityCheckCard
+                key={notice.id}
+                notice={notice}
+                agentName={agent?.name ?? notice.agentId}
+                avatarName={agent?.name}
+                avatar={agent?.avatar}
+                now={now}
+                onDismiss={() => view.securityChecks.dismiss(notice)}
+                onOpen={() => {
+                  if (notice.sessionId)
+                    openSession(notice.agentId, notice.sessionId);
+                  else openAgent(notice.agentId);
+                  onNavigate?.();
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
       {view.outageAlerts.waiting.length > 0 && (
         <div className="mb-1 flex flex-col gap-1">
           {view.outageAlerts.waiting.map((alert) => (
@@ -177,6 +205,7 @@ function ApprovalsList({
         view.defaultModels.waiting.length === 0 &&
         view.outageAlerts.waiting.length === 0 &&
         view.ownerQuestions.waiting.length === 0 &&
+        view.securityChecks.waiting.length === 0 &&
         view.costReviews.offers.length === 0 &&
         view.costReviews.startingAgentId === null && (
           <EmptyState bordered={false}>No approvals waiting.</EmptyState>

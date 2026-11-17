@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-11-14
+Last verified: 2026-11-17
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -11,7 +11,7 @@ In an Agent's chat the bell sits in the chat's top bar and opens that same drawe
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts), [sub-agent questions](#sub-agent-questions) and the [cost review offer](#cost-review-offer) are read beside them.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices), [outage alerts](#outage-alerts), [sub-agent questions](#sub-agent-questions), the [cost review offer](#cost-review-offer) and the [security check alert](#security-check-alert) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -166,6 +166,21 @@ That first turn runs like a scheduled one, without anyone watching, because the 
 That first turn names the skill, which holds the procedure; the review recommends and changes nothing.
 Later, and the card's dismiss for all its Agents at once, tells the owner when the offer returns and that they can ask the Agent for a review in its chat any time, which the skill covers on its own.
 Both answers are recorded in the activity log.
+
+## Security check alert
+
+The bell tells the owner what their assistant's [security check](assistant.md#the-security-check) found, as one card: a short title for each problem, and when the check ran.
+The card is the last report the assistant made, and only while that report names a problem: a report with none takes the card away.
+It is read from the owner's one record, so a sleeping Agent is never woken for it, and it is computed only for a person the feature is on for.
+The card counts in the panel's badge like an approval.
+
+It opens the Session of the check's latest run, where the assistant already described each problem and offers to fix it, so nothing runs again and no finding is copied into a new chat.
+That Session is the newest one the check's Schedule opened; when the session list no longer holds one, the card opens the assistant's chat instead.
+Nothing is fixed from the card.
+
+A dismissal names one report, per owner and on the server, so it hides that card on every device and the next report is told again.
+A dismissal is dropped once its report is gone.
+A new report reaches open tabs through the attention hint.
 
 ## Seen, unread, and dismissed
 
