@@ -16,6 +16,7 @@ import {
 } from "../api/queries.js";
 import { assistantFeatureRow } from "../lib/assistant-feature-row.js";
 import { damConnectionFeatureRow } from "../lib/dam-connection-feature-row.js";
+import { securityCheckFeatureRow } from "../lib/security-check-feature-row.js";
 import { isFeatureOffered } from "../lib/visible-features.js";
 
 interface FeatureRow {
@@ -24,12 +25,13 @@ interface FeatureRow {
   description: ReactNode;
 }
 
-/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the Connection that drives the install and the assistant last, both built from the brand. */
+/* UNIT_BOUNDARY_DESCRIPTION: the rows the tab offers, with the Connection that drives the install, the assistant and its security check last, all built from the brand. */
 function featureRows(brand: Brand): FeatureRow[] {
   return [
     ...FEATURE_ROWS,
     damConnectionFeatureRow(brand),
     assistantFeatureRow(brand),
+    securityCheckFeatureRow(brand),
   ];
 }
 

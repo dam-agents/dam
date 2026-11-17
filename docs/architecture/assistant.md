@@ -1,6 +1,6 @@
 # Assistant
 
-Last verified: 2026-11-16
+Last verified: 2026-11-17
 
 ## Overview
 
@@ -133,6 +133,42 @@ What it restores is the first open: the record says the assistant has never been
 The UI does not build that route itself — it fetches the record, the feature flags and the checklist again, releases the one-shot landing, and goes to the app's entry route, so the same landing logic decides, on fresh answers rather than the ones the cache held before the reset.
 The greeting rests on that mark alone, not on how many sessions the assistant holds, so an empty chat shows it even when older sessions exist; sending a message marks the assistant used and takes it away again.
 
+## The security check
+
+A person can have their assistant check their whole setup once a week against the [security advisory](cli.md#agent-skill) of the `dam` skill, the same page that guides any agent that drives the platform through the CLI.
+Each check is a scheduled run on the owner's budget, so it is the `security-check` [feature](features.md), off until the person turns it on.
+
+**The switch is the trigger.**
+Turning it on gives the assistant an ordinary weekly [Schedule](schedules.md) named "Security check", in a fresh Session each time, and a record names that Schedule.
+The record is one row per person and kind of the Schedules the platform gave their assistant, so another default Schedule is a new kind with its own name, recurrence and task, not a new table.
+Its minute of the week is derived from the owner, so one person's check keeps its time while an install's checks do not all wake their Agents together.
+A person with no assistant gets nothing, and the switch says so and stays off.
+The Schedule is the owner's from then on: they change its time or its task, pause it, or delete it, with the controls every Schedule has.
+Turning the switch on again makes a Schedule only when the one the record names is gone.
+Turning it off deletes that Schedule and the record, and the alert goes with them.
+An install that pins the feature on has no switch, so it gives each person the Schedule once, after their assistant exists; one they delete stays deleted, and a flag written off takes nothing away.
+An install that turns the feature off gives nobody one, whatever flag is written.
+The check follows the assistant: when the platform makes a person's assistant again, by its switch or by the onboarding reset, a check they have on is given to the new Agent.
+Giving and taking away run one at a time per person, so two requests never make two Schedules.
+
+**The platform checks nothing itself.**
+The Schedule's task holds the whole procedure, since only this run needs it: read the advisory, list every agent's editors, channels, connections, network rules and satellites through the CLI, and change nothing.
+The skill is not changed for it; what counts as a problem stays in the advisory, which the task points to.
+The task is written when the Schedule is made and is the owner's to edit, so a later release's wording reaches a person only when their Schedule is made again.
+The assistant describes each problem in that Session, as what in the setup goes against the advisory and what the safer setup is, and offers to fix it.
+It then reports to the platform with `dam security-check report`, one short title per problem, over the [Connection](connection-presets.md#platform-preset-this-install-itself) that lets it act as its owner.
+The record keeps only the last report, and a report with no problem clears it.
+A report from a person the feature is off for, or who has no record, is answered with nothing recorded.
+
+The report is what the bell shows as the [security check alert](home-feed.md#security-check-alert), which opens that Session.
+There the assistant fixes only what the owner agrees to, and reports what is left with `--update`, which keeps the report's time, so an alert the owner dismissed stays dismissed while a new check is told again.
+The report is shown only while its Schedule stands: once the owner deletes the Schedule no run can clear it, so the alert goes with it.
+A problem the owner calls fine goes into the assistant's memory file, and later checks leave it out until that setup changes; the platform keeps no list of accepted problems.
+
+The check sees what the CLI lists.
+It does not read agents' files or sessions, so a secret left in a file is found only by the agent that works with that file.
+It uses the access the assistant already has: there is no narrower read-only grant, and the task is what keeps a check from changing anything.
+
 ## Questions about the platform
 
 A person asks the assistant about the platform itself privately, in their own chat, rather than in a public channel: what it is, what a feature does, how to set something up, what changed in a release.
@@ -152,5 +188,5 @@ The agent posts the question nowhere; it still reaches the Agent's model provide
 
 It holds no special standing: it knows what any Agent knows, with the access any Agent has.
 The one grant provisioning gives it is the install's own [Connection](connection-presets.md#platform-preset-this-install-itself), so it can drive the platform as its owner — a grant the platform makes whatever the flag that offers that Connection to people says; without that Connection it has only the access any Agent has.
-It is proactive only through what its owner set up with it: a schedule it created runs on time, and a Slack DM Bridge delivers there.
+It is proactive only through what its owner set up with it: a schedule it created runs on time, a Slack DM Bridge delivers there, and the [security check](#the-security-check) runs once its owner turned it on.
 Anything else it should know later, such as a team knowledge base, arrives as a grant or a capability, without changing provisioning or this page's guarantees.

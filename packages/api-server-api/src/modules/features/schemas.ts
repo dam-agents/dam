@@ -12,6 +12,7 @@ export const featureIdSchema = z.enum([
   "damConnection",
   "chat-network-approvals",
   "one-time-tasks",
+  "security-check",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

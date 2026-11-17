@@ -17,13 +17,25 @@ export const featuresRouter = t.router({
     .input(featureSetFlagInputSchema)
     .mutation(async ({ ctx, input }) => {
       const flags = await ctx.features.setFlag(input.feature, input.enabled);
-      if (!input.enabled || input.feature !== "dambledore") return flags;
-      // UNIT_BOUNDARY_DESCRIPTION: switching the assistant on gives this person Dambledore here if they have none under that name, since a flag change makes no new request context; switching it off removes nothing and hides only the greeting, the landing and the reset. A create that failed leaves the switch off, so the person is not shown a switch that promises an assistant nothing made, and its error reaches them.
+      // UNIT_BOUNDARY_DESCRIPTION: what a switch makes or takes away for this person, since a flag change makes no new request context. Switching the assistant on gives them Dambledore if they have none under that name; switching it off removes nothing and hides only the greeting, the landing and the reset. Switching the security check on gives their assistant the weekly check, and switching it off takes that Schedule and its last report away. A step that failed puts the switch back, so the person is not shown a switch that promises what nothing made, and its error reaches them.
+      const follow =
+        input.feature === "dambledore"
+          ? input.enabled
+            ? () => ctx.optInAssistant()
+            : undefined
+          : input.feature === "security-check"
+            ? input.enabled
+              ? () => ctx.securityChecks.enable()
+              : () => ctx.securityChecks.disable()
+            : undefined;
+      if (follow === undefined) return flags;
       try {
-        await ctx.optInAssistant();
+        await follow();
         return flags;
       } catch (err) {
-        await ctx.features.setFlag(input.feature, false).catch(() => undefined);
+        await ctx.features
+          .setFlag(input.feature, !input.enabled)
+          .catch(() => undefined);
         throw err;
       }
     }),
