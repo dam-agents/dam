@@ -239,9 +239,9 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          {/* UNIT_BOUNDARY_DESCRIPTION: the header sits in the composer's own column, with its padding, so the agent's avatar starts at the composer's left edge and New chat ends at its right edge, as the design review asked. */}
-          <header className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8">
-            <ChatColumn className="flex items-center gap-2 px-0 md:@xs/chat:px-4">
+          {/* UNIT_BOUNDARY_DESCRIPTION: the header sits in the conversation's own column, with the messages' padding, so the agent's avatar starts where the messages start and New chat ends where they end: the content well's outer edges, as the design review asked. */}
+          <header className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3">
+            <ChatColumn className="flex items-center gap-2 max-md:px-0 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8">
               <MobileMenuButton />
               {identity}
               <div className="flex min-w-0 items-center gap-2">{status}</div>

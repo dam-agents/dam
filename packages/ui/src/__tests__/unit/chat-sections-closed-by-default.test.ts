@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width; a stored choice still wins. On a desktop the column beside the conversation, 320 px as the design's chat refresh draws it, holds only the open ones and is gone while none is, two open ones stack with a divider, and a section's X closes it; Processes is never in it, since it docks beside the conversation instead. The thin strip across the top shows its border while anything is open beside the conversation. A phone keeps every section, Processes too, in a screen of its own, each folding from its header. The chat header lines up with the composer's column.
+// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width; a stored choice still wins. On a desktop the column beside the conversation, 320 px as the design's chat refresh draws it, holds only the open ones and is gone while none is, two open ones stack with a divider, and a section's X closes it; Processes is never in it, since it docks beside the conversation instead. The thin strip across the top shows its border while anything is open beside the conversation. A phone keeps every section, Processes too, in a screen of its own, each folding from its header. The chat header lines up with the messages' column.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -248,8 +248,8 @@ describe("the sections screen on a phone", () => {
 });
 
 describe("the chat header", () => {
-  // TEST_SCENARIO: the header's identity and New chat sit in the composer's own 813 px column, with the composer's padding, so the name starts at the composer's left edge and New chat ends at its right edge, as the design review asked.
-  it("lines up with the composer's column", () => {
+  // TEST_SCENARIO: the header's identity and New chat sit in the conversation's own 813 px column, with the messages' padding, so the name starts where the messages start and New chat ends where they end, as the design review asked.
+  it("lines up with the messages' column", () => {
     render(
       createElement(ClassicChatLayout, {
         ...(layout().props as object),
@@ -260,6 +260,6 @@ describe("the chat header", () => {
     expect(well.className).toContain("max-w-[813px]");
     expect(well.className).toContain("mx-auto");
     expect(well.contains(byTestId("new-chat"))).toBe(true);
-    expect(well.parentElement!.className).toContain("md:@xl/chat:px-8");
+    expect(well.className).toContain("md:@xl/chat:px-8");
   });
 });
