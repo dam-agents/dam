@@ -1,5 +1,23 @@
 // UNIT_BOUNDARY_DESCRIPTION: the Satellite mount, one FUSE filesystem at /mnt/sat inside every machine: a directory per files Satellite the Agent is granted, and under each, that machine's tree read and written one operation at a time through the platform. It runs as threads of the guest's init and not as a process beside it, because platform-init kills every process whenever the image's entrypoint exits — which is every image without openrc, and so a harness restart — and a mount whose daemon was killed answers "Transport endpoint is not connected" until the next reboot. Nothing here is a child, nothing here is installed into an image, and nothing here is started by the controller: the mount arrives with the runner release and serves whatever the platform grants.
 // UNIT_BOUNDARY_DESCRIPTION: it is dormant by construction. No Satellite of kind files can exist yet, so the mount lists nothing and asks the platform on a timer. A platform older than the channel answers 404 to the grant list, which the mount logs once and backs off from, keeping an empty mount rather than disappearing.
+#[cfg(test)]
+pub(crate) mod trace {
+    use std::sync::Mutex;
+
+    static LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub fn add(line: String) {
+        LINES
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .push(line);
+    }
+
+    pub fn take() -> Vec<String> {
+        std::mem::take(&mut *LINES.lock().unwrap_or_else(|held| held.into_inner()))
+    }
+}
+
 mod fs;
 mod inodes;
 mod platform;

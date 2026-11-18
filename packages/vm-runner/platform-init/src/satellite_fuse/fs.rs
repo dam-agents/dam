@@ -17,6 +17,17 @@ use super::inodes::{self, Node};
 use super::wire::{self, Attrs, Failure, Request as Op};
 use super::State;
 
+#[cfg(test)]
+macro_rules! trace {
+    ($($t:tt)*) => {
+        super::trace::add(format!($($t)*))
+    };
+}
+#[cfg(not(test))]
+macro_rules! trace {
+    ($($t:tt)*) => {};
+}
+
 pub struct SatelliteFs {
     state: Arc<State>,
 }
@@ -694,14 +705,28 @@ impl Filesystem for SatelliteFs {
         target: &Path,
         reply: ReplyEntry,
     ) {
+        trace!(
+            "symlink CALLED parent_ino={} link_name={:?} target={:?}",
+            parent.0,
+            link_name,
+            target
+        );
         let found = caught("symlink", || {
             let parent = self.node(parent.0)?;
+            trace!(
+                "symlink parent satellite={:?} path={:?} depth={}",
+                parent.satellite,
+                parent.path,
+                depth(&parent.path)
+            );
             let name = shown(link_name)?;
             let target = target.to_str().ok_or(Failure::NotPermitted)?;
             if !wire::target_stays_inside(target, depth(&parent.path)) {
+                trace!("symlink REFUSED target={target:?} -> EPERM");
                 return Err(Failure::NotPermitted);
             }
             let path = child(&parent, name);
+            trace!("symlink RELAYING path={path:?} target={target:?}");
             let answer = self.relay(
                 &parent,
                 Op::at("symlink", &path).with("target", json!(target)),
@@ -724,9 +749,13 @@ impl Filesystem for SatelliteFs {
         });
         match found {
             Ok((attr, generation)) => {
+                trace!("symlink REPLY ok");
                 reply.entry(&super::TTL, &attr, fuser::Generation(generation))
             }
-            Err(failure) => reply.error(failure.errno()),
+            Err(failure) => {
+                trace!("symlink REPLY errno={:?}", failure.errno());
+                reply.error(failure.errno())
+            }
         }
     }
 

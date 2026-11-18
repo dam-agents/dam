@@ -695,9 +695,28 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     let (ok, target) = shell(format!("readlink {mnt}/lab/docs/notes/link"));
     assert!(ok, "readlink: {target}");
     assert_eq!(target.trim(), "../../a.txt");
+    let environment = shell(format!(
+        "id -a; uname -r; uname -m; grep -E 'Cap(Eff|Prm)' /proc/self/status; stat -c 'parent %a %u %g %F' {mnt}/lab/docs/notes"
+    ));
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.contains(&mnt))
+        .map(|line| format!("mountinfo {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = super::trace::take();
+    let _ = tree.trace();
     let (ok, escaping) = shell(format!(
         "ln -s ../../../etc/passwd {mnt}/lab/docs/notes/out"
     ));
+    let fuse_trace = super::trace::take();
+    let platform_trace = tree.trace();
+    eprintln!(
+        "--- symlink diagnostic ---\n{} {mountinfo}\nenvironment: {}\nfuse trace: {fuse_trace:#?}\nplatform trace: {platform_trace:#?}\n--- end ---",
+        if ok { "ln succeeded" } else { "ln failed" },
+        environment.1
+    );
     assert!(!ok, "a link whose `..` leave the root was created");
     assert!(
         escaping.contains("Operation not permitted"),
@@ -905,6 +924,7 @@ struct Tree {
     next_ino: AtomicUsize,
     reads: AtomicUsize,
     writes: AtomicUsize,
+    trace: Mutex<Vec<String>>,
 }
 
 struct InMemory {
@@ -922,6 +942,7 @@ impl Tree {
             next_ino: AtomicUsize::new(2),
             reads: AtomicUsize::new(0),
             writes: AtomicUsize::new(0),
+            trace: Mutex::new(Vec::new()),
         };
         for satellite in ["lab", "ro"] {
             for directory in ["", "docs", "docs/notes"] {
@@ -1010,7 +1031,30 @@ impl Tree {
         (200, self.operate(satellite_id(satellite), body).to_string())
     }
 
+    fn trace(&self) -> Vec<String> {
+        std::mem::take(&mut *self.trace.lock().unwrap_or_else(|held| held.into_inner()))
+    }
+
     fn operate(&self, satellite: &'static str, body: &serde_json::Value) -> serde_json::Value {
+        let answer = self.operate_inner(satellite, body);
+        self.trace
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .push(format!(
+                "platform op={:?} path={:?} target={:?} -> {}",
+                body["op"].as_str().unwrap_or_default(),
+                body["path"].as_str().unwrap_or_default(),
+                body["target"].as_str().unwrap_or_default(),
+                answer
+            ));
+        answer
+    }
+
+    fn operate_inner(
+        &self,
+        satellite: &'static str,
+        body: &serde_json::Value,
+    ) -> serde_json::Value {
         let op = body["op"].as_str().unwrap_or_default();
         let path = body["path"].as_str().unwrap_or_default();
         let path = if path == wire::ROOT_PATH { "" } else { path };
