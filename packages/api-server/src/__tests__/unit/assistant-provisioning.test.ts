@@ -40,11 +40,10 @@ describe("an install that pins the feature on", () => {
     const instructions = (input as unknown as { instructions: string })
       .instructions;
     expect(instructions).toContain(`I'm ${NAME}, your personal DAM agent.`);
-    // TEST_SCENARIO: the standing instructions report the greeting as it now reads, naming where the provider is changed and no provider at all, since the notice above the composer is what names CurveBender.
+    // TEST_SCENARIO: the standing instructions report the greeting as it now reads, with no provider line at all, since the notice above the composer is what names CurveBender.
     expect(instructions).not.toContain("You're set up with");
-    expect(instructions).toContain(
-      "You can switch providers anytime in Agent settings.",
-    );
+    expect(instructions).not.toContain("switch providers");
+    expect(instructions).not.toContain("Agent settings");
     expect(w.enrolled).toHaveBeenCalledTimes(1);
     expect(w.provisioned).toHaveBeenCalledTimes(1);
     expect(w.rows.rows.get(OWNER)).toMatchObject({

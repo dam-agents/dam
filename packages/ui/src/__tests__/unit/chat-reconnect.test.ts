@@ -575,7 +575,6 @@ function greetingCopy() {
     assistantName: "Dammy",
     opening: "Hi Jenna! I'm Dammy, your personal DAM agent.",
     learn: "I learn how you work, one task at a time.",
-    settingsLink: "Agent settings",
     ideas: [
       {
         label: "Artifact",

@@ -831,7 +831,7 @@ export function ChatView() {
     else if (processesToggle.click === "open")
       void toggleProcesses(selectedAgent);
   };
-  /* UNIT_BOUNDARY_DESCRIPTION: every way into the Agent's settings from its chat — the top bar's name and wrench, a reply's agent name, the empty chat's avatar, the greeting's link, and the model pickers' provider links at the Providers section — opens the same modal over the chat; the modal links to the full page. */
+  /* UNIT_BOUNDARY_DESCRIPTION: every way into the Agent's settings from its chat — the top bar's name and wrench, a reply's agent name, the empty chat's avatar, and the model pickers' provider links at the Providers section — opens the same modal over the chat; the modal links to the full page. */
   const handleConfigureSandbox = useCallback(
     () => openSettings("setup"),
     [openSettings],
