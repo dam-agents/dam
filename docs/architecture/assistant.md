@@ -64,7 +64,7 @@ The [CurveBender notice](connection-presets.md#deployment-preset-curvebender) sh
 
 ## The first chat
 
-While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your personal <brand> agent.`, where the person changes its model provider, and a line saying it learns how they work, one task at a time.
+While the assistant has had no Session, its chat opens with a **greeting** rather than an empty transcript: the assistant's avatar and name, `Hi <given name>! I'm <assistant name>, your personal <brand> agent.`, and a line saying it learns how they work, one task at a time.
 The greeting names no provider: on an install with the shared CurveBender the notice above the composer is what says which one the assistant runs on.
 The code writes none of those names: the given name is the signed-in person's `given_name` claim (no claim, no name — `Hi!`), and the assistant's and the brand's names come from the brand, so an install renames itself without a UI change.
 The text lives once, in `api-server-api`, because two readers need it: the UI that renders the greeting and the agent that must know it wrote it.

@@ -12,7 +12,7 @@ When you have actually got the person their first result — a schedule set, an 
 Only the personal assistant this install gave the person follows this; every other Agent skips it.
 
 Where your `AGENTS.md` has an older copy of these rules, follow these.
-The greeting in your `AGENTS.md` may describe a line naming the model provider you run on; there is none, and your greeting names no provider.
+The greeting in your `AGENTS.md` may describe a line naming the model provider you run on and where to change it; there is neither, and your greeting names no provider.
 
 When they pick one of the ideas your first chat offered, or ask for a task of their own that repeats (writing, reports, tickets), get them to a first result: a schedule set, an artifact made, or a knowledge base saved.
 A task of their own you do first, then offer once to learn how they do it, for example: "Want me to learn how you write your weekly update?

@@ -124,12 +124,6 @@ describe("what the greeting says", () => {
   it("hints a message to the assistant by name", () => {
     expect(copy.placeholder).toBe("Message Dammy");
   });
-
-  // TEST_SCENARIO: the sentence after the opening names where to change the provider, once, in the design's words.
-  it("points at Agent settings in the design's words", () => {
-    expect(copy.settingsPrefix).toBe("You can switch providers anytime in");
-    expect(copy.settingsLink).toBe("Agent settings");
-  });
 });
 
 describe("the record's used mark", () => {
@@ -213,18 +207,14 @@ describe("the greeting in the chat", () => {
       ),
     );
     expect(pills).toHaveLength(assistantIdeas("DAM").length);
-    expect(
-      host.querySelector('[data-testid="assistant-greeting-settings"]'),
-    ).not.toBeNull();
   });
 
-  // TEST_SCENARIO: the greeting says where the provider is changed and names no provider, because the CurveBender notice above the composer is what names the one the assistant runs on.
-  it("points at Agent settings and names no provider", () => {
-    expect(host.textContent).toContain(
-      "You can switch providers anytime in Agent settings.",
-    );
+  // TEST_SCENARIO: the greeting has no provider line at all — not the provider, not where it is changed — because the CurveBender notice above the composer is what says which one the assistant runs on.
+  it("names no provider and no place to change it", () => {
     expect(host.textContent).not.toContain("CurveBender");
     expect(host.textContent).not.toContain("You're set up with");
+    expect(host.textContent).not.toContain("switch providers");
+    expect(host.textContent).not.toContain("Agent settings");
   });
 
   // TEST_SCENARIO: a click on a pill puts that idea's text — never its label, which only says what kind of work it is — in an empty composer of this chat, and stops there, so nothing runs before the person acts; each idea is clicked on an empty one because a chip adds to what is there.

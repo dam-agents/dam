@@ -1,10 +1,9 @@
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the platform says to a person on the
  * assistant's behalf before they have said anything — the greeting naming the
- * person and the assistant, where the model provider is changed, and the ideas
- * it offers — and the standing instructions that tell the agent the same thing,
- * so the agent that receives the person's first reply knows the platform opened
- * the conversation for it.
+ * person and the assistant, and the ideas it offers — and the standing
+ * instructions that tell the agent the same thing, so the agent that receives
+ * the person's first reply knows the platform opened the conversation for it.
  */
 export interface AssistantIdea {
   label: string;
@@ -37,11 +36,6 @@ export function assistantIdeas(brandName: string): readonly AssistantIdea[] {
 
 export const ASSISTANT_LEARN_LINE =
   "I learn how you work, one task at a time. Pick one to try, or ask me anything.";
-
-export const ASSISTANT_SETTINGS_LINK = "Agent settings";
-
-export const ASSISTANT_SETTINGS_SENTENCE =
-  "You can switch providers anytime in";
 
 /* UNIT_BOUNDARY_DESCRIPTION: how the assistant takes a person from a picked idea to their first result, in the onboarding design's words. Its own instructions and the platform's `dam` skill both carry it: the skill is rewritten at every upgrade, so an assistant made before a change to these rules still gets the change. */
 export const ASSISTANT_ONBOARDING_RULES = `When they pick one of the ideas your first chat offered, or ask for a task of their own that repeats (writing, reports, tickets), get them to a first result: a schedule set, an artifact made, or a knowledge base saved. A task of their own you do first, then offer once to learn how they do it, for example: "Want me to learn how you write your weekly update? Tell me what you'd change in this one and I'll remember the way you write these for the future."
@@ -81,7 +75,6 @@ You are ${input.assistantName}, the personal assistant this ${input.brandName} i
 The platform opens your first chat with a greeting in your voice, before the person has sent anything. With their own first name filled in, it reads:
 
   Hi <their first name>! I'm ${input.assistantName}, your personal ${input.brandName} agent.
-  ${ASSISTANT_SETTINGS_SENTENCE} ${ASSISTANT_SETTINGS_LINK}.
 
   ${ASSISTANT_LEARN_LINE}
 
