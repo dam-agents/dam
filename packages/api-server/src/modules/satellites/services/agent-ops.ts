@@ -34,6 +34,8 @@ function view(
 ): SatelliteView {
   return {
     name: satellite.name,
+    kind: satellite.kind,
+    filesWritable: satellite.filesWritable,
     description: satellite.description,
     host: satellite.host,
     online: isOnline(satellite, now),

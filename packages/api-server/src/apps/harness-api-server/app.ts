@@ -24,7 +24,10 @@ import {
   inheritanceOf,
 } from "../../modules/agents/index.js";
 import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
-import type { SatellitesComposition } from "../../modules/satellites/index.js";
+import {
+  createAgentFileChannelRoutes,
+  type SatellitesComposition,
+} from "../../modules/satellites/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { ANN_SWEEPABLE } from "../../modules/agents/infrastructure/labels.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
@@ -58,6 +61,7 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import type { AgentSecretRequests } from "../../modules/connections/services/agent-secret-requests.js";
 import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
+import { resolveAgent } from "./agent-auth.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import {
@@ -306,6 +310,16 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const readChatFormPreferences = createChatFormPreferencesReader(db);
   const readsChannelHistory = hasSlackChannelHistory(db);
   const app = new Hono();
+  app.route(
+    "/",
+    createAgentFileChannelRoutes({
+      ownerOf: async (agentId) =>
+        (await resolveAgent((id) => deps.agentStateCache.get(id), agentId))
+          ?.owner ?? null,
+      repo: deps.satellitesBoot.repo,
+      fileChannel: deps.satellitesBoot.fileChannel,
+    }),
+  );
   app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
     channelManager,
@@ -352,6 +366,12 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentTelemetry,
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
+    satelliteMounts: {
+      filesFor: (agentId, owner) =>
+        deps.satellitesBoot.repo.grantedFilesSatellites(agentId, owner),
+      isPresent: (agentId) =>
+        deps.satellitesBoot.fileChannel.isPresent(agentId),
+    },
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
     sessionMessages: deps.sessionMessages,
     agentSecretRequestsFor: deps.agentSecretRequestsFor,

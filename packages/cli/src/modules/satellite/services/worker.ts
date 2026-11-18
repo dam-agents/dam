@@ -1,4 +1,5 @@
 import type {
+  CallWorkItem,
   SatelliteImage,
   SatelliteManifest,
   SatelliteTool,
@@ -97,7 +98,7 @@ export interface WorkerLog {
   line(text: string): void;
 }
 
-function agentLabel(agent: WorkItem["agent"]): string {
+function agentLabel(agent: CallWorkItem["agent"]): string {
   if (agent === undefined) return "an agent";
   return agent.name === null ? agent.id : `${agent.name} (${agent.id})`;
 }
@@ -490,7 +491,7 @@ export function createWorker(deps: {
     tools,
   });
 
-  function startJob(item: WorkItem): void {
+  function startJob(item: CallWorkItem): void {
     running.add(item.sequence);
     claimed.set(item.sequence, incarnation);
     const startedAt = Date.now();
@@ -551,7 +552,7 @@ export function createWorker(deps: {
       if (item.kind === "cancel") {
         log.line(`CANCEL REQUESTED #${item.sequence}`);
         backend.cancel(item.sequence);
-      } else {
+      } else if (item.kind === "call") {
         startJob(item);
         started++;
       }

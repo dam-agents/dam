@@ -1014,6 +1014,8 @@ export const satellites = pgTable(
   {
     owner: text("owner").notNull(),
     name: text("name").notNull(),
+    kind: text("kind").notNull().default("tools"),
+    filesWritable: boolean("files_writable").notNull().default(false),
     description: text("description"),
     host: text("host"),
     maxConcurrent: integer("max_concurrent").notNull(),

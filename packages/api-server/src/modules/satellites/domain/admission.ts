@@ -7,7 +7,10 @@ export function jobCount(n: number): string {
   return n === 1 ? "1 job" : `${n} jobs`;
 }
 
-export function isOnline(satellite: SatelliteRow, now: Date): boolean {
+export function isOnline(
+  satellite: Pick<SatelliteRow, "lastSeenAt">,
+  now: Date,
+): boolean {
   if (satellite.lastSeenAt === null) return false;
   return now.getTime() - satellite.lastSeenAt.getTime() < OFFLINE_AFTER_MS;
 }
@@ -44,6 +47,12 @@ export function admit(
     };
   if (satellite.draining)
     return { ok: false, reason: `${satellite.name} is shutting down` };
+
+  if (satellite.kind === "files")
+    return {
+      ok: false,
+      reason: `${satellite.name} is a files satellite: it has a mount at /mnt/sat/${satellite.name} and no tools to call`,
+    };
 
   const entry = satellite.tools.find((candidate) => candidate.name === tool);
   if (entry === undefined)

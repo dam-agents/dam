@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SatelliteManifest, WorkItem } from "api-server-api";
+import type { CallWorkItem, SatelliteManifest, WorkItem } from "api-server-api";
 import { createBackoff } from "../modules/shared/backoff.js";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import {
@@ -103,7 +103,7 @@ function harness(items: WorkItem[], timeoutMs?: number) {
 function runItem(
   sequence: number,
   cmd: string[],
-  agent?: WorkItem["agent"],
+  agent?: CallWorkItem["agent"],
 ): WorkItem {
   return {
     kind: "call",

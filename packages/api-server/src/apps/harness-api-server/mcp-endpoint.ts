@@ -243,6 +243,7 @@ export interface McpSessionDeps {
     granted: SatelliteView[];
     waitDeadlineMs: number;
   } | null;
+  mountInstructions?: string | null;
   secretRequests?: AgentSecretRequests;
   egressProposals?: EgressProposals;
 }
@@ -255,6 +256,28 @@ const SESSION_SETTINGS_INSTRUCTIONS =
 
 const KB_SHARE_INSTRUCTIONS =
   "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a session is told about the file Satellites it
+ * can mount. It is built from the grants alone, so it names a mount only when
+ * one is granted, and only when the mount server has been seen within its
+ * presence window: an Agent on a machine that has not booted the server would
+ * otherwise be told about a directory that is not there. The three errors are
+ * the ones an Agent will meet and cannot read from its own tools.
+ */
+export function satelliteMountInstructions(
+  mounts: readonly { name: string; writable: boolean }[],
+  present: boolean,
+): string | null {
+  if (!present || mounts.length === 0) return null;
+  const named = mounts
+    .map(
+      (mount) =>
+        `/mnt/sat/${mount.name} (${mount.writable ? "writable" : "read-only"})`,
+    )
+    .join(", ");
+  return `Your machine mounts the files of ${mounts.length === 1 ? "this satellite" : "these satellites"} as ordinary directories: ${named}. Read and walk them with your own tools. A mount error is about the machine, not your path: "Host is down" means its worker is offline or shutting down and nothing under it can be reached until it returns; "Stale file handle" means the file you opened was replaced or removed on the machine, so list the directory again and reopen it; "Operation not permitted" means the mount's rules refuse that operation — a link or a special file leaving the satellite's root, a chown, an extended attribute — and no retry changes it.`;
+}
 
 const ISO_DATE_OR_TIME =
   /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
@@ -318,6 +341,7 @@ export function createMcpSession(
       instructions: [
         SESSION_SETTINGS_INSTRUCTIONS,
         ...(deps.kbShares ? [KB_SHARE_INSTRUCTIONS] : []),
+        ...(deps.mountInstructions ? [deps.mountInstructions] : []),
       ].join("\n\n"),
     },
   );
@@ -1989,6 +2013,13 @@ export interface MountMcpDeps {
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
+  satelliteMounts?: {
+    filesFor: (
+      agentId: string,
+      owner: string,
+    ) => Promise<{ name: string; writable: boolean; online: boolean }[]>;
+    isPresent: (agentId: string) => Promise<boolean>;
+  };
   satelliteWaitDeadlineMs?: number;
   sessionMessages?: SessionMessages;
   agentSecretRequestsFor?: (
@@ -1996,6 +2027,28 @@ export interface MountMcpDeps {
     agentId: string,
   ) => AgentSecretRequests;
   egressProposalsFor?: (owner: string, agentId: string) => EgressProposals;
+}
+
+async function mountInstructionsFor(
+  agentId: string,
+  owner: string,
+  deps: MountMcpDeps,
+): Promise<string | null> {
+  if (deps.satelliteMounts === undefined) return null;
+  try {
+    const files = await deps.satelliteMounts.filesFor(agentId, owner);
+    if (files.length === 0) return null;
+    return satelliteMountInstructions(
+      files,
+      await deps.satelliteMounts.isPresent(agentId),
+    );
+  } catch (err) {
+    console.error(
+      `[satellites] could not read ${agentId}'s file mounts; serving the session without them`,
+      err,
+    );
+    return null;
+  }
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -2069,6 +2122,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       }),
     ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
+    const mounts = await mountInstructionsFor(agentId, verified.owner, deps);
     const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
       owner: verified.owner,
@@ -2123,6 +2177,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ...(deps.egressProposalsFor && {
         egressProposals: deps.egressProposalsFor(verified.owner, agentId),
       }),
+      mountInstructions: mounts,
       satellites:
         deps.satelliteOps && grantedSatellites.length > 0
           ? {

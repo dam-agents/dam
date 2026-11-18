@@ -14,6 +14,7 @@ import {
   connectFencedInputSchema,
   drainFencedInputSchema,
   drainInputSchema,
+  fileResultInputSchema,
   heartbeatFencedInputSchema,
   heartbeatInputSchema,
   jobRefSchema,
@@ -113,6 +114,12 @@ export const satellitesRouter = t.router({
         input.satellite,
         input.incarnation,
       ),
+    ),
+
+  fileResult: serveSatellitesProcedure
+    .input(fileResultInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.satelliteWorker.fileResult(ctx.user.sub, input),
     ),
 
   reportFenced: serveSatellitesProcedure

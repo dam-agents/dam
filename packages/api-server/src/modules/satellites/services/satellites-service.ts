@@ -8,9 +8,14 @@ import {
 import { isOnline } from "../domain/admission.js";
 import { isTerminal } from "../domain/types.js";
 import type { SatellitesRepository } from "../infrastructure/satellites-repository.js";
+import type { SatelliteFileChannel } from "./file-channel.js";
 
 export interface SatellitesServiceDeps {
   repo: SatellitesRepository;
+  fileChannel: Pick<
+    SatelliteFileChannel,
+    "revoke" | "satelliteOffline" | "clearRevoked"
+  >;
   owner: string;
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy: (agentId: string, owner: string) => Promise<boolean>;
@@ -60,6 +65,8 @@ export function createSatellitesService(
       return Promise.all(
         rows.map(async (row) => ({
           name: row.name,
+          kind: row.kind,
+          filesWritable: row.filesWritable,
           description: row.description,
           host: row.host,
           online: isOnline(row, at),
@@ -79,6 +86,7 @@ export function createSatellitesService(
       await mustExist(name);
       await deps.stopDispatch({ satellite: name }, "satellite removed");
       await deps.repo.remove(deps.owner, name);
+      await deps.fileChannel.satelliteOffline(deps.owner, name);
     },
 
     async grant(name: string, agentId: string): Promise<void> {
@@ -87,6 +95,7 @@ export function createSatellitesService(
       if (!(await deps.isAgentOwnedBy(agentId, deps.owner)))
         throw new TRPCError({ code: "FORBIDDEN", message: "not your agent" });
       await deps.repo.grant(deps.owner, name, agentId);
+      await deps.fileChannel.clearRevoked(deps.owner, name, agentId);
     },
 
     async revoke(name: string, agentId: string): Promise<void> {
@@ -97,6 +106,7 @@ export function createSatellitesService(
         { satellite: name, agentId },
         "the agent's access to this satellite was revoked",
       );
+      await deps.fileChannel.revoke(deps.owner, name, agentId);
     },
 
     async listJobs(name: string): Promise<JobView[]> {

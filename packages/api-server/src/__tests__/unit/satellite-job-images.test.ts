@@ -20,6 +20,7 @@ import { createSatellitesRepository } from "../../modules/satellites/infrastruct
 import { registerSatelliteTools } from "../../modules/satellites/mcp-tools.js";
 import { createSatelliteAgentOps } from "../../modules/satellites/services/agent-ops.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
+import { stubFileChannel } from "../helpers/satellite-fakes.js";
 
 /**
  * TEST_OVERVIEW: What an Agent receives from a Satellite tool that returns an
@@ -57,6 +58,8 @@ const REPORT = {
 function view(tools: string[]): SatelliteView {
   return {
     name: "gpu-box",
+    kind: "tools",
+    filesWritable: false,
     description: null,
     host: null,
     online: true,
@@ -328,6 +331,7 @@ describe("a reported job read back", () => {
     };
     const workerOps = createSatelliteWorkerOps({
       repo: repo as never,
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
     });
@@ -441,6 +445,7 @@ describe("a settlement that fails", () => {
   it("names the job and the driver's code, never the payload it was writing", async () => {
     const workerOps = createSatelliteWorkerOps({
       repo: failingRepo(driverFailure("57P01")),
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
     });
@@ -462,6 +467,7 @@ describe("a settlement that fails", () => {
   it("reaches the log without the image either", async () => {
     const workerOps = createSatelliteWorkerOps({
       repo: failingRepo(driverFailure("57P01")),
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
     });

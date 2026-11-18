@@ -3,6 +3,7 @@ import type { SatelliteTool } from "api-server-api";
 import type { JobRow } from "../../modules/satellites/domain/types.js";
 import { createSatelliteAgentOps } from "../../modules/satellites/services/agent-ops.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
+import { stubFileChannel } from "../helpers/satellite-fakes.js";
 
 /**
  * TEST_OVERVIEW: Which way a Job may move a file is decided once, when the
@@ -127,6 +128,7 @@ describe("the transfer token a claim is issued", () => {
         takeCancellations: async () => [],
         claimQueued: async () => claimed,
       } as never,
+      fileChannel: stubFileChannel(),
       maxConcurrentCeiling: 64,
       deliverOutcome: async () => {},
     });
@@ -142,9 +144,9 @@ describe("the transfer token a claim is issued", () => {
     const [withToken] = await claim([
       { job: job(), transferToken: "f".repeat(64) },
     ]);
-    expect(withToken?.transferToken).toBe("f".repeat(64));
+    expect(withToken).toMatchObject({ transferToken: "f".repeat(64) });
 
     const [without] = await claim([{ job: job({ tool: "run" }) }]);
-    expect(without?.transferToken).toBeUndefined();
+    expect(without).not.toHaveProperty("transferToken");
   });
 });
