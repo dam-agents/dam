@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -9,8 +9,8 @@ The format is [A2UI](https://a2ui.org) 1.0: the agent describes the UI as data a
 Nothing the agent sends runs as code in the browser.
 The user's answer goes back to the agent as text in their next prompt.
 
-Chat forms are an [experimental feature](features.md), off by default.
-With it off, a block in a reply shows as a collapsed note with its source.
+Chat forms are on for every user; they graduated from an [experimental feature](features.md) with no flag left behind.
+An owner can still turn them off for an agent in its [chat form settings](#chat-form-settings-per-agent).
 
 The first users are [Kit Onboarding and Kit Update](starter-kits.md): the questions an agent asks there — which upstream changes to take, values only the owner knows — become choices and fields instead of free text.
 
@@ -34,10 +34,10 @@ sequenceDiagram
   The chat cuts blocks out of the reply as it streams and renders the rest of the reply as markdown.
 - **Chat → agent.** A button press, an error the user chooses to forward, and the answer to an agent's function call each travel as an A2UI **renderer message** in a block of the user's prompt.
   A surface that asks for it also gets its whole **data model** attached to every prompt, so the agent sees the current state of the form.
-- **Renderer capabilities.** While the owner has the feature on and the agent's forms are not off, the web chat attaches the catalogs it renders and the [agent's chat form settings](#chat-form-settings-per-agent) to every prompt, and the platform adds the same announcement to the onboarding and Kit Update briefings it composes.
+- **Renderer capabilities.** While the agent's forms are not off, the web chat attaches the catalogs it renders and the [agent's chat form settings](#chat-form-settings-per-agent) to every prompt, and the platform adds the same announcement to the onboarding and Kit Update briefings it composes.
   An agent uses forms only in a conversation that announces them.
   Channel turns never carry the announcement, so in [Slack and Telegram](channels.md) the agent asks in plain text.
-- **The skill.** Agents learn the format from the `platform-chat-forms` [platform skill](skills.md#platform-skill), which ships in the base image and is listed under this feature.
+- **The skill.** Agents learn the format from the `platform-chat-forms` [platform skill](skills.md#platform-skill), which ships in the base image and is listed under Chat forms on the Skills page.
   It names the catalogs, components, functions and rules, with worked examples.
   Where the context supports one, it asks the agent to preselect a recommended answer, mark it and say why; matters of taste, values only the user knows and risky choices stay empty.
   The chat shows a label's trailing `(Recommended)` as a muted tag.
@@ -48,7 +48,7 @@ sequenceDiagram
   The count lives in the tag, so a restart keeps it: after two failed fixes the third prompt asks for plain text and announces no capabilities, so its reply is not checked and the loop ends.
   The chat hides the whole tag, so the user sees no message of their own; the blocks of a reply marked with `chatFormFix` are left out of the replay and show that the agent is fixing the form, and once a later reply arrives, that the agent answered again below.
   A transcript loaded from the harness carries no `platform/turnEnded`, so there the chat marks the reply from the `<chat-form-check>` prompt that follows it.
-- **The check tool.** While the owner has the feature on and the agent's forms are not off, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
+- **The check tool.** While the agent's forms are not off, the agent's platform MCP server also offers `check_chat_form`.
   It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before it sends it.
   It is optional: the platform's check catches what it does not, and the tool only saves that round trip.
   A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked, plus the children of a `root` the reply replaces, which the reply must send itself; agent function calls are checked, not run.
@@ -62,7 +62,7 @@ In the user's own message the chat shows a short summary — the action's human-
 
 ## Chat form settings per agent
 
-The owner sets, for each agent, how it may use forms, in the agent's Interactive chat section (the UI's name for chat forms); the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
+The owner sets, for each agent, how it may use forms, in the agent's Interactive chat section (the UI's name for chat forms); every owner sees the section, and the platform-chat-forms skill on the Skills page links to it:
 
 - **When to use them** — for questions and results, only for questions, or never (plain text only).
 - **Questions per form** — the agent decides, all at once, or one at a time.
@@ -155,7 +155,6 @@ The specification requires a reply to each call, and the chat sends it on its ow
 - **Channels** — Slack and Telegram never announce the capability; see above.
   In Slack an agent asks with the buttons and fields of a [Channel Card](channel-cards.md#interactions) instead.
 - **Read-only views**, such as a delegated agent's transcript, render surfaces without input.
-- **Feature off** — a collapsed note with the block's source.
 
 The renderer lives in the UI ([`packages/ui/`](../../packages/ui/)).
 The schema, the catalogs, the replay and its validation, the capability announcement and the form check live in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)), shared by the chat and the api-server's check tool ([`packages/api-server/src/modules/chat-forms/`](../../packages/api-server/src/modules/chat-forms/)).

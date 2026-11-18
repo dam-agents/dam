@@ -8,7 +8,6 @@ import {
   useChatFormPreferences,
   useSetChatFormPreferences,
 } from "../api/queries.js";
-import { useChatFormsEnabled } from "../hooks/use-chat-forms-enabled.js";
 
 type Choice<K extends keyof ChatFormPreferences> = {
   value: ChatFormPreferences[K];
@@ -64,18 +63,8 @@ function ChoiceField<K extends "forms" | "pacing" | "recommend">({
 }
 
 export function ChatFormSettings({ agentId }: { agentId: string }) {
-  const enabled = useChatFormsEnabled();
   const { data } = useChatFormPreferences(agentId);
   const save = useSetChatFormPreferences();
-  if (!enabled)
-    return (
-      <section className="mb-8">
-        <p className="text-sm text-muted-foreground">
-          Interactive chat is an experimental feature, and it is off for your
-          account.
-        </p>
-      </section>
-    );
   if (!data) return null;
 
   const preferences = save.isPending ? save.variables.preferences : data;

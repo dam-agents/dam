@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent's settings show the Chat forms section only while chat forms are on for the account, since the only setting left there is about chat forms; the section keeps its own address and its content, so a stale link still works.
+// TEST_OVERVIEW: An agent's settings show the Interactive chat section (the UI's name for chat forms) to every owner, with no feature to turn on first, and the section opens at its own address.
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -11,7 +11,6 @@ vi.stubGlobal("window", new EventTarget());
 const OWNS = [...AGENT_PERMISSIONS];
 
 const state = vi.hoisted(() => ({
-  chatForms: false,
   section: "usage",
 }));
 
@@ -25,9 +24,6 @@ vi.mock("../../store.js", () => ({
       openAgentSession: vi.fn(),
       navigateToSandboxHome: vi.fn(),
     }),
-}));
-vi.mock("../../modules/a2ui/hooks/use-chat-forms-enabled.js", () => ({
-  useChatFormsEnabled: () => state.chatForms,
 }));
 vi.mock("../../modules/a2ui/components/chat-form-settings.js", () => ({
   ChatFormSettings: () => createElement("p", null, "CHAT-FORMS-SETTINGS"),
@@ -126,16 +122,8 @@ const renderPage = (section: string) =>
     ),
   );
 
-// TEST_SCENARIO: with chat forms off the section has nothing left to offer — the thinking setting moved to Settings › Appearance — so it leaves the navigation.
-it("hides the navigation entry while chat forms are off", () => {
-  state.chatForms = false;
-  expect(renderPage("usage")).not.toContain("Interactive chat");
-});
-
-// TEST_SCENARIO: with chat forms on the section returns, and a link to it still opens it while the feature is off.
-it("shows the navigation entry with chat forms on, and keeps the address", () => {
-  state.chatForms = true;
+// TEST_SCENARIO: an owner who never touched Experimental features finds the Interactive chat section in the navigation, and its address opens its settings.
+it("lists the section for every owner and opens it at its address", () => {
   expect(renderPage("usage")).toContain("Interactive chat");
-  state.chatForms = false;
   expect(renderPage("chat-forms")).toContain("CHAT-FORMS-SETTINGS");
 });

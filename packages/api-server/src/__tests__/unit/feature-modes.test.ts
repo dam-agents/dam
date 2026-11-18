@@ -13,7 +13,7 @@ describe("feature modes", () => {
         listEnabled: () =>
           Promise.resolve({
             processes: true,
-            "chat-forms": true,
+            hermes: true,
           }),
         upsert: () => Promise.resolve(),
       },
@@ -22,7 +22,6 @@ describe("feature modes", () => {
       modes: {
         processes: "off",
         "advanced-connections": "experimental",
-        "chat-forms": "experimental",
         "custom-avatars": "experimental",
         environments: "experimental",
         hermes: "experimental",
@@ -37,7 +36,7 @@ describe("feature modes", () => {
     });
     expect(await service.flags()).toMatchObject({
       processes: false,
-      "chat-forms": true,
+      hermes: true,
       "advanced-connections": false,
     });
   });
@@ -55,8 +54,7 @@ describe("feature modes", () => {
         modes: {
           processes: "experimental",
           "advanced-connections": "experimental",
-          "chat-forms": "experimental",
-          "custom-avatars": "experimental",
+            "custom-avatars": "experimental",
           "github-enterprise-hosts": "experimental",
           environments: "experimental",
           hermes: "experimental",

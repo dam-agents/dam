@@ -351,11 +351,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudyInspection,
     carriesInspectorRole,
     readsChannelHistory,
-    chatFormPreferences: (owner, agentId) =>
-      readChatFormPreferences(
-        agentId,
-        async () => (await featureFlagsFor(owner))["chat-forms"],
-      ),
+    chatFormPreferences: readChatFormPreferences,
     agentImage: createAgentImageReader((id) => deps.agentStateCache.get(id)),
     environments: async (owner, agentId) => {
       const manage = Boolean((await featureFlagsFor(owner)).environments);

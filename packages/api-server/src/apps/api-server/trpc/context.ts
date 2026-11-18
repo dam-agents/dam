@@ -591,11 +591,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           outboxRepo.readEventReport(agentId, eventId),
       }),
       linkedKits,
-      chatFormPreferences: (agentId) =>
-        readChatFormPreferences(
-          agentId,
-          async () => (await features.flags())["chat-forms"],
-        ),
+      chatFormPreferences: readChatFormPreferences,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;

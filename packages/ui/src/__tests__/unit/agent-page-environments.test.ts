@@ -76,9 +76,6 @@ vi.mock("../../modules/agents/hooks/use-public-agent-fallback.js", () => ({
 vi.mock("../../modules/agents/hooks/use-resolved-agent-display.js", () => ({
   useResolvedAgentDisplay: () => ({ state: "running", powerAction: "restart" }),
 }));
-vi.mock("../../modules/a2ui/hooks/use-chat-forms-enabled.js", () => ({
-  useChatFormsEnabled: () => true,
-}));
 vi.mock("../../modules/sandboxes/hooks/use-section-summaries.js", () => ({
   useSectionSummaries: () => ({ summaries: {}, warnings: {} }),
 }));
