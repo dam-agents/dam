@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width; a stored choice still wins. On a desktop the column beside the conversation, 320 px as the design's chat refresh draws it, holds only the open ones and is gone while none is, two open ones stack with a divider, and a section's X closes it; Processes is never in it, since it docks beside the conversation instead. The thin strip across the top shows its border while anything is open beside the conversation. A phone keeps every section, Processes too, in a screen of its own, each folding from its header. The chat header lines up with the messages' column.
+// TEST_OVERVIEW: In an Agent's chat the Files and Artifacts sections start closed, so the conversation has the width; a stored choice still wins. On a desktop the column beside the conversation, 320 px as the design's chat refresh draws it, holds only the open ones and is gone while none is, two open ones stack with a divider, and a section's X closes it; Processes is never in it, since it docks beside the conversation instead. The thin strip across the top shows its border while anything is open beside the conversation. A phone keeps every section, Processes too, in a screen of its own, each folding from its header. The chat header flanks the messages' column where the chat is wide enough, and sits at its edges where it is not.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -248,18 +248,26 @@ describe("the sections screen on a phone", () => {
 });
 
 describe("the chat header", () => {
-  // TEST_SCENARIO: the header's identity and New chat sit in the conversation's own 813 px column, with the messages' padding, so the name starts where the messages start and New chat ends where they end, as the design review asked.
-  it("lines up with the messages' column", () => {
+  // TEST_SCENARIO: where the chat is wide enough, the header flanks the content well, as the design review drew it: three columns around the messages' 749 px, the agent menu ending in the first and New chat starting in the third; a narrower chat keeps both inside the messages' column, at their edges.
+  it("flanks the messages' column, or sits at its edges", () => {
     render(
       createElement(ClassicChatLayout, {
         ...(layout().props as object),
         newChat: createElement("button", { "data-testid": "new-chat" }),
       } as never),
     );
-    const well = byTestId("identity")!.parentElement!;
-    expect(well.className).toContain("max-w-[813px]");
-    expect(well.className).toContain("mx-auto");
-    expect(well.contains(byTestId("new-chat"))).toBe(true);
-    expect(well.className).toContain("md:@xl/chat:px-8");
+    const start = byTestId("chat-header-start")!;
+    const end = byTestId("chat-header-end")!;
+    const row = start.parentElement!;
+    expect(start.contains(byTestId("identity"))).toBe(true);
+    expect(end.contains(byTestId("new-chat"))).toBe(true);
+    expect(row.className).toContain("max-w-[813px]");
+    expect(row.className).toContain("md:@xl/chat:px-8");
+    expect(row.className).toContain(
+      "@5xl/chat:grid-cols-[1fr_minmax(0,749px)_1fr]",
+    );
+    expect(start.className).toContain("@5xl/chat:justify-self-end");
+    expect(end.className).toContain("@5xl/chat:col-start-3");
+    expect(end.className).toContain("@5xl/chat:justify-self-start");
   });
 });
