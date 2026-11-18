@@ -30,6 +30,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
 ## Vocabulary a user sees
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
+- **The navigation rail** — expanded by default, with labels; its header carries the install's brand mark, which opens Home, and a *Collapse navigation* chevron beside it.
+  Collapsed, the header carries only an *Expand navigation* chevron, always drawn rather than swapped in on hover, and no brand mark or brand text.
+  This change opens the rail expanded once in every browser, whatever the person had collapsed before, and their next collapse sticks for that browser.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
   Its tile and its modal say who publishes it: "By" the brand, with a check mark, for the platform team's kits, or "By" a named user, linked from the modal.
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
