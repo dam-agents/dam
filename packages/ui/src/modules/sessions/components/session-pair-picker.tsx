@@ -86,6 +86,8 @@ interface CommonProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: where Manage providers goes; without it, the Agent's settings modal at Providers. The chat passes its own. */
+  onManageProviders?: () => void;
   /** UNIT_BOUNDARY_DESCRIPTION: the row the panel opens on when something other than the chip asked for it, as the CurveBender notice's "Use a different provider" asks for the provider choice. */
   initialFocus?: "provider";
 }
@@ -235,7 +237,7 @@ export function SessionPairPicker(props: Props) {
   const edit = props.pending ? undefined : props.edit;
   const target = props.pending ? undefined : props.target;
   const row = props.pending ? false : (props.row ?? false);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
@@ -665,9 +667,11 @@ export function SessionPairPicker(props: Props) {
           harnessName(pair.harness) ?? pair.harness,
         );
   const manageProviders = () =>
-    agentId
-      ? navigateToSandboxHome(agentId, "providers")
-      : onConnectProviders();
+    props.onManageProviders
+      ? props.onManageProviders()
+      : agentId
+        ? openAgentSettings(agentId, "providers")
+        : onConnectProviders();
   const agentDefault = target?.agentDefault;
   /* UNIT_BOUNDARY_DESCRIPTION: neither primary slot set is this pick following the agent's default. */
   const following =

@@ -21,6 +21,7 @@ export function SkillRow({
   onToggle,
   onUpdate,
   onOpen,
+  hideSwitch = false,
 }: {
   skill: Skill;
   installed: boolean;
@@ -31,6 +32,8 @@ export function SkillRow({
   onToggle: () => void;
   onUpdate: () => void;
   onOpen?: () => void;
+  /** UNIT_BOUNDARY_DESCRIPTION: a viewer who may not change the Agent's skills in the + menu sees the name alone, as the design's read-only state draws it. */
+  hideSwitch?: boolean;
 }) {
   return (
     <div
@@ -54,7 +57,7 @@ export function SkillRow({
           </p>
         )}
       </div>
-      {hasDrift && (
+      {hasDrift && !hideSwitch && (
         <Tooltip content={DRIFT_HINT}>
           {}
           <Button
@@ -69,7 +72,7 @@ export function SkillRow({
           </Button>
         </Tooltip>
       )}
-      {hasDrift && compareUrl && (
+      {hasDrift && !hideSwitch && compareUrl && (
         <Tooltip content="Open on GitHub">
           <a
             href={compareUrl}
@@ -82,13 +85,15 @@ export function SkillRow({
         </Tooltip>
       )}
       {busy && <Spinner />}
-      <Switch
-        checked={installed}
-        onCheckedChange={onToggle}
-        label={`${installed ? "Uninstall" : "Install"} ${skill.name}`}
-        testId={`skill-toggle-${skill.name}`}
-        className={cn(disabled && "pointer-events-none opacity-50")}
-      />
+      {!hideSwitch && (
+        <Switch
+          checked={installed}
+          onCheckedChange={onToggle}
+          label={`${installed ? "Uninstall" : "Install"} ${skill.name}`}
+          testId={`skill-toggle-${skill.name}`}
+          className={cn(disabled && "pointer-events-none opacity-50")}
+        />
+      )}
     </div>
   );
 }

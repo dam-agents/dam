@@ -67,6 +67,7 @@ export function ChatArtifactsPanel({
   agentId,
   open,
   onToggle,
+  onClose,
   className,
   style,
   ref,
@@ -74,6 +75,7 @@ export function ChatArtifactsPanel({
   agentId: string | null;
   open: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -229,6 +231,7 @@ export function ChatArtifactsPanel({
       title="Artifacts"
       open={open}
       onToggle={onToggle}
+      onClose={onClose}
       className={className}
       headerClassName="border-t border-border"
       style={style}

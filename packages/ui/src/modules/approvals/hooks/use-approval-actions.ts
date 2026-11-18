@@ -62,7 +62,7 @@ export function useApprovalActions(
   const showConfirm = useStore((s) => s.showConfirm);
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const restart = useEgressApprovalRestart(row);
 
   const inflight =
@@ -379,6 +379,6 @@ export function useApprovalActions(
         : row.status === "expired" && row.type === "web_search"
           ? "The search already failed. Always allow lets the agent's later searches through."
           : null,
-    openSettings: () => navigateToSandboxHome(row.agentId, "network"),
+    openSettings: () => openAgentSettings(row.agentId, "network"),
   };
 }

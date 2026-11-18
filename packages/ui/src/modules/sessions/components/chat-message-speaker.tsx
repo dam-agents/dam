@@ -42,7 +42,7 @@ export function SpeakerRow({
         <button
           type="button"
           onClick={onAgentClick}
-          aria-label={`Configure ${agentName ?? "agent"}`}
+          aria-label={`${agentName ?? "Agent"} settings`}
           className="flex min-w-0 items-center gap-2 rounded-md text-left hover:opacity-80"
         >
           {children}

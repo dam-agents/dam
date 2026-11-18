@@ -19,7 +19,7 @@ import {
 const NO_AGENTS: ListedAgent[] = [];
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's page: the
+ * UNIT_BOUNDARY_DESCRIPTION: The Environments section of an agent's settings: the
  * agent's Environment Members, who open every Environment it creates, read at
  * each request, and a link to the Artifacts list, where its owner finds,
  * shares, extends and deletes each Environment. An editor has no Artifacts

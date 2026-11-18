@@ -36,7 +36,7 @@ export function SlackChannelCard({
 }) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
 
   return (
     <>
@@ -48,7 +48,7 @@ export function SlackChannelCard({
             <SlackChannelExplainer
               onGoToConnections={
                 agent
-                  ? () => navigateToSandboxHome(agent.id, "connections")
+                  ? () => openAgentSettings(agent.id, "connections")
                   : undefined
               }
             />

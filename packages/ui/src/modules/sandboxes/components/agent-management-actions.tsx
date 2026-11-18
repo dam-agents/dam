@@ -18,7 +18,7 @@ export function AgentManagementActions({
   agent: AgentView;
   display: AgentDisplay;
 }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const management = useAgentManagement();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(environmentsEnabled ? agent.id : null);
@@ -50,7 +50,7 @@ export function AgentManagementActions({
           title: "Choose who may open Environments",
           description:
             "This agent has none yet and creates them itself. Name the people who may open the ones it creates.",
-          onClick: () => navigateToSandboxHome(agent.id, "environments"),
+          onClick: () => openAgentSettings(agent.id, "environments"),
         },
       ]
     : [];

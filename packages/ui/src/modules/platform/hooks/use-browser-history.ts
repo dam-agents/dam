@@ -7,6 +7,7 @@ import {
   RETIRED_PATHS,
   type Route,
   routeToNavigationState,
+  routeToPath,
   type View,
 } from "../lib/routes.js";
 
@@ -57,6 +58,14 @@ export function installBrowserHistory(): () => void {
     const wasChat = isChatView(useStore.getState().view);
 
     if (isChatRoute(route)) {
+      /* UNIT_BOUNDARY_DESCRIPTION: an old agent page link lands on the agent's chat with its settings modal on the linked section: the address becomes the chat's, keeping an #anchor the modal scrolls to, and the entry is replaced so Back does not reopen it. */
+      if (route.settings)
+        window.history.replaceState(
+          history.state,
+          "",
+          routeToPath({ view: "chat", agent: route.agent }) +
+            window.location.hash,
+        );
       useStore.getState().resetChatContext();
       useStore.setState({
         ...routeToNavigationState(route),
@@ -66,6 +75,14 @@ export function installBrowserHistory(): () => void {
           ? {
               pendingResumeSessionId: route.session,
               mobileScreen: "chat" as const,
+            }
+          : {}),
+        ...(route.settings
+          ? {
+              agentSettings: {
+                agentId: route.agent,
+                section: route.settings,
+              },
             }
           : {}),
       });

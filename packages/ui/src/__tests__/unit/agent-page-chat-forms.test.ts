@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent's page shows the Chat forms section only while chat forms are on for the account, since the only setting left there is about chat forms; the section keeps its own address and its content, so a stale link still works.
+// TEST_OVERVIEW: An agent's settings show the Chat forms section only while chat forms are on for the account, since the only setting left there is about chat forms; the section keeps its own address and its content, so a stale link still works.
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -100,13 +100,31 @@ vi.mock("../../modules/metrics/components/sandbox-usage-section.js", () => ({
   SandboxUsageSection: () => null,
 }));
 
-const { SandboxHomeView } =
-  await import("../../modules/sandboxes/views/sandbox-home-view.js");
+const { AgentConfiguration } =
+  await import("../../modules/sandboxes/components/agent-configuration.js");
+const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 
-const renderPage = (section: string) => {
-  state.section = section;
-  return renderToStaticMarkup(createElement(SandboxHomeView));
-};
+const renderPage = (section: string) =>
+  renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(AgentConfiguration, {
+        agent: {
+          id: "agent-dev",
+          name: "dam",
+          vm: true,
+          env: [],
+          access: { role: "owner", editors: [], permissions: OWNS },
+        } as never,
+        display: { state: "running", powerAction: "restart" } as never,
+        section: section as never,
+        onNavigate: () => {},
+        onOpenSession: () => {},
+        oauthReturnView: "/chat/agent-dev",
+      }),
+    ),
+  );
 
 // TEST_SCENARIO: with chat forms off the section has nothing left to offer — the thinking setting moved to Settings › Appearance — so it leaves the navigation.
 it("hides the navigation entry while chat forms are off", () => {

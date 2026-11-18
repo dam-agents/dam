@@ -21,6 +21,7 @@ interface ModalProps {
   size?: keyof typeof MODAL_SIZE;
   widthClass?: string;
   heightClass?: string;
+
   onClose?: () => void;
   children: ReactNode;
 }
@@ -74,6 +75,11 @@ export function Modal({
 const ModalContext = createContext<{ labelId: string | undefined }>({
   labelId: undefined,
 });
+
+/* UNIT_BOUNDARY_DESCRIPTION: the id the open modal is labelled by, for a modal that draws its own title instead of DialogHeader's. */
+export function useModalLabelId(): string | undefined {
+  return useContext(ModalContext).labelId;
+}
 
 interface DialogRegionProps {
   children: ReactNode;

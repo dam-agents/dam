@@ -42,7 +42,7 @@ export function usePaletteActions({
     s.view === "chat" ? s.selectedAgent : null,
   );
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const setShowSleeping = useStore((s) => s.setSidebarShowHibernating);
@@ -101,7 +101,7 @@ export function usePaletteActions({
       );
     },
     openSession: (s) => openSession(s.agentId, s.sessionId, s.mode),
-    configure: navigateToSandboxHome,
+    configure: openAgentSettings,
     toggleBrowser: (agentId, open) =>
       open ? void openBrowser(agentId) : setOpenBrowser(null),
     toggleChanges: (agentId, open) => void toggleChanges(open ? agentId : null),

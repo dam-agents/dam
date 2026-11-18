@@ -227,6 +227,8 @@ Each turn's end names it.
 Output joins its turn's open reply only while nothing but waiting prompts came after it; otherwise it starts a new reply at the end.
 So a reply never lands above a newer message, unprompted work shows as the latest message, and Stop leaves the reply open until its turn ends, so the last words the harness flushes join it rather than starting another.
 
+An Agent's chat also reaches the Agent's settings and its skills, schedules and Connections without leaving the conversation ([chat-view](chat-view.md)).
+
 ## Protocols
 
 | Edge                                                                                        | Protocol                           | Purpose                                                                                                                                                                                                                                                                                                                                                                                                         |

@@ -39,15 +39,9 @@ const NO_APPROVALS: readonly ApprovalView[] = [];
  */
 export function usePaletteInput(): PaletteInput {
   const view = useStore((s) => s.view);
-  const agentId = useStore((s) =>
-    s.view === "chat"
-      ? s.selectedAgent
-      : s.view === "sandbox-home"
-        ? s.agentId
-        : null,
-  );
+  const agentId = useStore((s) => (s.view === "chat" ? s.selectedAgent : null));
   const chatAgentId = view === "chat" ? agentId : null;
-  const section = useStore((s) => s.sandboxSection);
+  const section = useStore((s) => s.agentSettings?.section ?? null);
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const settingsTab = useStore((s) => s.settingsTab);
   const theme = useStore((s) => s.theme);
@@ -114,7 +108,7 @@ export function usePaletteInput(): PaletteInput {
     route: {
       view,
       agentId,
-      section: view === "sandbox-home" ? section : null,
+      section,
       sessionId,
       settingsTab: view === "settings" ? settingsTab : null,
     },
@@ -136,7 +130,7 @@ export function usePaletteInput(): PaletteInput {
       ? dock?.kind === "browser" && dock.agentId === chatAgent.id
       : null,
     changesOpen:
-      chatAgent && hasGitRepositories(changeSets) !== false
+      chatAgent && hasGitRepositories(changeSets) === true
         ? dock?.kind === "changes" && dock.agentId === chatAgent.id
         : null,
     theme,

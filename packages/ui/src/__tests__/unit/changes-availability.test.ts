@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { hasGitRepositories } from "../../modules/changes/lib/availability.js";
 
-// TEST_OVERVIEW: the answer the change set list gives about an agent's repositories, which decides if the Changes tab exists. A settled list holds one entry per repository, so an empty one is an agent with no repository. A list that has not arrived, or one that stands in for another agent's list after a switch, answers nothing.
+// TEST_OVERVIEW: the answer the change set list gives about an agent's repositories, which decides if the Changes tab exists once it has answered. A settled list holds one entry per repository, so an empty one is an agent with no repository. A list that has not arrived, or one that stands in for another agent's list after a switch, answers nothing.
 
 const answer = (changeSets: ChangeSet[] | undefined, placeholder = false) => ({
   data: changeSets === undefined ? undefined : { changeSets },

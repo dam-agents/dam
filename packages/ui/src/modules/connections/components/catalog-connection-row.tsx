@@ -246,7 +246,8 @@ export function CheckFailedMark({
   );
 }
 
-function StatusBadges({ connection }: { connection: ConnectionView }) {
+/** UNIT_BOUNDARY_DESCRIPTION: a connection's status beside its name: Authorizing…, Expired or Disconnected, or the full-access mark that carries it. */
+export function StatusBadges({ connection }: { connection: ConnectionView }) {
   const status =
     connection.status === "active"
       ? undefined

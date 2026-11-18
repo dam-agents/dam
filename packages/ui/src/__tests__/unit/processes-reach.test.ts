@@ -69,7 +69,7 @@ function panel() {
 
 function indicator() {
   return renderToStaticMarkup(
-    createElement(ProcessesIndicator, { agentId: "agent-a" }),
+    createElement(ProcessesIndicator, { agentId: "agent-a", onOpen: () => {} }),
   );
 }
 

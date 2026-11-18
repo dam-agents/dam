@@ -19,6 +19,8 @@ export function SkillSourcesSection({
   onToggleAll,
   onRemove,
   onManageConnections,
+  compact = false,
+  hideSwitches = false,
 }: {
   readOnly: boolean;
   surface: SkillsSurface;
@@ -29,6 +31,9 @@ export function SkillSourcesSection({
   onToggleAll: (source: SkillSource, on: boolean, scope?: Skill[]) => void;
   onRemove?: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
+  /** UNIT_BOUNDARY_DESCRIPTION: the + menu's compact list: its source cards drop their tools, and the group drops its add row, which the + menu's footer holds instead. */
+  compact?: boolean;
+  hideSwitches?: boolean;
 }) {
   const { sources, sourcesLoaded, hiddenSources, sets } = surface;
   const { searching, shownSources } = derived;
@@ -43,13 +48,14 @@ export function SkillSourcesSection({
       newLabel="Add source"
       headerExtra={
         !readOnly &&
+        !compact &&
         sets.length > 0 && (
           <Button variant="outline" size="sm" onClick={onAddSets}>
             <Add size={16} /> Add skill sets…
           </Button>
         )
       }
-      addRow={onAddSource && <AddSourceRow onClick={onAddSource} />}
+      addRow={onAddSource && !compact && <AddSourceRow onClick={onAddSource} />}
       isEmpty={sourcesLoaded && sources.length === 0}
       empty={
         hiddenSources.length > 0
@@ -71,6 +77,8 @@ export function SkillSourcesSection({
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}
             onManageConnections={onManageConnections}
+            compact={compact}
+            hideSwitches={hideSwitches}
           />
         ))
       )}

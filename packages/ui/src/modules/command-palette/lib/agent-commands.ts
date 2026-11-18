@@ -112,7 +112,7 @@ export function agentCommands(
       .filter(
         ({ section }) =>
           !isLockedSection(agent.access, section) &&
-          !(here && route.view === "sandbox-home" && route.section === section),
+          !(here && route.section === section),
       )
       .map(({ section, title }) =>
         of({

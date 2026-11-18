@@ -14,7 +14,7 @@ Icons come from `@carbon/icons-react`.
 | Draft marker on a session row                               | `Pen`                                          |
 | Delete, and remove an item from a list                      | `TrashCan` (use `RemoveButton` for a row)      |
 | Close a modal, panel, tab or search                         | `Close`                                        |
-| Attach a file in the composer                               | `Attachment`                                   |
+| Composer's + menu (attach, skills, schedules, connections)  | `Add`                                          |
 | New session, discuss with agent                             | `AddComment`                                   |
 | Generic add or new                                          | `Add`                                          |
 | Create agent                                                | `Add`                                          |
@@ -28,8 +28,13 @@ Icons come from `@carbon/icons-react`.
 | Restart agent                                               | `Restart`                                      |
 | Retry, update, reload                                       | `Renew`                                        |
 | Files destination                                           | `Folder`                                       |
+| Agent menu: Rename, Artifacts, File tree, Git Changes       | `Edit`, `DataCategorical`, `Folder`, `Branch`  |
+| Agent menu: Browser, Processes                              | `Globe`, `Activity`                            |
+| Agent menu: Add editors, Agent settings                     | `UserFollow`, `Settings`                       |
+| Agent menu's button, after the name                         | `ChevronDown`                                  |
 | Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
+| More actions on a + menu connection card, as designed       | `OverflowMenuHorizontal` (`horizontal`)        |
 | "About X" hint                                              | `Information`                                  |
 | How-to explainer popover                                    | `Help`                                         |
 

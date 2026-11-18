@@ -4,6 +4,7 @@ import { useMemo, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
 import { useStore } from "../../../store.js";
@@ -19,6 +20,11 @@ interface Props {
 
 export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
   const setDock = useStore((s) => s.setDock);
+  /* UNIT_BOUNDARY_DESCRIPTION: Back returns to the docked processes on a desktop, and on a phone when the output was opened from them (the agent menu's Processes); otherwise a phone keeps the list in its sections screen, which closing the dock shows again. */
+  const desktop = useIsDesktop();
+  const fromDockedList = useStore(
+    (s) => s.dock?.kind === "process-output" && s.dock.fromDockedList === true,
+  );
   const { data: list, isPending } = useProcesses(agentId, {
     enabled: true,
     poll: false,
@@ -37,7 +43,11 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           className="shrink-0"
           aria-label="Back to processes"
           tooltip="Back to processes"
-          onClick={() => setDock(null)}
+          onClick={() =>
+            setDock(
+              desktop || fromDockedList ? { kind: "processes", agentId } : null,
+            )
+          }
         >
           <ArrowLeft size={16} />
         </Button>

@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function StorageBreakdown({ rows }: Props) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   return (
     <section
       aria-label="What fills your storage"
@@ -35,7 +35,7 @@ export function StorageBreakdown({ rows }: Props) {
                 <button
                   type="button"
                   className="cursor-pointer rounded-sm text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => navigateToSandboxHome(agent.id, "setup")}
+                  onClick={() => openAgentSettings(agent.id, "setup")}
                 >
                   {label}
                 </button>

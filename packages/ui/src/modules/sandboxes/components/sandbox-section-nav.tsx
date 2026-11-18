@@ -44,6 +44,12 @@ export const SECTIONS: SectionEntry[] = [
       "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
   },
   {
+    section: "browser",
+    title: "Browser",
+    description:
+      "Controls to clear or restart the browser this agent drives in its sandbox.",
+  },
+  {
     section: "environment",
     title: "Environment vars",
     description:
@@ -116,7 +122,7 @@ export function SandboxSectionNav({
   return (
     <nav
       aria-label="Agent sections"
-      className="flex shrink-0 flex-col gap-1 md:sticky md:top-10 md:w-[245px] md:self-start"
+      className="flex min-w-0 shrink-0 flex-col gap-1"
     >
       <div ref={strip} className="contents">
         <Tabs
@@ -178,22 +184,25 @@ function SectionNavItem({
   active: boolean;
   onClick: () => void;
 }) {
+  /* UNIT_BOUNDARY_DESCRIPTION: the design's two lines per section, the title and its summary under it, on every row; both truncate, so a long summary never widens the list. A section that needs attention carries the design's small orange dot after its title, its reason as the tooltip. A modal opening on the list starts the keyboard on the open row. */
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
+      data-testid="section-nav-item"
+      data-dialog-noautofocus={active ? undefined : ""}
       className={cn(
-        "flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
+        "flex w-full min-w-0 flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
     >
-      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-        {title}
+      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+        <span className="truncate">{title}</span>
         {locked && (
           <Tooltip content={LOCKED_LABEL}>
             <span
-              className="inline-flex text-muted-foreground"
+              className="inline-flex shrink-0 text-muted-foreground"
               data-testid="section-lock"
             >
               <Locked size={14} aria-hidden />
@@ -203,8 +212,11 @@ function SectionNavItem({
         )}
         {warning && (
           <Tooltip content={warning}>
-            <span className="ml-auto inline-flex text-warning">
-              <WarningAltFilled size={16} aria-hidden />
+            <span
+              className="inline-flex shrink-0"
+              data-testid="section-attention"
+            >
+              <span aria-hidden className="size-1.5 rounded-full bg-warning" />
               <span className="sr-only">{warning}</span>
             </span>
           </Tooltip>

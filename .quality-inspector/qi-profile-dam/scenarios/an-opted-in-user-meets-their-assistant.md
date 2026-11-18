@@ -59,7 +59,7 @@ Then the conversation is listed in the sidebar
 And above the message box a collapsed *Try something new* row is shown; opened, it offers every idea but the one whose text the sent message started with
 When they open a new chat on Dammy
 Then the chat opens on the ordinary new-chat page, with the agent's large avatar and *Send a message to begin.*
-And the message box hints *Message…*
+And the empty message box shows example prompts one after another, each with a *Tab* hint, in place of a first task
 And no greeting is shown, and no idea pills are under the cards for opening a new session elsewhere
 And above the message box a collapsed *Try something new* row is shown
 When they open it

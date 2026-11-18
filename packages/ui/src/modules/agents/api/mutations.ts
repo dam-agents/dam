@@ -240,40 +240,67 @@ export function useDisconnectSlack() {
   });
 }
 
-export function useSetAgentConnections() {
+export interface AgentConnectionsChange {
+  agentId: string;
+  grant: string[];
+  revoke: string[];
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a grant or revoke sends only its change, and the server applies it to the grants it holds, so a write never carries another write's change: one that fails takes nothing with it. The writes still run one at a time, so a grant and a revoke of the same Connection land in the order they were made. A failed write takes back only its own change from the shown list. */
+export function useChangeAgentConnections() {
   return useMutation({
-    mutationFn: (vars: { agentId: string; connectionIds: string[] }) =>
-      api.connections.setAgentConnections.mutate(vars),
-    onMutate: async (vars) => {
+    mutationKey: trpc.connections.updateAgentConnections.mutationKey(),
+    scope: { id: "change-agent-connections" },
+    mutationFn: (change: AgentConnectionsChange) =>
+      api.connections.updateAgentConnections.mutate(change),
+    onMutate: async (change) => {
       const key = trpc.connections.getAgentConnections.queryKey({
-        agentId: vars.agentId,
+        agentId: change.agentId,
       });
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<AgentConnections>(key);
-      if (previous) {
-        const byId = new Map(
-          previous.connections.map((c) => [c.connectionId, c]),
+      const shown = queryClient.getQueryData<AgentConnections>(key);
+      if (!shown) return { key, added: [], removed: [] };
+      const revoked = new Set(change.revoke);
+      const held = new Set(shown.connections.map((c) => c.connectionId));
+      const removed = shown.connections.filter((c) =>
+        revoked.has(c.connectionId),
+      );
+      const added = [...new Set(change.grant)].filter(
+        (id) => !held.has(id) && !revoked.has(id),
+      );
+      queryClient.setQueryData<AgentConnections>(key, {
+        ...shown,
+        connections: [
+          ...shown.connections.filter((c) => !revoked.has(c.connectionId)),
+          ...added.map((connectionId) => ({
+            connectionId,
+            grantedAt: new Date().toISOString(),
+            preferred: false,
+          })),
+        ],
+      });
+      return { key, added, removed };
+    },
+    onError: (_err, _change, context) => {
+      if (!context) return;
+      const shown = queryClient.getQueryData<AgentConnections>(context.key);
+      if (shown) {
+        const added = new Set(context.added);
+        const kept = shown.connections.filter(
+          (c) => !added.has(c.connectionId),
         );
-        queryClient.setQueryData<AgentConnections>(key, {
-          ...previous,
-          connections: vars.connectionIds.map(
-            (id) =>
-              byId.get(id) ?? {
-                connectionId: id,
-                grantedAt: new Date().toISOString(),
-                preferred: false,
-              },
-          ),
+        const keptIds = new Set(kept.map((c) => c.connectionId));
+        queryClient.setQueryData<AgentConnections>(context.key, {
+          ...shown,
+          connections: [
+            ...kept,
+            ...context.removed.filter((c) => !keptIds.has(c.connectionId)),
+          ],
         });
       }
-      return { previous, key };
     },
-    onError: (_err, _vars, context) => {
-      if (context?.previous)
-        queryClient.setQueryData(context.key, context.previous);
-    },
-    onSettled: (_data, error, vars) => {
-      if (!error) askToRestartAfterSave(vars.agentId);
+    onSettled: (_data, error, change) => {
+      if (!error) askToRestartAfterSave(change.agentId);
     },
     meta: {
       invalidates: [

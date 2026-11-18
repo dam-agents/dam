@@ -81,7 +81,7 @@ test("one-click create from the Generalist card, then the mock agent with the co
     await waitForAgentIdRunning(api, agent!.id);
   });
 
-  await test.step("delete the one-click agent from its configuration page", async () => {
+  await test.step("delete the one-click agent from its settings, opened by the Home card's wrench", async () => {
     const agent = (await api.agents.list.query()).find(
       (a) => a.id === oneClickId,
     );
@@ -91,7 +91,7 @@ test("one-click create from the Generalist card, then the mock agent with the co
       .filter({
         has: page.getByRole("heading", { name: agent!.name, exact: true }),
       })
-      .getByRole("button", { name: "Configure agent" })
+      .getByRole("button", { name: "Agent settings" })
       .press("Enter");
     await page
       .getByRole("button", { name: "Delete", exact: true })

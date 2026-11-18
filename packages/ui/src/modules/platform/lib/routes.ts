@@ -26,7 +26,13 @@ export type Route =
   | { view: "artifacts"; artifactId?: string }
   | { view: "artifact"; artifactId: string }
   | { view: "starter-kits" }
-  | { view: "chat"; agent: string; session?: string }
+  | {
+      view: "chat";
+      agent: string;
+      session?: string;
+      /** UNIT_BOUNDARY_DESCRIPTION: an old agent page link, `/sandboxes/<id>/<section>`, opens the agent's chat with its settings modal on this section; the chat's own address never carries it. */
+      settings?: SandboxSection;
+    }
   | {
       view: "settings";
       settingsTab: SettingsTab;
@@ -37,7 +43,6 @@ export type Route =
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
   | { view: "connection-secret" }
-  | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "analytics" }
   | { view: "not-found"; path: string };
@@ -59,6 +64,20 @@ export function parsePublicAgentPath(pathname: string): string | null {
   return match ? decodeSegment(match[1]!) : null;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the address that opens an Agent's chat with its
+ * settings modal on a section: the same `/sandboxes/<id>/<section>` the server
+ * writes into messages, so a redirect back from a sign-in lands on the modal
+ * as an old link does.
+ */
+export function agentSettingsPath(
+  agentId: string,
+  section: SandboxSection = "setup",
+): string {
+  const base = `/sandboxes/${encodeURIComponent(agentId)}`;
+  return section === "setup" ? base : `${base}/${section}`;
+}
+
 export function publicAgentPath(agentId: string): string {
   return `/a/${encodeURIComponent(agentId)}`;
 }
@@ -75,7 +94,8 @@ export const RETIRED_PATHS = new Set([
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
-const sandboxHomeRe = new RegExp(
+/* UNIT_BOUNDARY_DESCRIPTION: the agent page's address, which the server still writes into Slack and Telegram messages (agentPageUrl); there is no such page any more, so it opens the agent's chat with its settings modal. */
+const agentPageRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
 
@@ -131,13 +151,13 @@ export function parseRoute(path: string, search = ""): Route {
   if (path === "/connections/secret") return { view: "connection-secret" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/analytics") return { view: "analytics" };
-  const sandboxHomeMatch = path.match(sandboxHomeRe);
-  if (sandboxHomeMatch) {
-    const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
+  const agentPageMatch = path.match(agentPageRe);
+  if (agentPageMatch) {
+    const section = sandboxSectionSchema.safeParse(agentPageMatch[2]);
     return {
-      view: "sandbox-home",
-      agentId: decodeSegment(sandboxHomeMatch[1]!),
-      sandboxSection: section.success ? section.data : "setup",
+      view: "chat",
+      agent: decodeSegment(agentPageMatch[1]!),
+      settings: section.success ? section.data : "setup",
     };
   }
   if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
@@ -197,12 +217,6 @@ export function routeToPath(route: Route): string {
       return "/slack/bind";
     case "connection-secret":
       return "/connections/secret";
-    case "sandbox-home": {
-      const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
-      return route.sandboxSection === "setup"
-        ? base
-        : `${base}/${route.sandboxSection}`;
-    }
     case "starter-kit":
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${
         route.catalog === LINKED_KIT_CATALOG
@@ -222,19 +236,16 @@ export function routeToPath(route: Route): string {
 
 export function routeToNavigationState(route: Route): {
   view: View;
-  agentId: string | null;
   artifactId: string | null;
   pageArtifactId: string | null;
   settingsTab: SettingsTab;
   settingsProfileId: string | null;
   usagePeriod: string | null;
-  sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
 } {
   return {
     view: route.view,
-    agentId: route.view === "sandbox-home" ? route.agentId : null,
     artifactId: route.view === "artifacts" ? (route.artifactId ?? null) : null,
     pageArtifactId: route.view === "artifact" ? route.artifactId : null,
     starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
@@ -243,7 +254,5 @@ export function routeToNavigationState(route: Route): {
     settingsProfileId:
       route.view === "settings" ? (route.profileId ?? null) : null,
     usagePeriod: route.view === "settings" ? (route.period ?? null) : null,
-    sandboxSection:
-      route.view === "sandbox-home" ? route.sandboxSection : "setup",
   };
 }

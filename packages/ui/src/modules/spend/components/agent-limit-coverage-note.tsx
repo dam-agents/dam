@@ -12,7 +12,7 @@ export function AgentLimitCoverageNote({
   coverage: AgentLimitCoverage;
   hasLimit: boolean;
 }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSettings = useStore((s) => s.openAgentSettings);
   const names = joinNames(coverage.uncounted);
   const several = coverage.uncounted.length > 1;
 
@@ -33,7 +33,7 @@ export function AgentLimitCoverageNote({
       <Button
         variant="link"
         size="inline"
-        onClick={() => navigateToSandboxHome(agentId, "providers")}
+        onClick={() => openAgentSettings(agentId, "providers")}
       >
         Providers
       </Button>

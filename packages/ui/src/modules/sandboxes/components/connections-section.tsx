@@ -4,31 +4,24 @@ import { SectionHeading } from "@/components/ui/section-heading";
 
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
-import { useSetAgentConnections } from "../../agents/api/mutations.js";
-import { useAgent, useAgentConnections } from "../../agents/api/queries.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
-import { useHoldsDamConnection } from "../../agents/hooks/use-holds-dam-connection.js";
-import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
+import { ownerName } from "../../agents/lib/agent-permissions.js";
 import { useSetPreferredConnection } from "../../connections/api/mutations.js";
-import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { ConnectionAudienceNotice } from "../../connections/components/connection-audience-notice.js";
 import { ConnectionAudienceSentence } from "../../connections/components/connection-audience-sentence.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
-import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
 import {
   damAudienceSentence,
-  damHoldWarns,
   isDamConnection,
 } from "../../connections/lib/dam-connection.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
-import { useSharedChannels } from "../hooks/use-shared-channels.js";
+import { useAgentConnectionGrants } from "../hooks/use-agent-connection-grants.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
-
-const NO_EDITORS: readonly string[] = [];
 
 interface Props {
   agentId: string;
@@ -47,67 +40,23 @@ export function ConnectionsSection({
   onGoToChannels,
   panelHeading,
 }: Props) {
-  const connectionsQ = useAgentPageConnections(agentId);
+  const {
+    granted,
+    grantedIds,
+    grants,
+    managesConnections,
+    editors,
+    audience,
+    sharing: shareConfirm,
+    toggleGrant,
+    revokeGrants,
+  } = useAgentConnectionGrants(agentId);
   const access = useAgent(agentId)?.access;
-  const managesConnections = !access || holds(access, "connections");
-  const agentConnectionsQ = useAgentConnections(agentId);
-  const setConnections = useSetAgentConnections();
   const setPreferred = useSetPreferredConnection();
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
+  const openAgentSettings = useStore((st) => st.openAgentSettings);
   const satellites = useAgentSatellites(agentId);
-  const sharedChannels = useSharedChannels(agentId);
-  const editors = access?.role === "owner" ? access.editors : NO_EDITORS;
-  const audience = useMemo(
-    () => ({ editors, channels: sharedChannels }),
-    [editors, sharedChannels],
-  );
-  const agent = useAgent(agentId);
-  const damWarns = damHoldWarns(useHoldsDamConnection(agent ?? null));
-  const shareConfirm = useConfirmSharedConnection(
-    audience,
-    damWarns
-      ? damAudienceSentence(getBrand().name, "anyone who can drive it")
-      : null,
-  );
 
-  const grantedIds = useMemo(
-    () =>
-      new Set(
-        agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [],
-      ),
-    [agentConnectionsQ.data],
-  );
-  const grants = useMemo(
-    () =>
-      new Map(
-        (agentConnectionsQ.data?.connections ?? []).map((c) => [
-          c.connectionId,
-          { grantedAt: c.grantedAt, preferred: c.preferred },
-        ]),
-      ),
-    [agentConnectionsQ.data],
-  );
-  const grantedNow = () =>
-    agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
-  const revokeGrants = (ids: readonly string[]) =>
-    setConnections.mutate({
-      agentId,
-      connectionIds: grantedNow().filter((x) => !ids.includes(x)),
-    });
-  const toggleGrant = (id: string, on: boolean) => {
-    if (on)
-      setConnections.mutate({
-        agentId,
-        connectionIds: [...new Set([...grantedNow(), id])],
-      });
-    else revokeGrants([id]);
-  };
-
-  const granted = useMemo(
-    () => (connectionsQ.data ?? []).filter((c) => grantedIds.has(c.id)),
-    [connectionsQ.data, grantedIds],
-  );
   const listed = useMemo(() => excludeProviderConnections(granted), [granted]);
   const { populated: groups, templateById } = useCatalogGroups(listed);
 
@@ -138,7 +87,7 @@ export function ConnectionsSection({
           testId="connections-editors-notice"
         >
           <ConnectionAudienceSentence
-            audience={{ editors, channels: sharedChannels }}
+            audience={audience}
             uses="these connections"
           />
         </ConnectionAudienceNotice>
@@ -185,7 +134,7 @@ export function ConnectionsSection({
           onGoToChannels={() => {
             setCatalogOpen(false);
             if (onGoToChannels) onGoToChannels();
-            else navigateToSandboxHome(agentId, "channels");
+            else openAgentSettings(agentId, "channels");
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent's page shows no Environments surface until the agent owns one: its section navigation has no Environments entry, and while it has none the Manage card of its General section links to the section instead, so the owner can still name the people who may open the Environments it creates. The section itself stays at its own address with its empty text.
+// TEST_OVERVIEW: An agent's settings show no Environments surface until the agent owns one: their section navigation has no Environments entry, and while it has none the Manage card of the General section links to the section instead, so the owner can still name the people who may open the Environments it creates. The section itself still opens, with its empty text, so an old link to it works.
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   loading: false,
   enabled: true,
   section: "usage",
-  navigateToSandboxHome: vi.fn(),
+  openAgentSettings: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -27,7 +27,7 @@ vi.mock("../../store.js", () => ({
       setView: vi.fn(),
       showConfirm: vi.fn(),
       openAgentSession: vi.fn(),
-      navigateToSandboxHome: state.navigateToSandboxHome,
+      openAgentSettings: state.openAgentSettings,
     }),
 }));
 vi.mock("../../modules/environments/api/queries.js", () => ({
@@ -110,8 +110,9 @@ const { environmentsShown } =
   await import("../../modules/environments/lib/environments-tab.js");
 const { AgentManagementActions } =
   await import("../../modules/sandboxes/components/agent-management-actions.js");
-const { SandboxHomeView } =
-  await import("../../modules/sandboxes/views/sandbox-home-view.js");
+const { AgentConfiguration } =
+  await import("../../modules/sandboxes/components/agent-configuration.js");
+const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 
 const agent = () =>
   ({
@@ -131,7 +132,20 @@ const renderRow = () =>
 
 const renderPage = (section: string) => {
   state.section = section;
-  return renderToStaticMarkup(createElement(SandboxHomeView));
+  return renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(AgentConfiguration, {
+        agent: agent(),
+        display: { state: "running", powerAction: "restart" } as never,
+        section: section as never,
+        onNavigate: () => {},
+        onOpenSession: () => {},
+        oauthReturnView: "/sandboxes/agent-dev/connections",
+      }),
+    ),
+  );
 };
 
 // TEST_SCENARIO: the section navigation offers Environments with the feature on, and once the agent owns at least one; it never flashes the entry while the list is still loading.
@@ -145,8 +159,8 @@ it("shows the section only once the agent owns an Environment", () => {
     expect(environmentsShown(off)).toBe(false);
 });
 
-// TEST_SCENARIO: the agent's page lists Environments in its section navigation only once the agent owns one, and the section is still at its own address with the section's content, so a stale link works.
-it("hides the navigation entry until the agent owns one, and keeps the section address", () => {
+// TEST_SCENARIO: the agent's settings list Environments in their section navigation only once the agent owns one, and the section still opens with its content, so a stale link works.
+it("hides the navigation entry until the agent owns one, and still opens the section", () => {
   state.count = 0;
   expect(renderPage("usage")).not.toContain("Environments");
   expect(renderPage("environments")).toContain("ENVIRONMENTS-SECTION");

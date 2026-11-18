@@ -12,6 +12,7 @@ export type DockedItems = {
   artifact: boolean;
   processOutput: boolean;
   changes: boolean;
+  processes: boolean;
   browser: boolean;
   delegation: boolean;
 };
@@ -21,6 +22,7 @@ export const NOTHING_DOCKED: DockedItems = {
   artifact: false,
   processOutput: false,
   changes: false,
+  processes: false,
   browser: false,
   delegation: false,
 };
@@ -56,7 +58,7 @@ export function dockedItemTab(docked: DockedItems): SidePanelTab | null {
   if (docked.file) return "files";
   if (docked.artifact) return "artifacts";
   if (docked.changes) return "changes";
-  if (docked.processOutput) return "processes";
+  if (docked.processes || docked.processOutput) return "processes";
   return null;
 }
 

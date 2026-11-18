@@ -1,4 +1,5 @@
 import type { SidePanelTab } from "./side-panel.js";
+import type { SidebarPanel, SidebarPanelId } from "./sidebar-panels.js";
 
 export const LEFT_MIN_W = 240;
 const LEFT_MAX_W = 400;
@@ -80,4 +81,27 @@ export function classicDockToggle({
   return shown
     ? { pressed: true, click: "close" }
     : { pressed: false, click: "reveal" };
+}
+
+export interface SectionsColumn {
+  shown: SidebarPanelId[];
+  open: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which of the Files, Artifacts and Processes
+ * sections the column beside the conversation draws. On a desktop each section
+ * opens from its top-bar icon and closes with its X, so the column draws only
+ * the open ones and is gone while none is open, leaving the conversation the
+ * width. A phone shows the column as a screen of its own, so it draws every
+ * section there, each one folding from its header.
+ */
+export function sectionsColumn(
+  sections: readonly SidebarPanel[],
+  desktop: boolean,
+): SectionsColumn {
+  const opened = sections.filter((s) => s.open).map((s) => s.id);
+  return desktop
+    ? { shown: opened, open: opened.length > 0 }
+    : { shown: sections.map((s) => s.id), open: true };
 }

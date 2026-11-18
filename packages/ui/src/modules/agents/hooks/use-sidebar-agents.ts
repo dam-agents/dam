@@ -25,11 +25,7 @@ export function useSidebarAgents() {
   const activity = useActivitySessions();
   const { order } = useSidebarOrder();
   const openAgentId = useStore((s) =>
-    s.view === "chat"
-      ? s.selectedAgent
-      : s.view === "sandbox-home"
-        ? s.agentId
-        : null,
+    s.view === "chat" ? s.selectedAgent : null,
   );
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   const openOverrides = useStore((s) => s.sidebarAgentOpen);
@@ -94,11 +90,7 @@ export function useSidebarSharedAgents() {
   const shared = useSharedAgents();
   const openOverrides = useStore((s) => s.sidebarAgentOpen);
   const openAgentId = useStore((s) =>
-    s.view === "chat"
-      ? s.selectedAgent
-      : s.view === "sandbox-home"
-        ? s.agentId
-        : null,
+    s.view === "chat" ? s.selectedAgent : null,
   );
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
   return useMemo(() => {

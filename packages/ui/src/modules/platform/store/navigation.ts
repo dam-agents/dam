@@ -6,7 +6,6 @@ import {
   parseRoute,
   routeToNavigationState,
   routeToPath,
-  type SandboxSection,
   type SettingsTab,
   type View,
 } from "../lib/routes.js";
@@ -16,13 +15,11 @@ type ParameterlessView =
 
 export interface NavigationSlice {
   view: View;
-  agentId: string | null;
   artifactId: string | null;
   pageArtifactId: string | null;
   settingsTab: SettingsTab;
   settingsProfileId: string | null;
   usagePeriod: string | null;
-  sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
   kitBrowserOpen: boolean;
@@ -34,7 +31,6 @@ export interface NavigationSlice {
     options?: { period?: string; profileId?: string },
   ) => void;
   setUsagePeriod: (period: string) => void;
-  navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
   mobileScreen: "files" | "chat";
@@ -120,7 +116,6 @@ export const createNavigationSlice: StateCreator<
         settingsTab,
         usagePeriod: period,
         settingsProfileId: profileId,
-        agentId: null,
       });
     }),
   setUsagePeriod: (period) => {
@@ -130,20 +125,6 @@ export const createNavigationSlice: StateCreator<
       routeToPath({ view: "settings", settingsTab: "usage", period }),
     );
     set({ usagePeriod: period });
-  },
-  navigateToSandboxHome: (agentId, section = "setup") => {
-    leaveView(get, () => {
-      history.pushState(
-        null,
-        "",
-        routeToPath({
-          view: "sandbox-home",
-          agentId,
-          sandboxSection: section,
-        }),
-      );
-      set({ view: "sandbox-home", agentId, sandboxSection: section });
-    });
   },
   navigateToStarterKit: (catalog, kitId) =>
     leaveView(get, () => {
@@ -156,7 +137,6 @@ export const createNavigationSlice: StateCreator<
         view: "starter-kit",
         starterKitCatalog: catalog,
         starterKitId: kitId,
-        agentId: null,
       });
     }),
   setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
