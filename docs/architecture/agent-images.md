@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-11-12
+Last verified: 2026-11-18
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -52,7 +52,7 @@ The native CLI the adapter runs stays in the tools; the bundle cannot find it be
 The default image also carries the platform's repository, as its own layer at `/usr/local/share/platform-source`, so the `platform-docs` skill answers a question about the platform from the docs and code of the release the agent runs, with no network ([assistant](assistant.md#questions-about-the-platform)).
 It is what git tracks under `docs/`, `helm/`, `skills/`, `packages/` and the top-level README and AGENTS.md, less tests, the e2e suite, migration snapshots, lockfiles, images and other binaries: about 30 MB on disk and 6 MB compressed.
 Its `user-docs/` holds the published user docs' Markdown and site config, from their own repository at the commit [`user-docs.pin`](../../packages/agents/base/user-docs.pin) names; the build checks the archive's digest against the pin and fails on a failed fetch or a wrong digest, as it does for a pinned tool.
-A `BUILD` file beside it names the commit the image was built from, the chart's version and the user docs' commit.
+A `BUILD` file beside it names the commit the image was built from, the chart's version, the user docs' commit and, when CI built it, the repository it came from; a local build knows no repository and leaves that line out, and its readers fall back to the upstream repository.
 The repository is public, so the layer holds nothing the source does not already publish; tracked files only, which keeps a local `.env` or an ignored values file out.
 The image's key covers its own sources, not the whole repository, so an image reused on a main push carries the tree of the commit it was built at, as `BUILD` says; a release rebuilds every image, so a release image carries its own.
 
