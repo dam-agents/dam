@@ -25,13 +25,15 @@ export function KitUpdateTag({
   agentId: string;
   onOpenAgent: () => void;
 }) {
-  const badge = kitUpdateBadge(useKitUpdate(agentId));
-  if (!badge) return null;
+  const update = useKitUpdate(agentId);
+  const badge = kitUpdateBadge(update);
+  if (!update || !badge) return null;
   if (badge.kind === "running")
     return (
       <KitUpdatingTag
         agentId={agentId}
         pending={badge.pending}
+        current={update.current}
         onOpenAgent={onOpenAgent}
       />
     );
@@ -50,10 +52,12 @@ export function KitUpdateTag({
 function KitUpdatingTag({
   agentId,
   pending,
+  current,
   onOpenAgent,
 }: {
   agentId: string;
   pending: KitUpdatePending;
+  current: string;
   onOpenAgent: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -65,8 +69,9 @@ function KitUpdatingTag({
   const sessionId = useKitUpdateSessionId(agentId, pending);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const version = changes?.versionTo ?? shortKitVersion(pending.targetCommit);
+  const from = changes?.versionFrom ?? shortKitVersion(current);
 
-  const openUpdate = () => {
+  const continueUpdate = () => {
     setOpen(false);
     if (sessionId) openAgentSession(agentId, sessionId);
     else onOpenAgent();
@@ -86,10 +91,11 @@ function KitUpdatingTag({
         onClick={(e) => e.stopPropagation()}
       >
         <KitUpdatingPanel
-          version={version}
+          from={from}
+          to={version}
           startedAt={pending.startedAt}
-          hasChat={sessionId !== null}
-          onOpen={openUpdate}
+          compareUrl={changes?.compareUrl ?? null}
+          onContinue={continueUpdate}
         />
       </PopoverContent>
     </Popover>
