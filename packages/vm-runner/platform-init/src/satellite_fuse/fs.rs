@@ -147,7 +147,16 @@ fn entries(fs: &SatelliteFs, node: &Node, offset: u64) -> Result<Shown, Failure>
         }
         let path = child(node, &listed.name);
         let (number, _) = fs.intern(&node.satellite, &path, &listed.attrs);
-        shown.push((number, listed.attrs.kind.file_type()?, listed.name));
+        // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds is listed, not refused: one such entry must not fail its whole directory. It is shown as a regular file, so the kernel hands every open and read of it to the platform, where the worker refuses it; presenting it as a pipe would let the guest's own kernel answer reads of the machine's tree.
+        shown.push((
+            number,
+            listed
+                .attrs
+                .kind
+                .file_type()
+                .unwrap_or(FileType::RegularFile),
+            listed.name,
+        ));
     }
     Ok(shown)
 }

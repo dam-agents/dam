@@ -608,6 +608,13 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     let (ok, listed) = shell(format!("ls {mnt}"));
     assert!(ok, "ls {mnt}: {listed}");
     assert_eq!(listed.lines().collect::<Vec<_>>(), vec!["lab", "ro"]);
+    // TEST_SCENARIO: one entry the platform can only call "other" must not fail the listing of its directory.
+    let (ok, lab) = shell(format!("ls {mnt}/lab"));
+    assert!(ok, "ls {mnt}/lab: {lab}");
+    assert!(
+        lab.lines().any(|line| line == "pipe"),
+        "the other-kind entry is missing from the listing: {lab}"
+    );
 
     let reads = tree.reads();
     let (ok, contents) = shell(format!("cat {mnt}/lab/a.txt"));
@@ -695,39 +702,57 @@ fn the_mount_serves_the_granted_satellites_over_a_real_fuse_session() {
     let (ok, target) = shell(format!("readlink {mnt}/lab/docs/notes/link"));
     assert!(ok, "readlink: {target}");
     assert_eq!(target.trim(), "../../a.txt");
-    let environment = shell(format!(
-        "id -a; uname -r; uname -m; grep -E 'Cap(Eff|Prm)' /proc/self/status; stat -c 'parent %a %u %g %F' {mnt}/lab/docs/notes"
-    ));
-    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
-        .unwrap_or_default()
-        .lines()
-        .filter(|line| line.contains(&mnt))
-        .map(|line| format!("mountinfo {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _ = super::trace::take();
-    let _ = tree.trace();
-    let (ok, escaping) = shell(format!(
-        "ln -s ../../../etc/passwd {mnt}/lab/docs/notes/out"
-    ));
-    let fuse_trace = super::trace::take();
-    let platform_trace = tree.trace();
-    eprintln!(
-        "--- symlink diagnostic ---\n{} {mountinfo}\nenvironment: {}\nfuse trace: {fuse_trace:#?}\nplatform trace: {platform_trace:#?}\n--- end ---",
-        if ok { "ln succeeded" } else { "ln failed" },
-        environment.1
-    );
-    assert!(!ok, "a link whose `..` leave the root was created");
+    // UNIT_BOUNDARY_DESCRIPTION: the mount's own answer is what these two links are held to: the request must reach the server and be refused with EPERM. The errno the caller sees is read from a direct symlink(2), not from a tool's message, because a kernel may map a filesystem's error and the CI kernel (7.0.0-azure) reports EACCES for a symlink the server answered with EPERM. A caller errno other than EPERM is accepted only when the server trace proves the mount refused with EPERM, and the environment that did it is printed.
+    let escaping = refused_symlink(&format!("{mnt}/lab/docs/notes/out"), "../../../etc/passwd");
     assert!(
-        escaping.contains("Operation not permitted"),
-        "the refusal said {escaping}"
+        escaping.errno.is_some(),
+        "a link whose `..` leave the root was created"
     );
-    let (ok, absolute) = shell(format!("ln -s /etc/passwd {mnt}/lab/out"));
-    assert!(!ok, "a link out of the tree was created");
     assert!(
-        absolute.contains("Operation not permitted"),
-        "the refusal said {absolute}"
+        escaping
+            .trace
+            .iter()
+            .any(|line| line.contains("REFUSED") && line.contains("EPERM")),
+        "the mount did not refuse the escaping link with EPERM: {:#?}",
+        escaping.trace
     );
+    assert!(
+        matches!(escaping.errno, Some(libc::EPERM) | Some(libc::EACCES)),
+        "the caller saw errno {:?}, not a permission refusal",
+        escaping.errno
+    );
+    if escaping.errno != Some(libc::EPERM) {
+        eprintln!(
+            "--- the server answered EPERM, the caller saw {:?} ---\n{}",
+            escaping.errno,
+            diagnostics(&mnt, &tree)
+        );
+    }
+    let absolute = refused_symlink(&format!("{mnt}/lab/out"), "/etc/passwd");
+    assert!(
+        absolute.errno.is_some(),
+        "a link out of the tree was created"
+    );
+    assert!(
+        absolute
+            .trace
+            .iter()
+            .any(|line| line.contains("REFUSED") && line.contains("EPERM")),
+        "the mount did not refuse the absolute link with EPERM: {:#?}",
+        absolute.trace
+    );
+    assert!(
+        matches!(absolute.errno, Some(libc::EPERM) | Some(libc::EACCES)),
+        "the caller saw errno {:?}, not a permission refusal",
+        absolute.errno
+    );
+    if absolute.errno != Some(libc::EPERM) {
+        eprintln!(
+            "--- the server answered EPERM (absolute), the caller saw {:?} ---\n{}",
+            absolute.errno,
+            diagnostics(&mnt, &tree)
+        );
+    }
     let (ok, hard) = shell(format!("ln {mnt}/lab/a.txt {mnt}/lab/second"));
     assert!(!ok, "a hard link was created: {hard}");
 
@@ -851,6 +876,41 @@ fn online(state: &State) {
     state.set_grants(held);
 }
 
+struct Refused {
+    errno: Option<i32>,
+    trace: Vec<String>,
+}
+
+fn refused_symlink(path: &str, target: &str) -> Refused {
+    let _ = super::trace::take();
+    let result = std::os::unix::fs::symlink(target, path);
+    Refused {
+        errno: result.err().and_then(|err| err.raw_os_error()),
+        trace: super::trace::take(),
+    }
+}
+
+fn diagnostics(mnt: &str, tree: &Tree) -> String {
+    let environment = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "id -a; uname -r; uname -m; grep -E 'Cap(Eff|Prm)' /proc/self/status; stat -c 'parent %a %u %g %F' {mnt}/lab/docs/notes"
+        ))
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).to_string())
+        .unwrap_or_default();
+    let mountinfo = std::fs::read_to_string("/proc/self/mountinfo")
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.contains(mnt))
+        .map(|line| format!("mountinfo {line}\n"))
+        .collect::<String>();
+    format!(
+        "{mountinfo}environment: {environment}platform trace: {:#?}",
+        tree.trace()
+    )
+}
+
 fn temp() -> PathBuf {
     let output = Command::new("mktemp")
         .arg("-d")
@@ -952,6 +1012,8 @@ impl Tree {
                 tree.add(satellite, path, "file", contents.to_string(), 0o644);
             }
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a FIFO, a socket or a device the machine holds: the platform can describe it only as "other", and one of them must not fail the listing of its directory.
+        tree.add("lab", "pipe", "other", String::new(), 0o644);
         tree.add("lab", "many", "dir", String::new(), 0o755);
         for number in 0..600 {
             tree.add(

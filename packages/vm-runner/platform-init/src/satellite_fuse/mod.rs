@@ -171,15 +171,18 @@ pub fn start(env: &[(String, String)]) {
             "satellite mount: {MOUNT_POINT} is not mounted: {e}"
         )),
     }
-    match state.client.grants(&state.config.agent, FIRST_ANSWER) {
-        Ok(grants) => state.set_grants(grants),
-        Err(platform::GrantsError::NotServed) => log(format_args!(
-            "satellite mount: this platform answers no satellite-file grants, so nothing appears under {MOUNT_POINT} until it does"
-        )),
-        Err(platform::GrantsError::Failed(e)) => log(format_args!(
-            "satellite mount: reading the grants for {}: {e}",
-            state.config.agent
-        )),
+    // UNIT_BOUNDARY_DESCRIPTION: the first grant read happens only once the mount stands, because that same read is what records the mount's presence: a guest without /dev/fuse would otherwise tell the platform it serves a mount that is not there, and the Agent's instructions would name it.
+    if session.is_ok() {
+        match state.client.grants(&state.config.agent, FIRST_ANSWER) {
+            Ok(grants) => state.set_grants(grants),
+            Err(platform::GrantsError::NotServed) => log(format_args!(
+                "satellite mount: this platform answers no satellite-file grants, so nothing appears under {MOUNT_POINT} until it does"
+            )),
+            Err(platform::GrantsError::Failed(e)) => log(format_args!(
+                "satellite mount: reading the grants for {}: {e}",
+                state.config.agent
+            )),
+        }
     }
     std::thread::spawn(move || serve(state, PathBuf::from(MOUNT_POINT), session.ok()));
 }
