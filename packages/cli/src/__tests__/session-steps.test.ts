@@ -11,7 +11,9 @@ import {
  * however many chunks carry them. Each tool call becomes one step with its
  * tool, a summary of its input, its status and its duration. The duration
  * comes from the `_meta.platform.at` stamps of the frame that started the call
- * and the frame that finished it, because no harness reports one.
+ * and the frame that finished it, because no harness reports one. The output
+ * is the shared parser's text of either harness's shape, cut to 2000
+ * characters.
  */
 
 function update(
@@ -106,6 +108,7 @@ describe("session steps", () => {
         tool: "Bash",
         summary: "mise run test",
         status: "completed",
+        output: null,
         startedAt: "2026-10-29T08:00:03.000Z",
         endedAt: "2026-10-29T08:06:03.000Z",
         durationMs: 360_000,
@@ -137,11 +140,59 @@ describe("session steps", () => {
         tool: "create_pull_request",
         summary: "mcp__github__create_pull_request",
         status: "in_progress",
+        output: null,
         startedAt: null,
         endedAt: null,
         durationMs: null,
       },
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: Two harnesses report what a finished command printed in
+   * their own shape, Claude Code as text in `rawOutput` and Codex as a result
+   * object, and a third prints more than one step may keep. The step carries
+   * the shared parser's text either way, cut to 2000 characters, so one call
+   * cannot bloat a replay.
+   */
+  it("should read a tool call's output on either harness and cap it", () => {
+    const log = createStepLog();
+    const call = (toolCallId: string) =>
+      log.apply(
+        update("tool_call", {
+          toolCallId,
+          title: "Bash",
+          status: "in_progress",
+        }),
+      );
+    call("t3");
+    log.apply(
+      update("tool_call_update", {
+        toolCallId: "t3",
+        status: "completed",
+        rawOutput: "done",
+      }),
+    );
+    call("t4");
+    log.apply(
+      update("tool_call_update", {
+        toolCallId: "t4",
+        status: "failed",
+        rawOutput: { result: "boom" },
+      }),
+    );
+    call("t5");
+    log.apply(
+      update("tool_call_update", {
+        toolCallId: "t5",
+        status: "completed",
+        rawOutput: "x".repeat(2500),
+      }),
+    );
+
+    expect(
+      log.steps.map((step) => (step.kind === "tool" ? step.output : null)),
+    ).toEqual(["done", "boom", "x".repeat(2000)]);
   });
 
   /**

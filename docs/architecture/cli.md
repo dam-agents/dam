@@ -128,6 +128,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
+- **`outage`** — list the model provider outages, the fault on the platform's side and the owner's outage alerts, the same data the bell shows ([Provider status](provider-status.md#the-cli)).
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
@@ -275,7 +276,7 @@ Every attempt reads the token again, so an access token that expired during a lo
 The attempt targets the session the harness last moved its PTY to, and the screen is cleared just before the replay.
 On exit, on a drop that does not reconnect, and when it gives up or the user stops it, the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
-`dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls.
+`dam session show` reads one Session: it lists the sessions first, so an id the agent does not have is refused with a pointer to `dam session list`, then loads it over the same ACP relay the UI uses and prints its Session Transcript as messages and tool calls, the error a turn ended with, and a failed tool call's output, both capped.
 A tool call's duration is the time between the stamps the runtime puts on the frame that started it and the frame that finished it, since no harness reports one.
 A call its turn left open, by a stop or an error, is closed when the turn ends, or by the load when no turn runs: it gets an end time and no duration.
 The load answer says whether a turn is running, and the runtime adds when it started, for any Session, so the CLI tells how long a turn has been going even where the run fields of the session list stay empty: those count unattended runs only.

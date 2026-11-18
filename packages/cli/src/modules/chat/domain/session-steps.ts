@@ -1,4 +1,4 @@
-import { toolNameOf, toolServerOf } from "agent-runtime-api";
+import { toolNameOf, toolOutputTexts, toolServerOf } from "agent-runtime-api";
 
 export interface MessageStep {
   kind: "message";
@@ -14,6 +14,7 @@ export interface ToolStep {
   tool: string;
   summary: string;
   status: string;
+  output: string | null;
   startedAt: string | null;
   endedAt: string | null;
   durationMs: number | null;
@@ -79,6 +80,13 @@ function summaryOf(update: Record<string, unknown>): string | undefined {
   return stringOf(update.title);
 }
 
+const OUTPUT_MAX = 2000;
+
+function outputOf(update: Record<string, unknown>): string | null {
+  const text = toolOutputTexts(update).join("\n");
+  return text === "" ? null : text.slice(0, OUTPUT_MAX);
+}
+
 function durationOf(
   startedAt: string | null,
   endedAt: string | null,
@@ -92,14 +100,16 @@ function durationOf(
  * UNIT_BOUNDARY_DESCRIPTION: Reads a Session Transcript, frame by frame, into
  * the steps `dam session show` prints: the messages of the person and of the
  * agent, and each tool call with its tool, a one-line summary of its input,
- * its status and how long it took. Chunks of one message (one `messageId`, or
- * consecutive chunks of one role when the harness sends none) become one
- * message. A tool call's duration is the time between the `_meta.platform.at`
- * stamp of its `tool_call` frame and that of the update that finished it,
- * because no harness reports a duration of its own. A turn that ends by a
- * stop or an error sends no closing update for the calls still open, so
- * settle closes them as `cancelled` or `failed`, with an end time and no
- * duration, the way the web chat does. Thoughts and plans are not steps.
+ * its status and how long it took, and the last output it printed, read the
+ * same way on every harness by the shared parser and cut to a short preview,
+ * because one transcript can hold megabytes. Chunks of one message (one
+ * `messageId`, or consecutive chunks of one role when the harness sends
+ * none) become one message. A tool call's duration is the time between the
+ * `_meta.platform.at` stamp of its `tool_call` frame and that of the update
+ * that finished it, because no harness reports a duration of its own. A turn
+ * that ends by a stop or an error sends no closing update for the calls still
+ * open, so settle closes them as `cancelled` or `failed`, with an end time and
+ * no duration, the way the web chat does. Thoughts and plans are not steps.
  */
 export function createStepLog() {
   const steps: Step[] = [];
@@ -150,6 +160,7 @@ export function createStepLog() {
         tool: toolOf(update),
         summary: summaryOf(update) ?? "",
         status: status ?? "pending",
+        output: outputOf(update),
         startedAt: at,
         endedAt: finished ? at : null,
         durationMs: finished ? 0 : null,
@@ -162,6 +173,8 @@ export function createStepLog() {
     if (step.tool === "tool") step.tool = toolOf(update);
     step.summary = summaryOf(update) ?? step.summary;
     if (status !== undefined) step.status = status;
+    const output = outputOf(update);
+    if (output !== null) step.output = output;
     if (step.endedAt === null && FINISHED.has(step.status)) {
       step.endedAt = at;
       step.durationMs = durationOf(step.startedAt, at);

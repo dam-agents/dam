@@ -25,6 +25,12 @@ import {
 } from "../../kit/index.js";
 import type { KitUpdateStatus } from "api-server-api";
 
+const RESTART_REASON: Record<string, string> = {
+  OutOfMemory: "out of memory",
+  HomeVolumeFull: "its storage was full",
+  GuestStoppedAnswering: "it stopped answering",
+};
+
 export function buildGetCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
@@ -107,6 +113,12 @@ function renderAgent(
   }
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
   entries.push(...modelEntries(models));
+  const restart = agent.podTerminationReason
+    ? agent.podTerminationReason
+    : agent.podRestartReason
+      ? (RESTART_REASON[agent.podRestartReason] ?? agent.podRestartReason)
+      : null;
+  if (restart !== null) entries.push(["LAST RESTART", restart]);
   if (agent.state === "error" && agent.error)
     entries.push(["ERROR", agent.error]);
   return renderEntries(entries);

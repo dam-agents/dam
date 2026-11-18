@@ -205,6 +205,58 @@ describe("dam agent get (integration)", () => {
     }
   });
 
+  it("get: says why the agent last restarted", async () => {
+    const agent = makeAgent({
+      id: "agent-0000000000000042",
+      podRestartReason: "GuestStoppedAnswering",
+      podTerminationReason: "out of memory (OOMKilled)",
+      podTerminationCode: "OutOfMemory",
+    });
+    const fixture = await startFixture({
+      get: async () => agent,
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["agent", "get", "agent-0000000000000042"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+      expect(r.stdout).toMatch(
+        /^LAST RESTART:\s+out of memory \(OOMKilled\)$/m,
+      );
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("get: words a restart reason that has no termination cause", async () => {
+    const agent = makeAgent({
+      id: "agent-0000000000000042",
+      podRestartReason: "HomeVolumeFull",
+    });
+    const fixture = await startFixture({
+      get: async () => agent,
+    });
+    try {
+      await configureServer(fixture.url);
+
+      const r = await runDam(["agent", "get", "agent-0000000000000042"], {
+        HOME: home,
+        PATH: process.env.PATH ?? "",
+        DAM_TOKEN: "test-token",
+      });
+
+      expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+      expect(r.stdout).toMatch(/^LAST RESTART:\s+its storage was full$/m);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("get by id 404: stderr references the id, exit 5", async () => {
     const fixture = await startFixture({
       get: async () => null,
