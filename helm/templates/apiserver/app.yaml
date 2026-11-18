@@ -69,10 +69,21 @@ spec:
   {{- else }}
   replicas: {{ .Values.apiServer.replicas | default 1 }}
   {{- end }}
-  {{- if eq .Values.agentStore.authority "postgres" }}
+  {{- $recreate := eq .Values.agentStore.authority "postgres" }}
+  {{- if $recreate }}
+  {{- $marker := lookup "v1" "ConfigMap" .Values.agentNamespace (include "platform.agentStore.markerName" .) | default dict }}
+  {{- $recreate = ne (dig "data" "store" "" $marker) "postgres" }}
+  {{- end }}
+  {{- if $recreate }}
   # The switch recreates: every old replica is gone before the absorb reads the
   # custom resources, so no old writer or periodic job can act on a fleet that
-  # exists only in rows.
+  # exists only in rows. That is the switch's own rollout only — once its marker
+  # names Postgres, a replica on the custom resources can no longer serve that
+  # store, so a later release surges and keeps serving. `lookup` finds no marker
+  # in an offline render (`helm template`, a plan with no cluster), which asks
+  # for Recreate: the safe side. `helm rollback` replays a stored manifest
+  # instead of rendering, so it carries what that render saw: never replay a
+  # switched release across a rollback of the store.
   strategy:
     type: Recreate
     rollingUpdate: null

@@ -101,6 +101,8 @@ Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for
 Agents and user budgets live in the install's Postgres database, in the `control` schema, not in the Kubernetes API.
 The chart values under `agentStore` move an install through the three releases that got it there: `crd` (the custom resources, an install that has not cut over yet), `postgres` (the switch), and `contract` (past the rollback window, no custom resources).
 `apiServer.db` points both components at one platform database; the controller has its own login, `platform_controller`, whose password lives beside the api-server's.
+The switch's api-server recreates, so every old replica is gone before the absorb reads the custom resources; a later release on `postgres` rolls, because the chart reads the store's marker while it renders and a replica that reads the custom resources refuses to serve once that marker says Postgres.
+That read is one `get` of the marker ConfigMap in the agent namespace, so the identity running the upgrade must be allowed it; an offline render (`helm template`, a GitOps plan with no cluster) reads no marker and recreates the api-server, the safe side.
 
 Do not edit these values by hand outside a cutover: the switch is an acknowledged short outage, and the contract release refuses to start until the rollback window has closed and the install's archive is attested.
 The procedure is in [the cutover page](notes/agent-store-cutover.md); `docs/architecture/persistence.md` describes what the components do.

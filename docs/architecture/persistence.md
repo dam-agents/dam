@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -172,7 +172,9 @@ The contract release adds one stamp to it: `contract-at`, written by the api-ser
 The store is then bound to that install: the absorb records the release, namespace and API server it ran against, and the absorb, the barrier and a rollback refuse a database whose absorb stamp or install does not match the cluster's marker.
 
 The switch is one api-server startup behind that marker ([agent-store cutover](../notes/agent-store-cutover.md) is the operator's procedure).
-It recreates both Deployments instead of rolling them, so no old replica or periodic job acts on a fleet that exists only in rows.
+It recreates the api-server and takes the old controller down before the new one starts, so no old replica or periodic job acts on a fleet that exists only in rows.
+That ordering is the switch's own rollout: the chart reads the marker while it renders, so an api-server release that renders against the cluster rolls like any other once the marker is written, since a replica that reads the custom resources refuses to serve once the marker says Postgres.
+A render that cannot read the marker — an offline one, or a manifest Helm stored before and replays — recreates.
 The api-server then reads every `Agent` and `UserBudget`, refuses any record it cannot carry as rows — a refusal names the record, and a connection grant that disagrees with `connection_grants` is one of them — and writes the rows, the archive in `crd_snapshots` and the store row's `absorbed_at` in one transaction.
 The archive's independent copy is written to the object store and read back before that transaction opens, so an install with an object store aborts rather than absorb with one copy; an install without one carries the in-database copy only, and the operator's encrypted file before the contract release is what replaces it.
 The object-store copy is plaintext in the platform's own bucket; only the operator's file leaves the platform, encrypted to the install's age key.

@@ -1,6 +1,6 @@
 # Agent store cutover and rollback
 
-Last verified: 2026-10-24
+Last verified: 2026-11-18
 
 This is the operator's procedure for moving Agents and user budgets out of the Kubernetes API and into Postgres, and for rolling one install back inside its window.
 [persistence](../architecture/persistence.md) describes what the components do; this page is what a person does.
@@ -40,8 +40,10 @@ A failed render leaves the previous release running.
 
 What happens, in order:
 
-1. Both Deployments recreate.
+1. Both Deployments replace every old replica before the new ones start, and no later rollout that renders against the cluster does.
    Every old api-server replica and the old controller are gone before the new ones start; machines keep running.
+   The api-server recreates only while the marker is not yet written: once this release has written it, a later api-server release rolls and keeps serving, and the controller keeps its no-surge roll.
+   A render that cannot read the marker recreates: an offline render, and a manifest Helm stored and replays.
 2. The api-server migrates, verifies with a `SelfSubjectAccessReview` that its identity can no longer write an `Agent` or a `UserBudget`, absorbs, writes the marker `<release>-agent-store`, and waits.
 3. The controller takes the Lease, ensures every absorbed Agent has an anchor, and records the holder and the moment.
 4. The api-server serves as soon as the Lease's holder is that controller and the record exists, and records `switch_completed_at`.
@@ -174,6 +176,8 @@ Remove the ServiceAccount, the two Roles and the two RoleBindings after the wind
    In CR mode there are no anchors: the controller renders from the custom resources again and adopts the children on its first reconcile, and owner references to a custom resource are what it expects.
 
 A later re-upgrade re-absorbs with the custom resources authoritative.
+Reach it with an upgrade, never with `helm rollback` to a release that ran on `postgres`: Helm replays the manifest it stored then instead of rendering again, so that release's rollout strategy is the one the switch's safe side was not asked for.
+Only an upgrade reads the marker again, and with the marker gone it recreates.
 
 ## The contract release
 

@@ -1,0 +1,256 @@
+#!/usr/bin/env node
+//MISE description="The api-server recreates only for the store's switch, rolls once its marker says Postgres, and recreates when no cluster answers"
+//MISE sources=["**/*.{yaml,yml,tpl}", ".mise/tasks/check/rollout"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+
+/* UNIT_BOUNDARY_DESCRIPTION: the api-server's rollout strategy carries the
+ * switch's only ordering guarantee — every old replica gone before the absorb
+ * reads the custom resources — so it is decided by a cluster read, and an
+ * offline render cannot exercise that read: `lookup` finds no marker there, so a
+ * template that never asked the cluster at all would still pass `helm template`
+ * with the safe answer. This task stands a fake API server in front of Helm and
+ * renders the real chart against it, so an install whose marker names Postgres
+ * rolls, one without the marker recreates, the custom-resources release reads no
+ * marker at all, and an identity that may not read it fails closed. The render
+ * is read, not validated — the fake server serves no OpenAPI — and the chart
+ * nulls `rollingUpdate` beside `Recreate`, which the API server rejects. */
+
+import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const exec = promisify(execFile);
+const namespace = "test-release";
+const agentNamespace = "test-agents";
+
+let marker = null;
+let forbidden = false;
+let markerReads = 0;
+
+const group = (name, version, resources) => ({ name, version, resources });
+const groups = [
+  group("agent-platform.ai", "v1", [{ name: "agents", kind: "Agent" }, { name: "userbudgets", kind: "UserBudget" }]),
+  group("gateway.networking.k8s.io", "v1", [{ name: "gateways", kind: "Gateway" }, { name: "gatewayclasses", kind: "GatewayClass" }]),
+  group("security.istio.io", "v1", [{ name: "authorizationpolicies", kind: "AuthorizationPolicy" }]),
+  group("networking.istio.io", "v1", [{ name: "destinationrules", kind: "DestinationRule" }]),
+  group("apps", "v1", [{ name: "deployments", kind: "Deployment" }, { name: "statefulsets", kind: "StatefulSet" }, { name: "daemonsets", kind: "DaemonSet" }]),
+  group("rbac.authorization.k8s.io", "v1", [{ name: "roles", kind: "Role" }, { name: "rolebindings", kind: "RoleBinding" }, { name: "clusterroles", kind: "ClusterRole" }, { name: "clusterrolebindings", kind: "ClusterRoleBinding" }]),
+  group("networking.k8s.io", "v1", [{ name: "ingresses", kind: "Ingress" }, { name: "networkpolicies", kind: "NetworkPolicy" }]),
+  group("cert-manager.io", "v1", [{ name: "certificates", kind: "Certificate" }, { name: "issuers", kind: "Issuer" }, { name: "clusterissuers", kind: "ClusterIssuer" }]),
+  group("policy", "v1", [{ name: "poddisruptionbudgets", kind: "PodDisruptionBudget" }]),
+  group("scheduling.k8s.io", "v1", [{ name: "priorityclasses", kind: "PriorityClass" }]),
+  group("apiextensions.k8s.io", "v1", [{ name: "customresourcedefinitions", kind: "CustomResourceDefinition", namespaced: false }]),
+];
+const core = [
+  { name: "configmaps", kind: "ConfigMap" },
+  { name: "secrets", kind: "Secret" },
+  { name: "namespaces", kind: "Namespace", namespaced: false },
+  { name: "services", kind: "Service" },
+  { name: "pods", kind: "Pod" },
+  { name: "serviceaccounts", kind: "ServiceAccount" },
+].map((resource) => ({ singularName: "", namespaced: resource.namespaced !== false, verbs: ["get", "list"], ...resource }));
+
+const notFound = { kind: "Status", apiVersion: "v1", status: "Failure", reason: "NotFound", code: 404, message: "not found" };
+const objects = {
+  "/apis/apps/v1/namespaces/istio-system/daemonsets/ztunnel": {
+    apiVersion: "apps/v1",
+    kind: "DaemonSet",
+    metadata: { name: "ztunnel", namespace: "istio-system" },
+  },
+  [`/api/v1/namespaces/${namespace}`]: {
+    apiVersion: "v1",
+    kind: "Namespace",
+    metadata: { name: namespace, labels: { "istio.io/dataplane-mode": "ambient" } },
+  },
+};
+const markerPath = `/api/v1/namespaces/${agentNamespace}/configmaps/platform-agent-store`;
+
+const server = http.createServer((request, response) => {
+  const route = new URL(request.url, "http://localhost").pathname;
+  let body;
+  let code = 200;
+  const discovery = route.match(/^\/apis\/([^/]+)\/([^/]+)$/);
+  const api = discovery && groups.find((one) => one.name === discovery[1] && one.version === discovery[2]);
+  if (route === "/version") body = { major: "1", minor: "35", gitVersion: "v1.35.0" };
+  else if (route === "/api") body = { apiVersion: "v1", kind: "APIVersions", versions: ["v1"] };
+  else if (route === "/apis")
+    body = {
+      apiVersion: "v1",
+      kind: "APIGroupList",
+      groups: groups.map((one) => ({
+        name: one.name,
+        versions: [{ groupVersion: `${one.name}/${one.version}`, version: one.version }],
+        preferredVersion: { groupVersion: `${one.name}/${one.version}`, version: one.version },
+      })),
+    };
+  else if (route === "/api/v1") body = { apiVersion: "v1", kind: "APIResourceList", groupVersion: "v1", resources: core };
+  else if (api)
+    body = {
+      apiVersion: "v1",
+      kind: "APIResourceList",
+      groupVersion: `${api.name}/${api.version}`,
+      resources: api.resources.map((resource) => ({ singularName: "", namespaced: true, verbs: ["get", "list"], ...resource })),
+    };
+  else if (route === markerPath) {
+    markerReads++;
+    if (forbidden) {
+      code = 403;
+      body = { kind: "Status", apiVersion: "v1", status: "Failure", reason: "Forbidden", code: 403, message: "get configmaps forbidden" };
+    } else if (marker === null) {
+      code = 404;
+      body = notFound;
+    } else body = marker;
+  } else if (route === `/apis/agent-platform.ai/v1/namespaces/${agentNamespace}/agents`)
+    body = { apiVersion: "agent-platform.ai/v1", kind: "AgentList", metadata: { resourceVersion: "1" }, items: [] };
+  else if (objects[route]) body = objects[route];
+  else {
+    code = 404;
+    body = notFound;
+  }
+  response.statusCode = code;
+  response.setHeader("content-type", "application/json");
+  response.end(JSON.stringify(body));
+});
+
+const values = [
+  "--namespace", namespace,
+  "--set", `agentNamespace=${agentNamespace}`,
+  "--set", "terms.version=test",
+  "--set", "terms.text=Test Terms",
+  "--set", "virtualization.runner.resources.limits.memory=8Gi",
+  "--set", "virtualization.imageCache.hostPath=/var/lib/platform-images",
+  "--set", "virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases",
+  "--set", "agentStore.authority=postgres",
+  "--set", "agentStore.cutover.acknowledged=true",
+];
+
+const chartDir = await fs.mkdtemp(path.join(os.tmpdir(), "platform-rollout-"));
+try {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const kubeconfig = path.join(chartDir, "kubeconfig");
+  await fs.writeFile(
+    kubeconfig,
+    [
+      "apiVersion: v1",
+      "kind: Config",
+      "clusters:",
+      "- name: fake",
+      "  cluster:",
+      `    server: http://127.0.0.1:${server.address().port}`,
+      "users:",
+      "- name: fake",
+      "  user: {}",
+      "contexts:",
+      "- name: fake",
+      "  context:",
+      "    cluster: fake",
+      "    user: fake",
+      "current-context: fake",
+      "",
+    ].join("\n"),
+  );
+
+  const render = async ({ live, set = [] }) => {
+    const args = ["template", "platform", ".", ...values, ...set, "--show-only", "templates/apiserver/app.yaml"];
+    if (live) args.push("--kubeconfig", kubeconfig, "--dry-run=server", "--disable-openapi-validation");
+    const manifest = path.join(chartDir, "app.yaml");
+    markerReads = 0;
+    try {
+      const { stdout } = await exec("helm", args, { maxBuffer: 16 << 20 });
+      await fs.writeFile(manifest, stdout);
+      const { stdout: strategy } = await exec("yq", ["-o=json", 'select(.kind == "Deployment") | .spec.strategy', manifest]);
+      return { ok: true, strategy: JSON.parse(strategy) };
+    } catch (error) {
+      return { ok: false, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
+    }
+  };
+
+  const recreate = { type: "Recreate", rollingUpdate: null };
+  const rollingUpdate = { type: "RollingUpdate", rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } };
+  const cases = [
+    {
+      name: "an offline render recreates, the safe side",
+      m: null,
+      live: false,
+      strategy: recreate,
+      reads: 0,
+    },
+    {
+      name: "the switch, before its marker exists, recreates",
+      m: null,
+      live: true,
+      strategy: recreate,
+      reads: 1,
+    },
+    {
+      name: "a switched install rolls",
+      m: { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "platform-agent-store", namespace: agentNamespace }, data: { store: "postgres", "absorbed-at": "2026-11-18T00:00:00.000Z" } },
+      live: true,
+      strategy: rollingUpdate,
+      reads: 1,
+    },
+    {
+      name: "a marker that names another store recreates",
+      m: { apiVersion: "v1", kind: "ConfigMap", metadata: { name: "platform-agent-store", namespace: agentNamespace }, data: { store: "crd" } },
+      live: true,
+      strategy: recreate,
+      reads: 1,
+    },
+    {
+      name: "an install on the custom resources reads no marker",
+      m: null,
+      live: true,
+      set: ["--set", "agentStore.authority=crd", "--set", "agentStore.cutover.acknowledged=false"],
+      strategy: rollingUpdate,
+      reads: 0,
+    },
+  ];
+
+  let failed = 0;
+  for (const testCase of cases) {
+    marker = testCase.m;
+    forbidden = false;
+    const result = await render(testCase);
+    let message = "";
+    if (!result.ok) message = `expected a render, got:\n${result.output}`;
+    else if (JSON.stringify(result.strategy) !== JSON.stringify(testCase.strategy))
+      message = `expected ${JSON.stringify(testCase.strategy)}, got ${JSON.stringify(result.strategy)}`;
+    else if (markerReads !== testCase.reads)
+      message = `expected ${testCase.reads} read(s) of the marker, saw ${markerReads}`;
+    console.log(`${message === "" ? "ok  " : "FAIL"} ${testCase.name}`);
+    if (message !== "") {
+      console.error(`      ${message.replaceAll("\n", "\n      ")}`);
+      failed++;
+    }
+  }
+
+  marker = null;
+  forbidden = true;
+  const denied = await render({ live: true });
+  const refusal = "an identity that may not read the marker fails the render";
+  if (denied.ok) {
+    console.error(`FAIL ${refusal}, but the ordering must fail closed`);
+    failed++;
+  } else if (!denied.output.includes("forbidden") || markerReads !== 1) {
+    console.error(`FAIL ${refusal}, but not on its own read:\n      ${denied.output.replaceAll("\n", "\n      ")}`);
+    failed++;
+  } else {
+    console.log(`ok   ${refusal}`);
+  }
+  const unread = await render({ live: true, set: ["--set", "agentStore.authority=contract", "--set", "agentStore.contract.emptyArchive=true"] });
+  if (!unread.ok || markerReads !== 0) {
+    console.error(`FAIL an install that reads no custom resource renders with a forbidden marker read: reads=${markerReads} ${unread.output ?? ""}`);
+    failed++;
+  } else {
+    console.log("ok   an install that reads no custom resource renders with a forbidden marker read");
+  }
+
+  process.exitCode = failed === 0 ? 0 : 1;
+} finally {
+  await new Promise((resolve) => server.close(resolve));
+  await fs.rm(chartDir, { recursive: true, force: true });
+}
