@@ -12,6 +12,7 @@ const fake = vi.hoisted(() => ({
   agents: [] as unknown[],
   emitToast: vi.fn(),
   appendNewSessionDraft: vi.fn(),
+  closeAgentSettings: vi.fn(),
   selectAgent: vi.fn(),
   leaveChatContext: vi.fn((run: () => void) => run()),
 }));
@@ -23,6 +24,7 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({
       appendNewSessionDraft: fake.appendNewSessionDraft,
+      closeAgentSettings: fake.closeAgentSettings,
       selectAgent: fake.selectAgent,
       leaveChatContext: fake.leaveChatContext,
     }),
@@ -42,6 +44,9 @@ const { useAgentCrashToasts } =
   await import("../../modules/agents/hooks/use-agent-crash-toasts.js");
 const { useAskAssistant } =
   await import("../../modules/assistants/hooks/use-ask-assistant.js");
+
+const assistantAgent = (): AgentView =>
+  agent({ id: "assistant-1", name: "Dammy", state: "running" });
 
 const agent = (over: Partial<AgentView> = {}): AgentView =>
   ({
@@ -77,7 +82,7 @@ function CrashHarness() {
 }
 
 function renderCrash(agents: AgentView[]): void {
-  fake.agents = agents;
+  fake.agents = [...agents, assistantAgent()];
   act(() => root.render(createElement(CrashHarness)));
 }
 
@@ -125,6 +130,17 @@ it("leaves the notice as it was with no assistant", () => {
   expect(toast.action).toBeUndefined();
 });
 
+it("offers nothing when the recorded assistant is no longer in the list", () => {
+  fake.agents = [agent()];
+  act(() => root.render(createElement(CrashHarness)));
+  fake.agents = [agent({ podRestarts: 1, podRestartReason: "OutOfMemory" })];
+  act(() => root.render(createElement(CrashHarness)));
+
+  expect(fake.emitToast).toHaveBeenCalledTimes(1);
+  const toast = fake.emitToast.mock.calls[0]?.[0] as { action?: unknown };
+  expect(toast.action).toBeUndefined();
+});
+
 it("does not offer to ask the assistant itself", () => {
   fake.state = { data: { agentId: "agent-1", ready: true } };
   crash();
@@ -135,6 +151,7 @@ it("does not offer to ask the assistant itself", () => {
 });
 
 it("writes the question into a new chat and sends nothing", () => {
+  fake.agents = [assistantAgent(), agent()];
   let ask: ((prefill: string) => void) | null = null;
   function AskHarness() {
     ask = useAskAssistant().ask;
@@ -145,6 +162,7 @@ it("writes the question into a new chat and sends nothing", () => {
   act(() => ask?.("why did it fail?"));
 
   expect(fake.leaveChatContext).toHaveBeenCalledTimes(1);
+  expect(fake.closeAgentSettings).toHaveBeenCalledTimes(1);
   expect(fake.appendNewSessionDraft).toHaveBeenCalledWith(
     "assistant-1",
     "why did it fail?",

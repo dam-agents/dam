@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { useAssistantGate, useAssistantState } from "../api/assistant-state.js";
 import { canAskAssistant } from "../lib/ask-prefill.js";
@@ -23,10 +24,14 @@ export interface AskAssistant {
 export function useAskAssistant(): AskAssistant {
   const gate = useAssistantGate();
   const state = useAssistantState();
+  const agents = useAgentsList();
   const appendNewSessionDraft = useStore((s) => s.appendNewSessionDraft);
+  const closeAgentSettings = useStore((s) => s.closeAgentSettings);
   const leaveChatContext = useStore((s) => s.leaveChatContext);
   const selectAgent = useStore((s) => s.selectAgent);
-  const assistantId = state.data?.agentId ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the record can outlive the Agent, so the assistant is only the one the person still has in their list; a deleted assistant offers no link and opens no chat. */
+  const recorded = state.data?.agentId ?? null;
+  const assistantId = agents.some((a) => a.id === recorded) ? recorded : null;
   const assistantOn = gate.on;
   const assistantKnown = gate.known && state.data?.ready === true;
 
@@ -46,11 +51,18 @@ export function useAskAssistant(): AskAssistant {
     (prefill: string) => {
       if (assistantId === null) return;
       leaveChatContext(() => {
+        closeAgentSettings();
         appendNewSessionDraft(assistantId, prefill);
         selectAgent(assistantId);
       });
     },
-    [assistantId, appendNewSessionDraft, leaveChatContext, selectAgent],
+    [
+      assistantId,
+      appendNewSessionDraft,
+      closeAgentSettings,
+      leaveChatContext,
+      selectAgent,
+    ],
   );
 
   return { offered, label: `Ask ${getBrand().assistantName}`, ask };
