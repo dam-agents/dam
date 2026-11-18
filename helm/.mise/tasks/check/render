@@ -818,7 +818,9 @@ jq -e '.["apiserver"].PLATFORM_AGENT_STORE == "postgres"
   { echo "the switch render does not run both components on the rows, or not in its unfrozen state: $switched" >&2; exit 1; }
 # The switch takes every old writer down before the new ones start: the
 # api-server recreates, and the controller rolls with no surge (Recreate cannot
-# replace a Deployment whose strategy the API server defaulted).
+# replace a Deployment whose strategy the API server defaulted). This render is
+# the offline one, which sees no marker and so is the switch's; check:rollout
+# renders it against a cluster, with and without the marker.
 strategies=$(helm template platform . "${COMMON[@]}" \
   --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
   yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "type": .spec.strategy.type, "surge": .spec.strategy.rollingUpdate.maxSurge}' | jq -s 'map({(.component): {type: .type, surge: .surge}}) | add')
