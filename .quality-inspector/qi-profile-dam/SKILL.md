@@ -30,6 +30,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
 ## Vocabulary a user sees
 
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view; it stops on its own when idle and starts again when used.
+- **The navigation rail** — expanded by default, with labels; its header carries the install's brand mark, which opens Home, and a *Collapse navigation* chevron beside it.
+  Collapsed, the header carries only an *Expand navigation* chevron, always drawn rather than swapped in on hover, and no brand mark or brand text.
+  This change opens the rail expanded once in every browser, whatever the person had collapsed before, and their next collapse sticks for that browser.
   In the chat's header the agent's avatar, name and state dot open the agent menu: *Rename* (a dialog), *Artifacts* and *File tree*, which open those sections beside the conversation, stacked when both are open, and show a check while open, *Browser* and *Processes* for an agent that has them, *Git Changes* once the agent has a repository, *Add editors* and *Agent settings*.
   Files and Artifacts start closed for an account that never opened them, and each stays as the account last left it; the processes and the running count (*N running*) open in a panel beside the conversation.
   The notifications bell sits in a thin strip across the top of the chat.
