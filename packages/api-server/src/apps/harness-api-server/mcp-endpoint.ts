@@ -2102,15 +2102,13 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         );
         return false;
       }),
-      deps
-        .chatFormPreferences(agentId)
-        .catch((err: unknown) => {
-          console.error(
-            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
-            err,
-          );
-          return null;
-        }),
+      deps.chatFormPreferences(agentId).catch((err: unknown) => {
+        console.error(
+          `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+          err,
+        );
+        return null;
+      }),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
         (err: unknown) => {
           console.error(

@@ -54,7 +54,7 @@ describe("feature modes", () => {
         modes: {
           processes: "experimental",
           "advanced-connections": "experimental",
-            "custom-avatars": "experimental",
+          "custom-avatars": "experimental",
           "github-enterprise-hosts": "experimental",
           environments: "experimental",
           hermes: "experimental",
