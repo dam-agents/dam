@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-11-16
+Last verified: 2026-11-18
 
 ## Overview
 
@@ -183,7 +183,7 @@ See [security-and-credentials](security-and-credentials.md).
 ### ui
 
 A React + Vite single-page app served by the api-server.
-It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, and agent-sourced state follows the agent the same way, so the remaining polls are runtime metrics (a telemetry-store aggregation, not agent-sourced), the agent's background-work report (30 s, only while the agent is awake), skill-install state, Home's approval reads, and a compatibility poll for agents whose runtime predates live updates — those fall back to the HTTP proxy and the passive ACP list, flagged in the session panel with an update action when a newer image exists, until their image is updated — and ACP WebSockets for bidirectional agent communication.
+It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, and agent-sourced state follows the agent the same way, so the remaining polls are runtime metrics (a telemetry-store aggregation, not agent-sourced), the agent's background-work report (30 s, only while the agent is awake), skill-install state, Home's approval reads, and a compatibility poll for agents whose runtime predates live updates — those fall back to the HTTP proxy and the passive ACP list: one passive connection per Agent, kept while the list polls and dropped once it has been idle, so a poll costs a list read rather than a connection setup; the session panel flags such an Agent with an update action when a newer image exists, until its image is updated — and ACP WebSockets for bidirectional agent communication.
 A tab holds several ACP channels per Agent at once: the live channel for the session on screen, short-lived ones for history replay, and — while a brand-new session's first prompt is on its way — a channel of its own, which either becomes the live one or carries that turn to completion after the user has moved on.
 Permission prompts, tool calls, and streaming output all flow over the live ACP connection.
 See [`packages/ui/`](../../packages/ui/).

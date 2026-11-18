@@ -88,16 +88,86 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
   };
 }
 
+const PASSIVE_CONNECTION_IDLE_MS = 30_000;
+
+interface PassiveConnection {
+  ready: Promise<{ connection: ClientConnection; ws: WebSocket }>;
+  idle?: ReturnType<typeof setTimeout>;
+}
+
+const passiveConnections = new Map<string, PassiveConnection>();
+
+function closePassiveConnection(agentId: string): void {
+  const cached = passiveConnections.get(agentId);
+  if (!cached) return;
+  passiveConnections.delete(agentId);
+  if (cached.idle) clearTimeout(cached.idle);
+  cached.ready.then(({ ws }) => ws.close()).catch(() => {});
+}
+
+function passiveConnection(agentId: string): PassiveConnection {
+  const cached = passiveConnections.get(agentId);
+  if (cached) {
+    if (cached.idle) clearTimeout(cached.idle);
+    cached.idle = undefined;
+    return cached;
+  }
+  const connection: PassiveConnection = {
+    ready: openInitializedConnection(agentId, () => {}, {
+      passive: true,
+      clientInfo: { name: "platform-ui-sessions", version: "1.0.0" },
+    }).then(({ connection: acp, ws }) => {
+      ws.addEventListener("close", () => {
+        if (passiveConnections.get(agentId) === connection)
+          closePassiveConnection(agentId);
+      });
+      return { connection: acp, ws };
+    }),
+  };
+  connection.ready.catch(() => {
+    if (passiveConnections.get(agentId) === connection)
+      passiveConnections.delete(agentId);
+  });
+  passiveConnections.set(agentId, connection);
+  return connection;
+}
+
+async function openPassiveConnection(
+  agentId: string,
+): Promise<{ cached: PassiveConnection; connection: ClientConnection }> {
+  const cached = passiveConnection(agentId);
+  const opened = await cached.ready;
+  if (opened.ws.readyState === WebSocket.OPEN)
+    return { cached, connection: opened.connection };
+  closePassiveConnection(agentId);
+  const fresh = passiveConnection(agentId);
+  return { cached: fresh, connection: (await fresh.ready).connection };
+}
+
+async function withPassiveConnection<T>(
+  agentId: string,
+  fn: (conn: ClientConnection) => Promise<T>,
+): Promise<T> {
+  const { cached, connection } = await openPassiveConnection(agentId);
+  try {
+    return await fn(connection);
+  } finally {
+    if (passiveConnections.get(agentId) === cached)
+      cached.idle = setTimeout(
+        () => closePassiveConnection(agentId),
+        PASSIVE_CONNECTION_IDLE_MS,
+      );
+  }
+}
+
 async function withConnection<T>(
   agentId: string,
   fn: (conn: ClientConnection) => Promise<T>,
-  opts?: { passive?: boolean },
 ): Promise<T> {
   const { connection, ws } = await openInitializedConnection(
     agentId,
     () => {},
     {
-      ...opts,
       clientInfo: { name: "platform-ui-sessions", version: "1.0.0" },
     },
   );
@@ -191,10 +261,8 @@ export async function listAgentSessionPage(
   query: SessionListQuery = {},
 ): Promise<SessionViewPage> {
   if (agentLacksLiveUpdates(agentId)) {
-    const sessions = await withConnection(
-      agentId,
-      (conn) => listSessionsOn(agentId, conn),
-      { passive: true },
+    const sessions = await withPassiveConnection(agentId, (conn) =>
+      listSessionsOn(agentId, conn),
     );
     return {
       sessions: sessions.filter((s) => sessionMatchesQuery(s, query)),
