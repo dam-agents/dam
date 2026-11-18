@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
+// TEST_OVERVIEW: a Schedule the platform gives one owner's assistant, shown on the security check, its first kind. Turning it on gives their assistant one weekly Schedule and records it; a person with no assistant is refused; a Schedule that still stands is left alone and a deleted one is made again only by the switch. Turning it off deletes the Schedule and the last report. The install's mode wins over a switch. A Schedule made by an earlier release gets the current task, and keeps the time its owner gave it. The assistant's report replaces the one before it, is kept only for a person the feature is on for, and is shown only while it names a problem, its Schedule stands and the owner still has the Agent.
 import type { FeatureMode, Schedule, SchedulesService } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
@@ -78,13 +78,41 @@ function world(
   const createRRule = vi.fn(
     async (input: Parameters<SchedulesService["createRRule"]>[0]) => {
       made += 1;
-      const schedule = {
+      const schedule: Schedule = {
         id: `schedule-${String(made)}`,
         name: input.name,
         agentId: input.agentId,
-      } as Schedule;
+        spec: {
+          version: "1",
+          type: "rrule",
+          rrule: input.rrule,
+          timezone: input.timezone,
+          task: input.task,
+          enabled: true,
+          createdBy: "user",
+          ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        },
+      };
       schedules.set(schedule.id, schedule);
       return schedule;
+    },
+  );
+  const updateRRule = vi.fn(
+    async (input: Parameters<SchedulesService["updateRRule"]>[0]) => {
+      const current = schedules.get(input.id);
+      if (current === undefined || current.spec.type !== "rrule") return null;
+      const updated: Schedule = {
+        ...current,
+        name: input.name,
+        spec: {
+          ...current.spec,
+          rrule: input.rrule,
+          timezone: input.timezone,
+          task: input.task,
+        },
+      };
+      schedules.set(updated.id, updated);
+      return updated;
     },
   );
   const deleteSchedule = vi.fn(async (id: string) => {
@@ -107,6 +135,7 @@ function world(
       schedules: {
         get: async (id) => schedules.get(id) ?? null,
         createRRule,
+        updateRRule,
         delete: deleteSchedule,
       },
       lock,
@@ -120,6 +149,7 @@ function world(
     repo,
     schedules,
     createRRule,
+    updateRRule,
     deleteSchedule,
   };
 }
@@ -273,6 +303,94 @@ describe("the check where nobody flipped a switch", () => {
     const w = world({ assistant: null });
     await w.checks.ensure();
     expect(w.createRRule).not.toHaveBeenCalled();
+  });
+});
+
+describe("a schedule made by an earlier release", () => {
+  const madeEarlier = (w: ReturnType<typeof world>): void => {
+    const schedule = w.schedules.get("schedule-1");
+    if (schedule?.spec.type !== "rrule") throw new Error("no schedule made");
+    w.schedules.set(schedule.id, {
+      ...schedule,
+      name: "My Monday check",
+      spec: {
+        ...schedule.spec,
+        task: "the procedure of an earlier release",
+        rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0",
+        timezone: "Europe/Prague",
+      },
+    });
+  };
+
+  // TEST_SCENARIO: the Schedule holds an older task under a name and a time the owner gave it, so a refresh puts the current task there and sends the name, the time and the session mode back unchanged.
+  it("gets the current task and keeps the owner's name and time", async () => {
+    const w = world();
+    await w.checks.enable();
+    madeEarlier(w);
+    await w.checks.refresh();
+    expect(w.updateRRule).toHaveBeenCalledTimes(1);
+    expect(w.updateRRule).toHaveBeenCalledWith({
+      id: "schedule-1",
+      name: "My Monday check",
+      rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0",
+      timezone: "Europe/Prague",
+      task: securityCheckSchedule.task(),
+      sessionMode: "fresh",
+    });
+    expect(w.schedules.get("schedule-1")?.spec.task).toBe(
+      securityCheckSchedule.task(),
+    );
+  });
+
+  // TEST_SCENARIO: the Schedule already holds the current task, so a refresh writes nothing and takes no lock.
+  it("is left alone when its task is current", async () => {
+    const w = world();
+    await w.checks.enable();
+    const locksBefore = w.lockCalls.count;
+    await w.checks.refresh();
+    expect(w.updateRRule).not.toHaveBeenCalled();
+    expect(w.lockCalls.count).toBe(locksBefore);
+  });
+
+  // TEST_SCENARIO: another request brought the task up to date while this one waited for the lock, so this one writes nothing.
+  it("is not written twice when another request refreshed it first", async () => {
+    const w = world();
+    await w.checks.enable();
+    madeEarlier(w);
+    w.state.beforeLockedWork = async () => {
+      w.state.beforeLockedWork = undefined;
+      await w.checks.refresh();
+    };
+    await w.checks.refresh();
+    expect(w.updateRRule).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST_SCENARIO: a person the platform gave no check has nothing to refresh, and neither has one who deleted its Schedule.
+  it("writes nothing for a person with no schedule of the check", async () => {
+    const none = world();
+    await none.checks.refresh();
+    expect(none.updateRRule).not.toHaveBeenCalled();
+
+    const deleted = world();
+    await deleted.checks.enable();
+    deleted.schedules.delete("schedule-1");
+    await deleted.checks.refresh();
+    expect(deleted.updateRRule).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the install turned the feature off, so the Schedule a person still has from before is not touched.
+  it("is not touched where the install turned the feature off", async () => {
+    const on = world();
+    await on.checks.enable();
+    madeEarlier(on);
+    const off = world({ mode: "off" });
+    off.schedules.set("schedule-1", on.schedules.get("schedule-1") as Schedule);
+    await off.repo.save(OWNER, KIND, {
+      agentId: "agent-ada",
+      scheduleId: "schedule-1",
+    });
+    await off.checks.refresh();
+    expect(off.updateRRule).not.toHaveBeenCalled();
   });
 });
 
