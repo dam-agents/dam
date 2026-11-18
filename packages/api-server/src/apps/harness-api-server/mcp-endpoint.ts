@@ -1999,10 +1999,7 @@ export interface MountMcpDeps {
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   readsChannelHistory: (agentId: string) => Promise<boolean>;
-  chatFormPreferences: (
-    owner: string,
-    agentId: string,
-  ) => Promise<ChatFormPreferences | null>;
+  chatFormPreferences: (agentId: string) => Promise<ChatFormPreferences | null>;
   agentImage: (agentId: string) => Promise<string | null>;
   environments: (
     owner: string,
@@ -2089,7 +2086,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         return false;
       }),
       deps
-        .chatFormPreferences(verified.owner, agentId)
+        .chatFormPreferences(agentId)
         .catch((err: unknown) => {
           console.error(
             `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,

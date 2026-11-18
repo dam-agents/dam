@@ -5,11 +5,9 @@ import {
   A2uiConversationProvider,
   useA2uiConversationState,
 } from "../contexts/a2ui-conversation-context.js";
-import { useChatFormsEnabled } from "../hooks/use-chat-forms-enabled.js";
 import { buildConversation } from "../lib/build-conversation.js";
 import { withRendererMetadata as attachMetadata } from "../lib/outgoing.js";
 import { A2uiBlockView } from "./a2ui-block-view.js";
-import { A2uiFormsOff } from "./a2ui-forms-off.js";
 import { A2uiSentBack } from "./a2ui-sent-back.js";
 
 const STANDALONE_MESSAGE = "standalone";
@@ -67,8 +65,6 @@ function A2uiStandaloneBlock({ blockKey, source, closed, interactive }: Props) {
 
 export function A2uiBlock(props: Props) {
   const conversation = useA2uiConversationState();
-  const enabled = useChatFormsEnabled();
-  if (!enabled) return <A2uiFormsOff source={props.source} />;
   const sentBack = conversation?.sentBack?.get(props.blockKey);
   if (sentBack) return <A2uiSentBack state={sentBack} />;
   if (conversation?.conversation.blocks.has(props.blockKey))

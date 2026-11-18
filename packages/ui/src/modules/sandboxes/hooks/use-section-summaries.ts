@@ -8,7 +8,6 @@ import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
 import { useChatFormPreferences } from "../../a2ui/api/queries.js";
-import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
@@ -231,10 +230,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     limitCoverage.paid,
   ]);
 
-  const chatFormsEnabled = useChatFormsEnabled();
-  const { data: chatForms } = useChatFormPreferences(
-    chatFormsEnabled ? (agentId ?? null) : null,
-  );
+  const { data: chatForms } = useChatFormPreferences(agentId ?? null);
   const chatFormsSummary = chatForms
     ? [
         CHAT_FORMS_SUMMARY[chatForms.forms],

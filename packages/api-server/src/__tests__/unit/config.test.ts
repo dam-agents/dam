@@ -196,13 +196,24 @@ describe("agentsInstallSettings — what every agents module is built with", () 
 
   // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
   it("reads every feature the chart does not name as the default mode", () => {
-    expect(loadConfig().featureModes["chat-forms"]).toBe("experimental");
+    expect(loadConfig().featureModes.processes).toBe("experimental");
     process.env.FEATURE_DEFAULT_MODE = "off";
-    process.env.FEATURE_MODES = JSON.stringify({ "chat-forms": "on" });
+    process.env.FEATURE_MODES = JSON.stringify({ processes: "on" });
     expect(loadConfig().featureModes).toMatchObject({
-      "chat-forms": "on",
+      processes: "on",
       "custom-avatars": "off",
     });
+  });
+
+  // TEST_SCENARIO: an install's values still pin chat forms, which graduated: the api-server starts, ignores the id and keeps the other modes it names.
+  it("ignores a feature the chart names after it graduated", () => {
+    process.env.FEATURE_MODES = JSON.stringify({
+      "chat-forms": "off",
+      processes: "on",
+    });
+    const modes = loadConfig().featureModes;
+    expect(modes).not.toHaveProperty("chat-forms");
+    expect(modes.processes).toBe("on");
   });
 
   // TEST_SCENARIO: the deployment's CurveBender is offered only where the install sets its key; without one the install configures no shared CurveBender rather than failing the boot.

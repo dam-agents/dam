@@ -21,13 +21,9 @@ export function composeChatFormPreferencesForOwner(opts: {
 
 export function createChatFormPreferencesReader(
   db: Db,
-): (
-  agentId: string,
-  flagOn: () => Promise<boolean>,
-) => Promise<ChatFormPreferences | null> {
+): (agentId: string) => Promise<ChatFormPreferences | null> {
   const repo = createChatFormPreferencesRepository(db);
-  return async (agentId, flagOn) => {
-    if (!(await flagOn())) return null;
+  return async (agentId) => {
     const preferences = await repo.get(agentId);
     return preferences.forms === "off" ? null : preferences;
   };
