@@ -26,7 +26,7 @@ const BOOT_LOG_NAME: &str = "agent-runtime.log";
 const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 // UNIT_BOUNDARY_DESCRIPTION: one line to stderr, written in a single call. Stderr is the boot log once it is open, and the log is on the disk, so a write can fail with the disk full; that must not stop the boot, so the error is dropped.
-fn log(message: std::fmt::Arguments) {
+pub(crate) fn log(message: std::fmt::Arguments) {
     let line = format!("platform-init: {message}\n");
     let _ = io::stderr().write_all(line.as_bytes());
 }
@@ -97,6 +97,12 @@ pub use vm::stage0;
 pub fn run() -> ! {
     // UNIT_BOUNDARY_DESCRIPTION: a panic of the guest's init ends the guest, and its message would go only to the boot log, which a thread may not have written out yet; it goes to the console too, where the runner reads why a boot ended, with the second the console needs before the reset (see exit).
     std::panic::set_hook(Box::new(|info| {
+        if crate::satellite_fuse::in_callback() {
+            log(format_args!(
+                "WARNING: a satellite mount thread panicked: {info}"
+            ));
+            return;
+        }
         announce(&format!("FATAL: {info}"));
         std::thread::sleep(std::time::Duration::from_secs(1));
     }));
@@ -136,6 +142,8 @@ pub fn run() -> ! {
     step(&mut since, "detaching the disk");
     share_mounts();
     step(&mut since, "the shared mount tree");
+    crate::satellite_fuse::start(&machine.launch.env);
+    step(&mut since, "the satellite mount");
     enter_workdir(Path::new(machine.launch.workdir.as_deref().unwrap_or("/")));
     step(&mut since, "the working directory");
 

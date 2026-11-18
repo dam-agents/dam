@@ -42,5 +42,18 @@ russh-sftp = "3"
 rand = { version = "0.10", features = ["thread_rng"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "process", "fs", "time", "sync"] }
 
+# The Satellite mount (satellite_fuse) shows the Agent's granted files Satellites
+# as one FUSE filesystem at /mnt/sat, and every other operation on it is one
+# POST to the api-server. Linux only, as the boot is, and mounted through
+# /dev/fuse rather than through libfuse, so the static link carries no C library
+# beyond libc. Plain HTTP with no TLS, and the proxy set explicitly: a guest
+# reaches the api-server by the gateway's IP literal, and a static binary must
+# never call getaddrinfo. base64 spells the bytes of a read or a write inside the
+# JSON body, and is already in the lock by way of the runner.
+[target.'cfg(target_os = "linux")'.dependencies]
+fuser = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["blocking"] }
+base64 = "0.22"
+
 [lints.clippy]
 all = "deny"

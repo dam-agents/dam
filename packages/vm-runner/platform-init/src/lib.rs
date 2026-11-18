@@ -6,3 +6,5 @@ pub mod runc;
 
 #[cfg(target_os = "linux")]
 pub mod boot;
+#[cfg(target_os = "linux")]
+pub mod satellite_fuse;
