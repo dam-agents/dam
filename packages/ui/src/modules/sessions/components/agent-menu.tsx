@@ -2,16 +2,16 @@ import {
   Activity,
   Branch,
   Checkmark,
+  ChevronDown,
   DataCategorical,
   Edit,
   Folder,
   Globe,
   Settings,
-  Share,
+  UserFollow,
 } from "@carbon/icons-react";
 import { type ReactNode, useRef, useState } from "react";
 
-import { stateDotClass } from "@/components/status-indicator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,12 +19,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { RenameAgentDialog } from "../../agents/components/rename-agent-dialog.js";
-import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 
 /** UNIT_BOUNDARY_DESCRIPTION: an item of the agent menu that opens or closes something beside the conversation, with whether it shows now; absent when the Agent has nothing for it. */
@@ -43,7 +41,6 @@ export interface AgentMenuToggle {
  */
 export function AgentMenu({
   agent,
-  display,
   artifacts,
   files,
   browser,
@@ -52,7 +49,6 @@ export function AgentMenu({
   onOpenSettings,
 }: {
   agent: AgentView;
-  display: AgentDisplay | null;
   artifacts: AgentMenuToggle;
   files: AgentMenuToggle;
   browser: AgentMenuToggle | null;
@@ -74,7 +70,7 @@ export function AgentMenu({
             type="button"
             aria-label={`${agent.name} menu`}
             data-testid="chat-agent-identity"
-            className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pr-3 pl-1 transition-colors hover:bg-muted"
+            className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pr-2 pl-1 transition-colors hover:bg-muted md:-ml-1"
           >
             <AgentAvatar
               name={agent.name}
@@ -85,15 +81,11 @@ export function AgentMenu({
             <span className="min-w-0 truncate text-sm font-semibold text-foreground">
               {agent.name}
             </span>
-            {display && (
-              <span
-                aria-hidden
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  stateDotClass[display.state],
-                )}
-              />
-            )}
+            <ChevronDown
+              size={16}
+              aria-hidden
+              className="shrink-0 text-muted-foreground"
+            />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -132,7 +124,7 @@ export function AgentMenu({
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onOpenSettings("people")}>
-            <Share size={13} /> Add editors
+            <UserFollow size={13} /> Add editors
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => onOpenSettings("setup")}>

@@ -30,7 +30,8 @@ Icons come from `@carbon/icons-react`.
 | Files destination                                           | `Folder`                                       |
 | Agent menu: Rename, Artifacts, File tree, Git Changes       | `Edit`, `DataCategorical`, `Folder`, `Branch`  |
 | Agent menu: Browser, Processes                              | `Globe`, `Activity`                            |
-| Agent menu: Add editors, Agent settings                     | `Share`, `Settings`                            |
+| Agent menu: Add editors, Agent settings                     | `UserFollow`, `Settings`                       |
+| Agent menu's button, after the name                         | `ChevronDown`                                  |
 | Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
 | More actions on a + menu connection card, as designed       | `OverflowMenuHorizontal` (`horizontal`)        |

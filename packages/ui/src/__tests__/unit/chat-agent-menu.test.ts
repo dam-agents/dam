@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: The chat's agent menu, as the design's chat refresh draws it: the Agent's avatar, name and state dot are one button that opens Rename, Artifacts and File tree (checked while open), Git Changes, Add editors and Agent settings; Browser and Processes join the same menu, checked the same way, for an Agent that has them, since the design has no other way to open them. Rename opens the Rename agent dialog, Add editors the settings' People, Agent settings their General. The running count shows the Agent's processes through the chat's toggle, and docking them asks first to discard an unsaved draft the dock holds.
+// TEST_OVERVIEW: The chat's agent menu, as the design's chat refresh draws it: the Agent's avatar and name, with a down chevron, are one button that opens Rename, Artifacts and File tree (checked while open), Git Changes, Add editors and Agent settings; Browser and Processes join the same menu, checked the same way, for an Agent that has them, since the design has no other way to open them. Rename opens the Rename agent dialog, Add editors the settings' People, Agent settings their General. The running count shows the Agent's processes through the chat's toggle, and docking them asks first to discard an unsaved draft the dock holds.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,7 +70,6 @@ function menu(opts: { extras?: boolean; filesOpen?: boolean } = {}) {
     createElement(ClassicChatIdentity, {
       agent: ALPHA,
       name: ALPHA.name,
-      display: { state: "running" } as never,
       artifacts: { open: false, onToggle: toggles.artifacts },
       files: { open: opts.filesOpen ?? false, onToggle: toggles.files },
       browser: extras ? { open: true, onToggle: toggles.browser } : null,
@@ -115,8 +114,8 @@ afterEach(() => {
 });
 
 describe("the agent menu's button", () => {
-  // TEST_SCENARIO: the button is the design's 24 px avatar, the name and the state dot, with no caret.
-  it("is the avatar, the name and the state dot", () => {
+  // TEST_SCENARIO: the button is the design's 24 px avatar and the name, then a down chevron that says it opens a menu, with no state dot, as the design review asked.
+  it("is the avatar, the name and a chevron", () => {
     menu();
     const trigger = host.querySelector<HTMLElement>(
       '[data-testid="chat-agent-identity"]',
@@ -126,8 +125,8 @@ describe("the agent menu's button", () => {
       trigger.querySelector<HTMLElement>('[data-testid="avatar"]')!.dataset
         .size,
     ).toBe("24");
-    expect(trigger.querySelector(".rounded-full")).not.toBeNull();
-    expect(trigger.querySelector("svg")).toBeNull();
+    expect(trigger.querySelector(".rounded-full")).toBeNull();
+    expect(trigger.lastElementChild!.tagName.toLowerCase()).toBe("svg");
   });
 });
 

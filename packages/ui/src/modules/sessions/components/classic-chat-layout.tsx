@@ -33,6 +33,7 @@ import {
   sectionsColumn,
 } from "../lib/classic-chat-layout.js";
 import type { SidebarPanel, SidebarPanelId } from "../lib/sidebar-panels.js";
+import { ChatColumn } from "./chat-column.js";
 import { SidePanelCloseScope } from "./side-panel-close-button.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
@@ -238,14 +239,17 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
-          <header className="relative z-content flex h-14 shrink-0 items-center gap-2 px-6 max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3">
-            <MobileMenuButton />
-            {identity}
-            <div className="flex min-w-0 items-center gap-2">{status}</div>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {newChat}
-              {!desktop && activity}
-            </div>
+          {/* UNIT_BOUNDARY_DESCRIPTION: the header sits in the composer's own column, with its padding, so the agent's avatar starts at the composer's left edge and New chat ends at its right edge, as the design review asked. */}
+          <header className="relative z-content flex h-14 shrink-0 items-center max-md:h-[52px] max-md:border-b max-md:border-border max-md:px-3 md:px-2 md:@xs/chat:px-4 md:@xl/chat:px-8">
+            <ChatColumn className="flex items-center gap-2 px-0 md:@xs/chat:px-4">
+              <MobileMenuButton />
+              {identity}
+              <div className="flex min-w-0 items-center gap-2">{status}</div>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {newChat}
+                {!desktop && activity}
+              </div>
+            </ChatColumn>
           </header>
           {(!desktop || !column.open) && notices}
           {children}

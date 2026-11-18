@@ -1,7 +1,6 @@
 import type { AgentView } from "../../../types.js";
 import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { isSharedAgent } from "../../agents/lib/agent-editors.js";
-import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { AgentMenu, type AgentMenuToggle } from "./agent-menu.js";
 
@@ -13,7 +12,6 @@ import { AgentMenu, type AgentMenuToggle } from "./agent-menu.js";
 export function ClassicChatIdentity({
   agent,
   name,
-  display,
   artifacts,
   files,
   browser,
@@ -23,7 +21,6 @@ export function ClassicChatIdentity({
 }: {
   agent: AgentView | null;
   name: string | null;
-  display: AgentDisplay | null;
   artifacts: AgentMenuToggle;
   files: AgentMenuToggle;
   browser: AgentMenuToggle | null;
@@ -36,7 +33,6 @@ export function ClassicChatIdentity({
       {agent ? (
         <AgentMenu
           agent={agent}
-          display={display}
           artifacts={artifacts}
           files={files}
           browser={browser}

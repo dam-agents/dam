@@ -1430,7 +1430,6 @@ export function ChatView() {
           <ClassicChatIdentity
             agent={agentView}
             name={selectedAgentName}
-            display={agentDisplay}
             artifacts={{
               open: artifactsSectionOpen,
               onToggle: () => toggleSection("artifacts"),
